@@ -1,9 +1,9 @@
-name: Deploy Empty GitHub Pages
+name: Deploy Placeholder to GitHub Pages (gh-pages)
 
 on:
   push:
     branches:
-      - main  # Change to your default branch
+      - main   # change if your default branch is different
   workflow_dispatch:
 
 permissions:
@@ -13,16 +13,30 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create placeholder index.html
+      - name: Build simple placeholder
         run: |
-          mkdir public
-          echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>GitHub Pages</title></head><body><h1>GitHub Pages</h1></body></html>" > public/index.html
+          mkdir -p public
+          cat > public/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>GitHub Pages</title>
+              <style>body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}h1{font-weight:600}</style>
+            </head>
+            <body>
+              <h1>GitHub Pages</h1>
+            </body>
+          </html>
+          EOF
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
+          publish_dir: public
+          publish_branch: gh-pages
