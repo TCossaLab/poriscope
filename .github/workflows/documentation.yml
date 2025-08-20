@@ -7,9 +7,9 @@ name: Build and Test Sphinx Docs
 on:
   # Triggers the workflow on push or pull request events for the specified branches
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "develop", "main" ]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: [ "develop", "main" ]
     
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -63,9 +63,9 @@ jobs:
           path: docs/build
 
       # Step 6: Deploy to GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/build
-          publish_branch: gh-pages
+      #- name: Deploy to GitHub Pages
+      #  uses: peaceiris/actions-gh-pages@v4
+      #  with:
+      #    github_token: ${{ secrets.GITHUB_TOKEN }}
+      #    publish_dir: docs/build
+      #    publish_branch: gh-pages
