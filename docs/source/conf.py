@@ -32,7 +32,7 @@ import os
 import sys
 from typing import List
 
-sys.path.insert(0, os.path.abspath("../../poriscope"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../poriscope')))
 
 
 from poriscope.constants import __VERSION__, VERSION_DATE
