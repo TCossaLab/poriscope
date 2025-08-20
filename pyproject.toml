@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 88
+# <-- belongs here
+src = ["poriscope", "tests"]
+
+[tool.ruff.lint]
+# enable import-sorting rules
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["poriscope"]
+# optional but helpful to avoid misclassification
+known-third-party = ["PySide6", "matplotlib", "pytest", "numpy", "pandas"]
+combine-as-imports = true

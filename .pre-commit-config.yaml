@@ -1,0 +1,32 @@
+# Apply hooks during commit stage
+default_stages: [pre-commit]
+
+repos:
+  # Code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        args: [--fast]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        exclude: ^tests/slow/
+
+  # Static Type Checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        # args: ["--strict"]
+        exclude: ^tests/slow/
+
+  # File Size Guard
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=123"]
