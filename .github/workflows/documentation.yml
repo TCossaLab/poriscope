@@ -6,10 +6,10 @@ name: Build and Test Sphinx Docs
 on:
   # Run on pushes to these branches
   push:
-    branches: [ "develop", "main" ]
+    branches: [ "main" ]
   # Also build on PRs targeting these branches (but we skip deploy on PRs below)
   pull_request:
-    branches: [ "develop", "main" ]
+    branches: [ "main" ]
   # Allow manual runs from the Actions tab
   workflow_dispatch:
 
