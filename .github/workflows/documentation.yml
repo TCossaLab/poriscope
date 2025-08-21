@@ -29,6 +29,12 @@ jobs:
   build-docs:
     runs-on: ubuntu-latest
 
+    # Required by actions/deploy-pages (names the target environment)
+    environment:
+      name: github-pages
+      # Show the deployed URL in the job summary (provided by deploy step output)
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       # Step 1: Check out the repository
       - name: Checkout repository
@@ -73,6 +79,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/build
+          # name: github-pages  # (optional) change if you want a custom artifact name
 
       # Deploy the uploaded artifact to GitHub Pages
       # We skip deploy on pull_request events to avoid publishing previews
@@ -80,6 +87,8 @@ jobs:
         if: github.event_name != 'pull_request'  # skip deploy on PRs
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages   # explicitly deploy the uploaded artifact
 
       # Step 6 (optional/testing): also upload the built site as a regular CI artifact
       # Handy for inspecting the exact HTML bundle from the run
