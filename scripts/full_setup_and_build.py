@@ -31,7 +31,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QFileDialog
 
-DLL_PATH = os.path.abspath("cdlls/wavelet/dist/wavelet.dll")
+DLL_PATH = os.path.abspath("poriscope/cdlls/wavelet/dist/wavelet.dll")
 CORRECT_PYTHON = shutil.which("python")
 
 

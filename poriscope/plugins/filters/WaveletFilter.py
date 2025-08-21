@@ -148,8 +148,7 @@ class WaveletFilter(MetaFilter):
             os.path.join(
                 os.path.dirname(__file__),
                 "..",
-                "..",
-                "..",
+                "poriscope",
                 "cdlls",
                 "wavelet",
                 "dist",
