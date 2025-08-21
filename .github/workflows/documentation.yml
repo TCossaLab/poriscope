@@ -77,3 +77,9 @@ jobs:
           publish_branch: gh-pages                    # Pages branch
           enable_jekyll: false                        # Create .nojekyll so _static/_sources work
           force_orphan: true                          # Clean deploy (no history)
+
+      - name: Verify gh-pages branch updated
+        run: |
+          git fetch origin gh-pages
+          git log -1 --oneline origin/gh-pages
+          git ls-tree --name-only -r origin/gh-pages | head -n 20
