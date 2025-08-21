@@ -21,7 +21,7 @@ permissions:
 
 # Ensure only one Pages deploy runs at a time
 concurrency:
-  group: "pages-${{ github.ref }}"
+  group: pages
   cancel-in-progress: true
 
 jobs:
