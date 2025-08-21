@@ -3,97 +3,68 @@
 
 name: Build and Test Sphinx Docs
 
+# Controls when the workflow will run
 on:
-  # Run on pushes to these branches
+  # Triggers the workflow on push or pull request events for the specified branches
   push:
-    branches: [ "main" ]
-  # Also build on PRs targeting these branches (but we skip deploy on PRs below)
+    branches: [ "develop", "main" ]
   pull_request:
-    branches: [ "main" ]
-  # Allow manual runs from the Actions tab
+    branches: [ "develop", "main" ]
+    
+  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Permissions required by the official GitHub Pages deployment actions
-permissions:
-  contents: read   # read-only access to repo contents during build
-  pages: write     # allow publishing the Pages artifact
-  id-token: write  # OIDC token for actions/deploy-pages
-
-# Ensure only one Pages deploy runs at a time
-#concurrency:
-#  group: pages
-#  cancel-in-progress: true
-
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # Single job that builds docs and (if not a PR) deploys them to GitHub Pages
+# This workflow contains a single job called "build-docs"
   build-docs:
+    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Required by actions/deploy-pages (names the target environment)
-    environment:
-      name: github-pages
-      # Show the deployed URL in the job summary (provided by deploy step output)
-      url: ${{ steps.deployment.outputs.page_url }}
-
+   
+    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Step 1: Check out the repository
+      # Step 1: Checks-out repository under $GITHUB_WORKSPACE, so the job can access it
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Install a specific Python version for reproducible builds
-      - name: Set up Python 3.12.10
-        uses: actions/setup-python@v5
+      # Step 2: Sets up Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.12.10"
+          python-version: "3.11"
 
-      # (Optional) Log the exact Python version used
-      - name: Show Python version
-        run: python -V
-
-      # Step 3: Install project and docs dependencies
-      # - requirements.txt: your project deps (if any used by autodoc)
-      # - sphinx + theme: tools to build the docs
+      # Step 3: Install dependencies
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install sphinx furo
-          
-      # Step 4: Build Sphinx HTML docs
-      # Source dir contains conf.py and index.rst: docs/source
-      # Output dir (published later): docs/build
+          pip install sphinx
+          pip install furo
+      # Step 4: Run autodoc scripts
+      - name: Generate autodoc for plugins
+        run: python scripts/autodoc/plugins_generate_autodoc.py
+
+      - name: Generate autodoc for metaclasses
+        run: python scripts/autodoc/metaclasses_generate_autodoc.py
+
+      # Step 5: Build HTML docs with Sphinx
       - name: Build Sphinx HTML docs (into `build/`)
-        run: sphinx-build -b html docs/source docs/build
-
-      # (Optional) List a subset of the build output for quick sanity check
+        run: |
+          sphinx-build -b html docs/source docs/build
+          
       - name: List docs/build contents
-        run: ls -la docs/build | sed -n '1,120p'
+        run: ls -R docs/build || echo "No build output found"
 
-      # ---- Official GitHub Pages flow (Actions-based) ----
-      # Configure the Pages environment for this job
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      # Upload only the built site (docs/build) as the Pages artifact
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/build
-          # name: github-pages  # (optional) change if you want a custom artifact name
-
-      # Deploy the uploaded artifact to GitHub Pages
-      # We skip deploy on pull_request events to avoid publishing previews
-      - name: Deploy to GitHub Pages
-        if: github.event_name != 'pull_request'  # skip deploy on PRs
-        id: deployment
-        uses: actions/deploy-pages@v4
-        with:
-          artifact_name: github-pages   # explicitly deploy the uploaded artifact
-
-      # Step 6 (optional/testing): also upload the built site as a regular CI artifact
-      # Handy for inspecting the exact HTML bundle from the run
+      # Step 6 (test purposes): Upload HTML as an artifact
       - name: Upload HTML docs
         uses: actions/upload-artifact@v4
         with:
           name: sphinx-html-docs
           path: docs/build
+
+      # Step 6: Deploy to GitHub Pages
+      #- name: Deploy to GitHub Pages
+      #  uses: peaceiris/actions-gh-pages@v4
+      #  with:
+      #    github_token: ${{ secrets.GITHUB_TOKEN }}
+      #    publish_dir: docs/build
+      #    publish_branch: gh-pages
