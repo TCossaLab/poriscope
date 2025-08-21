@@ -63,10 +63,9 @@ jobs:
           path: docs/build
 
       # Step 6: Deploy to GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/build
-          publish_branch: gh-pages
-          jekyll_enabled: false
+      #- name: Deploy to GitHub Pages
+      #  uses: peaceiris/actions-gh-pages@v4
+      #  with:
+      #    github_token: ${{ secrets.GITHUB_TOKEN }}
+      #    publish_dir: docs/build
+      #    publish_branch: gh-pages
