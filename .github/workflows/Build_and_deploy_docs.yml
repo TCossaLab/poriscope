@@ -3,7 +3,7 @@
 name: Build and Deploy Docs to Pages
 
 on:
-  # Runs on pushes targeting the default branch
+  # Runs on pushes targeting the develop branch
   push:
     branches: ["develop"]
   # Allows manual runs from the Actions tab
@@ -26,7 +26,6 @@ jobs:
     steps:
       # 1) Checkout repo
       - name: Checkout
-        # Keep fetch-depth: 1 (default) — full history not needed
         uses: actions/checkout@v4
 
       # 2) Build the Sphinx site (docs/source -> docs/build)
@@ -52,21 +51,20 @@ jobs:
         run: ls -la docs/build | sed -n '1,200p'
 
       # 3) Deploy to GitHub Pages (branch mode)
-      #    Your repo Settings → Pages should be:
+      #    Repo Settings → Pages:
       #    Source: Deploy from a branch • Branch: gh-pages • Folder: /docs
       - name: Deploy to GitHub Pages (gh-pages/docs)
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}  # auto-provided token
           publish_dir: docs/build                    # upload this folder's contents
           publish_branch: gh-pages                   # Pages branch
-          destination_dir: docs                      # <- land the site under /docs on gh-pages
+          destination_dir: docs                      # land the site under /docs on gh-pages
           enable_jekyll: false                       # create .nojekyll so _static/_sources work
           force_orphan: true                         # clean deploy (single-commit history)
 
       # 4) (Optional/testing) Also upload the built site as a normal CI artifact
-      #    This shows up under the workflow run's "Artifacts" for easy download.
       - name: Upload HTML docs (testing download artifact)
         uses: actions/upload-artifact@v4
         with:
