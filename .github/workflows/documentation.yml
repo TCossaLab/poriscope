@@ -69,4 +69,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/build
           publish_branch: gh-pages
-          jekyll_enabled: false
+          enable_jekyll: false
