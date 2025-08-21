@@ -1,58 +1,72 @@
-# Build Sphinx and deploy the generated static site to GitHub Pages (branch mode → gh-pages/docs)
+# Build Sphinx and deploy the generated static site to GitHub Pages
+# Branch mode → publishes to gh-pages/docs
 
-name: Build and Deploy Docs to Pages
+name: Build and Deploy Docs to Pages (develop)
 
 on:
-  # Runs on pushes targeting the develop branch
+  # Run automatically on pushes to develop
   push:
     branches: ["develop"]
-  # Allows manual runs from the Actions tab
+  # Allow manual runs from the Actions tab
   workflow_dispatch:
 
-# Permissions needed to push to the gh-pages branch
+# Allow pushing to gh-pages
 permissions:
   contents: write   # peaceiris needs write to push commits to gh-pages
 
-# Allow only one deployment per branch at a time; newest cancels older on same branch
+# One run per branch; newest cancels older on same branch
 concurrency:
   group: "docs-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
-  # Single job: build then deploy
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1) Checkout repo
-      - name: Checkout
+      # 1) Checkout the branch this run was started from
+      - name: Checkout (develop)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
-      # 2) Build the Sphinx site (docs/source -> docs/build)
+      # 2) Python & deps
       - name: Set up Python 3.12.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.12.10"
 
       - name: Install Python dependencies
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install sphinx furo
+          # Use requirements if present; otherwise install minimal doc deps
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f docs/requirements.txt ]; then
+            pip install -r docs/requirements.txt
+          else
+            pip install sphinx furo
+          fi
 
-      - name: Build Sphinx HTML
+      # 3) Build Sphinx (source → build)
+      - name: Build Sphinx HTML (docs/source → docs/build)
         run: sphinx-build -b html docs/source docs/build
 
+      # Ensure GitHub Pages serves _static/ by placing .nojekyll in the publish root
+      - name: Add .nojekyll to built site
+        run: touch docs/build/.nojekyll
+
       # Optional sanity checks
-      - name: Verify root index.html exists
-        run: test -f docs/build/index.html || (echo "Sphinx did not produce docs/build/index.html" && exit 1)
+      - name: Verify index.html exists
+        run: test -f docs/build/index.html || (echo "Missing docs/build/index.html" && exit 1)
 
       - name: List docs/build (debug)
         run: ls -la docs/build | sed -n '1,200p'
 
-      # 3) Deploy to GitHub Pages (branch mode)
-      #    Repo Settings → Pages:
-      #    Source: Deploy from a branch • Branch: gh-pages • Folder: /docs
+      # 4) Deploy to gh-pages/docs (branch-based Pages; NOT the Actions Pages flow)
+      #    Repo Settings → Pages must be: Source = Deploy from a branch • Branch = gh-pages • Folder = /docs
       - name: Deploy to GitHub Pages (gh-pages/docs)
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
         uses: peaceiris/actions-gh-pages@v4
@@ -61,11 +75,11 @@ jobs:
           publish_dir: docs/build                    # upload this folder's contents
           publish_branch: gh-pages                   # Pages branch
           destination_dir: docs                      # land the site under /docs on gh-pages
-          enable_jekyll: false                       # create .nojekyll so _static/_sources work
+          enable_jekyll: false                       # also writes a root .nojekyll (belt & suspenders)
           force_orphan: true                         # clean deploy (single-commit history)
 
-      # 4) (Optional/testing) Also upload the built site as a normal CI artifact
-      - name: Upload HTML docs (testing download artifact)
+      # 5) (Optional) downloadable artifact of the built site
+      - name: Upload HTML docs (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: sphinx-html-docs
