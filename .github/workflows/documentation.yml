@@ -59,27 +59,29 @@ jobs:
       - name: List docs/build contents
         run: ls -R docs/build || echo "No build output found"
 
+      - name: Build Sphinx HTML
+        # Adjust paths if your sources/build dirs differ
+        run: |
+          sphinx-build -b html docs docs/_build/html
+        env:
+          SPHINXOPTS: -W --keep-going  # drop -W if you don't want warnings to fail the build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload the built HTML, not the whole repo
+          path: docs/_build/html
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
       # Step 6 (test purposes): Upload HTML as an artifact
       - name: Upload HTML docs
         uses: actions/upload-artifact@v4
         with:
           name: sphinx-html-docs
           path: docs/build
-
-      # Step 6: Deploy to GitHub Pages
-      # Runs only on pushes to main
-      - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}   # Auth to push to gh-pages
-          publish_dir: docs/build                     # Sphinx output directory
-          publish_branch: gh-pages                    # Pages branch
-          enable_jekyll: false                        # Create .nojekyll so _static/_sources work
-          force_orphan: true                          # Clean deploy (no history)
-
-      - name: Verify gh-pages branch updated
-        run: |
-          git fetch origin gh-pages
-          git log -1 --oneline origin/gh-pages
-          git ls-tree --name-only -r origin/gh-pages | head -n 20
