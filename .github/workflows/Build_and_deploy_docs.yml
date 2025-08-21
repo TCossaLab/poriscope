@@ -5,7 +5,7 @@ name: Build and Deploy Docs to Pages
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
+    branches: ["develop"]
   # Allows manual runs from the Actions tab
   workflow_dispatch:
 
