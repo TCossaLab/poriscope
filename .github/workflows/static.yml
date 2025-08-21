@@ -1,0 +1,77 @@
+# Build Sphinx and deploy the generated static site to GitHub Pages (Actions mode)
+
+name: Build and Deploy Docs to Pages
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["main"]
+  # Allows manual runs from the Actions tab
+  workflow_dispatch:
+
+# Permissions required for the official Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; don't cancel in-progress prod deploys
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # Single job: build then deploy
+  deploy:
+    # Required environment for actions/deploy-pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Checkout repo
+      - name: Checkout
+        # Keep fetch-depth: 1 (default) — full history not needed
+        uses: actions/checkout@v4
+
+      # 2) Build the Sphinx site (docs/source -> docs/build)
+      - name: Set up Python 3.12.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install sphinx furo
+
+      - name: Build Sphinx HTML
+        run: sphinx-build -b html docs/source docs/build
+
+      # 3) Pages: configure, upload artifact (the built site), and deploy
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact (for Pages deploy)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload the built site only
+          path: docs/build
+          # name: github-pages  # (optional) override artifact name if you want
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # 4) (Optional/testing) Also upload the built site as a normal CI artifact
+      #    This shows up under the workflow run's "Artifacts" for easy download.
+      - name: Upload HTML docs (testing download artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sphinx-html-docs
+          path: docs/build
+          if-no-files-found: error
+          retention-days: 7
