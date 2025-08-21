@@ -1,4 +1,4 @@
-# Build Sphinx and deploy the generated static site to GitHub Pages (Actions mode)
+# Build Sphinx and deploy the generated static site to GitHub Pages (branch mode → gh-pages/docs)
 
 name: Build and Deploy Docs to Pages
 
@@ -9,25 +9,18 @@ on:
   # Allows manual runs from the Actions tab
   workflow_dispatch:
 
-# Permissions required for the official Pages deployment
+# Permissions needed to push to the gh-pages branch
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write   # peaceiris needs write to push commits to gh-pages
 
-# Allow only one concurrent deployment; don't cancel in-progress prod deploys
+# Allow only one deployment per branch at a time; newest cancels older on same branch
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "docs-${{ github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   # Single job: build then deploy
   deploy:
-    # Required environment for actions/deploy-pages
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     runs-on: ubuntu-latest
 
     steps:
@@ -51,23 +44,29 @@ jobs:
       - name: Build Sphinx HTML
         run: sphinx-build -b html docs/source docs/build
 
-      # 3) Pages: configure, upload artifact (the built site), and deploy
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      # Optional sanity checks
+      - name: Verify root index.html exists
+        run: test -f docs/build/index.html || (echo "Sphinx did not produce docs/build/index.html" && exit 1)
 
-      - name: Upload artifact (for Pages deploy)
-        uses: actions/upload-pages-artifact@v3
+      - name: List docs/build (debug)
+        run: ls -la docs/build | sed -n '1,200p'
+
+      # 3) Deploy to GitHub Pages (branch mode)
+      #    Repo Settings → Pages:
+      #    Source: Deploy from a branch • Branch: gh-pages • Folder: /docs
+      - name: Deploy to GitHub Pages (gh-pages/docs)
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          # Upload the built site only
-          path: docs/build
-          # name: github-pages  # (optional) override artifact name if you want
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # auto-provided token
+          publish_dir: docs/build                    # upload this folder's contents
+          publish_branch: gh-pages                   # Pages branch
+          destination_dir: docs                      # <- land the site under /docs on gh-pages
+          enable_jekyll: false                       # create .nojekyll so _static/_sources work
+          force_orphan: true                         # clean deploy (single-commit history)
 
       # 4) (Optional/testing) Also upload the built site as a normal CI artifact
-      #    This shows up under the workflow run's "Artifacts" for easy download.
+      #    This shows up under the workflow run's "Artifacts" for  download.
       - name: Upload HTML docs (testing download artifact)
         uses: actions/upload-artifact@v4
         with:
