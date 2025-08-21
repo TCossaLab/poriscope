@@ -14,9 +14,13 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+# Grant the workflow permission to push to gh-pages (required by the deploy action)
+permissions:
+  contents: write
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-# This workflow contains a single job called "build-docs"
+  # This workflow contains a single job called "build-docs"
   build-docs:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -63,9 +67,13 @@ jobs:
           path: docs/build
 
       # Step 6: Deploy to GitHub Pages
+      # Runs only on pushes to main
       - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/build
-          publish_branch: gh-pages
+          github_token: ${{ secrets.GITHUB_TOKEN }}   # Auth to push to gh-pages
+          publish_dir: docs/build                     # Sphinx output directory
+          publish_branch: gh-pages                    # Pages branch
+          enable_jekyll: false                        # Create .nojekyll so _static/_sources work
+          force_orphan: true                          # Clean deploy (no history)
