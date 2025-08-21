@@ -14,9 +14,9 @@ permissions:
   contents: write   # peaceiris needs write to push commits to gh-pages
 
 # Allow only one deployment per branch at a time; newest cancels older on same branch
-concurrency:
-  group: "docs-${{ github.ref }}"
-  cancel-in-progress: true
+#concurrency:
+#  group: "docs-${{ github.ref }}"
+#  cancel-in-progress: true
 
 jobs:
   # Single job: build then deploy
