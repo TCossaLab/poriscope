@@ -41,6 +41,9 @@ setup(
     url="https://github.com/TCossaLab/data_selection.git",
     packages=find_packages(include=["poriscope", "poriscope.*"]),
     include_package_data=True,
+    package_data={
+        "poriscope": ["configs/icons/*"],  # Make sure this matches the path to your icons
+    },
     install_requires=[
         "PySide6==6.9.0",
         "numpy==2.2.6",
