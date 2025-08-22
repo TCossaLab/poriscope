@@ -1,0 +1,21 @@
+.. _MetadataModel:
+
+MetadataModel
+=============
+
+**class MetadataModel(**kwargs)**
+
+Bases: :ref:`MetaModel`
+
+Subclass of MetaModel for handling metadata-related processing and storage.
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel._init
+

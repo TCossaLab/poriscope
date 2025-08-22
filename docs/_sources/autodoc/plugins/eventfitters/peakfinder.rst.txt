@@ -1,0 +1,38 @@
+.. _PeakFinder:
+
+PeakFinder
+==========
+
+**class PeakFinder(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaEventFitter`
+
+Abstract base class to analyze and flag the start and end times of regions
+of interest in a timeseries for further analysis.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.close_resources
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.construct_fitted_event
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.enumerate_peaks
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.filter_peaks
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.find_unfolded_blockage_level
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.get_empty_settings
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.get_plot_features
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_event_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_event_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_sublevel_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_sublevel_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._init
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._locate_sublevel_transitions
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._populate_event_metadata
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._populate_sublevel_metadata
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._post_process_events
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._pre_process_events
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._validate_settings
+

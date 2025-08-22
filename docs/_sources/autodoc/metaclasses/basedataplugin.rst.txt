@@ -1,0 +1,91 @@
+.. _BaseDataPlugin:
+
+BaseDataPlugin
+==============
+
+**class BaseDataPlugin(settings: Optional[dict] = None)**
+
+Bases: :class:`~abc.ABC`
+
+:ref:`BaseDataPlugin` is an abstraction of the functionality and interface that is common to all data plugins. What this means practically is that there is a chain of inheritance: all data plugins inherits from their respective base class, all of which inherit from :ref:`BaseDataPlugin`.
+
+It handles stuff like instantiating the plugins, constructing settings dictionaries, and sanity checking the inputs, as well as a handful of bookkeeping functions used by the poriscope GUI to manage interactions between the MVC architecture and the data plugins themselves - basically, anything that involves interaction with the nuts and bolts of the poriscope GUI.
+
+What You Get by Inheriting from Base Data Plugin
+------------------------------------------------
+
+.. warning::
+
+   You probably do not need to inherit directly from :ref:`BaseDataPlugin`, as this is a general base class for the specific base classes from which :ref:`Data Plugins <Data_Plugins>` are built. If your intention is to build a data plugin that fits one of the existing subtypes, you should inherit instead refer to one of the following pages:
+
+   1. :ref:`Build_MetaReader`
+   2. :ref:`Build_MetaFilter`
+   3. :ref:`Build_MetaEventFinder`
+   4. :ref:`Build_MetaWriter`
+   5. :ref:`Build_MetaEventLoader`
+   6. :ref:`Build_MetaEventFitter`
+   7. :ref:`Build_MetaDatabaseWriter`
+   8. :ref:`Build_MetaDatabaseLoader`
+
+   If you are planning to build an entirely new type of Data Plugin not in the list above, we strongly suggest contacting the poriscope developers first.
+
+As soon as you subclass a base class from :ref:`BaseDataPlugin`, the following happens:
+
+- The ``poriscope`` GUI will know how to interact with this plugin type, and will manage its relationship to other plugin classes on which it might depend
+- Your plugin will handle basic sanity checks on settings at instantiation without any extra work needed
+- Several abstract functions are defined that can be realized either at the base class or subclass level that define a common API for all data plugins
+
+.. note::
+
+    For the most part, users will not have to worry much about anything in this base class, as all other abstract base classes for data plugins inherit from this one and will define the relevant interface at the subclass level. However, in the unlikely event that you are defining an entirely new class of data plugin, it will need to inherit from this base in order to fully integrate into poriscope. Because integrating a new base into poriscope requires registration in core app elements, it is strongly encouraged that you contact the repository managers before trying in order to assess whether there is a simpler solution.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.close_resources
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.report_channel_status
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.reset_channel
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.force_serial_channel_operations
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_dependents
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_key
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_parents
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_raw_settings
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.register_dependent
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.register_parent
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.set_key
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.unregister_dependent
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.unregister_parent
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.update_raw_settings
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin._finalize_initialization
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin._init
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.__enter__
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.__exit__
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_param_ranges
+.. automethod:: poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_param_types
+

@@ -1,0 +1,85 @@
+.. _MetadataView:
+
+MetadataView
+============
+
+**class MetadataView(*args, **kwargs)**
+
+Bases: :ref:`MetaView`, :class:`~poriscope.plugins.WalkthroughMixin`
+
+Subclass of MetaView for visualizing and interacting with metadata plots.
+
+This view supports a wide variety of statistical visualizations, including:
+1D histograms, KDEs, capture rates, scatterplots, heatmaps, and event overlays.
+Also provides walkthroughs and export options.
+
+Attributes:
+    metadata_plots (List[str]): List of supported metadata-based plot types.
+    event_data_plots (List[str]): List of supported event-based plot types.
+    subset_export_count (int): Counter for naming exported subsets.
+    plot_initialized (bool): Indicates whether a plot is currently initialized.
+    no_cached_data (bool): True if data is not cached due to size.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.clear_pending_filter_state
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.get_selected_filters
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.replace_filter_item
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.request_experiment_structure
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_baseline_duration
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_event_data_generator
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_event_plot_data_generator
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_event_query
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_experiment_id
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_exported_event_count
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_query
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_table_by_column
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_units
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.show_edit_filter_dialog
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.show_selection_tree
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_available_columns
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_column_units
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_filter_name
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.__init__
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._calculate_heatmap
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._construct_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._construct_event_overlay
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._delete_all_selected_filters
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._delete_filter
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._delete_filter_by_name
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._export_csv_subset
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._get_event_index_text
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._handle_other_actions
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._handle_plot_events
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._init
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._load_filter
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._overlay_plot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_1d_density
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_1d_histogram
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_3d_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_capture_rate
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_heatmap
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._plot_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._reset_actions
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._save_filter
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._set_control_area
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._shift_range_and_update_plot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._show_add_filter_dialog
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._show_filter_info_dialog
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._undo_plot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._update_event_plot
+

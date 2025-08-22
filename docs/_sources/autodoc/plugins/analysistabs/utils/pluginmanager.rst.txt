@@ -1,0 +1,20 @@
+.. _PluginManager:
+
+PluginManager
+=============
+
+**class PluginManager(plugin_name, plugin_data = None, parent = None)**
+
+Bases: :class:`~poriscope.plugins.QDialog`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.PluginManagerPopup.PluginManager.emit_save
+.. automethod:: poriscope.plugins.analysistabs.utils.PluginManagerPopup.PluginManager.setup_ui
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.PluginManagerPopup.PluginManager.__init__
+

@@ -1,0 +1,68 @@
+.. _MetaEventFinder:
+
+MetaEventFinder
+===============
+
+**class MetaEventFinder(settings: Optional[dict] = None)**
+
+Bases: :ref:`BaseDataPlugin`
+
+:ref:`MetaEventFinder` is the base class for finding events within your nanopore data and represents the first analysis and transformation step. :ref:`MetaEventFinder` depends on and is linked at instantiation to a :ref:`MetaReader` subclass instance that serves as its source of nanopore data, meaning that creating and using one of these plugins requires that you first instantiate a reader. :ref:`MetaEventFinder` can in turn be the child object of :ref:`MetaWriter` subclass isntance for downstream saving of the data found by a instance of a subclass of :ref:`MetaEventFinder`.
+
+What you get by inheriting from MetaEventFinder
+-----------------------------------------------
+
+:ref:`MetaEventFinder` provides a common and intuitive API through which to identify segments of a nanopore timeseries that represent events (whatever that means for you) and flag them for writing to disk, excluding the uninteresting parts. In practice, this means that the size of nanopore data can be reduced by up to 1000x by keeping only the segments that matter. This operation is a precursor to downstream analysis, which operates only on the data segments flagged by subclasses of this base class.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.close_resources
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.find_events
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_base_experiment_name
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_channels
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_dtype
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_empty_settings
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_event_data_generator
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_event_indices
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_eventfinding_status
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_num_events_found
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_samplerate
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_single_event_data
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.report_channel_status
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.reset_channel
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._filter_events
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._find_events_in_chunk
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._get_baseline_stats
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._init
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.__init__
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._finalize_initialization
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._find_events_single_range
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._get_padding_length
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._merge_overlapping_ranges
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._validate_param_types
+

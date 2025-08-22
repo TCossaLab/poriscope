@@ -1,0 +1,74 @@
+.. _MetaView:
+
+MetaView
+========
+
+**class MetaView()**
+
+Bases: :class:`~PySide6.QtWidgets.QWidget`
+
+Abstract base class designed to provide a unified interface for different analysis tabs.
+
+This class includes a blank plot canvas for visualizing data, a dedicated space for
+control elements, and an interface for dynamically updating the plot based on user
+interactions or analysis results.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaView.MetaView.update_available_plugins
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_add_triggered
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_delete_triggered
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_edit_triggered
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_kill_all
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_kill_button
+.. automethod:: poriscope.utils.MetaView.MetaView.remove_progress_bar
+.. automethod:: poriscope.utils.MetaView.MetaView.set_available_subclasses
+.. automethod:: poriscope.utils.MetaView.MetaView.update_actions_from_json
+.. automethod:: poriscope.utils.MetaView.MetaView.update_plot_data
+.. automethod:: poriscope.utils.MetaView.MetaView.update_progressbar
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaView.MetaView._init
+.. automethod:: poriscope.utils.MetaView.MetaView._reset_actions
+.. automethod:: poriscope.utils.MetaView.MetaView._set_control_area
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaView.MetaView.__init__
+.. automethod:: poriscope.utils.MetaView.MetaView._clear_cache
+.. automethod:: poriscope.utils.MetaView.MetaView._commit_cache
+.. automethod:: poriscope.utils.MetaView.MetaView._expand_event_indices
+.. automethod:: poriscope.utils.MetaView.MetaView._factors
+.. automethod:: poriscope.utils.MetaView.MetaView._format_ranges
+.. automethod:: poriscope.utils.MetaView.MetaView._load_actions_from_json
+.. automethod:: poriscope.utils.MetaView.MetaView._logscale_and_filter_dataframe
+.. automethod:: poriscope.utils.MetaView.MetaView._logscale_and_filter_multiple_columns
+.. automethod:: poriscope.utils.MetaView.MetaView._merge_ranges
+.. automethod:: poriscope.utils.MetaView.MetaView._parse_event_indices
+.. automethod:: poriscope.utils.MetaView.MetaView._save_actions_to_json
+.. automethod:: poriscope.utils.MetaView.MetaView._set_custom_display_area
+.. automethod:: poriscope.utils.MetaView.MetaView._set_display_area_base
+.. automethod:: poriscope.utils.MetaView.MetaView._set_progress_area
+.. automethod:: poriscope.utils.MetaView.MetaView._setup_canvas
+.. automethod:: poriscope.utils.MetaView.MetaView._setup_ui
+.. automethod:: poriscope.utils.MetaView.MetaView._shift_ranges
+.. automethod:: poriscope.utils.MetaView.MetaView._update_cache
+

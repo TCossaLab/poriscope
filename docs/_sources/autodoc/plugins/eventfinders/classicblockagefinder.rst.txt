@@ -1,0 +1,47 @@
+.. _ClassicBlockageFinder:
+
+ClassicBlockageFinder
+=====================
+
+**class ClassicBlockageFinder(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaEventFinder`
+
+Event finder plugin for detecting transient blockages in nanopore signals using a threshold-based approach.
+
+This subclass of MetaEventFinder implements a classic event detection strategy, where events are identified
+by thresholding rectified signal traces. The start and end of events are determined using hysteresis and
+configurable settings such as threshold, minimum/maximum duration, and minimum separation.
+
+Core features:
+- Event detection based on baseline-normalized threshold crossings.
+- Configurable minimum and maximum event durations and separation.
+- Histogram-based baseline estimation with optional Gaussian fitting.
+- Supports chunked data processing with entry state handling across segments.
+
+Required settings:
+- Threshold (in pA)
+- Min Duration (in µs)
+- Max Duration (in µs)
+- Min Separation (in µs)
+- MetaReader reference for data access
+
+This class can be extended (e.g., BoundedBlockageFinder) to impose additional constraints such as baseline range limits.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder.close_resources
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder.get_empty_settings
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._filter_events
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._find_events_in_chunk
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._gaussian
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._gaussian_fit
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._get_baseline_stats
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._init
+.. automethod:: poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._validate_settings
+

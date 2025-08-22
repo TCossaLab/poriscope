@@ -1,0 +1,43 @@
+.. _ChimeraReader20240101:
+
+ChimeraReader20240101
+=====================
+
+**class ChimeraReader20240101(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaReader`
+
+Subclass of MetaReader for reading chimera VC400 .log files using the 2024-01 format specification with json string embedded in the file header and multiple files per dataset.
+
+Attributes:
+    datafile (str): Path to the data file.
+    logger (logging.Logger): Logger instance for logging messages.
+    datafiles (List[List[str]]): List of sorted data files grouped by channel and time.
+    configs (List[List[dict]]): List of sorted configuration dictionaries grouped by channel and time.
+    datamaps (List[List[numpy.ndarray]]): List of sorted data maps (memmaps or numpy arrays) grouped by channel and time.
+    file_start_indices (List[List[int]]): List of starting indices for each data map in each channel.
+    total_channel_samples (List[int]): List of total number of samples in each channel.
+    samplerate (float): Sampling rate for data acquisition.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101.close_resources
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101.get_empty_settings
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101.reset_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._convert_data
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_configs
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_file_channel_stamps
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_file_pattern
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_file_time_stamps
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._init
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._map_data
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._set_file_extension
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._set_raw_dtype
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._validate_file_type
+.. automethod:: poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._validate_settings
+

@@ -1,0 +1,33 @@
+.. _RawDataController:
+
+RawDataController
+=================
+
+**class RawDataController(available_subclasses = None, **kwargs)**
+
+Bases: :ref:`MetaController`
+
+Subclass of MetaController for managing raw data view-model logic.
+
+Handles raw data plotting and PSD logic.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.calculate_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.relay_eventfinding_status
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.set_event_filter
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.set_eventfinding_status
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.set_num_events_allowed
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.update_channels
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.update_plot_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.update_plot_samplerate
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.update_timer_channels
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController._init
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController._setup_connections
+

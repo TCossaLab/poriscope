@@ -1,0 +1,61 @@
+.. _MetaDatabaseWriter:
+
+MetaDatabaseWriter
+==================
+
+**class MetaDatabaseWriter(settings: Optional[dict] = None)**
+
+Bases: :ref:`BaseDataPlugin`
+
+What you get by inheriting from MetaDatabaseWriter
+--------------------------------------------------
+
+:ref:`MetaDatabaseWriter` is the base class for writing the metadata corresponding to events fitted by a :ref:`MetaEventFitter` subclass instance and is the end of most poriscope analysis workflows prior to post-processing. :ref:`MetaDatabaseWriter` depends on and is linked at instantiation to a :ref:`MetaEventFitter` subclass instance that serves as its source of nanopore data, meaning that creating and using one of these plugins requires that you first instantiate an eventfitter.
+
+Poriscope ships with a subclass of :ref:`MetaDatabaseWriter` already that writes data to a :mod:`sqlite3` format. While additional subclasses can write to almost any format you desire, we strongly encourage standardization around this format. Think twice before creating additional subclasses of this base class. It is not sufficient to write just a :ref:`MetaWriter` subclass. In addition to this base class, you will also need a paired :ref:`MetaEventLoader` subclass to read back and use the data you write to any other format for downstream analysis.
+
+.. warning::
+
+    We strongly encourage standardization on the :ref:SQLiteDBWriter subclass, so please think carefully before creating other formats. If you do, your database must be queryable with standard SQL and be able to implement everything required by :ref:`MetaDatabaseLoader` in order to be compatible with the poriscope loaders and workflows, and you will need to also create an associated database loader
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.close_resources
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.reset_channel
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.get_empty_settings
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.report_channel_status
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.write_events
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._init
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._initialize_database
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._validate_settings
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_channel_metadata
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_event
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_experiment_metadata
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.__init__
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._finalize_initialization
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._validate_param_types
+

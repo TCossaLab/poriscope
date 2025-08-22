@@ -1,0 +1,26 @@
+.. _Overlay:
+
+Overlay
+=======
+
+**class Overlay(parent)**
+
+Bases: :class:`~PySide6.QtWidgets.QWidget`
+
+Dark transparent overlay that highlights widgets during the walkthrough.
+
+:param parent: Parent widget over which the overlay is displayed.
+:type parent: QWidget
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.Overlay.eventFilter
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.Overlay.highlight
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.Overlay.paintEvent
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.Overlay.__init__
+

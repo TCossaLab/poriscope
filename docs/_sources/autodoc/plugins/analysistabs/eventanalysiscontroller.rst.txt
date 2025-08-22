@@ -1,0 +1,32 @@
+.. _EventAnalysisController:
+
+EventAnalysisController
+=======================
+
+**class EventAnalysisController(available_subclasses = None, **kwargs)**
+
+Bases: :ref:`MetaController`
+
+Subclass of MetaController for for managing event analysis view-model logic.
+
+Connects the EventAnalysisModel and EventAnalysisView.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.relay_eventfitting_status
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.set_event_filter
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.set_eventfitting_status
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.set_num_events_allowed
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.update_channels
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.update_features
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.update_plot_data
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController.update_plot_samplerate
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController._init
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisController.EventAnalysisController._setup_connections
+

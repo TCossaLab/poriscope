@@ -1,0 +1,32 @@
+.. _SQLiteDBWriter:
+
+SQLiteDBWriter
+==============
+
+**class SQLiteDBWriter(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaDatabaseWriter`
+
+Abstract base class for database writer that will store metadata and data from fitted events for postprocessing later
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter.close_resources
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter.get_empty_settings
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter.reset_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._column_exists
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._init
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._initialize_database
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._insert_event
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._insert_event_data
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._insert_sublevels
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._validate_settings
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._write_channel_metadata
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._write_event
+.. automethod:: poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._write_experiment_metadata
+

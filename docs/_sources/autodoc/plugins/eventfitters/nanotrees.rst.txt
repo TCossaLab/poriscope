@@ -1,0 +1,48 @@
+.. _NanoTrees:
+
+NanoTrees
+=========
+
+**class NanoTrees(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaEventFitter`
+
+Abstract base class to analyze and flag the start and end times of regions
+of interest in a timeseries for further analysis.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.close_resources
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.construct_fitted_event
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.get_empty_settings
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.get_rise_time
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.get_skip_region
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.l50_max_height
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._DNA
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.__pass1
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees.__pass2
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_event_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_event_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_sublevel_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_sublevel_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._init
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._locate_sublevel_transitions
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._ml_automation
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass3
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass4
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass5
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass6
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass7
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._populate_event_metadata
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._populate_sublevel_metadata
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._post_process_events
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pre_process_events
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._set_automation_hyperparameters
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._slope_height_adjust
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.NanoTrees._validate_settings
+

@@ -1,0 +1,31 @@
+.. _SQLiteEventWriter:
+
+SQLiteEventWriter
+=================
+
+**class SQLiteEventWriter(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaWriter`
+
+Save events into a single file with baseline between them discarded
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.close_resources
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.get_empty_settings
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.get_output_file_name
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.reset_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._finalize_initialization
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._init
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._initialize_database
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._rescale_data_to_adc
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._set_output_dtype
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._validate_settings
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._write_channel_metadata
+.. automethod:: poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._write_data
+

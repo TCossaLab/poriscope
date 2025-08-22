@@ -1,0 +1,58 @@
+.. _MetaEventLoader:
+
+MetaEventLoader
+===============
+
+**class MetaEventLoader(settings: Optional[dict] = None)**
+
+Bases: :class:`~poriscope.utils.BaseDataPlugin`
+
+What you get by inheriting from MetaEventLoader
+-----------------------------------------------
+
+:ref:`MetaEventLoader` is the base class for loading the data written by a :ref:`MetaWriter` subclass instance or any other method that produces an equivalent format.
+
+Poriscope ships with :ref:`SQLiteEventLoader`, a subclass of :ref:`MetaEventLoader` that reads data written by the :ref:`SQLiteDBWriter` subclass. While additional subclasses can read almost any format you desire, we strongly encourage standardization around this format. Think twice before creating additional subclasses of this base class. It is not sufficient to write just a :ref:`MetaEventLoader` subclass. In addition to this base class, you will also need a paired :ref:`MetaWriter` subclass to write data in your target format.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.close_resources
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_channels
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_num_events
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_samplerate
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_valid_indices
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.load_event
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_base_file
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_empty_settings
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_event_generator
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.report_channel_status
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.reset_channel
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader._init
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.__init__
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader._finalize_initialization
+

@@ -1,0 +1,54 @@
+.. _MetaFilter:
+
+MetaFilter
+==========
+
+**class MetaFilter(settings: Optional[dict] = None)**
+
+Bases: :ref:`BaseDataPlugin`
+
+:ref:`MetaFilter` is the base class for all things related to filtering and/or preprocessing raw data before it is passed to other plugins for analysis. While it is presented as a filtering method and the most common use case for it is Bessel filtering, it is not specifically limited to timeseries filtering per se, instead providing a general interface through which data can be passed or otherwise transformed before analysis.
+
+What you get by inheriting from MetaFilter
+------------------------------------------
+
+:ref:`MetaFilter` will provide a common API with which to define data preprocessing steps that can be swapped in and out of data analysis pipelines.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.close_resources
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.get_empty_settings
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.reset_channel
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.filter_data
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.get_callable_filter
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.report_channel_status
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter._apply_filter
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter._finalize_initialization
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter._init
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.__init__
+

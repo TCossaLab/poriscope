@@ -1,0 +1,57 @@
+.. _MetaController:
+
+MetaController
+==============
+
+**class MetaController(available_subclasses = None)**
+
+Bases: :class:`~PySide6.QtCore.QObject`
+
+Base controller class that manages exactly one MetaView and MetaModel instance
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaController.MetaController.export_plot_data
+.. automethod:: poriscope.utils.MetaController.MetaController.handle_kill_all_workers
+.. automethod:: poriscope.utils.MetaController.MetaController.handle_kill_worker
+.. automethod:: poriscope.utils.MetaController.MetaController.ignore
+.. automethod:: poriscope.utils.MetaController.MetaController.load_actions_from_json
+.. automethod:: poriscope.utils.MetaController.MetaController.relay_add_text_to_display
+.. automethod:: poriscope.utils.MetaController.MetaController.save_tab_actions
+.. automethod:: poriscope.utils.MetaController.MetaController.set_force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaController.MetaController.set_generator
+.. automethod:: poriscope.utils.MetaController.MetaController.update_available_plugins
+.. automethod:: poriscope.utils.MetaController.MetaController.update_plot_data
+.. automethod:: poriscope.utils.MetaController.MetaController.update_tab_actions
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaController.MetaController._init
+.. automethod:: poriscope.utils.MetaController.MetaController._setup_connections
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaController.MetaController.__init__
+.. automethod:: poriscope.utils.MetaController.MetaController._connect_global_signal
+.. automethod:: poriscope.utils.MetaController.MetaController._relay_create_plugin
+.. automethod:: poriscope.utils.MetaController.MetaController._relay_data_plugin_controller_signal
+.. automethod:: poriscope.utils.MetaController.MetaController._relay_global_signal
+
