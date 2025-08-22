@@ -50,9 +50,13 @@ jobs:
             pip install sphinx furo
           fi
 
-      # 3) Build Sphinx (source → build)
+    # 3) Build Sphinx (source → build)
+      - name: Generate .rst files using autodoc generators
+        run: python docs/generate_all_autodoc_rst.py
+      
       - name: Build Sphinx HTML (docs/source → docs/build)
         run: sphinx-build -b html docs/source docs/build
+
 
       # Ensure GitHub Pages serves _static/ by placing .nojekyll in the publish root
       - name: Add .nojekyll to built site
