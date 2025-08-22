@@ -139,7 +139,14 @@ class App(QApplication):
 
 
 def main():
-    import sys
+    import platform
+    import sys    
+    
+    # Refuse to run if 32-bit Python
+    bit_architecture = platform.architecture()[0]
+    if bit_architecture == "32bit":
+        logger.error(f"Poriscope requires a 64-bit version of Python.")
+        sys.exit(1)
 
     app = App(sys.argv)
 
