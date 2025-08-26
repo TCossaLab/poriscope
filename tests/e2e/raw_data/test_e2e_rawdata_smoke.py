@@ -3,13 +3,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.e2e._helpers import (
+    open_menu_hybrid,
+)  # stable helper to open menus in headless CI
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
-from tests.e2e._helpers import (
-    open_menu_hybrid,
-)  # stable helper to open menus in headless CI
 
 # Make sure the repo root is on sys.path so `poriscope.*` imports resolve when running tests directly
 REPO_ROOT = Path(__file__).resolve().parents[2]

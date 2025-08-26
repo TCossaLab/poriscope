@@ -18,11 +18,11 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QComboBox, QDialog, QLineEdit, QPushButton
+from tests.e2e._helpers import open_menu_hybrid
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
-from tests.e2e._helpers import open_menu_hybrid
 
 # Make repo imports work when running directly
 REPO_ROOT = Path(__file__).resolve().parents[2]
