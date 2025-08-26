@@ -122,7 +122,7 @@ class MetaFilter(BaseDataPlugin):
 
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If calloing part of this plugin from different channels to do not create persistent state changes in your plugin, you can simply ``pass`` this function, which will be the case for most :ref:`MetaFilter` instances.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If calling part of this plugin from different channels to do not create persistent state changes in your plugin, you can simply ``pass`` this function, which will be the case for most :ref:`MetaFilter` instances.
 
 
         """
@@ -186,7 +186,7 @@ class MetaFilter(BaseDataPlugin):
 
         These must have Type str and will cause the GUI to generate appropriate widgets to allow selection of these elements when used.
 
-        In the case of filters, this function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the ``self.settings`` class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation. For example, the following settings would be apperopriate for a low-pass Bessel filter:
+        In the case of filters, this function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the ``self.settings`` class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation. For example, the following settings would be appropriate for a low-pass Bessel filter:
 
         ..   code:: python
 
@@ -219,7 +219,7 @@ class MetaFilter(BaseDataPlugin):
         """
         **Purpose:** Perform generic class construction operations before settings are applied.
 
-        This is called immediately at the start of class creation but before settingns have beebn applied, and is used to do whatever is required to set up your reader. Note that no app settings are available when this is called, so this function should be used only for generic class construction operations. Most filters simply ``pass`` this function.
+        This is called immediately at the start of class creation but before settings have been applied, and is used to do whatever is required to set up your reader. Note that no app settings are available when this is called, so this function should be used only for generic class construction operations. Most filters simply ``pass`` this function.
         """
         pass
 

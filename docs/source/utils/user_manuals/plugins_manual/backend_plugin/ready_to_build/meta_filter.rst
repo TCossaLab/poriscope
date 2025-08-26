@@ -30,6 +30,9 @@ Required Private Methods
 
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter._apply_filter
    :no-index:
+   
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter._validate_settings
+   :no-index:
 
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -1,7 +1,7 @@
 .. _Build_MetaEventFinder:
 
-Bulding a MetaEventFinder subclass
-==================================
+Building a MetaEventFinder subclass
+===================================
 
 .. autoclass:: poriscope.utils.MetaEventFinder.MetaEventFinder
     :no-members:
@@ -26,6 +26,9 @@ Required Private Methods
    :no-index:
 
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._filter_events
+   :no-index:
+   
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._validate_settings
    :no-index:
 
 Optional Method Overrides

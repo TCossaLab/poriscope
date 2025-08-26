@@ -69,6 +69,9 @@ Required Private Methods
 
 .. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_event_data
    :no-index:
+   
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._validate_settings
+   :no-index:
 
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~

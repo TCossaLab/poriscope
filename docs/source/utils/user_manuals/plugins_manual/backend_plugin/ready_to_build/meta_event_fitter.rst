@@ -51,6 +51,9 @@ Required Private Methods
 
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._post_process_events
    :no-index:
+   
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._validate_settings
+   :no-index:
 
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -33,6 +33,9 @@ Required Private Methods
 
 .. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader._init
    :no-index:
+   
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader._validate_settings
+   :no-index:
 
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~

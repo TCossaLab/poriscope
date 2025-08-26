@@ -36,6 +36,9 @@ Required Private Methods
 
 .. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_event
    :no-index:
+   
+.. automethod:: poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._validate_settings
+   :no-index:
 
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
