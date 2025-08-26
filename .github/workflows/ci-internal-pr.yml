@@ -1,1 +1,48 @@
+name: CI (Internal PR)
+on:
+  pull_request:
+    branches: [main, release/*]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+concurrency:
+  group: ci-internal-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  lint-type:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12.10' }
+      - run: pip install -U pip && pip install -e ".[dev]" || pip install -r requirements-dev.txt
+      - run: ruff check . && black --check . && mypy .
 
+  unit:
+    needs: lint-type
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { python-version: ['3.12.10'] }
+      
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }} 
+      - run: pip install -U pip && pip install -e ".[test]" || pip install -r requirements.txt
+      - run: pytest -q --maxfail=1 --disable-warnings --cov=yourpkg --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        with: { name: coverage-xml, path: coverage.xml }
+
+  e2e:
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12.10' }
+      - run: pip install -U pip && pip install -e ".[e2e]" || true
+      - run: pytest -q -m "e2e"
+
+
+        
