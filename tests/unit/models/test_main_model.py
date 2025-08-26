@@ -128,6 +128,7 @@ def test_get_plugin_data_existing(main_model, tmp_path, monkeypatch):
     got = main_model.get_plugin_data(plugin_key)
     assert got == {"Value": "SomeData"}
 
+
 def test_get_plugin_data_nonexistent(main_model):
     """
     Test the fetching of plugin data when the session file does not exist.
