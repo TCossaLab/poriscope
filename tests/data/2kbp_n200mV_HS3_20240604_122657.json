@@ -1,0 +1,45 @@
+{
+  "log": {
+    "logname": "2kbp_n200mV_HS3_20240604_122657.log",
+    "comments": "",
+    "timestamp": "20240604_122657",
+    "version": "vc400 2024.05",
+    "HS": 3
+  },
+  "nanolyzer_import_settings": {
+    "header_bytes": 0,
+    "sampling_rate": 5000000.0,
+    "num_arrays": 1,
+    "data_size_bits": 16,
+    "data_type": "int16",
+    "bit_order": "<",
+    "scale": -2.351414672911338,
+    "offset": -2327.096842420032,
+    "unit": "pA"
+  },
+  "global": {
+    "f_adc": 5000000.0,
+    "f_vector": 100000.0,
+    "f_sampling": 5000000.0,
+    "filter_gain": 1,
+    "bandwidth": 2500000.0,
+    "decimate": 1,
+    "filter_choice": 0
+  },
+  "channel": {
+    "tia_gain": -53159487.962722786,
+    "i_offset": 2.327096842420032e-09,
+    "filtertuning": 0.35000000000000003,
+    "dacpower": true,
+    "dacdivider": 1,
+    "dac_rescale": 0.101,
+    "voffset": -0.09973871551557636,
+    "lowgain": false,
+    "boost": false,
+    "leds": 2,
+    "internalT": 38.375,
+    "tcT": 1828.5,
+    "tcFault": 1,
+    "display": true
+  }
+}
