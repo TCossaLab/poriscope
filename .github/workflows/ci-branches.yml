@@ -33,7 +33,7 @@ on:
       - 'bugfix/*'
 
 # Needed only because we auto-commit style fixes below.
-# If you switch to check-only linting, you can set this to: { contents: read }
+# If switched to check-only linting, can be set to: { contents: read }
 permissions:
   contents: write  # needed for auto-commit on push
 
@@ -46,12 +46,12 @@ jobs:
   quick:
     runs-on: ubuntu-latest
 
-    # Headless Qt rendering; kept even though we also run under Xvfb as an extra guard
+    # Headless Qt rendering; kept even though Xvfb run acts as an extra guard
     env:
       QT_QPA_PLATFORM: offscreen  # run Qt without a display
 
     steps:
-      # Fetch history so we can push changes back (auto-fix commit step)
+      # Fetch history to enable push changes back (auto-fix commit step)
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -113,7 +113,7 @@ jobs:
           fi
 
       # Run unit tests that exclude slow and e2e marks, under a virtual display
-      # If you drop Xvfb, Qt may fail to initialize on headless runners.
+      # If no Xvfb, Qt may fail to initialize on headless runners
       - name: Run tests (no slow/e2e) under Xvfb
         run: |
           xvfb-run -a pytest -q -m "not e2e and not slow"
