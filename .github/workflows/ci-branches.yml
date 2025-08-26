@@ -1,1 +1,25 @@
+name: CI (Branches)
+on:
+  push:
+    branches:
+      - develop
+      - 'feature/*'
+      - 'bugfix/*'
+permissions: { contents: read }
+
+# Concurrency cancellation per branch
+concurrency:
+  group: ci-branches-${{ github.ref }}
+  cancel-in-progress: true
+  
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -U pip && pip install -e ".[dev]" || pip install -r requirements-dev.txt
+      - run: ruff check . && black --check .
+      - run: pytest -q -m "not e2e and not slow"
 
