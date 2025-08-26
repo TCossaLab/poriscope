@@ -15,7 +15,7 @@ def test_metadata_and_clustering_instantiation_pipeline_no_gui(sample_metadata_d
 
     Steps
     -----
-    1) Instantiate SQLiteDBLoader (standalone=True) and point to tests/integration/data/DB.db.
+    1) Instantiate SQLiteDBLoader (standalone=True) and point to tests/data/DB.db.
     2) Smoke-call a lightweight method on the loader.
     3) Run PRAGMA integrity checks and validate expected schema tables exist.
     4) Assert basic content exists (e.g., ≥1 channel row).

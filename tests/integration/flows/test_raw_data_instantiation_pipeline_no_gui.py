@@ -12,7 +12,7 @@ import pytest
 def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     """
     Integration test (no GUI) for the *raw data* instantiation pipeline:
-    (Specifically for 2kbp_n200mV_HS3_20240604_122657.log in tests/integration/data/)
+    (Specifically for 2kbp_n200mV_HS3_20240604_122657.log in tests/data/)
 
       ChimeraReader20240501  ->  BesselFilter  ->  ClassicBlockageFinder  ->  SQLiteEventWriter
 

@@ -67,7 +67,7 @@ def _assert_db_schema_sqlite_dbwriter(
 def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path):
     """
     Integration (no GUI):
-    (Specifically for events.sqlite3 in tests/integration/data/)
+    (Specifically for events.sqlite3 in tests/data/)
 
       SQLiteEventLoader -> CUSUM -> SQLiteDBWriter
 
