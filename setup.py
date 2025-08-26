@@ -42,7 +42,9 @@ setup(
     packages=find_packages(include=["poriscope", "poriscope.*"]),
     include_package_data=True,
     package_data={
-        "poriscope": ["configs/icons/*"],  # Make sure this matches the path to your icons
+        "poriscope": [
+            "configs/icons/*"
+        ],  # Make sure this matches the path to your icons
     },
     install_requires=[
         "PySide6==6.9.0",

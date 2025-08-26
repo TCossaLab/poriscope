@@ -141,7 +141,7 @@ class App(QApplication):
 
 def main():
     logger = logging.getLogger(__name__)
-    
+
     # Refuse to run if 32-bit Python
     bit_architecture = platform.architecture()[0]
     if bit_architecture == "32bit":
