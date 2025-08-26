@@ -1,5 +1,7 @@
 import logging
+
 import pytest
+
 
 @pytest.fixture
 def main_model(tmp_path, monkeypatch):
@@ -17,6 +19,7 @@ def main_model(tmp_path, monkeypatch):
     (tmp_path / "Poriscope" / "user_plugins").mkdir(parents=True, exist_ok=True)
 
     from poriscope.models.main_model import MainModel
+
     app_config = {
         "Parent Folder": str(tmp_path),
         "User Plugin Folder": str(tmp_path / "Poriscope" / "user_plugins"),
