@@ -77,7 +77,7 @@ class MainModel(QObject):
     @log(logger=logger)
     def clear_cache(self):
         """
-        Deletes log file and wait until it's confirmed deleted, with a busy-wait loop.
+        Deletes log file and wait until it's confirmed deleted.
 
         :param filepath: Path to the file to be deleted.
         :param timeout: Maximum time (in seconds) to wait for file deletion.
