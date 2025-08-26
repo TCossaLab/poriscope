@@ -59,7 +59,7 @@ setup(
         "scikit-learn==1.6.1",
         "hdbscan==0.8.40",
     ],
-    python_requires=">=3.12.10",
+    python_requires=">=3.12.9",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
