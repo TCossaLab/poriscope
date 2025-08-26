@@ -26,6 +26,7 @@
 
 import json
 import logging
+import platform
 import sys
 from pathlib import Path
 
@@ -139,13 +140,12 @@ class App(QApplication):
 
 
 def main():
-    import platform
-    import sys    
+    logger = logging.getLogger(__name__)
     
     # Refuse to run if 32-bit Python
     bit_architecture = platform.architecture()[0]
     if bit_architecture == "32bit":
-        logger.error(f"Poriscope requires a 64-bit version of Python.")
+        logger.error("Poriscope requires a 64-bit version of Python.")
         sys.exit(1)
 
     app = App(sys.argv)
@@ -153,7 +153,6 @@ def main():
     if not sys.platform.startswith("darwin"):
         app.setStyle("Fusion")
 
-    logger = logging.getLogger(__name__)
     retval = app.exec()
     logger.debug(
         f"----------------------Exiting with exit status {retval}----------------------"
