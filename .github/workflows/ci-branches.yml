@@ -62,17 +62,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libegl1 \                     # provides libEGL.so.1 (EGL runtime)
-            libgl1 \                      # OpenGL runtime (libGL.so.1)
-            libxkbcommon-x11-0 \          # X keyboard handling
-            libxcb-icccm4 \               # ICCCM utilities
-            libxcb-image0 \               # X image helpers
-            libxcb-keysyms1 \             # key symbol helpers
-            libxcb-randr0 \               # resize/rotate extension
-            libxcb-render-util0 \         # render helpers
-            libxcb-shape0 \               # shape extension
-            libxcb-xfixes0 \              # fixes extension
-            xvfb                          # virtual X server for headless GUI
+            libegl1 \                     
+            libgl1 \                      
+            libxkbcommon-x11-0 \          
+            libxcb-icccm4 \               
+            libxcb-image0 \               
+            libxcb-keysyms1 \             
+            libxcb-randr0 \               
+            libxcb-render-util0 \         
+            libxcb-shape0 \               
+            libxcb-xfixes0 \              
+            xvfb                          
 
       # Set up Python and enable pip cache keyed by requirements files
       - name: Set up Python
