@@ -1,27 +1,57 @@
 name: CI (Branches)
+
 on:
   push:
     branches:
       - develop
       - 'feature/*'
       - 'bugfix/*'
-permissions: { contents: read }
+
+permissions:
+  contents: write  # needed for auto-commit on push
 
 # Concurrency cancellation per branch
 concurrency:
   group: ci-branches-${{ github.ref }}
   cancel-in-progress: true
-  
+
 jobs:
   quick:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12.10' }
-      - run: |
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # required to push back changes
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dev dependencies
+        run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-      - run: ruff check . && black --check .
-      - run: pytest -q -m "not e2e and not slow"
 
+      - name: Ruff + Black (auto-fix)
+        run: |
+          ruff check . --fix
+          black .
+
+      - name: Commit style fixes if any
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "style: auto-fix (ruff --fix, black)"
+            git push
+          fi
+
+      - name: Run unit tests (no slow/e2e)
+        run: pytest -q -m "not e2e and not slow"
