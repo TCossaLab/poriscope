@@ -106,16 +106,27 @@ def test_populate_available_plugins(main_model):
         assert "MetaFilter" in available_plugins_list
 
 
-def test_get_plugin_data_existing(main_model):
+def test_get_plugin_data_existing(main_model, tmp_path, monkeypatch):
+    # Ensure MainModel looks under temp user_data_dir
+    monkeypatch.setattr(
+        "poriscope.models.main_model.user_data_dir",
+        lambda *a, **k: str(tmp_path),
+        raising=False,
+    )
+
     plugin_key = "MetaReader"
-    mock_data = {"MetaReader": {"Value": "SomeData"}}
-    m = mock_open(read_data=json.dumps(mock_data))
+    mock_data = {plugin_key: {"Value": "SomeData"}}
 
-    with patch("builtins.open", m):
-        plugin_data = main_model.get_plugin_data(plugin_key)
+    # Create the exact directory tree MainModel expects:
+    # <user_data_dir>/Poriscope/session/plugin_history.json
+    session_dir = tmp_path / "Poriscope" / "session"
+    session_dir.mkdir(parents=True, exist_ok=True)
 
-    assert plugin_data == mock_data[plugin_key]
+    plugin_history = session_dir / "plugin_history.json"
+    plugin_history.write_text(json.dumps(mock_data))
 
+    got = main_model.get_plugin_data(plugin_key)
+    assert got == {"Value": "SomeData"}
 
 def test_get_plugin_data_nonexistent(main_model):
     """
