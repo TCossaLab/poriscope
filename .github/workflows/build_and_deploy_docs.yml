@@ -1,18 +1,15 @@
 # Build Sphinx and deploy the generated static site to GitHub Pages
 # Branch mode → publishes to gh-pages/docs
 
-name: Build and Deploy Docs to Pages (develop)
+name: Build and Deploy Docs
 
 on:
-  # Run automatically on pushes to develop
   push:
-    branches: ["develop"]
-  # Allow manual runs from the Actions tab
-  workflow_dispatch:
+    branches:
+      - main              # Trigger on push to main branch
 
-# Allow pushing to gh-pages
 permissions:
-  contents: write   # peaceiris needs write to push commits to gh-pages
+  contents: write         # Required to upload release assets to GitHub
 
 # One run per branch; newest cancels older on same branch
 concurrency:
