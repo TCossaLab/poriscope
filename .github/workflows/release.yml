@@ -7,12 +7,15 @@ on:
   push:
     branches:
       - main              # Trigger on push to main branch
-    tags:
-      - 'v*.*.*'          # Trigger on version tags like v1.0.0, v2.2.1, etc.
 
 permissions:
   contents: write         # Required to upload release assets to GitHub
 
+# One run per branch; newest cancels older on same branch
+concurrency:
+  group: "release-${{ github.ref }}"
+  cancel-in-progress: true
+  
 jobs:
   test-build-release:
     name: Run tests, build, and optionally release
