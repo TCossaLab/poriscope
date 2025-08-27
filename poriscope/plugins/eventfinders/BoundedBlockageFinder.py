@@ -141,7 +141,6 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         except StopIteration:
             bottom_index = 0
 
-        np.minimum(top_index - max_index, max_index - bottom_index)
 
         top = centers[top_index]
         bottom = centers[bottom_index]
@@ -181,6 +180,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
             else top_index
         )
 
+
         try:
             baseline_params = np.array(
                 self._gaussian_fit(
@@ -190,7 +190,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
                     np.absolute(centers[std_index] - centers[max_index]),
                 )
             )
-        except ValueError:
+        except ValueError as e:
             raise
         mean = baseline_params[1]
         if (
@@ -198,4 +198,4 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
             or mean > self.settings["Max Baseline"]["Value"]
         ):
             raise ValueError("Baseline out of bounds")
-        return baseline_params
+        return baseline_params[1], baseline_params[2]

@@ -317,7 +317,6 @@ class MetaEventFinder(BaseDataPlugin):
                     if abort is True:
                         break
             except RuntimeError as e:
-                self.logger.warning(f"Range {i+1} failed: {str(e)}")
                 continue
             except StopIteration:
                 continue
@@ -424,6 +423,7 @@ class MetaEventFinder(BaseDataPlugin):
             )
             if data_filter:
                 data = data_filter(data)
+
             try:
                 mean, std = self._get_baseline_stats(data)
                 if (
@@ -441,6 +441,7 @@ class MetaEventFinder(BaseDataPlugin):
                 self.logger.info(
                     f"Error processing data chunk {start/samplerate}-{(start+len(data))/samplerate}s for channel {channel}: {str(e)}"
                 )
+                yield float(processed / total_samples)
                 continue
             else:
                 self.accepted_data[channel] += len(data) / samplerate
@@ -571,11 +572,7 @@ class MetaEventFinder(BaseDataPlugin):
                     f"Mismatched event starts and event ends: {len(self.event_starts[channel])} and {len(self.event_ends[channel])} in channel {channel}"
                 )
         else:
-            self.logger.warning(
-                f"No events found in channel {channel} with specified paramters"
-            )
-            self.reset_channel(channel)
-            raise RuntimeError(
+            self.logger.info(
                 f"No events found in channel {channel} with specified paramters"
             )
 
