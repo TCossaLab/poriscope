@@ -1,0 +1,89 @@
+# Build Sphinx and deploy the generated static site to GitHub Pages
+# Branch mode → publishes to gh-pages/docs
+
+name: Build and Deploy Docs
+
+on:
+  push:
+    branches:
+      - main              # Trigger on push to main branch
+
+permissions:
+  contents: write         # Required to upload release assets to GitHub
+
+# One run per branch; newest cancels older on same branch
+concurrency:
+  group: "docs-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Checkout the branch this run was started from
+      - name: Checkout (develop)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      # 2) Python & deps
+      - name: Set up Python 3.12.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+
+      - name: Install Python dependencies
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: |
+          python -m pip install --upgrade pip
+          # Use requirements if present; otherwise install minimal doc deps
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f docs/requirements.txt ]; then
+            pip install -r docs/requirements.txt
+          else
+            pip install sphinx furo
+          fi
+
+    # 3) Build Sphinx (source → build)
+      - name: Generate .rst files using autodoc generators
+        run: python scripts/generate_all_autodoc_rst.py
+      
+      - name: Build Sphinx HTML (docs/source → docs/build)
+        run: sphinx-build -b html docs/source docs/build
+
+
+      # Ensure GitHub Pages serves _static/ by placing .nojekyll in the publish root
+      - name: Add .nojekyll to built site
+        run: touch docs/build/.nojekyll
+
+      # Optional sanity checks
+      - name: Verify index.html exists
+        run: test -f docs/build/index.html || (echo "Missing docs/build/index.html" && exit 1)
+
+      - name: List docs/build (debug)
+        run: ls -la docs/build | sed -n '1,200p'
+
+      # 4) Deploy to gh-pages/docs (branch-based Pages; NOT the Actions Pages flow)
+      #    Repo Settings → Pages must be: Source = Deploy from a branch • Branch = gh-pages • Folder = /docs
+      - name: Deploy to GitHub Pages (gh-pages/docs)
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # auto-provided token
+          publish_dir: docs/build                    # upload this folder's contents
+          publish_branch: gh-pages                   # Pages branch
+          destination_dir: docs                      # land the site under /docs on gh-pages
+          enable_jekyll: false                       # also writes a root .nojekyll (belt & suspenders)
+          force_orphan: true                         # clean deploy (single-commit history)
+
+      # 5) (Optional) downloadable artifact of the built site
+      - name: Upload HTML docs (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sphinx-html-docs
+          path: docs/build
+          if-no-files-found: error
+          retention-days: 7

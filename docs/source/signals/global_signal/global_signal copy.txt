@@ -1,0 +1,107 @@
+Global Signal 
+==============
+
+
+.. _global_signal_doc:
+
+Overview
+--------
+
+Signal Definition (in ``MetaController``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    global_signal = Signal(str, str, str, tuple, object, tuple)
+
+- **metaclass (str)**: The type of the metaclass associated with the signal.
+- **subclass key (str)**: A specific identifier for a subclass of the metaclass.
+- **function to call (str)**: The name of the function to be executed.
+- **args for function (tuple)**: Arguments to pass to the function specified.
+- **return function to call (object)**: The function that will handle the return of the called function.
+- **ret args (tuple)**: Additional arguments that might be passed to the return function.
+
+Signal Usage and Flow
+---------------------
+
+#. **Emitting the signal**
+
+   The ``MetaModel`` or ``MetaView`` emits the ``global_signal``:
+
+   - Used when interaction with or data from another part of the system is required, especially when direct access is not possible.
+
+#. **Relaying the signal**
+
+   The method ``_relay_global_signal`` in ``MetaController`` listens for ``global_signal`` emission and relays it to the main controller bridge.
+
+#. **Handling the signal in ``MainController``**
+
+   - **Signal Reception**:
+   ``MainController`` continuously monitors for global signal emissions across the system (from views, models, or controllers).
+
+   - **Signal Interpretation**:
+   ``MainController`` **handle_global_signal** interprets the signal parameters (``metaclass`` and ``subclass_key``) to determine which plugin needs to be interacted with and what specific action needs to be taken (``call_function``).
+
+   - **Function Execution**:
+   ``MainController`` retrieves the plugin instance and executes the specified ``call_function`` with provided arguments (``call_args``).
+
+   - **Handling the Return Value**:
+   After executing the specified function, the ``MainController`` captures any output it generates. This output is then potentially formatted, enriched with additional data (``ret_args``), or validated to ensure it's in a usable form according to the **return function**. The **return_function** is called with the processed result. 
+   
+
+Information Flow Diagram
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. image:: /_static/images/global_signal_flow.png
+   :alt: Global Signal Information Flow
+   :align: center
+   :width: 600px
+
+.. note::
+    - The method ``handle_global_signal`` inside ``MainController`` uses the ``data_plugin_controller`` to fetch plugin instances based on provided ``metaclass`` and ``subclass_key``. 
+    - This controller manages the lifecycle and registry of plugin instances, ensuring the correct one is accessed for required operations. 
+    - Once retrieved, the method checks if the instance exists (not None) to confirm it can execute the requested function (call_function) with the necessary arguments (call_args). If no instance is found, it may indicate that the plugin does not exist, has not been instantiated, or an error occurred during retrieval. 
+    - This design allows dynamic execution of plugin functions system-wide, based on global signal emissions.
+
+
+Example Usage: RawDataView
+---------------------------
+
+.. code-block:: python
+
+   @log(logger=logger)
+   def _apply_filter(self, data_filter, channel_data):
+      try:
+         filter_data_args = (channel_data,)
+         self.global_signal.emit('MetaFilter', data_filter, 'filter_data', filter_data_args, 'update_plot_data', ())
+         return self.plot_data  # Assuming the plot_data is updated by the filter
+      except Exception as e:
+         self.logger.error(f"Unable to filter data with {data_filter}: {repr(e)}")
+         return channel_data  # Return unfiltered data if the filter fails
+
+Detailed Explanation
+~~~~~~~~~~~~~~~~~~~~~
+
+This function, used in a specific view (e.g., ``RawDataView``), needs to filter the the data with the specific parameters selected in the corresponding control panel. 
+
+In this case, the application of the filtering requires invoking functions from a specific subclass of the ``MetaFilter``. This cannot be directly executed from ``RawDataView``, as it does not instantiate the filter on its own. Instead, ``RawDataView`` utilizes the global signal to communicate the need for filtering.
+
+#. **Signal Emission**  
+   The ``RawDataView`` emits a ``global_signal`` that encapsulates the filtering command alongside the necessary parameters.
+
+#. **Signal Routing**  
+   The ``MetaController`` receives this signal and forwards it to the ``MainController``. This is crucial, as the ``MainController`` has access to all data plugins via the ``DataPluginController`` and can therefore select the appropriate ``MetaFilter`` instance.
+
+#. **Filter Execution**  
+   Once the correct ``MetaFilter`` instance is identified, the ``MainController`` calls its ``filter_data`` method. This public method is designed to serve as a facade for the actual filtering logic, which is encapsulated in the privately implemented ``_apply_filter`` method.
+
+#. **Displaying Results**  
+   After the data is filtered, the results need to be sent back to the originating view for display. This is efficiently managed through the global signal mechanism, ensuring that the filtered data is promptly and accurately reflected in the ``RawDataView``.
+
+This structured approach leverages the modular architecture of the system, ensuring that each component fulfills its role effectively without overstepping its responsibilities. The use of global signals facilitates seamless communication across different parts of the system, maintaining a clean separation of concerns and promoting scalability
+
+.. tip::
+
+   - The ``MainController`` can call methods of instances managed by the ``DataPluginController`` because the ``DataPluginController`` is instantiated and managed within the ``MainController``. This relationship allows the ``MainController`` to interact directly with the instances (**DataPlugins**) that are managed by the ``DataPluginController``. 
+
+   - The ``MainController`` can pass results or any other data from the **DataPlugins**  to the analysis tabs (**AnalysisPlugins**) because it oversees their instantiation as well and manages their lifecycle within the application. 

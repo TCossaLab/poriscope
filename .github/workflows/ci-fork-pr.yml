@@ -1,0 +1,89 @@
+# CI (Fork PR)
+# ------------
+# This workflow runs on pull requests from forks targeting the `main` or `develop` branches.
+# It installs Python dependencies, sets up a virtual display (xvfb) to support PySide6 GUI tests,
+# performs linting (Ruff, Black), type checking (mypy), and runs only tests marked as `fast`.
+# This conservative setup avoids secrets, builds in safety for external PRs, and skips slow/e2e tests.
+#
+# Summary:
+# 1. Uses concurrency to cancel outdated runs per PR branch
+# 2. Uses matrix to support multiple Python versions (if needed)
+# 3. Installs headless Qt system libs to support GUI-based libraries
+# 4. Runs formatting, linting, and type-checking
+# 5. Runs only `@pytest.mark.fast` tests
+# 6. Safe for forks: no secret usage, no direct pushes
+
+
+name: CI (Fork PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+
+permissions: { contents: read }  # read-only for fork safety
+
+# Cancel previous runs from same branch (by branch name, not PR number)
+concurrency:
+  group: ci-fork-pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12.10"]
+
+    steps:
+      # Checkout source code
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # Set up Python version
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Install system dependencies needed for PySide6 (headless Qt apps)
+      - name: Install system dependencies for Qt (xvfb + X11)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcomposite1 \
+            libxrandr2 \
+            libxi6 \
+            libxtst6 \
+            xvfb
+
+      # Install Python dependencies (manually, no editable install for safety)
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Try editable install with dev extras
+          pip install -e ".[dev]" || \
+          # Or fallback to:
+          pip install -r requirements-dev.txt
+          pip install -r requirements.txt
+
+      # Linting and static analysis (Ruff + Black + mypy)
+      - name: Run pre-commit (all hooks)
+        run: |
+          pre-commit run --all-files
+     
+      # Run only fast tests using xvfb for headless GUI support
+      - name: Run fast tests (headless GUI-safe)
+        run: xvfb-run -a pytest -q -m "fast"
