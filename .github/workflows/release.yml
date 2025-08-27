@@ -62,7 +62,7 @@ jobs:
 
       - name: Build distributables (.exe, .whl, etc.)
         run: |
-          python poriscope/scripts/full_setup_and_build.py
+          python scripts/full_setup_and_build.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
