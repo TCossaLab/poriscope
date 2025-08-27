@@ -1,1 +1,57 @@
+# Continuous Deployment: 
+# Build and release when pushing to main or tagging a version
 
+name: CD (Build & Release)
+
+on:
+  push:
+    branches:
+      - main              # Trigger on push to main branch
+    tags:
+      - 'v*.*.*'          # Trigger on version tags like v1.0.0, v2.2.1, etc.
+
+permissions:
+  contents: write         # Required to upload release assets to GitHub
+
+jobs:
+  test-build-release:
+    name: Run tests, build, and optionally release
+    runs-on: ubuntu-latest
+
+    environment:
+      name: release
+      url: ${{ steps.upload_release.outputs.url }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests (unit + E2E)
+        run: |
+          xvfb-run -a pytest -m     # Add specific markers (e.g., "not slow") if needed
+
+      - name: Build distributables (.exe, .whl, etc.)
+        run: |
+          python poriscope/scripts/full_setup_and_build.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: poriscope-distributables
+          path: dist/
+
+      - name: Create GitHub Release (if tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/           # Upload all files in the dist/ directory to the release
