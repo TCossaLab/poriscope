@@ -124,7 +124,7 @@ class DataPluginController(QObject):
                 )
                 self.add_text_to_display.emit(
                     f"Unable to delete {key} since it has dependents {dependents}",
-                    "DataPluginController",
+                    self.__class__.__name__,
                 )
         else:
             old_key = instance.get_key()
@@ -170,7 +170,11 @@ class DataPluginController(QObject):
                         app_settings[settings_key]["Options"] = None
             except Exception as e:
                 self.logger.exception(
-                    f"Unable to edit plugin {key} of type {metaclass} : {repr(e)}"
+                    f"Unable to edit plugin {key} of type {metaclass} : {str(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
+                    self.__class__.__name__,
                 )
                 return
 
@@ -193,8 +197,12 @@ class DataPluginController(QObject):
             instance.apply_settings(app_settings)
         except Exception as e:
             self.logger.info(
-                f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {repr(e)}"
+                f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}"
             )
+            self.add_text_to_display.emit(
+                    f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
+                    self.__class__.__name__,
+                )
             return
         else:
             history["key"] = key
@@ -297,8 +305,12 @@ class DataPluginController(QObject):
             temp_instance = self.model.get_temp_instance(metaclass, subclass)
         except Exception as e:
             self.logger.error(
-                f"Unable to create a temporary instance of plugin of type {metaclass}.{subclass}: {repr(e)}"
+                f"Unable to create a temporary instance of plugin of type {metaclass}.{subclass}: {str(e)}"
             )
+            self.add_text_to_display.emit(
+                    f"Unable to create a temporary instance of plugin of type {metaclass}.{subclass}: {str(e)}",
+                    self.__class__.__name__,
+                )
             return
 
         # get the settings dict required from the user if it is not provided already, pre-populating from history where possible
@@ -345,7 +357,7 @@ class DataPluginController(QObject):
                     )
                     self.add_text_to_display.emit(
                         f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
-                        "DataPluginController",
+                        self.__class__.__name__,
                     )
                     return
 
@@ -353,8 +365,12 @@ class DataPluginController(QObject):
 
         except Exception as e:
             self.logger.exception(
-                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass}: {repr(e)}"
+                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass}: {str(e)}"
             )
+            self.add_text_to_display.emit(
+                     f"Unable to instantiate plugin {key} of type {metaclass}.{subclass}: {str(e)}",
+                    self.__class__.__name__,
+                )
             return
 
         if not settings:
@@ -372,17 +388,25 @@ class DataPluginController(QObject):
                     app_settings[settings_key]["Options"] = None
         except Exception as e:
             self.logger.exception(
-                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass} due to inability to fetch other plugins: {repr(e)}"
+                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass} due to inability to fetch other plugins: {str(e)}"
             )
+            self.add_text_to_display.emit(
+                     f"Unable to instantiate plugin {key} of type {metaclass}.{subclass} due to inability to fetch other plugins: {str(e)}",
+                    self.__class__.__name__,
+                )
             return
 
         # apply the settings to the new plugin object
         try:
             temp_instance.apply_settings(app_settings)
         except Exception as e:
-            self.logger.info(
-                f"Unable to apply settings to plugin {key} of type {metaclass}.{subclass}: {repr(e)}, no plugin created."
+            self.logger.error(
+                f"Unable to apply settings to plugin {key} of type {metaclass}.{subclass}: {str(e)}"
             )
+            self.add_text_to_display.emit(
+                     f"Unable to apply settings to plugin {key} of type {metaclass}.{subclass}: {str(e)}",
+                    self.__class__.__name__,
+                )
             return
 
         # register the completed plugin for use by the rest of the app
@@ -390,8 +414,12 @@ class DataPluginController(QObject):
             self.model.register_plugin(temp_instance, metaclass, key)
         except Exception as e:
             self.logger.error(
-                f"Unable to register new plugin instance {key} of type {metaclass}.{subclass}: {repr(e)}"
+                f"Unable to register new plugin instance {key} of type {metaclass}.{subclass}: {str(e)}"
             )
+            self.add_text_to_display.emit(
+                     f"Unable to register new plugin instance {key} of type {metaclass}.{subclass}: {str(e)}",
+                    self.__class__.__name__,
+                )
             return
 
         self.update_available_plugins.emit(
