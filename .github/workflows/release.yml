@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests (unit + E2E)
         run: |
-          xvfb-run -a pytest -m     # Add specific markers (e.g., "not slow") if needed
+          xvfb-run -a pytest      # Add specific markers (e.g., "not slow") if needed
 
       - name: Build distributables (.exe, .whl, etc.)
         run: |
