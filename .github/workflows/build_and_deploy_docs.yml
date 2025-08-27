@@ -72,7 +72,7 @@ jobs:
       # 4) Deploy to gh-pages/docs (branch-based Pages; NOT the Actions Pages flow)
       #    Repo Settings → Pages must be: Source = Deploy from a branch • Branch = gh-pages • Folder = /docs
       - name: Deploy to GitHub Pages (gh-pages/docs)
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}  # auto-provided token
