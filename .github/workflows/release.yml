@@ -60,15 +60,15 @@ jobs:
         run: |
           xvfb-run -a pytest      # Add specific markers (e.g., "not slow") if needed
 
-      - name: Build distributables (.exe, .whl, etc.)
-        run: |
-          python scripts/full_setup_and_build.py
+      #- name: Build distributables (.exe, .whl, etc.)
+       # run: |
+      #    python scripts/full_setup_and_build.py
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: poriscope-distributables
-          path: dist/
+      #- name: Upload artifacts
+    #    uses: actions/upload-artifact@v4
+    #    with:
+     #     name: poriscope-distributables
+     #     path: dist/
 
       - name: Create GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/')
