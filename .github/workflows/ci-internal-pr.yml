@@ -1,48 +1,126 @@
+# CI (Internal PR)
+# ----------------
+# This workflow runs on internal pull requests targeting `main` or `release/*`.
+# It installs system libraries required for PySide6 GUI tests on Ubuntu,
+# then installs the project in editable mode with [dev] extras (with fallbacks),
+# and finally runs the full test suite (unit + integration in headless mode using xvfb + GUI/e2e).
+# Coverage data is collected and uploaded as an artifact.
+#
+# Steps:
+# 1. Install Qt system dependencies (libxcb, libgl, etc.)
+# 2. Install Python dependencies via `pip install -e ".[dev]"`
+# 3. Run `pytest` with xvfb-run to enable headless GUI testing
+# 4. Upload coverage report as `coverage.xml`
+
+# GitHub won’t run this workflow for PRs from forks, because of the security model and what this workflow does: pull_request on main/release/* and push 
 name: CI (Internal PR)
+
 on:
   pull_request:
     branches: [main, release/*]
     types: [opened, synchronize, reopened]
+
+# Make workflow explicitly unsafe for forks
 permissions:
-  contents: read
+  contents: write #needed to push formatting changes
+
+# Uses the pull request number as the unique identifier.
 concurrency:
   group: ci-internal-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
 jobs:
-  lint-type:
+  test:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12.10' }
-      - run: pip install -U pip && pip install -e ".[dev]" || pip install -r requirements-dev.txt
-      - run: ruff check . && black --check . && mypy .
 
-  unit:
-    needs: lint-type
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: { python-version: ['3.12.10'] }
-      
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Checkout repository code
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # Set up Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }} 
-      - run: pip install -U pip && pip install -e ".[test]" || pip install -r requirements.txt
-      - run: pytest -q --maxfail=1 --disable-warnings --cov=yourpkg --cov-report=xml
-      - uses: actions/upload-artifact@v4
-        with: { name: coverage-xml, path: coverage.xml }
+          python-version: '3.12.10'
 
-  e2e:
-    needs: unit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12.10' }
-      - run: pip install -U pip && pip install -e ".[e2e]" || true
-      - run: pytest -q -m "e2e"
+      # Install system libraries required for PySide6 / Qt
+      - name: Install Linux system dependencies for Qt & GUI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcomposite1 \
+            libxrandr2 \
+            libxi6 \
+            libxtst6 \
+            xvfb
 
+      # Install Python test/dev dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Try editable install with dev extras
+          pip install -e ".[dev]" || \
+          # Or fallback to:
+          pip install -r requirements-dev.txt
+          pip install -r requirements.txt
 
-        
+      # Auto-fix style on push (Ruff fixes + Black formatting)
+      - name: Run pre-commit (all hooks, including mypy)
+        run: |
+          pre-commit run --all-files
+     
+      # Commit and push any formatting changes introduced by the step above
+      - name: Commit and push pre-commit fixes
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "style: auto-fix via pre-commit hooks"
+            git push
+          fi
+
+      # Run ALL tests (unit, integration, e2e, etc.) in a virtual display
+      - name: Run full test suite (headless with GUI support)
+        run: xvfb-run -a pytest -q --maxfail=1 --disable-warnings --cov=yourpkg --cov-report=xml
+
+      # Upload coverage report artifact
+      - name: Upload coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Read and print total coverage from coverage.xml
+        run: |
+          python - <<EOF
+          import xml.etree.ElementTree as ET
+          root = ET.parse('coverage.xml').getroot()
+          line_rate = float(root.attrib.get("line-rate", 0))
+          print(f"::notice::Line Coverage: {line_rate * 100:.2f}%")
+          EOF
+
+      #If needed "Enforce minimum coverage threshold"
+      
+     # - name: Enforce minimum coverage threshold
+      #  run: |
+     #     python - <<EOF
+     #     import xml.etree.ElementTree as ET
+     #     root = ET.parse('coverage.xml').getroot()
+     #     line_rate = float(root.attrib.get("line-rate", 0))
+     #     percent = line_rate * 100
+      #    print(f"::notice::Line Coverage: {percent:.2f}%")
+      #    if percent < 90:
+      #        raise SystemExit(f"::error::Coverage too low: {percent:.2f}% (min 90%)")
+      #    EOF
