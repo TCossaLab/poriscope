@@ -25,9 +25,15 @@
 
 import os
 import subprocess
+import platform
+import sys
 
 
 def build_wavelet_dll():
+    if platform.system() != "Windows":
+        print("[INFO] Skipping DLL build: not on Windows.")
+        return
+
     root_dir = os.path.abspath(os.path.dirname(__file__))
     wavelet_dir = os.path.join(root_dir, "poriscope", "cdlls", "wavelet")
     build_dirs = ["build", os.path.join("build", "obj"), "dist"]
