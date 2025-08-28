@@ -39,10 +39,10 @@ jobs:
           sudo apt install -y mingw-w64 make
 
       # Step 3: Set up Python
-      - name: Set up Python 3.12
+      - name: Set up Python 3.12.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.12.10'
 
       # Step 4: Run the build script (cross-platform)
       - name: Build wavelet library using Python script
