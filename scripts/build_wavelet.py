@@ -30,7 +30,7 @@ import sys
 import shutil
 
 
-def build_wavelet_dll():
+def build_wavelet_library():
     root_dir = os.path.abspath(os.path.dirname(__file__))
     wavelet_dir = os.path.abspath(os.path.join(root_dir, "..", "poriscope", "cdlls", "wavelet"))
     build_dirs = ["build", os.path.join("build", "obj"), "dist"]
@@ -38,32 +38,40 @@ def build_wavelet_dll():
     for d in build_dirs:
         os.makedirs(os.path.join(wavelet_dir, d), exist_ok=True)
 
-    print(f"[INFO] Building in: {wavelet_dir}")
+    print(f"[INFO] Building wavelet in: {wavelet_dir}")
     env = os.environ.copy()
+    system = platform.system()
 
-    if platform.system() == "Windows":
-        # Native Windows build using mingw32-make
+    if system == "Windows":
+        # Native Windows build using mingw32-make.exe
         mingw_path = r"C:\msys64\mingw64\bin"
+        make_exe = os.path.join(mingw_path, "mingw32-make.exe")
+        if not os.path.exists(make_exe):
+            print("[ERROR] mingw32-make.exe not found. Please install MinGW via MSYS2.")
+            sys.exit(1)
         env["PATH"] = mingw_path + os.pathsep + env["PATH"]
-        make_cmd = ["mingw32-make.exe", "all"]
-    elif platform.system() == "Linux":
-        # Cross-compile on Linux using mingw-w64 (x86_64-w64-mingw32-gcc)
+        subprocess.run([make_exe, "clean"], cwd=wavelet_dir, env=env)
+        subprocess.run([make_exe, "all"], check=True, cwd=wavelet_dir, env=env)
+
+    elif system == "Linux":
+        # Cross-compile for Windows on Linux using mingw-w64
         if shutil.which("x86_64-w64-mingw32-gcc") is None:
             print("[ERROR] mingw-w64 is not installed. Run: sudo apt install mingw-w64")
             sys.exit(1)
-        make_cmd = ["make", "CROSS=true"]
+        subprocess.run(["make", "clean"], cwd=wavelet_dir)
+        subprocess.run(["make", "CROSS=true"], check=True, cwd=wavelet_dir)
+
+    elif system == "Darwin":
+        # macOS build, generates .dylib instead of .so or .dll
+        subprocess.run(["make", "clean"], cwd=wavelet_dir)
+        subprocess.run(["make"], check=True, cwd=wavelet_dir)
+
     else:
-        print("[ERROR] Unsupported platform:", platform.system())
+        print(f"[ERROR] Unsupported platform: {system}")
         sys.exit(1)
 
-    try:
-        subprocess.run(make_cmd, check=True, cwd=wavelet_dir, env=env)
-        print("[INFO] wavelet.dll built successfully.")
-    except subprocess.CalledProcessError as e:
-        print("[ERROR] Failed to build wavelet.dll. Check your Makefile and toolchain.")
-        print("Error:", e)
-        sys.exit(1)
+    print("[INFO] wavelet library built successfully.")
 
 
 if __name__ == "__main__":
-    build_wavelet_dll()
+    build_wavelet_library()
