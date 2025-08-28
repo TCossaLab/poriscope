@@ -1,98 +1,105 @@
-# Auto-detect platform and configure compiler, file extension,
-# path separators, and removal commands depending on OS.
+# ============================
+# Cross-platform basics
+# ============================
 ifeq ($(OS),Windows_NT)
-    RM       = del /Q
     SEP      = \\
-    E        = .dll
-    CC       = x86_64-w64-mingw32-gcc
+    RM       = del /Q
     RM_NULL  = nul
-    DETECTED_OS = Windows
-    SHELLTYPE = windows
 else
-    UNAME_S  := $(shell uname -s)
-    RM       = rm -f
     SEP      = /
-    ifeq ($(UNAME_S),Darwin)
-        E    = .dylib
-        CC   = clang
-    else
-        E    = .so
-        CC   = gcc
-    endif
+    RM       = rm -f
     RM_NULL  = /dev/null
-    DETECTED_OS = $(UNAME_S)
-    SHELLTYPE = posix
 endif
 
-# A portable "make directory" helper:
-# - On Windows/cmd: "if not exist DIR mkdir DIR"
-# - On POSIX shells: "mkdir -p DIR"
-define make_dir
-$(if $(filter windows,$(SHELLTYPE)),\
-	@if not exist "$(1)" mkdir "$(1)" 2>$(RM_NULL),\
-	@mkdir -p "$(1)" 2>$(RM_NULL))
+# A tiny portable mkdir helper (macro used inside recipes)
+define MKDIR
+@if not exist "$(1)" mkdir "$(1)" 2>$(RM_NULL)
 endef
+ifeq ($(SEP),/)
+  define MKDIR
+  @mkdir -p "$(1)" 2>$(RM_NULL)
+  endef
+endif
 
-# Directories, flags, and libraries
-O             = o
-ODIR          = build$(SEP)obj
+# ============================
+# Common config
+# ============================
 SRC           = src
 INC           = lib
 INCDIR        = -I$(INC)
 CFLAGS_COMMON = -O3 -fPIC -Wall
-CFLAGS        = $(CFLAGS_COMMON)
 LIBS          = -lm
 
-# Source files and corresponding object files
-_SRCS  = wavelet_filter wdenoise ebayesthresh wdenmath wavefilt wavefunc \
-         wavelib wtmath cwt cwtmath hsfft real conv utils
-OBJS   = $(patsubst %,$(ODIR)$(SEP)%.$(O),$(_SRCS))
+_SRCS = wavelet_filter wdenoise ebayesthresh wdenmath wavefilt wavefunc \
+        wavelib wtmath cwt cwtmath hsfft real conv utils
 
-# Output shared library name (default target)
-OUT    = dist$(SEP)wavelet$(E)
+# Per-mode defaults; overridden below based on MODE
+ODIR  ?= build$(SEP)obj_default
+OUT   ?= dist$(SEP)wavelet.so
+CC    ?= gcc
+CFLAGS?= $(CFLAGS_COMMON)
 
-# Phony targets
-.PHONY: all clean dll so dylib build
+# Compute object list AFTER ODIR is known (inside sub-make)
+OBJS  = $(patsubst %,$(ODIR)$(SEP)%.o,$(_SRCS))
 
-# Build all variants
-all: dll so dylib
+.PHONY: all clean so dll dylib all_one
 
-# Windows DLL
-dll: E = .dll
-dll: CC = x86_64-w64-mingw32-gcc
-dll: OUT = dist$(SEP)wavelet.dll
-dll: CFLAGS = $(CFLAGS_COMMON)
-dll: build
+# Top-level convenience targets: spawn sub-make with MODE
+all: so dll dylib
 
-# Linux SO
-so: E = .so
-so: CC = gcc
-so: OUT = dist$(SEP)wavelet.so
-so: CFLAGS = $(CFLAGS_COMMON)
-so: build
+so:
+	$(MAKE) MODE=so  all_one
 
-# macOS DYLIB (when built on Linux, this is a clang-built .dylib for naming/tests)
-dylib: E = .dylib
-dylib: CC = clang
-dylib: OUT = dist$(SEP)wavelet.dylib
-# Only the dylib target needs the feature macros due to fopen64/fseeko64/ftello64
-dylib: CFLAGS = $(CFLAGS_COMMON) -std=c99 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
-dylib: build
+dll:
+	$(MAKE) MODE=dll all_one
 
-# General build target: cleans and builds the library
-build: clean $(OUT)
+dylib:
+	$(MAKE) MODE=dylib all_one
 
-# Compile object files
-$(ODIR)$(SEP)%.$(O): $(SRC)/%.c $(wildcard $(INC)/*.h)
-	$(call make_dir,$(ODIR))
-	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIR)
+# ============================
+# Mode selection (evaluated in sub-make)
+# ============================
+ifeq ($(MODE),so)
+    CC     = gcc
+    OUT    = dist$(SEP)wavelet.so
+    ODIR   = build$(SEP)obj_gcc
+    CFLAGS = $(CFLAGS_COMMON)
+endif
 
-# Link shared library
+ifeq ($(MODE),dll)
+    CC     = x86_64-w64-mingw32-gcc
+    OUT    = dist$(SEP)wavelet.dll
+    ODIR   = build$(SEP)obj_mingw
+    CFLAGS = $(CFLAGS_COMMON)
+endif
+
+ifeq ($(MODE),dylib)
+    CC     = clang
+    OUT    = dist$(SEP)wavelet.dylib
+    ODIR   = build$(SEP)obj_clang
+    # Only clang/dylib needs the feature macros for *64 file APIs
+    CFLAGS = $(CFLAGS_COMMON) -std=c99 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
+endif
+
+# ============================
+# One-mode build
+# ============================
+all_one: $(OUT)
+
 $(OUT): $(OBJS)
-	$(call make_dir,dist)
+	$(call MKDIR,dist)
 	$(CC) -shared -o $@ $^ $(CFLAGS) $(INCDIR) $(LIBS)
 
-# Clean artifacts
+# Compile rule (uses mode-specific ODIR/CC/CFLAGS)
+$(ODIR)$(SEP)%.o: $(SRC)/%.c $(wildcard $(INC)/*.h)
+	$(call MKDIR,$(ODIR))
+	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIR)
+
+# ============================
+# Clean
+# ============================
 clean:
-	-$(RM) dist$(SEP)*.dll dist$(SEP)*.so dist$(SEP)*.dylib 2>$(RM_NULL)
-	-$(RM) $(ODIR)$(SEP)*.$(O) 2>$(RM_NULL)
+	-$(RM) dist$(SEP)*.so dist$(SEP)*.dll dist$(SEP)*.dylib 2>$(RM_NULL)
+	-$(RM) build$(SEP)obj_gcc$(SEP)*.o    2>$(RM_NULL)
+	-$(RM) build$(SEP)obj_mingw$(SEP)*.o  2>$(RM_NULL)
+	-$(RM) build$(SEP)obj_clang$(SEP)*.o  2>$(RM_NULL)
