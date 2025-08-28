@@ -80,7 +80,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wavelet-dll
-          path: poriscope/cdlls/wavelet/dist/wavelet.dll
+          path: poriscope/poriscope/cdlls/wavelet/dist/wavelet.dll
+
+      - name: Configure Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Add wavelet.dll to repo
+        run: |
+          git add poriscope/poriscope/cdlls/wavelet/dist/wavelet.dll
+          git commit -m "Auto-add wavelet.dll from GitHub Actions" || echo "No changes to commit"
+          git push origin HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
       - name: Create GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/')
