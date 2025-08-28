@@ -27,13 +27,10 @@ import os
 import subprocess
 import platform
 import sys
+import shutil
 
 
 def build_wavelet_dll():
-    if platform.system() != "Windows":
-        print("[INFO] Skipping DLL build: not on Windows.")
-        return
-
     root_dir = os.path.abspath(os.path.dirname(__file__))
     wavelet_dir = os.path.join(root_dir, "poriscope", "cdlls", "wavelet")
     build_dirs = ["build", os.path.join("build", "obj"), "dist"]
@@ -41,19 +38,31 @@ def build_wavelet_dll():
     for d in build_dirs:
         os.makedirs(os.path.join(wavelet_dir, d), exist_ok=True)
 
-    print(f"Building in: {wavelet_dir}")
-    mingw_path = r"C:\msys64\mingw64\bin"
+    print(f"[INFO] Building in: {wavelet_dir}")
     env = os.environ.copy()
-    env["PATH"] = mingw_path + os.pathsep + env["PATH"]
+
+    if platform.system() == "Windows":
+        # Native Windows build using mingw32-make
+        mingw_path = r"C:\msys64\mingw64\bin"
+        env["PATH"] = mingw_path + os.pathsep + env["PATH"]
+        make_cmd = ["mingw32-make.exe", "all"]
+    elif platform.system() == "Linux":
+        # Cross-compile on Linux using mingw-w64 (x86_64-w64-mingw32-gcc)
+        if shutil.which("x86_64-w64-mingw32-gcc") is None:
+            print("[ERROR] mingw-w64 is not installed. Run: sudo apt install mingw-w64")
+            sys.exit(1)
+        make_cmd = ["make", "CROSS=true"]
+    else:
+        print("[ERROR] Unsupported platform:", platform.system())
+        sys.exit(1)
 
     try:
-        subprocess.run(
-            ["mingw32-make.exe", "all"], check=True, cwd=wavelet_dir, env=env
-        )
-        print("wavelet.dll built successfully.")
+        subprocess.run(make_cmd, check=True, cwd=wavelet_dir, env=env)
+        print("[INFO] wavelet.dll built successfully.")
     except subprocess.CalledProcessError as e:
-        print("Failed to build wavelet.dll. Check your makefile and environment.")
+        print("[ERROR] Failed to build wavelet.dll. Check your Makefile and toolchain.")
         print("Error:", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
