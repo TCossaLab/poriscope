@@ -32,7 +32,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.12.10'
 
       # Native libs required for PySide6/Qt on Ubuntu + a virtual display server for GUI tests
       - name: Install system libs for Qt + Xvfb
