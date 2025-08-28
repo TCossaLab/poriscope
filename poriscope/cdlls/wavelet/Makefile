@@ -68,12 +68,12 @@ build: clean $(OUT)
 
 # Compile object files from source files
 $(ODIR)$(SEP)%.$(O): $(SRC)/%.c $(wildcard $(INC)/*.h)
-	@if not exist "$(ODIR)" mkdir "$(ODIR)" 2>$(RM_NULL)
+	@mkdir -p "$(ODIR)" 2>$(RM_NULL)
 	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIR)
 
 # Link object files into final shared library
 $(OUT): $(OBJS)
-	@if not exist "dist" mkdir "dist" 2>$(RM_NULL)
+	@mkdir -p "dist" 2>$(RM_NULL)
 	$(CC) -shared -o $@ $^ $(CFLAGS) $(INCDIR) $(LIBS)
 
 # Clean up build artifacts
