@@ -180,3 +180,8 @@ __pycache__/
 # DON'T ignore .json and .log in tests/data/
 !tests/data/*.json
 !tests/data/*.log
+
+# === ALLOW platform-specific wavelet builds ===
+!poriscope/cdlls/wavelet/dist/wavelet.dll
+!poriscope/cdlls/wavelet/dist/wavelet.so
+!poriscope/cdlls/wavelet/dist/wavelet.dylib
