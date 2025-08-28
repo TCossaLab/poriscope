@@ -1,20 +1,20 @@
 # Build Wavelet Shared Library (DLL/SO/DYLIB)
-# 
+#
 # Description:
-# This workflow builds the wavelet shared library from source using `make`.
-# - On Linux, it builds:
+# This workflow builds the wavelet shared library from source using `make` or `scripts/build_wavelet.py`.
+# - On Ubuntu (Linux runner), it builds:
 #     - `wavelet.dll` (using MinGW cross-compiler)
-#     - `wavelet.so` (native build)
-#     - `wavelet.dylib` (macOS build, if extended later)
-# - Uploads built libraries as artifacts for download
-# - Optionally commits updates to dist/ binaries on main branch
+#     - `wavelet.so` (native Linux build)
+#     - `wavelet.dylib` (macOS-style dynamic library simulated using gcc -dynamiclib)
+# - Uploads built libraries as downloadable artifacts
+# - Optionally commits new/updated dist/ binaries back to main branch
 #
 # Triggered on:
 # - push to main
 #
 # Requirements:
 # - Your Makefile must support CROSS=true for Windows DLL
-# - `scripts/build_wavelet.py` must handle platform logic
+# - `scripts/build_wavelet.py` must handle all OS-specific logic
 
 name: Build Wavelet Shared Library
 
@@ -25,35 +25,39 @@ on:
 jobs:
   build-wavelet:
     name: Build & Upload Wavelet Library
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Only run this on Ubuntu to simplify toolchain setup
 
     steps:
-      # Step 1: Checkout repository
+      # Step 1: Checkout the code from the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Install required compilers and make
-      - name: Install MinGW-w64 (for Windows DLL) and Make
+      # Step 2: Install required compilers
+      # - mingw-w64: for cross-compiling to Windows DLL (.dll)
+      # - make: for building using your Makefile
+      - name: Install MinGW-w64 (for .dll) and Make
         run: |
           sudo apt update
           sudo apt install -y mingw-w64 make
 
-      # Step 3: Set up Python
+      # Step 3: Install Python (to run your build script)
       - name: Set up Python 3.12.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.12.10'
 
-      # Step 4: Run the build script (cross-platform)
+      # Step 4: Run the custom build script (platform-aware)
       - name: Build wavelet library using Python script
         run: |
           python scripts/build_wavelet.py
 
-      # Step 5: List generated binaries
+      # Step 5: Confirm built output
       - name: List built shared libraries
-        run: ls -lh poriscope/cdlls/wavelet/dist/
+        run: |
+          echo "[INFO] Contents of wavelet/dist/"
+          ls -lh poriscope/cdlls/wavelet/dist/
 
-      # Step 6: Upload artifacts 
+      # Step 6: Upload the compiled shared libraries as an artifact
       - name: Upload built wavelet binaries
         uses: actions/upload-artifact@v4
         with:
@@ -62,15 +66,15 @@ jobs:
             poriscope/cdlls/wavelet/dist/wavelet.dll
             poriscope/cdlls/wavelet/dist/wavelet.so
             poriscope/cdlls/wavelet/dist/wavelet.dylib
-          if-no-files-found: ignore  # Ignore if platform didn't build all formats
+          if-no-files-found: ignore  # Continue even if one or more files are missing
 
-      # Step 7: Commit updated DLL/SO/DYLIB to main branch
+      # Step 7: Commit and push the newly built binaries to main (if changed)
       - name: Commit built binaries to main (if applicable)
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git pull origin main
-          git add poriscope/cdlls/wavelet/dist/wavelet.*
+          git add -f poriscope/cdlls/wavelet/dist/wavelet.*
           git commit -m "Update wavelet binaries [skip ci]" || echo "No changes to commit"
           git push origin main
