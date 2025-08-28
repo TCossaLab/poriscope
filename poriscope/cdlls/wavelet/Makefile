@@ -22,14 +22,15 @@ else
     DETECTED_OS = $(UNAME_S)
 endif
 
-# Directories, file extensions, flags, and libraries
-O      = o
-ODIR   = build$(SEP)obj
-SRC    = src
-INC    = lib
-INCDIR = -I$(INC)
-CFLAGS = -O3 -fPIC -Wall
-LIBS   = -lm
+# Directories, flags, and libraries
+O            = o
+ODIR         = build$(SEP)obj
+SRC          = src
+INC          = lib
+INCDIR       = -I$(INC)
+CFLAGS_COMMON= -O3 -fPIC -Wall
+CFLAGS       = $(CFLAGS_COMMON)
+LIBS         = -lm
 
 # Source files and corresponding object files
 _SRCS  = wavelet_filter wdenoise ebayesthresh wdenmath wavefilt wavefunc \
@@ -49,18 +50,21 @@ all: dll so dylib
 dll: E = .dll
 dll: CC = x86_64-w64-mingw32-gcc
 dll: OUT = dist$(SEP)wavelet.dll
+dll: CFLAGS = $(CFLAGS_COMMON)
 dll: build
 
 # Linux SO build rules
 so: E = .so
 so: CC = gcc
 so: OUT = dist$(SEP)wavelet.so
+so: CFLAGS = $(CFLAGS_COMMON)
 so: build
 
-# macOS DYLIB build rules
+# macOS DYLIB build rules (clang) — add feature macros ONLY here
 dylib: E = .dylib
 dylib: CC = clang
 dylib: OUT = dist$(SEP)wavelet.dylib
+dylib: CFLAGS = $(CFLAGS_COMMON) -std=c99 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE
 dylib: build
 
 # General build target: cleans and builds the library
