@@ -181,7 +181,8 @@ __pycache__/
 !tests/data/*.json
 !tests/data/*.log
 
-# === ALLOW platform-specific wavelet builds ===
+# ALLOW platform-specific wavelet builds
++!poriscope/cdlls/wavelet/dist/
 !poriscope/cdlls/wavelet/dist/wavelet.dll
 !poriscope/cdlls/wavelet/dist/wavelet.so
 !poriscope/cdlls/wavelet/dist/wavelet.dylib
