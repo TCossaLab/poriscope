@@ -5,7 +5,9 @@ Make sure you have Python 3.12.10 installed (python --version) to avoid dependen
 As a developer:
 
 git clone https://github.com/TCossaLab/poriscope.git
+
 cd poriscope
+
 pip install -e .
 
 To use a stable version (does not allow retroactive pulls): 
@@ -14,6 +16,7 @@ python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"
 Then from any cmd you will be able to run the 'poriscope' command to open the app.
 
 *If you have a previous version of poriscope installed, make sure to run: 
+
 pip uninstall poriscope
 
 

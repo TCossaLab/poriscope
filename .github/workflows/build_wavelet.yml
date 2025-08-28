@@ -1,0 +1,106 @@
+# GitHub Actions Workflow: Build Wavelet Libraries
+#
+# This workflow runs on Ubuntu and:
+#  1. Installs required compilers (gcc, clang, mingw-w64).
+#  2. Builds the Wavelet library in three formats:
+#       - Linux shared object (.so)
+#       - Windows dynamic link library (.dll)
+#       - macOS-style dynamic library (.dylib, built via clang on Linux)
+#  3. Uploads the compiled binaries as an artifact.
+#  4. Commits and pushes the built binaries in `dist/` back to the `main` branch
+#     (only if there are changes).
+#
+# Note:
+#   - The `.dylib` built on Linux is not a native macOS binary, it is produced
+#     using clang for compatibility testing and naming purposes.
+#   - Ensure branch protections allow this workflow to push changes to `main`,
+#     or restrict usage to `workflow_dispatch` (manual trigger).
+
+name: Build Wavelet (Linux .so, Windows .dll, macOS-style .dylib)
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+  # Automatic run on pushes to main
+  push:
+    branches: [ main ]
+
+# Required so the workflow can push back to the repo
+permissions:
+  contents: write
+
+# Prevent overlapping runs on the same branch
+concurrency:
+  group: build-wavelet-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository with full history (needed for committing)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Install build toolchains
+      - name: Install compilers and make
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential make gcc clang mingw-w64
+
+      # 3. Display versions for debugging
+      - name: Show toolchain versions
+        run: |
+          echo "gcc: $(gcc --version | head -n1)"
+          echo "clang: $(clang --version | head -n1)"
+          echo "mingw: $(x86_64-w64-mingw32-gcc --version | head -n1)"
+          echo "uname: $(uname -a)"
+
+      # 4. Run Makefile to build .so, .dll, .dylib
+      - name: Build Wavelet libraries
+        working-directory: poriscope/cdlls/wavelet
+        run: |
+          make clean
+          make so       # Build Linux .so
+          make dll      # Build Windows .dll (via mingw)
+          make dylib    # Build macOS-style .dylib (via clang)
+
+      # 5. Verify that outputs exist in dist/
+      - name: Verify outputs
+        working-directory: poriscope/cdlls/wavelet/dist
+        run: |
+          ls -la
+          test -f wavelet.so     || (echo "Missing wavelet.so" && exit 1)
+          test -f wavelet.dll    || (echo "Missing wavelet.dll" && exit 1)
+          test -f wavelet.dylib  || (echo "Missing wavelet.dylib" && exit 1)
+
+      # 6. Upload dist/ as a build artifact
+      - name: Upload artifact (dist/)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wavelet-binaries-${{ github.sha }}
+          path: poriscope/cdlls/wavelet/dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      # 7. Commit and push dist/ updates back to main (only if changes exist)
+      - name: Commit & push dist/ binaries
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Configure git identity for commits
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stage changes in dist/
+          git add -A poriscope/cdlls/wavelet/dist
+
+          # Commit only if there are modifications
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(wavelet): update built binaries (.so/.dll/.dylib) [skip ci]"
+            git push origin main
+          else
+            echo "No changes to commit."
+          fi
