@@ -1,0 +1,76 @@
+# Build Wavelet Shared Library (DLL/SO/DYLIB)
+# 
+# Description:
+# This workflow builds the wavelet shared library from source using `make`.
+# - On Linux, it builds:
+#     - `wavelet.dll` (using MinGW cross-compiler)
+#     - `wavelet.so` (native build)
+#     - `wavelet.dylib` (macOS build, if extended later)
+# - Uploads built libraries as artifacts for download
+# - Optionally commits updates to dist/ binaries on main branch
+#
+# Triggered on:
+# - push to main
+#
+# Requirements:
+# - Your Makefile must support CROSS=true for Windows DLL
+# - `scripts/build_wavelet.py` must handle platform logic
+
+name: Build Wavelet Shared Library
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-wavelet:
+    name: Build & Upload Wavelet Library
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Install required compilers and make
+      - name: Install MinGW-w64 (for Windows DLL) and Make
+        run: |
+          sudo apt update
+          sudo apt install -y mingw-w64 make
+
+      # Step 3: Set up Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Step 4: Run the build script (cross-platform)
+      - name: Build wavelet library using Python script
+        run: |
+          python scripts/build_wavelet.py
+
+      # Step 5: List generated binaries
+      - name: List built shared libraries
+        run: ls -lh poriscope/cdlls/wavelet/dist/
+
+      # Step 6: Upload artifacts 
+      - name: Upload built wavelet binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: wavelet-libraries
+          path: |
+            poriscope/cdlls/wavelet/dist/wavelet.dll
+            poriscope/cdlls/wavelet/dist/wavelet.so
+            poriscope/cdlls/wavelet/dist/wavelet.dylib
+          if-no-files-found: ignore  # Ignore if platform didn't build all formats
+
+      # Step 7: Commit updated DLL/SO/DYLIB to main branch
+      - name: Commit built binaries to main (if applicable)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git pull origin main
+          git add poriscope/cdlls/wavelet/dist/wavelet.*
+          git commit -m "Update wavelet binaries [skip ci]" || echo "No changes to commit"
+          git push origin main
