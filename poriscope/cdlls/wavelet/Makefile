@@ -1,100 +1,82 @@
-# wavelet DLL cross-platform Makefile
-#
-# This Makefile builds a shared library for the wavelet library across:
-# - Windows (.dll)
-# - Linux (.so)
-# - macOS (.dylib)
-#
-# It supports native builds and cross-compilation with mingw-w64 on Linux.
-# To force Windows cross-build on Linux: `make dll CROSS=true`
-# To build all: `make dll so dylib`
-
-# Detect cross-compilation
-ifeq ($(CROSS),true)
-    CC     = x86_64-w64-mingw32-gcc
-    E      = .dll
-    RM     = rm -f
-    MKDIR  = mkdir -p
-    RMDIR  = rm -rf
-    SEP    = /
+# Auto-detect platform and configure compiler, file extension,
+# path separators, and removal commands depending on OS.
+ifeq ($(OS),Windows_NT)
+    RM = del /Q
+    SEP = \\
+    E   = .dll
+    CC  = x86_64-w64-mingw32-gcc
+    RM_NULL = nul
+    DETECTED_OS = Windows
 else
-    ifeq ($(OS),Windows_NT)
-        CC     = x86_64-w64-mingw32-gcc
-        E      = .dll
-        RM     = del /F /Q
-        MKDIR  = if not exist
-        RMDIR  = rmdir /S /Q
-        SEP    = \\
+    UNAME_S := $(shell uname -s)
+    RM = rm -f
+    SEP = /
+    ifeq ($(UNAME_S),Darwin)
+        E = .dylib
+        CC = clang
     else
-        UNAME_S := $(shell uname -s)
-        ifeq ($(UNAME_S),Darwin)
-            CC     = clang
-            E      = .dylib
-        else
-            CC     = gcc
-            E      = .so
-        endif
-        RM     = rm -f
-        MKDIR  = mkdir -p
-        RMDIR  = rm -rf
-        SEP    = /
+        E = .so
+        CC = gcc
     endif
+    RM_NULL = /dev/null
+    DETECTED_OS = $(UNAME_S)
 endif
 
-# Output and object settings
-O       = o
-ODIR    = build/obj
-SRC     = src
-INC     = lib
-INCDIR  = -I$(INC)
-DEPS    = $(wildcard $(INC)/*.h)
+# Directories, file extensions, flags, and libraries
+O      = o
+ODIR   = build$(SEP)obj
+SRC    = src
+INC    = lib
+INCDIR = -I$(INC)
+CFLAGS = -O3 -fPIC -Wall
+LIBS   = -lm
 
-# C compiler flags and libraries
-CFLAGS  = -O3 -D_GNU_SOURCE -fPIC -Wall
-LIBS    = -lm
+# Source files and corresponding object files
+_SRCS  = wavelet_filter wdenoise ebayesthresh wdenmath wavefilt wavefunc \
+         wavelib wtmath cwt cwtmath hsfft real conv utils
+OBJS   = $(patsubst %,$(ODIR)$(SEP)%.$(O),$(_SRCS))
 
-# Source files
-_SRCS   = wavelet_filter wdenoise ebayesthresh wdenmath wavefilt wavefunc \
-          wavelib wtmath cwt cwtmath hsfft real conv utils
-OBJS    = $(patsubst %,$(ODIR)$(SEP)%.$(O),$(_SRCS))
+# Output shared library name (default target)
+OUT    = dist$(SEP)wavelet$(E)
 
-# Platform-specific outputs
-DLL_OUT   = dist$(SEP)wavelet.dll
-SO_OUT    = dist$(SEP)wavelet.so
-DYLIB_OUT = dist$(SEP)wavelet.dylib
+# Phony targets (always executed)
+.PHONY: all clean dll so dylib build
 
-# Default output determined by platform
-OUT ?= dist$(SEP)wavelet$(E)
+# Build all variants: DLL, SO, DYLIB
+all: dll so dylib
 
-.PHONY: all clean dll so dylib
+# Windows DLL build rules
+dll: E = .dll
+dll: CC = x86_64-w64-mingw32-gcc
+dll: OUT = dist$(SEP)wavelet.dll
+dll: build
 
-# Default target: build platform-specific shared library
-all: $(OUT)
+# Linux SO build rules
+so: E = .so
+so: CC = gcc
+so: OUT = dist$(SEP)wavelet.so
+so: build
 
-# Platform-specific targets
-dll:
-	@$(MKDIR) dist
-	$(MAKE) OUT=$(DLL_OUT) E=.dll CC=x86_64-w64-mingw32-gcc
+# macOS DYLIB build rules
+dylib: E = .dylib
+dylib: CC = clang
+dylib: OUT = dist$(SEP)wavelet.dylib
+dylib: build
 
-so:
-	@$(MKDIR) dist
-	$(MAKE) OUT=$(SO_OUT) E=.so CC=gcc
+# General build target: cleans and builds the library
+build: clean $(OUT)
 
-dylib:
-	@$(MKDIR) dist
-	$(MAKE) OUT=$(DYLIB_OUT) E=.dylib CC=clang
-
-# Compile each .c to .o
-$(ODIR)$(SEP)%.$(O): $(SRC)/%.c $(DEPS)
-	@$(MKDIR) $(ODIR)
+# Compile object files from source files
+$(ODIR)$(SEP)%.$(O): $(SRC)/%.c $(wildcard $(INC)/*.h)
+	@if not exist "$(ODIR)" mkdir "$(ODIR)" 2>$(RM_NULL)
 	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIR)
 
-# Link all .o files into platform-specific shared library
-$(DLL_OUT) $(SO_OUT) $(DYLIB_OUT): $(OBJS)
-	@$(MKDIR) dist
+# Link object files into final shared library
+$(OUT): $(OBJS)
+	@if not exist "dist" mkdir "dist" 2>$(RM_NULL)
 	$(CC) -shared -o $@ $^ $(CFLAGS) $(INCDIR) $(LIBS)
 
-# Remove all build outputs
+# Clean up build artifacts
 clean:
-	-$(RM) dist$(SEP)*.dll dist$(SEP)*.so dist$(SEP)*.dylib
-	-$(RM) $(ODIR)$(SEP)*.$(O)
+	-$(RM) dist$(SEP)*.dll dist$(SEP)*.so dist$(SEP)*.dylib 2>$(RM_NULL)
+	-$(RM) $(ODIR)$(SEP)*.$(O) 2>$(RM_NULL)
