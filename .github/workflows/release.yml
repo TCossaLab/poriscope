@@ -32,26 +32,55 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.12.10'
 
+      # Native libs required for PySide6/Qt on Ubuntu + a virtual display server for GUI tests
+      - name: Install system libs for Qt + Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            xvfb                    
+            
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+    
+      - name: Install MinGW-w64
+        run: sudo apt-get install -y mingw-w64
 
       - name: Run tests (unit + E2E)
         run: |
-          xvfb-run -a pytest -m     # Add specific markers (e.g., "not slow") if needed
+          xvfb-run -a pytest      # Add specific markers (e.g., "not slow") if needed
 
-      - name: Build distributables (.exe, .whl, etc.)
+      - name: Build distributables (.exe, .whl, .dll, etc.)
         run: |
-          python poriscope/scripts/full_setup_and_build.py
+          python scripts/full_setup_and_build.py
+      
+      - name: Check if DLL exists
+        id: check_dll
+        run: |
+          if [ -f poriscope/cdlls/wavelet/dist/wavelet.dll ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Upload artifacts
+      - name: Upload DLL artifact
         uses: actions/upload-artifact@v4
         with:
-          name: poriscope-distributables
-          path: dist/
+          name: wavelet-dll
+          path: poriscope/cdlls/wavelet/dist/wavelet.dll
 
       - name: Create GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/')
