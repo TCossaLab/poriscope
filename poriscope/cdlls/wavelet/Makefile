@@ -1,25 +1,38 @@
-O = obj
-E = .dll
-CC = x86_64-w64-mingw32-gcc
-OUT_DIST = dist/wavelet$(E)
-CFLAGS = -D_GNU_SOURCE -O3 -shared -fPIC
-INCDIR = lib/
-DEPS = lib/*.h
-ODIR = build/obj
-_OBJ = wavelet_filter.$(O) wdenoise.$(O) ebayesthresh.$(O) wdenmath.$(O) wavefilt.$(O) wavefunc.$(O) wavelib.$(O) wtmath.$(O) cwt.$(O) cwtmath.$(O) hsfft.$(O) real.$(O) conv.$(O) utils.$(O)
-OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
+# wavelet DLL cross-platform Makefile
 
-LIBS = -lm
+# Output and object settings
+E      = .dll
+O      = o
+ODIR   = build/obj
+OUT    = dist/wavelet$(E)
+SRC    = src
+INC    = lib
+INCDIR = -I$(INC)
+DEPS   = $(wildcard $(INC)/*.h)
 
-$(ODIR)/%.$(O): src/%.c $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS) -I$(INCDIR) $(LIBS)
+# C compiler
+CC     = x86_64-w64-mingw32-gcc
+CFLAGS = -O3 -D_GNU_SOURCE -fPIC -Wall
+LIBS   = -lm
 
-$(OUT_DIST): $(OBJ)
-	$(CC) -shared -o $@ $^ $(CFLAGS) -I$(INCDIR) $(LIBS)
+# Source files
+_SRCS  = wavelet_filter wdenoise ebayesthresh wdenmath wavefilt wavefunc \
+         wavelib wtmath cwt cwtmath hsfft real conv utils
+OBJS   = $(patsubst %,$(ODIR)/%.$(O),$(_SRCS))
 
-.PHONY: all clean
+# Default target
+all: $(OUT)
 
-all: $(OUT_DIST)
+# Compile .c to .o
+$(ODIR)/%.$(O): $(SRC)/%.c $(DEPS)
+	@mkdir -p $(ODIR)
+	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIR)
 
+# Link objects into DLL
+$(OUT): $(OBJS)
+	@mkdir -p dist
+	$(CC) -shared -o $@ $^ $(CFLAGS) $(INCDIR) $(LIBS)
+
+# Clean target (cross-platform)
 clean:
-	del /F /Q $(subst /,\,$(OUT_DIST)) $(subst /,\,$(OUT_SRC)) $(subst /,\,$(ODIR))\*.$(O)
+	rm -f $(OUT) $(ODIR)/*.$(O)
