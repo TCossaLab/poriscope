@@ -127,13 +127,22 @@ def build_wavelet(extra_path=None):
         return
 
     print("[INFO] Building wavelet DLL...")
+
     env = os.environ.copy()
     if extra_path:
         env["PATH"] = extra_path + os.pathsep + env["PATH"]
 
+    # Compute absolute path to build_wavelet.py
+    wavelet_script_path = os.path.join(os.path.dirname(__file__), "build_wavelet.py")
+    wavelet_script_path = os.path.abspath(wavelet_script_path)
+
+    if not os.path.exists(wavelet_script_path):
+        print(f"[ERROR] build_wavelet.py not found at {wavelet_script_path}")
+        sys.exit(1)
+
     if CORRECT_PYTHON is not None:
         print(f"[INFO] Using Python to build DLL: {CORRECT_PYTHON}")
-        subprocess.run([CORRECT_PYTHON, "build_wavelet.py"], check=True, env=env)
+        subprocess.run([CORRECT_PYTHON, wavelet_script_path], check=True, env=env)
         print("[INFO] DLL built successfully.")
     else:
         print("[ERROR] unable to find python.")
