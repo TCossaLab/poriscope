@@ -25,14 +25,16 @@ all: $(OUT)
 
 # Compile .c to .o
 $(ODIR)/%.$(O): $(SRC)/%.c $(DEPS)
-	@mkdir -p $(ODIR)
+	@if not exist $(ODIR) mkdir $(ODIR)
 	$(CC) -c -o $@ $< $(CFLAGS) $(INCDIR)
 
 # Link objects into DLL
 $(OUT): $(OBJS)
-	@mkdir -p dist
+	@if not exist dist mkdir dist
 	$(CC) -shared -o $@ $^ $(CFLAGS) $(INCDIR) $(LIBS)
 
 # Clean target (cross-platform)
+.PHONY: all clean
+
 clean:
-	rm -f $(OUT) $(ODIR)/*.$(O)
+	del /F /Q $(OUT) $(ODIR)\*.$(O) 2>NUL
