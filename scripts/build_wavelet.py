@@ -32,7 +32,7 @@ import shutil
 
 def build_wavelet_dll():
     root_dir = os.path.abspath(os.path.dirname(__file__))
-    wavelet_dir = os.path.join(root_dir, "poriscope", "cdlls", "wavelet")
+    wavelet_dir = os.path.abspath(os.path.join(root_dir, "..", "poriscope", "cdlls", "wavelet"))
     build_dirs = ["build", os.path.join("build", "obj"), "dist"]
 
     for d in build_dirs:
