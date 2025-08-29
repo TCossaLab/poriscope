@@ -92,6 +92,10 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      - name: Clear pre-commit cache to reinitialize environments
+        run: |
+          pre-commit clean
+
       # Run auto-fixes (doesn't fail the job)
       - name: Run pre-commit auto-fixes (non-blocking) - Runs mypy too, but those do not autofix
         run: |
