@@ -2,12 +2,13 @@
 default_stages: [pre-commit]
 
 repos:
-  # Code formatting
+  # Code formatting (runs only during --hook-stage manual)
   - repo: https://github.com/psf/black
     rev: 24.8.0
     hooks:
       - id: black
         args: [--fast]
+        stages: [manual]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9
@@ -15,8 +16,9 @@ repos:
       - id: ruff
         args: ["--fix"]
         exclude: ^tests/slow/
+        stages: [manual]
 
-  # Static Type Checking
+  # Static Type Checking (runs during default commit stage)
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.9.0
     hooks:
@@ -24,7 +26,7 @@ repos:
         # args: ["--strict"]
         exclude: ^tests/slow/
 
-  # File Size Guard
+  # File Size Guard (runs during default commit stage)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
