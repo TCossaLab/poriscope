@@ -92,13 +92,12 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-
-      # Auto-fix style on push (Ruff fixes + Black formatting)
-      - name: Run pre-commit (all hooks, including mypy)
+      # Run auto-fixes (doesn't fail the job)
+      - name: Run pre-commit auto-fixes (non-blocking) - Runs mypy too, but those do not autofix
         run: |
-          pre-commit run --all-files
-     
-      # Commit and push any formatting changes introduced by the step above
+          pre-commit run --all-files --hook-stage manual || true
+      
+      # Commit and push changes if any
       - name: Commit and push pre-commit fixes
         run: |
           if ! git diff --quiet; then
@@ -108,6 +107,10 @@ jobs:
             git commit -m "style: auto-fix via pre-commit hooks"
             git push
           fi
+      
+      # Run pre-commit again and fail if *any* issues remain
+      - name: Run pre-commit validation (must pass)
+        run: pre-commit run --all-files
 
       # Run unit tests that exclude slow and e2e marks, under a virtual display
       # If no Xvfb, Qt may fail to initialize on headless runners
