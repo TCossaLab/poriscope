@@ -1,0 +1,34 @@
+.. _ClusteringController:
+
+ClusteringController
+====================
+
+**class ClusteringController(available_subclasses = None, **kwargs)**
+
+Bases: :ref:`MetaController`
+
+Subclass of MetaController for managing clustering view-model logic.
+
+Handles queries, data relaying, and view updates.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.alter_database_status
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.check_cluster_column_exists
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.display_write_status
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.refresh_plugin_list
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.relay_event_data_generator
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.relay_plot_data
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.relay_query
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.relay_units
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.update_column_units
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController.update_plugins
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController._init
+.. automethod:: poriscope.plugins.analysistabs.ClusteringController.ClusteringController._setup_connections
+

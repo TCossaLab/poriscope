@@ -1,0 +1,35 @@
+.. _CUSUM:
+
+CUSUM
+=====
+
+**class CUSUM(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaEventFitter`
+
+Abstract base class to analyze and flag the start and end times of regions
+of interest in a timeseries for further analysis.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM.close_resources
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM.construct_fitted_event
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM.get_empty_settings
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._calculate_threshold
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._define_event_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._define_event_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._define_sublevel_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._define_sublevel_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._init
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._locate_sublevel_transitions
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._populate_event_metadata
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._populate_sublevel_metadata
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._post_process_events
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._pre_process_events
+.. automethod:: poriscope.plugins.eventfitters.CUSUM.CUSUM._validate_settings
+

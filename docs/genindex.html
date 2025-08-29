@@ -1,0 +1,1770 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="#" /><link rel="search" title="Search" href="search.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 --><title>Index - Poriscope 1.5.0 documentation</title>
+<link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">Poriscope 1.5.0 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  
+  <span class="sidebar-brand-text">Poriscope 1.5.0 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">User Manuals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="utils/user_manuals/user_guide/index.html">User Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of User Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/workflow_overview.html">Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/tutorial.html">Tutorial and Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/raw_data_tab.html">Raw Data Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/event_analysis_tab.html">Event Analysis Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/metadata_tab.html">MetaData Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/clustering_tab.html">Clustering Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/settings.html">Settings Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/menus_and_sessions.html">Menus and Session Management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/user_guide/scripting.html">Scripting with Poriscope</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/plugin_manual_index.html">Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="utils/user_manuals/plugins_manual/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/system_architecture/index.html">System Architecture</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of System Architecture</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/system_architecture/mainview_overview.html">MainView Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/system_architecture/mainmodel_overview.html">MainModel Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/system_architecture/maincontroller_overview.html">MainController Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/MainMVC/MainView.html">MainView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/MainMVC/MainModel.html">MainModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/MainMVC/MainController.html">MainController</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/where_to_begin/index.html">Where to Begin</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Where to Begin</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/where_to_begin/where_to_begin.html">Where to Begin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/where_to_begin/understanding_base_classes.html">Understanding Base Classes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/where_to_begin/understanding_signals.html">Understanding Signals</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/frontend_plugin_manual_index.html">Frontend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Frontend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/index.html">Ready to Build Your Own Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/metaview_base.html">MetaView as a Base Class</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/metamodel_base.html">MetaModel as a Base Class</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/metacontroller_base.html">MetaController as a Base Class</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/hello_world_tutorial.html">Keeping It Minimal: HelloWorld Tutorial</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/simpleCalc/from_helloworld_to_full_mvc.html">From HelloWorld to a Full MVC Analysis Tab</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of From HelloWorld to a Full MVC Analysis Tab</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/simpleCalc/simpleCalc_code.html">SimpleCalc Full Code Example</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/next_steps/index.html">What’s next ?</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of What’s next ?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/frontend_plugin/next_steps/adding_walkthrough.html">Adding a Walkthrough to Your Custom MVC Plugin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/backend_plugin_manual_index.html">Backend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of Backend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/index.html">Ready to Build Your Own Data Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Data Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/base_data_plugin.html">Base Data Plugin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_reader.html">Build a MetaReader subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_filter.html">Building a MetaFilter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_finder.html">Building a MetaEventFinder subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_writer.html">Building a MetaWriter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_loader.html">Build a MetaEventLoader subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_fitter.html">Build a MetaEventFitter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_database_writer.html">Build a MetaDatabaseWriter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_database_loader.html">Build a MetaDatabaseLoader subclass</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Base Classes:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="autodoc/metaclasses/metaclasses_index.html">Abstract Base Classes</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of Abstract Base Classes</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/basedataplugin.html">BaseDataPlugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metacontroller.html">MetaController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metadatabaseloader.html">MetaDatabaseLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metadatabasewriter.html">MetaDatabaseWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metaeventfinder.html">MetaEventFinder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metaeventfitter.html">MetaEventFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metaeventloader.html">MetaEventLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metafilter.html">MetaFilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metamodel.html">MetaModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metareader.html">MetaReader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metaview.html">MetaView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autodoc/metaclasses/metawriter.html">MetaWriter</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Plugins:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="autodoc/plugins/plugins_index.html">Plugins</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of Plugins</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/analysistabs/analysistabs.html">Analysistabs</a><input class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of Analysistabs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/eventanalysiscontroller.html">EventAnalysisController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/rawdatamodel.html">RawDataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/eventanalysismodel.html">EventAnalysisModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/metadatamodel.html">MetadataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/metadataview.html">MetadataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/clusteringview.html">ClusteringView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/clusteringcontroller.html">ClusteringController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/eventanalysisview.html">EventAnalysisView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/metadatacontroller.html">MetadataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/clusteringmodel.html">ClusteringModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/rawdatacontroller.html">RawDataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/analysistabs/rawdataview.html">RawDataView</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/utils_index.html">Utils</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of Utils</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/eventanalysiscontrols.html">EventAnalysisControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/pluginmanager.html">PluginManager</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/walkthroughmixin.html">WalkthroughMixin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/rawdatacontrols.html">RawDataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/introdialog.html">IntroDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/overlay.html">Overlay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/stepdialog.html">StepDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/metadatacontrols.html">MetadataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="autodoc/plugins/analysistabs/utils/clusteringcontrols.html">ClusteringControls</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/datareaders/datareaders.html">Datareaders</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of Datareaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datareaders/abf2reader.html">ABF2Reader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datareaders/singlebinarydecoder.html">SingleBinaryDecoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datareaders/chimerareader20240501.html">ChimeraReader20240501</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datareaders/chimerareadervc100.html">ChimeraReaderVC100</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datareaders/binaryreader1x.html">BinaryReader1X</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datareaders/chimerareader20240101.html">ChimeraReader20240101</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/datawriters/datawriters.html">Datawriters</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of Datawriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/datawriters/sqliteeventwriter.html">SQLiteEventWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/db_loaders/db_loaders.html">Db Loaders</a><input class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><div class="visually-hidden">Toggle navigation of Db Loaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/db_loaders/sqlitedbloader.html">SQLiteDBLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/dbwriters/dbwriters.html">Dbwriters</a><input class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><div class="visually-hidden">Toggle navigation of Dbwriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/dbwriters/sqlitedbwriter.html">SQLiteDBWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/eventfinders/eventfinders.html">Eventfinders</a><input class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><div class="visually-hidden">Toggle navigation of Eventfinders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfinders/classicblockagefinder.html">ClassicBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfinders/boundedblockagefinder.html">BoundedBlockageFinder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/eventfitters/eventfitters.html">Eventfitters</a><input class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><div class="visually-hidden">Toggle navigation of Eventfitters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/peakfinder.html">PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/cusum.html">CUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/intracusum.html">IntraCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/p6flags.html">P6Flags</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/singlesublevel.html">SingleSublevel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/hackylist.html">HackyList</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/sublevels.html">Sublevels</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventfitters/nanotrees.html">NanoTrees</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/eventloaders/eventloaders.html">Eventloaders</a><input class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><div class="visually-hidden">Toggle navigation of Eventloaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/eventloaders/sqliteeventloader.html">SQLiteEventLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="autodoc/plugins/filters/filters.html">Filters</a><input class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><div class="visually-hidden">Toggle navigation of Filters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/filters/waveletfilter.html">WaveletFilter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autodoc/plugins/filters/besselfilter.html">BesselFilter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Signals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="signals/global_signal/global_signal.html">Global Signal</a><input class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><div class="visually-hidden">Toggle navigation of Global Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="signals/global_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="signals/global_signal/example_usage.html">Example Usage: RawDataView</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="signals/data_plugin_controller_signal/data_plugin_controller_signal.html">Data Plugin Controller Signal</a><input class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><div class="visually-hidden">Toggle navigation of Data Plugin Controller Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="signals/data_plugin_controller_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="signals/data_plugin_controller_signal/example_usage.html">Example Usage: RawDataView</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="signals/which_one_to_use/which_one_to_use.html">Which to use</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Logging Decorators:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="utils/loggers_index.html">Logging</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          
+<section class="genindex-section">
+  <h1 id="index">Index</h1>
+  <div class="genindex-jumpbox"><a href="#_"><strong>_</strong></a> | <a href="#A"><strong>A</strong></a> | <a href="#C"><strong>C</strong></a> | <a href="#D"><strong>D</strong></a> | <a href="#E"><strong>E</strong></a> | <a href="#F"><strong>F</strong></a> | <a href="#G"><strong>G</strong></a> | <a href="#H"><strong>H</strong></a> | <a href="#I"><strong>I</strong></a> | <a href="#L"><strong>L</strong></a> | <a href="#M"><strong>M</strong></a> | <a href="#Q"><strong>Q</strong></a> | <a href="#R"><strong>R</strong></a> | <a href="#S"><strong>S</strong></a> | <a href="#U"><strong>U</strong></a> | <a href="#V"><strong>V</strong></a> | <a href="#W"><strong>W</strong></a></div>
+</section>
+<section id="_" class="genindex-section">
+  <h2>_</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.__enter__">__enter__() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.__exit__">__exit__() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/singlesublevel.html#poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.__init__">__init__() (poriscope.plugins.eventfitters.NanoTrees.SingleSublevel method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.__init__">(poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.__init__">(poriscope.utils.MetaController.MetaController method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.__init__">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.__init__">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.__init__">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.__init__">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.__init__">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.__init__">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.__init__">(poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.__init__">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.__init__">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.__pass1">__pass1() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.__pass2">__pass2() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/singlesublevel.html#poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.__repr__">__repr__() (poriscope.plugins.eventfitters.NanoTrees.SingleSublevel method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/singlesublevel.html#poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.__str__">__str__() (poriscope.plugins.eventfitters.NanoTrees.SingleSublevel method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.__str__">(poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter._apply_filter">_apply_filter() (poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter._apply_filter">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter._apply_filter">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._calculate_threshold">_calculate_threshold() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+</li>
+        <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._column_exists">_column_exists() (poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._commit_events">_commit_events() (poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController._connect_global_signal">_connect_global_signal() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._convert_data">_convert_data() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._convert_data">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._convert_data">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._convert_data">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._convert_data">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._convert_data">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._convert_data">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._define_event_metadata_types">_define_event_metadata_types() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/intracusum.html#poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM._define_event_metadata_types">(poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_event_metadata_types">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_event_metadata_types">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_types">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._define_event_metadata_units">_define_event_metadata_units() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/intracusum.html#poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM._define_event_metadata_units">(poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_event_metadata_units">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_event_metadata_units">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_units">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._define_metadata_types">_define_metadata_types() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._define_metadata_units">_define_metadata_units() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._define_sublevel_metadata_types">_define_sublevel_metadata_types() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_sublevel_metadata_types">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_sublevel_metadata_types">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_types">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._define_sublevel_metadata_units">_define_sublevel_metadata_units() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._define_sublevel_metadata_units">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_sublevel_metadata_units">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_units">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._DNA">_DNA() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._filter_events">_filter_events() (poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._filter_events">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._finalize_initialization">_finalize_initialization() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._finalize_initialization">(poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader._finalize_initialization">(poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter._finalize_initialization">(poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter._finalize_initialization">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin._finalize_initialization">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._finalize_initialization">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._finalize_initialization">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._finalize_initialization">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._finalize_initialization">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader._finalize_initialization">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter._finalize_initialization">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._finalize_initialization">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._finalize_initialization">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._find_events_in_chunk">_find_events_in_chunk() (poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._find_events_in_chunk">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._find_events_single_range">_find_events_single_range() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._format_debug_msg">_format_debug_msg() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._gaussian">_gaussian() (poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._gaussian_fit">_gaussian_fit() (poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfinders/boundedblockagefinder.html#poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder._get_baseline_stats">_get_baseline_stats() (poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._get_baseline_stats">(poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._get_baseline_stats">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_configs">_get_configs() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._get_configs">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_configs">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._get_configs">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._get_configs">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._get_configs">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_configs">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_file_channel_stamps">_get_file_channel_stamps() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._get_file_channel_stamps">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_file_channel_stamps">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._get_file_channel_stamps">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._get_file_channel_stamps">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._get_file_channel_stamps">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_file_channel_stamps">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_file_index">_get_file_index() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._get_file_names">_get_file_names() (poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_file_names">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_file_pattern">_get_file_pattern() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._get_file_pattern">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_file_pattern">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._get_file_pattern">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._get_file_pattern">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._get_file_pattern">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_file_pattern">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_file_start_indices">_get_file_start_indices() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_file_time_stamps">_get_file_time_stamps() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._get_file_time_stamps">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._get_file_time_stamps">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._get_file_time_stamps">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._get_file_time_stamps">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._get_file_time_stamps">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_file_time_stamps">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._get_padding_length">_get_padding_length() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._get_sqlite_type">_get_sqlite_type() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._get_total_channel_samples">_get_total_channel_samples() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/analysistabs/clusteringmodel.html#poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel._init">_init() (poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/analysistabs/eventanalysismodel.html#poriscope.plugins.analysistabs.EventAnalysisModel.EventAnalysisModel._init">(poriscope.plugins.analysistabs.EventAnalysisModel.EventAnalysisModel method)</a>
+</li>
+          <li><a href="autodoc/plugins/analysistabs/metadatamodel.html#poriscope.plugins.analysistabs.MetadataModel.MetadataModel._init">(poriscope.plugins.analysistabs.MetadataModel.MetadataModel method)</a>
+</li>
+          <li><a href="autodoc/plugins/analysistabs/rawdatamodel.html#poriscope.plugins.analysistabs.RawDataModel.RawDataModel._init">(poriscope.plugins.analysistabs.RawDataModel.RawDataModel method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._init">(poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._init">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._init">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._init">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._init">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._init">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._init">(poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._init">(poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._init">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._init">(poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._init">(poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._init">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._init">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader._init">(poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter._init">(poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter._init">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin._init">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController._init">(poriscope.utils.MetaController.MetaController method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._init">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._init">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._init">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._init">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader._init">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter._init">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel._init">(poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._init">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._init">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._initialize_database">_initialize_database() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._initialize_database">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._initialize_database">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._initialize_database">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._insert_event">_insert_event() (poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+        <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._insert_event_data">_insert_event_data() (poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+        <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._insert_sublevels">_insert_sublevels() (poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._load_event_data">_load_event_data() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_event_data">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._load_metadata">_load_metadata() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_metadata">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._load_metadata_generator">_load_metadata_generator() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_metadata_generator">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._locate_sublevel_transitions">_locate_sublevel_transitions() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._locate_sublevel_transitions">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._locate_sublevel_transitions">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._locate_sublevel_transitions">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._map_data">_map_data() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._map_data">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._map_data">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._map_data">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._map_data">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._map_data">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._map_data">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._merge_overlapping_ranges">_merge_overlapping_ranges() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._ml_automation">_ml_automation() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass3">_pass3() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass4">_pass4() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass5">_pass5() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass6">_pass6() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pass7">_pass7() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._populate_event_metadata">_populate_event_metadata() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/intracusum.html#poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM._populate_event_metadata">(poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._populate_event_metadata">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._populate_event_metadata">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._populate_event_metadata">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._populate_sublevel_metadata">_populate_sublevel_metadata() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._populate_sublevel_metadata">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._populate_sublevel_metadata">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._populate_sublevel_metadata">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._post_process_events">_post_process_events() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._post_process_events">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._post_process_events">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._post_process_events">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._pre_process_events">_pre_process_events() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._pre_process_events">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._pre_process_events">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._pre_process_events">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController._relay_create_plugin">_relay_create_plugin() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController._relay_data_plugin_controller_signal">_relay_data_plugin_controller_signal() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController._relay_global_signal">_relay_global_signal() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._rescale_data_to_adc">_rescale_data_to_adc() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._rescale_data_to_adc">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._scale_data">_scale_data() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._set_automation_hyperparameters">_set_automation_hyperparameters() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._set_file_extension">_set_file_extension() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._set_file_extension">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._set_file_extension">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._set_file_extension">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._set_file_extension">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._set_file_extension">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._set_file_extension">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._set_output_dtype">_set_output_dtype() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._set_output_dtype">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._set_raw_dtype">_set_raw_dtype() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._set_raw_dtype">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._set_raw_dtype">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._set_raw_dtype">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._set_raw_dtype">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._set_raw_dtype">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._set_raw_dtype">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._set_sample_rate">_set_sample_rate() (poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._set_sample_rate">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController._setup_connections">_setup_connections() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._slope_height_adjust">_slope_height_adjust() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._sort_objects_by_channel_and_time">_sort_objects_by_channel_and_time() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._validate_file_extension">_validate_file_extension() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._validate_file_type">_validate_file_type() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._validate_file_type">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._validate_file_type">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._validate_file_type">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._validate_file_type">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._validate_file_type">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._validate_file_type">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_param_ranges">_validate_param_ranges() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_param_types">_validate_param_types() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._validate_param_types">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._validate_param_types">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._validate_param_types">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._validate_param_types">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._validate_settings">_validate_settings() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X._validate_settings">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101._validate_settings">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501._validate_settings">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100._validate_settings">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder._validate_settings">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._validate_settings">(poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader._validate_settings">(poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._validate_settings">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfinders/boundedblockagefinder.html#poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder._validate_settings">(poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder._validate_settings">(poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM._validate_settings">(poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees._validate_settings">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder._validate_settings">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader._validate_settings">(poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter._validate_settings">(poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter._validate_settings">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_settings">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._validate_settings">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._validate_settings">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder._validate_settings">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter._validate_settings">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader._validate_settings">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter._validate_settings">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader._validate_settings">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._validate_settings">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._write_channel_metadata">_write_channel_metadata() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._write_channel_metadata">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_channel_metadata">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._write_channel_metadata">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter._write_data">_write_data() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter._write_data">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._write_event">_write_event() (poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_event">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter._write_experiment_metadata">_write_experiment_metadata() (poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter._write_experiment_metadata">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="A" class="genindex-section">
+  <h2>A</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.add_columns_to_table">add_columns_to_table() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.add_columns_to_table">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.alter_database">alter_database() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.alter_database">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings">apply_settings() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="C" class="genindex-section">
+  <h2>C</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.cache_plot_data">cache_plot_data() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+        <li><a href="autodoc/plugins/analysistabs/rawdatamodel.html#poriscope.plugins.analysistabs.RawDataModel.RawDataModel.calculate_psd">calculate_psd() (poriscope.plugins.analysistabs.RawDataModel.RawDataModel method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader.close_resources">close_resources() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X.close_resources">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101.close_resources">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501.close_resources">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100.close_resources">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder.close_resources">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.close_resources">(poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.close_resources">(poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter.close_resources">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder.close_resources">(poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM.close_resources">(poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.close_resources">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.close_resources">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.close_resources">(poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter.close_resources">(poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter.close_resources">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.close_resources">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.close_resources">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.close_resources">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.close_resources">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.close_resources">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.close_resources">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.close_resources">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.close_resources">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.close_resources">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.combinedRegion">combinedRegion() (poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.commit_events">commit_events() (poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.construct_event_data_query">construct_event_data_query() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM.construct_fitted_event">construct_fitted_event() (poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.construct_fitted_event">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.construct_fitted_event">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.construct_fitted_event">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.construct_metadata_query">construct_metadata_query() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.continuous_read">continuous_read() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="D" class="genindex-section">
+  <h2>D</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.denormalize">denormalize() (poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="E" class="genindex-section">
+  <h2>E</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.edges">edges (poriscope.plugins.eventfitters.NanoTrees.Sublevels attribute)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.embeded">embeded (poriscope.plugins.eventfitters.NanoTrees.Sublevels attribute)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.emit_progress_update">emit_progress_update() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.enumerate_peaks">enumerate_peaks() (poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.export_plot_data">export_plot_data() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.export_subset_to_csv">export_subset_to_csv() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="F" class="genindex-section">
+  <h2>F</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/singlesublevel.html#poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.fetchData">fetchData() (poriscope.plugins.eventfitters.NanoTrees.SingleSublevel method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.filter_data">filter_data() (poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.filter_peaks">filter_peaks() (poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.filterEmptySublevels">filterEmptySublevels() (poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.find_events">find_events() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.find_unfolded_blockage_level">find_unfolded_blockage_level() (poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.fit_events">fit_events() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.force_serial_channel_operations">force_serial_channel_operations() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.force_serial_channel_operations">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.force_serial_channel_operations">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.force_serial_channel_operations">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.force_serial_channel_operations">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.force_serial_channel_operations">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.force_serial_channel_operations">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.force_serial_channel_operations">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.format_cache_data">format_cache_data() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="G" class="genindex-section">
+  <h2>G</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.generate_report">generate_report() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_base_experiment_name">get_base_experiment_name() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_base_experiment_name">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_base_file">get_base_file() (poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_base_file">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.get_callable_filter">get_callable_filter() (poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_channel_length">get_channel_length() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.get_channels">get_channels() (poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_channels">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_channels">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_channels">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_channels">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_channels_by_experiment">get_channels_by_experiment() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_channels_by_experiment">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_column_names_by_table">get_column_names_by_table() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_column_names_by_table">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_column_units">get_column_units() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_column_units">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_dependents">get_dependents() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_dtype">get_dtype() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader.get_empty_settings">get_empty_settings() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X.get_empty_settings">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101.get_empty_settings">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501.get_empty_settings">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100.get_empty_settings">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder.get_empty_settings">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.get_empty_settings">(poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_empty_settings">(poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter.get_empty_settings">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfinders/boundedblockagefinder.html#poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder.get_empty_settings">(poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfinders/classicblockagefinder.html#poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder.get_empty_settings">(poriscope.plugins.eventfinders.ClassicBlockageFinder.ClassicBlockageFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/cusum.html#poriscope.plugins.eventfitters.CUSUM.CUSUM.get_empty_settings">(poriscope.plugins.eventfitters.CUSUM.CUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/intracusum.html#poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM.get_empty_settings">(poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.get_empty_settings">(poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.get_empty_settings">(poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.get_empty_settings">(poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter.get_empty_settings">(poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter.get_empty_settings">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_empty_settings">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.get_empty_settings">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_empty_settings">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_empty_settings">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.get_empty_settings">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_empty_settings">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.get_empty_settings">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_event_counts_by_experiment_and_channel">get_event_counts_by_experiment_and_channel() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_event_counts_by_experiment_and_channel">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_event_data_generator">get_event_data_generator() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_event_generator">get_event_generator() (poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_event_indices">get_event_indices() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_event_metadata_generator">get_event_metadata_generator() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_event_metadata_types">get_event_metadata_types() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_event_metadata_units">get_event_metadata_units() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_eventfinding_status">get_eventfinding_status() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_eventfitting_status">get_eventfitting_status() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_experiment_id_by_name">get_experiment_id_by_name() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_experiment_names">get_experiment_names() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_experiment_names">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_experiments_and_channels">get_experiments_and_channels() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_key">get_key() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_llm_prompt">get_llm_prompt() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_llm_prompt">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_metadata_columns">get_metadata_columns() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.get_num_events">get_num_events() (poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_num_events">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_num_events">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_num_events_found">get_num_events_found() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.get_output_file_name">get_output_file_name() (poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.get_output_file_name">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_parents">get_parents() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/peakfinder.html#poriscope.plugins.eventfitters.PeakFinder.PeakFinder.get_plot_features">get_plot_features() (poriscope.plugins.eventfitters.PeakFinder.PeakFinder method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_plot_features">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_raw_dtype">get_raw_dtype() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_raw_settings">get_raw_settings() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.get_rise_time">get_rise_time() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.get_samplerate">get_samplerate() (poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_samplerate">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_samplerate">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_samplerate">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.get_samplerate">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_samplerate_by_experiment_and_channel">get_samplerate_by_experiment_and_channel() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_samplerate_by_experiment_and_channel">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.get_single_event_data">get_single_event_data() (poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_single_event_metadata">get_single_event_metadata() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.get_skip_region">get_skip_region() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_sublevel_columns">get_sublevel_columns() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_sublevel_metadata_types">get_sublevel_metadata_types() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.get_sublevel_metadata_units">get_sublevel_metadata_units() (poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_table_by_column">get_table_by_column() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_table_by_column">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.get_table_names">get_table_names() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_table_names">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.get_valid_indices">get_valid_indices() (poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.get_valid_indices">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="H" class="genindex-section">
+  <h2>H</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.handle_kill_all_workers">handle_kill_all_workers() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.handle_kill_worker">handle_kill_worker() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.heights">heights (poriscope.plugins.eventfitters.NanoTrees.Sublevels attribute)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="I" class="genindex-section">
+  <h2>I</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.ignore">ignore() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.insert">insert() (poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+        <li><a href="autodoc/plugins/analysistabs/rawdatamodel.html#poriscope.plugins.analysistabs.RawDataModel.RawDataModel.integrate_noise">integrate_noise() (poriscope.plugins.analysistabs.RawDataModel.RawDataModel method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="L" class="genindex-section">
+  <h2>L</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/nanotrees.html#poriscope.plugins.eventfitters.NanoTrees.NanoTrees.l50_max_height">l50_max_height() (poriscope.plugins.eventfitters.NanoTrees.NanoTrees method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.load_actions_from_json">load_actions_from_json() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.load_data">load_data() (poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.load_event">load_event() (poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.load_event">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.load_event_data">load_event_data() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.load_metadata">load_metadata() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        <li><a href="utils/loggers_index.html#poriscope.utils.LogDecorator.log">log() (in module poriscope.utils.LogDecorator)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="M" class="genindex-section">
+  <h2>M</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.merge">merge() (poriscope.plugins.eventfitters.NanoTrees.Sublevels method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="Q" class="genindex-section">
+  <h2>Q</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.query_database_directly">query_database_directly() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.query_database_directly_and_get_generator">query_database_directly_and_get_generator() (poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="R" class="genindex-section">
+  <h2>R</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.register_dependent">register_dependent() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.register_parent">register_parent() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.relay_add_text_to_display">relay_add_text_to_display() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.report_channel_status">report_channel_status() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.report_channel_status">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.report_channel_status">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.report_channel_status">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.report_channel_status">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.report_channel_status">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.report_channel_status">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.report_channel_status">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/plugins/datareaders/abf2reader.html#poriscope.plugins.datareaders.ABF2Reader.ABF2Reader.reset_channel">reset_channel() (poriscope.plugins.datareaders.ABF2Reader.ABF2Reader method)</a>
+
+        <ul>
+          <li><a href="autodoc/plugins/datareaders/binaryreader1x.html#poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X.reset_channel">(poriscope.plugins.datareaders.BinaryReader1X.BinaryReader1X method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240101.html#poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101.reset_channel">(poriscope.plugins.datareaders.ChimeraReader20240101.ChimeraReader20240101 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareader20240501.html#poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501.reset_channel">(poriscope.plugins.datareaders.ChimeraReader20240501.ChimeraReader20240501 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/chimerareadervc100.html#poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100.reset_channel">(poriscope.plugins.datareaders.ChimeraReaderVC100.ChimeraReaderVC100 method)</a>
+</li>
+          <li><a href="autodoc/plugins/datareaders/singlebinarydecoder.html#poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder.reset_channel">(poriscope.plugins.datareaders.SingleBinaryDecoder.SingleBinaryDecoder method)</a>
+</li>
+          <li><a href="autodoc/plugins/datawriters/sqliteeventwriter.html#poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter.reset_channel">(poriscope.plugins.datawriters.SQLiteEventWriter.SQLiteEventWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.reset_channel">(poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/dbwriters/sqlitedbwriter.html#poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter.reset_channel">(poriscope.plugins.dbwriters.SQLiteDBWriter.SQLiteDBWriter method)</a>
+</li>
+          <li><a href="autodoc/plugins/eventloaders/sqliteeventloader.html#poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader.reset_channel">(poriscope.plugins.eventloaders.SQLiteEventLoader.SQLiteEventLoader method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/besselfilter.html#poriscope.plugins.filters.BesselFilter.BesselFilter.reset_channel">(poriscope.plugins.filters.BesselFilter.BesselFilter method)</a>
+</li>
+          <li><a href="autodoc/plugins/filters/waveletfilter.html#poriscope.plugins.filters.WaveletFilter.WaveletFilter.reset_channel">(poriscope.plugins.filters.WaveletFilter.WaveletFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.reset_channel">(poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.reset_channel">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.reset_channel">(poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfinder.html#poriscope.utils.MetaEventFinder.MetaEventFinder.reset_channel">(poriscope.utils.MetaEventFinder.MetaEventFinder method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventfitter.html#poriscope.utils.MetaEventFitter.MetaEventFitter.reset_channel">(poriscope.utils.MetaEventFitter.MetaEventFitter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metaeventloader.html#poriscope.utils.MetaEventLoader.MetaEventLoader.reset_channel">(poriscope.utils.MetaEventLoader.MetaEventLoader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metafilter.html#poriscope.utils.MetaFilter.MetaFilter.reset_channel">(poriscope.utils.MetaFilter.MetaFilter method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metareader.html#poriscope.utils.MetaReader.MetaReader.reset_channel">(poriscope.utils.MetaReader.MetaReader method)</a>
+</li>
+          <li><a href="autodoc/metaclasses/metawriter.html#poriscope.utils.MetaWriter.MetaWriter.reset_channel">(poriscope.utils.MetaWriter.MetaWriter method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.reset_lock">reset_lock() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.run_generators">run_generators() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="S" class="genindex-section">
+  <h2>S</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.save_tab_actions">save_tab_actions() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.set_force_serial_channel_operations">set_force_serial_channel_operations() (poriscope.utils.MetaController.MetaController method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.set_force_serial_channel_operations">(poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+        </ul></li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.set_generator">set_generator() (poriscope.utils.MetaController.MetaController method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.set_generator">(poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.set_key">set_key() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/sublevels.html#poriscope.plugins.eventfitters.NanoTrees.Sublevels.size">size (poriscope.plugins.eventfitters.NanoTrees.Sublevels attribute)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.stop_workers">stop_workers() (poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="U" class="genindex-section">
+  <h2>U</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.unregister_dependent">unregister_dependent() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.unregister_parent">unregister_parent() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/plugins/eventfitters/singlesublevel.html#poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.update">update() (poriscope.plugins.eventfitters.NanoTrees.SingleSublevel method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.update_available_plugins">update_available_plugins() (poriscope.utils.MetaController.MetaController method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metamodel.html#poriscope.utils.MetaModel.MetaModel.update_available_plugins">(poriscope.utils.MetaModel.MetaModel method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.update_plot_data">update_plot_data() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.update_raw_settings">update_raw_settings() (poriscope.utils.BaseDataPlugin.BaseDataPlugin method)</a>
+</li>
+        <li><a href="autodoc/metaclasses/metacontroller.html#poriscope.utils.MetaController.MetaController.update_tab_actions">update_tab_actions() (poriscope.utils.MetaController.MetaController method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="V" class="genindex-section">
+  <h2>V</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/db_loaders/sqlitedbloader.html#poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader.validate_filter_query">validate_filter_query() (poriscope.plugins.db_loaders.SQLiteDBLoader.SQLiteDBLoader method)</a>
+
+        <ul>
+          <li><a href="autodoc/metaclasses/metadatabaseloader.html#poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.validate_filter_query">(poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader method)</a>
+</li>
+        </ul></li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="W" class="genindex-section">
+  <h2>W</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/plugins/eventfitters/singlesublevel.html#poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.width">width (poriscope.plugins.eventfitters.NanoTrees.SingleSublevel attribute)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="autodoc/metaclasses/metadatabasewriter.html#poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.write_events">write_events() (poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter method)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Kyle Briggs, Carolina González G.
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer no-toc">
+      
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=e0a75244"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>

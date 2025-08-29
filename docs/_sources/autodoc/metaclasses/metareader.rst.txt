@@ -1,0 +1,76 @@
+.. _MetaReader:
+
+MetaReader
+==========
+
+**class MetaReader(settings: Optional[dict] = None)**
+
+Bases: :class:`~poriscope.utils.BaseDataPlugin`
+
+:ref:`MetaReader` is the base class for all things related to reading raw nanopore timeseries datafiles. It handles mapping groups of files that belong in the same experiment, separating them by channel in the case of multichannel experimental operations, and time-ordering files within a channel when many data files are written as part of a single experiment. Subsequently, it provides a common API through which to interact with that data, effectively standardizing data reading operations regardless of the source. Given the number of different file formats commonly in use in the nanopore field, this plugin will likely always have the largest number of subclasses.
+
+What you get by inheriting from MetaReader
+------------------------------------------
+
+Regardless of the details of how your data is actually stored, :ref:`MetaReader` will provide a common and intuitive API with which to interact with it, stitching together all the files in your dataset to work seamlessly together as a single dataset. Datasets are broken down by channel ID and time, allowing slicing into data that might be spread across multiple files as though it were a single contiguous memory structure. Data can be retrieved either on an ad-hoc basis, or as a continuous generator that allows you to iterate through on demand. Metadata like sampling rate, the length of data available in each channel, etc., can be retrieved through the API directly.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaReader.MetaReader.close_resources
+.. automethod:: poriscope.utils.MetaReader.MetaReader.reset_channel
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaReader.MetaReader.continuous_read
+.. automethod:: poriscope.utils.MetaReader.MetaReader.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_base_experiment_name
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_base_file
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_channel_length
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_channels
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_empty_settings
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_raw_dtype
+.. automethod:: poriscope.utils.MetaReader.MetaReader.get_samplerate
+.. automethod:: poriscope.utils.MetaReader.MetaReader.load_data
+.. automethod:: poriscope.utils.MetaReader.MetaReader.report_channel_status
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaReader.MetaReader._convert_data
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_configs
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_channel_stamps
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_pattern
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_time_stamps
+.. automethod:: poriscope.utils.MetaReader.MetaReader._init
+.. automethod:: poriscope.utils.MetaReader.MetaReader._map_data
+.. automethod:: poriscope.utils.MetaReader.MetaReader._set_file_extension
+.. automethod:: poriscope.utils.MetaReader.MetaReader._set_raw_dtype
+.. automethod:: poriscope.utils.MetaReader.MetaReader._validate_file_type
+.. automethod:: poriscope.utils.MetaReader.MetaReader._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaReader.MetaReader.__init__
+.. automethod:: poriscope.utils.MetaReader.MetaReader._finalize_initialization
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_index
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_names
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_start_indices
+.. automethod:: poriscope.utils.MetaReader.MetaReader._get_total_channel_samples
+.. automethod:: poriscope.utils.MetaReader.MetaReader._scale_data
+.. automethod:: poriscope.utils.MetaReader.MetaReader._set_sample_rate
+.. automethod:: poriscope.utils.MetaReader.MetaReader._sort_objects_by_channel_and_time
+.. automethod:: poriscope.utils.MetaReader.MetaReader._validate_file_extension
+

@@ -1,0 +1,78 @@
+.. _MetaEventFitter:
+
+MetaEventFitter
+===============
+
+**class MetaEventFitter(settings: Optional[dict] = None)**
+
+Bases: :ref:`BaseDataPlugin`
+
+:ref:`MetaEventFitter` is the base class for fitting events within your nanopore data to extract physical insights from the details of translocation events. :ref:`MetaEventFitter` depends on and is linked at instantiation to a :ref:`MetaEventLoader` subclass instance that serves as its source of event data, meaning that creating and using one of these plugins requires that you first instantiate an event loader. :ref:`MetaEventFinder` can in turn be the child object of :ref:`MetaDatabaseWriter` subclass isntance for downstream saving of the metadata extracted by the fits.
+
+What you get by inheriting from MetaEventFitter
+-----------------------------------------------
+
+:ref:`MetaEventFitter` provides a common and intuitive API through which to fit and extract metadata from nanopore events (whatever that means for you). In practice, typically means fitting sublevels, peaks, or other features of interest within your event for downstream postprocessing, visualization, and statistical analysis. The nanopore field has produced numerous methods of fitting nanopore data over the years. All of them could be implemented as subclasses of this base class in order to fit them into the overall poriscope workflow.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.close_resources
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.construct_fitted_event
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.fit_events
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_channels
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_event_metadata_generator
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_event_metadata_types
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_event_metadata_units
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_eventfitting_status
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_metadata_columns
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_num_events
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_plot_features
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_samplerate
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_single_event_metadata
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_sublevel_columns
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_sublevel_metadata_types
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_sublevel_metadata_units
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.reset_channel
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_types
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_units
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_types
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_units
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._init
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._locate_sublevel_transitions
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._populate_event_metadata
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._populate_sublevel_metadata
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._post_process_events
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._pre_process_events
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.__init__
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._define_metadata_types
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._define_metadata_units
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._finalize_initialization
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._validate_param_types
+

@@ -1,0 +1,52 @@
+.. _EventAnalysisView:
+
+EventAnalysisView
+=================
+
+**class EventAnalysisView(*args, **kwargs)**
+
+Bases: :ref:`MetaView`, :class:`~poriscope.plugins.WalkthroughMixin`
+
+Subclass of MetaView for visualizing and interacting with event-based signal analysis.
+
+Handles event plotting, plugin integration, and user-triggered actions.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.set_data_filter_function
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.set_eventfitting_status
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.set_num_events_allowed
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_channels
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_plot_data
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_plot_features
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_plot_samplerate
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.validate_single_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.__init__
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._extract_commit_event_parameters
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._extract_event_fit_parameters
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._extract_plot_event_parameters
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._factors
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._get_event_index_text
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._handle_commit_events
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._handle_fit_events
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._handle_other_actions
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._handle_plot_events
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._init
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._reset_actions
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._set_control_area
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._shift_range_and_update_plot
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._start_eventfitter
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._start_writer
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._update_event_plot
+

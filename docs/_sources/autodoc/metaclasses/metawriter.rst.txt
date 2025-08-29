@@ -1,0 +1,64 @@
+.. _MetaWriter:
+
+MetaWriter
+==========
+
+**class MetaWriter(settings: Optional[dict] = None)**
+
+Bases: :ref:`BaseDataPlugin`
+
+What you get by inheriting from MetaWriter
+------------------------------------------
+
+:ref:`MetaWriter` is the base class for writing the data corresponding to events found by a :ref:`MetaEventFinder` subclass instance events within your nanopore data and represents the first analysis and transformation step. :ref:`MetaWriter` depends on and is linked at instantiation to a :ref:`MetaEventFinder` subclass instance that serves as its source of nanopore data, meaning that creating and using one of these plugins requires that you first instantiate an eventfinder.
+
+Poriscope ships with :ref:`SQLiteEventWriter`, a subclass of :ref:`MetaWriter` already that writes data to a :mod:`sqlite3` format. While additional subclasses can write to almost any format you desire, we strongly encourage standardization around this format. Think twice before creating additional subclasses of this base class. It is not sufficient to write just a :ref:`MetaWriter` subclass. In addition to this base class, you will also need a paired :ref:`MetaEventLoader` subclass to read back and use the data you write to any other format for downstream analysis.
+
+.. warning::
+
+    We strongly encourage standardization on the :ref:SQLiteDBWriter subclass, so please think carefully before creating other formats.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.close_resources
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.reset_channel
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.commit_events
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.get_empty_settings
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.get_output_file_name
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.report_channel_status
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._finalize_initialization
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._init
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._initialize_database
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._set_output_dtype
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._validate_settings
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._write_channel_metadata
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._write_data
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.__init__
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._commit_events
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._rescale_data_to_adc
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._validate_param_types
+

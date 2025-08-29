@@ -1,0 +1,27 @@
+.. _StepDialog:
+
+StepDialog
+==========
+
+**class StepDialog(parent, steps, overlay)**
+
+Bases: :class:`~poriscope.plugins.QDialog`
+
+Dialog that guides the user through steps using popups and an overlay.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog.force_close
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog.next_step
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog.prev_step
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog.reposition
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog.update_step
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog.__init__
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog._reposition_and_show
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.StepDialog._reposition_now
+

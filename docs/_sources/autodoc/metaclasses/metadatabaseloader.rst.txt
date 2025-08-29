@@ -1,0 +1,76 @@
+.. _MetaDatabaseLoader:
+
+MetaDatabaseLoader
+==================
+
+**class MetaDatabaseLoader(settings: Optional[dict] = None)**
+
+Bases: :ref:`BaseDataPlugin`
+
+What you get by inheriting from MetaDatabaseLoader
+--------------------------------------------------
+
+:ref:`MetaDatabaseLoader` is the base class for loading the data written by a :ref:`MetaDatabaseWriter` subclass instance or any other method that produces an equivalent format.
+
+Poriscope ships with :ref:`SQLiteDBLoader`, a subclass of :ref:`MetaDatabaseLoader` that reads data written by the :ref:`SQLiteDBWriter` subclass. While additional subclasses can read almost any format you desire, we strongly encourage standardization around this format. Think twice before creating additional subclasses of this base class. It is not sufficient to write just a :ref:`MetaEventLoader` subclass. In addition to this base class, you will also need a paired :ref:`MetaDatabaseWriter` subclass to write data in your target format.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.add_columns_to_table
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.alter_database
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.close_resources
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_channels_by_experiment
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_column_names_by_table
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_column_units
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_empty_settings
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_event_counts_by_experiment_and_channel
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_experiment_names
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_llm_prompt
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_samplerate_by_experiment_and_channel
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_table_by_column
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_table_names
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.reset_channel
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.validate_filter_query
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.construct_event_data_query
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.construct_metadata_query
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.export_subset_to_csv
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_experiment_id_by_name
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_experiments_and_channels
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.load_event_data
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.load_metadata
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.query_database_directly
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.query_database_directly_and_get_generator
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.report_channel_status
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._init
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_event_data
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_metadata
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_metadata_generator
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._validate_settings
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.__init__
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._finalize_initialization
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._format_debug_msg
+

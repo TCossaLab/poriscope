@@ -1,0 +1,35 @@
+.. _HackyList:
+
+HackyList
+=========
+
+**class HackyList()**
+
+Bases: :class:`~poriscope.plugins.list`
+
+HackyList is a subclass of Python's built-in list that allows arbitrary
+attribute assignment. It exists to support use cases where a list-like
+structure is required but needs to carry additional metadata or
+auxiliary attributes, which native Python lists do not allow.
+
+This class is used to return a list like object for sublevel edges from
+_locate_sublevel_transitions to return edges and attatch extra information
+along with it i.e. sublevel heights.
+
+Example usage:
+    >>> hl = HackyList([1, 2, 3])
+    >>> hl.heights = [1.2, 4.1, 0.1]
+    >>> hl.extra = {}
+    >>> print(hl, hl.heights, hl.extra)
+    [1, 2, 3] [1.2, 4.1, 0.1] {}
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+(none)
+

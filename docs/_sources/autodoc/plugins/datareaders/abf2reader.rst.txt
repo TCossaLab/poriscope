@@ -1,0 +1,33 @@
+.. _ABF2Reader:
+
+ABF2Reader
+==========
+
+**class ABF2Reader(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaReader`
+
+Subclass of MetaReader for reading ABF2 files
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader.close_resources
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader.get_empty_settings
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader.reset_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._convert_data
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_configs
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_file_channel_stamps
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_file_pattern
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._get_file_time_stamps
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._init
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._map_data
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._set_file_extension
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._set_raw_dtype
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._validate_file_type
+.. automethod:: poriscope.plugins.datareaders.ABF2Reader.ABF2Reader._validate_settings
+

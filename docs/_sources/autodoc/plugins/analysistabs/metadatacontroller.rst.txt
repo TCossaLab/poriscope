@@ -1,0 +1,36 @@
+.. _MetadataController:
+
+MetadataController
+==================
+
+**class MetadataController(available_subclasses = None, **kwargs)**
+
+Bases: :ref:`MetaController`
+
+Subclass of MetaController for managing metadata view-model logic.
+
+Relays plot data, query results, and column/unit updates to the view.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.get_experiment_names_for_tree
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.get_experiment_structure_ready
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_baseline_duration
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_event_data_generator
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_event_plot_data_generator
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_event_query
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_plot_data
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_query
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_table_by_column
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.relay_units
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.set_exported_event_count
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.update_column_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController._init
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController._setup_connections
+

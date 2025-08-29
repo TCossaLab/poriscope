@@ -1,0 +1,52 @@
+.. _MetadataControls:
+
+MetadataControls
+================
+
+**class MetadataControls(parent = None)**
+
+Bases: :class:`~PySide6.QtWidgets.QWidget`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.clear_popup_reference
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.collect_parameters
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.connect_signals
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.createButton
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.createLabel
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_add_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_add_filter_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_comboBox
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_delete_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_filter_delete_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_filter_info_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.create_info_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.delete_filter_by_name
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.delete_plugin
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.get_nested_value
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.get_selected_filter_names
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.is_placeholder_item
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.on_button_clicked
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.on_loader_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.retranslateUi
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.set_event_index_input
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.setupUi
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.show_filter_info_dialog_single
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.show_plugin_add_manager
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.show_plugin_edit_manager
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.toggle_info_button
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_axes
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_column_units_label
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_filters
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_loaders
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_units
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.validate_inputs
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.__init__
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls._on_sizes_checkbox_toggled
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls._plot_type_changed
+

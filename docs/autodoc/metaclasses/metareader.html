@@ -1,0 +1,1289 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" /><link rel="next" title="MetaView" href="metaview.html" /><link rel="prev" title="MetaModel" href="metamodel.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
+        <title>MetaReader - Poriscope 1.5.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../index.html"><div class="brand">Poriscope 1.5.0 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
+  
+  
+  <span class="sidebar-brand-text">Poriscope 1.5.0 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">User Manuals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../utils/user_manuals/user_guide/index.html">User Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of User Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/workflow_overview.html">Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/tutorial.html">Tutorial and Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/raw_data_tab.html">Raw Data Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/event_analysis_tab.html">Event Analysis Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/metadata_tab.html">MetaData Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/clustering_tab.html">Clustering Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/settings.html">Settings Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/menus_and_sessions.html">Menus and Session Management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/scripting.html">Scripting with Poriscope</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_manual_index.html">Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/index.html">System Architecture</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of System Architecture</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/mainview_overview.html">MainView Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/mainmodel_overview.html">MainModel Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/maincontroller_overview.html">MainController Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/MainMVC/MainView.html">MainView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/MainMVC/MainModel.html">MainModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/MainMVC/MainController.html">MainController</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/where_to_begin/index.html">Where to Begin</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Where to Begin</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/where_to_begin/where_to_begin.html">Where to Begin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/where_to_begin/understanding_base_classes.html">Understanding Base Classes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/where_to_begin/understanding_signals.html">Understanding Signals</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/frontend_plugin_manual_index.html">Frontend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Frontend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/index.html">Ready to Build Your Own Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/metaview_base.html">MetaView as a Base Class</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/metamodel_base.html">MetaModel as a Base Class</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/ready_to_build/metacontroller_base.html">MetaController as a Base Class</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/hello_world_tutorial.html">Keeping It Minimal: HelloWorld Tutorial</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/simpleCalc/from_helloworld_to_full_mvc.html">From HelloWorld to a Full MVC Analysis Tab</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of From HelloWorld to a Full MVC Analysis Tab</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/simpleCalc/simpleCalc_code.html">SimpleCalc Full Code Example</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/next_steps/index.html">What’s next ?</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of What’s next ?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/frontend_plugin/next_steps/adding_walkthrough.html">Adding a Walkthrough to Your Custom MVC Plugin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/backend_plugin_manual_index.html">Backend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of Backend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/index.html">Ready to Build Your Own Data Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Data Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/base_data_plugin.html">Base Data Plugin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_reader.html">Build a MetaReader subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_filter.html">Building a MetaFilter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_finder.html">Building a MetaEventFinder subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_writer.html">Building a MetaWriter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_loader.html">Build a MetaEventLoader subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_event_fitter.html">Build a MetaEventFitter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_database_writer.html">Build a MetaDatabaseWriter subclass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/backend_plugin/ready_to_build/meta_database_loader.html">Build a MetaDatabaseLoader subclass</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Base Classes:</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="metaclasses_index.html">Abstract Base Classes</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of Abstract Base Classes</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="basedataplugin.html">BaseDataPlugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metacontroller.html">MetaController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metadatabaseloader.html">MetaDatabaseLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metadatabasewriter.html">MetaDatabaseWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventfinder.html">MetaEventFinder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventfitter.html">MetaEventFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventloader.html">MetaEventLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metafilter.html">MetaFilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metamodel.html">MetaModel</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">MetaReader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaview.html">MetaView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metawriter.html">MetaWriter</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Plugins:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../plugins/plugins_index.html">Plugins</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of Plugins</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/analysistabs/analysistabs.html">Analysistabs</a><input class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of Analysistabs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/eventanalysiscontroller.html">EventAnalysisController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/rawdatamodel.html">RawDataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/eventanalysismodel.html">EventAnalysisModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/metadatamodel.html">MetadataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/metadataview.html">MetadataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/clusteringview.html">ClusteringView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/clusteringcontroller.html">ClusteringController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/eventanalysisview.html">EventAnalysisView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/metadatacontroller.html">MetadataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/clusteringmodel.html">ClusteringModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/rawdatacontroller.html">RawDataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/rawdataview.html">RawDataView</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugins/analysistabs/utils/utils_index.html">Utils</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of Utils</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/eventanalysiscontrols.html">EventAnalysisControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/pluginmanager.html">PluginManager</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/walkthroughmixin.html">WalkthroughMixin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/rawdatacontrols.html">RawDataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/introdialog.html">IntroDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/overlay.html">Overlay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/stepdialog.html">StepDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/metadatacontrols.html">MetadataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/clusteringcontrols.html">ClusteringControls</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/datareaders/datareaders.html">Datareaders</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of Datareaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/abf2reader.html">ABF2Reader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/singlebinarydecoder.html">SingleBinaryDecoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/chimerareader20240501.html">ChimeraReader20240501</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/chimerareadervc100.html">ChimeraReaderVC100</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/binaryreader1x.html">BinaryReader1X</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/chimerareader20240101.html">ChimeraReader20240101</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/datawriters/datawriters.html">Datawriters</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of Datawriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datawriters/sqliteeventwriter.html">SQLiteEventWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/db_loaders/db_loaders.html">Db Loaders</a><input class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><div class="visually-hidden">Toggle navigation of Db Loaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/db_loaders/sqlitedbloader.html">SQLiteDBLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/dbwriters/dbwriters.html">Dbwriters</a><input class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><div class="visually-hidden">Toggle navigation of Dbwriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/dbwriters/sqlitedbwriter.html">SQLiteDBWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/eventfinders/eventfinders.html">Eventfinders</a><input class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><div class="visually-hidden">Toggle navigation of Eventfinders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfinders/classicblockagefinder.html">ClassicBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfinders/boundedblockagefinder.html">BoundedBlockageFinder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/eventfitters/eventfitters.html">Eventfitters</a><input class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><div class="visually-hidden">Toggle navigation of Eventfitters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/peakfinder.html">PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/cusum.html">CUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/intracusum.html">IntraCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/p6flags.html">P6Flags</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/singlesublevel.html">SingleSublevel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/hackylist.html">HackyList</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/sublevels.html">Sublevels</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/nanotrees.html">NanoTrees</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/eventloaders/eventloaders.html">Eventloaders</a><input class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><div class="visually-hidden">Toggle navigation of Eventloaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventloaders/sqliteeventloader.html">SQLiteEventLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/filters/filters.html">Filters</a><input class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><div class="visually-hidden">Toggle navigation of Filters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/filters/waveletfilter.html">WaveletFilter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/filters/besselfilter.html">BesselFilter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Signals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../signals/global_signal/global_signal.html">Global Signal</a><input class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><div class="visually-hidden">Toggle navigation of Global Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../signals/global_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../signals/global_signal/example_usage.html">Example Usage: RawDataView</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../signals/data_plugin_controller_signal/data_plugin_controller_signal.html">Data Plugin Controller Signal</a><input class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><div class="visually-hidden">Toggle navigation of Data Plugin Controller Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../signals/data_plugin_controller_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../signals/data_plugin_controller_signal/example_usage.html">Example Usage: RawDataView</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../signals/which_one_to_use/which_one_to_use.html">Which to use</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Logging Decorators:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../utils/loggers_index.html">Logging</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../_sources/autodoc/metaclasses/metareader.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="metareader">
+<span id="id1"></span><h1>MetaReader<a class="headerlink" href="#metareader" title="Link to this heading">¶</a></h1>
+<p><strong>class MetaReader(settings: Optional[dict] = None)</strong></p>
+<p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BaseDataPlugin</span></code></p>
+<p><a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a> is the base class for all things related to reading raw nanopore timeseries datafiles. It handles mapping groups of files that belong in the same experiment, separating them by channel in the case of multichannel experimental operations, and time-ordering files within a channel when many data files are written as part of a single experiment. Subsequently, it provides a common API through which to interact with that data, effectively standardizing data reading operations regardless of the source. Given the number of different file formats commonly in use in the nanopore field, this plugin will likely always have the largest number of subclasses.</p>
+<section id="what-you-get-by-inheriting-from-metareader">
+<h2>What you get by inheriting from MetaReader<a class="headerlink" href="#what-you-get-by-inheriting-from-metareader" title="Link to this heading">¶</a></h2>
+<p>Regardless of the details of how your data is actually stored, <a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a> will provide a common and intuitive API with which to interact with it, stitching together all the files in your dataset to work seamlessly together as a single dataset. Datasets are broken down by channel ID and time, allowing slicing into data that might be spread across multiple files as though it were a single contiguous memory structure. Data can be retrieved either on an ad-hoc basis, or as a continuous generator that allows you to iterate through on demand. Metadata like sampling rate, the length of data available in each channel, etc., can be retrieved through the API directly.</p>
+</section>
+<section id="public-methods">
+<h2>Public Methods<a class="headerlink" href="#public-methods" title="Link to this heading">¶</a></h2>
+<section id="abstract-methods">
+<h3>Abstract Methods<a class="headerlink" href="#abstract-methods" title="Link to this heading">¶</a></h3>
+<p>These methods must be implemented by subclasses.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.close_resources">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">close_resources</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.close_resources" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>channel</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>) – channel ID</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Clean up any open file handles or memory.</p>
+<p>This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. If channel is not None, handle only that channel, else close all of them. If no such operation is needed, it suffices to <code class="docutils literal notranslate"><span class="pre">pass</span></code>. Note that readers that operate based on memmaps need not explicitly close those memmaps, as they will be handled by the garbage collector, but it does no harm to do so. Any open file handles should be closed explicitly if not closed at  the end of read operations.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.reset_channel">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">reset_channel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.reset_channel" title="Link to this definition">¶</a></dt>
+<dd><p>Perform any actions necessary to gracefully close resources before app exit.
+:param channel: channel ID
+:type channel: Optional[int]</p>
+<p><strong>Purpose:</strong> Reset the state of a specific channel for a new operation or run.</p>
+<p>This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If reading through a channel does not create any persistent state changes in your plugin, you can simply <code class="docutils literal notranslate"><span class="pre">pass</span></code> this function.</p>
+</dd></dl>
+
+</section>
+<section id="concrete-methods">
+<h3>Concrete Methods<a class="headerlink" href="#concrete-methods" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.continuous_read">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">continuous_read</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_length</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunk_length</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.continuous_read" title="Link to this definition">¶</a></dt>
+<dd><p>Read data in chunks and return it as a generator.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Starting index in the timeseries data (default is 0).</p></li>
+<li><p><strong>total_length</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Ending index in the timeseries data (default is 0, meaning end of data).</p></li>
+<li><p><strong>channel</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – channel index to analyze.</p></li>
+<li><p><strong>chunk_length</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Size of data chunks to process at a time (default is 0, auto-determined).</p></li>
+<li><p><strong>raw_data</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Decide whether to rescale data or return raw adc codes</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Generator yielding data chunks.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.force_serial_channel_operations">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">force_serial_channel_operations</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.force_serial_channel_operations" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if only one channel can run at a time, False otherwise</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)">bool</a></p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Indicate whether operations on different channels must be serialized (not run in parallel).</p>
+<p>By default this simply returns <code class="docutils literal notranslate"><span class="pre">False</span></code>, meaning that it is acceptable and thread-safe to run operations on different channels in different threads on this plugin. If such operation is not thread-safe, this function should be overridden to simply return <code class="docutils literal notranslate"><span class="pre">True</span></code>. Most readers are thread-safe since reading from a file on disk is usually so, and therefore no override is necessary.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_base_experiment_name">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_base_experiment_name</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_base_experiment_name" title="Link to this definition">¶</a></dt>
+<dd><p>Get the base name of the experiment being analyzed</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>name of the experiment being analyzed</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_base_file">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_base_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_base_file" title="Link to this definition">¶</a></dt>
+<dd><p>Return the full path to the file used to initiate this reader</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>path to the file used to initiate the reader</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)">os.PathLike</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_channel_length">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_channel_length</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_channel_length" title="Link to this definition">¶</a></dt>
+<dd><p>Return the number of samples in a channel, or a dict of all of them if no channel is provided.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>channel</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>) – Channel number to get length for.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Number of samples in the specified channel, or a dict of all channel lengths.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Union[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, Dict[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_channels">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_channels</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_channels" title="Link to this definition">¶</a></dt>
+<dd><p>Return the number of channels in the reader</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of channels in the reader</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_empty_settings">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_empty_settings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">globally_available_plugins</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">standalone</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_empty_settings" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>globally_available_plugins</strong> (<em>Optional</em><em>[</em><em>Mapping</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>]</em><em>]</em><em>]</em>) – a dict containing all data plugins that exist to date, keyes by metaclass</p></li>
+<li><p><strong>standalone</strong> – True if this is outside the context of a GUI, False otherwise, Default False.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>the dict that must be filled in to initialize the filter</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dict[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a>, Dict[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a>, Any]]</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Provide a list of settings details to users to assist in instantiating an instance of your <a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a> subclass.</p>
+<p>Get a dict populated with keys needed to initialize the filter if they are not set yet.
+This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
+Value and Type are required. All values provided must be consistent with Type.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">settings</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;Parameter 1&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;Type&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="o">&gt;</span><span class="p">,</span>
+                                  <span class="s1">&#39;Value&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="n">value</span><span class="o">&gt;</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                                  <span class="s1">&#39;Options&#39;</span><span class="p">:</span> <span class="p">[</span><span class="o">&lt;</span><span class="n">option_1</span><span class="o">&gt;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">option_2</span><span class="o">&gt;</span><span class="p">,</span> <span class="o">...</span> <span class="p">]</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                                  <span class="s1">&#39;Min&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="n">min_value</span><span class="o">&gt;</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                                  <span class="s1">&#39;Max&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="n">max_value</span><span class="o">&gt;</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                                  <span class="s1">&#39;Units&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="n">unit</span> <span class="nb">str</span><span class="o">&gt;</span> <span class="ow">or</span> <span class="kc">None</span>
+                              <span class="p">},</span>
+                              <span class="o">...</span>
+                              <span class="p">}</span>
+</pre></div>
+</div>
+<p>Several parameter keywords are reserved: these are</p>
+<p>‘Input File’
+‘Output File’
+‘Folder’
+and all MetaClass names</p>
+<p>These must have Type str and will cause the GUI to generate appropriate widgets to allow selection of these elements when used.</p>
+<p>This function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the <code class="docutils literal notranslate"><span class="pre">self.settings</span></code> class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation.</p>
+<p>While this function is technically not abstract in <a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a>, which already has an implementation of this function that ensures that settings will have the required <a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a> key available to users, in most cases you will need to override it to add any other settings required by your subclass. The implementation in <a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a> provides a single key, <code class="docutils literal notranslate"><span class="pre">Input</span> <span class="pre">File</span></code>, without specifing file options. If you need additional settings, or if you want to specify the file types that will show up in related file dialogs and be accepted as inputs (recommended) you would override this to specidy options, but you <strong>MUST</strong> call <code class="docutils literal notranslate"><span class="pre">settings</span> <span class="pre">=</span> <span class="pre">super().get_empty_settings(globally_available_plugins,</span> <span class="pre">standalone)</span></code> first, which will ensure the existence of the “Input File” key. For example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">settings</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_empty_settings</span><span class="p">(</span><span class="n">globally_available_plugins</span><span class="p">,</span> <span class="n">standalone</span><span class="p">)</span>
+<span class="n">settings</span><span class="p">[</span><span class="s2">&quot;Input File&quot;</span><span class="p">][</span><span class="s2">&quot;Options&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;ABF2 Files (*.abf)&quot;</span><span class="p">]</span>
+<span class="n">settings</span><span class="p">[</span><span class="s2">&quot;Your Key&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Type&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+                        <span class="s2">&quot;Value&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">&quot;Min&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                        <span class="s2">&quot;Units&quot;</span><span class="p">:</span> <span class="s2">&quot;pA&quot;</span>
+                        <span class="p">}</span>
+<span class="k">return</span> <span class="n">settings</span>
+</pre></div>
+</div>
+<p>which will ensure that your have key specified above, as well as an additional key, <code class="docutils literal notranslate"><span class="pre">Input</span> <span class="pre">File</span></code>, as required by readers. You can learn more about formatting input file option strings in the <a class="reference external" href="https://doc.qt.io/qt-6/qfiledialog.html#getOpenFileName">PySide6 module documentation</a>.  In the case of multiple file types, supply the relevant strings as a comma-separated list in the “Options” key; poriscope will handle formatting it for <code class="xref py py-mod docutils literal notranslate"><span class="pre">PySide6</span></code>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_raw_dtype">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_raw_dtype</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_raw_dtype" title="Link to this definition">¶</a></dt>
+<dd><p>Return the data type for the raw data in files of this type</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>configs</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em>]</em>) – List of configuration dictionaries corresponding to data files.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.get_samplerate">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">get_samplerate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.get_samplerate" title="Link to this definition">¶</a></dt>
+<dd><p>Return the sampling rate for the dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Sampling rate for the dataset.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.load_data">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">load_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">length</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.load_data" title="Link to this definition">¶</a></dt>
+<dd><p>Return raw data starting from index start and of length samples and rescale it to pA</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Starting index of data to load.</p></li>
+<li><p><strong>length</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of samples to load.</p></li>
+<li><p><strong>channel</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Channel number from which to load data.</p></li>
+<li><p><strong>raw_data</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Decide whether to rescale data or return raw adc codes</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Converted and rescaled data.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.ndarray</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If start or end indices are out of bounds</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.report_channel_status">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">report_channel_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channel</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.report_channel_status" title="Link to this definition">¶</a></dt>
+<dd><p>Return a string detailing any pertinent information about the status of analysis conducted on a given channel</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>channel</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>) – channel ID</p></li>
+<li><p><strong>init</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – is the function being called as part of plugin initialization? Default False</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>the status of the channel as a string</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+<section id="private-methods">
+<h2>Private Methods<a class="headerlink" href="#private-methods" title="Link to this heading">¶</a></h2>
+<section id="id2">
+<h3>Abstract Methods<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p>These methods must be implemented by subclasses.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._convert_data">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_convert_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">int16</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._convert_data" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>numpy.ndarray</em>) – Data to convert.</p></li>
+<li><p><strong>config</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – Configuration dictionary for data conversion.</p></li>
+<li><p><strong>raw_data</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Decide whether to rescale data or return raw adc codes</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Converted data, and scale and offset if and only if raw_data is True</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Union[Tuple[np.ndarray, <a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a>], np.ndarray]</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Convert raw data from disk format to a usable numerical format.</p>
+<p>Given a numpy array of raw data extracted from one of the <code class="xref py py-class docutils literal notranslate"><span class="pre">memmap</span></code> instances you defined in the previous function along with its associated <code class="docutils literal notranslate"><span class="pre">config</span></code> dict, provide a means to turn this raw data into a numpy array of <cite>~numpy.float64</cite> double precision floats. For this purpose, if convenient, you can use the <code class="xref py py-meth docutils literal notranslate"><span class="pre">_scale_data()</span></code> function, which will apply bitmasks, multiply data by a scaling factor, and add an offset, like so:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_scale_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">copy</span><span class="p">:</span><span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">bitmask</span><span class="p">:</span><span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint64</span><span class="p">]</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="p">:</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span><span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span><span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">:</span><span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">bitmask</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">bitmask</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">raw_data</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">copy</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">bitmask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bitwise_and</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">bitmask</span><span class="p">)),</span> <span class="n">bitmask</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">scale</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">*=</span> <span class="n">scale</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">offset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">+=</span> <span class="n">offset</span>
+        <span class="k">return</span> <span class="n">data</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">dtype</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;Specify dtype to retrieve raw data&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span>
+</pre></div>
+</div>
+<p>if <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> is <code class="docutils literal notranslate"><span class="pre">True</span></code>, your function must also return a scale and offset factor, like so:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">if</span> <span class="n">raw_data</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">,</span> <span class="n">scale</span><span class="p">,</span> <span class="n">offset</span>
+<span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">data</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_configs">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_configs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datafiles</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_configs" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>datafiles</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><em>os.PathLike</em></a><em>]</em>) – List of data files for which to load configurations.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of configuration dictionaries.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)">dict</a>]</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Extract configuration metadata from dataset files.</p>
+<p>Given a list of filenames corresponding to the data files, construct a list of dictionaries containing any required configurations for use downstream. Your config dictionaries must have at a minimum the key <cite>‘samplerate’</cite> in them, and the list of configs must correspond one-to-one to the provided list of data files. All files in a dataset must have the same samplerate. Your reader will use these configs to map the data on disk, so you could include information like endianness, raw data type, details of any columns within the data, etc. Aside from the required samplerate key, this can be anything.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_file_channel_stamps">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_file_channel_stamps</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_names</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">configs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_file_channel_stamps" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file_names</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><em>os.PathLike</em></a><em>]</em>) – List of file names to get channel stamps for.</p></li>
+<li><p><strong>configs</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em>]</em>) – List of configuration dictionaries corresponding to data files.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of serialization keys for channels</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>]</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Extract channel identifiers for grouping files by channel.</p>
+<p>Given a list of all the files in the experiment and the list of config dictionaries you defined above, extract a corresponding list of channel identifiers as integers. These channel indices will be used to group the mapped data by channel. The list must have the same length as both input lists and must be a list of integers.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_file_pattern">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_file_pattern</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_file_pattern" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><em>os.PathLike</em></a>) – File name to get the base pattern for.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Base pattern for matching other files.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Extract a <cite>glob</cite> pattern from an input filename to match all dataset files.</p>
+<p>When you instantiate a reader plugin, you provide a single filename as input. However, in some cases, a dataset might comprise many files. This function requires you to extract a pattern from the given filename that can be used by <code class="docutils literal notranslate"><span class="pre">glob</span></code> to match all files belonging to your dataset.</p>
+<p>If your dataset consists of only a single file, you can simply return the original filename.</p>
+<p><strong>Example:</strong></p>
+<p>Consider a scenario where your dataset files follow a pattern with channel numbers and serial numbers, such as:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">experiment_1_channel_01_001.log</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">experiment_1_channel_01_002.log</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">experiment_1_channel_02_001.log</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">experiment_1_channel_02_002.log</span></code></p></li>
+</ul>
+<p>In this case, you could return a <code class="docutils literal notranslate"><span class="pre">glob</span></code> pattern like:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>experiment_1_channel_??_???.log
+</pre></div>
+</div>
+<p>This pattern assumes the channel stamp will always be two digits and the serial number always three. If the lengths of these varying parts are uncertain, a more general pattern using wildcards would be:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>experiment_1_channel_*_*.log
+</pre></div>
+</div>
+<p>Poriscope will use this file pattern to search the folder of the input file for other files that match the pattern. It will not search outside of that folder.</p>
+<p>For more information on <code class="docutils literal notranslate"><span class="pre">glob</span></code> patterns, refer to the <a class="reference external" href="https://docs.python.org/3/library/glob.html">glob module documentation</a>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_file_time_stamps">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_file_time_stamps</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_names</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">configs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.datetime" title="(in Python v3.13)"><span class="pre">datetime</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.date" title="(in Python v3.13)"><span class="pre">date</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">datetime64</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_file_time_stamps" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file_names</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><em>os.PathLike</em></a><em>]</em>) – List of file names to get time stamps for.</p></li>
+<li><p><strong>configs</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em>]</em>) – List of configuration dictionaries corresponding to data files.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of serialization keys for timestamps in almost any format.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a>, <a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.datetime" title="(in Python v3.13)">datetime.datetime</a>, <a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.date" title="(in Python v3.13)">datetime.date</a>, np.datetime64]]</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Extract time stamps for sorting files chronologically within a channel.</p>
+<p>Given a list of all the files in the experiment and the list of config dictionaries you defined above, extract a corresponding list of timestamps. These timestamps will be used to time-order the mapped data within each channel. The list must have the same length as both input lists and must be of a type that can be sorted into the desired time-ordering using the builtin <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list.sort" title="(in Python v3.13)"><code class="xref py py-meth docutils literal notranslate"><span class="pre">sort()</span></code></a> method.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._init">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_init</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._init" title="Link to this definition">¶</a></dt>
+<dd><p><strong>Purpose:</strong> Perform generic class construction operations.</p>
+<p>All data plugins have this function and must provide an implementation. This is called immediately at the start of class creation and is used to do whatever is required to set up your reader. Note that no app settings are available when this is called, so this function should be used only for generic class construction operations. Most readers simply <code class="docutils literal notranslate"><span class="pre">pass</span></code> this function.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._map_data">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_map_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datafiles</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">configs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._map_data" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>datafiles</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><em>os.PathLike</em></a><em>]</em>) – List of data files to map.</p></li>
+<li><p><strong>configs</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em>]</em>) – List of configuration dictionaries corresponding to data files.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of memmaps or numpy arrays mapped from data files.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[numpy.ndarray]</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Map the provided data files into an accessible format, preferably memory-mapped views.</p>
+<p>Using all the information provided in the implementations so far, in this function, you are asked to map the list of files provided in <code class="docutils literal notranslate"><span class="pre">datafiles</span></code>, according to information given in <code class="docutils literal notranslate"><span class="pre">configs</span></code>. You can assume that the lists are of equal length and that the config file at a given index corresponds to the data file at the same index. You must return a list of views into those files. We strongly encourage the use of <code class="xref py py-class docutils literal notranslate"><span class="pre">memmap</span></code> where possible, in which case you may return a list of such memmaps with length equal to the input list of filenames.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This function expects that the elements of the returned list can be indexed and sliced into like NumPy arrays, hence the suggestion to use memmaps, which avoid the need to actually load raw data into RAM before it is needed. In cases where memmap is not an option, you must still return NumPy array for each file, which may involve significant memory consumption. If this is impractical, it is possible to override this function to return, for example, a list of file handles instead, with the caveat that this will in turn require that you completely override <a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.load_data" title="poriscope.utils.MetaReader.MetaReader.load_data"><code class="xref py py-meth docutils literal notranslate"><span class="pre">load_data()</span></code></a> as well to properly handle your file access method manually.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._set_file_extension">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_set_file_extension</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._set_file_extension" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the file extension</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a></p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Set the file extension for the file type this reader plugin handles.</p>
+<p>This is a simple function that allows you to set the file extension (including the leading dot) of the file type that this reader plugin will read. It is used by downstream functions while mapping your data to assist in identifying files. It should be a single line:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="s2">&quot;.ext&quot;</span>
+</pre></div>
+</div>
+<p>If you need to refer to this value again, you can access it via the class variable <code class="docutils literal notranslate"><span class="pre">self.file_extension</span></code>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._set_raw_dtype">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_set_raw_dtype</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">configs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dtype</span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._set_raw_dtype" title="Link to this definition">¶</a></dt>
+<dd><p>Set the data type for the raw data in files of this type</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>configs</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em>]</em>) – List of configuration dictionaries corresponding to data files.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>the dtype of the raw data in your data files</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.dtype</p>
+</dd>
+</dl>
+<p><strong>Purpose:</strong> Inform Poriscope what NumPy datatype to expect for raw data on disk.</p>
+<p>This function is used to tell Poriscope what datatype to expect on disk for downstream use by <code class="xref py py-meth docutils literal notranslate"><span class="pre">_map_data()</span></code>. You should return a NumPy dtype object. For example, if you are using a 16-bit ADC code, you might return <code class="docutils literal notranslate"><span class="pre">np.uint16</span></code>. This is also a single-line function:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">uint16</span>
+</pre></div>
+</div>
+<p>If you need to refer to this value again, you can access it via the class variable <code class="docutils literal notranslate"><span class="pre">self.dtype</span></code>. For more details on NumPy dtypes, refer to the <a class="reference external" href="https://numpy.org/doc/stable/reference/arrays.dtypes.html">NumPy documentation on dtypes</a>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._validate_file_type">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_validate_file_type</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._validate_file_type" title="Link to this definition">¶</a></dt>
+<dd><p>Check that the file(s) being opened are of the correct type, and raise IOError if not</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filename</strong> (<em>os.Pathlike</em>) – the path to one of the files to be opened</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#IOError" title="(in Python v3.13)"><strong>IOError</strong></a> – If the wrong type is file is fed to the plugin</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._validate_settings">
+<em class="property"><span class="k"><span class="pre">abstractmethod</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_validate_settings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">settings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._validate_settings" title="Link to this definition">¶</a></dt>
+<dd><p>Validate that the settings dict contains the correct information for use by the subclass.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>settings</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – Parameters for event detection.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If the settings dict does not contain the correct information.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="id3">
+<h3>Concrete Methods<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader.__init__">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">settings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader.__init__" title="Link to this definition">¶</a></dt>
+<dd><p>Initialize the MetaReader instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#FileNotFoundError" title="(in Python v3.13)"><strong>FileNotFoundError</strong></a> – If the specified data file does not exist.</p>
+</dd>
+</dl>
+<p>Initialize instance attributes based on provided parameters and perform initialization tasks such as mapping data files, loading configurations, and setting sample rate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>settings</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – a dict conforming to that which is required by the self.get_empty_settings() function</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._finalize_initialization">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_finalize_initialization</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._finalize_initialization" title="Link to this definition">¶</a></dt>
+<dd><p><strong>Purpose:</strong> Apply application-specific settings to the plugin, if needed.</p>
+<p>If additional initialization operations are required beyond the defaults provided in <a class="reference internal" href="basedataplugin.html#basedataplugin"><span class="std std-ref">BaseDataPlugin</span></a> or <a class="reference internal" href="#metareader"><span class="std std-ref">MetaReader</span></a> that must occur after settings have been applied to the reader instance, you can override this function to add those operations, subject to the caveat below.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you <strong>MUST</strong> call <code class="docutils literal notranslate"><span class="pre">super()._finalize_initialization()</span></code> <strong>before</strong> any additional code that you add, and take care to understand the implementation of both <a class="reference internal" href="basedataplugin.html#poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings" title="poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings"><code class="xref py py-meth docutils literal notranslate"><span class="pre">apply_settings()</span></code></a> and <a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._finalize_initialization" title="poriscope.utils.MetaReader.MetaReader._finalize_initialization"><code class="xref py py-meth docutils literal notranslate"><span class="pre">_finalize_initialization()</span></code></a> before doing so to ensure that you are not conflicting with those functions.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_file_index">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_file_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_start_index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_file_index" title="Link to this definition">¶</a></dt>
+<dd><p>Get the index of the file containing the specified sample index given a 1D list (i.e. only one channel worth).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Sample index to get file index for.</p></li>
+<li><p><strong>file_start_index</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>) – List of starting sample indices per file.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Index of the file containing the specified sample index.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_file_names">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_file_names</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">folder</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pattern</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_file_names" title="Link to this definition">¶</a></dt>
+<dd><p>Get a list of file names with data to map</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>folder</strong> (<a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><em>os.PathLike</em></a>) – File name to get the base pattern for.</p></li>
+<li><p><strong>pattern</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – pattern to match</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>a list of file names</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_file_start_indices">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_file_start_indices</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datamaps</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_file_start_indices" title="Link to this definition">¶</a></dt>
+<dd><p>Populate a dictionary of lists, keyed by channel number, that lists the starting index
+of the sample in each datamap within the global dataset.  This function now takes
+the dictionary output from _sort_objects_by_channel_and_time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>datamaps</strong> (<em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>List</em><em>[</em><em>numpy.ndarray</em><em>]</em><em>]</em>) – Dictionary of data maps, where keys are channel numbers.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dictionary of starting indices, keyed by channel number.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dict[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, List[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._get_total_channel_samples">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_get_total_channel_samples</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datamaps</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_start_indices</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._get_total_channel_samples" title="Link to this definition">¶</a></dt>
+<dd><p>Populate a dictionary of the number of datapoints in each channel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>datamaps</strong> (<em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>List</em><em>[</em><em>numpy.ndarray</em><em>]</em><em>]</em>) – Dictionary of data maps, keyed by channel number.</p></li>
+<li><p><strong>file_start_indices</strong> (<em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em><em>]</em>) – Dictionary of starting indices for each file in each channel, keyed by channel number.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dictionary of total channel samples, keyed by channel number.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dict[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._scale_data">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_scale_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">copy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bitmask</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">uint64</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._scale_data" title="Link to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>Apply scaling and masking operations to data as needed.</dt><dd><p>Default behavior assumes data is already scaled and does nothing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">param data<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Data to scale.</p>
+</dd>
+<dt class="field-even">type data<span class="colon">:</span></dt>
+<dd class="field-even"><p>numpy.ndarray</p>
+</dd>
+<dt class="field-odd">param copy<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Whether to create a copy of the data, defaults to True.</p>
+</dd>
+<dt class="field-even">type copy<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool, optional</p>
+</dd>
+<dt class="field-odd">param bitmask<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Bitmask to apply to data, defaults to None.</p>
+</dd>
+<dt class="field-even">type bitmask<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[np.uint64], optional</p>
+</dd>
+<dt class="field-odd">param dtype<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Desired data type after scaling, defaults to None.</p>
+</dd>
+<dt class="field-even">type dtype<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[str], optional</p>
+</dd>
+<dt class="field-odd">param scale<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Scaling factor, defaults to None.</p>
+</dd>
+<dt class="field-even">type scale<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[float], optional</p>
+</dd>
+<dt class="field-odd">param offset<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Offset to add to scaled data, defaults to None.</p>
+</dd>
+<dt class="field-even">type offset<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[float], optional</p>
+</dd>
+<dt class="field-odd">param raw_data<span class="colon">:</span></dt>
+<dd class="field-odd"><p>is the data to be returned as the original type?</p>
+</dd>
+<dt class="field-even">type raw_data<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[bool]</p>
+</dd>
+<dt class="field-odd">return<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Scaled data.</p>
+</dd>
+<dt class="field-even">rtype<span class="colon">:</span></dt>
+<dd class="field-even"><p>numpy.NDArray[Any]</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._set_sample_rate">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_set_sample_rate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._set_sample_rate" title="Link to this definition">¶</a></dt>
+<dd><p>Set the sampling rate for the reader.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the sampling rate that is applicable to the reader</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._sort_objects_by_channel_and_time">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_sort_objects_by_channel_and_time</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">objects</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel_numbers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamps</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.datetime" title="(in Python v3.13)"><span class="pre">datetime</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.date" title="(in Python v3.13)"><span class="pre">date</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">datetime64</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.datetime" title="(in Python v3.13)"><span class="pre">datetime</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.date" title="(in Python v3.13)"><span class="pre">date</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">datetime64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._sort_objects_by_channel_and_time" title="Link to this definition">¶</a></dt>
+<dd><p>Sort a list of objects into a dictionary of lists, indexed by channel number.
+The objects within each channel’s list are sorted by timestamp.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>objects</strong> (<em>List</em><em>[</em><em>Any</em><em>]</em>) – List of objects to sort.</p></li>
+<li><p><strong>channel_numbers</strong> (<em>List</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>) – List of channel numbers corresponding to objects.</p></li>
+<li><p><strong>timestamps</strong> (<em>List</em><em>[</em><em>Union</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.datetime" title="(in Python v3.13)"><em>datetime.datetime</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.date" title="(in Python v3.13)"><em>datetime.date</em></a><em>, </em><em>np.datetime64</em><em>]</em><em>]</em>) – List of timestamps corresponding to objects.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dictionary where keys are channel numbers and values are lists of objects,
+sorted by timestamp.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dict[<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, List[Union[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)">int</a>, <a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a>, <a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.datetime" title="(in Python v3.13)">datetime.datetime</a>, <a class="reference external" href="https://docs.python.org/3/library/datetime.html#datetime.date" title="(in Python v3.13)">datetime.date</a>, np.datetime64]]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If the input lists have inconsistent lengths.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaReader.MetaReader._validate_file_extension">
+<span class="sig-prename descclassname"><span class="pre">MetaReader.</span></span><span class="sig-name descname"><span class="pre">_validate_file_extension</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/os.html#os.PathLike" title="(in Python v3.13)"><span class="pre">PathLike</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaReader.MetaReader._validate_file_extension" title="Link to this definition">¶</a></dt>
+<dd><p>Check that the file(s) being opened are of the correct type, and raise IOError if not</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filename</strong> (<em>os.Pathlike</em>) – the path to one of the files to be opened</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#IOError" title="(in Python v3.13)"><strong>IOError</strong></a> – If the wrong type is file is fed to the plugin</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="metaview.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">MetaView</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="metamodel.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">MetaModel</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Kyle Briggs, Carolina González G.
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">MetaReader</a><ul>
+<li><a class="reference internal" href="#what-you-get-by-inheriting-from-metareader">What you get by inheriting from MetaReader</a></li>
+<li><a class="reference internal" href="#public-methods">Public Methods</a><ul>
+<li><a class="reference internal" href="#abstract-methods">Abstract Methods</a><ul>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.close_resources"><code class="docutils literal notranslate"><span class="pre">MetaReader.close_resources()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.reset_channel"><code class="docutils literal notranslate"><span class="pre">MetaReader.reset_channel()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#concrete-methods">Concrete Methods</a><ul>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.continuous_read"><code class="docutils literal notranslate"><span class="pre">MetaReader.continuous_read()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.force_serial_channel_operations"><code class="docutils literal notranslate"><span class="pre">MetaReader.force_serial_channel_operations()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_base_experiment_name"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_base_experiment_name()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_base_file"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_base_file()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_channel_length"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_channel_length()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_channels"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_channels()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_empty_settings"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_empty_settings()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_raw_dtype"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_raw_dtype()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.get_samplerate"><code class="docutils literal notranslate"><span class="pre">MetaReader.get_samplerate()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.load_data"><code class="docutils literal notranslate"><span class="pre">MetaReader.load_data()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.report_channel_status"><code class="docutils literal notranslate"><span class="pre">MetaReader.report_channel_status()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#private-methods">Private Methods</a><ul>
+<li><a class="reference internal" href="#id2">Abstract Methods</a><ul>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._convert_data"><code class="docutils literal notranslate"><span class="pre">MetaReader._convert_data()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_configs"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_configs()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_file_channel_stamps"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_file_channel_stamps()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_file_pattern"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_file_pattern()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_file_time_stamps"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_file_time_stamps()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._init"><code class="docutils literal notranslate"><span class="pre">MetaReader._init()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._map_data"><code class="docutils literal notranslate"><span class="pre">MetaReader._map_data()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._set_file_extension"><code class="docutils literal notranslate"><span class="pre">MetaReader._set_file_extension()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._set_raw_dtype"><code class="docutils literal notranslate"><span class="pre">MetaReader._set_raw_dtype()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._validate_file_type"><code class="docutils literal notranslate"><span class="pre">MetaReader._validate_file_type()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._validate_settings"><code class="docutils literal notranslate"><span class="pre">MetaReader._validate_settings()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id3">Concrete Methods</a><ul>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader.__init__"><code class="docutils literal notranslate"><span class="pre">MetaReader.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._finalize_initialization"><code class="docutils literal notranslate"><span class="pre">MetaReader._finalize_initialization()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_file_index"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_file_index()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_file_names"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_file_names()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_file_start_indices"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_file_start_indices()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._get_total_channel_samples"><code class="docutils literal notranslate"><span class="pre">MetaReader._get_total_channel_samples()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._scale_data"><code class="docutils literal notranslate"><span class="pre">MetaReader._scale_data()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._set_sample_rate"><code class="docutils literal notranslate"><span class="pre">MetaReader._set_sample_rate()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._sort_objects_by_channel_and_time"><code class="docutils literal notranslate"><span class="pre">MetaReader._sort_objects_by_channel_and_time()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaReader.MetaReader._validate_file_extension"><code class="docutils literal notranslate"><span class="pre">MetaReader._validate_file_extension()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=e0a75244"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>

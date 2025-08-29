@@ -1,0 +1,26 @@
+.. _WaveletFilter:
+
+WaveletFilter
+=============
+
+**class WaveletFilter(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaFilter`
+
+Subclass for defining a Wavelete filter to be applied to a dataset
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter.close_resources
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter.get_empty_settings
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter.reset_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter._apply_filter
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter._finalize_initialization
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter._init
+.. automethod:: poriscope.plugins.filters.WaveletFilter.WaveletFilter._validate_settings
+

@@ -1,0 +1,66 @@
+.. _RawDataView:
+
+RawDataView
+===========
+
+**class RawDataView(*args, **kwargs)**
+
+Bases: :ref:`MetaView`, :class:`~poriscope.plugins.WalkthroughMixin`
+
+Subclass of MetaView for visualizing raw signal data and PSD plots.
+
+Handles plot rendering, signal responses, and interactions with readers, filters, and event finders.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_data_filter_function
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_eventfinding_status
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_num_events_allowed
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_channels
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_plot_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_plot_samplerate
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_timer_channels
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.validate_single_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.__init__
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._apply_filter
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._extract_commit_event_parameters
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._extract_event_parameters
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._extract_plot_event_parameters
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._extract_plot_parameters
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._factors
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._gaussian
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._gaussian_fit
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._get_baseline_stats
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._get_event_index_text
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_commit_events
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_find_events
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_load_data_and_update_plot
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_load_data_and_update_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_other_actions
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_plot_events
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._handle_timer
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._init
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._load_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._load_event_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._reset_actions
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._set_control_area
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._shift_range_and_update_plot
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._shift_range_and_update_trace
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._start_eventfinder
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._start_writer
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._update_event_plot
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._validate_plot_parameters
+

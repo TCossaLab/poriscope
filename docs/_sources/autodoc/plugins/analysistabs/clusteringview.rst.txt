@@ -1,0 +1,46 @@
+.. _ClusteringView:
+
+ClusteringView
+==============
+
+**class ClusteringView(*args, **kwargs)**
+
+Bases: :ref:`MetaView`, :class:`~poriscope.plugins.WalkthroughMixin`
+
+Subclass of MetaView for displaying and interacting with clustering analysis.
+
+Handles plotting, user input, and signal exchanges.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.set_alter_database_status
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.set_cluster_column_exists
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.set_query
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.set_units
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_available_columns
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_column_units
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.__init__
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._commit_clusters
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._handle_clustering_settings
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._handle_other_actions
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._init
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._load_metadata_and_cluster
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._merge_clusters
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._normalize_column_data
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._reset_actions
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._set_control_area
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._update_clusters_hdbscan
+

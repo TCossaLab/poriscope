@@ -1,0 +1,50 @@
+.. _MetaModel:
+
+MetaModel
+=========
+
+**class MetaModel()**
+
+Bases: :class:`~PySide6.QtCore.QObject`
+
+Abstract base class for models.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaModel.MetaModel.cache_plot_data
+.. automethod:: poriscope.utils.MetaModel.MetaModel.emit_progress_update
+.. automethod:: poriscope.utils.MetaModel.MetaModel.format_cache_data
+.. automethod:: poriscope.utils.MetaModel.MetaModel.generate_report
+.. automethod:: poriscope.utils.MetaModel.MetaModel.reset_lock
+.. automethod:: poriscope.utils.MetaModel.MetaModel.run_generators
+.. automethod:: poriscope.utils.MetaModel.MetaModel.set_force_serial_channel_operations
+.. automethod:: poriscope.utils.MetaModel.MetaModel.set_generator
+.. automethod:: poriscope.utils.MetaModel.MetaModel.stop_workers
+.. automethod:: poriscope.utils.MetaModel.MetaModel.update_available_plugins
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaModel.MetaModel._init
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaModel.MetaModel.__init__
+
