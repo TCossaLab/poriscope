@@ -27,6 +27,7 @@
 import ctypes
 import logging
 import os
+import platform
 from typing import Any, Dict
 
 import numpy as np
@@ -144,19 +145,29 @@ class WaveletFilter(MetaFilter):
         Apply the provided filter paramters and intialize any internal structures needed by self.apply_filter().
         Should Raise if initialization fails, but corner cases should be handled by _validate_settings already
         """
-        dll_path = os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__),
-                "..",
-                "poriscope",
-                "cdlls",
-                "wavelet",
-                "dist",
-                "wavelet.dll",
+        override_path = os.environ.get("PORISCOPE_WAVELET_PATH")
+        if override_path:
+            dll_path = os.path.abspath(override_path)
+        else:
+            system = platform.system()
+            ext_map = {"Windows": ".dll", "Linux": ".so", "Darwin": ".dylib"}
+            if system not in ext_map:
+                raise RuntimeError(f"Unsupported platform: {system}")
+            dll_path = os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..", "..", "cdlls", "wavelet", "dist",
+                    f"wavelet{ext_map[system]}",
+                )
             )
-        )
 
-        if hasattr(os, "add_dll_directory"):
+        if not os.path.isfile(dll_path):
+            raise FileNotFoundError(
+                f"Wavelet library not found at: {dll_path}\n"
+                "Build the binaries or set PORISCOPE_WAVELET_PATH to the exact file."
+            )
+
+        if platform.system() == "Windows" and hasattr(os, "add_dll_directory"):
             os.add_dll_directory(os.path.dirname(dll_path))
 
         wavelib = ctypes.cdll.LoadLibrary(dll_path)
