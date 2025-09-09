@@ -1,114 +1,98 @@
 Getting Started
 ===============
 
-Welcome to Poriscope! This section helps you get up and running with the application.
+Welcome to **Poriscope** — a powerful tool for nanopore data visualization and analysis.  
+This guide will walk you through installing Poriscope, setting up your environment, and launching the app.
 
-Alright, ready to dive in? Here’s everything you need to get Poriscope installed and running smoothly.
+Prerequisites
+-------------
 
-Check Your Prerequisites
-------------------------
+Before installing Poriscope, make sure you have the following installed:
 
-Before anything else, make sure you have the following installed:
+1. **Git**
 
-1. **Git** — Check by running:
-
-   .. code-block:: bash
+   Check by running::
 
       git --version
 
-   If Git is not installed, visit: https://git-scm.com/downloads
+   If Git is not installed, download it here: https://git-scm.com/downloads
 
-   Then, inside the repo do: 
+2. **Python 3.12.10**
 
-   .. code-block:: bash
-
-      git init
-
-2. **Python 3.12.10** — Required version. Check by running:
-
-   .. code-block:: bash
+   Required version. Check by running::
 
       python --version
 
-   If you don’t have Python or it's the wrong version, download it from: https://www.python.org/downloads/release/python-31210/
+   If not installed, download it here: https://www.python.org/downloads/release/python-31210/
 
    .. important::
 
-      When installing Python, **be sure to check the box that says "Add Python to PATH"**.
+      During installation, **make sure to check** the box that says **"Add Python to PATH"**.
 
    .. note::
 
-      We recommend avoiding Conda — Poriscope is built with standard ``pip`` environments in mind. Conda may cause unexpected compatibility issues.
+      **Conda is not supported.** You can make it work, but you're on your own.  
+      Poriscope is built for standard ``pip`` environments.
 
+3. **MSYS2 (Optional)**
 
-3. **MSYS2** — Required for compiling the Wavelet DLL used by Poriscope.
+   Required **only if you need to compile the Wavelet DLL manually**.
 
-   - Download and install it from: https://www.msys2.org/
+   - Download and install from: https://www.msys2.org/
 
-   .. note::
+   To check if you already have a compatible build tool installed::
 
-      You can skip installing MSYS2 if you already have a working `mingw32-make` in your system ``PATH``.
-   
-      To check, open a terminal and run:
+      mingw32-make --version
 
-      .. code-block:: bash
+Installation
+------------
 
-         mingw32-make --version
-
-Clone the Repository
---------------------
-
-Choose or create the folder where you want Poriscope to live. Right-click inside it and select **Open in Terminal**.
-
-Then run:
+As a developer, install Poriscope in *editable* mode:
 
 .. code-block:: bash
 
-   git clone https://github.com/TCossaLab/data_selection.git
+   git clone https://github.com/TCossaLab/poriscope.git
+   cd poriscope
+   pip install -e .
 
-Make sure you're on the correct branch (see the README if unsure).
+This allows live code edits without reinstallation.
 
-Set Up Your Python Environment
-------------------------------
+.. note::
 
-Install the required Python dependencies:
+   If you have a previous version of Poriscope installed, uninstall it first::
 
-.. code-block:: bash
+      pip uninstall poriscope
 
-   cd data_selection
-   pip install -r requirements.txt
+Installing the Stable Version
+-----------------------------
 
-Post-Clone Setup
-----------------
-
-After cloning the repo and installing Python requirements, run:
+To install the **latest stable version** (recommended for general users — no editable mode, no retroactive code updates):
 
 .. code-block:: bash
 
-   python scripts/setup_hooks.py
+   python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"
 
-This script sets up Git hooks and other helpful tools.
+This version does not track local source code changes.
 
-**Why is this useful?**
+Launching Poriscope
+-------------------
 
-- It automatically opens the documentation in your browser after setup.
-- Every time you pull new changes, the updated docs will appear — keeping you in sync.
-- You can also manually trigger this behavior at any time:
+Once everything is installed, run the application using:
 
-  .. code-block:: bash
+From **any terminal**::
 
-     python .git/hooks/post-merge
+   poriscope
 
-Launch the Application
-----------------------
-
-Once everything is ready:
-
-.. code-block:: bash
+Or from the local repo directly::
 
    cd app
    python main_app.py
 
-This will launch Poriscope.
+Documentation
+-------------
 
-That’s it — you’re all set. Now let’s actually build something!
+The official documentation is available at:
+
+   https://tcossalab.github.io/poriscope/
+
+You're all set — time to explore Poriscope!
