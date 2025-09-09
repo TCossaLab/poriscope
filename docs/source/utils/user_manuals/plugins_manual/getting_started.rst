@@ -87,6 +87,17 @@ Or from the local repo directly::
    cd app
    python main_app.py
 
+If the command is not found, make sure your Python environment's ``Scripts/``
+(Windows) or ``bin/`` (Linux/macOS) folder is added to your system ``PATH``.
+
+.. warning::
+
+   Skipping setup steps like adding Python to your system ``PATH`` or using ``pip`` to install Poriscope
+   will prevent you from running the ``poriscope`` command in your terminal.
+
+   As a result, you won't be able to launch the application from the command line or use Poriscope in standalone scripts.
+   Follow the installation instructions exactly to ensure everything works as expected.
+
 Documentation
 -------------
 
