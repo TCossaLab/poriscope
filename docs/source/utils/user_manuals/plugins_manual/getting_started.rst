@@ -67,13 +67,11 @@ This allows live code edits without reinstallation.
 Installing the Stable Version
 -----------------------------
 
-To install the **latest stable version** (recommended for general users — no editable mode, no retroactive code updates):
+To install the **latest stable version** (recommended for general users — **does not track future updates unless reinstalled manually**):
 
 .. code-block:: bash
 
    python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"
-
-This version does not track local source code changes.
 
 Launching Poriscope
 -------------------
