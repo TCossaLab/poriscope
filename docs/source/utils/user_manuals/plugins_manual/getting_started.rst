@@ -1,8 +1,9 @@
 Getting Started
 ===============
 
-Welcome to **Poriscope** — a powerful tool for nanopore data visualization and analysis.  
-This guide will walk you through installing Poriscope, setting up your environment, and launching the app.
+Welcome to Poriscope! This section helps you get up and running with the application.
+
+Alright, ready to dive in? Here’s everything you need to get Poriscope installed and running smoothly.
 
 Prerequisites
 -------------
