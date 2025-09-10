@@ -92,11 +92,17 @@ If the command is not found, make sure your Python environment's ``Scripts/``
 
 .. warning::
 
-   Skipping setup steps like adding Python to your system ``PATH`` or using ``pip`` to install Poriscope
-   will prevent you from running the ``poriscope`` command in your terminal.
+   **Installation vs PATH**
 
-   As a result, you won't be able to launch the application from the command line or use Poriscope in standalone scripts.
-   Follow the installation instructions exactly to ensure everything works as expected.
+   - If you **don’t install** Poriscope (skip ``python -m pip install -e .`` or the GitHub install),
+     it won’t be importable and you can’t launch it.
+   - If Python is **not on PATH**, only the convenience command ``poriscope`` will fail.
+     You can still run ``python -m poriscope`` and import Poriscope in your scripts,
+     as long as it’s installed in the **same Python interpreter** you use.
+
+.. tip::
+
+   To keep things in sync, if you have multiple python versions, make sure you always use the same interpreter for install and run.
 
 Documentation
 -------------
