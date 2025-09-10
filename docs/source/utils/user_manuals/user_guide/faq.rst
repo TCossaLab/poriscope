@@ -1,8 +1,6 @@
 FAQ
 ===
 
-Welcome back to the **Poriscope Tutorial Series – Part III: Putting It All Together**.
-
 In this section, we cover frequently asked questions and show you how to resolve them. These are issues users often encounter in day-to-day use, especially when working across multiple datasets or returning to a project after a break.
 
 I loaded a file, but nothing appeared. What happened?
@@ -12,26 +10,26 @@ I loaded a file, but nothing appeared. What happened?
   Make sure you clicked :guilabel:`OK` (not :guilabel:`Cancel`) after selecting your file and settings.
 - Confirm you’ve selected a valid **channel** and clicked :guilabel:`Update Trace` to display the signal.
 
-I'm feeding my events, but it shows the feed from a previous dataset.
+I'm fitting my events, but it shows the fit from a previous dataset.
 ---------------------------------------------------------------------
 
-This usually means the wrong **reader** or **event feeder** plugin is selected.
+This usually means the wrong **reader** or **event fitter** plugin is selected.
 
 Make sure that:
 
-- The event feeder **instance you just created** is selected in the dropdown.
+- The event fitter **instance you just created** is selected in the dropdown.
 - The **reader** you want to apply the events to is **active**.
 - You aren’t mixing configurations from a different session.
 
 Otherwise you may apply one dataset’s events to another, leading to mismatched results.
 
-I clicked :menuselection:`Analysis -> Event` or :menuselection:`Raw Data View`, but nothing changes.
+I clicked :menuselection:`Analysis -> New Analysis Tab -> EventAnalysisController` or :menuselection:`RawDataController`, but nothing changes.
 ----------------------------------------------------------------------------------------------------
 
 Poriscope lets you use the top menu to **open** a plugin tab the first time only.  
 After it’s opened, switch back to any analysis view from the left sidebar:
 
-:menuselection:`Plugins` → select the tab you want.
+:menuselection:`All Analysis Tabs` → select the tab you want.
 
 I'm trying to load a database into Metadata View or Event Analysis View, but it says the format is unsupported.
 ---------------------------------------------------------------------------------------------------------------
