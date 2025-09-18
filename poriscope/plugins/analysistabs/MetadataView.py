@@ -253,10 +253,19 @@ class MetadataView(MetaView, WalkthroughMixin):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
+        # Optimize for normalized columns with extreme ranges
+        if "normalized" in cols[0].lower():
+            # Use percentile-based range for normalized data
+            data_min, data_max = np.percentile(data[cols[0]].values, [1, 99])
+        else:
+            # Use standard min/max for regular data
+            data_vals = data[cols[0]].values
+            data_min, data_max = np.min(data_vals), np.max(data_vals)
+        
+        if self.hist_min is None or data_min < self.hist_min:
+            self.hist_min = data_min
+        if self.hist_max is None or data_max > self.hist_max:
+            self.hist_max = data_max
         ax.clear()
         self._clear_cache()
         self.hist_data.append(data)
@@ -294,19 +303,27 @@ class MetadataView(MetaView, WalkthroughMixin):
                         bins = None
             if bins is None:
                 try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
+                    # Optimize calculations for normalized data
+                    if "normalized" in x_label.lower():
+                        # Use simpler calculation for normalized data to avoid expensive IQR
+                        numbins = max(50, min(200, int(np.sqrt(len(data)))))
                     else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
+                        # Standard calculation for regular data
+                        data_iqr = iqr(data)
+                        if data_iqr > 0:
+                            numbins = int(
+                                (self.hist_max - self.hist_min)
+                                * len(data) ** (1.0 / 3.0)
+                                / data_iqr
+                            )
+                        else:
+                            numbins = int(3.332 * np.log10(len(data)))
+                except (OverflowError, ZeroDivisionError):
                     numbins = 100
 
             density = stats.kde.gaussian_kde(data.T)
-            x = np.linspace(np.min(data), np.max(data), numbins)
+            # Use cached range instead of recalculating min/max
+            x = np.linspace(self.hist_min, self.hist_max, numbins)
             ax.plot(x, density(x), label=dataset_label)
             ax.fill_between(x, density(x), alpha=0.3)
 
@@ -378,15 +395,18 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         if bins is None:
             try:
-                if iqr(data) > 0:
+                # Optimize for potentially extreme ranges in capture rate data
+                data_iqr = iqr(data)
+                if data_iqr > 0:
+                    data_min, data_max = np.min(data), np.max(data)
                     numbins = int(
-                        (np.max(data) - np.min(data))
+                        (data_max - data_min)
                         * len(data) ** (1.0 / 3.0)
-                        / (iqr(data))
+                        / data_iqr
                     )
                 else:
                     numbins = int(3.332 * np.log10(len(data)))
-            except OverflowError:
+            except (OverflowError, ZeroDivisionError):
                 numbins = int(3.332 * np.log10(len(data)))
         else:
             numbins = bins
@@ -469,10 +489,19 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
+        # Optimize for normalized columns with extreme ranges
+        # Use percentile-based range calculation to handle outliers efficiently
+        if "normalized" in x_label.lower():
+            # For normalized data, use 1st and 99th percentiles to exclude extreme outliers
+            data_min, data_max = np.percentile(data, [1, 99])
+        else:
+            # For regular data, use standard min/max but with more efficient numpy functions
+            data_min, data_max = np.min(data), np.max(data)
+        
+        if self.hist_min is None or data_min < self.hist_min:
+            self.hist_min = data_min
+        if self.hist_max is None or data_max > self.hist_max:
+            self.hist_max = data_max
         ax.clear()
         self._clear_cache()
         self.hist_data.append(data)
@@ -502,15 +531,24 @@ class MetadataView(MetaView, WalkthroughMixin):
                         bins = None
             if bins is None:
                 try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
+                    # Optimize calculations for normalized data with extreme ranges
+                    if "normalized" in x_label.lower():
+                        # For normalized data, use robust range estimation
+                        data_range = self.hist_max - self.hist_min
+                        # Use simpler calculation to avoid expensive IQR on extreme ranges
+                        numbins = max(50, min(200, int(np.sqrt(len(data)))))
                     else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
+                        # For regular data, use standard calculation but with cached range
+                        data_iqr = iqr(data)
+                        if data_iqr > 0:
+                            numbins = int(
+                                (self.hist_max - self.hist_min)
+                                * len(data) ** (1.0 / 3.0)
+                                / data_iqr
+                            )
+                        else:
+                            numbins = int(3.332 * np.log10(len(data)))
+                except (OverflowError, ZeroDivisionError):
                     numbins = 100
 
             val, bins = np.histogram(

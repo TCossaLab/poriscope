@@ -209,7 +209,9 @@ class SelectionTree(QWidget):
         selected: Optional[dict[str, list[str]]] = None,
     ) -> dict[str, list[str]]:
         dialog = QDialog()
-        dialog.setWindowFlags(Qt.Popup)
+        # Use proper dialog flags that allow closing with Escape or clicking outside
+        dialog.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowTitleHint)
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
         dialog.setStyleSheet("QDialog { border-radius: 10px; }")
         dialog.setWindowTitle(title)
 
@@ -234,6 +236,7 @@ class SelectionTree(QWidget):
             y = center_y - popup_height // 2
             dialog.setGeometry(x, y, popup_width, popup_height)
 
+        # Use exec() but with proper flags that allow dismissal
         dialog.exec()
 
         # Save selection state
