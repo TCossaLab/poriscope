@@ -324,8 +324,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 )
             else:
                 self.logger.info(f"Experiment already exists: {experiment_name}")
-                raise sqlite3.Error("Experiment name already exists, unable to write experimental metadata. Choose a unique experiment name")
-        except sqlite3.Error as e:
+                raise sqlite3.Error(
+                    "Experiment name already exists, unable to write experimental metadata. Choose a unique experiment name"
+                )
+        except sqlite3.Error:
             if conn:
                 conn.rollback()
             raise
