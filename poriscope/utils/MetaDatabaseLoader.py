@@ -110,21 +110,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
         """
         pass
 
-    def get_disambiguated_experiment_names(
-        self, all_experiments_by_loader: Optional[dict] = None
-    ) -> Optional[List[str]]:
-        """
-        Get experiment names with database identifiers added when conflicts exist.
-
-        :param all_experiments_by_loader: Dict mapping loader names to their experiment lists
-        :type all_experiments_by_loader: Optional[dict]
-
-        :return: List of disambiguated experiment names, defaults to original names
-        :rtype: Optional[List[str]]
-        """
-        # Default implementation returns original names (no disambiguation)
-        return self.get_experiment_names()
-
     @abstractmethod
     def get_channels_by_experiment(self, experiment: str) -> Optional[List[int]]:
         """
@@ -364,23 +349,17 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @log(logger=logger)
     def get_experiment_id_by_name(self, experiment_name: str) -> Optional[int]:
         """
-        Retrieve experiment ID by name, handling both original and disambiguated experiment names.
+        Retrieve a list of all unique experiment names registered in the database or a singleton list if a name is given.
 
-        :param experiment_name: the name of the experiment to find (can include database suffix)
-        :type experiment_name: str
+        :param experiment_id: the id of the experiment for which to fetch the name
+        :type experiment_id: Optional[int]
 
-        :return: Experiment ID, or None if not found
-        :rtype: Optional[int]
+        :return: List of experiment names, or None on failure
+        :rtype: Optional[List[str]]
         """
         if experiment_name:
             try:
-                # Handle disambiguated names like "experiment_name (database.sqlite)"
-                original_name = experiment_name
-                if " (" in experiment_name and experiment_name.endswith(")"):
-                    # Extract original name without database suffix
-                    original_name = experiment_name.split(" (")[0]
-                
-                query = f"SELECT id FROM experiments WHERE name = '{original_name}' LIMIT 1"
+                query = f"SELECT id FROM experiments WHERE name = '{experiment_name}' LIMIT 1"
                 result = self.query_database_directly(query)
                 if result is not None:
                     return result.at[0, "id"]
@@ -390,17 +369,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 self.logger.info(f"Database query failed: {e}")
                 raise
         return None
-
-    @log(logger=logger)
-    def get_database_identifier(self) -> str:
-        """
-        Get a unique identifier for this database to use in disambiguated experiment names.
-        
-        :return: A short identifier for the database (filename without extension)
-        :rtype: str
-        """
-        # This is overridden in SQLiteDBLoader to use the actual filename
-        return "db"
 
     @log(logger=logger)
     def export_subset_to_csv(
@@ -442,23 +410,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # Normalize experiment names to IDs if necessary
         experiment_ids = None
         if experiments_and_channels is not None:
-            # Get experiment IDs, but filter out None values and corresponding channel filters
-            experiment_ids = []
-            channel_filters = []
-            for exp, channels in experiments_and_channels.items():
-                exp_id = self.get_experiment_id_by_name(exp)
-                if exp_id is not None:
-                    experiment_ids.append(exp_id)
-                    channel_filters.append(channels)
-                else:
-                    self.logger.warning(f"Could not find experiment ID for experiment name: '{exp}'")
-            
-            # If no valid experiment IDs found, set to None to avoid empty lists
-            if not experiment_ids:
-                experiment_ids = None
-                channel_filters = None
-            else:
-                channel_filters = channel_filters  # Already set above
+            experiment_ids = [
+                self.get_experiment_id_by_name(exp)
+                for exp in experiments_and_channels.keys()
+            ]
+            channel_filters = list(experiments_and_channels.values())
             for exp_name, exp_id in zip(
                 experiments_and_channels.keys(), experiment_ids
             ):
@@ -482,45 +438,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if experiment_conditions:
             base_conditions.append(f"({' OR '.join(experiment_conditions)})")
 
-        # Build complete conditions string 
-        full_conditions = ' AND '.join(base_conditions) if base_conditions else None
-        
-        # Use the smart cross-table query construction to get event IDs that satisfy the conditions
-        # This handles cross-table filtering (e.g., filtering events by sublevels columns)
-        try:
-            # Get event IDs using cross-table aware query construction
-            id_query, debug_msg, table_name = self.construct_metadata_query(
-                columns=["voltage"],  # Use a placeholder column - we just want the IDs
-                conditions=full_conditions,
-                experiments_and_channels=experiments_and_channels
-            )
-            
-            if debug_msg:
-                raise ValueError(f"Failed to construct filtering query: {debug_msg}")
-            
-            # Execute the cross-table query to get filtered results
-            filtered_results = self._load_metadata(id_query)
-            if filtered_results is None or len(filtered_results) == 0:
-                raise ValueError("No events found matching subset criteria")
-            
-            # Extract event IDs from the results
-            if 'event_id' in filtered_results.columns:
-                event_ids = list(filtered_results['event_id'].values.astype(int))
-            else:
-                # Fallback - use the id column and assume it's event IDs
-                event_ids = list(filtered_results['id'].values.astype(int))
-            
-            # Now get full events data for these specific event IDs
-            events_query = f"SELECT e.* FROM events e WHERE e.event_id IN {tuple_builder(event_ids)}"
-            
-        except Exception as e:
-            # Fallback to original simple query if cross-table construction fails
-            self.logger.warning(f"Cross-table query construction failed, using simple events query: {e}")
-            condition_clause = (
-                f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
-            )
-            events_query = f"SELECT * FROM events {condition_clause}"
-        
+        condition_clause = (
+            f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
+        )
+
+        events_query = f"SELECT * FROM events {condition_clause}"
         valid, debug = self.validate_filter_query(events_query)
         if debug:
             raise ValueError(
@@ -664,51 +586,34 @@ class MetaDatabaseLoader(BaseDataPlugin):
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
     ) -> Tuple[str, str, str]:
         """
-        Construct metadata queries with automatic cross-table filtering support.
-        
-        The query construction automatically analyzes both the selected columns AND the filter conditions
-        to determine which tables need to be included. This enables powerful cross-table filtering,
-        such as plotting peak_height (events) filtered by unfolded_level (sublevels).
-        
-        The method will create the minimal required query structure:
+        The query to be constructed will take one of three forms, depending on the tables in which the metadata reside.
 
-        **Single table queries** (when all data comes from one table):
+        If all queries are in the events table, then the query executed will be:
 
         .. code-block:: sql
 
-            SELECT e.id, e.experiment_id, e.channel_id, e.event_id, [[events_columns]]
-            FROM events e
+            SELECT id, experiment_id, channel_id, event_id, [[columns]]
+            FROM events
             WHERE [[conditions]]
 
-        **Two-table JOIN queries** (when data spans two tables):
+        If all queries are in the sublevels table, then the query executed will be:
 
         .. code-block:: sql
 
-            SELECT s.id, e.experiment_id, e.channel_id, e.event_id, [[events_columns]], [[sublevels_columns]]
-            FROM events e
-            JOIN sublevels s ON e.id = s.event_db_id
+            SELECT id, experiment_id, channel_id, event_id, [[columns]]
+            FROM sublevels
             WHERE [[conditions]]
 
-        **Three-table JOIN queries** (when experiments metadata is also needed):
+        If the columns are mixed between the tables, the query will be:
 
         .. code-block:: sql
 
-            SELECT s.id, e.experiment_id, e.channel_id, e.event_id, [[events_columns]], [[sublevels_columns]], [[experiments_columns]]
+            SELECT e.id, e.experiment_id, e.channel_id, e.event_id, [[events_columns]], [[sublevels_columns]]
             FROM events e
-            JOIN sublevels s ON e.id = s.event_db_id
-            JOIN experiments exp ON exp.id = e.experiment_id
+            JOIN sublevels s on e.id = s.event_db_id
             WHERE [[conditions]]
 
-        **Cross-table filtering examples:**
-        
-        - Plot voltage (events) filtered by filtered status (sublevels)
-        - Histogram of peak_height (events) where unfolded_level > 0.5 (sublevels)  
-        - Any events/sublevels data from specific experiment_name (experiments)
-
-        The system automatically detects table requirements from conditions like:
-        - Explicit aliases: ``s.filtered != 0``, ``e.voltage > -100``
-        - Implicit columns: ``filtered != 0`` (looks up that filtered is in sublevels table)
-        - Mixed references: ``voltage > -100 AND filtered = 1`` (events + sublevels)
+        Note when constructing the conditions clause that it will need to take into account this structure.
 
         :param columns: List of column names to retrieve.
         :type columns: List[str]
@@ -751,56 +656,19 @@ class MetaDatabaseLoader(BaseDataPlugin):
         experiments_columns = [
             col for col, tbl in zip(columns, tables) if tbl == "experiments"
         ]
-        
-        # Analyze conditions to identify which tables are referenced
-        conditions_require_events = False
-        conditions_require_sublevels = False
-        conditions_require_experiments = False
-        
-        if conditions:
-            import re
-            # Find all column references in conditions (e.g., "e.voltage", "s.filtered", "voltage")
-            column_refs = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*\.)?([a-zA-Z_][a-zA-Z0-9_]*)\b', conditions)
-            
-            for prefix, col_name in column_refs:
-                # Skip SQL keywords and operators
-                if col_name.lower() in ('and', 'or', 'not', 'in', 'is', 'null', 'true', 'false', 'between', 'like'):
-                    continue
-                
-                # Check explicit table prefixes first
-                if prefix == 'e.':
-                    conditions_require_events = True
-                elif prefix == 's.':
-                    conditions_require_sublevels = True
-                elif prefix == 'exp.':
-                    conditions_require_experiments = True
-                else:
-                    # No explicit prefix, so look up which table this column belongs to
-                    col_table = self.get_table_by_column(col_name)
-                    if col_table == "events":
-                        conditions_require_events = True
-                    elif col_table == "sublevels":
-                        conditions_require_sublevels = True
-                    elif col_table == "experiments":
-                        conditions_require_experiments = True
 
         # Normalize experiment names to IDs if necessary
         experiments = None
         if experiments_and_channels is not None:
-            experiments = []
-            channels = []
-            for exp_name, channel_list in experiments_and_channels.items():
-                exp_id = self.get_experiment_id_by_name(exp_name)
-                if exp_id is not None:
-                    experiments.append(exp_id)
-                    channels.append(channel_list)
-                else:
+            experiments = [
+                self.get_experiment_id_by_name(exp)
+                for exp in experiments_and_channels.keys()
+            ]
+            channels = [channels for channels in experiments_and_channels.values()]
+
+            for exp_name, exp_id in zip(experiments, experiments_and_channels.keys()):
+                if exp_id is None:
                     raise KeyError(f"Could not find experiment ID(s) for: {exp_name}")
-                    
-            # If no valid experiments found, set to None
-            if not experiments:
-                experiments = None
-                channels = None
 
         ####
         base_conditions = []
@@ -812,23 +680,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # Experiment/channel conditions (OR logic between each)
         experiment_conditions = []
         if experiments is not None:
-            # Determine which table alias to use for experiment_id/channel_id
-            # Prefer 'e.' when events are involved, otherwise use 's.'
-            needs_events = bool(events_columns) or conditions_require_events
-            needs_sublevels = bool(sublevels_columns) or conditions_require_sublevels
-            
-            if needs_events:
-                table_prefix = "e."
-            elif needs_sublevels:
-                table_prefix = "s."
-            else:
-                table_prefix = ""
-                
             for exp, channel_list in zip(experiments, channels):
                 if channel_list:
-                    condition = f"{table_prefix}experiment_id = {exp} AND {table_prefix}channel_id IN {tuple_builder(channel_list)}"
+                    condition = f"({'e.' if events_columns and sublevels_columns else ''}experiment_id = {exp} AND {'e.' if events_columns and sublevels_columns else ''}channel_id IN {tuple_builder(channel_list)})"
                 else:
-                    condition = f"{table_prefix}experiment_id = {exp}"
+                    condition = f"({'e.' if events_columns and sublevels_columns else ''}experiment_id = {exp})"
                 experiment_conditions.append(condition)
 
         # Combine all into final WHERE clause
@@ -852,116 +708,65 @@ class MetaDatabaseLoader(BaseDataPlugin):
         }
         columns = [col for col in columns if col not in redundant_cols]
 
-        # Determine query type based on both selected columns AND conditions requirements
-        # If conditions require additional tables, we need to include them in JOINs
-        needs_events = bool(events_columns) or conditions_require_events
-        needs_sublevels = bool(sublevels_columns) or conditions_require_sublevels
-        needs_experiments = bool(experiments_columns) or conditions_require_experiments
-        
         # Determine query type and build it
-        if needs_events and not needs_sublevels and not needs_experiments:
-            # Events-only query (but may include JOINs if conditions require other tables)
-            events_str = ", ".join([f"e.{col}" for col in events_columns]) if events_columns else ""
-            select_parts = ["e.id, e.experiment_id, e.channel_id, e.event_id"]
-            if events_str:
-                select_parts.append(events_str)
-            
-            query = f"""SELECT {', '.join(select_parts)}
-                        FROM events e
+        if events_columns and not sublevels_columns and not experiments_columns:
+            events_str = ", ".join(events_columns)
+            query = f"""SELECT id, experiment_id, channel_id, event_id, {events_str}
+                        FROM events
                         {condition_clause}"""
             table_name = "events"
 
-        elif needs_sublevels and not needs_events and not needs_experiments:
-            # Sublevels-only query 
-            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns]) if sublevels_columns else ""
-            select_parts = ["s.id, s.experiment_id, s.channel_id, s.event_id"]
-            if sublevels_str:
-                select_parts.append(sublevels_str)
-                
-            query = f"""SELECT {', '.join(select_parts)}
-                        FROM sublevels s
+        elif sublevels_columns and not events_columns and not experiments_columns:
+            sublevels_str = ", ".join(sublevels_columns)
+            query = f"""SELECT id, experiment_id, channel_id, event_id, {sublevels_str}
+                        FROM sublevels
                         {condition_clause}"""
             table_name = "sublevels"
 
-        elif needs_events and needs_sublevels and not needs_experiments:
-            # Events + Sublevels JOIN
-            events_str = ", ".join([f"e.{col}" for col in events_columns]) if events_columns else ""
-            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns]) if sublevels_columns else ""
-            
-            select_parts = ["s.id, e.experiment_id, e.channel_id, e.event_id"]
-            if events_str:
-                select_parts.append(events_str)
-            if sublevels_str:
-                select_parts.append(sublevels_str)
-            
-            query = f"""SELECT {', '.join(select_parts)}
+        elif events_columns and sublevels_columns and not experiments_columns:
+            events_str = ", ".join([f"e.{col}" for col in events_columns])
+            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
+            query = f"""SELECT s.id, e.experiment_id, e.channel_id, e.event_id, {events_str}, {sublevels_str}
                         FROM events e
                         JOIN sublevels s
                         ON e.id = s.event_db_id
                         {condition_clause}"""
             table_name = "sublevels"
-            
-        elif needs_events and not needs_sublevels and needs_experiments:
-            # Events + Experiments JOIN
-            events_str = ", ".join([f"e.{col}" for col in events_columns]) if events_columns else ""
-            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns]) if experiments_columns else ""
-            
-            select_parts = ["e.id, e.experiment_id, e.channel_id, e.event_id"]
-            if events_str:
-                select_parts.append(events_str)
-            if experiments_str:
-                select_parts.append(experiments_str)
-                
-            query = f"""SELECT {', '.join(select_parts)}
+        elif events_columns and not sublevels_columns and experiments_columns:
+            events_str = ", ".join([f"e.{col}" for col in events_columns])
+            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
+            query = f"""SELECT e.id, e.experiment_id, e.channel_id, e.event_id, {events_str}, {experiments_str}
                         FROM events e
                         JOIN experiments exp
                         ON exp.id = e.experiment_id
                         {condition_clause}"""
             table_name = "events"
 
-        elif not needs_events and needs_sublevels and needs_experiments:
-            # Sublevels + Experiments JOIN
-            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns]) if sublevels_columns else ""
-            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns]) if experiments_columns else ""
-            
-            select_parts = ["s.id, s.experiment_id, s.channel_id, s.event_id"]
-            if sublevels_str:
-                select_parts.append(sublevels_str)
-            if experiments_str:
-                select_parts.append(experiments_str)
-                
-            query = f"""SELECT {', '.join(select_parts)}
+        elif sublevels_columns and not events_columns and experiments_columns:
+            sublevels_str = ", ".join(sublevels_columns)
+            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
+            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, {sublevels_str}, {experiments_str}
                         FROM sublevels s
                         JOIN experiments exp
                         ON exp.id = s.experiment_id
                         {condition_clause}"""
             table_name = "sublevels"
 
-        elif needs_events and needs_sublevels and needs_experiments:
-            # Three-way JOIN: Events + Sublevels + Experiments
-            events_str = ", ".join([f"e.{col}" for col in events_columns]) if events_columns else ""
-            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns]) if sublevels_columns else ""
-            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns]) if experiments_columns else ""
-            
-            select_parts = ["s.id, e.experiment_id, e.channel_id, e.event_id"]
-            if events_str:
-                select_parts.append(events_str)
-            if sublevels_str:
-                select_parts.append(sublevels_str)
-            if experiments_str:
-                select_parts.append(experiments_str)
-                
-            query = f"""SELECT {', '.join(select_parts)}
+        elif events_columns and sublevels_columns and experiments_columns:
+            events_str = ", ".join([f"e.{col}" for col in events_columns])
+            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
+            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
+            query = f"""SELECT s.id, e.experiment_id, e.channel_id, e.event_id, {events_str}, {sublevels_str}, {experiments_str}
                         FROM events e
                         JOIN sublevels s
                         ON e.id = s.event_db_id
                         JOIN experiments exp
-                        ON exp.id = e.experiment_id
+                        ON exp.id = s.experiment_id
                         {condition_clause}"""
             table_name = "sublevels"
         else:
             raise ValueError(
-                "No valid table columns specified or conditions found: You must select at least one column or have conditions that reference events, sublevels, or experiments tables"
+                "No valid table columns specified: You must select at least one column from either the events or sublevels tables"
             )
 
         # Validate query
@@ -1001,35 +806,22 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # Normalize experiment names to IDs if necessary
         experiments = None
         if experiments_and_channels is not None:
-            experiments = []
-            channels = []
-            for exp_name, channel_list in experiments_and_channels.items():
-                exp_id = self.get_experiment_id_by_name(exp_name)
-                if exp_id is not None:
-                    experiments.append(exp_id)
-                    channels.append(channel_list)
-                else:
+            experiments = [
+                self.get_experiment_id_by_name(exp)
+                for exp in experiments_and_channels.keys()
+            ]
+            channels = [channels for channels in experiments_and_channels.values()]
+
+            for exp_name, exp_id in zip(experiments, experiments_and_channels.keys()):
+                if exp_id is None:
                     raise KeyError(f"Could not find experiment ID(s) for: {exp_name}")
-                    
-            # If no valid experiments found, set to None
-            if not experiments:
-                experiments = None
-                channels = None
 
         ####
         base_conditions = []
 
-        # General conditions (AND logic) with cross-table support
+        # General conditions (AND logic)
         if conditions:
-            # Check if conditions need cross-table filtering
-            needs_events = self._check_events_columns(conditions)
-            needs_sublevels = self._check_sublevels_columns(conditions) 
-            needs_experiments = self._check_experiments_columns(conditions)
-            
-            # Event data queries always work with events and sublevels tables
-            # If experiments table is needed, ensure it's available in the existing JOIN
-            condition_with_alias = self._add_table_aliases(conditions)
-            base_conditions.append(condition_with_alias)
+            base_conditions.append(conditions)
 
         # Experiment/channel conditions (OR logic between each)
         experiment_conditions = []
@@ -1368,100 +1160,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
         """
         debug = re.sub(r"[ \t]+", " ", debug)
         return re.sub(r"\n[ \t]+", "\n", debug)
-
-    def _check_events_columns(self, conditions: str) -> bool:
-        """Check if conditions reference events table columns"""
-        import re
-        if not conditions:
-            return False
-        
-        # Check for explicit events table prefix
-        if re.search(r'\be\.', conditions):
-            return True
-            
-        # Check for column names that belong to events table
-        column_refs = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', conditions)
-        for col_name in column_refs:
-            # Skip SQL keywords
-            if col_name.lower() in ('and', 'or', 'not', 'in', 'is', 'null', 'true', 'false', 'between', 'like'):
-                continue
-            col_table = self.get_table_by_column(col_name)
-            if col_table == "events":
-                return True
-        return False
-
-    def _check_sublevels_columns(self, conditions: str) -> bool:
-        """Check if conditions reference sublevels table columns"""
-        import re
-        if not conditions:
-            return False
-            
-        # Check for explicit sublevels table prefix
-        if re.search(r'\bs\.', conditions):
-            return True
-            
-        # Check for column names that belong to sublevels table
-        column_refs = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', conditions)
-        for col_name in column_refs:
-            # Skip SQL keywords
-            if col_name.lower() in ('and', 'or', 'not', 'in', 'is', 'null', 'true', 'false', 'between', 'like'):
-                continue
-            col_table = self.get_table_by_column(col_name)
-            if col_table == "sublevels":
-                return True
-        return False
-
-    def _check_experiments_columns(self, conditions: str) -> bool:
-        """Check if conditions reference experiments table columns"""
-        import re
-        if not conditions:
-            return False
-            
-        # Check for explicit experiments table prefix
-        if re.search(r'\bexp\.', conditions):
-            return True
-            
-        # Check for column names that belong to experiments table
-        column_refs = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', conditions)
-        for col_name in column_refs:
-            # Skip SQL keywords
-            if col_name.lower() in ('and', 'or', 'not', 'in', 'is', 'null', 'true', 'false', 'between', 'like'):
-                continue
-            col_table = self.get_table_by_column(col_name)
-            if col_table == "experiments":
-                return True
-        return False
-
-    def _add_table_aliases(self, conditions: str) -> str:
-        """Add proper table aliases to column references in conditions"""
-        import re
-        if not conditions:
-            return conditions
-            
-        # Find all column references and add appropriate table prefixes
-        def replace_column(match):
-            col_name = match.group(1)
-            # Skip if already has a table prefix
-            if '.' in col_name:
-                return col_name
-            # Skip SQL keywords
-            if col_name.lower() in ('and', 'or', 'not', 'in', 'is', 'null', 'true', 'false', 'between', 'like'):
-                return col_name
-                
-            # Determine which table this column belongs to
-            col_table = self.get_table_by_column(col_name)
-            if col_table == "events":
-                return f"e.{col_name}"
-            elif col_table == "sublevels":
-                return f"s.{col_name}"
-            elif col_table == "experiments":
-                return f"exp.{col_name}"
-            else:
-                return col_name  # Unknown column, leave as-is
-                
-        # Replace column names with table-prefixed versions
-        # Pattern matches word boundaries to avoid partial matches
-        return re.sub(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', replace_column, conditions)
 
     @abstractmethod
     def _validate_settings(self, settings: dict) -> None:

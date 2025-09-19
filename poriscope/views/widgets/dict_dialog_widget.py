@@ -106,21 +106,18 @@ class DictDialog(QDialog):
                 file_types = val.get("Options")
                 if not starting_file_path:
                     starting_file_path = ""
-
                 if file_types is not None:
                     filters = []
                     for ext in file_types:
-                        # Check if ext already contains the full filter format
-                        if "(*." in ext:
-                            filters.append(ext)
-                        else:
-                            filters.append(f"Files (*{ext})")
-                    filter_str = ";;".join(filters)
+                        filters.append(f"Files (*{ext})")
+                        filter_str = ";;".join(filters)
                 else:
                     filter_str = "All Files (*)"
                 self.entrywidgets[key] = QPushButton("Select Input File")
                 self.entrywidgets[key].clicked.connect(
-                    lambda: self.get_input_file(starting_file_path=starting_file_path, file_types=filter_str)
+                    lambda: self.get_input_file(
+                        starting_file_path=starting_file_path, file_types=filter_str
+                    )
                 )
 
             elif key == "Output File":
@@ -131,19 +128,17 @@ class DictDialog(QDialog):
                 if file_types is not None:
                     filters = []
                     for ext in file_types:
-                        # Check if ext already contains the full filter format
-                        if "(*." in ext:
-                            filters.append(ext)
-                        else:
-                            filters.append(f"Files (*{ext})")
-                    filter_str = ";;".join(filters)
+                        filters.append(f"Files (*{ext})")
+                        filter_str = ";;".join(filters)
                 else:
                     filter_str = "All Files (*)"
+
                 self.entrywidgets[key] = QPushButton("Select Output File")
                 self.entrywidgets[key].clicked.connect(
-                    lambda: self.get_output_file(starting_file_path=starting_file_path, file_types=filter_str)
+                    lambda: self.get_output_file(
+                        starting_file_path=starting_file_path, file_types=filter_str
+                    )
                 )
-
             elif key == "Folder":
                 starting_path = val.get("Value")
                 if not starting_path:

@@ -185,62 +185,17 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             self.logger.error(f"Database error fetching experiment names: {e}")
             return None
 
-    @log(logger=logger) 
-    def get_disambiguated_experiment_names(
-        self, all_experiments_by_loader: Optional[dict] = None
-    ) -> Optional[List[str]]:
-        """
-        Get experiment names with database identifiers added when conflicts exist.
-
-        :param all_experiments_by_loader: Dict mapping loader names to their experiment lists
-        :type all_experiments_by_loader: Optional[dict]
-
-        :return: List of disambiguated experiment names
-        :rtype: Optional[List[str]]
-        """
-        original_names = self.get_experiment_names()
-        if not original_names:
-            return None
-            
-        if not all_experiments_by_loader:
-            # No conflict info available, return original names
-            return original_names
-        
-        db_identifier = self.get_database_identifier()
-        disambiguated_names = []
-        
-        # Check each experiment name for conflicts
-        for name in original_names:
-            has_conflict = False
-            for loader_name, experiments in all_experiments_by_loader.items():
-                if experiments and name in experiments and loader_name != db_identifier:
-                    has_conflict = True
-                    break
-            
-            if has_conflict:
-                disambiguated_names.append(f"{name} ({db_identifier})")
-            else:
-                disambiguated_names.append(name)
-                
-        return disambiguated_names
-
     @log(logger=logger)
     @override
     def get_channels_by_experiment(self, experiment: str) -> Optional[List[int]]:
         """
         Retrieve a list of all channel IDs associated with a given experiment name or None on failure
 
-        :param experiment: The name of the experiment (can be disambiguated).
+        :param experiment: The name of the experiment.
         :type experiment: str
         :return: List of channel IDs.
         :rtype: Optional[List[int]]
         """
-        # Handle disambiguated names like "experiment_name (database.sqlite)"
-        original_name = experiment
-        if " (" in experiment and experiment.endswith(")"):
-            # Extract original name without database suffix
-            original_name = experiment.split(" (")[0]
-        
         try:
             with sqlite3.connect(self.db_path) as conn:
                 with contextlib.closing(conn.cursor()) as cursor:
@@ -250,7 +205,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                     JOIN experiments ON channels.experiment_id = experiments.id
                     WHERE experiments.name = ?;
                     """
-                    cursor.execute(query, (original_name,))
+                    cursor.execute(query, (experiment,))
                     channels = cursor.fetchall()
                     if channels:
                         return [int(channel[0]) for channel in channels]
@@ -999,19 +954,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 conn.close()
 
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
-
-    @log(logger=logger)
-    @override 
-    def get_database_identifier(self) -> str:
-        """
-        Get a unique identifier for this SQLite database.
-        
-        :return: Database filename without extension
-        :rtype: str
-        """
-        if hasattr(self, 'db_path') and self.db_path:
-            return Path(self.db_path).stem
-        return "db"
 
     # Utility functions, specific to subclasses as needed
     @log(logger=logger)
