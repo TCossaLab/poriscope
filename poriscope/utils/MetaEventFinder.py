@@ -316,7 +316,7 @@ class MetaEventFinder(BaseDataPlugin):
                     abort = bool(abort)
                     if abort is True:
                         break
-            except RuntimeError as e:
+            except RuntimeError:
                 continue
             except StopIteration:
                 continue

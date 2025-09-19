@@ -144,8 +144,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         except Exception as e:
             self.close_resources(channel)
             self.logger.error(
-                f"Unexpected error writing experimental metadata for channel {channel}: {e}",
-                exc_info=True,
+                f"Unexpected error writing experimental metadata for channel {channel}: {e}"
             )
             raise
 
