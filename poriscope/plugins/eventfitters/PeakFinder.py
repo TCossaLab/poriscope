@@ -724,6 +724,10 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
+        # get the cumulative ecd 
+        sublevel_metadata["sublevel_cumulative_ecd"] = np.cumsum(
+            sublevel_metadata["sublevel_raw_ecd"]
+        )
         # get the maximal deviation from the event baseline for each sublevel
         sublevel_metadata["sublevel_max_deviation"] = np.array(
             [
@@ -1013,6 +1017,7 @@ class PeakFinder(MetaEventFitter):
             "sublevel_start_times": float,
             "sublevel_end_times": float,
             "sublevel_raw_ecd": float,
+            "sublevel_cumulative_ecd": float,
             "sublevel_max_deviation": float,
             "peak_id": int,
             "peak_height": float,
@@ -1072,6 +1077,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["sublevel_end_times"] = "us"
         metadata_units["sublevel_max_deviation"] = "pA"
         metadata_units["sublevel_raw_ecd"] = "pC"
+        metadata_units["sublevel_cumulative_ecd"] = "pC"
         metadata_units["peak_id"] = " "
         metadata_units["peak_height"] = "pA"
         metadata_units["peak_loc"] = "us"
