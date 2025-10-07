@@ -1399,8 +1399,8 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _load_filter(self, parameters):
         """
-        Load filters from a JSON file, validate them if loader is available,
-        reset UI, and apply loaded filters.
+        Append filters from a JSON file, warn if duplicates are found,
+        and apply all new filters only if none conflict with existing ones.
         """
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
@@ -1415,16 +1415,19 @@ class MetadataView(MetaView, WalkthroughMixin):
             if not isinstance(new_filters, dict):
                 raise ValueError("Invalid filter file format. Expected a dictionary.")
 
+            # Check for name conflicts
+            existing_names = set(self.subset_filters.keys())
+            new_names = set(new_filters.keys())
+            duplicate_names = existing_names & new_names
+
+            if duplicate_names:
+                self.logger.warning(
+                    f"Duplicate filter names found when loading from {path}: {', '.join(duplicate_names)}. "
+                    "No filters were loaded."
+                )
+                return
+
             combo = self.metadatacontrols.filter_comboBox
-
-            # Reset UI and internal state
-            combo.blockSignals(True)
-            combo.clear_selection_list()
-            combo.blockSignals(False)
-
-            self.subset_filters.clear()
-
-            # Get loader for validation
             loader = parameters.get("db_loader")
 
             if not loader:
@@ -1432,10 +1435,9 @@ class MetadataView(MetaView, WalkthroughMixin):
                     "No loader found – filters loaded but not validated."
                 )
 
-            # Store pending validations if loader exists
             for name, filter_text in new_filters.items():
                 if loader:
-                    # Save temporarily in case validation passes
+                    # Temporarily store to validate
                     self._pending_filter_name = name
                     self._pending_filter_text = filter_text
 
@@ -1452,7 +1454,6 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ("validate_new_filter",),
                     )
                 else:
-                    # Add unvalidated filter
                     self.subset_filters[name] = filter_text
                     combo.addItem(name)
                     combo.selectItem(name, select=True)
