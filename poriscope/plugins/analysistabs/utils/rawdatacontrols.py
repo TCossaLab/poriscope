@@ -229,7 +229,7 @@ class RawDataControls(QWidget):
 
         self.timer_pushButton = QPushButton("", self.groupBox)
         self.timer_pushButton.setIcon(get_icon("stopwatch.svg"))
-        self.timer_pushButton.setToolTip("Time Event Fitting")
+        self.timer_pushButton.setToolTip("Time Event Finding")
 
         button_layout.addWidget(self.find_events_pushButton)
         button_layout.addWidget(self.timer_pushButton)
