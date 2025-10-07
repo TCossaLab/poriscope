@@ -57,7 +57,7 @@ class MultiSelectComboBox(QComboBox):
         # Adding a container widget to hold title and list
         self.containerWidget = QDialog(None)
         self.containerWidget.setWindowFlags(
-            Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint
+            self.containerWidget.windowFlags() | Qt.Popup
         )
         self.containerWidget.setWindowTitle("Select Channel")
         self.containerWidget.setStyleSheet(
