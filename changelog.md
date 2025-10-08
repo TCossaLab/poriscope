@@ -1,5 +1,7 @@
 ## Poriscope 1.5: In Progress
 
+* **Click outside the pop-up or the x button in the selection menus (compatible with MacOs and Linux)**
+* **Append SQL-like filters instead of overriding when loading a new .json file**
 ### What's New since Poriscope 1.4:
 * **linting and unit tests**
     * repository now runs sanity checks before allowing commits
