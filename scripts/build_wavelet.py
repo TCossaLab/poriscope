@@ -23,11 +23,11 @@
 # Contributors:
 # Alejandra Carolina González González
 
-import glob
 import os
+import subprocess
 import platform
 import shutil
-import subprocess
+import glob
 
 
 def try_make(target, cwd, env=None):
@@ -86,9 +86,7 @@ def _wavelet_exists(wavelet_dir: str, system: str) -> bool:
 
 def build_wavelet_library():
     root_dir = os.path.abspath(os.path.dirname(__file__))
-    wavelet_dir = os.path.abspath(
-        os.path.join(root_dir, "..", "poriscope", "cdlls", "wavelet")
-    )
+    wavelet_dir = os.path.abspath(os.path.join(root_dir, "..", "poriscope", "cdlls", "wavelet"))
     print(f"[INFO] Building wavelet in: {wavelet_dir}")
 
     if not os.path.isdir(wavelet_dir):

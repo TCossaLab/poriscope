@@ -62,16 +62,16 @@ setup(
         "hdbscan==0.8.40",
     ],
     extras_require={
-        "dev": [
-            "black==25.1.0",
-            "ruff==0.12.9",
-            "mypy==1.9.0",
-            "pytest==8.4.1",
-            "pytest-mock==3.14.1",
-            "pytest-qt==4.5.0",
-            "pytest-timeout==2.4.0",
+        'dev': [
+        "black==25.1.0",
+        "ruff==0.12.9",
+        "mypy==1.9.0",
+        "pytest==8.4.1",
+        "pytest-mock==3.14.1",
+        "pytest-qt==4.5.0",
+        "pytest-timeout==2.4.0",
         ],
-        "docs": [
+        'docs': [
             "sphinx==8.2.3",
             "sphinx-tabs==3.4.7",
             "furo==2024.8.6",

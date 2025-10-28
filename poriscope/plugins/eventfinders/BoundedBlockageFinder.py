@@ -141,6 +141,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         except StopIteration:
             bottom_index = 0
 
+
         top = centers[top_index]
         bottom = centers[bottom_index]
 
@@ -179,6 +180,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
             else top_index
         )
 
+
         try:
             baseline_params = np.array(
                 self._gaussian_fit(
@@ -188,7 +190,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
                     np.absolute(centers[std_index] - centers[max_index]),
                 )
             )
-        except ValueError:
+        except ValueError as e:
             raise
         mean = baseline_params[1]
         if (
