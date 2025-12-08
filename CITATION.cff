@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "Poriscope"
+version: "1.5.0"
+doi: "10.5281/zenodo.17860300"
+date-released: "2025-12-08"
+authors:
+  - family-names: "Briggs"
+    given-names: "Kyle"
+  - family-names: "González González"
+    given-names: "Alejandra Carolina"
+  - family-names: "Wadhwa"
+    given-names: "Deekshant"
+  - family-names: "Kerrouri"
+    given-names: "Nada"
