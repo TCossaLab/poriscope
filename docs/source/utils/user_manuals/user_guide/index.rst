@@ -18,4 +18,5 @@ Welcome to Poriscope's user guide. This guide will walk you through the main fea
    settings
    menus_and_sessions
    scripting
+   faq
 

@@ -31,3 +31,6 @@ python .git/hooks/post-merge
 
 ## Documentation can be found
 https://tcossalab.github.io/poriscope/ 
+
+## Poriscope Tutorial Series
+https://youtube.com/@tcossalab?si=A8Wy8yHOXiwSXu5F 
