@@ -156,7 +156,11 @@ class WaveletFilter(MetaFilter):
             dll_path = os.path.abspath(
                 os.path.join(
                     os.path.dirname(__file__),
-                    "..", "..", "cdlls", "wavelet", "dist",
+                    "..",
+                    "..",
+                    "cdlls",
+                    "wavelet",
+                    "dist",
                     f"wavelet{ext_map[system]}",
                 )
             )

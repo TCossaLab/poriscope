@@ -24,18 +24,15 @@
 # Kyle Briggs
 
 import logging
-import os
 import re
-from pathlib import Path
 
 import numpy as np
 from typing_extensions import override
 
-from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
 from poriscope.plugins.datareaders.ABF2Reader import ABF2Reader
+from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaReader import MetaReader
 
 
 @inherit_docstrings
@@ -170,5 +167,3 @@ class LegacyElementsReader(ABF2Reader):
             config["header_bytes"] = header.get_header_bytes()
             configs.append(config)
         return configs
-
-

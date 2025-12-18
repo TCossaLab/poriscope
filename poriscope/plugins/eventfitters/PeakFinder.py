@@ -724,7 +724,7 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-        # get the cumulative ecd 
+        # get the cumulative ecd
         sublevel_metadata["sublevel_cumulative_ecd"] = np.cumsum(
             sublevel_metadata["sublevel_raw_ecd"]
         )

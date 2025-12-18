@@ -32,10 +32,10 @@
 import logging
 
 from poriscope import (
-    PeakFinder,
-    ChimeraReader20240501,
     BesselFilter,
+    ChimeraReader20240501,
     ClassicBlockageFinder,
+    PeakFinder,
     SQLiteDBLoader,
     SQLiteDBWriter,
     SQLiteEventLoader,
@@ -58,11 +58,14 @@ consoleHandler.setFormatter(formatter)
 root_logger.addHandler(consoleHandler)
 
 
-#paths
+# paths
 input_data_file = ""  # replace with the path to your input file
-event_output_file_path = ""  # replace with the path to where you want your event database file to be written
-metadata_output_file_path = ""  # replace with the path to where you want your metadata database to be written
-
+event_output_file_path = (
+    ""  # replace with the path to where you want your event database file to be written
+)
+metadata_output_file_path = (
+    ""  # replace with the path to where you want your metadata database to be written
+)
 
 
 def main():
