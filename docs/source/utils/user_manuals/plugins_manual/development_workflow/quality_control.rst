@@ -1,4 +1,4 @@
-.. _quality_control.rst:
+.. _quality_control:
 
 Quality Control and Developer Workflow
 ======================================
@@ -6,7 +6,8 @@ Quality Control and Developer Workflow
 Poriscope uses automated **quality control checks** to ensure that all contributed code
 is consistent, correct, and maintainable.
 
-These checks are enforced through continuous integration (CI) but can also be enforced locally using **Git hooks**.
+These checks are enforced through continuous integration (CI) and can also be enforced
+locally using **Git hooks**.
 
 This section explains what checks exist, when they run, and how developers should work
 with them.
@@ -23,20 +24,49 @@ The following tools are used in Poriscope:
 
 All tools are managed through the **pre-commit** framework.
 
-Pre-commit Hooks
-----------------
+Pre-commit Hooks (Validation)
+-----------------------------
 
-Poriscope uses *pre-commit* to run quality checks **before each commit**.
+Poriscope uses *pre-commit* to run **validation checks before each commit**.
 
 When committing code (either via the command line or GitHub Desktop), the following hooks
 run automatically:
 
-- ``black`` – formats Python code
-- ``ruff --fix`` – applies safe lint fixes
+- ``ruff`` (strict mode) – validates code without modifying files
 - ``mypy`` – validates static typing
 - ``check-added-large-files`` – blocks files larger than 123 KB
 
+These checks **never modify files**.
+
 If **any hook fails**, the commit is **blocked**.
+
+Automatic Formatting and Auto-fixes
+----------------------------------
+
+Automatic formatting and safe lint fixes are intentionally excluded from the
+commit stage.
+
+The following tools run **only when explicitly requested**:
+
+- ``black`` – reformats Python code
+- ``ruff --fix`` – applies safe automatic lint fixes
+
+To run these tools manually on all files, use:
+
+.. code-block:: bash
+
+   pre-commit run --all-files --hook-stage manual
+
+Any files modified by this command must be reviewed and committed manually.
+
+This design ensures that:
+
+- Commits never change files unexpectedly
+- Developers stay in control of formatting changes
+- CI behavior matches local expectations
+
+Installing Pre-commit
+---------------------
 
 Automatic installation (recommended)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -47,9 +77,6 @@ setup script:
 .. code-block:: bash
 
    python scripts/setup_hooks.py
-
-This installs ``pre-commit`` (if needed) and registers all configured Git hooks
-for the current repository clone.
 
 Manual installation (fallback)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -62,8 +89,6 @@ install ``pre-commit`` manually from the repository root:
    python -m pip install pre-commit
    pre-commit install
 
-This installs the hooks into the ``.git/hooks/`` directory.
-
 Verification
 ^^^^^^^^^^^^
 
@@ -73,79 +98,57 @@ To verify that pre-commit is active, run:
 
    pre-commit run --all-files
 
-If any checks fail, commits will be blocked until the issues are resolved.
-
-What Happens on Commit
-----------------------
-
-When a commit is created, the following steps occur automatically:
-
-1. Black reformats Python source files.
-2. Ruff applies safe lint fixes.
-3. Mypy checks type correctness.
-4. Large files are rejected.
-
-If any check fails, the commit is aborted and error output is shown.
+If this succeeds, the repository meets all required quality checks.
 
 Using GitHub Desktop
 --------------------
 
 GitHub Desktop enforces Poriscope’s Git hooks when configured to use **System Git**.
-If a pre-commit check fails, the commit is blocked and an error message is shown.
+If a validation check fails, the commit is blocked and an error message is shown.
 
 Verifying Hook Enforcement
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To confirm that pre-commit hooks are active in GitHub Desktop, you can intentionally
-introduce a small, temporary issue that violates one of the configured checks
-(for example, a type mismatch detected by the type checker).
-
-For example, temporarily add the following function to any tracked Python file:
+To confirm that hooks are active in GitHub Desktop, temporarily introduce a small
+type error in any tracked Python file:
 
 .. code-block:: python
 
    def _pre_commit_test() -> int:
        return "not an int"
 
-Attempt to commit the change using GitHub Desktop:
+Attempt to commit the change:
 
-- If the commit is **blocked** and an error is reported, the hooks are working correctly.
-- If the commit is **not blocked** , as a first step, re-run the setup script from the repository root:
+- If the commit is **blocked**, the hooks are working correctly.
+- If the commit is **not blocked**, re-run the setup script:
 
   .. code-block:: bash
 
      python scripts/setup_hooks.py
 
-  This will reinstall and refresh both the ``pre-commit`` and ``post-merge`` hooks.
+After verification, revert the temporary change.
 
-  If the issue persists, you can manually reinstall the pre-commit hooks:
+.. note::
 
-  .. code-block:: bash
+   In Poriscope’s current workflow, formatting tools such as black and
+   ruff --fix are executed in a dedicated auto-fix step before strict
+   validation.
 
-     pre-commit uninstall
-     pre-commit install
+   During continuous integration (CI), these tools may automatically modify
+   files and commit the fixes back to the branch. After auto-fixing, all
+   quality checks (including strict ruff validation and mypy) are
+   re-run, and the CI job only fails if unresolved issues remain.
 
-After verification, revert the temporary change before continuing development.
-
+   A commit will not be blocked locally unless strict validation hooks fail.
 
 Running Quality Checks Manually
 -------------------------------
 
-Run all **validation hooks** (the same checks enforced during commits and CI)
-on all tracked files:
+Run all **validation hooks** (the same checks enforced during commits and CI):
 
 .. code-block:: bash
 
    pre-commit run --all-files
-
-This command runs:
-
-- ``ruff --exit-non-zero-on-fix`` (strict lint validation)
-- ``mypy`` (static type checking)
-- ``check-added-large-files``
-
-If this command succeeds, the codebase meets the required quality standards
-and will pass commit-time checks and CI validation.
 
 Run individual validation tools:
 
@@ -158,68 +161,24 @@ Run individual validation tools:
 Running Auto-fix Hooks Manually
 -------------------------------
 
-Some tools in Poriscope are configured to run **only in the manual hook stage**
-because they automatically modify files. This avoids unexpected changes during
-commits or CI runs.
-
-These auto-fix tools include:
-
-- ``black`` – automatic code formatting
-- ``ruff --fix`` – safe automatic lint fixes
-
-To run all auto-fix hooks on all files, use:
+To apply all automatic formatting and safe fixes:
 
 .. code-block:: bash
 
    pre-commit run --all-files --hook-stage manual
 
-This command will:
-
-- Reformat code using ``black``
-- Apply safe fixes using ``ruff --fix``
-
-After running this command:
+After running:
 
 1. Review the changes
 2. Stage the modified files
-3. Commit the results manually
-
-It is strongly recommended to run this command **before committing or pushing**
-changes, especially after large edits or after pulling upstream updates.
+3. Commit manually
 
 .. note::
 
-   Ruff is used in **two different modes** in Poriscope, depending on *how* it is run.
+   **Ruff runs in two modes**:
 
-   **1. Auto-fix mode (manual stage)**
-
-   When Ruff is run in the *manual* hook stage, it is allowed to automatically
-   fix issues in the codebase:
-
-   .. code-block:: bash
-
-      pre-commit run ruff --hook-stage manual
-      pre-commit run --all-files --hook-stage manual
-
-   In this mode, Ruff applies safe fixes (such as unused imports or formatting
-   adjustments) and **modifies files directly**. Any changes must be reviewed
-   and committed manually.
-
-   **2. Strict validation mode (commit and CI)**
-
-   During normal commits and in continuous integration (CI), Ruff runs in
-   *strict validation mode*:
-
-   - No files are modified
-   - Any issue that would require a fix causes the check to fail
-
-   This ensures that all code entering the repository already meets the required
-   linting standards.
-
-   In practice, this means:
-
-   - Use the **manual mode** to *fix* code
-   - Use the **default mode** to *verify* code
+   - **Auto-fix mode (manual stage)**: fixes code and modifies files
+   - **Validation mode (commit & CI)**: checks only, fails on violations
 
 
 Skipping Hooks (Advanced Use Only)
@@ -249,13 +208,27 @@ Summary for New Developers
 - Most formatting and lint issues are auto-fixable
 - Mypy errors must be resolved manually
 
-.. note::
 
-   Even if tools such as ``black`` or ``ruff`` are configured to automatically
-   apply fixes during the continuous integration (CI) run, the CI job will still
-   be marked as **failed** when such fixes are required.
+.. important::
 
-   For this reason, it is strongly recommended to run ``pre-commit`` locally
-   before pushing changes to the remote repository. Doing so ensures that all
-   formatting and linting issues are resolved upfront, avoids unnecessary CI
-   failures, and keeps the development workflow efficient.
+   **Contributors submitting pull requests from forks must run validation checks locally
+   before pushing.**
+
+   For security reasons, fork-based pull requests do **not** run auto-fix hooks
+   (such as ``black`` or ``ruff --fix``) in continuous integration. CI will only run
+   strict validation and will fail if formatting or lint issues are present.
+
+   Before opening or updating a fork-based pull request, contributors must run:
+
+   .. code-block:: bash
+
+      pre-commit run --all-files --hook-stage manual
+
+      pre-commit run --all-files
+
+
+   Then commit the resulting changes before pushing. This ensures that fork pull requests
+   pass CI validation without requiring automated fixes.
+
+   If there are changes that cannot be fixed automatically (such as mypy errors),
+   these must be resolved manually before pushing.
