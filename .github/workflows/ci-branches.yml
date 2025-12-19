@@ -1,23 +1,26 @@
 # CI (Branches)
 # -----------------------------------------------------------------------------
-# What it  does
+# What it does
 # - Runs on branch pushes to: develop, feature/*, bugfix/*
 # - Installs Linux GUI prereqs for PySide6 (EGL/GL/XCB) + Xvfb virtual display
 # - Sets up Python, caches pip by requirements files
-# - Installs runtime + dev deps (ruff, black, pytest, pytest-qt, PySide6, etc.)
-# - Auto-formats code (ruff --fix, black) and commits fixes back to the branch
+# - Installs runtime + dev deps
+# - Runs pre-commit in two phases:
+#     1) Auto-fix (non-blocking)
+#     2) Strict validation (blocking)
+# - Commits auto-fixes back to the branch if needed
 # - Runs tests marked "not e2e and not slow" under Xvfb
 #
 # Why we need the GUI prereqs
-# - PySide6/Qt requires native shared libs (libEGL, libGL, XCB) to import QtGui.
-# - Xvfb provides a virtual X server so Qt can initialize in headless CI.
+# - PySide6/Qt requires native shared libs (libEGL, libGL, XCB) to import QtGui
+# - Xvfb provides a virtual X server so Qt can initialize in headless CI
 #
 # Notes / Maintenance
 # - Auto-commit requires: permissions.contents=write and checkout fetch-depth: 0
-# - Prefer check-only? Replace the lint step with:
-#     ruff check .
-#     black --check .
-#   and remove the commit step; set permissions.contents: read
+# - If switching to check-only linting:
+#     - Remove the auto-fix phase
+#     - Use `ruff check .` and `black --check .`
+#     - Set permissions.contents: read
 # - Keep pytest.ini with: qt_api = pyside6
 # - Concurrency cancels in-progress runs on the same ref to save compute
 # -----------------------------------------------------------------------------
@@ -25,19 +28,15 @@
 name: CI (Branches)
 
 on:
-  # Run this workflow on branch pushes to these patterns
   push:
     branches:
       - develop
       - 'feature/*'
       - 'bugfix/*'
 
-# Needed only because we auto-commit style fixes below.
-# If switched to check-only linting, can be set to: { contents: read }
 permissions:
-  contents: write  # needed for auto-commit on push
+  contents: write  # required for auto-commit of pre-commit fixes
 
-# Ensure only one run per branch ref is active; cancel older in-progress runs
 concurrency:
   group: ci-branches-${{ github.ref }}
   cancel-in-progress: true
@@ -46,18 +45,15 @@ jobs:
   quick:
     runs-on: ubuntu-latest
 
-    # Headless Qt rendering; kept even though Xvfb run acts as an extra guard
     env:
-      QT_QPA_PLATFORM: offscreen  # run Qt without a display
+      QT_QPA_PLATFORM: offscreen
 
     steps:
-      # Fetch history to enable push changes back (auto-fix commit step)
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # required to git push later
+          fetch-depth: 0
 
-      # Native libs required for PySide6/Qt on Ubuntu + a virtual display server for GUI tests
       - name: Install system libs for Qt + Xvfb
         run: |
           sudo apt-get update
@@ -72,9 +68,8 @@ jobs:
             libxcb-render-util0 \
             libxcb-shape0 \
             libxcb-xfixes0 \
-            xvfb                          
+            xvfb
 
-      # Set up Python and enable pip cache keyed by requirements files
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -84,24 +79,23 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
-      # Install runtime + dev dependencies (ruff, black, pytest, pytest-qt, PySide6, etc.)
-      - name: Install dev dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pre-commit
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Clear pre-commit cache to reinitialize environments
-        run: |
-          pre-commit clean
+      - name: Clear pre-commit cache
+        run: pre-commit clean
 
-      # Run auto-fixes (doesn't fail the job)
-      - name: Run pre-commit auto-fixes (non-blocking) - Runs mypy too, but those do not autofix
+      # ---------------------------------------------------------------------
+      # Phase 1: Auto-fix (never fails)
+      # ---------------------------------------------------------------------
+      - name: Run pre-commit auto-fix (non-blocking)
         run: |
           pre-commit run --all-files --hook-stage manual || true
-      
-      # Commit and push changes if any
+
       - name: Commit and push pre-commit fixes
         run: |
           if ! git diff --quiet; then
@@ -111,14 +105,17 @@ jobs:
             git commit -m "style: auto-fix via pre-commit hooks"
             git push
           fi
-      
-       # Run pre-commit again and fail if *any* issues remain
-      - name: Run pre-commit validation (must pass)
-        run: pre-commit run --all-files
 
+      # ---------------------------------------------------------------------
+      # Phase 2: Strict validation (must pass)
+      # ---------------------------------------------------------------------
+      - name: Run pre-commit validation
+        run: |
+          pre-commit run --all-files
 
-      # Run unit tests that exclude slow and e2e marks, under a virtual display
-      # If no Xvfb, Qt may fail to initialize on headless runners
+      # ---------------------------------------------------------------------
+      # Tests
+      # ---------------------------------------------------------------------
       - name: Run tests (no slow/e2e) under Xvfb
         run: |
           xvfb-run -a pytest -q -m "not e2e and not slow"
