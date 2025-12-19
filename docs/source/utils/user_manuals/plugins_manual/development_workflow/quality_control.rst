@@ -41,7 +41,7 @@ These checks **never modify files**.
 If **any hook fails**, the commit is **blocked**.
 
 Automatic Formatting and Auto-fixes
-----------------------------------
+-----------------------------------
 
 Automatic formatting and safe lint fixes are intentionally excluded from the
 commit stage.

@@ -47,7 +47,7 @@ feature reference: if users obtain the same intermediate views and final
 outputs, they can be confident that Poriscope is operating correctly.
 
 Once you have installed **Poriscope** as described in the installation guide
-(see :ref:`getting_started`), you can launch the application by following the
+(see :ref:`getting_started_general_user`), you can launch the application by following the
 steps below.
 
 Launching Poriscope
