@@ -27,7 +27,7 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Literal
 
 import numpy as np
 from matplotlib.backends.backend_qt5agg import (
@@ -487,8 +487,8 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
     @log(logger=logger)
     def _parse_event_indices(
-        self, indices: str, allow_floats: bool = False
-    ) -> list[tuple[int, int]]:
+        self, indices: str, allow_floats: Literal[True]
+    ) -> list[tuple[float, float]]:
         """
         Parse '7-10,12' → [(7,10), (12,12)]
         If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)]
