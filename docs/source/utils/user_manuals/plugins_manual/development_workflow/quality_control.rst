@@ -131,20 +131,96 @@ After verification, revert the temporary change before continuing development.
 Running Quality Checks Manually
 -------------------------------
 
-Run all pre-commit hooks on all files:
+Run all **validation hooks** (the same checks enforced during commits and CI)
+on all tracked files:
 
 .. code-block:: bash
 
    pre-commit run --all-files
 
-Run individual tools:
+This command runs:
+
+- ``ruff --exit-non-zero-on-fix`` (strict lint validation)
+- ``mypy`` (static type checking)
+- ``check-added-large-files``
+
+If this command succeeds, the codebase meets the required quality standards
+and will pass commit-time checks and CI validation.
+
+Run individual validation tools:
 
 .. code-block:: bash
 
-   pre-commit run black
    pre-commit run ruff
    pre-commit run mypy
    pre-commit run check-added-large-files
+
+Running Auto-fix Hooks Manually
+-------------------------------
+
+Some tools in Poriscope are configured to run **only in the manual hook stage**
+because they automatically modify files. This avoids unexpected changes during
+commits or CI runs.
+
+These auto-fix tools include:
+
+- ``black`` – automatic code formatting
+- ``ruff --fix`` – safe automatic lint fixes
+
+To run all auto-fix hooks on all files, use:
+
+.. code-block:: bash
+
+   pre-commit run --all-files --hook-stage manual
+
+This command will:
+
+- Reformat code using ``black``
+- Apply safe fixes using ``ruff --fix``
+
+After running this command:
+
+1. Review the changes
+2. Stage the modified files
+3. Commit the results manually
+
+It is strongly recommended to run this command **before committing or pushing**
+changes, especially after large edits or after pulling upstream updates.
+
+.. note::
+
+   Ruff is used in **two different modes** in Poriscope, depending on *how* it is run.
+
+   **1. Auto-fix mode (manual stage)**
+
+   When Ruff is run in the *manual* hook stage, it is allowed to automatically
+   fix issues in the codebase:
+
+   .. code-block:: bash
+
+      pre-commit run ruff --hook-stage manual
+      pre-commit run --all-files --hook-stage manual
+
+   In this mode, Ruff applies safe fixes (such as unused imports or formatting
+   adjustments) and **modifies files directly**. Any changes must be reviewed
+   and committed manually.
+
+   **2. Strict validation mode (commit and CI)**
+
+   During normal commits and in continuous integration (CI), Ruff runs in
+   *strict validation mode*:
+
+   - No files are modified
+   - Any issue that would require a fix causes the check to fail
+
+   This ensures that all code entering the repository already meets the required
+   linting standards.
+
+   In practice, this means:
+
+   - Use the **manual mode** to *fix* code
+   - Use the **default mode** to *verify* code
+
 
 Skipping Hooks (Advanced Use Only)
 ----------------------------------

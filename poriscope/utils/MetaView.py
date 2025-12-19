@@ -789,3 +789,5 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             )
 
         return df
+    
+    def add(a,b):return a+b
