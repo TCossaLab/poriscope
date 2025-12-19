@@ -24,7 +24,7 @@ Make sure that:
 Otherwise you may apply one dataset’s events to another, leading to mismatched results.
 
 I clicked :menuselection:`Analysis -> New Analysis Tab -> EventAnalysisController` or :menuselection:`RawDataController`, but nothing changes.
-----------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------
 
 Poriscope lets you use the top menu to **open** a plugin tab the first time only.  
 After it’s opened, switch back to any analysis view from the left sidebar:

@@ -1,4 +1,4 @@
-.. _getting_started_developer:
+.. _getting_started_general_user:
 
 Getting Started
 ===============
@@ -47,25 +47,15 @@ Before installing Poriscope, make sure you have the following installed:
 
       mingw32-make --version
 
-Installation
-------------
 
-As a developer, install Poriscope in *editable* mode:
+Installing the Stable Version
+-----------------------------
+
+To install the **latest stable version** (recommended for general users — **does not track future updates unless reinstalled manually**):
 
 .. code-block:: bash
 
-   git clone https://github.com/TCossaLab/poriscope.git
-   cd poriscope
-   pip install -e .
-
-This allows live code edits without reinstallation.
-
-.. note::
-
-   If you have a previous version of Poriscope installed, uninstall it first::
-
-      pip uninstall poriscope
-
+   python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"
 
 Launching Poriscope
 -------------------
