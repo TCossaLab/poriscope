@@ -3,15 +3,26 @@
 # What it does
 # - Runs on branch pushes to: develop, feature/*, bugfix/*
 # - Installs Linux GUI prereqs for PySide6 (EGL/GL/XCB) + Xvfb virtual display
-# - Sets up Python and caches pip dependencies
-# - Runs pre-commit auto-fix hooks (manual stage)
-# - Commits and pushes auto-fixes if needed
-# - Runs strict pre-commit validation (must pass)
+# - Sets up Python, caches pip by requirements files
+# - Installs runtime + dev deps
+# - Runs pre-commit in two phases:
+#     1) Auto-fix (non-blocking)
+#     2) Strict validation (blocking)
+# - Commits auto-fixes back to the branch if needed
 # - Runs tests marked "not e2e and not slow" under Xvfb
 #
-# Notes
+# Why we need the GUI prereqs
+# - PySide6/Qt requires native shared libs (libEGL, libGL, XCB) to import QtGui
+# - Xvfb provides a virtual X server so Qt can initialize in headless CI
+#
+# Notes / Maintenance
 # - Auto-commit requires: permissions.contents=write and checkout fetch-depth: 0
-# - Concurrency cancels in-progress runs on the same ref
+# - If switching to check-only linting:
+#     - Remove the auto-fix phase
+#     - Use `ruff check .` and `black --check .`
+#     - Set permissions.contents: read
+# - Keep pytest.ini with: qt_api = pyside6
+# - Concurrency cancels in-progress runs on the same ref to save compute
 # -----------------------------------------------------------------------------
 
 name: CI (Branches)
@@ -24,7 +35,7 @@ on:
       - 'bugfix/*'
 
 permissions:
-  contents: write
+  contents: write  # required for auto-commit of pre-commit fixes
 
 concurrency:
   group: ci-branches-${{ github.ref }}
@@ -75,16 +86,16 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      # ------------------------------------------------------------------
-      # 1. Run auto-fix hooks (manual stage only)
-      # ------------------------------------------------------------------
-      - name: Run pre-commit auto-fix hooks
+      - name: Clear pre-commit cache
+        run: pre-commit clean
+
+      # ---------------------------------------------------------------------
+      # Phase 1: Auto-fix (never fails)
+      # ---------------------------------------------------------------------
+      - name: Run pre-commit auto-fix (non-blocking)
         run: |
           pre-commit run --all-files --hook-stage manual || true
 
-      # ------------------------------------------------------------------
-      # 2. Commit and push any fixes
-      # ------------------------------------------------------------------
       - name: Commit and push pre-commit fixes
         run: |
           if ! git diff --quiet; then
@@ -95,16 +106,16 @@ jobs:
             git push
           fi
 
-      # ------------------------------------------------------------------
-      # 3. Strict validation (must pass)
-      # ------------------------------------------------------------------
+      # ---------------------------------------------------------------------
+      # Phase 2: Strict validation (must pass)
+      # ---------------------------------------------------------------------
       - name: Run pre-commit validation
         run: |
           pre-commit run --all-files
 
-      # ------------------------------------------------------------------
-      # 4. Tests
-      # ------------------------------------------------------------------
+      # ---------------------------------------------------------------------
+      # Tests
+      # ---------------------------------------------------------------------
       - name: Run tests (no slow/e2e) under Xvfb
         run: |
           xvfb-run -a pytest -q -m "not e2e and not slow"
