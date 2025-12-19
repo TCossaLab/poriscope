@@ -8,7 +8,7 @@ repos:
     hooks:
       - id: black
         args: [--fast]
-        stages: [manual]
+        # stages: [manual]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.11
@@ -16,7 +16,7 @@ repos:
       - id: ruff
         args: ["--fix"]
         exclude: ^tests/slow/
-        stages: [manual]
+        # stages: [manual]
 
   # Static Type Checking (runs during default commit stage)
   - repo: https://github.com/pre-commit/mirrors-mypy

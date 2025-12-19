@@ -27,7 +27,7 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Dict, List, Set, Literal
+from typing import Dict, List, Literal, Set
 
 import numpy as np
 from matplotlib.backends.backend_qt5agg import (
