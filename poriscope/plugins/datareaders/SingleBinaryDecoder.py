@@ -177,7 +177,7 @@ class SingleBinaryDecoder(MetaReader):
         """
         Set the sampling rate for the reader.
         """
-        self.samplerate = self.settings["Sampling Rate"]["Value"]
+        return self.settings["Sampling Rate"]["Value"]
 
     @log(logger=logger)
     @override
