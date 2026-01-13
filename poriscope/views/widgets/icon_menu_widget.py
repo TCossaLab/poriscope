@@ -43,6 +43,7 @@ from poriscope.utils.LogDecorator import log
 class IconMenuWidget(QWidget):
     rawDataToggled = Signal(bool)
     statsToggled = Signal(bool)
+    metadataToggled = Signal(bool)
     pluginsToggled = Signal(bool)
     helpToggled = Signal(bool)
     settingsToggled = Signal(bool)
@@ -51,6 +52,7 @@ class IconMenuWidget(QWidget):
 
     switchToRawData = Signal()
     switchToStatistics = Signal()
+    switchToMetadata = Signal()
 
     switchToPlugins = Signal()
     switchToHelp = Signal()
@@ -116,6 +118,16 @@ class IconMenuWidget(QWidget):
             self.handleStats,
             "Event Analysis",
         )
+        self.metadata_icon_button = self.createIconButton(
+            layout,
+            "metadata",
+            os.path.join(self.icon_path, "database-white.svg"),
+            os.path.join(self.icon_path, "database-black.svg"),
+            25,
+            self.handleMetadata,
+            "Metadata",
+        )
+
         self.add_icon_button = self.createIconButton(
             layout,
             "add",
@@ -276,6 +288,7 @@ class IconMenuWidget(QWidget):
     def connectSignals(self):
         self.raw_data_icon_button.clicked.connect(self.switchToRawData.emit)
         self.stats_icon_button.clicked.connect(self.switchToStatistics.emit)
+        self.metadata_icon_button.clicked.connect(self.switchToMetadata.emit)
         self.add_icon_button.clicked.connect(self.switchToPlugins.emit)
         self.settings_icon_button.clicked.connect(self.switchToSettings.emit)
         self.help_icon_button.clicked.connect(self.switchToHelp.emit)
@@ -287,6 +300,7 @@ class IconMenuWidget(QWidget):
             "menu": self.menuToggled,
             "data": self.rawDataToggled,
             "stats": self.statsToggled,
+            "metadata": self.metadataToggled,
             "add": self.pluginsToggled,
             "help": self.helpToggled,
             "settings": self.settingsToggled,
@@ -306,6 +320,10 @@ class IconMenuWidget(QWidget):
     @log(logger=logger)
     def handleStats(self):
         self.logger.info("Event Analysis clicked")
+
+    @log(logger=logger)
+    def handleMetadata(self):
+        self.logger.info("Metadata clicked")
 
     @log(logger=logger)
     def handlePlugins(self):

@@ -196,6 +196,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         icon_text_signals = [
             ("rawDataToggled", self.text_menu_widget.setRawDataChecked),
             ("statsToggled", self.text_menu_widget.setStatsChecked),
+            ("metadataToggled", self.text_menu_widget.setMetadataChecked),
             ("pluginsToggled", self.text_menu_widget.setPluginsChecked),
             ("helpToggled", self.text_menu_widget.setHelpChecked),
             ("settingsToggled", self.text_menu_widget.setSettingsChecked),
@@ -214,6 +215,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         page_switch_signals = [
             ("switchToRawData", self.on_raw_data_view_click),
             ("switchToStatistics", self.on_stats_click),
+            ("switchToMetadata", self.on_metadata_click),
             ("switchToSettings", self.on_settings_button_click),
             ("switchToHelp", self.on_help_button_click),
             ("switchToPlugins", self.on_plugins_button_click),
@@ -500,6 +502,11 @@ class MainView(QMainWindow, WalkthroughMixin):
     def on_stats_click(self):
         self.on_load_analysis_tab_button_click("EventAnalysisController")
         self.switch_to_page("EventAnalysisView")
+
+    @log(logger=logger)
+    def on_metadata_click(self):
+        self.on_load_analysis_tab_button_click("MetadataController")
+        self.switch_to_page("MetadataView")
 
     @log(logger=logger)
     def on_plugins_button_click(self):
