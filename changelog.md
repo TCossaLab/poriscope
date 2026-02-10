@@ -75,9 +75,9 @@
     * Post-merge pipeline updated to account for docs updates
 
 ### General Fixes and Improvements:
-* **Stability fix for heatmap plotting**
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
-    
+    * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
+
 ## Poriscope 1.4: 2025-06-09
 
 ### What's New since Poriscope 1.3:
