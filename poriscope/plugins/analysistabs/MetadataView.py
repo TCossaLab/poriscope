@@ -1229,7 +1229,13 @@ class MetadataView(MetaView, WalkthroughMixin):
                                     getattr(self, "allowed_sizes", None) != sizes
                                 )
                                 if bin_sensitive and (bins_changed or sizes_changed):
-                                    axis_type = "3d" if isinstance(getattr(self, "axes", None), Axes3D) else "2d"
+                                    axis_type = (
+                                        "3d"
+                                        if isinstance(
+                                            getattr(self, "axes", None), Axes3D
+                                        )
+                                        else "2d"
+                                    )
                                     self._reset_actions(axis_type=axis_type)
 
                                 plot_data = self._construct_all_points_histogram(
@@ -1260,7 +1266,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 )
                         else:
                             return False
-                        
+
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
@@ -1272,7 +1278,6 @@ class MetadataView(MetaView, WalkthroughMixin):
                         # event plots don't have metadata axes/log flags
                         self.allowed_columns = []
                         self.allowed_logs = []
-
 
                     self.plotted_datasets.add((exp, channel, sql_filter, subset_name))
 
@@ -1985,7 +1990,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         return re.sub(r"\s+", " ", sql).strip()
 
-
     @log(logger=logger)
     def set_query(self, query, table_name):
         """
@@ -2014,7 +2018,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.__class__.__name__,
         )
 
-
     @log(logger=logger)
     def set_event_query(self, query):
         """
@@ -2036,7 +2039,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             f"Event SQL:\n{query.strip()}",
             self.__class__.__name__,
         )
-
 
     @log(logger=logger)
     def set_units(self, units):
