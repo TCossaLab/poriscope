@@ -1537,7 +1537,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         loader,
                         "construct_metadata_query",
                         (
-                            ["event_id", "sublevel_current", "voltage"],
+                            ["sublevel_current", "voltage", "duration"],
                             filter_text,
                             None,
                         ),
@@ -2301,7 +2301,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 loader,
                 "construct_metadata_query",
                 (
-                    ["event_id", "sublevel_current", "voltage"],
+                    ["sublevel_current", "voltage", "duration"],
                     filter_text,
                     None,
                 ),  # using event_id as placeholder column
@@ -2370,7 +2370,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "MetaDatabaseLoader",
                 loader,
                 "construct_metadata_query",
-                (["event_id", "sublevel_current", "voltage"], new_filter, None),
+                (["sublevel_current", "voltage", "duration"], new_filter, None),
                 "relay_query",
                 ("validate_edited_filter",),
             )
