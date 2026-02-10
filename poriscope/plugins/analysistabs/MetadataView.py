@@ -1027,6 +1027,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                         else f"{subset_name}"
                     )
                     sizes = False
+                    columns: List[str] = []
+                    logscales: List[bool] = []
 
                     if plot_type in self.metadata_plots:
                         if plot_type in [
@@ -1223,7 +1225,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                                     getattr(self, "allowed_sizes", None) != sizes
                                 )
                                 if bin_sensitive and (bins_changed or sizes_changed):
-                                    self._reset_actions()
+                                    axis_type = "3d" if isinstance(getattr(self, "axes", None), Axes3D) else "2d"
+                                    self._reset_actions(axis_type=axis_type)
 
                                 plot_data = self._construct_all_points_histogram(
                                     self.event_data_generator,
@@ -1253,12 +1256,19 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 )
                         else:
                             return False
-
+                        
                     self.allowed_plot_type = plot_type
-                    self.allowed_columns = columns
-                    self.allowed_logs = logscales
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
+
+                    if plot_type in self.metadata_plots:
+                        self.allowed_columns = columns
+                        self.allowed_logs = logscales
+                    else:
+                        # event plots don't have metadata axes/log flags
+                        self.allowed_columns = []
+                        self.allowed_logs = []
+
 
                     self.plotted_datasets.add((exp, channel, sql_filter, subset_name))
 
