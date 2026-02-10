@@ -133,6 +133,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
         self.plotted_datasets: Set[
             Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]
         ] = (
@@ -244,6 +246,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_plot_type = None
         self.allowed_columns = []
         self.allowed_logs = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
         self.plotted_datasets = (
             set()
         )  # tuple of things already plotted: (experiment, channel, filter), which can be None
@@ -1009,6 +1013,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
+
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
                     dataset_label = (
@@ -1017,8 +1022,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                         else f"{subset_name}"
                     )
                     sizes = False
-                    if plot_type in self.metadata_plots:
 
+                    if plot_type in self.metadata_plots:
                         if plot_type in [
                             "Kernel Density Plot",
                             "Histogram",
@@ -1028,11 +1033,13 @@ class MetadataView(MetaView, WalkthroughMixin):
                             logscales = [parameters["x_log"]]
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
+
                         elif plot_type in ["Scatterplot", "Heatmap"]:
                             columns = [parameters["x_axis"], parameters["y_axis"]]
                             logscales = [parameters["x_log"], parameters["y_log"]]
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
+
                         elif plot_type in ["3D Scatterplot"]:
                             columns = [
                                 parameters["x_axis"],
@@ -1044,16 +1051,29 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 parameters["y_log"],
                                 parameters["z_log"],
                             ]
+
                         elif plot_type in ["Capture Rate"]:
                             columns = ["start_time"]
                             logscales = [True]
                             bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
                         else:
                             self.add_text_to_display.emit(
                                 f"Unsupported Plot Type: {plot_type}",
                                 self.__class__.__name__,
                             )
                             return False
+
+                        bin_sensitive = plot_type in [
+                            "Histogram",
+                            "Normalized Histogram",
+                            "Kernel Density Plot",
+                            "Capture Rate",
+                            "Heatmap",
+                        ]
+                        bins_changed = getattr(self, "allowed_bins", None) != bins
+                        sizes_changed = getattr(self, "allowed_sizes", None) != sizes
 
                         if (
                             (
@@ -1072,6 +1092,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 self.allowed_plot_type is not None
                                 and plot_type != self.allowed_plot_type
                             )
+                            or (bin_sensitive and (bins_changed or sizes_changed))
                         ):
                             self._reset_actions()  # reset the plot if the plot options change
 
@@ -1089,7 +1110,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             self.plotted_datasets
                             and (exp, channel, sql_filter, subset_name)
                             in self.plotted_datasets
-                        ):  # do not overlay the same thing twice
+                        ): # do not overlay the same thing twice
                             continue
 
                         self.global_signal.emit(
@@ -1102,6 +1123,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         )
                         if self.query == "":
                             return False
+
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
@@ -1122,6 +1144,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 f"{len(self.plot_data)} rows in subset {dataset_label}",
                                 self.__class__.__name__,
                             )
+
                         units = []
                         for column in columns:
                             self.global_signal.emit(
@@ -1185,12 +1208,21 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 "Normalized Filtered All Points Histogram",
                             ]:
                                 bins = parameters["bins"]
+                                sizes = parameters["sizes"]
+
+                                bin_sensitive = True
+                                bins_changed = getattr(self, "allowed_bins", None) != bins
+                                sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+                                if bin_sensitive and (bins_changed or sizes_changed):
+                                    self._reset_actions()
+
                                 plot_data = self._construct_all_points_histogram(
                                     self.event_data_generator,
                                     plot_type,
-                                    bins,
+                                    bins=bins,
                                     sizes=sizes,
                                 )
+
                                 if plot_data is not None:
                                     self.update_plot(
                                         plot_type,
@@ -1202,22 +1234,25 @@ class MetadataView(MetaView, WalkthroughMixin):
                                     )
                                 else:
                                     return False
+
                             elif plot_type in [
                                 "Raw Event Overlay",
                                 "Filtered Event Overlay",
                             ]:
-                                try:
-                                    self._construct_event_overlay(
-                                        self.event_data_generator, plot_type, loader
-                                    )
-                                except:
-                                    raise
+                                self._construct_event_overlay(
+                                    self.event_data_generator, plot_type, loader
+                                )
                         else:
                             return False
+
                     self.allowed_plot_type = plot_type
                     self.allowed_columns = columns
                     self.allowed_logs = logscales
+                    self.allowed_bins = bins
+                    self.allowed_sizes = sizes
+
                     self.plotted_datasets.add((exp, channel, sql_filter, subset_name))
+
         return True
 
     @log(logger=logger)
