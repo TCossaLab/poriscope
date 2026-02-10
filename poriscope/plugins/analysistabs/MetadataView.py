@@ -184,33 +184,59 @@ class MetadataView(MetaView, WalkthroughMixin):
             "CSV Files (*.csv);;All Files (*)",
         )
         return file_name
+    @log(logger=logger)
+    def _clear_figure_state(self, axis_type: str = "2d",*,create_default_axes: bool = True,) -> None:
+        """
+        Canonical figure reset.
+
+        :param axis_type: Type of axes to create if recreating axes.
+                        Use "2d" for a standard 2D axes or "3d" for a 3D projection.
+        :type axis_type: str
+        :param create_default_axes: Whether to recreate a default axes after clearing
+                                    the figure. If False, the figure is left without axes.
+        :type create_default_axes: bool
+        :return: None
+        :rtype: None
+        """
+        # Always invalidate references to figure-owned artists
+        self._heatmap_colorbar = None  # type: ignore[attr-defined]
+
+        fig = getattr(self, "figure", None)
+        if fig is None:
+            self._clear_cache()
+            return
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            fig.clear()
+
+        if create_default_axes:
+            if axis_type == "2d":
+                self.axes = fig.add_subplot(1, 1, 1)
+            else:
+                self.axes = fig.add_subplot(1, 1, 1, projection="3d")
+
+        fig.set_constrained_layout(True)
+        self._clear_cache()
 
     @log(logger=logger)
     @register_action()
     @override
-    def _reset_actions(self, axis_type="2d"):
+    def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
+        Clears the figure and reinitializes axes. This will also add a flag to the tab action history
+        if @register_action is being used to keep track of actions. Only actions applied after the most
+        recent call to this function will be recreated if the related file is loaded.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
         """
-        if hasattr(self, "_heatmap_colorbar") and self._heatmap_colorbar is not None:  # type: ignore
-            self._heatmap_colorbar.remove()  # type: ignore
-            self._heatmap_colorbar = None  # type: ignore
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            try:
-                self.figure.clear()
-            except AttributeError:
-                pass
-            self._clear_cache()
-        if axis_type == "2d":
-            self.axes = self.figure.add_subplot(1, 1, 1)
-        else:
-            self.axes = self.figure.add_subplot(1, 1, 1, projection="3d")
-        self.figure.set_constrained_layout(True)
+        # Canonical figure reset
+        self._clear_figure_state(axis_type=axis_type, create_default_axes=True)
+
         self.canvas.draw()
+
+        # Reset plot bookkeeping variables
         self.hist_min = None
         self.hist_max = None
         self.hist_data = []
@@ -607,10 +633,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         tickmax = max(ticks)
         ticks = np.linspace(-1, int(tickmax) + 1, num=int(tickmax) + 3, endpoint=True)
 
-        # Remove the previous colorbar if it exists
-        if hasattr(self, "_heatmap_colorbar") and self._heatmap_colorbar:
-            self._heatmap_colorbar.remove()
+        # Remove the previous colorbar if it exists (overlay case)
+        cb = getattr(self, "_heatmap_colorbar", None)
+        if cb is not None:
+            try:
+                # only remove if it still has an axes attached to a figure
+                if getattr(cb, "ax", None) is not None and cb.ax.figure is self.figure:
+                    cb.remove()
+            except Exception:
+                pass
             self._heatmap_colorbar = None
+
 
         self._heatmap_colorbar = self.figure.colorbar(im, ax=ax, ticks=ticks)
         self._heatmap_colorbar.ax.set_yticklabels([0] + list(2 ** ticks[1:]))
@@ -1769,10 +1802,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: None
         :rtype: None
         """
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            self.figure.clear()
-        self._clear_cache()
+        self._clear_figure_state(create_default_axes=False)
 
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
