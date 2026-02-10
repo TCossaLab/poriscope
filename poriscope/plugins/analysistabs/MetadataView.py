@@ -184,8 +184,14 @@ class MetadataView(MetaView, WalkthroughMixin):
             "CSV Files (*.csv);;All Files (*)",
         )
         return file_name
+
     @log(logger=logger)
-    def _clear_figure_state(self, axis_type: str = "2d",*,create_default_axes: bool = True,) -> None:
+    def _clear_figure_state(
+        self,
+        axis_type: str = "2d",
+        *,
+        create_default_axes: bool = True,
+    ) -> None:
         """
         Canonical figure reset.
 
@@ -643,7 +649,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             except Exception:
                 pass
             self._heatmap_colorbar = None
-
 
         self._heatmap_colorbar = self.figure.colorbar(im, ax=ax, ticks=ticks)
         self._heatmap_colorbar.ax.set_yticklabels([0] + list(2 ** ticks[1:]))
