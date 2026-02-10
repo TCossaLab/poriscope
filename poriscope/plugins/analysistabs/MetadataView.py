@@ -1115,7 +1115,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             self.plotted_datasets
                             and (exp, channel, sql_filter, subset_name)
                             in self.plotted_datasets
-                        ): # do not overlay the same thing twice
+                        ):  # do not overlay the same thing twice
                             continue
 
                         self.global_signal.emit(
@@ -1216,8 +1216,12 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 sizes = parameters["sizes"]
 
                                 bin_sensitive = True
-                                bins_changed = getattr(self, "allowed_bins", None) != bins
-                                sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+                                bins_changed = (
+                                    getattr(self, "allowed_bins", None) != bins
+                                )
+                                sizes_changed = (
+                                    getattr(self, "allowed_sizes", None) != sizes
+                                )
                                 if bin_sensitive and (bins_changed or sizes_changed):
                                     self._reset_actions()
 
