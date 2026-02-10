@@ -135,6 +135,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_logs: List[bool] = []
         self.allowed_bins = None
         self.allowed_sizes = None
+
+        self._last_sql_printed: Optional[str] = None
+        self._last_event_sql_printed: Optional[str] = None
+
         self.plotted_datasets: Set[
             Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]
         ] = (
@@ -1972,6 +1976,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.exported_event_count = written
 
     @log(logger=logger)
+    def _normalize_sql(self, sql: str) -> str:
+        """
+        Normalize SQL for comparison purposes only.
+
+        Collapses all whitespace and strips leading/trailing spaces so that
+        formatting-only differences do not trigger duplicate sidebar output.
+        """
+        return re.sub(r"\s+", " ", sql).strip()
+
+
+    @log(logger=logger)
     def set_query(self, query, table_name):
         """
         Set the SQL query and table name used in plotting.
@@ -1984,12 +1999,44 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.query = query
         self.table_name = table_name
 
+        if not query:
+            return
+
+        normalized = self._normalize_sql(query)
+
+        if normalized == self._last_sql_printed:
+            return  # skip duplicates
+
+        self._last_sql_printed = normalized
+
+        self.add_text_to_display.emit(
+            f"SQL ({table_name}):\n{query.strip()}",
+            self.__class__.__name__,
+        )
+
+
     @log(logger=logger)
     def set_event_query(self, query):
         """
-        a global signal callback that provides a valid SQL query for fetching event data
+        A global signal callback that provides a valid SQL query for fetching event data.
         """
         self.event_query = query
+
+        if not query:
+            return
+
+        normalized = self._normalize_sql(query)
+
+        if normalized == self._last_event_sql_printed:
+            return  # skip duplicates
+
+        self._last_event_sql_printed = normalized
+
+        self.add_text_to_display.emit(
+            f"Event SQL:\n{query.strip()}",
+            self.__class__.__name__,
+        )
+
 
     @log(logger=logger)
     def set_units(self, units):
