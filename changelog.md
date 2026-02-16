@@ -60,7 +60,7 @@
     * You can now set bins either by size or counts
     * When plotting multiple overlaid histograms, bins will adjust to match across subsets
     * Enforces single exp/channel selection for event plots, which allows event_id to be used instead of global_id to identify events for plotting
-    * Full SQL printed to the logging panel (even when valid)
+    * Full SQL will always be printed after filter creation/editing, regardless of validity
     
 * **Updated Frontend Plugin: `RawDataView`**
     * Added the option to calculate and plot the baseline stats on the raw data panel
@@ -78,6 +78,7 @@
 ### General Fixes and Improvements:
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
     * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
+    * Fixed cross-table SQL filtering
 
 
 ## Poriscope 1.4: 2025-06-09

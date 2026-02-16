@@ -136,8 +136,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_bins = None
         self.allowed_sizes = None
 
-        self._last_sql_printed: Optional[str] = None
-        self._last_event_sql_printed: Optional[str] = None
+        self._show_sql_in_display: bool = False
+        self._show_event_sql_in_display: bool = False
 
         self.plotted_datasets: Set[
             Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]
@@ -975,6 +975,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: True if the overlay was successful, False otherwise.
         :rtype: bool
         """
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
+
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
@@ -1981,16 +1984,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.exported_event_count = written
 
     @log(logger=logger)
-    def _normalize_sql(self, sql: str) -> str:
-        """
-        Normalize SQL for comparison purposes only.
-
-        Collapses all whitespace and strips leading/trailing spaces so that
-        formatting-only differences do not trigger duplicate sidebar output.
-        """
-        return re.sub(r"\s+", " ", sql).strip()
-
-    @log(logger=logger)
     def set_query(self, query, table_name):
         """
         Set the SQL query and table name used in plotting.
@@ -2002,21 +1995,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         self.query = query
         self.table_name = table_name
-
         if not query:
             return
 
-        normalized = self._normalize_sql(query)
-
-        if normalized == self._last_sql_printed:
-            return  # skip duplicates
-
-        self._last_sql_printed = normalized
-
-        self.add_text_to_display.emit(
-            f"SQL ({table_name}):\n{query.strip()}",
-            self.__class__.__name__,
-        )
+        # Only display SQL for filter creation/edit validation
+        if self._show_sql_in_display:
+            self.add_text_to_display.emit(
+                f"SQL ({table_name}):\n{query.strip()}",
+                self.__class__.__name__,
+            )
+            # one-shot so normal plot queries never show
+            self._show_sql_in_display = False
 
     @log(logger=logger)
     def set_event_query(self, query):
@@ -2024,21 +2013,15 @@ class MetadataView(MetaView, WalkthroughMixin):
         A global signal callback that provides a valid SQL query for fetching event data.
         """
         self.event_query = query
-
         if not query:
             return
 
-        normalized = self._normalize_sql(query)
-
-        if normalized == self._last_event_sql_printed:
-            return  # skip duplicates
-
-        self._last_event_sql_printed = normalized
-
-        self.add_text_to_display.emit(
-            f"Event SQL:\n{query.strip()}",
-            self.__class__.__name__,
-        )
+        if self._show_event_sql_in_display:
+            self.add_text_to_display.emit(
+                f"Event SQL:\n{query.strip()}",
+                self.__class__.__name__,
+            )
+            self._show_event_sql_in_display = False
 
     @log(logger=logger)
     def set_units(self, units):
@@ -2270,6 +2253,8 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         :param parameters: Dictionary with 'db_loader'.
         """
+        self._show_sql_in_display = True
+
         dialog = AddSubsetFilterDialog(
             self, existing_names=list(self.subset_filters.keys())
         )
@@ -2296,6 +2281,8 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_name = name
             self._pending_filter_text = filter_text
             self._pending_old_filter_name: Optional[str] = None
+
+            self._show_sql_in_display = True
 
             # Validate filter via construct_metadata_query
             self.global_signal.emit(
@@ -2347,6 +2334,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param name: The name of the filter to edit.
         :param parameters: Dictionary with context, must include 'db_loader'.
         """
+        self._show_sql_in_display = True
+
         self.logger.debug(f"Editing filter: {name}")
         self.logger.debug(f"Filters available: {self.subset_filters}")
 
@@ -2367,6 +2356,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_text = new_filter
             self._pending_old_filter_name = name  # important for replacing key
 
+            self._show_sql_in_display = True
             # Emit signal to validate the updated filter
             self.global_signal.emit(
                 "MetaDatabaseLoader",
