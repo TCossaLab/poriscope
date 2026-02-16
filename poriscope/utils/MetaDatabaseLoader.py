@@ -624,6 +624,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :return: a valid SQL query and an empty string, or an empty string and a debug message, and the table name of the affected id column
         :rtype: Tuple[str, str, str]
         """
+
         def tuple_builder(id_list):
             if not id_list:
                 raise ValueError("Unable to build tuple from empty list")
@@ -700,16 +701,16 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 if channel_list:
                     condition = f"({'e.' if events_columns and sublevels_columns else ''}experiment_id = {exp} AND {'e.' if events_columns and sublevels_columns else ''}channel_id IN {tuple_builder(channel_list)})"
                 else:
-                    condition = (
-                        f"({'e.' if events_columns and sublevels_columns else ''}experiment_id = {exp})"
-                    )
+                    condition = f"({'e.' if events_columns and sublevels_columns else ''}experiment_id = {exp})"
                 experiment_conditions.append(condition)
 
         # Combine all into final WHERE clause
         if experiment_conditions:
             base_conditions.append(f"({' OR '.join(experiment_conditions)})")
 
-        condition_clause = f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
+        condition_clause = (
+            f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
+        )
 
         # Determine query type and build it
         if events_columns and not sublevels_columns and not experiments_columns:
