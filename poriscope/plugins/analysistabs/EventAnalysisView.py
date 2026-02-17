@@ -452,7 +452,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                     self.global_signal.emit(
                                         "MetaEventFitter",
                                         eventfitter,
-                                        "construct_fitted_event",
+                                        "get_fitted_event",
                                         load_fit_args,
                                         "update_plot_data",
                                         (),

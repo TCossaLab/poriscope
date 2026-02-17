@@ -133,11 +133,22 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
+
+        self._show_sql_in_display: bool = False
+        self._show_event_sql_in_display: bool = False
+
         self.plotted_datasets: Set[
-            Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]
-        ] = (
-            set()
-        )  # list of tuples of things already plotted: (experiment, channel, filter, subset_name), which can be None
+            Tuple[
+                Optional[str],
+                Optional[str],
+                Optional[int],
+                Optional[str],
+                Optional[str],
+            ]
+        ] = set()
+        # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
     @log(logger=logger)
     @override
@@ -186,31 +197,63 @@ class MetadataView(MetaView, WalkthroughMixin):
         return file_name
 
     @log(logger=logger)
+    def _clear_figure_state(
+        self,
+        axis_type: str = "2d",
+        *,
+        create_default_axes: bool = True,
+    ) -> None:
+        """
+        Canonical figure reset.
+
+        :param axis_type: Type of axes to create if recreating axes.
+                        Use "2d" for a standard 2D axes or "3d" for a 3D projection.
+        :type axis_type: str
+        :param create_default_axes: Whether to recreate a default axes after clearing
+                                    the figure. If False, the figure is left without axes.
+        :type create_default_axes: bool
+        :return: None
+        :rtype: None
+        """
+        # Always invalidate references to figure-owned artists
+        self._heatmap_colorbar = None  # type: ignore[attr-defined]
+
+        fig = getattr(self, "figure", None)
+        if fig is None:
+            self._clear_cache()
+            return
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            fig.clear()
+
+        if create_default_axes:
+            if axis_type == "2d":
+                self.axes = fig.add_subplot(1, 1, 1)
+            else:
+                self.axes = fig.add_subplot(1, 1, 1, projection="3d")
+
+        fig.set_constrained_layout(True)
+        self._clear_cache()
+
+    @log(logger=logger)
     @register_action()
     @override
-    def _reset_actions(self, axis_type="2d"):
+    def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
+        Clears the figure and reinitializes axes. This will also add a flag to the tab action history
+        if @register_action is being used to keep track of actions. Only actions applied after the most
+        recent call to this function will be recreated if the related file is loaded.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
         """
-        if hasattr(self, "_heatmap_colorbar") and self._heatmap_colorbar is not None:  # type: ignore
-            self._heatmap_colorbar.remove()  # type: ignore
-            self._heatmap_colorbar = None  # type: ignore
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            try:
-                self.figure.clear()
-            except AttributeError:
-                pass
-            self._clear_cache()
-        if axis_type == "2d":
-            self.axes = self.figure.add_subplot(1, 1, 1)
-        else:
-            self.axes = self.figure.add_subplot(1, 1, 1, projection="3d")
-        self.figure.set_constrained_layout(True)
+        # Canonical figure reset
+        self._clear_figure_state(axis_type=axis_type, create_default_axes=True)
+
         self.canvas.draw()
+
+        # Reset plot bookkeeping variables
         self.hist_min = None
         self.hist_max = None
         self.hist_data = []
@@ -218,9 +261,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_plot_type = None
         self.allowed_columns = []
         self.allowed_logs = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
         self.plotted_datasets = (
             set()
-        )  # tuple of things already plotted: (experiment, channel, filter), which can be None
+        )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
 
     @log(logger=logger)
     def _plot_1d_density(
@@ -469,72 +514,95 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
+        # Update global min/max
+        if self.hist_min is None or np.min(data) < self.hist_min:
+            self.hist_min = float(np.min(data))
+        if self.hist_max is None or np.max(data) > self.hist_max:
+            self.hist_max = float(np.max(data))
+
         ax.clear()
         self._clear_cache()
+
+        # Store processed data for overlay
         self.hist_data.append(data)
         self.hist_labels.append(dataset_label)
 
-        for data, dataset_label in zip(self.hist_data, self.hist_labels):
-            x_label = format_axis_label(x_label, x_units)
-            y_label = "Count" if norm is False else "Fraction"
+        # Compute shared bin edges once
+        # Use ALL currently overlaid data to decide numbins when bins is None (auto)
+        all_data = (
+            np.concatenate(self.hist_data)
+            if len(self.hist_data) > 1
+            else self.hist_data[0]
+        )
 
-            if logx:
-                x_label = f"log10({x_label})"
-
-            if bins is not None:
-                if sizes is False:
-                    numbins = bins
-                else:
-                    try:
-                        if self.hist_max is not None and self.hist_min is not None:
-                            numbins = int((self.hist_max - self.hist_min) / bins)
-                        else:
-                            numbins = 0
-                            bins = None
-                    except TypeError:
-                        numbins = 0
-                        bins = None
-                    if numbins <= 1:
-                        bins = None
-            if bins is None:
+        # Decide numbins once
+        numbins: int
+        if bins is not None:
+            if sizes is False:
+                numbins = int(bins)
+            else:
+                # bins is interpreted as a bin *size*
                 try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
+                    if self.hist_max is not None and self.hist_min is not None:
+                        numbins = int((self.hist_max - self.hist_min) / float(bins))
                     else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
-                    numbins = 100
+                        numbins = 0
+                except Exception:
+                    numbins = 0
+                if numbins <= 1:
+                    # fall back to auto
+                    bins = None
 
-            val, bins = np.histogram(
-                data, bins=numbins, range=(self.hist_min, self.hist_max)
-            )
+        if bins is None:
+            try:
+                if iqr(all_data) > 0:
+                    numbins = int(
+                        (np.max(all_data) - np.min(all_data))
+                        * len(all_data) ** (1.0 / 3.0)
+                        / iqr(all_data)
+                    )
+                else:
+                    numbins = int(3.332 * np.log10(len(all_data)))
+            except OverflowError:
+                numbins = 100
+
+        # Guardrail
+        if numbins < 2:
+            numbins = 2
+
+        # Shared bin edges for every dataset
+        bin_edges = np.linspace(self.hist_min, self.hist_max, numbins + 1)
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        widths = np.diff(bin_edges)
+
+        # Plot all datasets using the same bin_edges
+        for d, lab in zip(self.hist_data, self.hist_labels):
+            x_lab = format_axis_label(x_label, x_units)
+            y_lab = "Count" if not norm else "Fraction"
+            if logx:
+                x_lab = f"log10({x_lab})"
+
+            val, _ = np.histogram(d, bins=bin_edges)
             val = val.astype(float)
-            if norm is True:
-                val /= np.sum(val)
-
-            # val, bins, patches = ax.hist(data, bins=numbins, histtype='step', stacked=False, fill=False, density=norm)
-            bincenters = bins[:-1] + np.diff(bins) / 2.0
+            if norm:
+                s = np.sum(val)
+                if s > 0:
+                    val /= s
 
             ax.bar(
                 bincenters,
                 val,
-                width=np.diff(bincenters)[0],
+                width=widths,
                 alpha=0.5,
-                label=dataset_label,
+                label=lab,
+                align="center",
             )
 
-            self._update_cache((bincenters, x_label), (val, y_label))
+            self._update_cache((bincenters, x_lab), (val, y_lab))
 
-            ax.set_xlabel(x_label)
-            ax.set_ylabel(y_label)
+            ax.set_xlabel(x_lab)
+            ax.set_ylabel(y_lab)
+
         ax.legend(loc="best")
 
     @log(logger=logger)
@@ -607,9 +675,15 @@ class MetadataView(MetaView, WalkthroughMixin):
         tickmax = max(ticks)
         ticks = np.linspace(-1, int(tickmax) + 1, num=int(tickmax) + 3, endpoint=True)
 
-        # Remove the previous colorbar if it exists
-        if hasattr(self, "_heatmap_colorbar") and self._heatmap_colorbar:
-            self._heatmap_colorbar.remove()
+        # Remove the previous colorbar if it exists (overlay case)
+        cb = getattr(self, "_heatmap_colorbar", None)
+        if cb is not None:
+            try:
+                # only remove if it still has an axes attached to a figure
+                if getattr(cb, "ax", None) is not None and cb.ax.figure is self.figure:
+                    cb.remove()
+            except Exception:
+                pass
             self._heatmap_colorbar = None
 
         self._heatmap_colorbar = self.figure.colorbar(im, ax=ax, ticks=ticks)
@@ -929,6 +1003,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: True if the overlay was successful, False otherwise.
         :rtype: bool
         """
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
+
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
@@ -976,16 +1053,20 @@ class MetadataView(MetaView, WalkthroughMixin):
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
+
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
+
                     dataset_label = (
-                        f"{exp} Ch {channel}: {subset_name}"
+                        f"{loader} | {exp} Ch {channel}: {subset_name}"
                         if exp is not None
-                        else f"{subset_name}"
+                        else f"{loader} | {subset_name}"
                     )
                     sizes = False
-                    if plot_type in self.metadata_plots:
+                    columns: List[str] = []
+                    logscales: List[bool] = []
 
+                    if plot_type in self.metadata_plots:
                         if plot_type in [
                             "Kernel Density Plot",
                             "Histogram",
@@ -995,11 +1076,13 @@ class MetadataView(MetaView, WalkthroughMixin):
                             logscales = [parameters["x_log"]]
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
+
                         elif plot_type in ["Scatterplot", "Heatmap"]:
                             columns = [parameters["x_axis"], parameters["y_axis"]]
                             logscales = [parameters["x_log"], parameters["y_log"]]
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
+
                         elif plot_type in ["3D Scatterplot"]:
                             columns = [
                                 parameters["x_axis"],
@@ -1011,16 +1094,29 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 parameters["y_log"],
                                 parameters["z_log"],
                             ]
+
                         elif plot_type in ["Capture Rate"]:
                             columns = ["start_time"]
                             logscales = [True]
                             bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
                         else:
                             self.add_text_to_display.emit(
                                 f"Unsupported Plot Type: {plot_type}",
                                 self.__class__.__name__,
                             )
                             return False
+
+                        bin_sensitive = plot_type in [
+                            "Histogram",
+                            "Normalized Histogram",
+                            "Kernel Density Plot",
+                            "Capture Rate",
+                            "Heatmap",
+                        ]
+                        bins_changed = getattr(self, "allowed_bins", None) != bins
+                        sizes_changed = getattr(self, "allowed_sizes", None) != sizes
 
                         if (
                             (
@@ -1039,6 +1135,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 self.allowed_plot_type is not None
                                 and plot_type != self.allowed_plot_type
                             )
+                            or (bin_sensitive and (bins_changed or sizes_changed))
                         ):
                             self._reset_actions()  # reset the plot if the plot options change
 
@@ -1054,7 +1151,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
                         if (
                             self.plotted_datasets
-                            and (exp, channel, sql_filter, subset_name)
+                            and (loader, exp, channel, sql_filter, subset_name)
                             in self.plotted_datasets
                         ):  # do not overlay the same thing twice
                             continue
@@ -1069,6 +1166,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         )
                         if self.query == "":
                             return False
+
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
@@ -1089,6 +1187,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 f"{len(self.plot_data)} rows in subset {dataset_label}",
                                 self.__class__.__name__,
                             )
+
                         units = []
                         for column in columns:
                             self.global_signal.emit(
@@ -1152,12 +1251,32 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 "Normalized Filtered All Points Histogram",
                             ]:
                                 bins = parameters["bins"]
+                                sizes = parameters["sizes"]
+
+                                bin_sensitive = True
+                                bins_changed = (
+                                    getattr(self, "allowed_bins", None) != bins
+                                )
+                                sizes_changed = (
+                                    getattr(self, "allowed_sizes", None) != sizes
+                                )
+                                if bin_sensitive and (bins_changed or sizes_changed):
+                                    axis_type = (
+                                        "3d"
+                                        if isinstance(
+                                            getattr(self, "axes", None), Axes3D
+                                        )
+                                        else "2d"
+                                    )
+                                    self._reset_actions(axis_type=axis_type)
+
                                 plot_data = self._construct_all_points_histogram(
                                     self.event_data_generator,
                                     plot_type,
-                                    bins,
+                                    bins=bins,
                                     sizes=sizes,
                                 )
+
                                 if plot_data is not None:
                                     self.update_plot(
                                         plot_type,
@@ -1169,22 +1288,33 @@ class MetadataView(MetaView, WalkthroughMixin):
                                     )
                                 else:
                                     return False
+
                             elif plot_type in [
                                 "Raw Event Overlay",
                                 "Filtered Event Overlay",
                             ]:
-                                try:
-                                    self._construct_event_overlay(
-                                        self.event_data_generator, plot_type, loader
-                                    )
-                                except:
-                                    raise
+                                self._construct_event_overlay(
+                                    self.event_data_generator, plot_type, loader
+                                )
                         else:
                             return False
+
                     self.allowed_plot_type = plot_type
-                    self.allowed_columns = columns
-                    self.allowed_logs = logscales
-                    self.plotted_datasets.add((exp, channel, sql_filter, subset_name))
+                    self.allowed_bins = bins
+                    self.allowed_sizes = sizes
+
+                    if plot_type in self.metadata_plots:
+                        self.allowed_columns = columns
+                        self.allowed_logs = logscales
+                    else:
+                        # event plots don't have metadata axes/log flags
+                        self.allowed_columns = []
+                        self.allowed_logs = []
+
+                    self.plotted_datasets.add(
+                        (loader, exp, channel, sql_filter, subset_name)
+                    )
+
         return True
 
     @log(logger=logger)
@@ -1446,7 +1576,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         loader,
                         "construct_metadata_query",
                         (
-                            ["event_id", "sublevel_current", "voltage"],
+                            ["sublevel_current", "voltage", "duration"],
                             filter_text,
                             None,
                         ),
@@ -1769,10 +1899,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: None
         :rtype: None
         """
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            self.figure.clear()
-        self._clear_cache()
+        self._clear_figure_state(create_default_axes=False)
 
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
@@ -1899,13 +2026,33 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         self.query = query
         self.table_name = table_name
+        if not query:
+            return
+
+        # Only display SQL for filter creation/edit validation
+        if self._show_sql_in_display:
+            self.add_text_to_display.emit(
+                f"SQL ({table_name}):\n{query.strip()}",
+                self.__class__.__name__,
+            )
+            # one-shot so normal plot queries never show
+            self._show_sql_in_display = False
 
     @log(logger=logger)
     def set_event_query(self, query):
         """
-        a global signal callback that provides a valid SQL query for fetching event data
+        A global signal callback that provides a valid SQL query for fetching event data.
         """
         self.event_query = query
+        if not query:
+            return
+
+        if self._show_event_sql_in_display:
+            self.add_text_to_display.emit(
+                f"Event SQL:\n{query.strip()}",
+                self.__class__.__name__,
+            )
+            self._show_event_sql_in_display = False
 
     @log(logger=logger)
     def set_units(self, units):
@@ -2137,6 +2284,8 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         :param parameters: Dictionary with 'db_loader'.
         """
+        self._show_sql_in_display = True
+
         dialog = AddSubsetFilterDialog(
             self, existing_names=list(self.subset_filters.keys())
         )
@@ -2164,13 +2313,15 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_text = filter_text
             self._pending_old_filter_name: Optional[str] = None
 
+            self._show_sql_in_display = True
+
             # Validate filter via construct_metadata_query
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
                 "construct_metadata_query",
                 (
-                    ["event_id", "sublevel_current", "voltage"],
+                    ["sublevel_current", "voltage", "duration"],
                     filter_text,
                     None,
                 ),  # using event_id as placeholder column
@@ -2214,6 +2365,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param name: The name of the filter to edit.
         :param parameters: Dictionary with context, must include 'db_loader'.
         """
+        self._show_sql_in_display = True
+
         self.logger.debug(f"Editing filter: {name}")
         self.logger.debug(f"Filters available: {self.subset_filters}")
 
@@ -2234,12 +2387,13 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_text = new_filter
             self._pending_old_filter_name = name  # important for replacing key
 
+            self._show_sql_in_display = True
             # Emit signal to validate the updated filter
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
                 "construct_metadata_query",
-                (["event_id", "sublevel_current", "voltage"], new_filter, None),
+                (["sublevel_current", "voltage", "duration"], new_filter, None),
                 "relay_query",
                 ("validate_edited_filter",),
             )

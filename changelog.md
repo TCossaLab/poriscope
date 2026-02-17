@@ -60,6 +60,8 @@
     * You can now set bins either by size or counts
     * When plotting multiple overlaid histograms, bins will adjust to match across subsets
     * Enforces single exp/channel selection for event plots, which allows event_id to be used instead of global_id to identify events for plotting
+    * Full SQL will always be printed after filter creation/editing, regardless of validity
+    * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     
 * **Updated Frontend Plugin: `RawDataView`**
     * Added the option to calculate and plot the baseline stats on the raw data panel
@@ -73,6 +75,13 @@
 * **Updated repository management**
     * Now includes pre-commit checks for code quality, linting, and proper type hinting
     * Post-merge pipeline updated to account for docs updates
+
+### General Fixes and Improvements:
+    * Fixed crash when resetting or updating heatmaps in the Metadata tab
+    * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
+    * Fixed cross-table SQL filtering
+    * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
+    * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
 
 
 ## Poriscope 1.4: 2025-06-09
