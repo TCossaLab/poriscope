@@ -61,6 +61,7 @@
     * When plotting multiple overlaid histograms, bins will adjust to match across subsets
     * Enforces single exp/channel selection for event plots, which allows event_id to be used instead of global_id to identify events for plotting
     * Full SQL will always be printed after filter creation/editing, regardless of validity
+    * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     
 * **Updated Frontend Plugin: `RawDataView`**
     * Added the option to calculate and plot the baseline stats on the raw data panel
