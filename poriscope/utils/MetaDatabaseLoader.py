@@ -630,7 +630,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 raise ValueError("Unable to build tuple from empty list")
             filtered_ids = [str(i) for i in id_list if i is not None]
             if not filtered_ids:
-                raise ValueError("Unable to build tuple from list with only None values")
+                raise ValueError(
+                    "Unable to build tuple from list with only None values"
+                )
             return f"({','.join(filtered_ids)})"
 
         # Qualify conditions for joined queries to avoid "no such column" / ambiguity
@@ -689,14 +691,20 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # Identify table sources for each column
         tables = [self.get_table_by_column(col) for col in columns]
         if any(table is None for table in tables):
-            invalid_columns = [col for col, table in zip(columns, tables) if table is None]
+            invalid_columns = [
+                col for col, table in zip(columns, tables) if table is None
+            ]
             raise ValueError(
                 f"The following columns could not be mapped to tables: {', '.join(invalid_columns)}"
             )
 
         events_columns = [col for col, tbl in zip(columns, tables) if tbl == "events"]
-        sublevels_columns = [col for col, tbl in zip(columns, tables) if tbl == "sublevels"]
-        experiments_columns = [col for col, tbl in zip(columns, tables) if tbl == "experiments"]
+        sublevels_columns = [
+            col for col, tbl in zip(columns, tables) if tbl == "sublevels"
+        ]
+        experiments_columns = [
+            col for col, tbl in zip(columns, tables) if tbl == "experiments"
+        ]
 
         # "events" anchor to JOIN experiments via events.
         if experiments_columns and not events_columns and not sublevels_columns:
@@ -715,7 +723,10 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # Normalize experiment names to IDs if necessary
         experiments = None
         if experiments_and_channels is not None:
-            experiments = [self.get_experiment_id_by_name(exp) for exp in experiments_and_channels.keys()]
+            experiments = [
+                self.get_experiment_id_by_name(exp)
+                for exp in experiments_and_channels.keys()
+            ]
             channels = [channels for channels in experiments_and_channels.values()]
 
             for exp_name, exp_id in zip(experiments, experiments_and_channels.keys()):
@@ -733,7 +744,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if experiments is not None:
             # when JOINing events+sublevels (including forced join),
             # always qualify experiment_id/channel_id as e.* to avoid ambiguity.
-            prefix = "e." if (events_columns and sublevels_columns) or force_events_sublevels_join else ""
+            prefix = (
+                "e."
+                if (events_columns and sublevels_columns) or force_events_sublevels_join
+                else ""
+            )
 
             for exp, channel_list in zip(experiments, channels):
                 if channel_list:
@@ -746,14 +761,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if experiment_conditions:
             base_conditions.append(f"({' OR '.join(experiment_conditions)})")
 
-        condition_clause = f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
+        condition_clause = (
+            f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
+        )
 
         # Determine query type and build it
         if force_events_sublevels_join and not experiments_columns:
             # Qualify WHERE clause contents for e./s. usage
             if condition_clause:
                 raw = condition_clause.replace("WHERE ", "", 1)
-                qualified_conditions = _qualify_conditions_for_events_sublevels_join(raw)
+                qualified_conditions = _qualify_conditions_for_events_sublevels_join(
+                    raw
+                )
                 qualified_where = f"WHERE {qualified_conditions}"
             else:
                 qualified_where = ""
@@ -834,7 +853,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
         else:
             return "", self._format_debug_msg(debug), table_name
 
-
     @log(logger=logger)
     def construct_event_data_query(
         self,
@@ -854,9 +872,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         def tuple_builder(id_list):
             if not id_list:
-                raise ValueError(
-                    "Unable to build tuple from empty list"
-                )
+                raise ValueError("Unable to build tuple from empty list")
             filtered_ids = [str(i) for i in id_list if i is not None]
             if not filtered_ids:
                 raise ValueError(
