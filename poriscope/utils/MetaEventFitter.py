@@ -93,6 +93,49 @@ class MetaEventFitter(BaseDataPlugin):
         """
         pass
 
+
+    def get_fitted_event(self, channel: int, index: int):
+        """
+        Safe wrapper around subclass construct_fitted_event().
+        Enforces the contract: returned array length must equal raw event length.
+
+
+        :param channel: Channel from which to retrieve the fitted event.
+        :type channel: int
+        :param index: Index of the event within the specified channel.
+        :type index: int
+
+        :return: A one-dimensional NumPy array representing the fitted event
+                with length equal to the raw event length, or ``None`` if the
+                fitting is not yet complete.
+        :rtype: Optional[npt.NDArray[np.float64]]
+        """
+        data = self.construct_fitted_event(channel, index)
+
+        # Allow "not ready" behavior 
+        if data is None:
+            return None
+
+        data = np.asarray(data)
+
+        # Structural checks
+        if data.ndim != 1:
+            raise ValueError(
+                f"{type(self).__name__}.construct_fitted_event() must return a 1D array, "
+                f"got shape {data.shape}"
+            )
+
+        # Length check (this catches your bug immediately)
+        true_len = int(self.event_lengths[channel][index])
+        if len(data) != true_len:
+            raise ValueError(
+                f"{type(self).__name__}.construct_fitted_event() returned length {len(data)} "
+                f"but raw event length is {true_len} (channel={channel}, index={index}). "
+                f"This will break plotting."
+            )
+
+        return data
+
     @abstractmethod
     def construct_fitted_event(
         self, channel: int, index: int
