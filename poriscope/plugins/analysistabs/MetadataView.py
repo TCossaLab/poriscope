@@ -140,9 +140,15 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._show_event_sql_in_display: bool = False
 
         self.plotted_datasets: Set[
-            Tuple[Optional[str], Optional[str], Optional[int], Optional[str], Optional[str]]
+            Tuple[
+                Optional[str],
+                Optional[str],
+                Optional[int],
+                Optional[str],
+                Optional[str],
+            ]
         ] = set()
-         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
+        # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
     @log(logger=logger)
     @override
@@ -1305,7 +1311,9 @@ class MetadataView(MetaView, WalkthroughMixin):
                         self.allowed_columns = []
                         self.allowed_logs = []
 
-                    self.plotted_datasets.add((loader, exp, channel, sql_filter, subset_name))
+                    self.plotted_datasets.add(
+                        (loader, exp, channel, sql_filter, subset_name)
+                    )
 
         return True
 
@@ -1795,7 +1803,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         channel = next(
             iter(self.selected_experiment_and_channels_by_loader[loader_name].values())
         )[0]
-        
+
         if not (
             sql_filter == self.current_sql_filter
             and self.current_experiment == exp
