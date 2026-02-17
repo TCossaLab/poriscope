@@ -140,10 +140,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._show_event_sql_in_display: bool = False
 
         self.plotted_datasets: Set[
-            Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]
-        ] = (
-            set()
-        )  # list of tuples of things already plotted: (experiment, channel, filter, subset_name), which can be None
+            Tuple[Optional[str], Optional[str], Optional[int], Optional[str], Optional[str]]
+        ] = set()
+         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
     @log(logger=logger)
     @override
@@ -260,7 +259,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_sizes = None
         self.plotted_datasets = (
             set()
-        )  # tuple of things already plotted: (experiment, channel, filter), which can be None
+        )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
 
     @log(logger=logger)
     def _plot_1d_density(
@@ -1051,10 +1050,11 @@ class MetadataView(MetaView, WalkthroughMixin):
 
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
+
                     dataset_label = (
-                        f"{exp} Ch {channel}: {subset_name}"
+                        f"{loader} | {exp} Ch {channel}: {subset_name}"
                         if exp is not None
-                        else f"{subset_name}"
+                        else f"{loader} | {subset_name}"
                     )
                     sizes = False
                     columns: List[str] = []
@@ -1145,7 +1145,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
                         if (
                             self.plotted_datasets
-                            and (exp, channel, sql_filter, subset_name)
+                            and (loader, exp, channel, sql_filter, subset_name)
                             in self.plotted_datasets
                         ):  # do not overlay the same thing twice
                             continue
@@ -1305,7 +1305,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         self.allowed_columns = []
                         self.allowed_logs = []
 
-                    self.plotted_datasets.add((exp, channel, sql_filter, subset_name))
+                    self.plotted_datasets.add((loader, exp, channel, sql_filter, subset_name))
 
         return True
 
@@ -1795,7 +1795,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         channel = next(
             iter(self.selected_experiment_and_channels_by_loader[loader_name].values())
         )[0]
-
+        
         if not (
             sql_filter == self.current_sql_filter
             and self.current_experiment == exp
