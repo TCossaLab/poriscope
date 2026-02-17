@@ -93,7 +93,6 @@ class MetaEventFitter(BaseDataPlugin):
         """
         pass
 
-
     def get_fitted_event(self, channel: int, index: int):
         """
         Safe wrapper around subclass construct_fitted_event().
@@ -112,7 +111,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         data = self.construct_fitted_event(channel, index)
 
-        # Allow "not ready" behavior 
+        # Allow "not ready" behavior
         if data is None:
             return None
 
