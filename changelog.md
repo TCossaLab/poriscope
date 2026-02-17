@@ -79,6 +79,8 @@
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
     * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
     * Fixed cross-table SQL filtering
+    * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
+    * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
 
 
 ## Poriscope 1.4: 2025-06-09
