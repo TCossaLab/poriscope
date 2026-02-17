@@ -524,7 +524,11 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         # Compute shared bin edges once
         # Use ALL currently overlaid data to decide numbins when bins is None (auto)
-        all_data = np.concatenate(self.hist_data) if len(self.hist_data) > 1 else self.hist_data[0]
+        all_data = (
+            np.concatenate(self.hist_data)
+            if len(self.hist_data) > 1
+            else self.hist_data[0]
+        )
 
         # Decide numbins once
         numbins: int
@@ -566,7 +570,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
         widths = np.diff(bin_edges)
 
-        # Plot all datasets using the same bin_edges 
+        # Plot all datasets using the same bin_edges
         for d, lab in zip(self.hist_data, self.hist_labels):
             x_lab = format_axis_label(x_label, x_units)
             y_lab = "Count" if not norm else "Fraction"
