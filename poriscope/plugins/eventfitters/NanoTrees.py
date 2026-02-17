@@ -487,7 +487,9 @@ class NanoTrees(MetaEventFitter):
             true_len = int(self.event_lengths[channel][index])
             ends[-1] = true_len
 
-            sublevel_currents = self.sublevel_metadata[channel][index]["sublevel_current"]
+            sublevel_currents = self.sublevel_metadata[channel][index][
+                "sublevel_current"
+            ]
 
             data = np.zeros(true_len, dtype=np.float64)
             for start, end, current in zip(starts, ends, sublevel_currents):

@@ -179,7 +179,7 @@ class PeakFinder(MetaEventFitter):
             self.logger.info(
                 f"Peak finding is not complete in channel {channel}, find peaks first"
             )
-            return None  
+            return None
 
         try:
             if self.eventloader is None:
@@ -203,7 +203,9 @@ class PeakFinder(MetaEventFitter):
             true_len = int(self.event_lengths[channel][index])
             ends[-1] = true_len
 
-            sublevel_currents = self.sublevel_metadata[channel][index]["sublevel_current"]
+            sublevel_currents = self.sublevel_metadata[channel][index][
+                "sublevel_current"
+            ]
             baseline = self.event_metadata[channel][index]["baseline"]
 
             # Peak-related data (stored in us in metadata; convert to indices)
@@ -212,11 +214,15 @@ class PeakFinder(MetaEventFitter):
 
             peak_rips = np.rint(
                 self.sublevel_metadata[channel][index]["right_ips"] / dt_us
-            ).astype(float)  # may contain nan
+            ).astype(
+                float
+            )  # may contain nan
 
             peak_lips = np.rint(
                 self.sublevel_metadata[channel][index]["left_ips"] / dt_us
-            ).astype(float)  # may contain nan
+            ).astype(
+                float
+            )  # may contain nan
 
             data = np.zeros(true_len, dtype=np.float64)
 
@@ -250,10 +256,10 @@ class PeakFinder(MetaEventFitter):
             self.logger.info(
                 f"missing event id {index} in channel {channel}: rejected event skipped"
             )
-            return None 
+            return None
 
         return data
-    
+
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
     def get_plot_features(self, channel: int, index: int) -> Tuple[
