@@ -509,72 +509,91 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
+        # Update global min/max
+        if self.hist_min is None or np.min(data) < self.hist_min:
+            self.hist_min = float(np.min(data))
+        if self.hist_max is None or np.max(data) > self.hist_max:
+            self.hist_max = float(np.max(data))
+
         ax.clear()
         self._clear_cache()
+
+        # Store processed data for overlay
         self.hist_data.append(data)
         self.hist_labels.append(dataset_label)
 
-        for data, dataset_label in zip(self.hist_data, self.hist_labels):
-            x_label = format_axis_label(x_label, x_units)
-            y_label = "Count" if norm is False else "Fraction"
+        # Compute shared bin edges once
+        # Use ALL currently overlaid data to decide numbins when bins is None (auto)
+        all_data = np.concatenate(self.hist_data) if len(self.hist_data) > 1 else self.hist_data[0]
 
-            if logx:
-                x_label = f"log10({x_label})"
-
-            if bins is not None:
-                if sizes is False:
-                    numbins = bins
-                else:
-                    try:
-                        if self.hist_max is not None and self.hist_min is not None:
-                            numbins = int((self.hist_max - self.hist_min) / bins)
-                        else:
-                            numbins = 0
-                            bins = None
-                    except TypeError:
-                        numbins = 0
-                        bins = None
-                    if numbins <= 1:
-                        bins = None
-            if bins is None:
+        # Decide numbins once
+        numbins: int
+        if bins is not None:
+            if sizes is False:
+                numbins = int(bins)
+            else:
+                # bins is interpreted as a bin *size*
                 try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
+                    if self.hist_max is not None and self.hist_min is not None:
+                        numbins = int((self.hist_max - self.hist_min) / float(bins))
                     else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
-                    numbins = 100
+                        numbins = 0
+                except Exception:
+                    numbins = 0
+                if numbins <= 1:
+                    # fall back to auto
+                    bins = None
 
-            val, bins = np.histogram(
-                data, bins=numbins, range=(self.hist_min, self.hist_max)
-            )
+        if bins is None:
+            try:
+                if iqr(all_data) > 0:
+                    numbins = int(
+                        (np.max(all_data) - np.min(all_data))
+                        * len(all_data) ** (1.0 / 3.0)
+                        / iqr(all_data)
+                    )
+                else:
+                    numbins = int(3.332 * np.log10(len(all_data)))
+            except OverflowError:
+                numbins = 100
+
+        # Guardrail
+        if numbins < 2:
+            numbins = 2
+
+        # Shared bin edges for every dataset
+        bin_edges = np.linspace(self.hist_min, self.hist_max, numbins + 1)
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        widths = np.diff(bin_edges)
+
+        # Plot all datasets using the same bin_edges 
+        for d, lab in zip(self.hist_data, self.hist_labels):
+            x_lab = format_axis_label(x_label, x_units)
+            y_lab = "Count" if not norm else "Fraction"
+            if logx:
+                x_lab = f"log10({x_lab})"
+
+            val, _ = np.histogram(d, bins=bin_edges)
             val = val.astype(float)
-            if norm is True:
-                val /= np.sum(val)
-
-            # val, bins, patches = ax.hist(data, bins=numbins, histtype='step', stacked=False, fill=False, density=norm)
-            bincenters = bins[:-1] + np.diff(bins) / 2.0
+            if norm:
+                s = np.sum(val)
+                if s > 0:
+                    val /= s
 
             ax.bar(
                 bincenters,
                 val,
-                width=np.diff(bincenters)[0],
+                width=widths,
                 alpha=0.5,
-                label=dataset_label,
+                label=lab,
+                align="center",
             )
 
-            self._update_cache((bincenters, x_label), (val, y_label))
+            self._update_cache((bincenters, x_lab), (val, y_lab))
 
-            ax.set_xlabel(x_label)
-            ax.set_ylabel(y_label)
+            ax.set_xlabel(x_lab)
+            ax.set_ylabel(y_lab)
+
         ax.legend(loc="best")
 
     @log(logger=logger)

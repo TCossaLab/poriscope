@@ -641,18 +641,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         # Remove redundant columns (before mapping to tables)
         redundant_cols = {
-            "id",
-            "experiment_id",
-            "channel_id",
-            "event_id",
             "s.id",
             "e.experiment_id",
             "e.channel_id",
             "e.event_id",
         }
-        columns = [col for col in columns if col not in redundant_cols]
+        filtered = [col for col in columns if col not in redundant_cols]
 
-        # Validate input
+        # Only apply the filtering if it leaves something usable.
+        # Otherwise keep the original columns (so ["event_id"] won't become []).
+        if filtered:
+            columns = filtered
+
         if not columns:
             raise ValueError("list of columns cannot be empty")
 
