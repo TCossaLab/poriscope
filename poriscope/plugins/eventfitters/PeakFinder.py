@@ -179,73 +179,81 @@ class PeakFinder(MetaEventFitter):
             self.logger.info(
                 f"Peak finding is not complete in channel {channel}, find peaks first"
             )
-            return None
+            return None  
+
         try:
             if self.eventloader is None:
                 raise RuntimeError(
                     "Event loader is not set; cannot retrieve samplerate."
                 )
+
             samplerate = self.eventloader.get_samplerate(channel)
             dt_us = 1.0 / samplerate * 1e6
-            # Convert times to sample indices
-            sublevel_start_indices = [
-                int(sublevel_duration / dt_us)
-                for sublevel_duration in self.sublevel_metadata[channel][index][
-                    "sublevel_start_times"
-                ]
-            ]
-            sublevel_end_indices = [
-                int(sublevel_duration / dt_us)
-                for sublevel_duration in self.sublevel_metadata[channel][index][
-                    "sublevel_end_times"
-                ]
-            ]
-            sublevel_currents = self.sublevel_metadata[channel][index][
-                "sublevel_current"
-            ]
+
+            # Convert times (us) to sample indices (rounded, not floored)
+            starts = np.rint(
+                self.sublevel_metadata[channel][index]["sublevel_start_times"] / dt_us
+            ).astype(int)
+
+            ends = np.rint(
+                self.sublevel_metadata[channel][index]["sublevel_end_times"] / dt_us
+            ).astype(int)
+
+            # Force the fitted length to match the true raw event length
+            true_len = int(self.event_lengths[channel][index])
+            ends[-1] = true_len
+
+            sublevel_currents = self.sublevel_metadata[channel][index]["sublevel_current"]
             baseline = self.event_metadata[channel][index]["baseline"]
-            # Peak-related data
-            peak_heights = [
-                loc for loc in self.sublevel_metadata[channel][index]["peak_height"]
-            ]
-            peak_rips = [
-                int(loc / dt_us) if not np.isnan(loc) else None
-                for loc in self.sublevel_metadata[channel][index]["right_ips"]
-            ]
-            peak_lips = [
-                int(loc / dt_us) if not np.isnan(loc) else None
-                for loc in self.sublevel_metadata[channel][index]["left_ips"]
-            ]
-            peak_fil = [
-                loc for loc in self.sublevel_metadata[channel][index]["filtered"]
-            ]
-            # Default array
-            data = np.zeros(sublevel_end_indices[-1], dtype=np.float64)
+
+            # Peak-related data (stored in us in metadata; convert to indices)
+            peak_heights = self.sublevel_metadata[channel][index]["peak_height"]
+            peak_fil = self.sublevel_metadata[channel][index]["filtered"]
+
+            peak_rips = np.rint(
+                self.sublevel_metadata[channel][index]["right_ips"] / dt_us
+            ).astype(float)  # may contain nan
+
+            peak_lips = np.rint(
+                self.sublevel_metadata[channel][index]["left_ips"] / dt_us
+            ).astype(float)  # may contain nan
+
+            data = np.zeros(true_len, dtype=np.float64)
 
             # Build data with sublevels and peaks (only if filtered == 3)
             for start, end, current, height, rips, lips, fil in zip(
-                sublevel_start_indices,
-                sublevel_end_indices,
+                starts,
+                ends,
                 sublevel_currents,
                 peak_heights,
                 peak_rips,
                 peak_lips,
                 peak_fil,
             ):
+                # Clamp sublevel bounds to the array
+                start_i = int(max(0, min(true_len, start)))
+                end_i = int(max(0, min(true_len, end)))
+                if end_i <= start_i:
+                    continue
+
                 # Fill baseline sublevel current
-                data[start:end] = current
-                # Plot peak only if filtered == 3 and lips/rips exist
-                if fil == 3:
-                    data[lips:rips] = baseline - np.sign(current) * height
+                data[start_i:end_i] = current
+
+                # Plot peak only if filtered == 3 and ips exist
+                if fil == 3 and not (np.isnan(lips) or np.isnan(rips)):
+                    li = int(max(0, min(true_len, int(lips))))
+                    ri = int(max(0, min(true_len, int(rips))))
+                    if ri > li:
+                        data[li:ri] = baseline - np.sign(current) * height
 
         except KeyError:
             self.logger.info(
                 f"missing event id {index} in channel {channel}: rejected event skipped"
             )
-            return None
+            return None 
 
         return data
-
+    
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
     def get_plot_features(self, channel: int, index: int) -> Tuple[

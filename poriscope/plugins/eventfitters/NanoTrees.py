@@ -457,33 +457,52 @@ class NanoTrees(MetaEventFitter):
 
         :raises RuntimeError: if fitting is not complete yet
         """
-        if self.sublevel_metadata == {}:
-            raise RuntimeError("Fitting is not complete, fit events first")
-        if self.eventloader is not None:
-            samplerate = self.eventloader.get_samplerate(channel)
-        else:
-            raise AttributeError(
-                "Nano Trees cannot operate without a linked MetaEventLoader"
-            )
-        sublevel_start_indices = [
-            int(sublevel_duration * samplerate * 1e-6)
-            for sublevel_duration in self.sublevel_metadata[channel][index][
-                "sublevel_start_times"
-            ]
-        ]
-        sublevel_end_indices = [
-            int(sublevel_duration * samplerate * 1e-6)
-            for sublevel_duration in self.sublevel_metadata[channel][index][
-                "sublevel_end_times"
-            ]
-        ]
-
-        sublevel_currents = self.sublevel_metadata[channel][index]["sublevel_current"]
-        data = np.zeros(sublevel_end_indices[-1], dtype=np.float64)
-        for start, end, current in zip(
-            sublevel_start_indices, sublevel_end_indices, sublevel_currents
+        if (
+            not self.sublevel_metadata
+            or channel not in self.sublevel_metadata
+            or not self.eventfitting_status.get(channel)
         ):
-            data[start:end] = current
+            self.logger.info(
+                f"Fitting is not complete in channel {channel}, fit events first"
+            )
+            return None
+
+        try:
+            if self.eventloader is None:
+                raise AttributeError(
+                    "Nano Trees cannot operate without a linked MetaEventLoader"
+                )
+
+            samplerate = self.eventloader.get_samplerate(channel)
+            dt_us = 1.0 / samplerate * 1e6
+
+            starts = np.rint(
+                self.sublevel_metadata[channel][index]["sublevel_start_times"] / dt_us
+            ).astype(int)
+
+            ends = np.rint(
+                self.sublevel_metadata[channel][index]["sublevel_end_times"] / dt_us
+            ).astype(int)
+
+            true_len = int(self.event_lengths[channel][index])
+            ends[-1] = true_len
+
+            sublevel_currents = self.sublevel_metadata[channel][index]["sublevel_current"]
+
+            data = np.zeros(true_len, dtype=np.float64)
+            for start, end, current in zip(starts, ends, sublevel_currents):
+                start_i = int(max(0, min(true_len, start)))
+                end_i = int(max(0, min(true_len, end)))
+                if end_i <= start_i:
+                    continue
+                data[start_i:end_i] = current
+
+        except KeyError:
+            self.logger.info(
+                f"missing event id {index} in channel {channel}: rejected event skipped"
+            )
+            return None
+
         return data
 
     # public API, should generally be left alone by subclasses
