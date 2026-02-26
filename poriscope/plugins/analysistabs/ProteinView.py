@@ -1,0 +1,2232 @@
+# MIT License
+#
+# Copyright (c) 2025 TCossaLab
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# Contributors:
+# Alejandra Carolina González González
+# Kyle Briggs
+
+import itertools
+import json
+import logging
+import os
+import re
+import warnings
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+from matplotlib.backends.backend_qt5agg import (
+    FigureCanvasQTAgg as FigureCanvas,
+    NavigationToolbar2QT as NavigationToolbar,
+)
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import Axes3D
+from PySide6.QtCore import Slot
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+from scipy.stats import iqr
+from typing_extensions import override
+
+from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.utils.DocstringDecorator import inherit_docstrings
+from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.MetaView import MetaView
+from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
+from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
+from poriscope.views.widgets.SelectionTree import SelectionTree
+
+warnings.filterwarnings(
+    "ignore",
+    message="constrained_layout not applied because axes sizes collapsed to zero",
+)
+
+
+@inherit_docstrings
+class ProteinView(MetaView, WalkthroughMixin):
+    """
+    Subclass of MetaView for TBD
+    Attributes:
+        TBD
+    """
+
+    logger = logging.getLogger(__name__)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._init()
+        self._init_walkthrough()
+
+    @log(logger=logger)
+    @override
+    def _init(self) -> None:
+        """
+        Initialize the MetadataView instance.
+
+        :param args: Positional arguments passed to parent constructors.
+        :param kwargs: Keyword arguments passed to parent constructors.
+        """
+        self._clear_cache()
+        self.plot_initialized = False
+        self.no_cached_data = False
+
+        self._analysis_mode: str = "individual"  # default mode; toggled by Individual/Ensemble buttons
+
+        self.subset_export_count = 0
+        self.hist_min: Optional[float] = None
+        self.hist_max: Optional[float] = None
+        self.hist_data: List[npt.NDArray[float]] = []
+        self.hist_labels: List[Optional[str]] = []
+        self.current_sql_filter: Optional[str] = None
+        self.current_experiment: Optional[str] = None
+        self.current_channel: Optional[int] = None
+        self.cached_events: Dict[int, Dict[str, Any]] = {}
+        self.subset_filters: Dict[str, str] = {}
+        self.plot_events_generator = None
+        self.available_experiment_and_channels_by_loader: Dict[
+            str, Dict[str, List[str]]
+        ] = {}
+        self.selected_experiment_and_channels_by_loader: Dict[
+            str, Dict[str, List[str]]
+        ] = {}
+        self.allowed_plot_type: Optional[str] = None
+        self.allowed_columns: List[str] = []
+        self.allowed_logs: List[bool] = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
+
+        self._show_sql_in_display: bool = False
+        self._show_event_sql_in_display: bool = False
+
+        self.plotted_datasets: Set[
+            Tuple[
+                Optional[str],
+                Optional[str],
+                Optional[int],
+                Optional[str],
+                Optional[str],
+            ]
+        ] = set()
+        # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
+
+    @override
+    def _set_custom_display_area(self, layout) -> None:
+        display_container = QWidget()
+        display_container.setObjectName("displayContainer")
+        display_container.setStyleSheet(
+            "#displayContainer { border: 2px solid black; border-radius: 15px; }"
+        )
+        outer = QVBoxLayout(display_container)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(0)
+        self.display_stack = QStackedWidget()
+        self.display_stack.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.display_stack, stretch=1)
+
+        # Page 0: distribution (two canvases)
+        dist_page = QWidget()
+        dist_outer = QVBoxLayout(dist_page)
+        dist_outer.setContentsMargins(0, 0, 0, 0)
+        dist_outer.setSpacing(0)
+        dist_row = QHBoxLayout()
+        dist_row.setContentsMargins(0, 0, 0, 0)
+        dist_row.setSpacing(0)
+        dist_outer.addLayout(dist_row, stretch=1)
+        self.fig_hist = Figure()
+        self.canvas_hist = FigureCanvas(self.fig_hist)
+        self.ax_hist = self.fig_hist.add_subplot(1, 1, 1)
+        self.fig_vm = Figure()
+        self.canvas_vm = FigureCanvas(self.fig_vm)
+        self.ax_vm = self.fig_vm.add_subplot(1, 1, 1)
+        dist_row.addWidget(self.canvas_hist, stretch=1)
+        dist_row.addWidget(self.canvas_vm, stretch=1)
+        self.dist_toolbar = NavigationToolbar(self.canvas_hist, self)
+        dist_outer.addWidget(self.dist_toolbar)
+
+        def activate(canvas):
+            self.dist_toolbar.set_canvas(canvas)
+
+        self.canvas_hist.mpl_connect("button_press_event", lambda evt: activate(self.canvas_hist))
+        self.canvas_vm.mpl_connect("button_press_event", lambda evt: activate(self.canvas_vm))
+
+        # Page 1: event (single full canvas)
+        event_page = QWidget()
+        event_outer = QVBoxLayout(event_page)
+        event_outer.setContentsMargins(0, 0, 0, 0)
+        event_outer.setSpacing(0)
+        self.fig_event = Figure()
+        self.canvas_event = FigureCanvas(self.fig_event)
+        self.event_outer_ax = None
+        event_outer.addWidget(self.canvas_event, stretch=1)
+        self.event_toolbar = NavigationToolbar(self.canvas_event, self)
+        event_outer.addWidget(self.event_toolbar)
+
+        self.display_stack.addWidget(dist_page)   # index 0
+        self.display_stack.addWidget(event_page)  # index 1
+        layout.addWidget(display_container, stretch=4)
+        self._display_mode = "distribution"
+        
+    def _set_display_mode(self, mode: str) -> None:
+        """
+        Switch between distribution view (hist + V/M)
+        and full event plot view.
+        """
+        if mode == "event":
+            self.display_stack.setCurrentIndex(1)
+            self._display_mode = "event"
+        else:
+            self.display_stack.setCurrentIndex(0)
+            self._display_mode = "distribution"
+
+    @log(logger=logger)
+    @override
+    def _set_control_area(self, layout):
+        """
+        Set up the control area layout by inserting metadata controls.
+
+        :param layout: The layout to which the controls will be added.
+        :type layout: QVBoxLayout
+        """
+        self.proteincontrols = ProteinControls()
+        self.proteincontrols.actionTriggered.connect(self.handle_parameter_change)
+        self.proteincontrols.edit_processed.connect(self.handle_edit_triggered)
+        self.proteincontrols.add_processed.connect(self.handle_add_triggered)
+        self.proteincontrols.delete_processed.connect(self.handle_delete_triggered)
+        self.proteincontrols.edit_filter_requested.connect(
+            self.show_edit_filter_dialog
+        )
+        self.proteincontrols.delete_filter_requested.connect(
+            self._delete_filter_by_name
+        )
+
+        controlsAndAnalysisLayout = QHBoxLayout()
+        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Add the rawdatacontrols directly to the main layout
+        controlsAndAnalysisLayout.addWidget(self.proteincontrols, stretch=1)
+
+        layout.setSpacing(0)
+        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+
+    @log(logger=logger)
+    def update_column_names(self, column_names):
+        """
+        Store available column names for internal use (filter validation, etc.)
+        No UI update is performed.
+        """
+        self.available_columns = column_names
+
+    @log(logger=logger)
+    def get_save_filename(self):
+        """
+        Open a file dialog for the user to choose a save location.
+
+        :return: Selected filename.
+        :rtype: str
+        """
+        file_name, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save CSV File",
+            os.path.expanduser("~"),
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        return file_name
+
+    @log(logger=logger)
+    def _clear_figure_state(
+        self,
+        axis_type: str = "2d",
+        *,
+        create_default_axes: bool = True,
+    ) -> None:
+        """
+        Canonical figure reset for the event figure.
+
+        :param axis_type: Unused, kept for interface compatibility.
+        :type axis_type: str
+        :param create_default_axes: Whether to recreate a default axes after clearing
+                                    the figure. If False, the figure is left without axes.
+        :type create_default_axes: bool
+        :return: None
+        :rtype: None
+        """
+        self._heatmap_colorbar = None
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            self.fig_event.clear()
+
+        self.event_outer_ax = None
+        self.fig_event.set_constrained_layout(True)
+        self._clear_cache()
+
+    @log(logger=logger)
+    @register_action()
+    @override
+    def _reset_actions(self, axis_type: str = "2d") -> None:
+        """
+        Clears the figure and reinitializes axes. This will also add a flag to the tab action history
+        if @register_action is being used to keep track of actions. Only actions applied after the most
+        recent call to this function will be recreated if the related file is loaded.
+
+        :param axis_type: Either '2d' or '3d' to determine plot projection.
+        :type axis_type: str
+        """
+        # clear both
+        self.fig_hist.clear()
+        self.ax_hist = self.fig_hist.add_subplot(1,1,1)
+
+        self.fig_vm.clear()
+        self.ax_vm = self.fig_vm.add_subplot(1,1,1)
+
+        self.canvas_hist.draw()
+        self.canvas_vm.draw()
+
+        # Reset plot bookkeeping variables TBD
+        self.hist_min = None
+        self.hist_max = None
+        self.hist_data = []
+        self.hist_labels = []
+        self.allowed_columns = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
+        self.plotted_datasets = (
+            set()
+        )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
+
+
+    @log(logger=logger)
+    def _plot_1d_histogram(
+        self,
+        ax,
+        data,
+        cols,
+        units,
+        logscales,
+        dataset_label="",
+        bins=None,
+        sizes=False,
+        norm=False,
+    ):
+        """
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param data: Tuple of data, only the first entry will be used
+        :type data: Tuple[npt.NDArray[np.float64]]
+        :param cols: Tuple of column names, only the first will be used
+        :type cols: Tuple[str]
+        :param units: Tuple of unit strings for axis labels, on the first entry will be used
+        :type units: Tuple[str]
+        :param logscales: logscale the data in the given column before building the density plot? only the first will be used
+        :type logscales: Tuple[bool]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
+        :type bins: Union[int, float]
+        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
+        :type sizes: bool
+        :param norm: normalize output to [0,1]?
+        :type norm: bool
+
+        Calculate a plot a 1d histogram with optional logscaling and normalization
+        """
+        if bins is not None:
+            if isinstance(bins, list) and len(bins) >= 1:
+                bins = bins[0]
+            else:
+                raise ValueError(f"Invalid bins entry {bins}")
+
+        (x_label,) = cols
+        (x_units,) = units
+        (logx,) = logscales
+        data = data[x_label].values
+
+        (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
+
+        # Update global min/max
+        if self.hist_min is None or np.min(data) < self.hist_min:
+            self.hist_min = float(np.min(data))
+        if self.hist_max is None or np.max(data) > self.hist_max:
+            self.hist_max = float(np.max(data))
+
+        ax.clear()
+        self._clear_cache()
+
+        # Store processed data for overlay
+        self.hist_data.append(data)
+        self.hist_labels.append(dataset_label)
+
+        # Compute shared bin edges once
+        # Use ALL currently overlaid data to decide numbins when bins is None (auto)
+        all_data = (
+            np.concatenate(self.hist_data)
+            if len(self.hist_data) > 1
+            else self.hist_data[0]
+        )
+
+        # Decide numbins once
+        numbins: int
+        if bins is not None:
+            if sizes is False:
+                numbins = int(bins)
+            else:
+                # bins is interpreted as a bin *size*
+                try:
+                    if self.hist_max is not None and self.hist_min is not None:
+                        numbins = int((self.hist_max - self.hist_min) / float(bins))
+                    else:
+                        numbins = 0
+                except Exception:
+                    numbins = 0
+                if numbins <= 1:
+                    # fall back to auto
+                    bins = None
+
+        if bins is None:
+            try:
+                if iqr(all_data) > 0:
+                    numbins = int(
+                        (np.max(all_data) - np.min(all_data))
+                        * len(all_data) ** (1.0 / 3.0)
+                        / iqr(all_data)
+                    )
+                else:
+                    numbins = int(3.332 * np.log10(len(all_data)))
+            except OverflowError:
+                numbins = 100
+
+        # Guardrail
+        if numbins < 2:
+            numbins = 2
+
+        # Shared bin edges for every dataset
+        bin_edges = np.linspace(self.hist_min, self.hist_max, numbins + 1)
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        widths = np.diff(bin_edges)
+
+        # Plot all datasets using the same bin_edges
+        for d, lab in zip(self.hist_data, self.hist_labels):
+            x_lab = format_axis_label(x_label, x_units)
+            y_lab = "Count" if not norm else "Fraction"
+            if logx:
+                x_lab = f"log10({x_lab})"
+
+            val, _ = np.histogram(d, bins=bin_edges)
+            val = val.astype(float)
+            if norm:
+                s = np.sum(val)
+                if s > 0:
+                    val /= s
+
+            ax.bar(
+                bincenters,
+                val,
+                width=widths,
+                alpha=0.5,
+                label=lab,
+                align="center",
+            )
+
+            self._update_cache((bincenters, x_lab), (val, y_lab))
+
+            ax.set_xlabel(x_lab)
+            ax.set_ylabel(y_lab)
+
+        ax.legend(loc="best")
+
+    @log(logger=logger)
+    def _plot_all_points_histogram(
+        self, ax, data, cols, units, dataset_label="", norm=False
+    ):
+        """
+        Plot a histogram of current values across all events (raw or filtered).
+
+        :param ax: Matplotlib axes to draw the histogram on.
+        :type ax: matplotlib.axes.Axes
+        :param data: DataFrame containing time and current values.
+        :type data: pd.DataFrame
+        :param cols: Column names for x and y axes.
+        :type cols: List[str]
+        :param units: Units corresponding to the axes.
+        :type units: List[str]
+        :param dataset_label: Label for the plotted dataset.
+        :type dataset_label: str
+        """
+        x_label, y_label = cols
+        x_units, y_units = units
+
+        x = data[x_label].values
+        y = data[y_label].values
+
+        x_label = format_axis_label(x_label, x_units)
+        y_label = format_axis_label(y_label, y_units)
+        if norm is True:
+            y = y.astype(float)
+            y /= sum(y)
+            y_label = f"Normalized {y_label}"
+
+        ax.clear()
+        self._clear_cache()
+        self.hist_data.append((x, y))
+        self.hist_labels.append(dataset_label)
+
+        for (x, y), label in zip(self.hist_data, self.hist_labels):
+            if norm is False:
+                ax.plot(x, y, label=label)
+            else:
+                ax.plot(x, y / np.max(y), label=label)
+            self._update_cache((x, x_label), (y, y_label))
+
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.legend(loc="best")
+
+    def update_plot(
+        self,
+        plot_type,
+        data,
+        cols,
+        units,
+        logscales,
+        dataset_label="",
+        bins=None,
+        sizes=False,
+    ):
+        # Decide which panel gets updated
+        # Histogram plots -> left
+        # V vs M plots / scatter / heatmap -> right
+        if plot_type in [
+            "Histogram", "Normalized Histogram",
+            "Kernel Density Plot",
+            "Raw All Points Histogram", "Filtered All Points Histogram",
+            "Normalized Raw All Points Histogram", "Normalized Filtered All Points Histogram",
+        ]:
+            ax = self.ax_hist
+            canvas = self.canvas_hist
+        else:
+            ax = self.ax_vm
+            canvas = self.canvas_vm
+
+        if plot_type in ["Histogram", "Normalized Histogram"]:
+            norm = (plot_type == "Normalized Histogram")
+            self._plot_1d_histogram(ax, data, cols, units, logscales,
+                                dataset_label=dataset_label, bins=bins, sizes=sizes, norm=norm)
+
+        elif plot_type in [
+            "Raw All Points Histogram",
+            "Filtered All Points Histogram",
+            "Normalized Raw All Points Histogram",
+            "Normalized Filtered All Points Histogram",
+        ]:
+            norm = plot_type in [
+                "Normalized Raw All Points Histogram",
+                "Normalized Filtered All Points Histogram",
+            ]
+            self._plot_all_points_histogram(ax, data, cols, units, dataset_label=dataset_label, norm=norm)
+
+        elif plot_type == "Scatterplot":
+            self._plot_scatterplot(ax, data, cols, units, logscales, dataset_label=dataset_label)
+
+        elif plot_type == "Heatmap":
+            self._plot_heatmap(ax, data, cols, units, logscales,
+                            dataset_label=dataset_label, bins=bins, sizes=sizes)
+
+        elif plot_type == "3D Scatterplot":
+            # you probably don't want this in the "vm" panel, but if you do:
+            self.fig_vm.clear()
+            self.ax_vm = self.fig_vm.add_subplot(1, 1, 1, projection="3d")
+            ax = self.ax_vm
+            self._plot_3d_scatterplot(ax, data, cols, units, logscales, dataset_label=dataset_label)
+            canvas = self.canvas_vm
+
+        else:
+            raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
+
+        canvas.draw()
+        self._commit_cache()
+
+    @log(logger=logger)
+    @override
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
+        """
+        Called whenever a new plugin is instantiated elsewhere in the app, to keep an up-to-date list of possible data sources for use by this plugin.
+
+        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
+        :type available_plugins: Mapping[str, list[str]]
+        """
+        super().update_available_plugins(available_plugins)
+
+        try:
+            loaders = available_plugins.get("MetaDatabaseLoader", [])
+            self.proteincontrols.update_loaders(loaders)
+            for loader in loaders:
+                self.request_experiment_structure(loader)
+            self.logger.info("ComboBoxes updated with available databases")
+            self.logger.debug(
+                f"Loaded experiment and channel selection: {self.selected_experiment_and_channels_by_loader}"
+            )
+
+        except Exception as e:
+            self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
+
+    @log(logger=logger)
+    def set_experiment_id(self, experiment_id):
+        """
+        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
+        :type experiment_id: Optional[int]
+
+        a global signal callback that provides an experiment id for a given filter
+        """
+        self.experiment_id = experiment_id
+
+    @log(logger=logger)
+    def set_table_by_column(self, table):
+        """
+        :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
+        :type table: Optional[str]
+
+        Get a list of tables affected by an SQL query
+        """
+        if table is not None:
+            self.involved_tables.append(table)
+
+    @log(logger=logger)
+    @register_action()
+    def _overlay_plot(self, parameters):
+        """
+        Handle the creation of a new overlay plot based on the selected parameters.
+
+        :param parameters: A dictionary of plotting parameters selected by the user.
+        :type parameters: dict
+        :return: True if the overlay was successful, False otherwise.
+        :rtype: bool
+        """
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
+
+        selected_filters = self.get_selected_filters()
+        loader = parameters["db_loader"]
+        plot_type = parameters["plot_type"]
+        experiments_and_channels: Optional[
+            Union[Dict[str, List[str]], Dict[Any, Any]]
+        ] = self.selected_experiment_and_channels_by_loader.get(loader)
+
+        self.plot_initialized = True
+
+        if experiments_and_channels is None or len(experiments_and_channels) == 0:
+            experiments_and_channels = {None: [None]}
+
+        if selected_filters is None or selected_filters == {}:
+            selected_filters = {"Full Dataset": ""}
+
+        if plot_type in ["Raw Event Overlay", "Filtered Event Overlay", "Heatmap"]:
+            if len(experiments_and_channels) > 1:
+                self.logger.warning(
+                    f"Only a single experiment can be used for {plot_type}"
+                )
+                self.add_text_to_display.emit(
+                    f"Only a single experiment can be used for {plot_type}",
+                    self.__class__.__name__,
+                )
+                return False
+
+            for exp, channels in experiments_and_channels.items():
+                if len(channels) > 1:
+                    self.logger.warning(
+                        f"Only a single channel can be used for {plot_type}"
+                    )
+                    self.add_text_to_display.emit(
+                        f"Only a single channel can be used for {plot_type}",
+                        self.__class__.__name__,
+                    )
+                    return False
+
+            if len(selected_filters) > 1:
+                self.add_text_to_display.emit(
+                    f"Only a single subset can be used for {plot_type}",
+                    self.__class__.__name__,
+                )
+                return False
+
+        for exp, channels in experiments_and_channels.items():
+            for channel in channels:
+                exp_and_ch_arg = {exp: [channel]}
+
+                for subset_name, sql_filter in selected_filters.items():
+                    bins = None
+
+                    dataset_label = (
+                        f"{loader} | {exp} Ch {channel}: {subset_name}"
+                        if exp is not None
+                        else f"{loader} | {subset_name}"
+                    )
+                    sizes = False
+                    columns: List[str] = []
+                    logscales: List[bool] = []
+
+                    if plot_type in self.metadata_plots:
+                        if plot_type in [
+                            "Kernel Density Plot",
+                            "Histogram",
+                            "Normalized Histogram",
+                        ]:
+                            columns = [parameters["x_axis"]]
+                            logscales = [parameters["x_log"]]
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                        elif plot_type in ["Scatterplot", "Heatmap"]:
+                            columns = [parameters["x_axis"], parameters["y_axis"]]
+                            logscales = [parameters["x_log"], parameters["y_log"]]
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                        elif plot_type in ["3D Scatterplot"]:
+                            columns = [
+                                parameters["x_axis"],
+                                parameters["y_axis"],
+                                parameters["z_axis"],
+                            ]
+                            logscales = [
+                                parameters["x_log"],
+                                parameters["y_log"],
+                                parameters["z_log"],
+                            ]
+
+                        elif plot_type in ["Capture Rate"]:
+                            columns = ["start_time"]
+                            logscales = [True]
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                        else:
+                            self.add_text_to_display.emit(
+                                f"Unsupported Plot Type: {plot_type}",
+                                self.__class__.__name__,
+                            )
+                            return False
+
+                        bin_sensitive = plot_type in [
+                            "Histogram",
+                            "Normalized Histogram",
+                            "Kernel Density Plot",
+                            "Capture Rate",
+                            "Heatmap",
+                        ]
+                        bins_changed = getattr(self, "allowed_bins", None) != bins
+                        sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+
+                        if (
+                            (
+                                self.allowed_columns
+                                and not all(
+                                    col in self.allowed_columns for col in columns
+                                )
+                            )
+                            or (
+                                self.allowed_logs
+                                and not all(
+                                    log in self.allowed_logs for log in logscales
+                                )
+                            )
+                            or (
+                                self.allowed_plot_type is not None
+                                and plot_type != self.allowed_plot_type
+                            )
+                            or (bin_sensitive and (bins_changed or sizes_changed))
+                        ):
+                            self._reset_actions()  # reset the plot if the plot options change
+
+                        seen = set()
+                        for col in columns:
+                            if col in seen:
+                                self.add_text_to_display.emit(
+                                    "All columns should be different for a meaningful plot",
+                                    self.__class__.__name__,
+                                )
+                                return False
+                            seen.add(col)
+
+                        if (
+                            self.plotted_datasets
+                            and (loader, exp, channel, sql_filter, subset_name)
+                            in self.plotted_datasets
+                        ):  # do not overlay the same thing twice
+                            continue
+
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "construct_metadata_query",
+                            (columns, sql_filter, exp_and_ch_arg),
+                            "relay_query",
+                            (),
+                        )
+                        if self.query == "":
+                            return False
+
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "load_metadata",
+                            (columns, sql_filter, exp_and_ch_arg),
+                            "update_plot_data",
+                            (),
+                        )
+
+                        if self.plot_data is None:
+                            self.add_text_to_display.emit(
+                                f"No data matching the subset {dataset_label}, skipping",
+                                self.__class__.__name__,
+                            )
+                            continue
+                        else:
+                            self.add_text_to_display.emit(
+                                f"{len(self.plot_data)} rows in subset {dataset_label}",
+                                self.__class__.__name__,
+                            )
+
+                        units = []
+                        for column in columns:
+                            self.global_signal.emit(
+                                "MetaDatabaseLoader",
+                                loader,
+                                "get_column_units",
+                                (column),
+                                "relay_units",
+                                (),
+                            )
+                            units.append(self.units)
+
+                        if len(columns) != len(units):
+                            self.add_text_to_display.emit(
+                                "cols and units must have equal length",
+                                self.__class__.__name__,
+                            )
+                            return False
+                        if not all(col in self.plot_data.columns for col in columns):
+                            self.add_text_to_display.emit(
+                                f"All columns {columns} must be present in the provided dataframe",
+                                self.__class__.__name__,
+                            )
+                            return False
+
+                        self.update_plot(
+                            plot_type,
+                            self.plot_data,
+                            columns,
+                            units,
+                            logscales,
+                            dataset_label=dataset_label,
+                            bins=bins,
+                            sizes=sizes,
+                        )
+
+                    elif plot_type in self.event_data_plots:
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "construct_event_data_query",
+                            (sql_filter, exp_and_ch_arg),
+                            "relay_event_query",
+                            (),
+                        )
+                        if self.event_query == "":
+                            return False
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "load_event_data",
+                            (sql_filter, exp_and_ch_arg),
+                            "relay_event_data_generator",
+                            (),
+                        )
+                        if self.event_data_generator:
+                            if plot_type in [
+                                "Raw All Points Histogram",
+                                "Normalized Raw All Points Histogram",
+                                "Filtered All Points Histogram",
+                                "Normalized Filtered All Points Histogram",
+                            ]:
+                                bins = parameters["bins"]
+                                sizes = parameters["sizes"]
+
+                                bin_sensitive = True
+                                bins_changed = (
+                                    getattr(self, "allowed_bins", None) != bins
+                                )
+                                sizes_changed = (
+                                    getattr(self, "allowed_sizes", None) != sizes
+                                )
+                                if bin_sensitive and (bins_changed or sizes_changed):
+                                    axis_type = (
+                                        "3d"
+                                        if isinstance(
+                                            getattr(self, "axes", None), Axes3D
+                                        )
+                                        else "2d"
+                                    )
+                                    self._reset_actions(axis_type=axis_type)
+
+                                plot_data = self._construct_all_points_histogram(
+                                    self.event_data_generator,
+                                    plot_type,
+                                    bins=bins,
+                                    sizes=sizes,
+                                )
+
+                                if plot_data is not None:
+                                    self.update_plot(
+                                        plot_type,
+                                        plot_data,
+                                        plot_data.columns,
+                                        ["pA", ""],
+                                        logscales=[False, False],
+                                        dataset_label=dataset_label,
+                                    )
+                                else:
+                                    return False
+
+                            elif plot_type in [
+                                "Raw Event Overlay",
+                                "Filtered Event Overlay",
+                            ]:
+                                self._construct_event_overlay(
+                                    self.event_data_generator, plot_type, loader
+                                )
+                        else:
+                            return False
+
+                    self.allowed_plot_type = plot_type
+                    self.allowed_bins = bins
+                    self.allowed_sizes = sizes
+
+                    if plot_type in self.metadata_plots:
+                        self.allowed_columns = columns
+                        self.allowed_logs = logscales
+                    else:
+                        # event plots don't have metadata axes/log flags
+                        self.allowed_columns = []
+                        self.allowed_logs = []
+
+                    self.plotted_datasets.add(
+                        (loader, exp, channel, sql_filter, subset_name)
+                    )
+
+        return True
+
+    @log(logger=logger)
+    def _construct_all_points_histogram(
+        self, event_generator, plot_type, bins=None, sizes=False
+    ):
+        """
+        Build a combined histogram across all event current values.
+
+        :param event_generator: Generator yielding individual event data.
+        :type event_generator: Iterator[dict]
+        :param plot_type: Type of histogram to create (raw or filtered).
+        :type plot_type: str
+        :param bins: Number of histogram bins.
+        :type bins: int | None
+        :return: DataFrame with histogram values and corresponding current levels.
+        :rtype: pd.DataFrame
+        """
+        # get global stats from the first event, don't forget to use this one later
+        egen1, egen2 = itertools.tee(event_generator)
+
+        min_current = float("inf")
+        max_current = float("-inf")
+        for event in egen1:
+
+            if plot_type in [
+                "Raw All Points Histogram",
+                "Normalized Raw All Points Histogram",
+            ]:
+                timeseries = event["raw_data"]
+            elif plot_type in [
+                "Filtered All Points Histogram",
+                "Normalized Filtered All Points Histogram",
+            ]:
+                timeseries = event["filtered_data"]
+
+            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+            baseline = np.median(timeseries[:padding_before])
+
+            min_curr = np.min(
+                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
+            )
+            max_curr = np.max(
+                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
+            )
+            if min_curr < min_current:
+                min_current = min_curr
+            if max_curr > max_current:
+                max_current = max_curr
+
+        if self.hist_min is None or min_current < self.hist_min:
+            self.hist_min = min_current
+        if self.hist_max is None or max_current > self.hist_max:
+            self.hist_max = max_current
+
+        if bins is not None:
+            if sizes is False:
+                if isinstance(bins, list) and len(bins) >= 1:
+                    bins = bins[0]
+                else:
+                    raise ValueError(f"Invalid bins entry {bins}")
+            else:
+                try:
+                    bins = int((self.hist_max - self.hist_min) / bins[0])
+                except Exception as e:
+                    raise ValueError(
+                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
+                    )
+        else:
+            bins = 100
+
+        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
+        hist = np.zeros(bins)
+        for event in egen2:
+            if plot_type in [
+                "Raw All Points Histogram",
+                "Normalized Raw All Points Histogram",
+            ]:
+                timeseries = event["raw_data"]
+            elif plot_type in [
+                "Filtered All Points Histogram",
+                "Normalized Filtered All Points Histogram",
+            ]:
+                timeseries = event["filtered_data"]
+            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+            baseline = np.median(timeseries[:padding_before])
+            if plot_type in [
+                "Raw All Points Histogram",
+                "Normalized Raw All Points Histogram",
+            ]:
+                timeseries = event["raw_data"]
+            elif plot_type in [
+                "Filtered All Points Histogram",
+                "Normalized Filtered All Points Histogram",
+            ]:
+                timeseries = event["filtered_data"]
+            event_hist, _ = np.histogram(
+                np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
+                bins=bin_edges,
+            )
+            hist += event_hist
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        return pd.DataFrame({"Current": bincenters, "Count": hist})
+
+    @log(logger=logger)
+    def set_baseline_duration(self, duration):
+        """
+        a callback from a global_signal call that sets the baseline_duration variable for further processing
+        """
+        self.baseline_duration = duration
+
+    @log(logger=logger)
+    def _construct_event_overlay(self, event_generator, plot_type, loader):
+        """
+        Overlay multiple event traces in a normalized time plot.
+
+        :param event_generator: Generator of events to overlay.
+        :type event_generator: Iterator[dict]
+        :param plot_type: Either 'Raw Event Overlay' or 'Filtered Event Overlay'.
+        :type plot_type: str
+        :param loader: Name of the active database loader.
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        self._set_display_mode("event")
+        self.fig_event.clear()
+        ax = self.fig_event.add_subplot(1, 1, 1)
+
+        egen1, egen2 = itertools.tee(event_generator)
+        min_duration = float("inf")
+        max_duration = float("-inf")
+
+        num_events = 0
+        for event in egen1:
+            num_events += 1
+            if plot_type == "Raw Event Overlay":
+                data = event["raw_data"]
+            elif plot_type == "Filtered Event Overlay":
+                data = event["filtered_data"]
+            duration = len(data)
+            if duration < min_duration:
+                min_duration = duration
+            if duration > max_duration:
+                max_duration = duration
+
+        for event in egen2:
+            if plot_type == "Raw Event Overlay":
+                data = event["raw_data"]
+            elif plot_type == "Filtered Event Overlay":
+                data = event["filtered_data"]
+
+            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
+            baseline = np.median(data[:padding_before])
+
+            data = np.sign(baseline) * data - np.sign(baseline) * baseline
+            time = np.array(range(len(data)), dtype=np.float64)
+            time -= padding_before
+            time /= len(data) - padding_after - padding_before
+
+            duration = len(data)
+            alpha = (
+                15
+                / num_events
+                * (1 - 0.99 * (duration - min_duration) / (max_duration - min_duration))
+            )
+            alpha = np.min((alpha, 0.5))
+            ax.plot(time, data, alpha=alpha, color="b")
+
+        ax.set_xlim(left=-0.333, right=1.333)
+        ax.set_xlabel("Normalized Time")
+        ax.set_ylabel("Rectified Current (pA)")
+
+        self.canvas_event.draw()
+        self.no_cached_data = True
+
+    @log(logger=logger)
+    def set_event_data_generator(self, generator):
+        """
+        Set the event data generator for event-based plots.
+
+        :param generator: A generator that yields event data.
+        :type generator: Iterator[dict]
+        """
+        self.event_data_generator = generator
+
+    @log(logger=logger)
+    def _undo_plot(self):
+        """
+        Undo the last plotted action and update the action history.
+        """
+        self.update_tab_action_history.emit(None, True)
+
+    @log(logger=logger)
+    def _save_filter(self):
+        """
+        Save the current filters to a JSON file.
+
+        """
+        if not self.subset_filters:
+            self.logger.info("There are no filters to save.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Filters", os.path.expanduser("~"), "JSON Files (*.json)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w") as f:
+                json.dump(self.subset_filters, f, indent=4)
+            self.logger.info(f"Filters saved to {path}")
+        except Exception as e:
+            self.logger.error(f"Failed to save filters: {e}")
+
+    @log(logger=logger)
+    def _load_filter(self, parameters):
+        """
+        Append filters from a JSON file, warn if duplicates are found,
+        and apply all new filters only if none conflict with existing ones.
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                new_filters = json.load(f)
+
+            if not isinstance(new_filters, dict):
+                raise ValueError("Invalid filter file format. Expected a dictionary.")
+
+            # Check for name conflicts
+            existing_names = set(self.subset_filters.keys())
+            new_names = set(new_filters.keys())
+            duplicate_names = existing_names & new_names
+
+            if duplicate_names:
+                self.logger.warning(
+                    f"Duplicate filter names found when loading from {path}: {', '.join(duplicate_names)}. "
+                    "No filters were loaded."
+                )
+                return
+
+            combo = self.proteincontrols.filter_comboBox
+            loader = parameters.get("db_loader")
+
+            if not loader:
+                self.logger.warning(
+                    "No loader found – filters loaded but not validated."
+                )
+
+            for name, filter_text in new_filters.items():
+                if loader:
+                    # Temporarily store to validate
+                    self._pending_filter_name = name
+                    self._pending_filter_text = filter_text
+
+                    self.global_signal.emit(
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_metadata_query",
+                        (
+                            ["sublevel_current", "voltage", "duration"],
+                            filter_text,
+                            None,
+                        ),
+                        "relay_query",
+                        ("validate_new_filter",),
+                    )
+                else:
+                    self.subset_filters[name] = filter_text
+                    combo.addItem(name)
+                    combo.selectItem(name, select=True)
+
+            combo.refreshDisplayText()
+            self.logger.info(f"Filters loaded from {path}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to load filters: {e}")
+
+    @log(logger=logger)
+    @Slot(str, str, tuple)
+    def handle_parameter_change(self, submodel_name, action_name, args):
+        """
+        Handle changes triggered by UI controls such as updates to axis selection or filters.
+
+        :param submodel_name: Name of the submodel that triggered the action.
+        :type submodel_name: str
+        :param action_name: Name of the action triggered.
+        :type action_name: str
+        :param args: Tuple containing action-specific arguments.
+        :type args: tuple
+        """
+        parameters = args[0]
+
+        if action_name == "export_plot_data":
+            if self.no_cached_data is True:
+                self.add_text_to_display.emit(
+                    "Event overlay data is not cached due to volume; use Export Subset as CSV instead",
+                    self.__class__.__name__,
+                )
+            else:
+                self.export_plot_data.emit()
+
+        elif action_name == "loader_changed":
+            loader = parameters.get("db_loader")
+            if loader:
+                self.update_available_columns(loader)  
+                self.request_experiment_structure(loader)
+
+        elif action_name == "select_experiment_and_channel":
+            loader = parameters.get("db_loader")
+            structure = self.available_experiment_and_channels_by_loader.get(loader, {})
+            selection = self.selected_experiment_and_channels_by_loader.get(loader, {})
+            self.show_selection_tree(structure, loader, selection)
+
+        elif action_name == "shift_range_backward":
+            self._shift_range_and_update_plot(parameters, direction="left")
+
+        elif action_name == "plot_events":
+            self._handle_plot_events(parameters)
+
+        elif action_name == "shift_range_forward":
+            self._shift_range_and_update_plot(parameters, direction="right")
+
+        elif action_name == "update_plot":
+            self._set_display_mode("distribution")
+            if self._analysis_mode == "individual":
+                self._update_distribution_individual(parameters)
+            else:
+                self._update_distribution_ensemble(parameters)
+
+        elif action_name == "reset_plot":
+            self._reset_actions()
+
+        elif action_name == "undo_plot":
+            self._undo_plot()
+
+        elif action_name == "add_filter":
+            self._show_add_filter_dialog(parameters)
+
+        elif action_name == "edit_filter":
+            self._show_filter_info_dialog(self.proteincontrols.filter_comboBox, parameters)
+
+        elif action_name == "delete_filter":
+            self._delete_all_selected_filters()
+
+        elif action_name == "save_filter":
+            self._save_filter()
+
+        elif action_name == "load_filter":
+            self._load_filter(parameters)
+
+        elif action_name == "set_mode_individual":
+            self._analysis_mode = "individual"   
+
+        elif action_name == "set_mode_ensemble":
+            self._analysis_mode = "ensemble"
+
+        elif action_name == "commit_individual":
+            self._commit_individual(parameters)
+
+        elif action_name == "commit_all":
+            self._commit_all(parameters)
+
+        else:
+            self._handle_other_actions(action_name, parameters)
+
+    @log(logger=logger)
+    def _shift_range_and_update_plot(self, parameters, direction):
+        """Shift ranges in the GUI and update plot and input if valid."""
+
+        original_str = self._get_event_index_text()
+        self.logger.debug(f"Original GUI input string: {original_str}")
+        if not original_str:
+            self.logger.error("Event index input is empty.")
+            return
+
+        parsed = self._parse_event_indices(original_str, False)
+        self.logger.debug(f"Parsed input into ranges: {parsed}")
+
+        shifted = self._shift_ranges(parsed, direction, 1)
+        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
+
+        merged = self._merge_ranges(shifted)
+        self.logger.debug(f"Merged shifted ranges: {merged}")
+
+        new_event_str = self._format_ranges(merged)
+        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
+
+        expanded = self._expand_event_indices(new_event_str)
+        self.logger.debug(f"Expanded list for plotting: {expanded}")
+
+        if not expanded:
+            self.logger.warning("Indices must be positive")
+            return
+
+        # Proceed with valid shift
+        new_params = parameters.copy()
+        new_params["event_index"] = expanded
+        self.logger.debug(f"Updated parameters for plot: {new_params}")
+
+        self._handle_plot_events(new_params)
+        self.logger.debug(
+            f"Shifting complete. Updating input field to: {new_event_str}"
+        )
+        self.proteincontrols.set_event_index_input(new_event_str)
+
+    def _get_event_index_text(self) -> str:  # Since params expanded
+        """
+        Get the current text from the event index input field.
+
+        :return: Stripped text content of the event index field.
+        :rtype: str
+        """
+        return self.proteincontrols.event_index_lineEdit.text().strip()
+
+    @log(logger=logger)
+    def set_event_plot_data_generator(self, generator):
+        """
+        :param generator: a generator of event data
+        :type generator: Generator[Dict[str, Any]]
+
+        A callback from a global signal call that sets the generator to be used to construct event plots and overlays
+        """
+        self.plot_events_generator = generator
+        self.plot_events_generator_updated = True
+
+    @log(logger=logger)
+    def _handle_plot_events(self, parameters):
+        """
+        Handle loading and plotting of selected events based on provided parameters.
+
+        :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
+        :type parameters: dict
+        """
+        selected_filters = self.get_selected_filters()
+        loader_name = parameters["db_loader"]
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader_name
+        )
+        if experiments_and_channels is None:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot events",
+                self.__class__.__name__,
+            )
+            return
+
+        if selected_filters is not None and len(selected_filters) > 1:
+            self.add_text_to_display(
+                "Unable to plot more than one subset at a time, select only one filter to apply",
+                self.__class__.__name__,
+            )
+            return
+
+        if (
+            self.selected_experiment_and_channels_by_loader[loader_name] is None
+            or len(self.selected_experiment_and_channels_by_loader[loader_name]) == 0
+        ):
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot events",
+                self.__class__.__name__,
+            )
+            return
+
+        if len(experiments_and_channels) > 1:
+            self.add_text_to_display.emit(
+                "Only a single experiment can be used for plotting events",
+                self.__class__.__name__,
+            )
+            return
+
+        for exp, channels in experiments_and_channels.items():
+            if len(channels) > 1:
+                self.add_text_to_display.emit(
+                    "Only a single channel can be used for plotting events",
+                    self.__class__.__name__,
+                )
+                return
+
+        if selected_filters is None or selected_filters == {}:
+            selected_filters = {"Full Dataset": ""}
+
+        event_index = parameters["event_index"]
+
+        sql_filter = next(iter(selected_filters.values()))
+        exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
+        exp = next(
+            iter(self.selected_experiment_and_channels_by_loader[loader_name].keys())
+        )
+        channel = next(
+            iter(self.selected_experiment_and_channels_by_loader[loader_name].values())
+        )[0]
+
+        if not (
+            sql_filter == self.current_sql_filter
+            and self.current_experiment == exp
+            and self.current_channel == channel
+            and self.plot_events_generator is not None
+        ):
+            # only load a new generator if the old one is invalid after explicitly aborting the current one
+            if self.plot_events_generator is not None:
+                try:
+                    try:
+                        new_event = self.plot_events_generator.send(True)
+                    except StopIteration:
+                        pass
+                except TypeError:
+                    try:
+                        new_event = next(self.plot_events_generator)
+                        new_event = self.plot_events_generator.send(True)
+                    except StopIteration:
+                        pass
+                self.cached_events = {}
+                self.plot_events_generator = None
+
+            loader = parameters["db_loader"]
+            load_event_data_args = (sql_filter, exp_and_ch)
+            self.plot_events_generator_updated = False
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "load_event_data",
+                load_event_data_args,
+                "relay_event_plot_data_generator",
+                (),
+            )
+            if self.plot_events_generator_updated is True:
+                self.current_sql_filter = sql_filter
+                self.current_experiment = exp
+                self.current_channel = int(channel) if channel is not None else None
+
+        event_index = parameters["event_index"]
+        data_list = []
+
+        for index in event_index:
+            cached_event = self.cached_events.get(index)
+            if cached_event is not None:
+                data_list.append(cached_event)
+                continue
+            else:
+                while True:
+                    new_event = None
+                    try:
+                        if self.plot_events_generator is not None:
+                            try:
+                                new_event = self.plot_events_generator.send(False)
+                            except TypeError:
+                                new_event = next(self.plot_events_generator)
+                        else:
+                            raise AttributeError(
+                                "Establish a plot events generator before trying to use it"
+                            )
+                    except StopIteration:
+                        break
+                    if new_event is not None:
+                        self.cached_events[new_event["event_id"]] = new_event
+                        if new_event["event_id"] == index:
+                            data_list.append(new_event)
+                            break
+                        elif new_event["event_id"] > index:
+                            break
+        if data_list:
+            self._update_event_plot(data_list)
+        else:
+            self.add_text_to_display.emit(
+                f"No data available for plotting with indices in the specified range {event_index}",
+                self.__class__.__name__,
+            )
+            self.logger.info(
+                f"No data available for plotting with indices in the specified range {event_index}"
+            )
+
+    @log(logger=logger)
+    def _update_event_plot(self, event_data):
+        """
+        Update the event plot with raw, filtered, and fitted traces for multiple events.
+
+        Each event is plotted in its own subplot with time on the x-axis and current on the y-axis.
+        The method also updates internal cache with data for interactive use (e.g., tooltips or exports).
+
+        :param event_data: List of dictionaries, each containing the data and metadata for one event.
+                        Each dictionary should have the keys:
+                        'experiment_id', 'channel_id', 'event_id',
+                        'raw_data', 'filtered_data', 'fit_data', and 'samplerate'.
+        :type event_data: list[dict]
+        :return: None
+        :rtype: None
+        """
+        self._set_display_mode("event")
+        self._clear_figure_state(create_default_axes=False)
+
+        num_events = len(event_data)
+        num_rows, num_cols = self._factors(num_events)
+        j = 0
+        for i, event in enumerate(event_data):
+            ax = self.fig_event.add_subplot(num_rows, num_cols, j + 1)
+            label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
+            ax.set_title(label)
+            j += 1
+
+            raw_data = event["raw_data"]
+            filtered_data = event["filtered_data"]
+            fit_data = event["fit_data"]
+            samplerate = event["samplerate"]
+
+            time = np.arange(len(raw_data)) / samplerate * 1e6
+            ax.plot(time, raw_data / 1000, zorder=1)
+            ax.plot(time, filtered_data / 1000, zorder=2)
+            ax.plot(time, fit_data / 1000, zorder=3)
+
+            x_label = r"Time (us)"
+            y_label = r"Current (nA)"
+
+            self._update_cache(
+                (time, label + " " + x_label),
+                (raw_data / 1000, label + " Raw " + y_label),
+            )
+            self._update_cache(
+                (time, label + " " + x_label),
+                (filtered_data / 1000, label + " Filtered " + y_label),
+            )
+            self._update_cache(
+                (time, label + " " + x_label),
+                (fit_data / 1000, label + " Fitted" + y_label),
+            )
+
+            if i % num_cols == 0:
+                ax.set_ylabel(y_label)
+            labelnum = (num_rows - 1) * num_cols
+            if num_events % num_cols > 0:
+                labelnum -= num_cols - num_events % num_cols
+            if i >= labelnum:
+                ax.set_xlabel(r"Time ($\mu s$)")
+
+        self.fig_event.set_constrained_layout(True)
+        self.canvas_event.draw()
+        self._commit_cache()
+
+    @log(logger=logger)
+    def _update_distribution_individual(self, parameters):
+        """
+        Compute and plot the ΔI/I histogram and V/M scatterplot for a single
+        selected event in Individual analysis mode.
+
+        :param parameters: Dictionary of plotting parameters from the UI controls.
+        :type parameters: dict
+        :return: None
+        :rtype: None
+        """
+        # TODO: implement individual distribution and V/M computation and plotting
+        self.logger.info("_update_distribution_individual called (not yet implemented)")
+
+    @log(logger=logger)
+    def _update_distribution_ensemble(self, parameters):
+        """
+        Compute and plot the ΔI/I histogram and V/M scatterplot aggregated across
+        all events in Ensemble analysis mode.
+
+        :param parameters: Dictionary of plotting parameters from the UI controls.
+        :type parameters: dict
+        :return: None
+        :rtype: None
+        """
+        # TODO: implement ensemble distribution and V/M computation and plotting
+        self.logger.info("_update_distribution_ensemble called (not yet implemented)")
+
+    @log(logger=logger)
+    def set_query(self, query, table_name):
+        """
+        Set the SQL query and table name used in plotting.
+
+        :param query: SQL query string.
+        :type query: str
+        :param table_name: Name of the database table.
+        :type table_name: str
+        """
+        self.query = query
+        self.table_name = table_name
+        if not query:
+            return
+
+        # Only display SQL for filter creation/edit validation
+        if self._show_sql_in_display:
+            self.add_text_to_display.emit(
+                f"SQL ({table_name}):\n{query.strip()}",
+                self.__class__.__name__,
+            )
+            # one-shot so normal plot queries never show
+            self._show_sql_in_display = False
+
+    @log(logger=logger)
+    def set_event_query(self, query):
+        """
+        A global signal callback that provides a valid SQL query for fetching event data.
+        """
+        self.event_query = query
+        if not query:
+            return
+
+        if self._show_event_sql_in_display:
+            self.add_text_to_display.emit(
+                f"Event SQL:\n{query.strip()}",
+                self.__class__.__name__,
+            )
+            self._show_event_sql_in_display = False
+
+    @log(logger=logger)
+    def set_units(self, units):
+        """
+        Set the units returned from the database for use in axis labels.
+
+        :param units: List or string representing units.
+        :type units: Any
+        """
+        self.units = units
+
+    @log(logger=logger)
+    def update_available_columns(self, loader):
+        """
+        Request available columns from the database loader.
+
+        :param loader: Name of the active database loader.
+        :type loader: str
+        """
+        try:
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_column_names_by_table",
+                (),
+                "update_column_names",
+                (),
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to request column data: {repr(e)}")
+
+    @log(logger=logger)
+    def request_experiment_structure(self, loader_name: str):
+        """
+        :param loader_name: the key of the loader
+        :type loader_name: str
+
+        get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
+        """
+        self.logger.debug(
+            f"Requesting experiment-channel structure from loader: {loader_name}"
+        )
+
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader_name,
+            "get_experiments_and_channels",
+            (),
+            "get_experiment_structure_ready",
+            (loader_name,),
+        )
+
+    @log(logger=logger)
+    def show_selection_tree(
+        self,
+        structure: dict[str, list[str]],
+        loader_name: str,
+        selection: Optional[dict[str, list[str]]] = None,
+    ) -> None:
+        """
+        Displays the selection tree for a given loader using the full structure and current selection.
+        """
+        self.logger.debug(
+            f"Displaying selection tree with structure: {structure} for loader: {loader_name}"
+        )
+
+        if not hasattr(self, "selection_tree"):
+            self.selection_tree = SelectionTree()
+
+        selected = self.selection_tree.show_dialog(
+            structure,
+            loader_name,
+            title="Select Experiment and Channels",
+            selected=selection,
+        )
+
+        self.selected_experiment_and_channels_by_loader[loader_name] = selected
+        self.logger.debug(f"Updated selection for {loader_name}: {selected}")
+
+    @log(logger=logger)
+    def update_units(self, loader, column, axis):
+        """
+        Request units for a specific column from the loader.
+
+        :param loader: Name of the database loader.
+        :type loader: str
+        :param column: Name of the column to get units for.
+        :type column: str
+        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
+        :type axis: str
+        """
+        try:
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_column_units",
+                (column,),
+                "update_column_units",
+                (axis,),
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
+
+    @log(logger=logger)
+    def _handle_other_actions(self, action_name, parameters):
+        """
+        Raise an error for actions not yet implemented.
+
+        :param action_name: The name of the unhandled action.
+        :type action_name: str
+        :param parameters: Parameters associated with the action.
+        :type parameters: dict
+        """
+        raise NotImplementedError(f"{action_name} handler not implemented")
+
+    @log(logger=logger)
+    def _calculate_heatmap(
+        self, xdata, ydata, logx=False, logy=False, bins=None, sizes=False
+    ):
+        """
+        :param xdata: the data on the x axis
+        :type xdata: npt.NDArray[np.float64]
+        :param ydata: the data on the y axis
+        :type ydata: npt.NDArray[np.float64]
+        :param logx: logscale the x data before building the heatmap?
+        :type logx: bool
+        :param logy: logscale the y data before building the heatmap?
+        :type logy: bool
+        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
+        :type bins: Union[int, float]
+        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
+        :type sizes: bool
+
+        Build a heatmap of the provided data
+        """
+        xdata, ydata = self._logscale_and_filter_multiple_columns(
+            xdata, ydata, log_flags=[logx, logy]
+        )
+
+        if bins is not None:
+            if sizes is False:
+                if isinstance(bins, list) and len(bins) >= 2:
+                    xbins = bins[0]
+                    ybins = bins[1]
+                elif isinstance(bins, list) and len(bins) == 1:
+                    xbins = bins[0]
+                    ybins = bins[0]
+                else:
+                    raise ValueError(f"Invalid bin entry: {bins}")
+            elif sizes is True:
+                if isinstance(bins, list) and len(bins) >= 2:
+                    xbins = int((max(xdata) - min(xdata)) / bins[0])
+                    ybins = int((max(ydata) - min(ydata)) / bins[1])
+                elif isinstance(bins, list) and len(bins) == 1:
+                    xbins = int((max(xdata) - min(xdata)) / bins[0])
+                    ybins = int((max(ydata) - min(ydata)) / bins[0])
+                else:
+                    self.logger.info(
+                        f"Invalid entry in bins: {bins}, defaulting to iqr"
+                    )
+                    bins = None
+                if xbins <= 1 or ybins <= 1:
+                    self.logger.info(
+                        f"Invalid entry in bins: {bins}, defaulting to iqr"
+                    )
+                    bins = None
+        if bins is None:
+            try:
+                if iqr(xdata) > 0:
+                    xbins = int(
+                        (max(xdata) - min(xdata))
+                        * len(xdata) ** (1.0 / 4.0)
+                        / (iqr(xdata))
+                    )
+                else:
+                    xbins = int(np.sqrt(len(xdata)))
+            except OverflowError:
+                xbins = int(np.sqrt(len(xdata)))
+            try:
+                if iqr(ydata) > 0:
+                    ybins = int(
+                        (max(ydata) - min(ydata))
+                        * len(xdata) ** (1.0 / 4.0)
+                        / (iqr(ydata))
+                    )
+                else:
+                    ybins = int(np.sqrt(len(ydata)))
+            except OverflowError:
+                ybins = int(np.sqrt(len(ydata)))
+
+        z, x, y = np.histogram2d(xdata, ydata, bins=[int(xbins), int(ybins)])
+        logged_z = np.empty_like(z)
+        for i in range(z.shape[0]):
+            for j in range(z.shape[1]):
+                logged_z[i, j] = np.log2(z[i, j]) if z[i, j] > 0 else -1
+
+        x = x[:-1] + np.diff(x) / 2.0
+        y = y[:-1] + np.diff(y) / 2.0
+
+        return x, y, logged_z.T
+
+    @log(logger=logger)
+    def _show_add_filter_dialog(self, parameters: dict):
+        """
+        Displays the dialog for adding a new subset filter. Validates filter syntax
+        before actually saving the filter.
+
+        :param parameters: Dictionary with 'db_loader'.
+        """
+        self._show_sql_in_display = True
+
+        dialog = AddSubsetFilterDialog(
+            self, existing_names=list(self.subset_filters.keys())
+        )
+
+        if self._walkthrough_active:
+            self.logger.info("Launching walkthrough from _show_add_filter_dialog()")
+            dialog._init_walkthrough()
+            dialog.launch_walkthrough()
+            if dialog.walkthrough_dialog:
+                dialog.finished.connect(
+                    lambda _: dialog.walkthrough_dialog.force_close()
+                )
+
+        if dialog.exec() == QDialog.Accepted:
+            name = dialog.name
+            filter_text = dialog.filter_text
+            loader = parameters["db_loader"]
+
+            if not loader:
+                self.logger.error("No database loader selected")
+                return
+
+            # Store pending data for use in relay_query
+            self._pending_filter_name = name
+            self._pending_filter_text = filter_text
+            self._pending_old_filter_name: Optional[str] = None
+
+            self._show_sql_in_display = True
+
+            # Validate filter via construct_metadata_query
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                (
+                    ["sublevel_current", "voltage", "duration"],
+                    filter_text,
+                    None,
+                ),  # using event_id as placeholder column
+                "relay_query",
+                ("validate_new_filter",),
+            )
+
+    @log(logger=logger)
+    def clear_pending_filter_state(self):
+        """
+        reset all filters to factory settings
+        """
+        self._pending_filter_name = None
+        self._pending_filter_text = None
+        self._pending_old_filter_name = None
+
+    @log(logger=logger)
+    def _show_filter_info_dialog(self, comboBox, parameters):
+        """
+        Called when clicking the edit button for filters with multiple selection.
+
+        Validates that exactly one filter is selected and delegates to the edit dialog.
+
+        :param comboBox: The combo box containing the list of selectable filters.
+        :type comboBox: MultiSelectComboBox
+        """
+        loader = parameters["db_loader"]
+        selected = comboBox.getSelectedItems()
+        if len(selected) != 1:
+            self.logger.warning("Please select exactly one filter to edit.")
+            return
+
+        self.show_edit_filter_dialog(selected[0], loader)
+
+    @log(logger=logger)
+    def show_edit_filter_dialog(self, name: str, loader: str):
+        """
+        Displays the dialog to edit an existing filter, and validates the updated
+        SQL filter syntax via construct_metadata_query before saving it.
+
+        :param name: The name of the filter to edit.
+        :param parameters: Dictionary with context, must include 'db_loader'.
+        """
+        self._show_sql_in_display = True
+
+        self.logger.debug(f"Editing filter: {name}")
+        self.logger.debug(f"Filters available: {self.subset_filters}")
+
+        dialog = EditSubsetFilterDialog(self, name, self.subset_filters)
+
+        if dialog.exec():
+            new_name = dialog.new_name
+            new_filter = dialog.new_filter
+
+            self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
+
+            if not loader:
+                self.logger.error("No database loader selected")
+                return
+
+            # Store pending update info to be committed in relay_query after validation
+            self._pending_filter_name = new_name
+            self._pending_filter_text = new_filter
+            self._pending_old_filter_name = name  # important for replacing key
+
+            self._show_sql_in_display = True
+            # Emit signal to validate the updated filter
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                (["sublevel_current", "voltage", "duration"], new_filter, None),
+                "relay_query",
+                ("validate_edited_filter",),
+            )
+
+    @log(logger=logger)
+    def _delete_filter_by_name(self, name: str):
+        """
+        Deletes a single filter by name.
+
+        :param name: The name of the filter to delete.
+        :type name: str
+        """
+        self._delete_filter(name)
+
+    @log(logger=logger)
+    def _delete_all_selected_filters(self):
+        """
+        Deletes multiple selected filters.
+        """
+        selected_items = self.proteincontrols.filter_comboBox.getSelectedItems()
+
+        if not selected_items:
+            self.logger.info("No filters selected to delete.")
+            return
+
+        for name in selected_items:
+            self._delete_filter(name)
+
+    @log(logger=logger)
+    def _delete_filter(self, name: str):
+        """
+        Internal method to remove a filter and update the UI.
+        """
+        self.subset_filters.pop(name, None)
+
+        list_widget = self.proteincontrols.filter_comboBox.listWidget
+        for i in reversed(range(list_widget.count())):
+            widget = list_widget.itemWidget(list_widget.item(i))
+            if widget:
+                checkbox = widget.findChild(QCheckBox)
+                if checkbox and checkbox.text() == name:
+                    list_widget.takeItem(i)
+                    break
+
+        self.proteincontrols.filter_comboBox.refreshDisplayText()
+
+    @log(logger=logger)
+    def get_selected_filters(self) -> dict:
+        """
+        Get a dict of the filters that the user has indicated should be active for the current plotting task
+        """
+        return {
+            name: self.subset_filters.get(name, "")
+            for name in self.proteincontrols.filter_comboBox.getSelectedItems()
+        }
+
+    @log(logger=logger)
+    def replace_filter_item(self, name):
+        """
+        Remove any existing filter item with the same name and add the new one.
+        """
+        list_widget = self.proteincontrols.filter_comboBox.listWidget
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            widget = list_widget.itemWidget(item)
+            checkbox = widget.findChild(QCheckBox)
+            if checkbox and checkbox.text() == name:
+                list_widget.takeItem(i)
+                break
+
+        self.proteincontrols.filter_comboBox.addItem(name)
+        self.proteincontrols.filter_comboBox.selectItem(name, select=True)
+
+    @log(logger=logger)
+    def update_filter_name(self, old_name, new_name):
+        """
+        Replace old filter name with new one in the ComboBox, removing any duplicates.
+        """
+        list_widget = self.proteincontrols.filter_comboBox.listWidget
+
+        # Remove old name
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            widget = list_widget.itemWidget(item)
+            checkbox = widget.findChild(QCheckBox)
+            if checkbox and checkbox.text() == old_name:
+                list_widget.takeItem(i)
+                break
+
+        # Remove new name if it already exists and is different
+        if new_name != old_name:
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                widget = list_widget.itemWidget(item)
+                checkbox = widget.findChild(QCheckBox)
+                if checkbox and checkbox.text() == new_name:
+                    list_widget.takeItem(i)
+                    break
+
+        # Add updated name
+        self.proteincontrols.filter_comboBox.addItem(new_name)
+        self.proteincontrols.filter_comboBox.selectItem(new_name, select=True)
+        self.proteincontrols.filter_comboBox.refreshDisplayText()
+
+    def get_walkthrough_steps(self):
+        return [
+            (
+                "Metadata Tab",
+                "Click the '+' button to load your metadata database.",
+                "MetadataView",
+                lambda: [self.proteincontrols.db_loader_add_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click the 'Scope' button to select specific experiments and  channels. By default, all options are selected.",
+                "MetadataView",
+                lambda: [self.proteincontrols.selection_tree_button],
+            ),
+            (
+                "Metadata Tab",
+                "Choose the type of plot you'd like to generate from this dropdown.",
+                "MetadataView",
+                lambda: [self.proteincontrols.plot_type_comboBox],
+            ),
+            (
+                "Metadata Tab",
+                "Specify the number of bins for your plot. Use 'x,y' format for heatmaps.",
+                "MetadataView",
+                lambda: [self.proteincontrols.bins_lineEdit],
+            ),
+            (
+                "Metadata Tab",
+                "Check the sizes box to be able to define the sizes of your bins.",
+                "MetadataView",
+                lambda: [self.proteincontrols.sizes_checkbox],
+            ),
+            (
+                "Metadata Tab",
+                "Here you can select the data for the x-axis.",
+                "MetadataView",
+                lambda: [self.proteincontrols.x_axis_comboBox],
+            ),
+            (
+                "Metadata Tab",
+                "Check this box if you want to use a log scale for the x-axis.",
+                "MetadataView",
+                lambda: [self.proteincontrols.x_axis_logscale_checkbox],
+            ),
+            (
+                "Metadata Tab",
+                "Once you're ready, click 'Update Plot' to generate the visualization.",
+                "MetadataView",
+                lambda: [self.proteincontrols.update_plot_button],
+            ),
+            (
+                "Metadata Tab",
+                "Not happy with the changes? Click 'Undo' to revert to the previous state at any point.",
+                "MetadataView",
+                lambda: [self.proteincontrols.undo_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click here to save the current plot to file.",
+                "MetadataView",
+                lambda: [self.proteincontrols.save_plot_button],
+            ),
+            (
+                "Metadata Tab",
+                "Reload previously saved configurations using the 'Load' button.",
+                "MetadataView",
+                lambda: [self.proteincontrols.load_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click 'Reset' to clear all changes and restore default settings.",
+                "MetadataView",
+                lambda: [self.proteincontrols.reset_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click the '+' button to apply filters to the full database or selected experiment/channels to create subsets.",
+                "MetadataView",
+                lambda: [self.proteincontrols.filter_add_button],
+            ),
+            (
+                "Metadata Tab",
+                "Use this dropdown to view your created subsets.",
+                "MetadataView",
+                lambda: [self.proteincontrols.filter_comboBox],
+            ),
+            (
+                "Metadata Tab",
+                "Click here to see the information and edit the currently selected subset.",
+                "MetadataView",
+                lambda: [self.proteincontrols.filter_info_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click the delete button to remove all selected subsets. You can also delete individual ones directly from the dropdown.",
+                "MetadataView",
+                lambda: [self.proteincontrols.filter_delete_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click 'Save Filter' to save the current subsets for future use.",
+                "MetadataView",
+                lambda: [self.proteincontrols.save_filter_button],
+            ),
+            (
+                "Metadata Tab",
+                "Click 'Load Filter' to import previously saved subsets.",
+                "MetadataView",
+                lambda: [self.proteincontrols.load_filter_button],
+            ),
+            (
+                "Metadata Tab",
+                "Use 'Export Subset - CSV' to save only the filtered data you're currently working with.",
+                "MetadataView",
+                lambda: [self.proteincontrols.export_csv_subset_button],
+            ),
+            (
+                "Metadata Tab",
+                "Select exactly one experiment to visualize its events.",
+                "MetadataView",
+                lambda: [self.proteincontrols.selection_tree_button],
+            ),
+            (
+                "Metadata Tab",
+                "Then, enter the index or ranges of events you want to visualize.",
+                "MetadataView",
+                lambda: [self.proteincontrols.event_index_lineEdit],
+            ),
+            (
+                "Metadata Tab",
+                "Then, click 'Plot Events' to visualize the selected entries.",
+                "MetadataView",
+                lambda: [self.proteincontrols.plot_events_pushButton],
+            ),
+            (
+                "Metadata Tab",
+                "Use the arrows to quickly navigate between filtered/unfiltered events.",
+                "MetadataView",
+                lambda: [
+                    self.proteincontrols.left_arrow_button,
+                    self.proteincontrols.right_arrow_button,
+                ],
+            ),
+        ]
+
+    def get_current_view(self):
+        return "MetadataView"
+
+
+def format_axis_label(label: str, unit: str) -> str:
+    """
+    Ensure the axis label contains the correct unit exactly once.
+    Removes any existing trailing unit in parentheses.
+    """
+    label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
+    return f"{label} ({unit})" if unit else label
