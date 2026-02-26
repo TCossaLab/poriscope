@@ -90,11 +90,11 @@ class ProteinControls(QWidget):
         self.groupBox = QGroupBox(self)
         self.groupBox.setObjectName("groupBox")
         group_layout = QGridLayout(self.groupBox)
-        
-        # 3 columns (LEFT/MIDDLE/RIGHT) spanning over: 
-        group_layout.setColumnStretch(0, 2) # 4/12
-        group_layout.setColumnStretch(1, 5) # 5/12
-        group_layout.setColumnStretch(2, 3) # 3/12
+
+        # 3 columns (LEFT/MIDDLE/RIGHT) spanning over:
+        group_layout.setColumnStretch(0, 2)  # 4/12
+        group_layout.setColumnStretch(1, 5)  # 5/12
+        group_layout.setColumnStretch(2, 3)  # 3/12
 
         group_layout.setVerticalSpacing(4)
 
@@ -121,37 +121,55 @@ class ProteinControls(QWidget):
             self.groupBox, self.db_loader_comboBox, "Add loader", "MetaDatabaseLoader"
         )
         self.db_loader_info_button = self.create_info_button(
-            self.groupBox, self.db_loader_comboBox, "Edit selected loader", "MetaDatabaseLoader"
+            self.groupBox,
+            self.db_loader_comboBox,
+            "Edit selected loader",
+            "MetaDatabaseLoader",
         )
         self.db_loader_delete_button = self.create_delete_button(
-            self.groupBox, self.db_loader_comboBox, "Delete loader", "MetaDatabaseLoader"
+            self.groupBox,
+            self.db_loader_comboBox,
+            "Delete loader",
+            "MetaDatabaseLoader",
         )
 
         self.selection_tree_button = QPushButton("Scope", self.groupBox)
         self.selection_tree_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
 
         # Take above defined widgets and put them in a horizontal layout to keep them together as a unit in the grid
-        db_loader_top_layout = QHBoxLayout()  # Separate layout for the top row of the left column (label + buttons)
+        db_loader_top_layout = (
+            QHBoxLayout()
+        )  # Separate layout for the top row of the left column (label + buttons)
         db_loader_top_layout.setContentsMargins(0, 0, 0, 0)
         db_loader_top_layout.setSpacing(5)
         db_loader_top_layout.setAlignment(Qt.AlignLeft)
 
         # (Optional but helps placement): vertically center label + toolbuttons so they sit on the same baseline
         db_loader_top_layout.addWidget(self.db_loader_label, alignment=Qt.AlignVCenter)
-        db_loader_top_layout.addWidget(self.db_loader_add_button, alignment=Qt.AlignVCenter)
-        db_loader_top_layout.addWidget(self.db_loader_info_button, alignment=Qt.AlignVCenter)
-        db_loader_top_layout.addWidget(self.db_loader_delete_button, alignment=Qt.AlignVCenter)
+        db_loader_top_layout.addWidget(
+            self.db_loader_add_button, alignment=Qt.AlignVCenter
+        )
+        db_loader_top_layout.addWidget(
+            self.db_loader_info_button, alignment=Qt.AlignVCenter
+        )
+        db_loader_top_layout.addWidget(
+            self.db_loader_delete_button, alignment=Qt.AlignVCenter
+        )
         db_loader_top_layout.addStretch(1)
 
         # Note: Wrapping a layout in a QWidget makes it a controllable, alignable, and stylable unit inside the grid.
-        combo_left_widget = QWidget(self.groupBox)  # Separate widget to hold the combobox and scope button, so they can be aligned as one unit in the grid
-        combo_left_layout = QHBoxLayout(combo_left_widget)  # Separate layout for the combobox + scope button to keep them together and aligned
+        combo_left_widget = QWidget(
+            self.groupBox
+        )  # Separate widget to hold the combobox and scope button, so they can be aligned as one unit in the grid
+        combo_left_layout = QHBoxLayout(
+            combo_left_widget
+        )  # Separate layout for the combobox + scope button to keep them together and aligned
         combo_left_layout.setContentsMargins(0, 0, 0, 0)
         combo_left_layout.setSpacing(5)
         combo_left_layout.addWidget(self.db_loader_comboBox)
         combo_left_layout.addWidget(self.selection_tree_button)
 
-        # ROW 2: PORE DIAMETER/LENGTH label 
+        # ROW 2: PORE DIAMETER/LENGTH label
         self.pore_label = self.createLabel(self.groupBox, 12, "PORE DIAMETER/LENGTH")
 
         # ROW 3: PORE DIAMETER/LENGTH input
@@ -165,8 +183,12 @@ class ProteinControls(QWidget):
         self.event_index_lineEdit.setPlaceholderText("e.g. 0-15")
 
         # ROW 5: Plot Events (arrows + button)
-        self.plot_events_widget = QWidget(self.groupBox) # Separate widget to hold the plot events button and arrows, so it can be aligned as one unit
-        plot_events_layout = QHBoxLayout(self.plot_events_widget) # Separate layout for the plot events button + arrows to keep them together and aligned
+        self.plot_events_widget = QWidget(
+            self.groupBox
+        )  # Separate widget to hold the plot events button and arrows, so it can be aligned as one unit
+        plot_events_layout = QHBoxLayout(
+            self.plot_events_widget
+        )  # Separate layout for the plot events button + arrows to keep them together and aligned
         plot_events_layout.setContentsMargins(0, 0, 0, 0)
         plot_events_layout.setSpacing(5)
 
@@ -175,8 +197,12 @@ class ProteinControls(QWidget):
         self.left_arrow_button.setIconSize(QSize(16, 16))
         self.left_arrow_button.setFixedWidth(30)
 
-        self.plot_events_pushButton = self.createButton(self.groupBox, "Plot Events", bold=True)
-        self.plot_events_pushButton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.plot_events_pushButton = self.createButton(
+            self.groupBox, "Plot Events", bold=True
+        )
+        self.plot_events_pushButton.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Preferred
+        )
 
         self.right_arrow_button = QPushButton(self.plot_events_widget)
         self.right_arrow_button.setIcon(get_icon("arrow-right.svg"))
@@ -190,10 +216,14 @@ class ProteinControls(QWidget):
         # ---------- MIDDLE COLUMN ----------
 
         # ROW 0: "Distribution event fitting" header
-        self.dist_label = self.createLabel(self.groupBox, 12, "DISTRIBUTION EVENT FITTING")
+        self.dist_label = self.createLabel(
+            self.groupBox, 12, "DISTRIBUTION EVENT FITTING"
+        )
 
         # ROW 1: Individual / Ensemble buttons
-        self.individual_button = self.createButton(self.groupBox, "Individual", bold=False)
+        self.individual_button = self.createButton(
+            self.groupBox, "Individual", bold=False
+        )
         self.ensemble_button = self.createButton(self.groupBox, "Ensemble", bold=False)
 
         self.analysis_mode_group = QButtonGroup(self.groupBox)
@@ -219,7 +249,7 @@ class ProteinControls(QWidget):
 
         # Apply initial state
         _set_mode_bold()
-        
+
         individual_ensemble_widget = QWidget(self.groupBox)
         individual_ensemble_layout = QHBoxLayout(individual_ensemble_widget)
         individual_ensemble_layout.setContentsMargins(0, 0, 0, 0)
@@ -277,7 +307,9 @@ class ProteinControls(QWidget):
         self._on_sizes_checkbox_toggled(self.sizes_checkbox.isChecked())
 
         # ROW 4: Update / Undo / Reset row
-        self.update_plot_button = self.createButton(self.groupBox, "Update Plot", bold=True)
+        self.update_plot_button = self.createButton(
+            self.groupBox, "Update Plot", bold=True
+        )
         self.undo_button = self.createButton(self.groupBox, "Undo", bold=True)
         self.reset_button = self.createButton(self.groupBox, "Reset", bold=True)
 
@@ -290,7 +322,9 @@ class ProteinControls(QWidget):
         update_undo_reset_layout.addWidget(self.reset_button, 1)
 
         # ROW 5: Commit row (Commit Individual / Commit All)
-        self.commit_individual = self.createButton(self.groupBox, "Commit Individual", bold=True)
+        self.commit_individual = self.createButton(
+            self.groupBox, "Commit Individual", bold=True
+        )
         self.commit_all = self.createButton(self.groupBox, "Commit All", bold=True)
 
         commit_widget = QWidget(self.groupBox)
@@ -309,9 +343,15 @@ class ProteinControls(QWidget):
         self.filter_comboBox = MultiSelectComboBox(self.groupBox)
         self.filter_comboBox.setObjectName("filterComboBox")
 
-        self.filter_add_button = self.create_add_filter_button(self.groupBox, self.filter_comboBox, "Add filter")
-        self.filter_info_button = self.create_filter_info_button(self.groupBox, self.filter_comboBox, "Edit selected filter")
-        self.filter_delete_button = self.create_filter_delete_button(self.groupBox, self.filter_comboBox, "Delete selected filter(s)")
+        self.filter_add_button = self.create_add_filter_button(
+            self.groupBox, self.filter_comboBox, "Add filter"
+        )
+        self.filter_info_button = self.create_filter_info_button(
+            self.groupBox, self.filter_comboBox, "Edit selected filter"
+        )
+        self.filter_delete_button = self.create_filter_delete_button(
+            self.groupBox, self.filter_comboBox, "Delete selected filter(s)"
+        )
 
         self.filter_comboBox.edit_filter = self.show_filter_info_dialog_single
         self.filter_comboBox.delete_filter = self.delete_filter_by_name
@@ -328,13 +368,19 @@ class ProteinControls(QWidget):
         filter_header_layout.addStretch(1)
 
         # ROW 3: Save Filter button
-        self.save_filter_button = self.createButton(self.groupBox, "Save Filter", bold=True)
+        self.save_filter_button = self.createButton(
+            self.groupBox, "Save Filter", bold=True
+        )
 
-        # ROW 5: Load Filter button 
-        self.load_filter_button = self.createButton(self.groupBox, "Load Filter", bold=True)
+        # ROW 5: Load Filter button
+        self.load_filter_button = self.createButton(
+            self.groupBox, "Load Filter", bold=True
+        )
 
         # ROW 7: Export Plot Data button
-        self.export_plot_data_pushButton = self.createButton(self.groupBox, "Export Plot Data", bold=True)
+        self.export_plot_data_pushButton = self.createButton(
+            self.groupBox, "Export Plot Data", bold=True
+        )
 
         # ============================================================
         # PLACE elements IN GRID
@@ -375,7 +421,7 @@ class ProteinControls(QWidget):
         group_layout.addWidget(self.export_plot_data_pushButton, 6, 2)
 
         # ============================================================
-        # SIZING 
+        # SIZING
         # ============================================================
         self.db_loader_comboBox.setMinimumWidth(160)
         self.selection_tree_button.setFixedWidth(60)
@@ -592,24 +638,16 @@ class ProteinControls(QWidget):
         self.individual_button.clicked.connect(
             lambda: self.on_button_clicked("individual")
         )
-        self.ensemble_button.clicked.connect(
-            lambda: self.on_button_clicked("ensemble")
-        )
+        self.ensemble_button.clicked.connect(lambda: self.on_button_clicked("ensemble"))
         self.update_plot_button.clicked.connect(
             lambda: self.on_button_clicked("update_plot")
         )
-        self.undo_button.clicked.connect(
-            lambda: self.on_button_clicked("undo")
-        )
-        self.reset_button.clicked.connect(
-            lambda: self.on_button_clicked("reset")
-        )
+        self.undo_button.clicked.connect(lambda: self.on_button_clicked("undo"))
+        self.reset_button.clicked.connect(lambda: self.on_button_clicked("reset"))
         self.commit_individual.clicked.connect(
             lambda: self.on_button_clicked("commit_individual")
         )
-        self.commit_all.clicked.connect(
-            lambda: self.on_button_clicked("commit_all")
-        )
+        self.commit_all.clicked.connect(lambda: self.on_button_clicked("commit_all"))
         self.filter_add_button.clicked.connect(
             lambda: self.on_button_clicked("add_filter")
         )
@@ -639,7 +677,6 @@ class ProteinControls(QWidget):
         self.individual_button.toggled.connect(self.validate_inputs)
         self.ensemble_button.toggled.connect(self.validate_inputs)
 
-
     # Data Validation
 
     def collect_parameters(self):
@@ -651,7 +688,7 @@ class ProteinControls(QWidget):
             parameters = {
                 "db_loader": self.db_loader_comboBox.currentText()
                 or "No Event Database",
-                "pore_dimensions": self.pore_lineEdit.text(), # TBD: decide on format and parsing in controller
+                "pore_dimensions": self.pore_lineEdit.text(),  # TBD: decide on format and parsing in controller
                 "event_index": [],
                 "sizes": self.sizes_checkbox.isChecked(),
                 "bins": (
@@ -695,20 +732,20 @@ class ProteinControls(QWidget):
 
     def validate_inputs(self):
         """Validates input fields and enables/disables buttons accordingly."""
-        
+
         # -----------------
         # Gather inputs
         # -----------------
         db_loader = self.db_loader_comboBox.currentText()
         pore_dimensions_valid = bool(self.pore_lineEdit.text().strip())
-        #bins_text = self.bins_lineEdit.text()
+        # bins_text = self.bins_lineEdit.text()
         filter_selected = self.filter_comboBox.getSelectedItems()
         event_index_valid = self.event_index_lineEdit.isValid()
 
         individual_selected = self.individual_button.isChecked()
         ensemble_selected = self.ensemble_button.isChecked()
-        
-        # ----------------- 
+
+        # -----------------
         # Default states
         # -----------------
         db_loader_loaded = True
@@ -722,7 +759,7 @@ class ProteinControls(QWidget):
         is_reset_valid = True
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
-        
+
         # DB Loader validation
         if not db_loader or db_loader == "No Event Database":
             db_loader_loaded = False
@@ -738,7 +775,7 @@ class ProteinControls(QWidget):
         #    )
         #    if bins_text
         #    else False
-        #)
+        # )
 
         self.logger.debug(
             f"Validating inputs: DB Loader: {db_loader}, "
@@ -763,13 +800,17 @@ class ProteinControls(QWidget):
         # Commit logic based on mode selection
         if individual_selected:
             is_commit_individual_valid = (
-                is_individual_analysis_valid and db_loader_loaded and pore_dimensions_valid
+                is_individual_analysis_valid
+                and db_loader_loaded
+                and pore_dimensions_valid
             )
             is_commit_all_valid = False
 
         elif ensemble_selected:
             is_commit_all_valid = (
-                is_ensemble_analysis_valid and db_loader_loaded and pore_dimensions_valid
+                is_ensemble_analysis_valid
+                and db_loader_loaded
+                and pore_dimensions_valid
             )
             is_commit_individual_valid = False
 
@@ -799,8 +840,8 @@ class ProteinControls(QWidget):
         self.filter_delete_button.setEnabled(is_save_edit_delete_filter_valid)
         self.load_filter_button.setEnabled(db_loader_loaded)
 
-        self.commit_individual.setEnabled(is_commit_individual_valid)          
-        self.commit_all.setEnabled(is_commit_all_valid)    
+        self.commit_individual.setEnabled(is_commit_individual_valid)
+        self.commit_all.setEnabled(is_commit_all_valid)
 
     # Actions
     def on_button_clicked(self, button_type):
