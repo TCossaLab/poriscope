@@ -97,7 +97,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.plot_initialized = False
         self.no_cached_data = False
 
-        self._analysis_mode: str = "individual"  # default mode; toggled by Individual/Ensemble buttons
+        self._analysis_mode: str = (
+            "individual"  # default mode; toggled by Individual/Ensemble buttons
+        )
 
         self.subset_export_count = 0
         self.hist_min: Optional[float] = None
@@ -173,8 +175,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         def activate(canvas):
             self.dist_toolbar.set_canvas(canvas)
 
-        self.canvas_hist.mpl_connect("button_press_event", lambda evt: activate(self.canvas_hist))
-        self.canvas_vm.mpl_connect("button_press_event", lambda evt: activate(self.canvas_vm))
+        self.canvas_hist.mpl_connect(
+            "button_press_event", lambda evt: activate(self.canvas_hist)
+        )
+        self.canvas_vm.mpl_connect(
+            "button_press_event", lambda evt: activate(self.canvas_vm)
+        )
 
         # Page 1: event (single full canvas)
         event_page = QWidget()
@@ -188,11 +194,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.event_toolbar = NavigationToolbar(self.canvas_event, self)
         event_outer.addWidget(self.event_toolbar)
 
-        self.display_stack.addWidget(dist_page)   # index 0
+        self.display_stack.addWidget(dist_page)  # index 0
         self.display_stack.addWidget(event_page)  # index 1
         layout.addWidget(display_container, stretch=4)
         self._display_mode = "distribution"
-        
+
     def _set_display_mode(self, mode: str) -> None:
         """
         Switch between distribution view (hist + V/M)
@@ -219,9 +225,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.proteincontrols.edit_processed.connect(self.handle_edit_triggered)
         self.proteincontrols.add_processed.connect(self.handle_add_triggered)
         self.proteincontrols.delete_processed.connect(self.handle_delete_triggered)
-        self.proteincontrols.edit_filter_requested.connect(
-            self.show_edit_filter_dialog
-        )
+        self.proteincontrols.edit_filter_requested.connect(self.show_edit_filter_dialog)
         self.proteincontrols.delete_filter_requested.connect(
             self._delete_filter_by_name
         )
@@ -301,10 +305,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         # clear both
         self.fig_hist.clear()
-        self.ax_hist = self.fig_hist.add_subplot(1,1,1)
+        self.ax_hist = self.fig_hist.add_subplot(1, 1, 1)
 
         self.fig_vm.clear()
-        self.ax_vm = self.fig_vm.add_subplot(1,1,1)
+        self.ax_vm = self.fig_vm.add_subplot(1, 1, 1)
 
         self.canvas_hist.draw()
         self.canvas_vm.draw()
@@ -320,7 +324,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.plotted_datasets = (
             set()
         )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
-
 
     @log(logger=logger)
     def _plot_1d_histogram(
@@ -523,10 +526,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         # Histogram plots -> left
         # V vs M plots / scatter / heatmap -> right
         if plot_type in [
-            "Histogram", "Normalized Histogram",
+            "Histogram",
+            "Normalized Histogram",
             "Kernel Density Plot",
-            "Raw All Points Histogram", "Filtered All Points Histogram",
-            "Normalized Raw All Points Histogram", "Normalized Filtered All Points Histogram",
+            "Raw All Points Histogram",
+            "Filtered All Points Histogram",
+            "Normalized Raw All Points Histogram",
+            "Normalized Filtered All Points Histogram",
         ]:
             ax = self.ax_hist
             canvas = self.canvas_hist
@@ -535,9 +541,18 @@ class ProteinView(MetaView, WalkthroughMixin):
             canvas = self.canvas_vm
 
         if plot_type in ["Histogram", "Normalized Histogram"]:
-            norm = (plot_type == "Normalized Histogram")
-            self._plot_1d_histogram(ax, data, cols, units, logscales,
-                                dataset_label=dataset_label, bins=bins, sizes=sizes, norm=norm)
+            norm = plot_type == "Normalized Histogram"
+            self._plot_1d_histogram(
+                ax,
+                data,
+                cols,
+                units,
+                logscales,
+                dataset_label=dataset_label,
+                bins=bins,
+                sizes=sizes,
+                norm=norm,
+            )
 
         elif plot_type in [
             "Raw All Points Histogram",
@@ -549,21 +564,35 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "Normalized Raw All Points Histogram",
                 "Normalized Filtered All Points Histogram",
             ]
-            self._plot_all_points_histogram(ax, data, cols, units, dataset_label=dataset_label, norm=norm)
+            self._plot_all_points_histogram(
+                ax, data, cols, units, dataset_label=dataset_label, norm=norm
+            )
 
         elif plot_type == "Scatterplot":
-            self._plot_scatterplot(ax, data, cols, units, logscales, dataset_label=dataset_label)
+            self._plot_scatterplot(
+                ax, data, cols, units, logscales, dataset_label=dataset_label
+            )
 
         elif plot_type == "Heatmap":
-            self._plot_heatmap(ax, data, cols, units, logscales,
-                            dataset_label=dataset_label, bins=bins, sizes=sizes)
+            self._plot_heatmap(
+                ax,
+                data,
+                cols,
+                units,
+                logscales,
+                dataset_label=dataset_label,
+                bins=bins,
+                sizes=sizes,
+            )
 
         elif plot_type == "3D Scatterplot":
             # you probably don't want this in the "vm" panel, but if you do:
             self.fig_vm.clear()
             self.ax_vm = self.fig_vm.add_subplot(1, 1, 1, projection="3d")
             ax = self.ax_vm
-            self._plot_3d_scatterplot(ax, data, cols, units, logscales, dataset_label=dataset_label)
+            self._plot_3d_scatterplot(
+                ax, data, cols, units, logscales, dataset_label=dataset_label
+            )
             canvas = self.canvas_vm
 
         else:
@@ -1252,7 +1281,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         elif action_name == "loader_changed":
             loader = parameters.get("db_loader")
             if loader:
-                self.update_available_columns(loader)  
+                self.update_available_columns(loader)
                 self.request_experiment_structure(loader)
 
         elif action_name == "select_experiment_and_channel":
@@ -1287,7 +1316,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._show_add_filter_dialog(parameters)
 
         elif action_name == "edit_filter":
-            self._show_filter_info_dialog(self.proteincontrols.filter_comboBox, parameters)
+            self._show_filter_info_dialog(
+                self.proteincontrols.filter_comboBox, parameters
+            )
 
         elif action_name == "delete_filter":
             self._delete_all_selected_filters()
@@ -1299,7 +1330,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._load_filter(parameters)
 
         elif action_name == "set_mode_individual":
-            self._analysis_mode = "individual"   
+            self._analysis_mode = "individual"
 
         elif action_name == "set_mode_ensemble":
             self._analysis_mode = "ensemble"
