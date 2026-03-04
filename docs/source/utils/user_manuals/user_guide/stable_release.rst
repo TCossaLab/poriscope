@@ -51,4 +51,4 @@ To upgrade to the latest release:
 
 .. seealso::
 
-   For details on how to install poriscope as a developer see: :doc:`getting_started`.
+   For details on how to install poriscope as a developer see: :ref:`getting_started`
