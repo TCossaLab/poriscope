@@ -1,3 +1,5 @@
+.. _getting_started:
+
 Getting Started
 ===============
 
@@ -18,7 +20,7 @@ Before installing Poriscope, make sure you have the following installed:
 
    If Git is not installed, download it here: https://git-scm.com/downloads
 
-2. **Python 3.12.10**
+2. **Python >=3.12.10**
 
    Required version. Check by running::
 

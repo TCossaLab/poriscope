@@ -2,6 +2,10 @@
 Note: Conda is not supported. You can make it work, but you're on your own. 
 Make sure you have Python 3.12.10 installed (python --version) to avoid dependencies compatibility issues.
 
+For regular users, you can install the latest stable release of poriscope directly from PyPi using pip or similar. Simply run_
+
+pip install poriscope 
+
 As a developer:
 
 git clone https://github.com/TCossaLab/poriscope.git
