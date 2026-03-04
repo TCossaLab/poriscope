@@ -67,7 +67,7 @@ To install directly from the latest commit on GitHub (does not track future upda
 .. note::
 
    This installs the package from source but does **not** give you an editable codebase.
-   If you want to browse or modify the code locally, refer to :doc:`getting_started`
+   If you want to browse or modify the code locally, refer to :ref:`getting_started`
    for the full developer setup using ``git clone`` and ``pip install -e .``.
 
 Launching Poriscope
@@ -82,4 +82,4 @@ Once everything is installed, run the application from any terminal:
 .. seealso::
 
    For details on how to install Poriscope as a developer, including editable mode,
-   pre-commit hooks, and working with the codebase, refer to :doc:`getting_started`.
+   pre-commit hooks, and working with the codebase, refer to :ref:`getting_started`.
