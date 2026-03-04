@@ -1,4 +1,4 @@
-.. _getting_started_developer:
+.. _getting_started:
 
 Getting Started
 ===============
@@ -20,7 +20,7 @@ Before installing Poriscope, make sure you have the following installed:
 
    If Git is not installed, download it here: https://git-scm.com/downloads
 
-2. **Python 3.12.10**
+2. **Python >=3.12.10**
 
    Required version. Check by running::
 
@@ -66,6 +66,10 @@ This allows live code edits without reinstallation.
 
       pip uninstall poriscope
 
+Installing the Stable Version
+-----------------------------
+
+To install the **latest stable version** (recommended for general users — **does not track future updates unless reinstalled manually**) see :ref:`stable_release
 
 Launching Poriscope
 -------------------

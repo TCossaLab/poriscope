@@ -9,7 +9,7 @@ Welcome to Poriscope's user guide. This guide will walk you through the main fea
    :maxdepth: 2
    :caption: Sections
 
-   getting_started
+   user_installation
    workflow_overview
    tutorial
    raw_data_tab
