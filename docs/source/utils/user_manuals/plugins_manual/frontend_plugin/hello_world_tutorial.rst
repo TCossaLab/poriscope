@@ -155,3 +155,7 @@ Now that you’ve got a working template:
 
 You’ve now built your first plugin.  
 From here, you can grow it into anything you need.
+
+.. note::
+
+   If you're new to PySide6 widgets and layouts, `pythonguis.com <https://www.pythonguis.com/pyside6/>`_ is a great place to start.

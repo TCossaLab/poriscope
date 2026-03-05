@@ -38,5 +38,11 @@ If you want to use it or add your own widgets to it, it’s all ready for you �
 
 .. note::
 
+   The control area accepts any PySide6 widget — buttons, dropdowns, sliders, etc.
+   You can also organize them using layouts, add menus, dialogs, and much more.
+   If you're new to PySide6, `pythonguis.com <https://www.pythonguis.com/pyside6/>`_ is a great place to start.
+
+.. note::
+
    Want the technical breakdown?  
-   Check the :ref:`MetaModel` section of this manual — it walks through each method’s purpose and parameters.
+   Check the :ref:`MetaView` section of this manual — it walks through each method’s purpose and parameters.
