@@ -55,6 +55,14 @@ poriscope = "poriscope.main_app:main"
 [tool.setuptools.dynamic]
 version = {attr = "poriscope.constants.__VERSION__"}
 
+[tool.setuptools.package-data] 
+poriscope = [
+    "configs/icons/*",
+    "cdlls/wavelet/dist/*.dll",
+    "cdlls/wavelet/dist/*.so",
+    "cdlls/wavelet/dist/*.dylib",
+]
+
 [tool.ruff]
 line-length = 88
 src = ["poriscope", "tests"]
