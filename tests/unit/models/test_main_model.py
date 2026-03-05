@@ -63,10 +63,11 @@ def test_load_plugin_valid(main_model):
     mock_module = MagicMock()
     mock_module.MetaReader = MetaReader
 
-    with patch("importlib.util.spec_from_file_location", return_value=mock_spec), patch(
-        "importlib.util.module_from_spec", return_value=mock_module
-    ), patch("pathlib.Path.exists", return_value=True), patch.object(
-        mock_spec.loader, "exec_module"
+    with (
+        patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+        patch("importlib.util.module_from_spec", return_value=mock_module),
+        patch("pathlib.Path.exists", return_value=True),
+        patch.object(mock_spec.loader, "exec_module"),
     ):
         plugin_class = main_model.load_plugin(
             plugin_key, plugin_folder, allowed_base_classes
@@ -227,9 +228,10 @@ def test_update_app_config(main_model):
 
 def test_update_logging_level_handlers(main_model):
     mock_handler = MagicMock()
-    with patch("builtins.open", MagicMock()), patch(
-        "logging.getLogger"
-    ) as mock_get_logger:
+    with (
+        patch("builtins.open", MagicMock()),
+        patch("logging.getLogger") as mock_get_logger,
+    ):
         mock_logger = MagicMock()
         mock_logger.handlers = [mock_handler]
         mock_get_logger.return_value = mock_logger
@@ -351,9 +353,10 @@ def test_populate_available_plugins_load_plugin_fails(main_model):
     Test when load_plugin fails internally (returns None).
     Should handle the exception and skip the plugin.
     """
-    with patch(
-        "os.walk", return_value=[("/mock/path", [], ["MetaReader.py"])]
-    ), patch.object(main_model, "load_plugin", side_effect=Exception("Load error")):
+    with (
+        patch("os.walk", return_value=[("/mock/path", [], ["MetaReader.py"])]),
+        patch.object(main_model, "load_plugin", side_effect=Exception("Load error")),
+    ):
         available_plugin_classes, available_plugins_list = (
             main_model.populate_available_plugins()
         )

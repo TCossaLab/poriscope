@@ -154,7 +154,13 @@ class WaveletFilter(MetaFilter):
             ext_map = {"Windows": ".dll", "Linux": ".so", "Darwin": ".dylib"}
             if system not in ext_map:
                 raise RuntimeError(f"Unsupported platform: {system}")
-            ref = importlib.resources.files("poriscope") / "cdlls" / "wavelet" / "dist" / f"wavelet{ext_map[system]}"
+            ref = (
+                importlib.resources.files("poriscope")
+                / "cdlls"
+                / "wavelet"
+                / "dist"
+                / f"wavelet{ext_map[system]}"
+            )
             dll_path = os.path.abspath(str(ref))
 
         if not os.path.isfile(dll_path):
