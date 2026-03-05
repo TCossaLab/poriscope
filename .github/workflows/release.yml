@@ -1,12 +1,13 @@
 # Continuous Deployment: 
 # Build and release when pushing to main or tagging a version
-
 name: CD (Build & Release)
 
 on:
   push:
     branches:
       - main              # Trigger on push to main branch
+    tags:
+      - 'v*'              # Also trigger on version tags like v1.5.1
 
 permissions:
   contents: write         # Required to upload release assets to GitHub
@@ -20,7 +21,6 @@ jobs:
   test-build-release:
     name: Run tests, build, and optionally release
     runs-on: ubuntu-latest
-
     environment:
       name: release
       url: ${{ steps.upload_release.outputs.url }}
@@ -49,22 +49,36 @@ jobs:
             libxcb-render-util0 \
             libxcb-shape0 \
             libxcb-xfixes0 \
-            xvfb                    
-            
+            xvfb
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-    
+          pip install build twine  # Required for building and uploading to PyPI
+
       - name: Install MinGW-w64 for cross-compiling
         run: sudo apt-get update && sudo apt-get install -y mingw-w64
-        
+
       - name: Run tests (unit + E2E)
         run: |
           xvfb-run -a pytest      # Add specific markers (e.g., "not slow") if needed
 
+      # Build the wheel and source distribution
+      - name: Build package
+        run: python -m build
+
+      # Publish to PyPI only when a version tag is pushed (e.g. v1.5.1)
+      - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
+
+      # Create a GitHub Release and upload dist/ assets (only on version tags)
       - name: Create GitHub Release (if tag)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/           # Upload all files in the dist/ directory to the release
+          files: dist/*           # Upload all files in the dist/ directory to the release
