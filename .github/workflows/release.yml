@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write         # Required to upload release assets to GitHub
+  id-token: write         # Required for trusted publishing to PyPI
+
 
 # One run per branch; newest cancels older on same branch
 concurrency:
@@ -69,12 +71,17 @@ jobs:
         run: python -m build
 
       # Publish to PyPI only when a version tag is pushed (e.g. v1.5.1)
+      #- name: Publish to PyPI
+      #  if: startsWith(github.ref, 'refs/tags/v')
+      #  env:
+      #    TWINE_USERNAME: __token__
+      #    TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      #  run: twine upload dist/*
+
+      # Publish to PyPI using trusted publishing (no token needed)
       - name: Publish to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload dist/*
+        uses: pypa/gh-action-pypi-publish@release/v1
 
       # Create a GitHub Release and upload dist/ assets (only on version tags)
       - name: Create GitHub Release (if tag)

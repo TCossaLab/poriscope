@@ -13,3 +13,6 @@ Here are some suggested next steps to level up your plugin:
 - Enable multithreaded analysis for long-running tasks.
 - Implement progress bars and dynamic status updates.
 - Explore how to integrate your plugin with the session manager.
+
+.. note::
+   To learn more about PySide6, check out https://www.pythonguis.com/pyside6/
