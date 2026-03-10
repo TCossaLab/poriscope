@@ -140,6 +140,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @override
     def _set_custom_display_area(self, layout) -> None:
+        """
+        Initialize a 2-canvas display area
+        """
         display_container = QWidget()
         display_container.setObjectName("displayContainer")
         display_container.setStyleSheet(
@@ -383,6 +386,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         bins=None,
         sizes=False,
     ):
+        """
+        update the plot area
+        """
         # Decide which panel gets updated
         # Histogram plots -> left
         # V vs M plots / scatter / heatmap -> right
