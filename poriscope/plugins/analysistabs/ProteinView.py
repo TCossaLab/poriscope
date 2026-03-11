@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from scipy.optimize import curve_fit
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
@@ -483,15 +484,14 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
+            baseline = 0.5*(np.median(timeseries[:padding_before]) + np.median(timeseries[-padding_after:]))
+            dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
             min_curr = np.min(
-                np.sign(baseline) * timeseries[padding_before:-padding_after]
-                - np.sign(baseline) * baseline
+                dI_I
             )
             max_curr = np.max(
-                np.sign(baseline) * timeseries[padding_before:-padding_after]
-                - np.sign(baseline) * baseline
+                dI_I
             )
             if min_curr < min_current:
                 min_current = min_curr
@@ -521,6 +521,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
         hist = np.zeros(bins)
+        count = 0
         for event in egen2:
             if plot_type == "Raw Histogram":
                 timeseries = event["raw_data"]
@@ -528,15 +529,17 @@ class ProteinView(MetaView, WalkthroughMixin):
                 timeseries = event["filtered_data"]
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
+            baseline = 0.5*(np.median(timeseries[:padding_before]) + np.median(timeseries[-padding_after:]))
+            dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
             event_hist, _ = np.histogram(
-                np.sign(baseline) * timeseries[padding_before:-padding_after]
-                - np.sign(baseline) * baseline,
+                dI_I,
                 bins=bin_edges,
             )
-            hist += event_hist
+            hist += event_hist / len(dI_I)
+            count += 1
+        hist /= count
         bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Current": bincenters, "Count": hist})
+        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": hist})
 
     @log(logger=logger)
     def set_baseline_duration(self, duration):
@@ -701,15 +704,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         elif action_name == "update_plot":
             self._set_display_mode("distribution")
             if self._analysis_mode == "individual":
-                parameters["plot_type"] = (
-                    "Filtered Histogram"  # hard coded for now, may change later
-                )
+                parameters["plot_type"] = "Filtered Histogram" #hard coded for now, may change later
                 self._update_distribution_individual(parameters)
             else:
                 parameters["plot_type"] = "Filtered Histogram"
-                bins, hist = self._update_distribution_ensemble(parameters)
-                print(bins)
-                print(hist)
+                self._update_distribution_ensemble(parameters)
+                    
 
         elif action_name == "reset_plot":
             self._reset_actions()
@@ -1034,6 +1034,83 @@ class ProteinView(MetaView, WalkthroughMixin):
         # TODO: implement individual distribution and V/M computation and plotting
         self.logger.info("_update_distribution_individual called (not yet implemented)")
 
+
+    @log(logger=logger)
+    def _double_gaussian(self, x, amp1, mean1, std1, amp2, mean2, std2):
+        """
+        return the value of a double gaussian with the specified paramters
+
+        :param x: array of x values at which to calculate double gaussian
+        :type x: npt.NDArray[np.float64]
+        :param amp1: amplitude of the first gaussian
+        :type amp1: float
+        :param mean1: mean of the first gaussian
+        :type mean1: float
+        :param std1: standard deviation of the first gaussian
+        :type std1: float
+        :param amp2: amplitude of the second gaussian
+        :type amp2: float
+        :param mean2: mean of the second gaussian
+        :type mean2: float
+        :param std2: standard deviation of the second gaussian
+        :type std2: float
+        :return: array of gaussian values at the given x positions
+        :rtype: npt.NDArray[np.float64]
+        """
+        g1 = amp1 * np.exp(-(x - mean1)**2 / (2 * std1**2))
+        g2 = amp2 * np.exp(-(x - mean2)**2 / (2 * std2**2))
+        return g1 + g2 
+        
+        
+    @log(logger=logger)
+    def _fit_double_gaussian(self, bins, amplitude):
+        """
+        Attempt to fit a double gaussian to data or return None on failure.
+
+        :param bins: numpy array of bin centers
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: numpy array of amplitude in bins
+        :type amplitude: npt.NDArray[np.float64]
+        :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
+        :rtype: Optional[List[float]]
+        """
+        n = len(amplitude)
+        left = amplitude[:n//2]
+        right = amplitude[n//2:]
+        
+        leftmax = np.max(left)
+        leftargmax = np.argmax(left)
+        
+        rightmax = np.max(right)
+        rightargmax = np.argmax(right)
+
+        left_half_max = leftmax / 2.0
+        idx_left = leftargmax
+        while idx_left < len(left) - 1 and left[idx_left] > left_half_max:
+            idx_left += 1
+
+        left_dist = abs(bins[idx_left] - bins[leftargmax])
+        left_std_guess = left_dist / 1.177
+
+        right_half_max = rightmax / 2.0
+        idx_right = rightargmax
+        while idx_right > 0 and right[idx_right] > right_half_max:
+            idx_right -= 1
+
+        right_dist = abs(bins[n//2 + idx_right] - bins[n//2 + rightargmax])
+        right_std_guess = right_dist / 1.177
+
+        p0 = (
+            leftmax, bins[leftargmax], left_std_guess, 
+            rightmax, bins[n//2 + rightargmax], right_std_guess
+        )
+
+        popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
+        return popt, np.sqrt(np.diag(pcov))
+
+        
+
+        
     @log(logger=logger)
     @register_action()
     def _update_distribution_ensemble(self, parameters):
@@ -1066,12 +1143,14 @@ class ProteinView(MetaView, WalkthroughMixin):
             selected_filters = {"Full Dataset": ""}
 
         if len(experiments_and_channels) > 1:
-            self.logger.warning(f"Only a single experiment can be used for {plot_type}")
+            self.logger.warning(
+                f"Only a single experiment can be used for {plot_type}"
+            )
             self.add_text_to_display.emit(
                 f"Only a single experiment can be used for {plot_type}",
                 self.__class__.__name__,
             )
-            return None, None
+            return
 
         for exp, channels in experiments_and_channels.items(): #possibly we will make it possible to mix things later, hence loop over single element
             if len(channels) > 1:
@@ -1082,13 +1161,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Only a single channel at a time can be used for protein ensemble analysis",
                     self.__class__.__name__,
                 )
-                return None, None
+                return
         if len(selected_filters) > 1:
-            self.add_text_to_display.emit(
-                f"Only a single subset can be used for {plot_type}",
-                self.__class__.__name__,
-            )
-            return False
+                self.add_text_to_display.emit(
+                    f"Only a single subset can be used for {plot_type}",
+                    self.__class__.__name__,
+                )
+                return
 
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
@@ -1105,15 +1184,15 @@ class ProteinView(MetaView, WalkthroughMixin):
                     sizes = False
 
                     self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "construct_event_data_query",
-                        (sql_filter, exp_and_ch_arg),
-                        "relay_event_query",
-                        (),
-                    )
+                            "MetaDatabaseLoader",
+                            loader,
+                            "construct_event_data_query",
+                            (sql_filter, exp_and_ch_arg),
+                            "relay_event_query",
+                            (),
+                        )
                     if self.event_query == "":
-                        return False
+                        return
                     self.global_signal.emit(
                         "MetaDatabaseLoader",
                         loader,
@@ -1131,12 +1210,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                             sizes = parameters["sizes"]
 
                             bin_sensitive = True
-                            bins_changed = getattr(self, "allowed_bins", None) != bins
+                            bins_changed = (
+                                getattr(self, "allowed_bins", None) != bins
+                            )
                             sizes_changed = (
                                 getattr(self, "allowed_sizes", None) != sizes
                             )
                             if bin_sensitive and (bins_changed or sizes_changed):
-                                axis_type = "2d"
+                                axis_type = ("2d")
                                 self._reset_actions(axis_type=axis_type)
 
                             plot_data = self._construct_all_points_histogram(
@@ -1156,18 +1237,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                                     dataset_label=dataset_label,
                                 )
                             else:
-                                return None, None
+                                self.logger.info("No plot data generates for the requested plot configuration", self.__class__.__name__)
+                                self.add_text_to_display("No plot data generates for the requested plot configuration", self.__class__.__name__)
+                                return
                         else:
-                            self.logger.warning(
-                                f"Invalid plot type: {plot_type}",
-                                self.__class__.__name__,
-                            )
-                            self.add_text_to_display.emit(
-                                f"Invalid plot type: {plot_type}",
-                                self.__class__.__name__,
-                            )
-                            return False
-
+                            self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                            self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                            return
+                        
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
@@ -1177,7 +1254,18 @@ class ProteinView(MetaView, WalkthroughMixin):
                     )
 
             #now we have to fit the distribution to a double gaussian
-        return plot_data
+            popt, pcov = self._fit_double_gaussian(plot_data['Normalized Current'].values, plot_data['Amplitude'].values)
+            fit_data = self._double_gaussian(plot_data['Normalized Current'].values, *popt)
+            plot_data['Amplitude'] = fit_data
+            if popt is not None:
+                self.update_plot(
+                                    plot_type,
+                                    plot_data,
+                                    plot_data.columns,
+                                    ["pA", ""],
+                                    logscales=[False, False],
+                                    dataset_label=dataset_label,
+                                )
 
     @log(logger=logger)
     def set_query(self, query, table_name):
