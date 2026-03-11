@@ -1073,7 +1073,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             return None, None
 
-        for exp, channels in experiments_and_channels.items(): #possibly we will make it possible to mix things later, hence loop over single element
+        for (
+            exp,
+            channels,
+        ) in (
+            experiments_and_channels.items()
+        ):  # possibly we will make it possible to mix things later, hence loop over single element
             if len(channels) > 1:
                 self.logger.warning(
                     "Only a single channel at a time can be used for protein ensemble analysis"
@@ -1176,7 +1181,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                         (loader, exp, channel, sql_filter, subset_name)
                     )
 
-            #now we have to fit the distribution to a double gaussian
+            # now we have to fit the distribution to a double gaussian
         return plot_data
 
     @log(logger=logger)
