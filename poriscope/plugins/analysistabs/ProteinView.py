@@ -702,7 +702,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self._update_distribution_individual(parameters)
             else:
                 parameters["plot_type"] = "Filtered Histogram"
-                self._update_distribution_ensemble(parameters)
+                bins, hist = self._update_distribution_ensemble(parameters)
+                print(bins)
+                print(hist)
 
         elif action_name == "reset_plot":
             self._reset_actions()
@@ -1028,6 +1030,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.logger.info("_update_distribution_individual called (not yet implemented)")
 
     @log(logger=logger)
+    @register_action()
     def _update_distribution_ensemble(self, parameters):
         """
         Compute and plot the ΔI/I histogram and V/M scatterplot aggregated across
@@ -1039,7 +1042,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: None
         """
         # TODO: implement ensemble distribution and V/M computation and plotting
-        self.logger.info("_update_distribution_ensemble called (not yet implemented)")
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
@@ -1066,9 +1068,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 f"Only a single experiment can be used for {plot_type}",
                 self.__class__.__name__,
             )
-            return False
+            return None, None
 
-        for exp, channels in experiments_and_channels.items():
+        for exp, channels in experiments_and_channels.items(): #possibly we will make it possible to mix things later, hence loop over single element
             if len(channels) > 1:
                 self.logger.warning(
                     "Only a single channel at a time can be used for protein ensemble analysis"
@@ -1077,13 +1079,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Only a single channel at a time can be used for protein ensemble analysis",
                     self.__class__.__name__,
                 )
-                return False
+                return None, None
         if len(selected_filters) > 1:
                 self.add_text_to_display.emit(
                     f"Only a single subset can be used for {plot_type}",
                     self.__class__.__name__,
                 )
-                return False
+                return None, None
 
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
@@ -1153,11 +1155,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                                     dataset_label=dataset_label,
                                 )
                             else:
-                                return False
+                                return None, None
                         else:
                             self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
                             self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
-                            return False
+                            return None, None
                         
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
@@ -1167,7 +1169,8 @@ class ProteinView(MetaView, WalkthroughMixin):
                         (loader, exp, channel, sql_filter, subset_name)
                     )
 
-        return True
+            #now we have to fit the distribution to a double gaussian
+        return plot_data
 
     @log(logger=logger)
     def set_query(self, query, table_name):
