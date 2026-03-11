@@ -30,7 +30,7 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -482,13 +482,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                 timeseries = event["filtered_data"]
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
 
             min_curr = np.min(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
+                np.sign(baseline) * timeseries[padding_before:-padding_after] - np.sign(baseline) * baseline
             )
             max_curr = np.max(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
+                np.sign(baseline) * timeseries[padding_before:-padding_after] - np.sign(baseline) * baseline
             )
             if min_curr < min_current:
                 min_current = min_curr
@@ -524,9 +525,10 @@ class ProteinView(MetaView, WalkthroughMixin):
             elif plot_type == "Filtered Histogram":
                 timeseries = event["filtered_data"]
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
             event_hist, _ = np.histogram(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
+                np.sign(baseline) * timeseries[padding_before:-padding_after] - np.sign(baseline) * baseline,
                 bins=bin_edges,
             )
             hist += event_hist
@@ -696,8 +698,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         elif action_name == "update_plot":
             self._set_display_mode("distribution")
             if self._analysis_mode == "individual":
+                parameters["plot_type"] = "Filtered Histogram" #hard coded for now, may change later
                 self._update_distribution_individual(parameters)
             else:
+                parameters["plot_type"] = "Filtered Histogram"
                 self._update_distribution_ensemble(parameters)
 
         elif action_name == "reset_plot":
@@ -1036,6 +1040,134 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         # TODO: implement ensemble distribution and V/M computation and plotting
         self.logger.info("_update_distribution_ensemble called (not yet implemented)")
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
+
+        selected_filters = self.get_selected_filters()
+        loader = parameters["db_loader"]
+        plot_type = parameters["plot_type"]
+        experiments_and_channels: Optional[
+            Union[Dict[str, List[str]], Dict[Any, Any]]
+        ] = self.selected_experiment_and_channels_by_loader.get(loader)
+
+        self.plot_initialized = True
+
+        if experiments_and_channels is None or len(experiments_and_channels) == 0:
+            experiments_and_channels = {None: [None]}
+
+        if selected_filters is None or selected_filters == {}:
+            selected_filters = {"Full Dataset": ""}
+
+        if len(experiments_and_channels) > 1:
+            self.logger.warning(
+                f"Only a single experiment can be used for {plot_type}"
+            )
+            self.add_text_to_display.emit(
+                f"Only a single experiment can be used for {plot_type}",
+                self.__class__.__name__,
+            )
+            return False
+
+        for exp, channels in experiments_and_channels.items():
+            if len(channels) > 1:
+                self.logger.warning(
+                    "Only a single channel at a time can be used for protein ensemble analysis"
+                )
+                self.add_text_to_display.emit(
+                    "Only a single channel at a time can be used for protein ensemble analysis",
+                    self.__class__.__name__,
+                )
+                return False
+        if len(selected_filters) > 1:
+                self.add_text_to_display.emit(
+                    f"Only a single subset can be used for {plot_type}",
+                    self.__class__.__name__,
+                )
+                return False
+
+        for exp, channels in experiments_and_channels.items():
+            for channel in channels:
+                exp_and_ch_arg = {exp: [channel]}
+
+                for subset_name, sql_filter in selected_filters.items():
+                    bins = None
+
+                    dataset_label = (
+                        f"{loader} | {exp} Ch {channel}: {subset_name}"
+                        if exp is not None
+                        else f"{loader} | {subset_name}"
+                    )
+                    sizes = False
+
+                    self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "construct_event_data_query",
+                            (sql_filter, exp_and_ch_arg),
+                            "relay_event_query",
+                            (),
+                        )
+                    if self.event_query == "":
+                        return False
+                    self.global_signal.emit(
+                        "MetaDatabaseLoader",
+                        loader,
+                        "load_event_data",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_data_generator",
+                        (),
+                    )
+                    if self.event_data_generator:
+                        if plot_type in [
+                            "Raw Histogram",
+                            "Filtered Histogram",
+                        ]:
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                            bin_sensitive = True
+                            bins_changed = (
+                                getattr(self, "allowed_bins", None) != bins
+                            )
+                            sizes_changed = (
+                                getattr(self, "allowed_sizes", None) != sizes
+                            )
+                            if bin_sensitive and (bins_changed or sizes_changed):
+                                axis_type = ("2d")
+                                self._reset_actions(axis_type=axis_type)
+
+                            plot_data = self._construct_all_points_histogram(
+                                self.event_data_generator,
+                                plot_type,
+                                bins=bins,
+                                sizes=sizes,
+                            )
+
+                            if plot_data is not None:
+                                self.update_plot(
+                                    plot_type,
+                                    plot_data,
+                                    plot_data.columns,
+                                    ["pA", ""],
+                                    logscales=[False, False],
+                                    dataset_label=dataset_label,
+                                )
+                            else:
+                                return False
+                        else:
+                            self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                            self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                            return False
+                        
+                    self.allowed_plot_type = plot_type
+                    self.allowed_bins = bins
+                    self.allowed_sizes = sizes
+
+                    self.plotted_datasets.add(
+                        (loader, exp, channel, sql_filter, subset_name)
+                    )
+
+        return True
 
     @log(logger=logger)
     def set_query(self, query, table_name):
