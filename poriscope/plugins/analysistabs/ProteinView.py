@@ -1059,7 +1059,60 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         g1 = amp1 * np.exp(-(x - mean1)**2 / (2 * std1**2))
         g2 = amp2 * np.exp(-(x - mean2)**2 / (2 * std2**2))
-        return g1 + g2 
+        return g1 + g2
+
+    @log(logger=logger)
+    def _spheroid_blockage(self, V, m, deltaI_I_max, deltaI_I_min, d, L, orientation=True, prolate=True):
+        """
+        return the value of the difference between v,m formula and a given blockage for a spheroid
+
+        :param V: the volume of the protein  in nm^3
+        :type V: float
+        :param m: the shape factor a/b of the protein
+        :type m: float
+        :param deltaI_I_max: the value of blockage observed for a given set of parameters
+        :type deltaI_I_max: float
+        :param deltaI_I_min: the value of blockage observed for a given set of parameters
+        :type deltaI_I_min: float
+        :param d: the pore diameter in nm
+        :type d: float
+        :param L: the length of the pore in nm
+        :type L: float
+        :param orientation: the angle of the protein, can either be True (theta=0) or False (theta=90) and nothing else
+        :type theta: float
+        :param sign: True for prolate (0<m<1), False for oblate (m>1)
+        :type sign: bool
+        :return: equations for fsolve, list of two equations in two unknowns (V and m) that resolve to floats - these should be both 0 when V and m are valid solutions
+        :rtype: List[float]
+        """
+        if prolate:
+            gamma_parallel = 1 / (1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m)))
+        elif not prolate:
+            gamma_parallel = 1 / (1 - 1 / (m**2 - 1) * (m / np.sqrt(m**2 - 1) * np.log(m + np.sqrt(m**2 - 1)) - 1))
+        elif prolate is None:
+            self.logger.error("prolate must be True or False", self.__class__.__name__)
+            self.add_text_to_display.emit("prolate must be True or False", self.__class__.__name__)
+            return None
+
+        gamma_perpendicular = 1 / (1 - 0.5*gamma_parallel)
+
+        b = (3*V / (4*np.pi*m))**(1/3)
+        a = b*m
+        d_ptn = 2*b
+        l_ptn = 2*a
+
+        gamma_parallel_prime = gamma_parallel / (1 - 0.71 * (d_ptn**2 + l_ptn**2)/(d**2 + l_ptn**2) * (d_ptn/d)**2)
+        gamma_perpendicular_prime = gamma_perpendicular / (1 - (0.32 + 0.48*l_ptn/d) * l_ptn * d_ptn**2/d**3) #double check typo
+
+        if prolate:
+            eq1 = 4*V/(np.pi*d**2*(L+0.8*d)) * (gamma_perpendicular_prime + (gamma_parallel_prime - gamma_perpendicular_prime)) - deltaI_I_max
+            eq2 = 4*V/(np.pi*d**2*(L+0.8*d)) * gamma_perpendicular_prime - deltaI_I_min
+        elif not prolate:
+            eq1 = 4*V/(np.pi*d**2*(L+0.8*d)) * (gamma_perpendicular_prime + (gamma_parallel_prime - gamma_perpendicular_prime)) - deltaI_I_min
+            eq2 = 4*V/(np.pi*d**2*(L+0.8*d)) * gamma_perpendicular_prime - deltaI_I_max
+
+        #when eq1 and eq2 are zero for a given (V,m), we have a mathematically valid solution, though not necessarily a physically valid one
+        return [eq1, eq2]
         
         
     @log(logger=logger)
