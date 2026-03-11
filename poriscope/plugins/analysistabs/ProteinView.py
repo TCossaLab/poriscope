@@ -486,10 +486,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             baseline = np.median(timeseries[:padding_before])
 
             min_curr = np.min(
-                np.sign(baseline) * timeseries[padding_before:-padding_after] - np.sign(baseline) * baseline
+                np.sign(baseline) * timeseries[padding_before:-padding_after]
+                - np.sign(baseline) * baseline
             )
             max_curr = np.max(
-                np.sign(baseline) * timeseries[padding_before:-padding_after] - np.sign(baseline) * baseline
+                np.sign(baseline) * timeseries[padding_before:-padding_after]
+                - np.sign(baseline) * baseline
             )
             if min_curr < min_current:
                 min_current = min_curr
@@ -528,7 +530,8 @@ class ProteinView(MetaView, WalkthroughMixin):
             padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
             event_hist, _ = np.histogram(
-                np.sign(baseline) * timeseries[padding_before:-padding_after] - np.sign(baseline) * baseline,
+                np.sign(baseline) * timeseries[padding_before:-padding_after]
+                - np.sign(baseline) * baseline,
                 bins=bin_edges,
             )
             hist += event_hist
@@ -698,7 +701,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         elif action_name == "update_plot":
             self._set_display_mode("distribution")
             if self._analysis_mode == "individual":
-                parameters["plot_type"] = "Filtered Histogram" #hard coded for now, may change later
+                parameters["plot_type"] = (
+                    "Filtered Histogram"  # hard coded for now, may change later
+                )
                 self._update_distribution_individual(parameters)
             else:
                 parameters["plot_type"] = "Filtered Histogram"
@@ -1061,9 +1066,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             selected_filters = {"Full Dataset": ""}
 
         if len(experiments_and_channels) > 1:
-            self.logger.warning(
-                f"Only a single experiment can be used for {plot_type}"
-            )
+            self.logger.warning(f"Only a single experiment can be used for {plot_type}")
             self.add_text_to_display.emit(
                 f"Only a single experiment can be used for {plot_type}",
                 self.__class__.__name__,
@@ -1081,11 +1084,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 return None, None
         if len(selected_filters) > 1:
-                self.add_text_to_display.emit(
-                    f"Only a single subset can be used for {plot_type}",
-                    self.__class__.__name__,
-                )
-                return None, None
+            self.add_text_to_display.emit(
+                f"Only a single subset can be used for {plot_type}",
+                self.__class__.__name__,
+            )
+            return False
 
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
@@ -1102,13 +1105,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                     sizes = False
 
                     self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_event_data_query",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_query",
-                            (),
-                        )
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_event_data_query",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_query",
+                        (),
+                    )
                     if self.event_query == "":
                         return False
                     self.global_signal.emit(
@@ -1128,14 +1131,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                             sizes = parameters["sizes"]
 
                             bin_sensitive = True
-                            bins_changed = (
-                                getattr(self, "allowed_bins", None) != bins
-                            )
+                            bins_changed = getattr(self, "allowed_bins", None) != bins
                             sizes_changed = (
                                 getattr(self, "allowed_sizes", None) != sizes
                             )
                             if bin_sensitive and (bins_changed or sizes_changed):
-                                axis_type = ("2d")
+                                axis_type = "2d"
                                 self._reset_actions(axis_type=axis_type)
 
                             plot_data = self._construct_all_points_histogram(
@@ -1157,10 +1158,16 @@ class ProteinView(MetaView, WalkthroughMixin):
                             else:
                                 return None, None
                         else:
-                            self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
-                            self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
-                            return None, None
-                        
+                            self.logger.warning(
+                                f"Invalid plot type: {plot_type}",
+                                self.__class__.__name__,
+                            )
+                            self.add_text_to_display.emit(
+                                f"Invalid plot type: {plot_type}",
+                                self.__class__.__name__,
+                            )
+                            return False
+
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
