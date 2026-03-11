@@ -484,15 +484,14 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = 0.5*(np.median(timeseries[:padding_before]) + np.median(timeseries[-padding_after:]))
+            baseline = 0.5 * (
+                np.median(timeseries[:padding_before])
+                + np.median(timeseries[-padding_after:])
+            )
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
-            min_curr = np.min(
-                dI_I
-            )
-            max_curr = np.max(
-                dI_I
-            )
+            min_curr = np.min(dI_I)
+            max_curr = np.max(dI_I)
             if min_curr < min_current:
                 min_current = min_curr
             if max_curr > max_current:
@@ -529,7 +528,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 timeseries = event["filtered_data"]
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = 0.5*(np.median(timeseries[:padding_before]) + np.median(timeseries[-padding_after:]))
+            baseline = 0.5 * (
+                np.median(timeseries[:padding_before])
+                + np.median(timeseries[-padding_after:])
+            )
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
             event_hist, _ = np.histogram(
                 dI_I,
@@ -704,12 +706,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         elif action_name == "update_plot":
             self._set_display_mode("distribution")
             if self._analysis_mode == "individual":
-                parameters["plot_type"] = "Filtered Histogram" #hard coded for now, may change later
+                parameters["plot_type"] = (
+                    "Filtered Histogram"  # hard coded for now, may change later
+                )
                 self._update_distribution_individual(parameters)
             else:
                 parameters["plot_type"] = "Filtered Histogram"
                 self._update_distribution_ensemble(parameters)
-                    
 
         elif action_name == "reset_plot":
             self._reset_actions()
@@ -1034,7 +1037,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         # TODO: implement individual distribution and V/M computation and plotting
         self.logger.info("_update_distribution_individual called (not yet implemented)")
 
-
     @log(logger=logger)
     def _double_gaussian(self, x, amp1, mean1, std1, amp2, mean2, std2):
         """
@@ -1114,7 +1116,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         #when eq1 and eq2 are zero for a given (V,m), we have a mathematically valid solution, though not necessarily a physically valid one
         return [eq1, eq2]
         
-        
     @log(logger=logger)
     def _fit_double_gaussian(self, bins, amplitude):
         """
@@ -1128,12 +1129,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: Optional[List[float]]
         """
         n = len(amplitude)
-        left = amplitude[:n//2]
-        right = amplitude[n//2:]
-        
+        left = amplitude[: n // 2]
+        right = amplitude[n // 2 :]
+
         leftmax = np.max(left)
         leftargmax = np.argmax(left)
-        
+
         rightmax = np.max(right)
         rightargmax = np.argmax(right)
 
@@ -1150,20 +1151,21 @@ class ProteinView(MetaView, WalkthroughMixin):
         while idx_right > 0 and right[idx_right] > right_half_max:
             idx_right -= 1
 
-        right_dist = abs(bins[n//2 + idx_right] - bins[n//2 + rightargmax])
+        right_dist = abs(bins[n // 2 + idx_right] - bins[n // 2 + rightargmax])
         right_std_guess = right_dist / 1.177
 
         p0 = (
-            leftmax, bins[leftargmax], left_std_guess, 
-            rightmax, bins[n//2 + rightargmax], right_std_guess
+            leftmax,
+            bins[leftargmax],
+            left_std_guess,
+            rightmax,
+            bins[n // 2 + rightargmax],
+            right_std_guess,
         )
 
         popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
         return popt, np.sqrt(np.diag(pcov))
 
-        
-
-        
     @log(logger=logger)
     @register_action()
     def _update_distribution_ensemble(self, parameters):
@@ -1196,9 +1198,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             selected_filters = {"Full Dataset": ""}
 
         if len(experiments_and_channels) > 1:
-            self.logger.warning(
-                f"Only a single experiment can be used for {plot_type}"
-            )
+            self.logger.warning(f"Only a single experiment can be used for {plot_type}")
             self.add_text_to_display.emit(
                 f"Only a single experiment can be used for {plot_type}",
                 self.__class__.__name__,
@@ -1221,11 +1221,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 return
         if len(selected_filters) > 1:
-                self.add_text_to_display.emit(
-                    f"Only a single subset can be used for {plot_type}",
-                    self.__class__.__name__,
-                )
-                return
+            self.add_text_to_display.emit(
+                f"Only a single subset can be used for {plot_type}",
+                self.__class__.__name__,
+            )
+            return
 
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
@@ -1242,13 +1242,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                     sizes = False
 
                     self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_event_data_query",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_query",
-                            (),
-                        )
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_event_data_query",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_query",
+                        (),
+                    )
                     if self.event_query == "":
                         return
                     self.global_signal.emit(
@@ -1268,14 +1268,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                             sizes = parameters["sizes"]
 
                             bin_sensitive = True
-                            bins_changed = (
-                                getattr(self, "allowed_bins", None) != bins
-                            )
+                            bins_changed = getattr(self, "allowed_bins", None) != bins
                             sizes_changed = (
                                 getattr(self, "allowed_sizes", None) != sizes
                             )
                             if bin_sensitive and (bins_changed or sizes_changed):
-                                axis_type = ("2d")
+                                axis_type = "2d"
                                 self._reset_actions(axis_type=axis_type)
 
                             plot_data = self._construct_all_points_histogram(
@@ -1295,14 +1293,26 @@ class ProteinView(MetaView, WalkthroughMixin):
                                     dataset_label=dataset_label,
                                 )
                             else:
-                                self.logger.info("No plot data generates for the requested plot configuration", self.__class__.__name__)
-                                self.add_text_to_display("No plot data generates for the requested plot configuration", self.__class__.__name__)
+                                self.logger.info(
+                                    "No plot data generates for the requested plot configuration",
+                                    self.__class__.__name__,
+                                )
+                                self.add_text_to_display(
+                                    "No plot data generates for the requested plot configuration",
+                                    self.__class__.__name__,
+                                )
                                 return
                         else:
-                            self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
-                            self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                            self.logger.warning(
+                                f"Invalid plot type: {plot_type}",
+                                self.__class__.__name__,
+                            )
+                            self.add_text_to_display.emit(
+                                f"Invalid plot type: {plot_type}",
+                                self.__class__.__name__,
+                            )
                             return
-                        
+
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
@@ -1311,19 +1321,23 @@ class ProteinView(MetaView, WalkthroughMixin):
                         (loader, exp, channel, sql_filter, subset_name)
                     )
 
-            #now we have to fit the distribution to a double gaussian
-            popt, pcov = self._fit_double_gaussian(plot_data['Normalized Current'].values, plot_data['Amplitude'].values)
-            fit_data = self._double_gaussian(plot_data['Normalized Current'].values, *popt)
-            plot_data['Amplitude'] = fit_data
+            # now we have to fit the distribution to a double gaussian
+            popt, pcov = self._fit_double_gaussian(
+                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+            )
+            fit_data = self._double_gaussian(
+                plot_data["Normalized Current"].values, *popt
+            )
+            plot_data["Amplitude"] = fit_data
             if popt is not None:
                 self.update_plot(
-                                    plot_type,
-                                    plot_data,
-                                    plot_data.columns,
-                                    ["pA", ""],
-                                    logscales=[False, False],
-                                    dataset_label=dataset_label,
-                                )
+                    plot_type,
+                    plot_data,
+                    plot_data.columns,
+                    ["pA", ""],
+                    logscales=[False, False],
+                    dataset_label=dataset_label,
+                )
 
     @log(logger=logger)
     def set_query(self, query, table_name):
