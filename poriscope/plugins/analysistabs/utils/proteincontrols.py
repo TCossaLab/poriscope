@@ -92,7 +92,7 @@ class ProteinControls(QWidget):
         group_layout = QGridLayout(self.groupBox)
 
         # 3 columns (LEFT/MIDDLE/RIGHT) spanning over:
-        group_layout.setColumnStretch(0, 2)  # 4/12
+        group_layout.setColumnStretch(0, 4)  # 4/12
         group_layout.setColumnStretch(1, 5)  # 5/12
         group_layout.setColumnStretch(2, 3)  # 3/12
 
@@ -170,11 +170,14 @@ class ProteinControls(QWidget):
         combo_left_layout.addWidget(self.selection_tree_button)
 
         # ROW 2: PORE DIAMETER/LENGTH label
-        self.pore_label = self.createLabel(self.groupBox, 12, "PORE DIAMETER/LENGTH")
+        self.pore_diameter_label = self.createLabel(self.groupBox, 12, "DIAMETER")
+        self.pore_length_label = self.createLabel(self.groupBox, 12, "LENGTH")
 
         # ROW 3: PORE DIAMETER/LENGTH input
-        self.pore_lineEdit = QLineEdit(self.groupBox)
-        self.pore_lineEdit.setPlaceholderText("Enter your pore dimensions")
+        self.pore_diameter_lineEdit = QLineEdit(self.groupBox)
+        self.pore_diameter_lineEdit.setPlaceholderText("Enter pore diameter")
+        self.pore_length_lineEdit = QLineEdit(self.groupBox)
+        self.pore_length_lineEdit.setPlaceholderText("Enter pore length")
 
         # ROW 4: EVENT INDEX
         self.event_index_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
@@ -399,11 +402,23 @@ class ProteinControls(QWidget):
         group_layout.addWidget(self.filter_comboBox, 1, 2)
 
         # Row 2
-        group_layout.addWidget(self.pore_label, 2, 0)
+        pore_labels_widget = QWidget(self.groupBox)
+        pore_labels_layout = QHBoxLayout(pore_labels_widget)
+        pore_labels_layout.setContentsMargins(0, 0, 0, 0)
+        pore_labels_layout.setSpacing(5)
+        pore_labels_layout.addWidget(self.pore_diameter_label, 1)
+        pore_labels_layout.addWidget(self.pore_length_label, 1)
+        group_layout.addWidget(pore_labels_widget, 2, 0)
         group_layout.addWidget(bins_sizes_labels_widget, 2, 1)
 
         # Row 3
-        group_layout.addWidget(self.pore_lineEdit, 3, 0)
+        pore_inputs_widget = QWidget(self.groupBox)
+        pore_inputs_layout = QHBoxLayout(pore_inputs_widget)
+        pore_inputs_layout.setContentsMargins(0, 0, 0, 0)
+        pore_inputs_layout.setSpacing(5)
+        pore_inputs_layout.addWidget(self.pore_diameter_lineEdit, 1)
+        pore_inputs_layout.addWidget(self.pore_length_lineEdit, 1)
+        group_layout.addWidget(pore_inputs_widget, 3, 0)
         group_layout.addWidget(bins_sizes_inputs_widget, 3, 1)
         group_layout.addWidget(self.save_filter_button, 3, 2)
 
@@ -426,7 +441,8 @@ class ProteinControls(QWidget):
         self.db_loader_comboBox.setMinimumWidth(160)
         self.selection_tree_button.setFixedWidth(60)
 
-        self.pore_lineEdit.setMinimumWidth(160)
+        self.pore_diameter_lineEdit.setMinimumWidth(80)
+        self.pore_length_lineEdit.setMinimumWidth(80)
         self.event_index_lineEdit.setMinimumWidth(160)
         self.bins_lineEdit.setMinimumWidth(140)
 
@@ -670,7 +686,8 @@ class ProteinControls(QWidget):
 
         # Ensure that validate_inputs is called when inputs change
         self.db_loader_comboBox.currentIndexChanged.connect(self.validate_inputs)
-        self.pore_lineEdit.textChanged.connect(self.validate_inputs)
+        self.pore_diameter_lineEdit.textChanged.connect(self.validate_inputs)
+        self.pore_length_lineEdit.textChanged.connect(self.validate_inputs)
         self.event_index_lineEdit.textChanged.connect(self.validate_inputs)
         self.bins_lineEdit.textChanged.connect(self.validate_inputs)
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
@@ -688,7 +705,8 @@ class ProteinControls(QWidget):
             parameters = {
                 "db_loader": self.db_loader_comboBox.currentText()
                 or "No Event Database",
-                "pore_dimensions": self.pore_lineEdit.text(),  # TBD: decide on format and parsing in controller
+                "pore_diameter": self.pore_diameter_lineEdit.text(),  # TBD: decide on format and parsing in controller
+                "pore_length": self.pore_length_lineEdit.text(),  # TBD: decide on format and parsing in controller
                 "event_index": [],
                 "sizes": self.sizes_checkbox.isChecked(),
                 "bins": (
@@ -737,7 +755,8 @@ class ProteinControls(QWidget):
         # Gather inputs
         # -----------------
         db_loader = self.db_loader_comboBox.currentText()
-        pore_dimensions_valid = bool(self.pore_lineEdit.text().strip())
+        pore_diameter_valid = bool(self.pore_diameter_lineEdit.text().strip())
+        pore_length_valid = bool(self.pore_length_lineEdit.text().strip())
         # bins_text = self.bins_lineEdit.text()
         filter_selected = self.filter_comboBox.getSelectedItems()
         event_index_valid = self.event_index_lineEdit.isValid()
@@ -784,7 +803,7 @@ class ProteinControls(QWidget):
         )
 
         # Pore dimensions required for analysis
-        if not pore_dimensions_valid:
+        if not pore_diameter_valid or not pore_length_valid:
             is_individual_analysis_valid = False
             is_ensemble_analysis_valid = False
 
@@ -802,7 +821,8 @@ class ProteinControls(QWidget):
             is_commit_individual_valid = (
                 is_individual_analysis_valid
                 and db_loader_loaded
-                and pore_dimensions_valid
+                and pore_diameter_valid
+                and pore_length_valid
             )
             is_commit_all_valid = False
 
@@ -810,7 +830,8 @@ class ProteinControls(QWidget):
             is_commit_all_valid = (
                 is_ensemble_analysis_valid
                 and db_loader_loaded
-                and pore_dimensions_valid
+                and pore_diameter_valid
+                and pore_length_valid
             )
             is_commit_individual_valid = False
 
@@ -830,7 +851,7 @@ class ProteinControls(QWidget):
 
         self.export_plot_data_pushButton.setEnabled(is_export_valid)
 
-        self.update_plot_button.setEnabled(db_loader_loaded and pore_dimensions_valid)
+        self.update_plot_button.setEnabled(db_loader_loaded and pore_diameter_valid and pore_length_valid)
         self.undo_button.setEnabled(is_undo_valid)
         self.reset_button.setEnabled(is_reset_valid)
 
