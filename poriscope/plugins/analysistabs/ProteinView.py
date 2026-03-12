@@ -661,11 +661,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             bins = 100
 
         bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        event_hist, _ = np.histogram(
-            dI_I,
-            bins=bin_edges,
-            density=True
-        )
+        event_hist, _ = np.histogram(dI_I, bins=bin_edges, density=True)
         bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
 
@@ -1218,11 +1214,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
 
-                    #dataset_label = (
+                    # dataset_label = (
                     #    f"{loader} | {exp} Ch {channel}: {subset_name}"
                     #    if exp is not None
                     #    else f"{loader} | {subset_name}"
-                    #)
+                    # )
                     sizes = False
 
                     self.global_signal.emit(
@@ -1264,9 +1260,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                         )
                         return
                     else:  # need to create histogram, fit it, find V,m pairs, and build up the datasets to plot all in a single loop over the events in the dataset
-                        N = parameters[
-                            "n_values"
-                        ]
+                        N = parameters["n_values"]
                         success = 0
                         prolate_solutions = []
                         oblate_solutions = []
@@ -1290,7 +1284,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                                 plot_data["Normalized Current"].values,
                                 plot_data["Amplitude"].values,
                             )
-                            
+
                             # failed fit for numerical reasons
                             if (
                                 popt is None
@@ -1333,7 +1327,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             amplitude_ratio = min(abs_A1, abs_A2) / max(abs_A1, abs_A2)
                             if amplitude_ratio < amplitude_ratio_threshold:
                                 continue
-                            
+
                             amp1, mean1, std1, amp2, mean2, std2 = popt
                             # possibly use standard error of mean instead of standard deviation of underlying histogram here
                             # errors = np.sqrt(np.diag(pcov))
@@ -1353,12 +1347,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                                 std_max = np.abs(std2)
                                 mean_min = mean1
                                 std_min = np.abs(std1)
-                            
 
                             deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
                             deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
 
-                            
                             tol = 1e-5
                             for prolate in [True, False]:
                                 if not prolate:
@@ -1393,7 +1385,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                                             continue
 
                                         # Append only the clean, mathematically sound solutions
-                                        
+
                                         if prolate:
                                             prolate_solutions.append((V_sol, m_sol))
                                         elif not prolate:
@@ -1558,7 +1550,6 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         prominences = properties["prominences"]
 
-
         largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
         top_two_peaks = peaks[largest_prominence_indices]
 
@@ -1570,7 +1561,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         std_guesses = fwhm_guesses / 2.355
 
         p0 = (
-
             amplitude[top_two_peaks[0]],
             bins[top_two_peaks[0]],
             std_guesses[0],
