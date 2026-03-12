@@ -51,6 +51,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from scipy.optimize import curve_fit, least_squares
+from scipy.signal import find_peaks, peak_widths
+from scipy.stats import t
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
@@ -599,6 +601,76 @@ class ProteinView(MetaView, WalkthroughMixin):
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": hist})
 
     @log(logger=logger)
+    def _construct_single_event_histogram(
+        self, event, plot_type, bins=None, sizes=False
+    ):
+        """
+        Build a histogram of the current in a single event
+
+        :param event: a dictionary of event metadata and the underlying timeseries
+        :type event: Dict[str, Any]
+        :param plot_type: Type of histogram to create (raw or filtered).
+        :type plot_type: str
+        :param bins: Number of histogram bins.
+        :type bins: int | None
+        :return: DataFrame with histogram values and corresponding current levels.
+        :rtype: pd.DataFrame
+        """
+        min_current = float("inf")
+        max_current = float("-inf")
+
+        if plot_type == "Raw Histogram":
+            timeseries = event["raw_data"]
+        elif plot_type == "Filtered Histogram":
+            timeseries = event["filtered_data"]
+
+        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+        padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
+        baseline = 0.5 * (
+            np.median(timeseries[:padding_before])
+            + np.median(timeseries[-padding_after:])
+        )
+        dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
+
+        min_curr = np.min(dI_I)
+        max_curr = np.max(dI_I)
+        if min_curr < min_current:
+            min_current = min_curr
+        if max_curr > max_current:
+            max_current = max_curr
+
+        if self.hist_min is None or min_current < self.hist_min:
+            self.hist_min = min_current
+        if self.hist_max is None or max_current > self.hist_max:
+            self.hist_max = max_current
+
+        if bins is not None:
+            if sizes is False:
+                if isinstance(bins, list) and len(bins) >= 1:
+                    bins = bins[0]
+                else:
+                    raise ValueError(f"Invalid bins entry {bins}")
+            else:
+                try:
+                    bins = int((self.hist_max - self.hist_min) / bins[0])
+                except Exception as e:
+                    raise ValueError(
+                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
+                    )
+        else:
+            bins = 100
+
+        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
+        event_hist, _ = np.histogram(
+            dI_I,
+            bins=bin_edges,
+            norm=True,
+        )
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
+
+
+    @log(logger=logger)
     def set_baseline_duration(self, duration):
         """
         a callback from a global_signal call that sets the baseline_duration variable for further processing
@@ -1089,8 +1161,259 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: None
         :rtype: None
         """
-        # TODO: implement individual distribution and V/M computation and plotting
-        self.logger.info("_update_distribution_individual called (not yet implemented)")
+        self._reset_actions()
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
+
+        selected_filters = self.get_selected_filters()
+        loader = parameters["db_loader"]
+        plot_type = parameters["plot_type"]
+        d = float(parameters["pore_diameter"])
+        L = float(parameters["pore_length"])
+        experiments_and_channels: Optional[
+            Union[Dict[str, List[str]], Dict[Any, Any]]
+        ] = self.selected_experiment_and_channels_by_loader.get(loader)
+
+        self.plot_initialized = True
+
+        if experiments_and_channels is None or len(experiments_and_channels) == 0:
+            experiments_and_channels = {None: [None]}
+
+        if selected_filters is None or selected_filters == {}:
+            selected_filters = {"Full Dataset": ""}
+
+        if len(experiments_and_channels) > 1:
+            self.logger.warning(f"Only a single experiment can be used for {plot_type}")
+            self.add_text_to_display.emit(
+                f"Only a single experiment can be used for {plot_type}",
+                self.__class__.__name__,
+            )
+            return
+
+        for (
+            exp,
+            channels,
+        ) in (
+            experiments_and_channels.items()
+        ):  # possibly we will make it possible to mix things later, hence loop over single element
+            if len(channels) > 1:
+                self.logger.warning(
+                    "Only a single channel at a time can be used for protein ensemble analysis"
+                )
+                self.add_text_to_display.emit(
+                    "Only a single channel at a time can be used for protein ensemble analysis",
+                    self.__class__.__name__,
+                )
+                return
+        if len(selected_filters) > 1:
+            self.add_text_to_display.emit(
+                f"Only a single subset can be used for {plot_type}",
+                self.__class__.__name__,
+            )
+            return
+
+        for exp, channels in experiments_and_channels.items():
+            for channel in channels:
+                exp_and_ch_arg = {exp: [channel]}
+
+                for subset_name, sql_filter in selected_filters.items():
+                    bins = None
+
+                    dataset_label = (
+                        f"{loader} | {exp} Ch {channel}: {subset_name}"
+                        if exp is not None
+                        else f"{loader} | {subset_name}"
+                    )
+                    print(dataset_label) #TODO
+                    sizes = False
+
+                    self.global_signal.emit(
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_event_data_query",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_query",
+                        (),
+                    )
+                    if self.event_query == "":
+                        return
+                    self.global_signal.emit(
+                        "MetaDatabaseLoader",
+                        loader,
+                        "load_event_data",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_data_generator",
+                        (),
+                    )
+                    if plot_type not in ["Raw Histogram","Filtered Histogram"]:
+                        self.logger.warning(
+                            f"Invalid plot type: {plot_type}",
+                            self.__class__.__name__,
+                        )
+                        self.add_text_to_display.emit(
+                            f"Invalid plot type: {plot_type}",
+                            self.__class__.__name__,
+                        )
+                        return
+                    if self.event_generator is None:
+                        self.logger.warning(
+                            "No events in dataset or unable to create event generator",
+                            self.__class__.__name__,
+                        )
+                        self.add_text_to_display.emit(
+                            "No events in dataset or unable to create event generator",
+                            self.__class__.__name__,
+                        )
+                        return
+                    else: #need to create histogram, fit it, find V,m pairs, and build up the datasets to plot all in a single loop over the events in the dataset
+                        for event in self.event_data_generator:
+                            #todo - move all of this into a loop that builds up the data set to plot over time,
+                            #possibly into a generator for a progress bar since this will be fairly slow
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                            plot_data = self._construct_single_event_histogram(
+                                event,
+                                plot_type,
+                                bins=bins,
+                                sizes=sizes,
+                            )
+                            if plot_data is None:
+                                continue
+
+                            # now we have to fit the distribution to a double gaussian
+                            popt, pcov = self._fit_double_gaussian(
+                                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+                            )
+                            perr = np.sqrt(np.diag(pcov))
+                            #failed fit for numerical reasons
+                            if popt is None or pcov is None or np.any(np.isinf(pcov)) or np.any(np.isnan(pcov)) or np.any(perr > np.abs(popt) * 10):
+                                continue
+
+                            #two peaks were fitted but they are not statistically distinguishable at the 0.05 confidence level
+                            mu1_idx, mu2_idx = 1, 4
+                            mu1 = popt[mu1_idx]
+                            mu2 = popt[mu2_idx]
+                            var_mu1 = pcov[mu1_idx, mu1_idx]
+                            var_mu2 = pcov[mu2_idx, mu2_idx]
+                            cov_mu1_mu2 = pcov[mu1_idx, mu2_idx]
+                            variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
+                            if variance_diff <= 0:
+                                continue
+                            se_diff = np.sqrt(variance_diff)
+                            t_stat = abs(mu1 - mu2) / se_diff
+                            N = len(plot_data["Normalized Current"].values)
+                            P = len(popt)
+                            df = N - P
+                            p_value = 2 * t.sf(t_stat, df)
+                            if p_value > 0.05:
+                                continue
+                            
+                            #two peaks were found but one is very small compared to the other
+                            A1_idx, A2_idx = 0, 3
+                            A1 = popt[A1_idx]
+                            A2 = popt[A2_idx]
+                            amplitude_ratio_threshold = 0.05 
+                            abs_A1 = abs(A1)
+                            abs_A2 = abs(A2)
+                            if max(abs_A1, abs_A2) == 0:
+                                continue
+                            amplitude_ratio = min(abs_A1, abs_A2) / max(abs_A1, abs_A2)
+                            if amplitude_ratio < amplitude_ratio_threshold:
+                                continue
+                                                        
+
+                            
+
+            N = 1000
+            amp1, mean1, std1, amp2, mean2, std2 = popt
+            #possibly use standard error of mean instead of standard deviation of underlying histogram here
+            #errors = np.sqrt(np.diag(pcov))
+            #mean1_err = errors[1]
+            #mean2_err = errors[4]
+            #std1 = mean1_err
+            #std2 = mean2_err
+            
+
+            # FIXED: Assign the correct means to mean_min
+            if mean1 > mean2:
+                mean_max = mean1
+                std_max = std1
+                mean_min = mean2
+                std_min = std2
+            else:
+                mean_max = mean2
+                std_max = std2
+                mean_min = mean1
+                std_min = std1
+
+            deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
+            deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
+
+            prolate_solutions = []
+            oblate_solutions = []
+            tol = 1e-5
+            for prolate in [True, False]:
+                if prolate:
+                    lower_bounds = [1, 0.01]
+                    upper_bounds = [np.inf, 0.99999]
+                    initial_guess = [64.0, 0.75]
+                else:
+                    lower_bounds = [1, 1.00001]
+                    upper_bounds = [np.inf, np.inf]
+                    initial_guess = [64.0, 1.5]
+
+                for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
+                    solution = least_squares(
+                        self._spheroid_blockage,
+                        initial_guess,
+                        args=(dI_M, dI_m, d, L, prolate),
+                        bounds=(lower_bounds, upper_bounds),
+                    )
+
+                    # Only proceed if the solver successfully converged
+                    if solution.success:  # check each residual
+                        if np.max(np.abs(solution.fun)) > tol:
+                            continue
+
+                        V_sol, m_sol = solution.x
+
+                        eq1_err, eq2_err = self._spheroid_blockage(
+                            (V_sol, m_sol), dI_M, dI_m, d, L, prolate
+                        )
+                        residuals = eq1_err**2 + eq2_err**2
+                        if residuals > tol:  # check aggregate residual
+                            continue
+
+                        # Append only the clean, mathematically sound solutions
+                        if prolate:
+                            prolate_solutions.append((V_sol, m_sol))
+                        elif not prolate:
+                            oblate_solutions.append((V_sol, m_sol))
+
+            # --- Create the Pandas DataFrames ---
+
+            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
+            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
+
+            if not df_prolate.empty:
+                self.update_plot(
+                    "Scatterplot",
+                    df_prolate,
+                    ["V", "m"],
+                    ["nm$^{3}$", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label="Prolate Solutions",
+                )
+            if not df_oblate.empty:
+                self.update_plot(
+                    "Scatterplot",
+                    df_oblate,
+                    ["V", "m"],
+                    ["nm$^{3}$", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label="Oblate Solutions",
+                )
 
     @log(logger=logger)
     def _double_gaussian(self, x, amp1, mean1, std1, amp2, mean2, std2):
@@ -1219,43 +1542,28 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
         :rtype: Optional[List[float]]
         """
-        n = len(amplitude)
-        left = amplitude[: n // 2]
-        right = amplitude[n // 2 :]
+        prominence_threshold = np.max(amplitude) * 0.1
+        peaks, _ = find_peaks(amplitude, prominence=prominence_threshold)
 
-        leftmax = np.max(left)
-        leftargmax = np.argmax(left)
+        if len(peaks) < 2:
+            return None, None 
 
-        rightmax = np.max(right)
-        rightargmax = np.argmax(right)
+        peaks = sorted(peaks, key=lambda x: amplitude[x], reverse=True)[:2]
 
-        left_half_max = leftmax / 2.0
-        idx_left = leftargmax
-        while idx_left < len(left) - 1 and left[idx_left] > left_half_max:
-            idx_left += 1
+        widths, width_heights, left_ips, right_ips = peak_widths(amplitude, peaks, rel_height=0.5)
 
-        left_dist = abs(bins[idx_left] - bins[leftargmax])
-        left_std_guess = left_dist / 1.177
+        bin_width = bins[1] - bins[0]
+        fwhm_guesses = widths * bin_width
 
-        right_half_max = rightmax / 2.0
-        idx_right = rightargmax
-        while idx_right > 0 and right[idx_right] > right_half_max:
-            idx_right -= 1
-
-        right_dist = abs(bins[n // 2 + idx_right] - bins[n // 2 + rightargmax])
-        right_std_guess = right_dist / 1.177
+        std_guesses = fwhm_guesses / 2.355 
 
         p0 = (
-            leftmax,
-            bins[leftargmax],
-            left_std_guess,
-            rightmax,
-            bins[n // 2 + rightargmax],
-            right_std_guess,
+            amplitude[peaks[0]], bins[peaks[0]], std_guesses[0],
+            amplitude[peaks[1]], bins[peaks[1]], std_guesses[1],
         )
 
         popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
-        return popt, np.sqrt(np.diag(pcov))
+        return popt, pcov
 
     @log(logger=logger)
     @register_action()
@@ -1269,6 +1577,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: None
         :rtype: None
         """
+        self._reset_actions()
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
@@ -1445,6 +1754,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "n_values"
             ]  # number of samples to draw from the fitted distributions for solving V and m
             amp1, mean1, std1, amp2, mean2, std2 = popt
+            #possibly use standard error of mean instead of standard deviation of underlying histogram here
+            #errors = np.sqrt(np.diag(pcov))
+            #mean1_err = errors[1]
+            #mean2_err = errors[4]
+            #std1 = mean1_err
+            #std2 = mean2_err
+            
 
             # FIXED: Assign the correct means to mean_min
             if mean1 > mean2:
