@@ -1506,11 +1506,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         Compute and plot the ΔI/I histogram and V/M scatterplot aggregated across
         all events in Ensemble analysis mode.
-
-        :param parameters: Dictionary of plotting parameters from the UI controls.
-        :type parameters: dict
-        :return: None
-        :rtype: None
         """
         self._reset_actions()
         self._show_sql_in_display = False
@@ -1521,6 +1516,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
         L = float(parameters["pore_length"])
+        
+        # --- OPTIMIZATION 1: Extract invariants ---
+        N = parameters.get("n_values", 100)
+        tol = 1e-5
+        prolate_setup = {
+            True:  {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
+            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]}
+        }
+
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
         ] = self.selected_experiment_and_channels_by_loader.get(loader)
@@ -1535,32 +1539,17 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(
-                f"Only a single experiment can be used for {plot_type}",
-                self.__class__.__name__,
-            )
+            self.add_text_to_display.emit(f"Only a single experiment can be used for {plot_type}", self.__class__.__name__)
             return
 
-        for (
-            exp,
-            channels,
-        ) in (
-            experiments_and_channels.items()
-        ):  # possibly we will make it possible to mix things later, hence loop over single element
+        for exp, channels in experiments_and_channels.items():
             if len(channels) > 1:
-                self.logger.warning(
-                    "Only a single channel at a time can be used for protein ensemble analysis"
-                )
-                self.add_text_to_display.emit(
-                    "Only a single channel at a time can be used for protein ensemble analysis",
-                    self.__class__.__name__,
-                )
+                self.logger.warning("Only a single channel at a time can be used for protein ensemble analysis")
+                self.add_text_to_display.emit("Only a single channel at a time can be used for protein ensemble analysis", self.__class__.__name__)
                 return
+                
         if len(selected_filters) > 1:
-            self.add_text_to_display.emit(
-                f"Only a single subset can be used for {plot_type}",
-                self.__class__.__name__,
-            )
+            self.add_text_to_display.emit(f"Only a single subset can be used for {plot_type}", self.__class__.__name__)
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1578,203 +1567,122 @@ class ProteinView(MetaView, WalkthroughMixin):
                     sizes = False
 
                     self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "construct_event_data_query",
-                        (sql_filter, exp_and_ch_arg),
-                        "relay_event_query",
-                        (),
+                        "MetaDatabaseLoader", loader, "construct_event_data_query",
+                        (sql_filter, exp_and_ch_arg), "relay_event_query", (),
                     )
                     if self.event_query == "":
                         return
+                        
                     self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "load_event_data",
-                        (sql_filter, exp_and_ch_arg),
-                        "relay_event_data_generator",
-                        (),
+                        "MetaDatabaseLoader", loader, "load_event_data",
+                        (sql_filter, exp_and_ch_arg), "relay_event_data_generator", (),
                     )
+                    
                     if self.event_data_generator:
-                        if plot_type in [
-                            "Raw Histogram",
-                            "Filtered Histogram",
-                        ]:
+                        if plot_type in ["Raw Histogram", "Filtered Histogram"]:
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
 
                             bin_sensitive = True
                             bins_changed = getattr(self, "allowed_bins", None) != bins
-                            sizes_changed = (
-                                getattr(self, "allowed_sizes", None) != sizes
-                            )
+                            sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+                            
                             if bin_sensitive and (bins_changed or sizes_changed):
                                 axis_type = "2d"
                                 self._reset_actions(axis_type=axis_type)
 
-                            plot_data = self._construct_all_points_histogram(
-                                self.event_data_generator,
-                                plot_type,
-                                bins=bins,
-                                sizes=sizes,
-                            )
+                        plot_data = self._construct_all_points_histogram(
+                            self.event_data_generator, plot_type, bins=bins, sizes=sizes,
+                        )
 
-                            if plot_data is not None:
-                                self.update_plot(
-                                    plot_type,
-                                    plot_data,
-                                    plot_data.columns,
-                                    ["pA", ""],
-                                    logscales=[False, False],
-                                    dataset_label=dataset_label,
-                                )
-                            else:
-                                self.logger.info(
-                                    "No plot data generates for the requested plot configuration",
-                                    self.__class__.__name__,
-                                )
-                                self.add_text_to_display(
-                                    "No plot data generates for the requested plot configuration",
-                                    self.__class__.__name__,
-                                )
-                                return
+                        if plot_data is not None:
+                            self.update_plot(
+                                plot_type, plot_data, plot_data.columns, ["pA", ""],
+                                logscales=[False, False], dataset_label=dataset_label,
+                            )
                         else:
-                            self.logger.warning(
-                                f"Invalid plot type: {plot_type}",
-                                self.__class__.__name__,
-                            )
-                            self.add_text_to_display.emit(
-                                f"Invalid plot type: {plot_type}",
-                                self.__class__.__name__,
-                            )
+                            self.logger.info("No plot data generates for the requested plot configuration", self.__class__.__name__)
+                            self.add_text_to_display("No plot data generates for the requested plot configuration", self.__class__.__name__)
                             return
+                    else:
+                        self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                        self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                        return
 
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
 
-                    self.plotted_datasets.add(
-                        (loader, exp, channel, sql_filter, subset_name)
-                    )
+                    self.plotted_datasets.add((loader, exp, channel, sql_filter, subset_name))
 
-            # now we have to fit the distribution to a double gaussian
+            # --- Fit Double Gaussian ---
             popt, pcov = self._fit_double_gaussian(
                 plot_data["Normalized Current"].values, plot_data["Amplitude"].values
             )
-            fit_data = self._double_gaussian(
-                plot_data["Normalized Current"].values, *popt
-            )
-            plot_data["Amplitude"] = fit_data
+            
             if popt is not None:
+                fit_data = self._double_gaussian(plot_data["Normalized Current"].values, *popt)
+                plot_data["Amplitude"] = fit_data
                 self.update_plot(
-                    plot_type,
-                    plot_data,
-                    plot_data.columns,
-                    ["pA", ""],
-                    logscales=[False, False],
-                    dataset_label="Fit",
+                    plot_type, plot_data, plot_data.columns, ["pA", ""],
+                    logscales=[False, False], dataset_label="Fit",
                 )
             else:
-                self.logger.info(
-                    "Unable to fit a double gaussian to the histogram",
-                    self.__class__.__name__,
-                )
-                self.add_text_to_display(
-                    "Unable to fit a double gaussian to the histogram",
-                    self.__class__.__name__,
-                )
+                self.logger.info("Unable to fit a double gaussian to the histogram", self.__class__.__name__)
+                self.add_text_to_display("Unable to fit a double gaussian to the histogram", self.__class__.__name__)
                 return
 
-            N = parameters[
-                "n_values"
-            ]  # number of samples to draw from the fitted distributions for solving V and m
             amp1, mean1, std1, amp2, mean2, std2 = popt
-            # possibly use standard error of mean instead of standard deviation of underlying histogram here
-            # errors = np.sqrt(np.diag(pcov))
-            # mean1_err = errors[1]
-            # mean2_err = errors[4]
-            # std1 = mean1_err
-            # std2 = mean2_err
 
-            # FIXED: Assign the correct means to mean_min
             if mean1 > mean2:
-                mean_max = mean1
-                std_max = std1
-                mean_min = mean2
-                std_min = std2
+                mean_max, std_max = mean1, std1
+                mean_min, std_min = mean2, std2
             else:
-                mean_max = mean2
-                std_max = std2
-                mean_min = mean1
-                std_min = std1
+                mean_max, std_max = mean2, std2
+                mean_min, std_min = mean1, std1
 
             deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
             deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
 
             prolate_solutions = []
             oblate_solutions = []
-            tol = 1e-5
+            
             for prolate in [True, False]:
-                if not prolate:
-                    lower_bounds = [1, 0.01]
-                    upper_bounds = [np.inf, 0.99999]
-                    initial_guess = [64.0, 0.75]
-                else:
-                    lower_bounds = [1, 1.00001]
-                    upper_bounds = [np.inf, np.inf]
-                    initial_guess = [64.0, 1.5]
+                setup = prolate_setup[prolate]
 
                 for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
                     solution = least_squares(
                         self._spheroid_blockage,
-                        initial_guess,
+                        setup["guess"],
                         args=(dI_M, dI_m, d, L, prolate),
-                        bounds=(lower_bounds, upper_bounds),
+                        bounds=setup["bounds"],
                     )
 
-                    # Only proceed if the solver successfully converged
-                    if solution.success:  # check each residual
+                    if solution.success:
+                        # --- OPTIMIZATION 2: Direct residual check ---
                         if np.max(np.abs(solution.fun)) > tol:
+                            continue
+
+                        # Avoid re-running _spheroid_blockage; use solver's exact output
+                        residuals = np.sum(solution.fun**2)
+                        if residuals > tol:
                             continue
 
                         V_sol, m_sol = solution.x
 
-                        eq1_err, eq2_err = self._spheroid_blockage(
-                            (V_sol, m_sol), dI_M, dI_m, d, L, prolate
-                        )
-                        residuals = eq1_err**2 + eq2_err**2
-                        if residuals > tol:  # check aggregate residual
-                            continue
-
-                        # Append only the clean, mathematically sound solutions
                         if prolate:
                             prolate_solutions.append((V_sol, m_sol))
-                        elif not prolate:
+                        else:
                             oblate_solutions.append((V_sol, m_sol))
 
             # --- Create the Pandas DataFrames ---
-
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
             df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
 
             if not df_prolate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_prolate,
-                    ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
-                    logscales=[False, False],
-                    dataset_label="Prolate Solutions",
-                )
+                self.update_plot("Scatterplot", df_prolate, ["V", "m"], ["nm$^{3}$", "arb. units"], logscales=[False, False], dataset_label="Prolate Solutions")
             if not df_oblate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_oblate,
-                    ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
-                    logscales=[False, False],
-                    dataset_label="Oblate Solutions",
-                )
+                self.update_plot("Scatterplot", df_oblate, ["V", "m"], ["nm$^{3}$", "arb. units"], logscales=[False, False], dataset_label="Oblate Solutions")
 
     @log(logger=logger)
     def set_query(self, query, table_name):
