@@ -1261,10 +1261,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                         return
                     else:  # need to create histogram, fit it, find V,m pairs, and build up the datasets to plot all in a single loop over the events in the dataset
                         N = parameters["n_values"]
-                        success = 0
+                        processed = 0
                         prolate_solutions = []
                         oblate_solutions = []
                         for event in self.event_data_generator:
+                            processed += 1
                             # todo - move all of this into a loop that builds up the data set to plot over time,
                             # definitely needs to be in a generator for a progress bar
                             bins = parameters["bins"]
@@ -1370,7 +1371,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                                         bounds=(lower_bounds, upper_bounds),
                                     )
 
-                                    # Only proceed if the solver successfully converged
                                     if solution.success:  # check each residual
                                         if np.max(np.abs(solution.fun)) > tol:
                                             continue
@@ -1384,13 +1384,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                                         if residuals > tol:  # check aggregate residual
                                             continue
 
-                                        # Append only the clean, mathematically sound solutions
-
                                         if prolate:
                                             prolate_solutions.append((V_sol, m_sol))
                                         elif not prolate:
                                             oblate_solutions.append((V_sol, m_sol))
-                            success += 1
+                            print(processed)
             # --- Create the Pandas DataFrames ---
 
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
