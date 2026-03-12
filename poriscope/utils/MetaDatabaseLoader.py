@@ -27,11 +27,11 @@
 import logging
 import re
 from abc import abstractmethod
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
-import numpy.typing as npt
 import pandas as pd
 
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
@@ -538,43 +538,50 @@ class MetaDatabaseLoader(BaseDataPlugin):
             yield i / num_events
         yield 1.0
 
-    @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
-        """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
-        :param channel: channel ID
+    @log(logger=logger)
+    def report_channel_status(self, channel: Optional[int] = None, init: bool = False) -> str:
+        """
+        Return a string detailing event counts per experiment and channel.
+
+        :param channel: channel ID. Currently unused at the base class level but
+            retained for API compatibility with subclasses that may filter by channel.
         :type channel: Optional[int]
-        :param init: is the function being called as part of plugin initialization? Default False
+        :param init: True if the function is being called as part of plugin
+            initialization. Default False.
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: a formatted string listing the number of experiments and the
+            event count per channel for each experiment, or ``"No experiments found."``
+            if the database is empty.
         :rtype: str
+
+        :raises sqlite3.Error: If a database error occurs while reading from
+            event_counts.
         """
-        experiments = self.get_experiment_names()
-        if not experiments:
+        self._ensure_event_counts()
+        result = self.query_database_directly("""
+            SELECT exp.name, cs.channel_id, cs.event_count
+            FROM event_counts cs
+            JOIN experiments exp ON exp.id = cs.experiment_id
+            ORDER BY exp.name, cs.channel_id
+        """)
+        if result is None or result.empty:
             return "No experiments found."
 
-        channels = [
-            self.get_channels_by_experiment(experiment) for experiment in experiments
-        ]
-        num_events = {
-            exp: {
-                ch: self.get_event_counts_by_experiment_and_channel(exp, ch)
-                for ch in chs
-            }
-            for exp, chs in zip(experiments, channels)
-            if chs is not None
-        }
+        counts: Dict[str, Dict[int, int]] = defaultdict(dict)
+        for _, row in result.iterrows():
+            counts[row["name"]][row["channel_id"]] = row["event_count"]
 
+        num_experiments = len(counts)
         report = (
-            f" {len(experiments)} experiment\n"
-            if len(experiments) == 1
-            else f"{len(experiments)} experiments\n"
+            f" {num_experiments} experiment\n"
+            if num_experiments == 1
+            else f"{num_experiments} experiments\n"
         )
-        for experiment, val in num_events.items():
-            report += f"{experiment}:\n"
-            for ch, num in val.items():
+        for exp_name, channel_counts in counts.items():
+            report += f"{exp_name}:\n"
+            for ch, num in channel_counts.items():
                 report += f"Channel: {ch}: {num} events\n"
         return report.rstrip("\n")
 
@@ -1004,25 +1011,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         self,
         conditions: Optional[str] = None,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
-    ) -> Generator[
-        Dict[
-            str,
-            Union[
-                int,
-                int,
-                int,
-                int,
-                float,
-                int,
-                int,
-                npt.NDArray[np.float64],
-                npt.NDArray[np.float64],
-                npt.NDArray[np.float64],
-            ],
-        ],
-        bool,
-        None,
-    ]:
+    ) -> Generator[Dict[str, Any], bool, None]:
         """
         Load data and return a generator that gives a one-row dataframe corresponding one row returned by query
         Make sure you exhaust or explicitly abort the generator, or else connections will remain open
@@ -1036,7 +1025,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
 
         :return: a generator that returns primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, samplerate, and a numpy array with event data
-        :rtype: Generator[Tuple[int, int, int, int, float, int, int, npt.NDArray[np.float64]], bool,  None]
+        :rtype: Generator[Dict[str, Any], bool, None]
         """
         query, debug = self.construct_event_data_query(
             conditions, experiments_and_channels
@@ -1180,25 +1169,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _load_event_data(self, query: str) -> Generator[
-        Dict[
-            str,
-            Union[
-                int,
-                int,
-                int,
-                int,
-                float,
-                int,
-                int,
-                npt.NDArray[np.float64],
-                npt.NDArray[np.float64],
-                npt.NDArray[np.float64],
-            ],
-        ],
-        bool,
-        None,
-    ]:
+    def _load_event_data(self, query: str) -> Generator[Dict[str, Any], bool, None]:
         """
         Load data and return a generator that gives a one-row dataframe corresponding one row returned by query
         Make sure you exhaust the generator, or else connections will remain open
@@ -1210,11 +1181,26 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type query: str
 
         :return: a generator that returns a dict with id, event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, and numpy array with event data for raw, filtered, and fitted data
-        :rtype: Generator[Dict[str, Union[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]], bool,  None]
+        :rtype: Generator[Dict[str, Any], bool, None]
         """
         pass
 
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
+
+    @abstractmethod
+    def _ensure_event_counts(self) -> None:
+        """
+        Ensure the event_counts summary table exists and is populated.
+        If the table does not exist, create it, populate it from existing events,
+        and add the appropriate triggers to keep it in sync going forward.
+
+        :return: None
+        :rtype: None
+
+        :raises sqlite3.Error: If a database error occurs during table creation or population.
+        """
+        pass
+    
     @log(logger=logger)
     def _finalize_initialization(self):
         """

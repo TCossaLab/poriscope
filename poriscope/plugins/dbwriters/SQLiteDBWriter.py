@@ -510,6 +510,38 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 WHERE id NOT IN (SELECT DISTINCT channel_db_id FROM events);
             END;
             """,
+            """
+            CREATE TABLE IF NOT EXISTS event_counts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                event_count INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (experiment_id, channel_id),
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_event_counts_exp_channel ON event_counts(experiment_id, channel_id);
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS increment_event_counts
+            AFTER INSERT ON events
+            BEGIN
+                INSERT INTO event_counts (experiment_id, channel_id, event_count)
+                VALUES (NEW.experiment_id, NEW.channel_id, 1)
+                ON CONFLICT(experiment_id, channel_id)
+                DO UPDATE SET event_count = event_count + 1;
+            END;
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS decrement_event_counts
+            AFTER DELETE ON events
+            BEGIN
+                UPDATE event_counts
+                SET event_count = event_count - 1
+                WHERE experiment_id = OLD.experiment_id AND channel_id = OLD.channel_id;
+            END;
+            """,
         ]
 
         # Connect to the SQLite database (creates the file if it doesn't exist)

@@ -1,4 +1,27 @@
-## Poriscope 1.5: In Progress
+## Poriscope 1.6: In Progress
+
+### What's New since Poriscope 1.5:
+    
+* **PyPi integration**
+    * Poriscope ..
+    
+* **Updated Data Plugin Base Class: `MetaDatabaseLoader`**
+    * Replaced N×M `COUNT(*)` query loop in `report_channel_status` with a `event_counts` summary table, making DB loading and experiment/channel count reporting ~10x faster.  
+    * The `event_counts` summary table is maintained automatically via SQLite triggers in case of manual edits (event removal)
+    * Backwards compatible — existing databases are upgraded automatically on first load
+    
+* **Updated Frontend Plugin: `MetadataView`**
+    * Full SQL will always be printed after filter creation/editing, regardless of validity
+    * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
+
+### General Fixes and Improvements:
+    * Fixed crash when resetting or updating heatmaps in the Metadata tab
+    * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
+    * Fixed cross-table SQL filtering
+    * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
+    * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
+
+## Poriscope 1.5: 2025-12-08
 
 * **Click outside the pop-up or the x button in the selection menus (compatible with MacOs and Linux)**
 * **Append SQL-like filters instead of overriding when loading a new .json file in the Metadata tab**
@@ -82,7 +105,6 @@
     * Fixed cross-table SQL filtering
     * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
     * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
-
 
 ## Poriscope 1.4: 2025-06-09
 

@@ -901,6 +901,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             "data",
             "sublevels",
             "columns",
+            "event_counts",
         ]
         try:
             conn = sqlite3.connect(self.db_path)
@@ -915,19 +916,15 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             if "sqlite_sequence" in existing_tables:
                 existing_tables.remove("sqlite_sequence")
 
-            # Check if the existing tables match the expected channels
-            missing_tables = [
-                table for table in expected_tables if table not in existing_tables
-            ]
-            extra_tables = [
-                table for table in existing_tables if table not in expected_tables
-            ]
-
-            if missing_tables:
+            # Check if the existing tables match the expected ones (except for event_counts, which is optional to acocunt for old DB versions)
+            core_tables = {"events", "channels", "experiments", "data", "sublevels", "columns"}
+            missing_core = [t for t in core_tables if t not in existing_tables]
+            if missing_core:
                 raise ValueError(
-                    f"Missing tables: {', '.join(missing_tables)}. Double check that you are loading a database of fitted metadata."
+                    f"Missing tables: {', '.join(missing_core)}. Double check that you are loading a database of fitted metadata."
                 )
 
+            extra_tables = [t for t in existing_tables if t not in expected_tables]
             if extra_tables:
                 raise ValueError(
                     f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of fitted metadata."
@@ -979,3 +976,72 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             return "TEXT"  # Store datetimes as ISO 8601 strings
         else:
             return "TEXT"  # Default for other or unknown types
+
+    @log(logger=logger)
+    def _ensure_event_counts (self) -> None:
+        """
+        Ensure event_counts table and its triggers exist, creating and populating
+        them from scratch if they don't (backwards compatibility for old DBs).
+
+        :return: None
+        :rtype: None
+        :raises sqlite3.Error: If a database error occurs during table creation or population.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='event_counts';"
+                )
+                exists = cursor.fetchone() is not None
+
+                if not exists:
+                    self.logger.info(
+                        "event_counts table not found, creating and populating from existing events."
+                    )
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS event_counts (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            experiment_id INTEGER NOT NULL,
+                            channel_id INTEGER NOT NULL,
+                            event_count INTEGER NOT NULL DEFAULT 0,
+                            UNIQUE (experiment_id, channel_id),
+                            FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+                        );
+
+                        CREATE INDEX IF NOT EXISTS idx_event_counts_exp_channel
+                            ON event_counts(experiment_id, channel_id);
+
+                        CREATE TRIGGER IF NOT EXISTS increment_event_counts
+                        AFTER INSERT ON events
+                        BEGIN
+                            INSERT INTO event_counts (experiment_id, channel_id, event_count)
+                            VALUES (NEW.experiment_id, NEW.channel_id, 1)
+                            ON CONFLICT(experiment_id, channel_id)
+                            DO UPDATE SET event_count = event_count + 1;
+                        END;
+
+                        CREATE TRIGGER IF NOT EXISTS decrement_event_counts
+                        AFTER DELETE ON events
+                        BEGIN
+                            UPDATE event_counts
+                            SET event_count = event_count - 1
+                            WHERE experiment_id = OLD.experiment_id
+                            AND channel_id = OLD.channel_id;
+                        END;
+
+                        INSERT INTO event_counts (experiment_id, channel_id, event_count)
+                        SELECT experiment_id, channel_id, COUNT(*)
+                        FROM events
+                        GROUP BY experiment_id, channel_id
+                        ON CONFLICT(experiment_id, channel_id)
+                        DO UPDATE SET event_count = excluded.event_count;
+                    """)
+                    conn.commit()
+                    self.logger.info("event_counts table created and populated successfully.")
+
+        except sqlite3.Error as e:
+            self.logger.error(f"Failed to ensure event_counts table: {e}")
+            raise
+
