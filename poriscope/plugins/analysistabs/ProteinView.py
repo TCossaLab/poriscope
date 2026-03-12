@@ -1582,7 +1582,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(f"Only a single experiment can be used for {plot_type}", self.__class__.__name__)
+            self.add_text_to_display.emit(f"Only a single experiment can be used for {plot_type}",
+                                          self.__class__.__name__
+                                          )
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1592,7 +1594,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 return
                 
         if len(selected_filters) > 1:
-            self.add_text_to_display.emit(f"Only a single subset can be used for {plot_type}", self.__class__.__name__)
+            self.add_text_to_display.emit(f"Only a single subset can be used for {plot_type}",
+                                          self.__class__.__name__
+                                          )
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1644,12 +1648,18 @@ class ProteinView(MetaView, WalkthroughMixin):
                                 logscales=[False, False], dataset_label=dataset_label,
                             )
                         else:
-                            self.logger.info("No plot data generates for the requested plot configuration", self.__class__.__name__)
-                            self.add_text_to_display("No plot data generates for the requested plot configuration", self.__class__.__name__)
+                            self.logger.info("No plot data generates for the requested plot configuration")
+                            self.add_text_to_display("No plot data generates for the requested plot configuration",
+                                                     self.__class__.__name__
+                                                     )
                             return
                     else:
-                        self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
-                        self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                        self.logger.warning(f"Invalid plot type: {plot_type}",
+                                            self.__class__.__name__
+                                            )
+                        self.add_text_to_display.emit(f"Invalid plot type: {plot_type}",
+                                                      self.__class__.__name__
+                                                      )
                         return
 
                     self.allowed_plot_type = plot_type
@@ -1671,8 +1681,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                     logscales=[False, False], dataset_label="Fit",
                 )
             else:
-                self.logger.info("Unable to fit a double gaussian to the histogram", self.__class__.__name__)
-                self.add_text_to_display("Unable to fit a double gaussian to the histogram", self.__class__.__name__)
+                self.logger.info("Unable to fit a double gaussian to the histogram")
+                self.add_text_to_display("Unable to fit a double gaussian to the histogram",
+                                         self.__class__.__name__
+                                         )
                 return
 
             amp1, mean1, std1, amp2, mean2, std2 = popt
@@ -1723,9 +1735,21 @@ class ProteinView(MetaView, WalkthroughMixin):
             df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
 
             if not df_prolate.empty:
-                self.update_plot("Scatterplot", df_prolate, ["V", "m"], ["nm$^{3}$", "arb. units"], logscales=[False, False], dataset_label="Prolate Solutions")
+                self.update_plot("Scatterplot",
+                                 df_prolate,
+                                 ["V", "m"],
+                                 ["nm$^{3}$", "arb. units"],
+                                 logscales=[False, False],
+                                 dataset_label="Prolate Solutions"
+                                 )
             if not df_oblate.empty:
-                self.update_plot("Scatterplot", df_oblate, ["V", "m"], ["nm$^{3}$", "arb. units"], logscales=[False, False], dataset_label="Oblate Solutions")
+                self.update_plot("Scatterplot",
+                                 df_oblate,
+                                 ["V", "m"],
+                                 ["nm$^{3}$", "arb. units"],
+                                 logscales=[False, False],
+                                 dataset_label="Oblate Solutions"
+                                 )
 
     @log(logger=logger)
     def set_query(self, query, table_name):
