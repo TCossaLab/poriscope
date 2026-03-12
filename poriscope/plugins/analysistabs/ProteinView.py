@@ -955,7 +955,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             return
 
         if selected_filters is not None and len(selected_filters) > 1:
-            self.add_text_to_display(
+            self.add_text_to_display.emit(
                 "Unable to plot more than one subset at a time, select only one filter to apply",
                 self.__class__.__name__,
             )
@@ -1510,7 +1510,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
         :rtype: Optional[List[float]]
         """
-        min_prominence = np.max(amplitude) * 0.05
+        min_prominence = np.max(amplitude) * 0.02
         peaks, properties = find_peaks(amplitude, prominence=min_prominence)
 
         if len(peaks) < 2:
@@ -1720,7 +1720,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
             else:
                 self.logger.info("Unable to fit a double gaussian to the histogram")
-                self.add_text_to_display(
+                self.add_text_to_display.emit(
                     "Unable to fit a double gaussian to the histogram",
                     self.__class__.__name__,
                 )
@@ -1730,11 +1730,11 @@ class ProteinView(MetaView, WalkthroughMixin):
             amp1, mean1, std1, amp2, mean2, std2 = popt
 
             if mean1 > mean2:
-                mean_max, std_max = mean1, std1
-                mean_min, std_min = mean2, std2
+                mean_max, std_max = mean1, np.abs(std1)
+                mean_min, std_min = mean2, np.abs(std2)
             else:
-                mean_max, std_max = mean2, std2
-                mean_min, std_min = mean1, std1
+                mean_max, std_max = mean2, np.abs(std2)
+                mean_min, std_min = mean1, np.abs(std1)
 
             deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
             deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
