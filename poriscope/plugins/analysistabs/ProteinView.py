@@ -175,7 +175,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         dist_outer.addWidget(self.dist_toolbar)
 
         def activate(canvas):
-            self.dist_toolbar.set_canvas(canvas)
+            self.dist_toolbar.canvas = canvas
 
         self.canvas_hist.mpl_connect(
             "button_press_event", lambda evt: activate(self.canvas_hist)
@@ -312,7 +312,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.fig_vm.clear()
         self.ax_vm = self.fig_vm.add_subplot(1, 1, 1)
 
+        try:
+            self.fig_hist.tight_layout(pad=0.5)
+        except Exception:
+            pass
         self.canvas_hist.draw()
+        try:
+            self.fig_vm.tight_layout(pad=0.5)
+        except Exception:
+            pass
         self.canvas_vm.draw()
 
         # Reset plot bookkeeping variables TBD
@@ -372,7 +380,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.legend(loc="best")
+        ax.legend(loc="best", fontsize="x-small")
 
     def update_plot(
         self,
@@ -406,6 +414,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         else:
             raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
 
+        try:
+            canvas.figure.tight_layout(pad=0.5)
+        except Exception:
+            pass
         canvas.draw()
         self._commit_cache()
 
@@ -1263,8 +1275,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
-        pore_dimensions = parameters["pore_dimensions"]
-        d, L = map(float, pore_dimensions.split(","))
+        d = float(parameters["pore_diameter"])
+        L = float(parameters["pore_length"])
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
         ] = self.selected_experiment_and_channels_by_loader.get(loader)
