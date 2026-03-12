@@ -538,9 +538,10 @@ class MetaDatabaseLoader(BaseDataPlugin):
             yield i / num_events
         yield 1.0
 
-
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init: bool = False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing event counts per experiment and channel.
 
@@ -560,12 +561,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
             event_counts.
         """
         self._ensure_event_counts()
-        result = self.query_database_directly("""
+        result = self.query_database_directly(
+            """
             SELECT exp.name, cs.channel_id, cs.event_count
             FROM event_counts cs
             JOIN experiments exp ON exp.id = cs.experiment_id
             ORDER BY exp.name, cs.channel_id
-        """)
+        """
+        )
         if result is None or result.empty:
             return "No experiments found."
 
@@ -1200,7 +1203,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :raises sqlite3.Error: If a database error occurs during table creation or population.
         """
         pass
-    
+
     @log(logger=logger)
     def _finalize_initialization(self):
         """

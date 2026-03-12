@@ -917,7 +917,14 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 existing_tables.remove("sqlite_sequence")
 
             # Check if the existing tables match the expected ones (except for event_counts, which is optional to acocunt for old DB versions)
-            core_tables = {"events", "channels", "experiments", "data", "sublevels", "columns"}
+            core_tables = {
+                "events",
+                "channels",
+                "experiments",
+                "data",
+                "sublevels",
+                "columns",
+            }
             missing_core = [t for t in core_tables if t not in existing_tables]
             if missing_core:
                 raise ValueError(
@@ -978,7 +985,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             return "TEXT"  # Default for other or unknown types
 
     @log(logger=logger)
-    def _ensure_event_counts (self) -> None:
+    def _ensure_event_counts(self) -> None:
         """
         Ensure event_counts table and its triggers exist, creating and populating
         them from scratch if they don't (backwards compatibility for old DBs).
@@ -1000,7 +1007,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                     self.logger.info(
                         "event_counts table not found, creating and populating from existing events."
                     )
-                    conn.executescript("""
+                    conn.executescript(
+                        """
                         CREATE TABLE IF NOT EXISTS event_counts (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             experiment_id INTEGER NOT NULL,
@@ -1037,11 +1045,13 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                         GROUP BY experiment_id, channel_id
                         ON CONFLICT(experiment_id, channel_id)
                         DO UPDATE SET event_count = excluded.event_count;
-                    """)
+                    """
+                    )
                     conn.commit()
-                    self.logger.info("event_counts table created and populated successfully.")
+                    self.logger.info(
+                        "event_counts table created and populated successfully."
+                    )
 
         except sqlite3.Error as e:
             self.logger.error(f"Failed to ensure event_counts table: {e}")
             raise
-
