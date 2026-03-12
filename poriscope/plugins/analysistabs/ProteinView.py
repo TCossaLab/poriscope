@@ -1559,13 +1559,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
         L = float(parameters["pore_length"])
-        
+
         # --- OPTIMIZATION 1: Extract invariants ---
         N = parameters.get("n_values", 100)
         tol = 1e-5
         prolate_setup = {
-            True:  {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
-            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]}
+            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
+            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]},
         }
 
         experiments_and_channels: Optional[
@@ -1585,18 +1585,25 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.add_text_to_display.emit(f"Only a single experiment can be used for {plot_type}",
                                           self.__class__.__name__
                                           )
+
             return
 
         for exp, channels in experiments_and_channels.items():
             if len(channels) > 1:
-                self.logger.warning("Only a single channel at a time can be used for protein ensemble analysis")
-                self.add_text_to_display.emit("Only a single channel at a time can be used for protein ensemble analysis", self.__class__.__name__)
+                self.logger.warning(
+                    "Only a single channel at a time can be used for protein ensemble analysis"
+                )
+                self.add_text_to_display.emit(
+                    "Only a single channel at a time can be used for protein ensemble analysis",
+                    self.__class__.__name__,
+                )
                 return
-                
+
         if len(selected_filters) > 1:
             self.add_text_to_display.emit(f"Only a single subset can be used for {plot_type}",
                                           self.__class__.__name__
                                           )
+
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1614,17 +1621,25 @@ class ProteinView(MetaView, WalkthroughMixin):
                     sizes = False
 
                     self.global_signal.emit(
-                        "MetaDatabaseLoader", loader, "construct_event_data_query",
-                        (sql_filter, exp_and_ch_arg), "relay_event_query", (),
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_event_data_query",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_query",
+                        (),
                     )
                     if self.event_query == "":
                         return
-                        
+
                     self.global_signal.emit(
-                        "MetaDatabaseLoader", loader, "load_event_data",
-                        (sql_filter, exp_and_ch_arg), "relay_event_data_generator", (),
+                        "MetaDatabaseLoader",
+                        loader,
+                        "load_event_data",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_data_generator",
+                        (),
                     )
-                    
+
                     if self.event_data_generator:
                         if plot_type in ["Raw Histogram", "Filtered Histogram"]:
                             bins = parameters["bins"]
@@ -1632,20 +1647,29 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                             bin_sensitive = True
                             bins_changed = getattr(self, "allowed_bins", None) != bins
-                            sizes_changed = getattr(self, "allowed_sizes", None) != sizes
-                            
+                            sizes_changed = (
+                                getattr(self, "allowed_sizes", None) != sizes
+                            )
+
                             if bin_sensitive and (bins_changed or sizes_changed):
                                 axis_type = "2d"
                                 self._reset_actions(axis_type=axis_type)
 
                         plot_data = self._construct_all_points_histogram(
-                            self.event_data_generator, plot_type, bins=bins, sizes=sizes,
+                            self.event_data_generator,
+                            plot_type,
+                            bins=bins,
+                            sizes=sizes,
                         )
 
                         if plot_data is not None:
                             self.update_plot(
-                                plot_type, plot_data, plot_data.columns, ["pA", ""],
-                                logscales=[False, False], dataset_label=dataset_label,
+                                plot_type,
+                                plot_data,
+                                plot_data.columns,
+                                ["pA", ""],
+                                logscales=[False, False],
+                                dataset_label=dataset_label,
                             )
                         else:
                             self.logger.info("No plot data generates for the requested plot configuration")
@@ -1660,31 +1684,41 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.add_text_to_display.emit(f"Invalid plot type: {plot_type}",
                                                       self.__class__.__name__
                                                       )
+
                         return
 
                     self.allowed_plot_type = plot_type
                     self.allowed_bins = bins
                     self.allowed_sizes = sizes
 
-                    self.plotted_datasets.add((loader, exp, channel, sql_filter, subset_name))
+                    self.plotted_datasets.add(
+                        (loader, exp, channel, sql_filter, subset_name)
+                    )
 
             # --- Fit Double Gaussian ---
             popt, pcov = self._fit_double_gaussian(
                 plot_data["Normalized Current"].values, plot_data["Amplitude"].values
             )
-            
+
             if popt is not None:
-                fit_data = self._double_gaussian(plot_data["Normalized Current"].values, *popt)
+                fit_data = self._double_gaussian(
+                    plot_data["Normalized Current"].values, *popt
+                )
                 plot_data["Amplitude"] = fit_data
                 self.update_plot(
-                    plot_type, plot_data, plot_data.columns, ["pA", ""],
-                    logscales=[False, False], dataset_label="Fit",
+                    plot_type,
+                    plot_data,
+                    plot_data.columns,
+                    ["pA", ""],
+                    logscales=[False, False],
+                    dataset_label="Fit",
                 )
             else:
                 self.logger.info("Unable to fit a double gaussian to the histogram")
                 self.add_text_to_display("Unable to fit a double gaussian to the histogram",
                                          self.__class__.__name__
                                          )
+
                 return
 
             amp1, mean1, std1, amp2, mean2, std2 = popt
@@ -1701,7 +1735,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             prolate_solutions = []
             oblate_solutions = []
-            
+
             for prolate in [True, False]:
                 setup = prolate_setup[prolate]
 
@@ -1750,6 +1784,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                                  logscales=[False, False],
                                  dataset_label="Oblate Solutions"
                                  )
+
 
     @log(logger=logger)
     def set_query(self, query, table_name):
