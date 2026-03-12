@@ -14,6 +14,9 @@
     * Full SQL will always be printed after filter creation/editing, regardless of validity
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
 
+* **Documentation**
+    * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time
+
 ### General Fixes and Improvements:
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
     * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
@@ -21,10 +24,9 @@
     * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
     * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
 
+
 ## Poriscope 1.5: 2025-12-08
 
-* **Click outside the pop-up or the x button in the selection menus (compatible with MacOs and Linux)**
-* **Append SQL-like filters instead of overriding when loading a new .json file in the Metadata tab**
 ### What's New since Poriscope 1.4:
 * **linting and unit tests**
     * repository now runs sanity checks before allowing commits
@@ -96,6 +98,10 @@
 * **Updated repository management**
     * Now includes pre-commit checks for code quality, linting, and proper type hinting
     * Post-merge pipeline updated to account for docs updates
+
+### General Fixes and Improvements:
+* **Click outside the pop-up or the x button in the selection menus (compatible with MacOs and Linux)**
+* **Append SQL-like filters instead of overriding when loading a new .json file in the Metadata tab**
 
 ## Poriscope 1.4: 2025-06-09
 

@@ -52,6 +52,10 @@ release_date = VERSION_DATE.strftime("%B %d, %Y")
 
 extensions = ["sphinx.ext.autodoc", "sphinx_tabs.tabs", "sphinx.ext.intersphinx"]
 
+autodoc_mock_imports = [
+    "PySide6",
+]
+
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),  # for abc.ABC, abc.ABCMeta
     "qt": ("https://doc.qt.io/qtforpython/", None),  # for PySide6.QtCore.QObject, etc.
