@@ -757,7 +757,7 @@ class ProteinControls(QWidget):
             if self.event_index_lineEdit.isValid():
                 parameters["event_index"] = self.event_index_lineEdit.get_values()
 
-        except (AttributeError):
+        except AttributeError:
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -878,9 +878,7 @@ class ProteinControls(QWidget):
         self.export_plot_data_pushButton.setEnabled(is_export_valid)
 
         self.update_plot_button.setEnabled(
-            db_loader_loaded
-            and pore_diameter_valid
-            and pore_length_valid
+            db_loader_loaded and pore_diameter_valid and pore_length_valid
         )
         self.undo_button.setEnabled(is_undo_valid)
         self.reset_button.setEnabled(is_reset_valid)
