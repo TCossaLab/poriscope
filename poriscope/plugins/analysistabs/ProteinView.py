@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, least_squares
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
@@ -409,6 +409,51 @@ class ProteinView(MetaView, WalkthroughMixin):
         canvas.draw()
         self._commit_cache()
 
+
+    @log(logger=logger)
+    def _plot_scatterplot(self, ax, data, cols, units, logscales, dataset_label=""):
+        """
+        Create a scatterplot of two metadata columns.
+
+        :param ax: Matplotlib axes object.
+        :type ax: matplotlib.axes.Axes
+        :param data: DataFrame containing the columns to plot.
+        :type data: pd.DataFrame
+        :param cols: List containing two column names for x and y axes.
+        :type cols: List[str]
+        :param units: List of corresponding units for x and y axes.
+        :type units: List[str]
+        :param logscales: List indicating log-scaling for x and y axes.
+        :type logscales: List[bool]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        """
+        x_label, y_label = cols
+        x_units, y_units = units
+        logx, logy = logscales
+
+        x = data[x_label].values
+        y = data[y_label].values
+
+        x_label = format_axis_label(x_label, x_units)
+        y_label = format_axis_label(y_label, y_units)
+
+        if logx:
+            x_label = f"log10({x_label})"
+        if logy:
+            y_label = f"log10({y_label})"
+
+        xdata, ydata = self._logscale_and_filter_multiple_columns(
+            x, y, log_flags=[logx, logy]
+        )
+        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+
+        self._update_cache((xdata, x_label), (ydata, y_label))
+        ax.legend(loc="best")
+
+        
     @log(logger=logger)
     @override
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
@@ -1064,7 +1109,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         return g1 + g2
 
     @log(logger=logger)
-    def _spheroid_blockage(self, V, m, deltaI_I_max, deltaI_I_min, d, L, orientation=True, prolate=True):
+    def _spheroid_blockage(self, vars, deltaI_I_max, deltaI_I_min, d, L, prolate=True):
         """
         return the value of the difference between v,m formula and a given blockage for a spheroid
 
@@ -1080,13 +1125,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type d: float
         :param L: the length of the pore in nm
         :type L: float
-        :param orientation: the angle of the protein, can either be True (theta=0) or False (theta=90) and nothing else
-        :type theta: float
         :param sign: True for prolate (0<m<1), False for oblate (m>1)
         :type sign: bool
         :return: equations for fsolve, list of two equations in two unknowns (V and m) that resolve to floats - these should be both 0 when V and m are valid solutions
         :rtype: List[float]
         """
+        V, m = vars
         if prolate:
             gamma_parallel = 1 / (1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m)))
         elif not prolate:
@@ -1178,13 +1222,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: None
         :rtype: None
         """
-        # TODO: implement ensemble distribution and V/M computation and plotting
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
+        pore_dimensions = parameters["pore_dimensions"]
+        d, L = map(float, pore_dimensions.split(','))
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
         ] = self.selected_experiment_and_channels_by_loader.get(loader)
@@ -1336,8 +1381,101 @@ class ProteinView(MetaView, WalkthroughMixin):
                     plot_data.columns,
                     ["pA", ""],
                     logscales=[False, False],
-                    dataset_label=dataset_label,
+                    dataset_label='Fit',
                 )
+            else:
+                self.logger.info(
+                                    "Unable to fit a double gaussian to the histogram",
+                                    self.__class__.__name__,
+                                )
+                self.add_text_to_display(
+                                    "Unable to fit a double gaussian to the histogram",
+                                    self.__class__.__name__,
+                                )
+                return
+
+            N = 1000
+            amp1, mean1, std1, amp2, mean2, std2 = popt
+
+            # FIXED: Assign the correct means to mean_min
+            if mean1 > mean2:
+                mean_max = mean1
+                std_max = std1
+                mean_min = mean2  
+                std_min = std2
+            else:
+                mean_max = mean2
+                std_max = std2
+                mean_min = mean1  
+                std_min = std1
+
+            deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
+            deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
+
+            prolate_solutions = []
+            oblate_solutions = []
+            tol = 1e-5
+            for prolate in [True, False]: 
+                if prolate:
+                    lower_bounds = [1, 0.01]
+                    upper_bounds = [np.inf, 0.99999] 
+                    initial_guess = [64.0, 0.75]
+                else:
+                    lower_bounds = [1, 1.00001]
+                    upper_bounds = [np.inf, np.inf]
+                    initial_guess = [64.0, 1.5]
+
+                for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
+                    solution = least_squares(
+                        self._spheroid_blockage, 
+                        initial_guess, 
+                        args=(dI_M, dI_m, d, L, prolate),
+                        bounds=(lower_bounds, upper_bounds)
+                    )
+                    
+                    # Only proceed if the solver successfully converged
+                    if solution.success: #check each residual
+                        if np.max(np.abs(solution.fun)) > tol:
+                            continue
+                                            
+                        V_sol, m_sol = solution.x
+
+                        eq1_err, eq2_err = self._spheroid_blockage((V_sol, m_sol), dI_M, dI_m, d, L, prolate)
+                        residuals = eq1_err**2 + eq2_err**2
+                        if residuals > tol: #check aggregate residual
+                            continue
+
+                        # Append only the clean, mathematically sound solutions
+                        if prolate:
+                            prolate_solutions.append((V_sol, m_sol))
+                        elif not prolate:
+                            oblate_solutions.append((V_sol, m_sol))
+                        
+            # --- Create the Pandas DataFrames ---
+            
+            df_prolate = pd.DataFrame(prolate_solutions, columns=['V', 'm'])
+            df_oblate = pd.DataFrame(oblate_solutions, columns=['V', 'm'])
+
+            if not df_prolate.empty:
+                self.update_plot(
+                    'Scatterplot',
+                    df_prolate,
+                    ['V', 'm'],
+                    ["nm$^{3}$", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label='Prolate Solutions',
+                )
+            if not df_oblate.empty:
+                self.update_plot(
+                    'Scatterplot',
+                    df_oblate,
+                    ['V', 'm'],
+                    ["nm$^{3}$", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label='Oblate Solutions',
+                )
+                
+                
 
     @log(logger=logger)
     def set_query(self, query, table_name):
