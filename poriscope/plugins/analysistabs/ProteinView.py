@@ -1160,17 +1160,17 @@ class ProteinView(MetaView, WalkthroughMixin):
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
         L = float(parameters["pore_length"])
-        
+
         # --- OPTIMIZATION 1: Extract invariants from loops ---
-        N = parameters.get("n_values", 100) # Default if missing
+        N = parameters.get("n_values", 100)  # Default if missing
         bins = parameters.get("bins")
         sizes = parameters.get("sizes")
         tol = 1e-5
-        
+
         # Pre-define bounds and guesses so they aren't recreated 2*N times per event
         prolate_setup = {
-            True:  {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
-            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]}
+            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
+            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]},
         }
 
         experiments_and_channels: Optional[
@@ -1187,17 +1187,28 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(f"Only a single experiment can be used for {plot_type}", self.__class__.__name__)
+            self.add_text_to_display.emit(
+                f"Only a single experiment can be used for {plot_type}",
+                self.__class__.__name__,
+            )
             return
 
         for exp, channels in experiments_and_channels.items():
             if len(channels) > 1:
-                self.logger.warning("Only a single channel at a time can be used for protein ensemble analysis")
-                self.add_text_to_display.emit("Only a single channel at a time can be used for protein ensemble analysis", self.__class__.__name__)
+                self.logger.warning(
+                    "Only a single channel at a time can be used for protein ensemble analysis"
+                )
+                self.add_text_to_display.emit(
+                    "Only a single channel at a time can be used for protein ensemble analysis",
+                    self.__class__.__name__,
+                )
                 return
-                
+
         if len(selected_filters) > 1:
-            self.add_text_to_display.emit("Only a single subset can be used for protein analysis", self.__class__.__name__)
+            self.add_text_to_display.emit(
+                "Only a single subset can be used for protein analysis",
+                self.__class__.__name__,
+            )
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1206,38 +1217,59 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                 for subset_name, sql_filter in selected_filters.items():
                     self.global_signal.emit(
-                        "MetaDatabaseLoader", loader, "construct_event_data_query",
-                        (sql_filter, exp_and_ch_arg), "relay_event_query", ()
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_event_data_query",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_query",
+                        (),
                     )
-                    
+
                     if self.event_query == "":
                         return
-                        
+
                     self.global_signal.emit(
-                        "MetaDatabaseLoader", loader, "load_event_data",
-                        (sql_filter, exp_and_ch_arg), "relay_event_data_generator", ()
+                        "MetaDatabaseLoader",
+                        loader,
+                        "load_event_data",
+                        (sql_filter, exp_and_ch_arg),
+                        "relay_event_data_generator",
+                        (),
                     )
-                    
+
                     if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
-                        self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
-                        self.add_text_to_display.emit(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                        self.logger.warning(
+                            f"Invalid plot type: {plot_type}", self.__class__.__name__
+                        )
+                        self.add_text_to_display.emit(
+                            f"Invalid plot type: {plot_type}", self.__class__.__name__
+                        )
                         return
-                        
+
                     if self.event_data_generator is None:
-                        self.logger.warning("No events in dataset or unable to create event generator", self.__class__.__name__)
-                        self.add_text_to_display.emit("No events in dataset or unable to create event generator", self.__class__.__name__)
+                        self.logger.warning(
+                            "No events in dataset or unable to create event generator",
+                            self.__class__.__name__,
+                        )
+                        self.add_text_to_display.emit(
+                            "No events in dataset or unable to create event generator",
+                            self.__class__.__name__,
+                        )
                         return
 
                     processed = 0
                     prolate_solutions = []
                     oblate_solutions = []
-                    
+
                     for event in self.event_data_generator:
                         processed += 1
                         print(processed)
-                        
+
                         plot_data = self._construct_single_event_histogram(
-                            event, plot_type, bins=bins, sizes=sizes,
+                            event,
+                            plot_type,
+                            bins=bins,
+                            sizes=sizes,
                         )
                         if plot_data is None:
                             continue
@@ -1247,28 +1279,36 @@ class ProteinView(MetaView, WalkthroughMixin):
                             plot_data["Amplitude"].values,
                         )
 
-                        if popt is None or pcov is None or np.any(np.isinf(pcov)) or np.any(np.isnan(pcov)):
+                        if (
+                            popt is None
+                            or pcov is None
+                            or np.any(np.isinf(pcov))
+                            or np.any(np.isnan(pcov))
+                        ):
                             continue
-                            
+
                         perr = np.sqrt(np.diag(pcov))
                         if np.any(perr > np.abs(popt) * 10):
                             continue
-                            
+
                         mu1_idx, mu2_idx = 1, 4
                         mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
-                        var_mu1, var_mu2 = pcov[mu1_idx, mu1_idx], pcov[mu2_idx, mu2_idx]
+                        var_mu1, var_mu2 = (
+                            pcov[mu1_idx, mu1_idx],
+                            pcov[mu2_idx, mu2_idx],
+                        )
                         cov_mu1_mu2 = pcov[mu1_idx, mu2_idx]
                         variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
-                        
+
                         if variance_diff <= 0:
                             continue
-                            
+
                         se_diff = np.sqrt(variance_diff)
                         t_stat = abs(mu1 - mu2) / se_diff
                         N_points = len(plot_data["Normalized Current"].values)
                         df = N_points - len(popt)
                         p_value = 2 * t.sf(t_stat, df)
-                        
+
                         if p_value > 0.05:
                             continue
 
@@ -1276,7 +1316,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                         abs_A1, abs_A2 = abs(A1), abs(A2)
                         if max(abs_A1, abs_A2) == 0:
                             continue
-                            
+
                         if min(abs_A1, abs_A2) / max(abs_A1, abs_A2) < 0.05:
                             continue
 
@@ -1294,7 +1334,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                         for prolate in [True, False]:
                             setup = prolate_setup[prolate]
-                            
+
                             for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
                                 solution = least_squares(
                                     self._spheroid_blockage,
@@ -1307,7 +1347,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                                     # --- OPTIMIZATION 2: Remove redundant function calls ---
                                     if np.max(np.abs(solution.fun)) > tol:
                                         continue
-                                    
+
                                     # solution.fun ALREADY contains the output of self._spheroid_blockage
                                     # Just sum the squares directly from the solver's result array
                                     residuals = np.sum(solution.fun**2)
@@ -1319,26 +1359,29 @@ class ProteinView(MetaView, WalkthroughMixin):
                                         prolate_solutions.append((V_sol, m_sol))
                                     else:
                                         oblate_solutions.append((V_sol, m_sol))
-                                        
+
             # --- Create the Pandas DataFrames ---
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
             df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
 
             if not df_prolate.empty:
-                self.update_plot("Scatterplot",
-                                 df_prolate,
-                                 ["V", "m"],
-                                 ["nm$^{3}$", "arb. units"],
-                                 logscales=[False, False],
-                                 dataset_label="Prolate Solutions"
-                                 )
+                self.update_plot(
+                    "Scatterplot",
+                    df_prolate,
+                    ["V", "m"],
+                    ["nm$^{3}$", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label="Prolate Solutions",
+                )
             if not df_oblate.empty:
-                self.update_plot("Scatterplot",
-                                 df_oblate,
-                                 ["V", "m"],
-                                 ["nm$^{3}$", "arb. units"],
-                                 logscales=[False, False],
-                                 dataset_label="Oblate Solutions")
+                self.update_plot(
+                    "Scatterplot",
+                    df_oblate,
+                    ["V", "m"],
+                    ["nm$^{3}$", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label="Oblate Solutions",
+                )
 
     @log(logger=logger)
     def _double_gaussian(self, x, amp1, mean1, std1, amp2, mean2, std2):
