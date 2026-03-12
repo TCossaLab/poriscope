@@ -1162,7 +1162,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         L = float(parameters["pore_length"])
 
         # --- OPTIMIZATION 1: Extract invariants from loops ---
-        N = parameters.get("n_values", 100)  # Default if missing
+        N = int(parameters.get("n_values") or 100) #Default if missing
         bins = parameters.get("bins")
         sizes = parameters.get("sizes")
         tol = 1e-5

@@ -733,7 +733,7 @@ class ProteinControls(QWidget):
                 "pore_diameter": self.pore_diameter_lineEdit.text(),  # TBD: decide on format and parsing in controller
                 "pore_length": self.pore_length_lineEdit.text(),  # TBD: decide on format and parsing in controller
                 "event_index": [],
-                "n_values": int(self.n_values_lineEdit.text().strip()),
+                "n_values": self.n_values_lineEdit.text(),
                 "sizes": self.sizes_checkbox.isChecked(),
                 "bins": (
                     [x.strip() for x in self.bins_lineEdit.text().split(",")]
@@ -757,7 +757,7 @@ class ProteinControls(QWidget):
             if self.event_index_lineEdit.isValid():
                 parameters["event_index"] = self.event_index_lineEdit.get_values()
 
-        except (AttributeError, ValueError):
+        except (AttributeError):
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -789,8 +789,6 @@ class ProteinControls(QWidget):
 
         individual_selected = self.individual_button.isChecked()
         ensemble_selected = self.ensemble_button.isChecked()
-
-        n_values_valid = bool(self.n_values_lineEdit.text().strip())
 
         # -----------------
         # Default states
@@ -883,7 +881,6 @@ class ProteinControls(QWidget):
             db_loader_loaded
             and pore_diameter_valid
             and pore_length_valid
-            and n_values_valid
         )
         self.undo_button.setEnabled(is_undo_valid)
         self.reset_button.setEnabled(is_reset_valid)
