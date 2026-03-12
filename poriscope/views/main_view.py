@@ -89,8 +89,8 @@ class MainView(QMainWindow, WalkthroughMixin):
         super().__init__()
         self._init_walkthrough()
         self.setWindowTitle(f"Poriscope {__VERSION__}")
-        self.setGeometry(100, 100, 1200, 650)
-        self.setMinimumSize(QSize(800, 750))
+        self.setGeometry(100, 100, 1200, 750)
+        self.setMinimumSize(QSize(1150, 750))
         self.available_plugins = available_plugins
         self.pages = {}
         self.received_analysis_tabs.connect(self.populate_plugins_menu)
