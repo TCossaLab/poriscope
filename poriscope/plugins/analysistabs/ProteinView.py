@@ -1441,7 +1441,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 return
 
-            N = parameters["n_values"]  # number of samples to draw from the fitted distributions for solving V and m
+            N = parameters[
+                "n_values"
+            ]  # number of samples to draw from the fitted distributions for solving V and m
             amp1, mean1, std1, amp2, mean2, std2 = popt
 
             # FIXED: Assign the correct means to mean_min

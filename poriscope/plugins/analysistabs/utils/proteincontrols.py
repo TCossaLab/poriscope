@@ -280,8 +280,8 @@ class ProteinControls(QWidget):
         bins_sizes_right_label_layout.addWidget(bins_label, 1)
         bins_sizes_right_label_layout.addWidget(sizes_label, 0)
 
-        n_bins_labels_layout.addWidget(self.n_values_label, 1)          # left half
-        n_bins_labels_layout.addWidget(bins_sizes_right_label_widget, 1) # right half
+        n_bins_labels_layout.addWidget(self.n_values_label, 1)  # left half
+        n_bins_labels_layout.addWidget(bins_sizes_right_label_widget, 1)  # right half
 
         # ROW 3: N + BINS + SIZES inputs
         # Left half: N input | Right half: BINS input + SIZES checkbox
@@ -326,7 +326,7 @@ class ProteinControls(QWidget):
         bins_sizes_right_layout.addWidget(self.bins_lineEdit, 1)
         bins_sizes_right_layout.addLayout(sizes_box_wrap, 0)
 
-        n_bins_inputs_layout.addWidget(self.n_values_lineEdit, 1)   # left half
+        n_bins_inputs_layout.addWidget(self.n_values_lineEdit, 1)  # left half
         n_bins_inputs_layout.addWidget(bins_sizes_right_widget, 1)  # right half
 
         self.sizes_checkbox.toggled.connect(self._on_sizes_checkbox_toggled)
@@ -468,7 +468,7 @@ class ProteinControls(QWidget):
         self.pore_length_lineEdit.setMinimumWidth(80)
         self.event_index_lineEdit.setMinimumWidth(160)
         self.n_values_lineEdit.setMinimumWidth(60)
-        self.bins_lineEdit.setMinimumWidth(60) 
+        self.bins_lineEdit.setMinimumWidth(60)
 
         # Add groupbox to main layout
         main_layout.addWidget(self.groupBox)
@@ -879,7 +879,12 @@ class ProteinControls(QWidget):
 
         self.export_plot_data_pushButton.setEnabled(is_export_valid)
 
-        self.update_plot_button.setEnabled(db_loader_loaded and pore_diameter_valid and pore_length_valid and n_values_valid)
+        self.update_plot_button.setEnabled(
+            db_loader_loaded
+            and pore_diameter_valid
+            and pore_length_valid
+            and n_values_valid
+        )
         self.undo_button.setEnabled(is_undo_valid)
         self.reset_button.setEnabled(is_reset_valid)
 
