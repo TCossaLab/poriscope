@@ -409,7 +409,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         canvas.draw()
         self._commit_cache()
 
-
     @log(logger=logger)
     def _plot_scatterplot(self, ax, data, cols, units, logscales, dataset_label=""):
         """
@@ -453,7 +452,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._update_cache((xdata, x_label), (ydata, y_label))
         ax.legend(loc="best")
 
-        
     @log(logger=logger)
     @override
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
@@ -1104,8 +1102,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: array of gaussian values at the given x positions
         :rtype: npt.NDArray[np.float64]
         """
-        g1 = amp1 * np.exp(-(x - mean1)**2 / (2 * std1**2))
-        g2 = amp2 * np.exp(-(x - mean2)**2 / (2 * std2**2))
+        g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1**2))
+        g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2**2))
         return g1 + g2
 
     @log(logger=logger)
@@ -1132,34 +1130,71 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         V, m = vars
         if prolate:
-            gamma_parallel = 1 / (1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m)))
+            gamma_parallel = 1 / (
+                1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m))
+            )
         elif not prolate:
-            gamma_parallel = 1 / (1 - 1 / (m**2 - 1) * (m / np.sqrt(m**2 - 1) * np.log(m + np.sqrt(m**2 - 1)) - 1))
+            gamma_parallel = 1 / (
+                1
+                - 1
+                / (m**2 - 1)
+                * (m / np.sqrt(m**2 - 1) * np.log(m + np.sqrt(m**2 - 1)) - 1)
+            )
         elif prolate is None:
             self.logger.error("prolate must be True or False", self.__class__.__name__)
-            self.add_text_to_display.emit("prolate must be True or False", self.__class__.__name__)
+            self.add_text_to_display.emit(
+                "prolate must be True or False", self.__class__.__name__
+            )
             return None
 
-        gamma_perpendicular = 1 / (1 - 0.5*gamma_parallel)
+        gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
 
-        b = (3*V / (4*np.pi*m))**(1/3)
-        a = b*m
-        d_ptn = 2*b
-        l_ptn = 2*a
+        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
+        a = b * m
+        d_ptn = 2 * b
+        l_ptn = 2 * a
 
-        gamma_parallel_prime = gamma_parallel / (1 - 0.71 * (d_ptn**2 + l_ptn**2)/(d**2 + l_ptn**2) * (d_ptn/d)**2)
-        gamma_perpendicular_prime = gamma_perpendicular / (1 - (0.32 + 0.48*l_ptn/d) * l_ptn * d_ptn**2/d**3) #double check typo
+        gamma_parallel_prime = gamma_parallel / (
+            1 - 0.71 * (d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2) * (d_ptn / d) ** 2
+        )
+        gamma_perpendicular_prime = gamma_perpendicular / (
+            1 - (0.32 + 0.48 * l_ptn / d) * l_ptn * d_ptn**2 / d**3
+        )  # double check typo
 
         if prolate:
-            eq1 = 4*V/(np.pi*d**2*(L+0.8*d)) * (gamma_perpendicular_prime + (gamma_parallel_prime - gamma_perpendicular_prime)) - deltaI_I_max
-            eq2 = 4*V/(np.pi*d**2*(L+0.8*d)) * gamma_perpendicular_prime - deltaI_I_min
+            eq1 = (
+                4
+                * V
+                / (np.pi * d**2 * (L + 0.8 * d))
+                * (
+                    gamma_perpendicular_prime
+                    + (gamma_parallel_prime - gamma_perpendicular_prime)
+                )
+                - deltaI_I_max
+            )
+            eq2 = (
+                4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
+                - deltaI_I_min
+            )
         elif not prolate:
-            eq1 = 4*V/(np.pi*d**2*(L+0.8*d)) * (gamma_perpendicular_prime + (gamma_parallel_prime - gamma_perpendicular_prime)) - deltaI_I_min
-            eq2 = 4*V/(np.pi*d**2*(L+0.8*d)) * gamma_perpendicular_prime - deltaI_I_max
+            eq1 = (
+                4
+                * V
+                / (np.pi * d**2 * (L + 0.8 * d))
+                * (
+                    gamma_perpendicular_prime
+                    + (gamma_parallel_prime - gamma_perpendicular_prime)
+                )
+                - deltaI_I_min
+            )
+            eq2 = (
+                4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
+                - deltaI_I_max
+            )
 
-        #when eq1 and eq2 are zero for a given (V,m), we have a mathematically valid solution, though not necessarily a physically valid one
+        # when eq1 and eq2 are zero for a given (V,m), we have a mathematically valid solution, though not necessarily a physically valid one
         return [eq1, eq2]
-        
+
     @log(logger=logger)
     def _fit_double_gaussian(self, bins, amplitude):
         """
@@ -1229,7 +1264,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         pore_dimensions = parameters["pore_dimensions"]
-        d, L = map(float, pore_dimensions.split(','))
+        d, L = map(float, pore_dimensions.split(","))
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
         ] = self.selected_experiment_and_channels_by_loader.get(loader)
@@ -1381,17 +1416,17 @@ class ProteinView(MetaView, WalkthroughMixin):
                     plot_data.columns,
                     ["pA", ""],
                     logscales=[False, False],
-                    dataset_label='Fit',
+                    dataset_label="Fit",
                 )
             else:
                 self.logger.info(
-                                    "Unable to fit a double gaussian to the histogram",
-                                    self.__class__.__name__,
-                                )
+                    "Unable to fit a double gaussian to the histogram",
+                    self.__class__.__name__,
+                )
                 self.add_text_to_display(
-                                    "Unable to fit a double gaussian to the histogram",
-                                    self.__class__.__name__,
-                                )
+                    "Unable to fit a double gaussian to the histogram",
+                    self.__class__.__name__,
+                )
                 return
 
             N = 1000
@@ -1401,12 +1436,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             if mean1 > mean2:
                 mean_max = mean1
                 std_max = std1
-                mean_min = mean2  
+                mean_min = mean2
                 std_min = std2
             else:
                 mean_max = mean2
                 std_max = std2
-                mean_min = mean1  
+                mean_min = mean1
                 std_min = std1
 
             deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
@@ -1415,10 +1450,10 @@ class ProteinView(MetaView, WalkthroughMixin):
             prolate_solutions = []
             oblate_solutions = []
             tol = 1e-5
-            for prolate in [True, False]: 
+            for prolate in [True, False]:
                 if prolate:
                     lower_bounds = [1, 0.01]
-                    upper_bounds = [np.inf, 0.99999] 
+                    upper_bounds = [np.inf, 0.99999]
                     initial_guess = [64.0, 0.75]
                 else:
                     lower_bounds = [1, 1.00001]
@@ -1427,22 +1462,24 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                 for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
                     solution = least_squares(
-                        self._spheroid_blockage, 
-                        initial_guess, 
+                        self._spheroid_blockage,
+                        initial_guess,
                         args=(dI_M, dI_m, d, L, prolate),
-                        bounds=(lower_bounds, upper_bounds)
+                        bounds=(lower_bounds, upper_bounds),
                     )
-                    
+
                     # Only proceed if the solver successfully converged
-                    if solution.success: #check each residual
+                    if solution.success:  # check each residual
                         if np.max(np.abs(solution.fun)) > tol:
                             continue
-                                            
+
                         V_sol, m_sol = solution.x
 
-                        eq1_err, eq2_err = self._spheroid_blockage((V_sol, m_sol), dI_M, dI_m, d, L, prolate)
+                        eq1_err, eq2_err = self._spheroid_blockage(
+                            (V_sol, m_sol), dI_M, dI_m, d, L, prolate
+                        )
                         residuals = eq1_err**2 + eq2_err**2
-                        if residuals > tol: #check aggregate residual
+                        if residuals > tol:  # check aggregate residual
                             continue
 
                         # Append only the clean, mathematically sound solutions
@@ -1450,32 +1487,30 @@ class ProteinView(MetaView, WalkthroughMixin):
                             prolate_solutions.append((V_sol, m_sol))
                         elif not prolate:
                             oblate_solutions.append((V_sol, m_sol))
-                        
+
             # --- Create the Pandas DataFrames ---
-            
-            df_prolate = pd.DataFrame(prolate_solutions, columns=['V', 'm'])
-            df_oblate = pd.DataFrame(oblate_solutions, columns=['V', 'm'])
+
+            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
+            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
 
             if not df_prolate.empty:
                 self.update_plot(
-                    'Scatterplot',
+                    "Scatterplot",
                     df_prolate,
-                    ['V', 'm'],
+                    ["V", "m"],
                     ["nm$^{3}$", "arb. units"],
                     logscales=[False, False],
-                    dataset_label='Prolate Solutions',
+                    dataset_label="Prolate Solutions",
                 )
             if not df_oblate.empty:
                 self.update_plot(
-                    'Scatterplot',
+                    "Scatterplot",
                     df_oblate,
-                    ['V', 'm'],
+                    ["V", "m"],
                     ["nm$^{3}$", "arb. units"],
                     logscales=[False, False],
-                    dataset_label='Oblate Solutions',
+                    dataset_label="Oblate Solutions",
                 )
-                
-                
 
     @log(logger=logger)
     def set_query(self, query, table_name):
