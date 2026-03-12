@@ -260,26 +260,37 @@ class ProteinControls(QWidget):
         individual_ensemble_layout.addWidget(self.individual_button, 1)
         individual_ensemble_layout.addWidget(self.ensemble_button, 1)
 
-        # ROW 2: BINS + SIZES labels
-        bins_sizes_labels_widget = QWidget(self.groupBox)
-        bins_sizes_labels_layout = QHBoxLayout(bins_sizes_labels_widget)
-        bins_sizes_labels_layout.setContentsMargins(0, 0, 0, 0)
-        bins_sizes_labels_layout.setSpacing(5)
+        # ROW 2: N + BINS + SIZES labels
+        # Left half: N label | Right half: BINS + SIZES labels grouped together
+        n_bins_labels_widget = QWidget(self.groupBox)
+        n_bins_labels_layout = QHBoxLayout(n_bins_labels_widget)
+        n_bins_labels_layout.setContentsMargins(0, 0, 0, 0)
+        n_bins_labels_layout.setSpacing(5)
 
+        self.n_values_label = self.createLabel(self.groupBox, 12, "N")
         bins_label = self.createLabel(self.groupBox, 12, "BINS")
         sizes_label = self.createLabel(self.groupBox, 12, "SIZES")
         sizes_label.setAlignment(Qt.AlignCenter)
 
-        bins_sizes_labels_layout.addWidget(bins_label, 5)
-        bins_sizes_labels_layout.addWidget(sizes_label, 1)
+        # BINS + SIZES labels grouped as one right-half unit
+        bins_sizes_right_label_widget = QWidget(self.groupBox)
+        bins_sizes_right_label_layout = QHBoxLayout(bins_sizes_right_label_widget)
+        bins_sizes_right_label_layout.setContentsMargins(0, 0, 0, 0)
+        bins_sizes_right_label_layout.setSpacing(5)
+        bins_sizes_right_label_layout.addWidget(bins_label, 1)
+        bins_sizes_right_label_layout.addWidget(sizes_label, 0)
 
-        # ROW 3: BINS + SIZES inputs
-        bins_sizes_inputs_widget = QWidget(self.groupBox)
-        bins_sizes_inputs_layout = QHBoxLayout(bins_sizes_inputs_widget)
-        bins_sizes_inputs_layout.setContentsMargins(0, 0, 0, 0)
-        bins_sizes_inputs_layout.setSpacing(5)
+        n_bins_labels_layout.addWidget(self.n_values_label, 1)          # left half
+        n_bins_labels_layout.addWidget(bins_sizes_right_label_widget, 1) # right half
 
-        # Validators belong to the widget’s configuration, not to runtime logic:
+        # ROW 3: N + BINS + SIZES inputs
+        # Left half: N input | Right half: BINS input + SIZES checkbox
+        n_bins_inputs_widget = QWidget(self.groupBox)
+        n_bins_inputs_layout = QHBoxLayout(n_bins_inputs_widget)
+        n_bins_inputs_layout.setContentsMargins(0, 0, 0, 0)
+        n_bins_inputs_layout.setSpacing(5)
+
+        # Validators belong to the widget's configuration, not to runtime logic:
         # A QValidator is part of how the QLineEdit behaves. So it should be defined at the same time the widget is created.
 
         # Int validator: e.g., 10,15,20
@@ -290,13 +301,16 @@ class ProteinControls(QWidget):
         float_regex = QRegularExpression(r"^\d*\.?\d+(,\d*\.?\d+)*,?$")
         self.float_validator = QRegularExpressionValidator(float_regex)
 
+        self.n_values_lineEdit = QLineEdit(self.groupBox)
+        self.n_values_lineEdit.setObjectName("nValuesLineEdit")
+        self.n_values_lineEdit.setPlaceholderText("e.g. 1000")
+        self.n_values_lineEdit.setValidator(self.int_validator)
+
         self.bins_lineEdit = QLineEdit(self.groupBox)
         self.bins_lineEdit.setObjectName("binsLineEdit")
         self.bins_lineEdit.setValidator(self.int_validator)
 
         self.sizes_checkbox = QCheckBox(self.groupBox)
-
-        bins_sizes_inputs_layout.addWidget(self.bins_lineEdit, 5)
 
         sizes_box_wrap = QVBoxLayout()
         sizes_box_wrap.setContentsMargins(0, 0, 0, 0)
@@ -304,7 +318,16 @@ class ProteinControls(QWidget):
         sizes_box_wrap.addWidget(self.sizes_checkbox, alignment=Qt.AlignCenter)
         sizes_box_wrap.addStretch()
 
-        bins_sizes_inputs_layout.addLayout(sizes_box_wrap, 1)
+        # BINS + SIZES grouped as one right-half unit
+        bins_sizes_right_widget = QWidget(self.groupBox)
+        bins_sizes_right_layout = QHBoxLayout(bins_sizes_right_widget)
+        bins_sizes_right_layout.setContentsMargins(0, 0, 0, 0)
+        bins_sizes_right_layout.setSpacing(5)
+        bins_sizes_right_layout.addWidget(self.bins_lineEdit, 1)
+        bins_sizes_right_layout.addLayout(sizes_box_wrap, 0)
+
+        n_bins_inputs_layout.addWidget(self.n_values_lineEdit, 1)   # left half
+        n_bins_inputs_layout.addWidget(bins_sizes_right_widget, 1)  # right half
 
         self.sizes_checkbox.toggled.connect(self._on_sizes_checkbox_toggled)
         self._on_sizes_checkbox_toggled(self.sizes_checkbox.isChecked())
@@ -409,7 +432,7 @@ class ProteinControls(QWidget):
         pore_labels_layout.addWidget(self.pore_diameter_label, 1)
         pore_labels_layout.addWidget(self.pore_length_label, 1)
         group_layout.addWidget(pore_labels_widget, 2, 0)
-        group_layout.addWidget(bins_sizes_labels_widget, 2, 1)
+        group_layout.addWidget(n_bins_labels_widget, 2, 1)
 
         # Row 3
         pore_inputs_widget = QWidget(self.groupBox)
@@ -419,7 +442,7 @@ class ProteinControls(QWidget):
         pore_inputs_layout.addWidget(self.pore_diameter_lineEdit, 1)
         pore_inputs_layout.addWidget(self.pore_length_lineEdit, 1)
         group_layout.addWidget(pore_inputs_widget, 3, 0)
-        group_layout.addWidget(bins_sizes_inputs_widget, 3, 1)
+        group_layout.addWidget(n_bins_inputs_widget, 3, 1)
         group_layout.addWidget(self.save_filter_button, 3, 2)
 
         # Row 4
@@ -444,7 +467,8 @@ class ProteinControls(QWidget):
         self.pore_diameter_lineEdit.setMinimumWidth(80)
         self.pore_length_lineEdit.setMinimumWidth(80)
         self.event_index_lineEdit.setMinimumWidth(160)
-        self.bins_lineEdit.setMinimumWidth(140)
+        self.n_values_lineEdit.setMinimumWidth(60)
+        self.bins_lineEdit.setMinimumWidth(60) 
 
         # Add groupbox to main layout
         main_layout.addWidget(self.groupBox)
@@ -689,6 +713,7 @@ class ProteinControls(QWidget):
         self.pore_diameter_lineEdit.textChanged.connect(self.validate_inputs)
         self.pore_length_lineEdit.textChanged.connect(self.validate_inputs)
         self.event_index_lineEdit.textChanged.connect(self.validate_inputs)
+        self.n_values_lineEdit.textChanged.connect(self.validate_inputs)
         self.bins_lineEdit.textChanged.connect(self.validate_inputs)
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.individual_button.toggled.connect(self.validate_inputs)
@@ -708,6 +733,7 @@ class ProteinControls(QWidget):
                 "pore_diameter": self.pore_diameter_lineEdit.text(),  # TBD: decide on format and parsing in controller
                 "pore_length": self.pore_length_lineEdit.text(),  # TBD: decide on format and parsing in controller
                 "event_index": [],
+                "n_values": int(self.n_values_lineEdit.text().strip()),
                 "sizes": self.sizes_checkbox.isChecked(),
                 "bins": (
                     [x.strip() for x in self.bins_lineEdit.text().split(",")]
@@ -731,7 +757,7 @@ class ProteinControls(QWidget):
             if self.event_index_lineEdit.isValid():
                 parameters["event_index"] = self.event_index_lineEdit.get_values()
 
-        except AttributeError:
+        except (AttributeError, ValueError):
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -763,6 +789,8 @@ class ProteinControls(QWidget):
 
         individual_selected = self.individual_button.isChecked()
         ensemble_selected = self.ensemble_button.isChecked()
+
+        n_values_valid = bool(self.n_values_lineEdit.text().strip())
 
         # -----------------
         # Default states
@@ -851,7 +879,7 @@ class ProteinControls(QWidget):
 
         self.export_plot_data_pushButton.setEnabled(is_export_valid)
 
-        self.update_plot_button.setEnabled(db_loader_loaded and pore_diameter_valid and pore_length_valid)
+        self.update_plot_button.setEnabled(db_loader_loaded and pore_diameter_valid and pore_length_valid and n_values_valid)
         self.undo_button.setEnabled(is_undo_valid)
         self.reset_button.setEnabled(is_reset_valid)
 
