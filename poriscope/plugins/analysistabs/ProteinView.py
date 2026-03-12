@@ -664,7 +664,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         event_hist, _ = np.histogram(
             dI_I,
             bins=bin_edges,
-            norm=True,
+            density=True
         )
         bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
@@ -1206,7 +1206,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 return
         if len(selected_filters) > 1:
             self.add_text_to_display.emit(
-                f"Only a single subset can be used for {plot_type}",
+                "Only a single subset can be used for protein analysis",
                 self.__class__.__name__,
             )
             return
@@ -1218,12 +1218,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
 
-                    dataset_label = (
-                        f"{loader} | {exp} Ch {channel}: {subset_name}"
-                        if exp is not None
-                        else f"{loader} | {subset_name}"
-                    )
-                    print(dataset_label)  # TODO
+                    #dataset_label = (
+                    #    f"{loader} | {exp} Ch {channel}: {subset_name}"
+                    #    if exp is not None
+                    #    else f"{loader} | {subset_name}"
+                    #)
                     sizes = False
 
                     self.global_signal.emit(
@@ -1254,7 +1253,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             self.__class__.__name__,
                         )
                         return
-                    if self.event_generator is None:
+                    if self.event_data_generator is None:
                         self.logger.warning(
                             "No events in dataset or unable to create event generator",
                             self.__class__.__name__,
@@ -1265,9 +1264,15 @@ class ProteinView(MetaView, WalkthroughMixin):
                         )
                         return
                     else:  # need to create histogram, fit it, find V,m pairs, and build up the datasets to plot all in a single loop over the events in the dataset
+                        N = parameters[
+                            "n_values"
+                        ]
+                        success = 0
+                        prolate_solutions = []
+                        oblate_solutions = []
                         for event in self.event_data_generator:
                             # todo - move all of this into a loop that builds up the data set to plot over time,
-                            # possibly into a generator for a progress bar since this will be fairly slow
+                            # definitely needs to be in a generator for a progress bar
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
 
@@ -1285,17 +1290,18 @@ class ProteinView(MetaView, WalkthroughMixin):
                                 plot_data["Normalized Current"].values,
                                 plot_data["Amplitude"].values,
                             )
-                            perr = np.sqrt(np.diag(pcov))
+                            
                             # failed fit for numerical reasons
                             if (
                                 popt is None
                                 or pcov is None
                                 or np.any(np.isinf(pcov))
                                 or np.any(np.isnan(pcov))
-                                or np.any(perr > np.abs(popt) * 10)
                             ):
                                 continue
-
+                            perr = np.sqrt(np.diag(pcov))
+                            if np.any(perr > np.abs(popt) * 10):
+                                continue
                             # two peaks were fitted but they are not statistically distinguishable at the 0.05 confidence level
                             mu1_idx, mu2_idx = 1, 4
                             mu1 = popt[mu1_idx]
@@ -1327,72 +1333,72 @@ class ProteinView(MetaView, WalkthroughMixin):
                             amplitude_ratio = min(abs_A1, abs_A2) / max(abs_A1, abs_A2)
                             if amplitude_ratio < amplitude_ratio_threshold:
                                 continue
+                            
+                            amp1, mean1, std1, amp2, mean2, std2 = popt
+                            # possibly use standard error of mean instead of standard deviation of underlying histogram here
+                            # errors = np.sqrt(np.diag(pcov))
+                            # mean1_err = errors[1]
+                            # mean2_err = errors[4]
+                            # std1 = mean1_err
+                            # std2 = mean2_err
 
-            N = 1000
-            amp1, mean1, std1, amp2, mean2, std2 = popt
-            # possibly use standard error of mean instead of standard deviation of underlying histogram here
-            # errors = np.sqrt(np.diag(pcov))
-            # mean1_err = errors[1]
-            # mean2_err = errors[4]
-            # std1 = mean1_err
-            # std2 = mean2_err
+                            # FIXED: Assign the correct means to mean_min
+                            if mean1 > mean2:
+                                mean_max = mean1
+                                std_max = np.abs(std1)
+                                mean_min = mean2
+                                std_min = np.abs(std2)
+                            else:
+                                mean_max = mean2
+                                std_max = np.abs(std2)
+                                mean_min = mean1
+                                std_min = np.abs(std1)
+                            
 
-            # FIXED: Assign the correct means to mean_min
-            if mean1 > mean2:
-                mean_max = mean1
-                std_max = std1
-                mean_min = mean2
-                std_min = std2
-            else:
-                mean_max = mean2
-                std_max = std2
-                mean_min = mean1
-                std_min = std1
+                            deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
+                            deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
 
-            deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
-            deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
+                            
+                            tol = 1e-5
+                            for prolate in [True, False]:
+                                if not prolate:
+                                    lower_bounds = [1, 0.01]
+                                    upper_bounds = [np.inf, 0.99999]
+                                    initial_guess = [64.0, 0.75]
+                                else:
+                                    lower_bounds = [1, 1.00001]
+                                    upper_bounds = [np.inf, np.inf]
+                                    initial_guess = [64.0, 1.5]
 
-            prolate_solutions = []
-            oblate_solutions = []
-            tol = 1e-5
-            for prolate in [True, False]:
-                if prolate:
-                    lower_bounds = [1, 0.01]
-                    upper_bounds = [np.inf, 0.99999]
-                    initial_guess = [64.0, 0.75]
-                else:
-                    lower_bounds = [1, 1.00001]
-                    upper_bounds = [np.inf, np.inf]
-                    initial_guess = [64.0, 1.5]
+                                for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
+                                    solution = least_squares(
+                                        self._spheroid_blockage,
+                                        initial_guess,
+                                        args=(dI_M, dI_m, d, L, prolate),
+                                        bounds=(lower_bounds, upper_bounds),
+                                    )
 
-                for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
-                    solution = least_squares(
-                        self._spheroid_blockage,
-                        initial_guess,
-                        args=(dI_M, dI_m, d, L, prolate),
-                        bounds=(lower_bounds, upper_bounds),
-                    )
+                                    # Only proceed if the solver successfully converged
+                                    if solution.success:  # check each residual
+                                        if np.max(np.abs(solution.fun)) > tol:
+                                            continue
 
-                    # Only proceed if the solver successfully converged
-                    if solution.success:  # check each residual
-                        if np.max(np.abs(solution.fun)) > tol:
-                            continue
+                                        V_sol, m_sol = solution.x
 
-                        V_sol, m_sol = solution.x
+                                        eq1_err, eq2_err = self._spheroid_blockage(
+                                            (V_sol, m_sol), dI_M, dI_m, d, L, prolate
+                                        )
+                                        residuals = eq1_err**2 + eq2_err**2
+                                        if residuals > tol:  # check aggregate residual
+                                            continue
 
-                        eq1_err, eq2_err = self._spheroid_blockage(
-                            (V_sol, m_sol), dI_M, dI_m, d, L, prolate
-                        )
-                        residuals = eq1_err**2 + eq2_err**2
-                        if residuals > tol:  # check aggregate residual
-                            continue
-
-                        # Append only the clean, mathematically sound solutions
-                        if prolate:
-                            prolate_solutions.append((V_sol, m_sol))
-                        elif not prolate:
-                            oblate_solutions.append((V_sol, m_sol))
-
+                                        # Append only the clean, mathematically sound solutions
+                                        
+                                        if prolate:
+                                            prolate_solutions.append((V_sol, m_sol))
+                                        elif not prolate:
+                                            oblate_solutions.append((V_sol, m_sol))
+                            success += 1
             # --- Create the Pandas DataFrames ---
 
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
@@ -1466,11 +1472,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: List[float]
         """
         V, m = vars
-        if prolate:
+        if not prolate:
             gamma_parallel = 1 / (
                 1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m))
             )
-        elif not prolate:
+        elif prolate:
             gamma_parallel = 1 / (
                 1
                 - 1
@@ -1498,7 +1504,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             1 - (0.32 + 0.48 * l_ptn / d) * l_ptn * d_ptn**2 / d**3
         )  # double check typo
 
-        if prolate:
+        if not prolate:
             eq1 = (
                 4
                 * V
@@ -1513,7 +1519,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
                 - deltaI_I_min
             )
-        elif not prolate:
+        elif prolate:
             eq1 = (
                 4
                 * V
@@ -1544,17 +1550,19 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
         :rtype: Optional[List[float]]
         """
-        prominence_threshold = np.max(amplitude) * 0.1
-        peaks, _ = find_peaks(amplitude, prominence=prominence_threshold)
+        min_prominence = np.max(amplitude) * 0.05
+        peaks, properties = find_peaks(amplitude, prominence=min_prominence)
 
         if len(peaks) < 2:
             return None, None
 
-        peaks = sorted(peaks, key=lambda x: amplitude[x], reverse=True)[:2]
+        prominences = properties["prominences"]
 
-        widths, width_heights, left_ips, right_ips = peak_widths(
-            amplitude, peaks, rel_height=0.5
-        )
+
+        largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
+        top_two_peaks = peaks[largest_prominence_indices]
+
+        widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
 
         bin_width = bins[1] - bins[0]
         fwhm_guesses = widths * bin_width
@@ -1562,16 +1570,20 @@ class ProteinView(MetaView, WalkthroughMixin):
         std_guesses = fwhm_guesses / 2.355
 
         p0 = (
-            amplitude[peaks[0]],
-            bins[peaks[0]],
+
+            amplitude[top_two_peaks[0]],
+            bins[top_two_peaks[0]],
             std_guesses[0],
-            amplitude[peaks[1]],
-            bins[peaks[1]],
+            amplitude[top_two_peaks[1]],
+            bins[top_two_peaks[1]],
             std_guesses[1],
         )
 
-        popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
-        return popt, pcov
+        try:
+            popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
+            return popt, pcov
+        except (RuntimeError, ValueError):
+            return None, None
 
     @log(logger=logger)
     @register_action()
@@ -1788,7 +1800,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             oblate_solutions = []
             tol = 1e-5
             for prolate in [True, False]:
-                if prolate:
+                if not prolate:
                     lower_bounds = [1, 0.01]
                     upper_bounds = [np.inf, 0.99999]
                     initial_guess = [64.0, 0.75]
