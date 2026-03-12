@@ -669,7 +669,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
 
-
     @log(logger=logger)
     def set_baseline_duration(self, duration):
         """
@@ -1224,7 +1223,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                         if exp is not None
                         else f"{loader} | {subset_name}"
                     )
-                    print(dataset_label) #TODO
+                    print(dataset_label)  # TODO
                     sizes = False
 
                     self.global_signal.emit(
@@ -1245,7 +1244,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                         "relay_event_data_generator",
                         (),
                     )
-                    if plot_type not in ["Raw Histogram","Filtered Histogram"]:
+                    if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
                         self.logger.warning(
                             f"Invalid plot type: {plot_type}",
                             self.__class__.__name__,
@@ -1265,10 +1264,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                             self.__class__.__name__,
                         )
                         return
-                    else: #need to create histogram, fit it, find V,m pairs, and build up the datasets to plot all in a single loop over the events in the dataset
+                    else:  # need to create histogram, fit it, find V,m pairs, and build up the datasets to plot all in a single loop over the events in the dataset
                         for event in self.event_data_generator:
-                            #todo - move all of this into a loop that builds up the data set to plot over time,
-                            #possibly into a generator for a progress bar since this will be fairly slow
+                            # todo - move all of this into a loop that builds up the data set to plot over time,
+                            # possibly into a generator for a progress bar since this will be fairly slow
                             bins = parameters["bins"]
                             sizes = parameters["sizes"]
 
@@ -1283,14 +1282,21 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                             # now we have to fit the distribution to a double gaussian
                             popt, pcov = self._fit_double_gaussian(
-                                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+                                plot_data["Normalized Current"].values,
+                                plot_data["Amplitude"].values,
                             )
                             perr = np.sqrt(np.diag(pcov))
-                            #failed fit for numerical reasons
-                            if popt is None or pcov is None or np.any(np.isinf(pcov)) or np.any(np.isnan(pcov)) or np.any(perr > np.abs(popt) * 10):
+                            # failed fit for numerical reasons
+                            if (
+                                popt is None
+                                or pcov is None
+                                or np.any(np.isinf(pcov))
+                                or np.any(np.isnan(pcov))
+                                or np.any(perr > np.abs(popt) * 10)
+                            ):
                                 continue
 
-                            #two peaks were fitted but they are not statistically distinguishable at the 0.05 confidence level
+                            # two peaks were fitted but they are not statistically distinguishable at the 0.05 confidence level
                             mu1_idx, mu2_idx = 1, 4
                             mu1 = popt[mu1_idx]
                             mu2 = popt[mu2_idx]
@@ -1308,12 +1314,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                             p_value = 2 * t.sf(t_stat, df)
                             if p_value > 0.05:
                                 continue
-                            
-                            #two peaks were found but one is very small compared to the other
+
+                            # two peaks were found but one is very small compared to the other
                             A1_idx, A2_idx = 0, 3
                             A1 = popt[A1_idx]
                             A2 = popt[A2_idx]
-                            amplitude_ratio_threshold = 0.05 
+                            amplitude_ratio_threshold = 0.05
                             abs_A1 = abs(A1)
                             abs_A2 = abs(A2)
                             if max(abs_A1, abs_A2) == 0:
@@ -1321,19 +1327,15 @@ class ProteinView(MetaView, WalkthroughMixin):
                             amplitude_ratio = min(abs_A1, abs_A2) / max(abs_A1, abs_A2)
                             if amplitude_ratio < amplitude_ratio_threshold:
                                 continue
-                                                        
-
-                            
 
             N = 1000
             amp1, mean1, std1, amp2, mean2, std2 = popt
-            #possibly use standard error of mean instead of standard deviation of underlying histogram here
-            #errors = np.sqrt(np.diag(pcov))
-            #mean1_err = errors[1]
-            #mean2_err = errors[4]
-            #std1 = mean1_err
-            #std2 = mean2_err
-            
+            # possibly use standard error of mean instead of standard deviation of underlying histogram here
+            # errors = np.sqrt(np.diag(pcov))
+            # mean1_err = errors[1]
+            # mean2_err = errors[4]
+            # std1 = mean1_err
+            # std2 = mean2_err
 
             # FIXED: Assign the correct means to mean_min
             if mean1 > mean2:
@@ -1546,20 +1548,26 @@ class ProteinView(MetaView, WalkthroughMixin):
         peaks, _ = find_peaks(amplitude, prominence=prominence_threshold)
 
         if len(peaks) < 2:
-            return None, None 
+            return None, None
 
         peaks = sorted(peaks, key=lambda x: amplitude[x], reverse=True)[:2]
 
-        widths, width_heights, left_ips, right_ips = peak_widths(amplitude, peaks, rel_height=0.5)
+        widths, width_heights, left_ips, right_ips = peak_widths(
+            amplitude, peaks, rel_height=0.5
+        )
 
         bin_width = bins[1] - bins[0]
         fwhm_guesses = widths * bin_width
 
-        std_guesses = fwhm_guesses / 2.355 
+        std_guesses = fwhm_guesses / 2.355
 
         p0 = (
-            amplitude[peaks[0]], bins[peaks[0]], std_guesses[0],
-            amplitude[peaks[1]], bins[peaks[1]], std_guesses[1],
+            amplitude[peaks[0]],
+            bins[peaks[0]],
+            std_guesses[0],
+            amplitude[peaks[1]],
+            bins[peaks[1]],
+            std_guesses[1],
         )
 
         popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
@@ -1754,13 +1762,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "n_values"
             ]  # number of samples to draw from the fitted distributions for solving V and m
             amp1, mean1, std1, amp2, mean2, std2 = popt
-            #possibly use standard error of mean instead of standard deviation of underlying histogram here
-            #errors = np.sqrt(np.diag(pcov))
-            #mean1_err = errors[1]
-            #mean2_err = errors[4]
-            #std1 = mean1_err
-            #std2 = mean2_err
-            
+            # possibly use standard error of mean instead of standard deviation of underlying histogram here
+            # errors = np.sqrt(np.diag(pcov))
+            # mean1_err = errors[1]
+            # mean2_err = errors[4]
+            # std1 = mean1_err
+            # std2 = mean2_err
 
             # FIXED: Assign the correct means to mean_min
             if mean1 > mean2:
