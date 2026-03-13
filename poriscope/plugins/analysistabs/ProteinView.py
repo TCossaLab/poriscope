@@ -1162,7 +1162,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         L = float(parameters["pore_length"])
 
         # Default N to 100 if missing
-        N = int(parameters.get("n_values") or 100)  
+        N = int(parameters.get("n_values") or 100)
         bins = parameters.get("bins")
         sizes = parameters.get("sizes")
 
@@ -1357,7 +1357,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
                 )
-                
+
     @log(logger=logger)
     def _double_gaussian(self, x, amp1, mean1, std1, amp2, mean2, std2):
         """
@@ -1612,7 +1612,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                             bin_sensitive = True
                             bins_changed = getattr(self, "allowed_bins", None) != bins
-                            sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+                            sizes_changed = (
+                                getattr(self, "allowed_sizes", None) != sizes
+                            )
 
                             if bin_sensitive and (bins_changed or sizes_changed):
                                 axis_type = "2d"
@@ -1635,14 +1637,18 @@ class ProteinView(MetaView, WalkthroughMixin):
                                 dataset_label=dataset_label,
                             )
                         else:
-                            self.logger.info("No plot data generates for the requested plot configuration")
+                            self.logger.info(
+                                "No plot data generates for the requested plot configuration"
+                            )
                             self.add_text_to_display.emit(
                                 "No plot data generates for the requested plot configuration",
                                 self.__class__.__name__,
                             )
                             return
                     else:
-                        self.logger.warning(f"Invalid plot type: {plot_type}", self.__class__.__name__)
+                        self.logger.warning(
+                            f"Invalid plot type: {plot_type}", self.__class__.__name__
+                        )
                         self.add_text_to_display.emit(
                             f"Invalid plot type: {plot_type}", self.__class__.__name__
                         )
@@ -1710,7 +1716,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 return
             elif len(prolate_V) < N or len(oblate_V) < N:
-                self.logger.info("Sampling hit bailout limit; returning partial ensemble arrays.")
+                self.logger.info(
+                    "Sampling hit bailout limit; returning partial ensemble arrays."
+                )
 
             # --- Create the Pandas DataFrames ---
             df_prolate = pd.DataFrame({"V": prolate_V, "m": prolate_m})
@@ -1734,22 +1742,24 @@ class ProteinView(MetaView, WalkthroughMixin):
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
                 )
-                
+
     @log(logger=logger)
     def _compute_theoretical_blockages(self, V, m, d, L, prolate=True):
         """
-        Vectorized forward model: Calculates theoretical max and min blockages 
+        Vectorized forward model: Calculates theoretical max and min blockages
         for arrays of volume (V) and shape factor (m).
         """
         m_sq = m**2
-        
+
         if not prolate:
             gamma_parallel = 1 / (
                 1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
             )
         else:
             gamma_parallel = 1 / (
-                1 - (1 / (m_sq - 1)) * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
+                1
+                - (1 / (m_sq - 1))
+                * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
             )
 
         gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
@@ -1768,7 +1778,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
         volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
-        
+
         parallel_term = volume_factor * gamma_parallel_prime
         perpendicular_term = volume_factor * gamma_perpendicular_prime
 
@@ -1779,20 +1789,22 @@ class ProteinView(MetaView, WalkthroughMixin):
         else:
             dI_max = perpendicular_term
             dI_min = parallel_term
-            
+
         return dI_max, dI_min
 
-
     @log(logger=logger)
-    def _generate_vm_ensemble(self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True):
+
+    def _generate_vm_ensemble(
+        self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+    ):
         """
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
-        Bails out after a maximum number of consecutive failed batches if the experimental 
+        Bails out after a maximum number of consecutive failed batches if the experimental
         data represents an unphysical geometry.
         """
         accepted_V = []
         accepted_m = []
-        
+
         # --- Dynamic Bounds Calculation ---
         K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0 #assumes gamma == 1
         gamma_min = 1
@@ -1802,108 +1814,116 @@ class ProteinView(MetaView, WalkthroughMixin):
         
         V_min = 1 #we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
         
+
         if V_min >= V_max:
             V_max = V_min * 10.0
-            
-        batch_size = 50000 
-        
+
+        batch_size = 50000
+
         # --- Bailout Logic Variables ---
         max_consecutive_zeros = 5
         consecutive_zeros = 0
-        
+
         while len(accepted_V) < N_target and consecutive_zeros < max_consecutive_zeros:
             # 1. Propose physically valid uniform samples
             V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
-            
+
             if prolate:
                 m_upper_bounds_raw = np.sqrt((np.pi * d**3) / (6 * V_prop_raw))
                 valid_mask = m_upper_bounds_raw >= 1.002
-                
+
                 V_prop = V_prop_raw[valid_mask]
-                
+
                 # Clip the upper bound to a physical maximum (e.g., m=50.0) 
                 # to prevent sampling impossible "1D string" geometries
                 m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.002, 50.0)
                 
+
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
                     continue
-                    
+
                 m_prop = np.random.uniform(1.001, m_upper_bounds)
-                
+
             else:
                 m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * d**3)
                 valid_mask = m_lower_bounds_raw <= 0.998
-                
+
                 V_prop = V_prop_raw[valid_mask]
                 
                 # Clip the lower bound to a physical minimum (e.g., m=0.01) 
                 # to prevent divide-by-zero errors and impossible "2D sheet" geometries
                 m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.998)
                 
+
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
                     continue
-                    
+
                 m_prop = np.random.uniform(m_lower_bounds, 0.999)
 
             # 2. Forward Calculation
-            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(V_prop, m_prop, d, L, prolate)
-            
+
+            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(
+                V_prop, m_prop, d, L, prolate
+            )
+
             # Clean up unexpected NaNs
             nan_mask = np.isnan(dI_max_calc) | np.isnan(dI_min_calc)
             if np.all(nan_mask):
                 consecutive_zeros += 1
                 continue
-                
+
             valid_math = ~nan_mask
             V_prop = V_prop[valid_math]
             m_prop = m_prop[valid_math]
             dI_max_calc = dI_max_calc[valid_math]
             dI_min_calc = dI_min_calc[valid_math]
-            
+
             # 3. Calculate probability
             # Use safe standard deviations to prevent infinite Z-scores on artificially sharp fits
             safe_std_max = max(std_max, mean_max * 0.01)
             safe_std_min = max(std_min, mean_min * 0.01)
 
-            z_sq_max = ((dI_max_calc - mean_max) / safe_std_max)**2
-            z_sq_min = ((dI_min_calc - mean_min) / safe_std_min)**2
-            
+            z_sq_max = ((dI_max_calc - mean_max) / safe_std_max) ** 2
+            z_sq_min = ((dI_min_calc - mean_min) / safe_std_min) ** 2
+
             # Absolute physical constraint: Ignore guesses that are > 4 standard deviations away
             # This prevents the sampler from accepting the "best of the worst" in terrible batches
             physical_mask = (z_sq_max < 16.0) & (z_sq_min < 16.0)
-            
+
             if not np.any(physical_mask):
                 consecutive_zeros += 1
                 continue
-                
+
             # Filter arrays to only physically reasonable points before probability rejection
             V_prop = V_prop[physical_mask]
             m_prop = m_prop[physical_mask]
             z_sq_max = z_sq_max[physical_mask]
             z_sq_min = z_sq_min[physical_mask]
-            
+
             likelihood = np.exp(-0.5 * (z_sq_max + z_sq_min))
             max_likelihood = np.max(likelihood)
-            
+
             if max_likelihood == 0 or np.isnan(max_likelihood):
                 consecutive_zeros += 1
-                continue 
-                
+                continue
+
             prob_accept = likelihood / max_likelihood
-            
+
             # 4. Accept / Reject
             random_thresh = np.random.uniform(0, 1, len(prob_accept))
             accepted_indices = random_thresh < prob_accept
-            
+
             new_V = V_prop[accepted_indices]
             new_m = m_prop[accepted_indices]
-            
+
             if len(new_V) == 0:
                 consecutive_zeros += 1
             else:
-                consecutive_zeros = 0  # Reset counter if we got at least one valid point
+                consecutive_zeros = (
+                    0  # Reset counter if we got at least one valid point
+                )
                 accepted_V.extend(new_V)
                 accepted_m.extend(new_m)
 
