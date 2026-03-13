@@ -1323,13 +1323,13 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                         # --- OPTIMIZED GENERATIVE SAMPLING ---
                         # Call the Monte Carlo generators directly for this specific event
-                        prolate_V, prolate_m = self.generate_vm_ensemble(
+                        prolate_V, prolate_m = self._generate_vm_ensemble(
                             N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
                         )
                         # Pack the returned arrays into tuples and extend the master list
                         prolate_solutions.extend(zip(prolate_V, prolate_m))
 
-                        oblate_V, oblate_m = self.generate_vm_ensemble(
+                        oblate_V, oblate_m = self._generate_vm_ensemble(
                             N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
                         )
                         # Pack the returned arrays into tuples and extend the master list
@@ -1693,10 +1693,10 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             # --- OPTIMIZED GENERATIVE SAMPLING ---
             # Call the Monte Carlo generators directly
-            prolate_V, prolate_m = self.generate_vm_ensemble(
+            prolate_V, prolate_m = self._generate_vm_ensemble(
                 N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
             )
-            oblate_V, oblate_m = self.generate_vm_ensemble(
+            oblate_V, oblate_m = self._generate_vm_ensemble(
                 N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
             )
 
@@ -1736,7 +1736,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 
     @log(logger=logger)
-    def compute_theoretical_blockages(self, V, m, d, L, prolate=True):
+    def _compute_theoretical_blockages(self, V, m, d, L, prolate=True):
         """
         Vectorized forward model: Calculates theoretical max and min blockages 
         for arrays of volume (V) and shape factor (m).
@@ -1784,7 +1784,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
 
     @log(logger=logger)
-    def generate_vm_ensemble(self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True):
+    def _generate_vm_ensemble(self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True):
         """
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
         Bails out after a maximum number of consecutive failed batches if the experimental 
@@ -1794,13 +1794,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         accepted_m = []
         
         # --- Dynamic Bounds Calculation ---
-        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0 #assumes gamma > 1
+        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0 #assumes gamma == 1
+        gamma_min = 1
         
-        highest_blockage = mean_max + 3 * std_max
-        V_max = highest_blockage * K
+        highest_blockage = mean_max + 4 * std_max
+        V_max = highest_blockage * K / gamma_min
         
-        lowest_blockage = max(0.0001, mean_min - 3 * std_min)
-        V_min = np.minimum((lowest_blockage / 3.0) * K, 1) #we cannot see a 1 nm^3 object anyway
+        V_min = 1 #we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
         
         if V_min >= V_max:
             V_max = V_min * 10.0
@@ -1820,7 +1820,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 valid_mask = m_upper_bounds_raw >= 1.002
                 
                 V_prop = V_prop_raw[valid_mask]
-                m_upper_bounds = m_upper_bounds_raw[valid_mask]
+                
+                # Clip the upper bound to a physical maximum (e.g., m=50.0) 
+                # to prevent sampling impossible "1D string" geometries
+                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.002, 50.0)
                 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
@@ -1833,7 +1836,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 valid_mask = m_lower_bounds_raw <= 0.998
                 
                 V_prop = V_prop_raw[valid_mask]
-                m_lower_bounds = m_lower_bounds_raw[valid_mask]
+                
+                # Clip the lower bound to a physical minimum (e.g., m=0.01) 
+                # to prevent divide-by-zero errors and impossible "2D sheet" geometries
+                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.998)
                 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
@@ -1842,7 +1848,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 m_prop = np.random.uniform(m_lower_bounds, 0.999)
 
             # 2. Forward Calculation
-            dI_max_calc, dI_min_calc = self.compute_theoretical_blockages(V_prop, m_prop, d, L, prolate)
+            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(V_prop, m_prop, d, L, prolate)
             
             # Clean up unexpected NaNs
             nan_mask = np.isnan(dI_max_calc) | np.isnan(dI_min_calc)
