@@ -1510,38 +1510,82 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
         :rtype: Optional[List[float]]
         """
-        min_prominence = np.max(amplitude) * 0.02
-        peaks, properties = find_peaks(amplitude, prominence=min_prominence)
-
-        if len(peaks) < 2:
-            return None, None
-
-        prominences = properties["prominences"]
-
-        largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
-        top_two_peaks = peaks[largest_prominence_indices]
-
-        widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
-
-        bin_width = bins[1] - bins[0]
-        fwhm_guesses = widths * bin_width
-
-        std_guesses = fwhm_guesses / 2.355
-
-        p0 = (
-            amplitude[top_two_peaks[0]],
-            bins[top_two_peaks[0]],
-            std_guesses[0],
-            amplitude[top_two_peaks[1]],
-            bins[top_two_peaks[1]],
-            std_guesses[1],
-        )
-
         try:
+            min_prominence = np.max(amplitude) * 0.05
+            peaks, properties = find_peaks(amplitude, prominence=min_prominence)
+
+            if len(peaks) < 2:
+                raise ValueError("Not enough peaks for initial guess")
+
+            prominences = properties["prominences"]
+
+            largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
+            top_two_peaks = peaks[largest_prominence_indices]
+
+            widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
+
+            bin_width = bins[1] - bins[0]
+            fwhm_guesses = widths * bin_width
+
+            std_guesses = fwhm_guesses / 2.355
+
+            p0 = (
+                amplitude[top_two_peaks[0]],
+                bins[top_two_peaks[0]],
+                std_guesses[0],
+                amplitude[top_two_peaks[1]],
+                bins[top_two_peaks[1]],
+                std_guesses[1],
+            )     
             popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
             return popt, pcov
         except (RuntimeError, ValueError):
-            return None, None
+            try:
+                n = len(amplitude)
+                amax = np.max(amplitude)
+                left_start = 0
+                while amplitude[left_start] < 0.05*amax and left_start < n:
+                    left_start += 1
+                right_start = n-1
+                while amplitude[right_start] < 0.05*amax and right_start > 0:
+                    right_start -= 1
+
+                if left_start >= right_start:
+                    raise ValueError('Cannot determine where to split the histogram for initial guess')
+                
+                left = amplitude[left_start:(left_start + right_start)//2]
+                right = amplitude[(left_start + right_start)//2:right_start]
+                
+                leftmax = np.max(left)
+                leftargmax = np.argmax(left)
+                
+                rightmax = np.max(right)
+                rightargmax = np.argmax(right)
+
+                left_half_max = leftmax / 2.0
+                idx_left = leftargmax
+                while idx_left > 0 and left[idx_left] > left_half_max:
+                    idx_left -= 1
+
+                left_dist = abs(bins[left_start + idx_left] - bins[left_start + leftargmax])
+                left_std_guess = left_dist / 1.177
+
+                right_half_max = rightmax / 2.0
+                idx_right = rightargmax
+                while idx_right > 0 and right[idx_right] > right_half_max:
+                    idx_right -= 1
+
+                right_dist = abs(bins[(left_start + right_start)//2 + idx_right] - bins[(left_start + right_start)//2 + rightargmax])
+                right_std_guess = right_dist / 1.177
+
+                p0 = (
+                    leftmax, bins[left_start + leftargmax], left_std_guess, 
+                    rightmax, bins[(left_start + right_start)//2 + rightargmax], right_std_guess
+                )
+                popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
+                return popt, pcov
+            except (RuntimeError, ValueError):
+                return None, None
 
     @log(logger=logger)
     @register_action()
@@ -1561,7 +1605,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         L = float(parameters["pore_length"])
 
         # --- OPTIMIZATION 1: Extract invariants ---
-        N = parameters.get("n_values", 100)
+        N = int(parameters.get("n_values", 100))
         tol = 1e-5
         prolate_setup = {
             True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
