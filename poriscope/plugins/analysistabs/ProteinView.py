@@ -1536,8 +1536,20 @@ class ProteinView(MetaView, WalkthroughMixin):
                 amplitude[top_two_peaks[1]],
                 bins[top_two_peaks[1]],
                 std_guesses[1],
-            )     
-            popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
+            )
+            min_mean = np.min(bins)
+            max_mean = np.max(bins)
+            min_amp = 0
+            max_amp = np.max(amplitude)
+            min_std = 0
+            max_std = np.abs(bins[-1] - bins[1])
+            
+            popt, pcov = curve_fit(self._double_gaussian,
+                                   bins, amplitude,
+                                   p0=p0,
+                                   bounds=([min_amp, min_mean, min_std, min_amp, min_mean, min_std],
+                                           [max_amp, max_mean, max_std, max_amp, max_mean, max_std])
+                                   )
             return popt, pcov
         except (RuntimeError, ValueError):
             try:
@@ -1582,7 +1594,19 @@ class ProteinView(MetaView, WalkthroughMixin):
                     leftmax, bins[left_start + leftargmax], left_std_guess, 
                     rightmax, bins[(left_start + right_start)//2 + rightargmax], right_std_guess
                 )
-                popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
+                min_mean = np.min(bins)
+                max_mean = np.max(bins)
+                min_amp = 0
+                max_amp = np.max(amplitude)
+                min_std = 0
+                max_std = np.abs(bins[-1] - bins[1])
+                
+                popt, pcov = curve_fit(self._double_gaussian,
+                                       bins, amplitude,
+                                       p0=p0,
+                                       bounds=([min_amp, min_mean, min_std, min_amp, min_mean, min_std],
+                                               [max_amp, max_mean, max_std, max_amp, max_mean, max_std])
+                                       )
                 return popt, pcov
             except (RuntimeError, ValueError):
                 return None, None
