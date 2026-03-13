@@ -1536,7 +1536,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 amplitude[top_two_peaks[1]],
                 bins[top_two_peaks[1]],
                 std_guesses[1],
-            )     
+            )
             popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
             return popt, pcov
         except (RuntimeError, ValueError):
@@ -1544,21 +1544,23 @@ class ProteinView(MetaView, WalkthroughMixin):
                 n = len(amplitude)
                 amax = np.max(amplitude)
                 left_start = 0
-                while amplitude[left_start] < 0.05*amax and left_start < n:
+                while amplitude[left_start] < 0.05 * amax and left_start < n:
                     left_start += 1
-                right_start = n-1
-                while amplitude[right_start] < 0.05*amax and right_start > 0:
+                right_start = n - 1
+                while amplitude[right_start] < 0.05 * amax and right_start > 0:
                     right_start -= 1
 
                 if left_start >= right_start:
-                    raise ValueError('Cannot determine where to split the histogram for initial guess')
-                
-                left = amplitude[left_start:(left_start + right_start)//2]
-                right = amplitude[(left_start + right_start)//2:right_start]
-                
+                    raise ValueError(
+                        "Cannot determine where to split the histogram for initial guess"
+                    )
+
+                left = amplitude[left_start : (left_start + right_start) // 2]
+                right = amplitude[(left_start + right_start) // 2 : right_start]
+
                 leftmax = np.max(left)
                 leftargmax = np.argmax(left)
-                
+
                 rightmax = np.max(right)
                 rightargmax = np.argmax(right)
 
@@ -1567,7 +1569,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 while idx_left > 0 and left[idx_left] > left_half_max:
                     idx_left -= 1
 
-                left_dist = abs(bins[left_start + idx_left] - bins[left_start + leftargmax])
+                left_dist = abs(
+                    bins[left_start + idx_left] - bins[left_start + leftargmax]
+                )
                 left_std_guess = left_dist / 1.177
 
                 right_half_max = rightmax / 2.0
@@ -1575,12 +1579,19 @@ class ProteinView(MetaView, WalkthroughMixin):
                 while idx_right > 0 and right[idx_right] > right_half_max:
                     idx_right -= 1
 
-                right_dist = abs(bins[(left_start + right_start)//2 + idx_right] - bins[(left_start + right_start)//2 + rightargmax])
+                right_dist = abs(
+                    bins[(left_start + right_start) // 2 + idx_right]
+                    - bins[(left_start + right_start) // 2 + rightargmax]
+                )
                 right_std_guess = right_dist / 1.177
 
                 p0 = (
-                    leftmax, bins[left_start + leftargmax], left_std_guess, 
-                    rightmax, bins[(left_start + right_start)//2 + rightargmax], right_std_guess
+                    leftmax,
+                    bins[left_start + leftargmax],
+                    left_std_guess,
+                    rightmax,
+                    bins[(left_start + right_start) // 2 + rightargmax],
+                    right_std_guess,
                 )
                 popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
                 return popt, pcov
