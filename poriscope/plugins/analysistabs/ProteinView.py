@@ -1169,8 +1169,8 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         # Pre-define bounds and guesses so they aren't recreated 2*N times per event
         prolate_setup = {
-            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
-            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]},
+            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [25.0, 1.5]},
+            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [25.0, 0.75]},
         }
 
         experiments_and_channels: Optional[
@@ -1439,23 +1439,22 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: List[float]
         """
         V, m = vars
-        if not prolate:
-            gamma_parallel = 1 / (
-                1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m))
-            )
-        elif prolate:
-            gamma_parallel = 1 / (
-                1
-                - 1
-                / (m**2 - 1)
-                * (m / np.sqrt(m**2 - 1) * np.log(m + np.sqrt(m**2 - 1)) - 1)
-            )
-        elif prolate is None:
+        if prolate is None:
             self.logger.error("prolate must be True or False", self.__class__.__name__)
             self.add_text_to_display.emit(
                 "prolate must be True or False", self.__class__.__name__
             )
             return None
+
+        m_sq = m**2
+        if not prolate:
+            gamma_parallel = 1 / (
+                1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
+            )
+        else:
+            gamma_parallel = 1 / (
+                1 - (1 / (m_sq - 1)) * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
+            )
 
         gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
 
@@ -1465,44 +1464,25 @@ class ProteinView(MetaView, WalkthroughMixin):
         l_ptn = 2 * a
 
         gamma_parallel_prime = gamma_parallel / (
-            1 - 0.71 * (d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2) * (d_ptn / d) ** 2
+            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d)**2
         )
+        
         gamma_perpendicular_prime = gamma_perpendicular / (
-            1 - (0.32 + 0.48 * l_ptn / d) * l_ptn * d_ptn**2 / d**3
-        )  # double check typo
+            1 - (0.32 + 0.48 * l_ptn / d) * (l_ptn * d_ptn**2 / d**3)
+        )
+
+        volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
+        
+        parallel_term = volume_factor * gamma_parallel_prime
+        perpendicular_term = volume_factor * gamma_perpendicular_prime
 
         if not prolate:
-            eq1 = (
-                4
-                * V
-                / (np.pi * d**2 * (L + 0.8 * d))
-                * (
-                    gamma_perpendicular_prime
-                    + (gamma_parallel_prime - gamma_perpendicular_prime)
-                )
-                - deltaI_I_max
-            )
-            eq2 = (
-                4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
-                - deltaI_I_min
-            )
-        elif prolate:
-            eq1 = (
-                4
-                * V
-                / (np.pi * d**2 * (L + 0.8 * d))
-                * (
-                    gamma_perpendicular_prime
-                    + (gamma_parallel_prime - gamma_perpendicular_prime)
-                )
-                - deltaI_I_min
-            )
-            eq2 = (
-                4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
-                - deltaI_I_max
-            )
+            eq1 = parallel_term - deltaI_I_max
+            eq2 = perpendicular_term - deltaI_I_min
+        else:
+            eq1 = parallel_term - deltaI_I_min
+            eq2 = perpendicular_term - deltaI_I_max
 
-        # when eq1 and eq2 are zero for a given (V,m), we have a mathematically valid solution, though not necessarily a physically valid one
         return [eq1, eq2]
 
     @log(logger=logger)
@@ -1645,8 +1625,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         N = int(parameters.get("n_values", 100))
         tol = 1e-5
         prolate_setup = {
-            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
-            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]},
+            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [25.0, 1.5]},
+            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [25.0, 0.75]},
         }
 
         experiments_and_channels: Optional[
