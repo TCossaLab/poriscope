@@ -1152,6 +1152,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         selected event in Individual analysis mode.
         """
         self._reset_actions()
+        self._clear_cache()
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
@@ -1326,18 +1327,25 @@ class ProteinView(MetaView, WalkthroughMixin):
                         prolate_V, prolate_m = self._generate_vm_ensemble(
                             N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
                         )
-                        # Pack the returned arrays into tuples and extend the master list
-                        prolate_solutions.extend(zip(prolate_V, prolate_m))
+
+                        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+                        prolate_a = prolate_b * prolate_m
+
+                        
+                                    # Pack the returned arrays into tuples and extend the master list
+                        prolate_solutions.extend(zip(prolate_V, prolate_m, prolate_a, prolate_b))
 
                         oblate_V, oblate_m = self._generate_vm_ensemble(
                             N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
                         )
+                        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+                        oblate_a = oblate_b * oblate_m
                         # Pack the returned arrays into tuples and extend the master list
-                        oblate_solutions.extend(zip(oblate_V, oblate_m))
+                        oblate_solutions.extend(zip(oblate_V, oblate_m, oblate_a, oblate_b))
 
             # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
-            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
+            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
+            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
 
             if not df_prolate.empty:
                 self.update_plot(
@@ -1524,6 +1532,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         all events in Ensemble analysis mode.
         """
         self._reset_actions()
+        self._clear_cache()
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
@@ -1720,9 +1729,15 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Sampling hit bailout limit; returning partial ensemble arrays."
                 )
 
+            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+            prolate_a = prolate_b * prolate_m
+
+            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+            oblate_a = oblate_b * oblate_m
+            
             # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame({"V": prolate_V, "m": prolate_m})
-            df_oblate = pd.DataFrame({"V": oblate_V, "m": oblate_m})
+            df_prolate = pd.DataFrame({"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b})
+            df_oblate = pd.DataFrame({"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b})
 
             if not df_prolate.empty:
                 self.update_plot(
