@@ -1331,9 +1331,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                         prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
                         prolate_a = prolate_b * prolate_m
 
-                        
-                                    # Pack the returned arrays into tuples and extend the master list
-                        prolate_solutions.extend(zip(prolate_V, prolate_m, prolate_a, prolate_b))
+                        # Pack the returned arrays into tuples and extend the master list
+                        prolate_solutions.extend(
+                            zip(prolate_V, prolate_m, prolate_a, prolate_b)
+                        )
 
                         oblate_V, oblate_m = self._generate_vm_ensemble(
                             N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
@@ -1341,7 +1342,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                         oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
                         oblate_a = oblate_b * oblate_m
                         # Pack the returned arrays into tuples and extend the master list
-                        oblate_solutions.extend(zip(oblate_V, oblate_m, oblate_a, oblate_b))
+                        oblate_solutions.extend(
+                            zip(oblate_V, oblate_m, oblate_a, oblate_b)
+                        )
 
             # --- Create the Pandas DataFrames ---
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
@@ -1734,10 +1737,14 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
             oblate_a = oblate_b * oblate_m
-            
+
             # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame({"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b})
-            df_oblate = pd.DataFrame({"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b})
+            df_prolate = pd.DataFrame(
+                {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
+            )
+            df_oblate = pd.DataFrame(
+                {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
+            )
 
             if not df_prolate.empty:
                 self.update_plot(
