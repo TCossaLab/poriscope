@@ -1793,7 +1793,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         return dI_max, dI_min
 
     @log(logger=logger)
-
     def _generate_vm_ensemble(
         self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True
     ):
@@ -1806,14 +1805,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         accepted_m = []
 
         # --- Dynamic Bounds Calculation ---
-        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0 #assumes gamma == 1
+        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
         gamma_min = 1
-        
+
         highest_blockage = mean_max + 4 * std_max
         V_max = highest_blockage * K / gamma_min
-        
-        V_min = 1 #we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
-        
+
+        V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
 
         if V_min >= V_max:
             V_max = V_min * 10.0
@@ -1834,10 +1832,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                 V_prop = V_prop_raw[valid_mask]
 
-                # Clip the upper bound to a physical maximum (e.g., m=50.0) 
+                # Clip the upper bound to a physical maximum (e.g., m=50.0)
                 # to prevent sampling impossible "1D string" geometries
                 m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.002, 50.0)
-                
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
@@ -1850,11 +1847,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 valid_mask = m_lower_bounds_raw <= 0.998
 
                 V_prop = V_prop_raw[valid_mask]
-                
-                # Clip the lower bound to a physical minimum (e.g., m=0.01) 
+
+                # Clip the lower bound to a physical minimum (e.g., m=0.01)
                 # to prevent divide-by-zero errors and impossible "2D sheet" geometries
                 m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.998)
-                
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
