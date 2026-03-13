@@ -1454,7 +1454,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
         else:
             gamma_parallel = 1 / (
-                1 - (1 / (m_sq - 1)) * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
+                1
+                - (1 / (m_sq - 1))
+                * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
             )
 
         gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
@@ -1465,15 +1467,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         l_ptn = 2 * a
 
         gamma_parallel_prime = gamma_parallel / (
-            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d)**2
+            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d) ** 2
         )
-        
+
         gamma_perpendicular_prime = gamma_perpendicular / (
             1 - (0.32 + 0.48 * l_ptn / d) * (l_ptn * d_ptn**2 / d**3)
         )
 
         volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
-        
+
         parallel_term = volume_factor * gamma_parallel_prime
         perpendicular_term = volume_factor * gamma_perpendicular_prime
 
