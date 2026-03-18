@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from scipy.optimize import curve_fit, least_squares
+from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
 from scipy.stats import t
 from typing_extensions import override
@@ -950,7 +950,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             return
 
         if selected_filters is not None and len(selected_filters) > 1:
-            self.add_text_to_display(
+            self.add_text_to_display.emit(
                 "Unable to plot more than one subset at a time, select only one filter to apply",
                 self.__class__.__name__,
             )
@@ -1147,6 +1147,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         selected event in Individual analysis mode.
         """
         self._reset_actions()
+        self._clear_cache()
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
@@ -1156,17 +1157,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         d = float(parameters["pore_diameter"])
         L = float(parameters["pore_length"])
 
-        # --- OPTIMIZATION 1: Extract invariants from loops ---
-        N = int(parameters.get("n_values") or 100) #Default if missing
+        # Default N to 100 if missing
+        N = int(parameters.get("n_values") or 100)
         bins = parameters.get("bins")
         sizes = parameters.get("sizes")
-        tol = 1e-5
-
-        # Pre-define bounds and guesses so they aren't recreated 2*N times per event
-        prolate_setup = {
-            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
-            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]},
-        }
 
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
@@ -1258,7 +1252,6 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                     for event in self.event_data_generator:
                         processed += 1
-                        print(processed)
 
                         plot_data = self._construct_single_event_histogram(
                             event,
@@ -1324,40 +1317,33 @@ class ProteinView(MetaView, WalkthroughMixin):
                             mean_max, std_max = mean2, np.abs(std2)
                             mean_min, std_min = mean1, np.abs(std1)
 
-                        deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
-                        deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
+                        # --- OPTIMIZED GENERATIVE SAMPLING ---
+                        # Call the Monte Carlo generators directly for this specific event
+                        prolate_V, prolate_m = self._generate_vm_ensemble(
+                            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+                        )
 
-                        for prolate in [True, False]:
-                            setup = prolate_setup[prolate]
+                        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+                        prolate_a = prolate_b * prolate_m
 
-                            for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
-                                solution = least_squares(
-                                    self._spheroid_blockage,
-                                    setup["guess"],
-                                    args=(dI_M, dI_m, d, L, prolate),
-                                    bounds=setup["bounds"],
-                                )
+                        # Pack the returned arrays into tuples and extend the master list
+                        prolate_solutions.extend(
+                            zip(prolate_V, prolate_m, prolate_a, prolate_b)
+                        )
 
-                                if solution.success:
-                                    # --- OPTIMIZATION 2: Remove redundant function calls ---
-                                    if np.max(np.abs(solution.fun)) > tol:
-                                        continue
-
-                                    # solution.fun ALREADY contains the output of self._spheroid_blockage
-                                    # Just sum the squares directly from the solver's result array
-                                    residuals = np.sum(solution.fun**2)
-                                    if residuals > tol:
-                                        continue
-
-                                    V_sol, m_sol = solution.x
-                                    if prolate:
-                                        prolate_solutions.append((V_sol, m_sol))
-                                    else:
-                                        oblate_solutions.append((V_sol, m_sol))
+                        oblate_V, oblate_m = self._generate_vm_ensemble(
+                            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+                        )
+                        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+                        oblate_a = oblate_b * oblate_m
+                        # Pack the returned arrays into tuples and extend the master list
+                        oblate_solutions.extend(
+                            zip(oblate_V, oblate_m, oblate_a, oblate_b)
+                        )
 
             # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
-            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
+            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
+            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
 
             if not df_prolate.empty:
                 self.update_plot(
@@ -1405,95 +1391,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         return g1 + g2
 
     @log(logger=logger)
-    def _spheroid_blockage(self, vars, deltaI_I_max, deltaI_I_min, d, L, prolate=True):
-        """
-        return the value of the difference between v,m formula and a given blockage for a spheroid
-
-        :param V: the volume of the protein  in nm^3
-        :type V: float
-        :param m: the shape factor a/b of the protein
-        :type m: float
-        :param deltaI_I_max: the value of blockage observed for a given set of parameters
-        :type deltaI_I_max: float
-        :param deltaI_I_min: the value of blockage observed for a given set of parameters
-        :type deltaI_I_min: float
-        :param d: the pore diameter in nm
-        :type d: float
-        :param L: the length of the pore in nm
-        :type L: float
-        :param sign: True for prolate (0<m<1), False for oblate (m>1)
-        :type sign: bool
-        :return: equations for fsolve, list of two equations in two unknowns (V and m) that resolve to floats - these should be both 0 when V and m are valid solutions
-        :rtype: List[float]
-        """
-        V, m = vars
-        if not prolate:
-            gamma_parallel = 1 / (
-                1 - 1 / (1 - m**2) * (1 - m / np.sqrt(1 - m**2) * np.arccos(m))
-            )
-        elif prolate:
-            gamma_parallel = 1 / (
-                1
-                - 1
-                / (m**2 - 1)
-                * (m / np.sqrt(m**2 - 1) * np.log(m + np.sqrt(m**2 - 1)) - 1)
-            )
-        elif prolate is None:
-            self.logger.error("prolate must be True or False", self.__class__.__name__)
-            self.add_text_to_display.emit(
-                "prolate must be True or False", self.__class__.__name__
-            )
-            return None
-
-        gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
-
-        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
-        a = b * m
-        d_ptn = 2 * b
-        l_ptn = 2 * a
-
-        gamma_parallel_prime = gamma_parallel / (
-            1 - 0.71 * (d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2) * (d_ptn / d) ** 2
-        )
-        gamma_perpendicular_prime = gamma_perpendicular / (
-            1 - (0.32 + 0.48 * l_ptn / d) * l_ptn * d_ptn**2 / d**3
-        )  # double check typo
-
-        if not prolate:
-            eq1 = (
-                4
-                * V
-                / (np.pi * d**2 * (L + 0.8 * d))
-                * (
-                    gamma_perpendicular_prime
-                    + (gamma_parallel_prime - gamma_perpendicular_prime)
-                )
-                - deltaI_I_max
-            )
-            eq2 = (
-                4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
-                - deltaI_I_min
-            )
-        elif prolate:
-            eq1 = (
-                4
-                * V
-                / (np.pi * d**2 * (L + 0.8 * d))
-                * (
-                    gamma_perpendicular_prime
-                    + (gamma_parallel_prime - gamma_perpendicular_prime)
-                )
-                - deltaI_I_min
-            )
-            eq2 = (
-                4 * V / (np.pi * d**2 * (L + 0.8 * d)) * gamma_perpendicular_prime
-                - deltaI_I_max
-            )
-
-        # when eq1 and eq2 are zero for a given (V,m), we have a mathematically valid solution, though not necessarily a physically valid one
-        return [eq1, eq2]
-
-    @log(logger=logger)
     def _fit_double_gaussian(self, bins, amplitude):
         """
         Attempt to fit a double gaussian to data or return None on failure.
@@ -1505,38 +1402,125 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
         :rtype: Optional[List[float]]
         """
-        min_prominence = np.max(amplitude) * 0.05
-        peaks, properties = find_peaks(amplitude, prominence=min_prominence)
-
-        if len(peaks) < 2:
-            return None, None
-
-        prominences = properties["prominences"]
-
-        largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
-        top_two_peaks = peaks[largest_prominence_indices]
-
-        widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
-
-        bin_width = bins[1] - bins[0]
-        fwhm_guesses = widths * bin_width
-
-        std_guesses = fwhm_guesses / 2.355
-
-        p0 = (
-            amplitude[top_two_peaks[0]],
-            bins[top_two_peaks[0]],
-            std_guesses[0],
-            amplitude[top_two_peaks[1]],
-            bins[top_two_peaks[1]],
-            std_guesses[1],
-        )
-
         try:
-            popt, pcov = curve_fit(self._double_gaussian, bins, amplitude, p0=p0)
+            min_prominence = np.max(amplitude) * 0.05
+            peaks, properties = find_peaks(amplitude, prominence=min_prominence)
+
+            if len(peaks) < 2:
+                raise ValueError("Not enough peaks for initial guess")
+
+            prominences = properties["prominences"]
+
+            largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
+            top_two_peaks = peaks[largest_prominence_indices]
+
+            widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
+
+            bin_width = bins[1] - bins[0]
+            fwhm_guesses = widths * bin_width
+
+            std_guesses = fwhm_guesses / 2.355
+
+            p0 = (
+                amplitude[top_two_peaks[0]],
+                bins[top_two_peaks[0]],
+                std_guesses[0],
+                amplitude[top_two_peaks[1]],
+                bins[top_two_peaks[1]],
+                std_guesses[1],
+            )
+            min_mean = np.min(bins)
+            max_mean = np.max(bins)
+            min_amp = 0
+            max_amp = np.max(amplitude)
+            min_std = 0
+            max_std = np.abs(bins[-1] - bins[1])
+
+            popt, pcov = curve_fit(
+                self._double_gaussian,
+                bins,
+                amplitude,
+                p0=p0,
+                bounds=(
+                    [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
+                    [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
+                ),
+            )
             return popt, pcov
         except (RuntimeError, ValueError):
-            return None, None
+            try:
+                n = len(amplitude)
+                amax = np.max(amplitude)
+                left_start = 0
+                while amplitude[left_start] < 0.05 * amax and left_start < n:
+                    left_start += 1
+                right_start = n - 1
+                while amplitude[right_start] < 0.05 * amax and right_start > 0:
+                    right_start -= 1
+
+                if left_start >= right_start:
+                    raise ValueError(
+                        "Cannot determine where to split the histogram for initial guess"
+                    )
+
+                left = amplitude[left_start : (left_start + right_start) // 2]
+                right = amplitude[(left_start + right_start) // 2 : right_start]
+
+                leftmax = np.max(left)
+                leftargmax = np.argmax(left)
+
+                rightmax = np.max(right)
+                rightargmax = np.argmax(right)
+
+                left_half_max = leftmax / 2.0
+                idx_left = leftargmax
+                while idx_left > 0 and left[idx_left] > left_half_max:
+                    idx_left -= 1
+
+                left_dist = abs(
+                    bins[left_start + idx_left] - bins[left_start + leftargmax]
+                )
+                left_std_guess = left_dist / 1.177
+
+                right_half_max = rightmax / 2.0
+                idx_right = rightargmax
+                while idx_right > 0 and right[idx_right] > right_half_max:
+                    idx_right -= 1
+
+                right_dist = abs(
+                    bins[(left_start + right_start) // 2 + idx_right]
+                    - bins[(left_start + right_start) // 2 + rightargmax]
+                )
+                right_std_guess = right_dist / 1.177
+
+                p0 = (
+                    leftmax,
+                    bins[left_start + leftargmax],
+                    left_std_guess,
+                    rightmax,
+                    bins[(left_start + right_start) // 2 + rightargmax],
+                    right_std_guess,
+                )
+                min_mean = np.min(bins)
+                max_mean = np.max(bins)
+                min_amp = 0
+                max_amp = np.max(amplitude)
+                min_std = 0
+                max_std = np.abs(bins[-1] - bins[1])
+
+                popt, pcov = curve_fit(
+                    self._double_gaussian,
+                    bins,
+                    amplitude,
+                    p0=p0,
+                    bounds=(
+                        [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
+                        [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
+                    ),
+                )
+                return popt, pcov
+            except (RuntimeError, ValueError):
+                return None, None
 
     @log(logger=logger)
     @register_action()
@@ -1546,6 +1530,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         all events in Ensemble analysis mode.
         """
         self._reset_actions()
+        self._clear_cache()
         self._show_sql_in_display = False
         self._show_event_sql_in_display = False
 
@@ -1554,14 +1539,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
         L = float(parameters["pore_length"])
-
-        # --- OPTIMIZATION 1: Extract invariants ---
-        N = parameters.get("n_values", 100)
-        tol = 1e-5
-        prolate_setup = {
-            True: {"bounds": ([1, 1.00001], [np.inf, np.inf]), "guess": [64.0, 1.5]},
-            False: {"bounds": ([1, 0.01], [np.inf, 0.99999]), "guess": [64.0, 0.75]},
-        }
+        N = int(parameters.get("n_values", 100))
 
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
@@ -1581,7 +1559,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 f"Only a single experiment can be used for {plot_type}",
                 self.__class__.__name__,
             )
-
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1600,7 +1577,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 f"Only a single subset can be used for {plot_type}",
                 self.__class__.__name__,
             )
-
             return
 
         for exp, channels in experiments_and_channels.items():
@@ -1609,7 +1585,6 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
-
                     dataset_label = (
                         f"{loader} | {exp} Ch {channel}: {subset_name}"
                         if exp is not None
@@ -1672,7 +1647,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             self.logger.info(
                                 "No plot data generates for the requested plot configuration"
                             )
-                            self.add_text_to_display(
+                            self.add_text_to_display.emit(
                                 "No plot data generates for the requested plot configuration",
                                 self.__class__.__name__,
                             )
@@ -1684,7 +1659,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.add_text_to_display.emit(
                             f"Invalid plot type: {plot_type}", self.__class__.__name__
                         )
-
                         return
 
                     self.allowed_plot_type = plot_type
@@ -1715,59 +1689,57 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
             else:
                 self.logger.info("Unable to fit a double gaussian to the histogram")
-                self.add_text_to_display(
+                self.add_text_to_display.emit(
                     "Unable to fit a double gaussian to the histogram",
                     self.__class__.__name__,
                 )
-
                 return
 
             amp1, mean1, std1, amp2, mean2, std2 = popt
 
             if mean1 > mean2:
-                mean_max, std_max = mean1, std1
-                mean_min, std_min = mean2, std2
+                mean_max, std_max = mean1, np.abs(std1)
+                mean_min, std_min = mean2, np.abs(std2)
             else:
-                mean_max, std_max = mean2, std2
-                mean_min, std_min = mean1, std1
+                mean_max, std_max = mean2, np.abs(std2)
+                mean_min, std_min = mean1, np.abs(std1)
 
-            deltaI_I_max = np.random.normal(mean_max, std_max, size=N)
-            deltaI_I_min = np.random.normal(mean_min, std_min, size=N)
+            # --- OPTIMIZED GENERATIVE SAMPLING ---
+            # Call the Monte Carlo generators directly
+            prolate_V, prolate_m = self._generate_vm_ensemble(
+                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+            )
+            oblate_V, oblate_m = self._generate_vm_ensemble(
+                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+            )
 
-            prolate_solutions = []
-            oblate_solutions = []
+            if len(prolate_V) == 0 and len(oblate_V) == 0:
+                self.logger.warning(
+                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
+                )
+                self.add_text_to_display.emit(
+                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
+                    self.__class__.__name__,
+                )
+                return
+            elif len(prolate_V) < N or len(oblate_V) < N:
+                self.logger.info(
+                    "Sampling hit bailout limit; returning partial ensemble arrays."
+                )
 
-            for prolate in [True, False]:
-                setup = prolate_setup[prolate]
+            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+            prolate_a = prolate_b * prolate_m
 
-                for dI_M, dI_m in zip(deltaI_I_max, deltaI_I_min):
-                    solution = least_squares(
-                        self._spheroid_blockage,
-                        setup["guess"],
-                        args=(dI_M, dI_m, d, L, prolate),
-                        bounds=setup["bounds"],
-                    )
-
-                    if solution.success:
-                        # --- OPTIMIZATION 2: Direct residual check ---
-                        if np.max(np.abs(solution.fun)) > tol:
-                            continue
-
-                        # Avoid re-running _spheroid_blockage; use solver's exact output
-                        residuals = np.sum(solution.fun**2)
-                        if residuals > tol:
-                            continue
-
-                        V_sol, m_sol = solution.x
-
-                        if prolate:
-                            prolate_solutions.append((V_sol, m_sol))
-                        else:
-                            oblate_solutions.append((V_sol, m_sol))
+            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+            oblate_a = oblate_b * oblate_m
 
             # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m"])
-            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m"])
+            df_prolate = pd.DataFrame(
+                {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
+            )
+            df_oblate = pd.DataFrame(
+                {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
+            )
 
             if not df_prolate.empty:
                 self.update_plot(
@@ -1787,6 +1759,188 @@ class ProteinView(MetaView, WalkthroughMixin):
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
                 )
+
+    @log(logger=logger)
+    def _compute_theoretical_blockages(self, V, m, d, L, prolate=True):
+        """
+        Vectorized forward model: Calculates theoretical max and min blockages
+        for arrays of volume (V) and shape factor (m).
+        """
+        m_sq = m**2
+
+        if not prolate:
+            gamma_parallel = 1 / (
+                1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
+            )
+        else:
+            gamma_parallel = 1 / (
+                1
+                - (1 / (m_sq - 1))
+                * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
+            )
+
+        gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
+
+        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
+        a = b * m
+        d_ptn = 2 * b
+        l_ptn = 2 * a
+
+        gamma_parallel_prime = gamma_parallel / (
+            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d) ** 2
+        )
+
+        gamma_perpendicular_prime = gamma_perpendicular / (
+            1 - (0.32 + 0.48 * l_ptn / d) * (l_ptn * d_ptn**2 / d**3)
+        )
+
+        volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
+
+        parallel_term = volume_factor * gamma_parallel_prime
+        perpendicular_term = volume_factor * gamma_perpendicular_prime
+
+        # Map parallel/perpendicular to max/min based on your original logic
+        if not prolate:
+            dI_max = parallel_term
+            dI_min = perpendicular_term
+        else:
+            dI_max = perpendicular_term
+            dI_min = parallel_term
+
+        return dI_max, dI_min
+
+    @log(logger=logger)
+    def _generate_vm_ensemble(
+        self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+    ):
+        """
+        Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
+        Bails out after a maximum number of consecutive failed batches if the experimental
+        data represents an unphysical geometry.
+        """
+        accepted_V = []
+        accepted_m = []
+
+        # --- Dynamic Bounds Calculation ---
+        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
+        gamma_min = 1
+
+        highest_blockage = mean_max + 4 * std_max
+        V_max = highest_blockage * K / gamma_min
+
+        V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
+
+        if V_min >= V_max:
+            V_max = V_min * 10.0
+
+        batch_size = 50000
+
+        # --- Bailout Logic Variables ---
+        max_consecutive_zeros = 5
+        consecutive_zeros = 0
+
+        while len(accepted_V) < N_target and consecutive_zeros < max_consecutive_zeros:
+            # 1. Propose physically valid uniform samples
+            V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
+
+            if prolate:
+                m_upper_bounds_raw = np.sqrt((np.pi * d**3) / (6 * V_prop_raw))
+                valid_mask = m_upper_bounds_raw >= 1.002
+
+                V_prop = V_prop_raw[valid_mask]
+
+                # Clip the upper bound to a physical maximum (e.g., m=50.0)
+                # to prevent sampling impossible "1D string" geometries
+                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.002, 50.0)
+
+                if len(V_prop) == 0:
+                    consecutive_zeros += 1
+                    continue
+
+                m_prop = np.random.uniform(1.001, m_upper_bounds)
+
+            else:
+                m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * d**3)
+                valid_mask = m_lower_bounds_raw <= 0.998
+
+                V_prop = V_prop_raw[valid_mask]
+
+                # Clip the lower bound to a physical minimum (e.g., m=0.01)
+                # to prevent divide-by-zero errors and impossible "2D sheet" geometries
+                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.998)
+
+                if len(V_prop) == 0:
+                    consecutive_zeros += 1
+                    continue
+
+                m_prop = np.random.uniform(m_lower_bounds, 0.999)
+
+            # 2. Forward Calculation
+
+            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(
+                V_prop, m_prop, d, L, prolate
+            )
+
+            # Clean up unexpected NaNs
+            nan_mask = np.isnan(dI_max_calc) | np.isnan(dI_min_calc)
+            if np.all(nan_mask):
+                consecutive_zeros += 1
+                continue
+
+            valid_math = ~nan_mask
+            V_prop = V_prop[valid_math]
+            m_prop = m_prop[valid_math]
+            dI_max_calc = dI_max_calc[valid_math]
+            dI_min_calc = dI_min_calc[valid_math]
+
+            # 3. Calculate probability
+            # Use safe standard deviations to prevent infinite Z-scores on artificially sharp fits
+            safe_std_max = max(std_max, mean_max * 0.01)
+            safe_std_min = max(std_min, mean_min * 0.01)
+
+            z_sq_max = ((dI_max_calc - mean_max) / safe_std_max) ** 2
+            z_sq_min = ((dI_min_calc - mean_min) / safe_std_min) ** 2
+
+            # Absolute physical constraint: Ignore guesses that are > 4 standard deviations away
+            # This prevents the sampler from accepting the "best of the worst" in terrible batches
+            physical_mask = (z_sq_max < 16.0) & (z_sq_min < 16.0)
+
+            if not np.any(physical_mask):
+                consecutive_zeros += 1
+                continue
+
+            # Filter arrays to only physically reasonable points before probability rejection
+            V_prop = V_prop[physical_mask]
+            m_prop = m_prop[physical_mask]
+            z_sq_max = z_sq_max[physical_mask]
+            z_sq_min = z_sq_min[physical_mask]
+
+            likelihood = np.exp(-0.5 * (z_sq_max + z_sq_min))
+            max_likelihood = np.max(likelihood)
+
+            if max_likelihood == 0 or np.isnan(max_likelihood):
+                consecutive_zeros += 1
+                continue
+
+            prob_accept = likelihood / max_likelihood
+
+            # 4. Accept / Reject
+            random_thresh = np.random.uniform(0, 1, len(prob_accept))
+            accepted_indices = random_thresh < prob_accept
+
+            new_V = V_prop[accepted_indices]
+            new_m = m_prop[accepted_indices]
+
+            if len(new_V) == 0:
+                consecutive_zeros += 1
+            else:
+                consecutive_zeros = (
+                    0  # Reset counter if we got at least one valid point
+                )
+                accepted_V.extend(new_V)
+                accepted_m.extend(new_m)
+
+        return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
     def set_query(self, query, table_name):
