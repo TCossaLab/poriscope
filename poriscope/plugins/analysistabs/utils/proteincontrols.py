@@ -207,6 +207,13 @@ class ProteinControls(QWidget):
             QSizePolicy.Expanding, QSizePolicy.Preferred
         )
 
+        self.plot_histogram_pushButton = self.createButton(
+            self.groupBox, "Plot Histogram", bold=True
+        )
+        self.plot_histogram_pushButton.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Preferred
+        )
+
         self.right_arrow_button = QPushButton(self.plot_events_widget)
         self.right_arrow_button.setIcon(get_icon("arrow-right.svg"))
         self.right_arrow_button.setIconSize(QSize(16, 16))
@@ -214,6 +221,7 @@ class ProteinControls(QWidget):
 
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
+        plot_events_layout.addWidget(self.plot_histogram_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
 
         # ---------- MIDDLE COLUMN ----------
@@ -682,6 +690,9 @@ class ProteinControls(QWidget):
         self.plot_events_pushButton.clicked.connect(
             lambda: self.on_button_clicked("plot_events")
         )
+        self.plot_histogram_pushButton.clicked.connect(
+            lambda: self.on_button_clicked("plot_histogram")
+        )
         self.right_arrow_button.clicked.connect(
             lambda: self.on_button_clicked("right_arrow")
         )
@@ -886,6 +897,7 @@ class ProteinControls(QWidget):
 
         self.left_arrow_button.setEnabled(is_plot_events_valid)
         self.plot_events_pushButton.setEnabled(is_plot_events_valid)
+        self.plot_histogram_pushButton.setEnabled(is_plot_events_valid)
         self.right_arrow_button.setEnabled(is_plot_events_valid)
 
         self.export_plot_data_left_pushButton.setEnabled(is_export_valid)
@@ -920,6 +932,7 @@ class ProteinControls(QWidget):
             "selection_tree": "select_experiment_and_channel",
             "left_arrow": "shift_range_backward",
             "plot_events": "plot_events",
+            "plot_histogram": "plot_histogram",
             "right_arrow": "shift_range_forward",
             "update_plot": "update_plot",
             "reset": "reset_plot",
@@ -947,6 +960,7 @@ class ProteinControls(QWidget):
             "selection_tree": self.selection_tree_button,
             "left_arrow": self.left_arrow_button,
             "plot_events": self.plot_events_pushButton,
+            "plot_histogram": self.plot_histogram_pushButton,
             "right_arrow": self.right_arrow_button,
             "update_plot": self.update_plot_button,
             "reset": self.reset_button,

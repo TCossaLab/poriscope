@@ -127,6 +127,8 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         self._show_sql_in_display: bool = False
         self._show_event_sql_in_display: bool = False
+        
+        self._last_event_action: str = "plot_events"  # or "plot_histogram"
 
         self.plotted_datasets: Set[
             Tuple[
@@ -822,10 +824,10 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         elif action_name == "shift_range_backward":
             self._shift_range_and_update_plot(parameters, direction="left")
-
         elif action_name == "plot_events":
             self._handle_plot_events(parameters)
-
+        elif action_name == "plot_histogram":
+            self._handle_plot_histogram(parameters)
         elif action_name == "shift_range_forward":
             self._shift_range_and_update_plot(parameters, direction="right")
 
@@ -912,10 +914,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         new_params["event_index"] = expanded
         self.logger.debug(f"Updated parameters for plot: {new_params}")
 
-        self._handle_plot_events(new_params)
-        self.logger.debug(
-            f"Shifting complete. Updating input field to: {new_event_str}"
-        )
+        if self._last_event_action == "plot_histogram":
+            self._handle_plot_histogram(new_params)
+        else:
+            self._handle_plot_events(new_params)
+            self.logger.debug(
+                f"Shifting complete. Updating input field to: {new_event_str}"
+            )
         self.proteincontrols.set_event_index_input(new_event_str)
 
     def _get_event_index_text(self) -> str:  # Since params expanded
@@ -939,70 +944,70 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.plot_events_generator_updated = True
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _fetch_event_data(self, parameters, action_label="events") -> list:
         """
-        Handle loading and plotting of selected events based on provided parameters.
+        Shared validation, generator management, and data fetching for event-based plots.
 
-        :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
+        :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
         :type parameters: dict
+        :param action_label: Label used in error messages to identify the plot type.
+        :type action_label: str
+        :return: List of fetched event dictionaries, or empty list on failure.
+        :rtype: list[dict]
         """
         selected_filters = self.get_selected_filters()
         loader_name = parameters["db_loader"]
         experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
             loader_name
         )
+
         if experiments_and_channels is None:
             self.add_text_to_display.emit(
-                "No experiments or channels are in scope, select at least one to plot events",
+                f"No experiments or channels are in scope, select at least one to plot {action_label}",
                 self.__class__.__name__,
             )
-            return
+            return []
 
         if selected_filters is not None and len(selected_filters) > 1:
             self.add_text_to_display.emit(
                 "Unable to plot more than one subset at a time, select only one filter to apply",
                 self.__class__.__name__,
             )
-            return
+            return []
 
         if (
             self.selected_experiment_and_channels_by_loader[loader_name] is None
             or len(self.selected_experiment_and_channels_by_loader[loader_name]) == 0
         ):
             self.add_text_to_display.emit(
-                "No experiments or channels are in scope, select at least one to plot events",
+                f"No experiments or channels are in scope, select at least one to plot {action_label}",
                 self.__class__.__name__,
             )
-            return
+            return []
 
         if len(experiments_and_channels) > 1:
             self.add_text_to_display.emit(
-                "Only a single experiment can be used for plotting events",
+                f"Only a single experiment can be used for plotting {action_label}",
                 self.__class__.__name__,
             )
-            return
+            return []
 
         for exp, channels in experiments_and_channels.items():
             if len(channels) > 1:
                 self.add_text_to_display.emit(
-                    "Only a single channel can be used for plotting events",
+                    f"Only a single channel can be used for plotting {action_label}",
                     self.__class__.__name__,
                 )
-                return
+                return []
 
         if selected_filters is None or selected_filters == {}:
             selected_filters = {"Full Dataset": ""}
 
         event_index = parameters["event_index"]
-
         sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
-        exp = next(
-            iter(self.selected_experiment_and_channels_by_loader[loader_name].keys())
-        )
-        channel = next(
-            iter(self.selected_experiment_and_channels_by_loader[loader_name].values())
-        )[0]
+        exp = next(iter(exp_and_ch.keys()))
+        channel = next(iter(exp_and_ch.values()))[0]
 
         if not (
             sql_filter == self.current_sql_filter
@@ -1010,28 +1015,26 @@ class ProteinView(MetaView, WalkthroughMixin):
             and self.current_channel == channel
             and self.plot_events_generator is not None
         ):
-            # only load a new generator if the old one is invalid after explicitly aborting the current one
             if self.plot_events_generator is not None:
                 try:
                     try:
-                        new_event = self.plot_events_generator.send(True)
+                        self.plot_events_generator.send(True)
                     except StopIteration:
                         pass
                 except TypeError:
                     try:
-                        new_event = next(self.plot_events_generator)
-                        new_event = self.plot_events_generator.send(True)
+                        next(self.plot_events_generator)
+                        self.plot_events_generator.send(True)
                     except StopIteration:
                         pass
                 self.cached_events = {}
                 self.plot_events_generator = None
 
-            loader = parameters["db_loader"]
             load_event_data_args = (sql_filter, exp_and_ch)
             self.plot_events_generator_updated = False
             self.global_signal.emit(
                 "MetaDatabaseLoader",
-                loader,
+                loader_name,
                 "load_event_data",
                 load_event_data_args,
                 "relay_event_plot_data_generator",
@@ -1042,9 +1045,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self.current_experiment = exp
                 self.current_channel = int(channel) if channel is not None else None
 
-        event_index = parameters["event_index"]
         data_list = []
-
         for index in event_index:
             cached_event = self.cached_events.get(index)
             if cached_event is not None:
@@ -1072,8 +1073,52 @@ class ProteinView(MetaView, WalkthroughMixin):
                             break
                         elif new_event["event_id"] > index:
                             break
+
+        return data_list
+
+    @log(logger=logger)
+    def _handle_plot_events(self, parameters):
+        """
+        Handle loading and plotting of selected events based on provided parameters.
+
+        :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
+        :type parameters: dict
+        """
+        self._last_event_action = "plot_events"
+        event_index = parameters["event_index"]
+        data_list = self._fetch_event_data(parameters, action_label="events")
+
         if data_list:
             self._update_event_plot(data_list)
+        else:
+            self.add_text_to_display.emit(
+                f"No data available for plotting with indices in the specified range {event_index}",
+                self.__class__.__name__,
+            )
+            self.logger.info(
+                f"No data available for plotting with indices in the specified range {event_index}"
+            )
+
+
+    @log(logger=logger)
+    def _handle_plot_histogram(self, parameters):
+        """
+        Handle loading and plotting of the ΔI/I histogram for selected events,
+        each in its own subplot on the event canvas.
+
+        :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
+        :type parameters: dict
+        """
+        self._last_event_action = "plot_histogram"
+        event_index = parameters["event_index"]
+        bins = parameters.get("bins")
+        sizes = parameters.get("sizes", False)
+        plot_type = "Filtered Histogram"
+
+        data_list = self._fetch_event_data(parameters, action_label="histograms")
+
+        if data_list:
+            self._update_event_histogram(data_list, bins=bins, sizes=sizes, plot_type=plot_type)
         else:
             self.add_text_to_display.emit(
                 f"No data available for plotting with indices in the specified range {event_index}",
@@ -1144,6 +1189,59 @@ class ProteinView(MetaView, WalkthroughMixin):
                 labelnum -= num_cols - num_events % num_cols
             if i >= labelnum:
                 ax.set_xlabel(r"Time ($\mu s$)")
+
+        self.fig_event.set_constrained_layout(True)
+        self.canvas_event.draw()
+        self._commit_cache()
+
+    @log(logger=logger)
+    def _update_event_histogram(self, event_data, bins=None, sizes=False, plot_type="Filtered Histogram"):
+        """
+        Update the event canvas with per-event ΔI/I histograms, one subplot per event.
+
+        :param event_data: List of event dictionaries, each containing data and metadata for one event.
+        :type event_data: list[dict]
+        :param bins: Number of histogram bins.
+        :type bins: int | None
+        :param sizes: Whether bins represent bin sizes.
+        :type sizes: bool
+        :param plot_type: Type of histogram to construct.
+        :type plot_type: str
+        """
+        self._set_display_mode("event")
+        self._clear_figure_state(create_default_axes=False)
+
+        num_events = len(event_data)
+        num_rows, num_cols = self._factors(num_events)
+
+        x_label = format_axis_label("Normalized Current", "pA")
+        y_label = format_axis_label("Amplitude", "")
+
+        for j, event in enumerate(event_data):
+            ax = self.fig_event.add_subplot(num_rows, num_cols, j + 1)
+            label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
+            ax.set_title(label)
+
+            plot_data = self._construct_single_event_histogram(
+                event, plot_type, bins=bins, sizes=sizes
+            )
+            if plot_data is None:
+                continue
+
+            ax.plot(plot_data["Normalized Current"].values, plot_data["Amplitude"].values)
+
+            if j % num_cols == 0:
+                ax.set_ylabel(y_label)
+            labelnum = (num_rows - 1) * num_cols
+            if num_events % num_cols > 0:
+                labelnum -= num_cols - num_events % num_cols
+            if j >= labelnum:
+                ax.set_xlabel(x_label)
+
+            self._update_cache(
+                (plot_data["Normalized Current"].values, label + " " + x_label),
+                (plot_data["Amplitude"].values, label + " " + y_label),
+            )
 
         self.fig_event.set_constrained_layout(True)
         self.canvas_event.draw()
