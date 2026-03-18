@@ -127,7 +127,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         self._show_sql_in_display: bool = False
         self._show_event_sql_in_display: bool = False
-        
+
         self._last_event_action: str = "plot_events"  # or "plot_histogram"
 
         self.plotted_datasets: Set[
@@ -1099,7 +1099,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 f"No data available for plotting with indices in the specified range {event_index}"
             )
 
-
     @log(logger=logger)
     def _handle_plot_histogram(self, parameters):
         """
@@ -1118,7 +1117,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         data_list = self._fetch_event_data(parameters, action_label="histograms")
 
         if data_list:
-            self._update_event_histogram(data_list, bins=bins, sizes=sizes, plot_type=plot_type)
+            self._update_event_histogram(
+                data_list, bins=bins, sizes=sizes, plot_type=plot_type
+            )
         else:
             self.add_text_to_display.emit(
                 f"No data available for plotting with indices in the specified range {event_index}",
@@ -1195,7 +1196,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _update_event_histogram(self, event_data, bins=None, sizes=False, plot_type="Filtered Histogram"):
+    def _update_event_histogram(
+        self, event_data, bins=None, sizes=False, plot_type="Filtered Histogram"
+    ):
         """
         Update the event canvas with per-event ΔI/I histograms, one subplot per event.
 
@@ -1228,7 +1231,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             if plot_data is None:
                 continue
 
-            ax.plot(plot_data["Normalized Current"].values, plot_data["Amplitude"].values)
+            ax.plot(
+                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+            )
 
             if j % num_cols == 0:
                 ax.set_ylabel(y_label)
