@@ -173,18 +173,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.ax_vm = self.fig_vm.add_subplot(1, 1, 1)
         dist_row.addWidget(self.canvas_hist, stretch=1)
         dist_row.addWidget(self.canvas_vm, stretch=1)
-        self.dist_toolbar = NavigationToolbar(self.canvas_hist, self)
-        dist_outer.addWidget(self.dist_toolbar)
-
-        def activate(canvas):
-            self.dist_toolbar.canvas = canvas
-
-        self.canvas_hist.mpl_connect(
-            "button_press_event", lambda evt: activate(self.canvas_hist)
-        )
-        self.canvas_vm.mpl_connect(
-            "button_press_event", lambda evt: activate(self.canvas_vm)
-        )
+        
+        self.dist_toolbar_hist = NavigationToolbar(self.canvas_hist, self)
+        self.dist_toolbar_vm = NavigationToolbar(self.canvas_vm, self)
+        toolbar_row = QHBoxLayout()
+        toolbar_row.addWidget(self.dist_toolbar_hist)
+        toolbar_row.addWidget(self.dist_toolbar_vm)
+        dist_outer.addLayout(toolbar_row)
 
         # Page 1: event (single full canvas)
         event_page = QWidget()
