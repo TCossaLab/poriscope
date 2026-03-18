@@ -403,9 +403,12 @@ class ProteinControls(QWidget):
             self.groupBox, "Load Filter", bold=True
         )
 
-        # ROW 7: Export Plot Data button
-        self.export_plot_data_pushButton = self.createButton(
-            self.groupBox, "Export Plot Data", bold=True
+        # ROW 7: Export Plot Data buttons
+        self.export_plot_data_left_pushButton = self.createButton(
+            self.groupBox, "Export Left Plot", bold=True
+        )
+        self.export_plot_data_right_pushButton = self.createButton(
+            self.groupBox, "Export Right Plot", bold=True
         )
 
         # ============================================================
@@ -456,7 +459,14 @@ class ProteinControls(QWidget):
         # Row 6
         group_layout.addWidget(self.plot_events_widget, 6, 0)
         group_layout.addWidget(commit_widget, 6, 1)
-        group_layout.addWidget(self.export_plot_data_pushButton, 6, 2)
+
+        export_widget = QWidget(self.groupBox)
+        export_layout = QHBoxLayout(export_widget)
+        export_layout.setContentsMargins(0, 0, 0, 0)
+        export_layout.setSpacing(5)
+        export_layout.addWidget(self.export_plot_data_left_pushButton, 1)
+        export_layout.addWidget(self.export_plot_data_right_pushButton, 1)
+        group_layout.addWidget(export_widget, 6, 2)
 
         # ============================================================
         # SIZING
@@ -703,8 +713,11 @@ class ProteinControls(QWidget):
         self.load_filter_button.clicked.connect(
             lambda: self.on_button_clicked("load_filter")
         )
-        self.export_plot_data_pushButton.clicked.connect(
-            lambda: self.on_button_clicked("export_plot_data")
+        self.export_plot_data_left_pushButton.clicked.connect(
+            lambda: self.on_button_clicked("export_plot_data_left")
+        )
+        self.export_plot_data_right_pushButton.clicked.connect(
+            lambda: self.on_button_clicked("export_plot_data_right")
         )
         self.logger.info("Signals connected")
 
@@ -875,7 +888,8 @@ class ProteinControls(QWidget):
         self.plot_events_pushButton.setEnabled(is_plot_events_valid)
         self.right_arrow_button.setEnabled(is_plot_events_valid)
 
-        self.export_plot_data_pushButton.setEnabled(is_export_valid)
+        self.export_plot_data_left_pushButton.setEnabled(is_export_valid)
+        self.export_plot_data_right_pushButton.setEnabled(is_export_valid)
 
         self.update_plot_button.setEnabled(
             db_loader_loaded and pore_diameter_valid and pore_length_valid
@@ -901,7 +915,8 @@ class ProteinControls(QWidget):
         )
 
         button_actions = {
-            "export_plot_data": "export_plot_data",
+            "export_plot_data_left": "export_plot_data_left",
+            "export_plot_data_right": "export_plot_data_right",
             "selection_tree": "select_experiment_and_channel",
             "left_arrow": "shift_range_backward",
             "plot_events": "plot_events",
@@ -927,7 +942,8 @@ class ProteinControls(QWidget):
 
         # Automatically uncheck the button after it is clicked
         button_mapping = {
-            "export_plot_data": self.export_plot_data_pushButton,
+            "export_plot_data_left": self.export_plot_data_left_pushButton,
+            "export_plot_data_right": self.export_plot_data_right_pushButton,
             "selection_tree": self.selection_tree_button,
             "left_arrow": self.left_arrow_button,
             "plot_events": self.plot_events_pushButton,
