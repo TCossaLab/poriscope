@@ -1891,7 +1891,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
             )
 
-        gamma_perpendicular = 1 / (1 - 0.5 * gamma_parallel)
+        gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
 
         b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
         a = b * m
