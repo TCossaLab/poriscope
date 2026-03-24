@@ -792,23 +792,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         parameters = args[0]
 
-        if action_name == "export_plot_data_left":
+        if action_name == "export_plot_data":
             if self.no_cached_data is True:
                 self.add_text_to_display.emit(
                     "Event overlay data is not cached due to volume; use Export Subset as CSV instead",
                     self.__class__.__name__,
                 )
             else:
-                self.export_plot_data.emit("left")
-
-        elif action_name == "export_plot_data_right":
-            if self.no_cached_data is True:
-                self.add_text_to_display.emit(
-                    "Event overlay data is not cached due to volume; use Export Subset as CSV instead",
-                    self.__class__.__name__,
-                )
-            else:
-                self.export_plot_data.emit("right")
+                self.export_plot_data.emit()
 
         elif action_name == "loader_changed":
             loader = parameters.get("db_loader")
