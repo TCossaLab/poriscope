@@ -1940,6 +1940,27 @@ class ProteinView(MetaView, WalkthroughMixin):
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
         Bails out after a maximum number of consecutive failed batches if the experimental
         data represents an unphysical geometry.
+
+        :param N_target: number of value V,m pairs to generate, if possible
+        :type N_target: int
+        :param mean_max: The mean value of the larger of the two blockage histograms 
+        :type mean_max: float
+        :param std_max: The standard deviation value of the larger of the two blockage histograms 
+        :type std_max: float
+        :param mean_min: The mean value of the smaller of the two blockage histograms 
+        :type mean_min: float
+        :param std_min: The standard deviation value of the smaller of the two blockage histograms 
+        :type std_min: float
+        :param d: the length of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param prolate: whether we are looking for prolate (m>1) solutions or oblate (0<m<1) solutions
+        :type prolate: bool
+        :param cutoff_std: the number of standard deviations outside the mean after which to cut off solutions
+        :type cutoff_std: float
+        :return: Tuple of arrays of V,m pairs
+        :rtype: Tuple[npt.NDArray[np.float64],npt.NDArray[np.float64]]
         """
         accepted_V = []
         accepted_m = []
