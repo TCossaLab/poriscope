@@ -1906,7 +1906,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
 
             gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
-        except ValueError: #divide by zero from a m=1 case
+        except ValueError:  # divide by zero from a m=1 case
             gamma_perpendicular = 1.5
             gamma_parallel = 1.5
 
