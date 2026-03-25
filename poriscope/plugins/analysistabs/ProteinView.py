@@ -1954,13 +1954,13 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         :param N_target: number of value V,m pairs to generate, if possible
         :type N_target: int
-        :param mean_max: The mean value of the larger of the two blockage histograms 
+        :param mean_max: The mean value of the larger of the two blockage histograms
         :type mean_max: float
-        :param std_max: The standard deviation value of the larger of the two blockage histograms 
+        :param std_max: The standard deviation value of the larger of the two blockage histograms
         :type std_max: float
-        :param mean_min: The mean value of the smaller of the two blockage histograms 
+        :param mean_min: The mean value of the smaller of the two blockage histograms
         :type mean_min: float
-        :param std_min: The standard deviation value of the smaller of the two blockage histograms 
+        :param std_min: The standard deviation value of the smaller of the two blockage histograms
         :type std_min: float
         :param d: the length of the pore in nanometers
         :type d: float
