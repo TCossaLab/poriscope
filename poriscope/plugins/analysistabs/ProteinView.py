@@ -1864,13 +1864,33 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
 
     @log(logger=logger)
-    def _compute_theoretical_blockages(self, V, m, d, L, prolate=True):
+    def _compute_theoretical_blockages(self, V, m, d, L):
         """
         Vectorized forward model: Calculates theoretical max and min blockages
         for arrays of volume (V) and shape factor (m).
+
+        :param V: array of volumes of spheroids in cubic nanometers
+        :type V: npt.NDArray[np.float64]
+        :param m: array of shape factors of spheroids (major axis / minor axis) of the same length as V. All must be either 0<m<1 or all m>1. 
+        :type m: npt.NDArray[np.float64]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :return: Tuple of arrays of theoretical max and min blockage values for the given parameters, one per V,m pair
+        :rtype: Tuple[npt.NDArray[np.float64],npt.NDArray[np.float64]]
         """
         m_sq = m**2
 
+        if all(m<1):
+            prolate = False
+        elif all(m>1):
+            prolate = True
+        elif any(m<0):
+            raise ValueError('Cannot have negative form factors')
+        else:
+            raise ValueError('Cannot mix oblate and prolate form factors in a singel call to _compute_theoretical_blockages')
+        
         if not prolate:
             gamma_parallel = 1 / (
                 1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
@@ -1914,7 +1934,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _generate_vm_ensemble(
-        self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True, cutoff_std=4
     ):
         """
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
@@ -1923,12 +1943,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         accepted_V = []
         accepted_m = []
-
+        x = np.minimum(d,L)
         # --- Dynamic Bounds Calculation ---
         K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
         gamma_min = 1
 
-        highest_blockage = mean_max + 4 * std_max
+        highest_blockage = mean_max + cutoff_std * std_max
         V_max = highest_blockage * K / gamma_min
 
         V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
@@ -1945,43 +1965,43 @@ class ProteinView(MetaView, WalkthroughMixin):
         while len(accepted_V) < N_target and consecutive_zeros < max_consecutive_zeros:
             # 1. Propose physically valid uniform samples
             V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
-
+            ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
             if prolate:
-                m_upper_bounds_raw = np.sqrt((np.pi * d**3) / (6 * V_prop_raw))
-                valid_mask = m_upper_bounds_raw >= 1.002
+                m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
+                valid_mask = m_upper_bounds_raw >= 1.0001
 
                 V_prop = V_prop_raw[valid_mask]
 
                 # Clip the upper bound to a physical maximum (e.g., m=50.0)
                 # to prevent sampling impossible "1D string" geometries
-                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.002, 50.0)
+                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.0001, 50.0)
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(1.001, m_upper_bounds)
+                m_prop = np.random.uniform(1.0001, m_upper_bounds)
 
             else:
-                m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * d**3)
-                valid_mask = m_lower_bounds_raw <= 0.998
+                m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
+                valid_mask = m_lower_bounds_raw <= 0.9999
 
                 V_prop = V_prop_raw[valid_mask]
 
                 # Clip the lower bound to a physical minimum (e.g., m=0.01)
                 # to prevent divide-by-zero errors and impossible "2D sheet" geometries
-                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.998)
+                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.9999)
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(m_lower_bounds, 0.999)
+                m_prop = np.random.uniform(m_lower_bounds, 0.9999)
 
             # 2. Forward Calculation
 
             dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(
-                V_prop, m_prop, d, L, prolate
+                V_prop, m_prop, d, L
             )
 
             # Clean up unexpected NaNs
@@ -2006,7 +2026,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             # Absolute physical constraint: Ignore guesses that are > 4 standard deviations away
             # This prevents the sampler from accepting the "best of the worst" in terrible batches
-            physical_mask = (z_sq_max < 16.0) & (z_sq_min < 16.0)
+            physical_mask = (z_sq_max < cutoff_std**2) & (z_sq_min < cutoff_std**2)
 
             if not np.any(physical_mask):
                 consecutive_zeros += 1
