@@ -124,7 +124,7 @@ class DictDialog(QDialog):
                 else:
                     filter_str = "All Files (*)"
                 self.entrywidgets[key] = QPushButton("Select Input File")
-                
+
                 ### FIX: explicit variable capture in lambda
                 self.entrywidgets[key].clicked.connect(
                     lambda checked=False, s=starting_file_path, f=filter_str: self.get_input_file(
@@ -146,23 +146,25 @@ class DictDialog(QDialog):
                     filter_str = "All Files (*)"
 
                 self.entrywidgets[key] = QPushButton("Select Output File")
-                
+
                 ### FIX: explicit variable capture in lambda
                 self.entrywidgets[key].clicked.connect(
                     lambda checked=False, s=starting_file_path, f=filter_str: self.get_output_file(
                         starting_file_path=s, file_types=f
                     )
                 )
-                
+
             elif key == "Folder":
                 starting_path = val.get("Value")
                 if not starting_path:
                     starting_path = self.data_server
                 self.entrywidgets[key] = QPushButton("Select Folder")
-                
+
                 ### FIX: explicit variable capture in lambda
                 self.entrywidgets[key].clicked.connect(
-                    lambda checked=False, s=starting_path: self.get_folder(starting_path=s)
+                    lambda checked=False, s=starting_path: self.get_folder(
+                        starting_path=s
+                    )
                 )
             else:
                 val_type = val.get("Type")
@@ -292,13 +294,13 @@ class DictDialog(QDialog):
                 loc = os.path.dirname(starting_file_path)
             except:
                 raise
-                
+
         options = QFileDialog.Options()
         options |= QFileDialog.DontConfirmOverwrite
         ### FIX: Only apply the non-native flag if the OS is Linux
         if sys.platform.startswith("linux"):
             options |= QFileDialog.DontUseNativeDialog
-        
+
         output_file, _ = QFileDialog.getSaveFileName(
             self, "Select File", loc, file_types, options=options
         )
@@ -320,7 +322,7 @@ class DictDialog(QDialog):
         :raises Exception: If there is an error determining the file path location.
         """
         loc = starting_path if starting_path else ""
-        
+
         options = QFileDialog.Options()
         options |= QFileDialog.ShowDirsOnly
         ### FIX: Only apply the non-native flag if the OS is Linux
@@ -330,7 +332,7 @@ class DictDialog(QDialog):
         folder = QFileDialog.getExistingDirectory(
             self, "Select or Create Experiment Folder", loc, options=options
         )
-        
+
         if folder:
             self.params["Folder"]["Value"] = folder
             self.unitwidgets["Folder"].setChecked(True)
