@@ -1882,15 +1882,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         m_sq = m**2
 
-        if all(m < 1):
+        if all(m <= 1):
             prolate = False
-        elif all(m > 1):
+        elif all(m >= 1):
             prolate = True
         elif any(m < 0):
             raise ValueError("Cannot have negative form factors")
         else:
             raise ValueError(
-                "Cannot mix oblate and prolate form factors in a singel call to _compute_theoretical_blockages"
+                "Cannot mix oblate and prolate form factors in a single call to _compute_theoretical_blockages"
             )
 
         try:
