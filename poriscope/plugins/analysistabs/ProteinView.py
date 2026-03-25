@@ -1893,18 +1893,22 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "Cannot mix oblate and prolate form factors in a singel call to _compute_theoretical_blockages"
             )
 
-        if not prolate:
-            gamma_parallel = 1 / (
-                1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
-            )
-        else:
-            gamma_parallel = 1 / (
-                1
-                - (1 / (m_sq - 1))
-                * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
-            )
+        try:
+            if not prolate:
+                gamma_parallel = 1 / (
+                    1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
+                )
+            else:
+                gamma_parallel = 1 / (
+                    1
+                    - (1 / (m_sq - 1))
+                    * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
+                )
 
-        gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
+            gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
+        except ValueError: #divide by zero from a m=1 case
+            gamma_perpendicular = 1.5
+            gamma_parallel = 1.5
 
         b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
         a = b * m
@@ -2000,35 +2004,35 @@ class ProteinView(MetaView, WalkthroughMixin):
             ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
             if prolate:
                 m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
-                valid_mask = m_upper_bounds_raw >= 1.0001
+                valid_mask = m_upper_bounds_raw >= 1
 
                 V_prop = V_prop_raw[valid_mask]
 
                 # Clip the upper bound to a physical maximum (e.g., m=50.0)
                 # to prevent sampling impossible "1D string" geometries
-                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1.0001, 50.0)
+                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1, 50.0)
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(1.0001, m_upper_bounds)
+                m_prop = np.random.uniform(1, m_upper_bounds)
 
             else:
                 m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
-                valid_mask = m_lower_bounds_raw <= 0.9999
+                valid_mask = m_lower_bounds_raw <= 1
 
                 V_prop = V_prop_raw[valid_mask]
 
                 # Clip the lower bound to a physical minimum (e.g., m=0.01)
                 # to prevent divide-by-zero errors and impossible "2D sheet" geometries
-                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 0.9999)
+                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 1)
 
                 if len(V_prop) == 0:
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(m_lower_bounds, 0.9999)
+                m_prop = np.random.uniform(m_lower_bounds, 1)
 
             # 2. Forward Calculation
 
