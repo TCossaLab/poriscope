@@ -1871,7 +1871,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         :param V: array of volumes of spheroids in cubic nanometers
         :type V: npt.NDArray[np.float64]
-        :param m: array of shape factors of spheroids (major axis / minor axis) of the same length as V. All must be either 0<m<1 or all m>1. 
+        :param m: array of shape factors of spheroids (major axis / minor axis) of the same length as V. All must be either 0<m<1 or all m>1.
         :type m: npt.NDArray[np.float64]
         :param d: the diameter of the pore in nanometers
         :type d: float
@@ -1882,15 +1882,17 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         m_sq = m**2
 
-        if all(m<1):
+        if all(m < 1):
             prolate = False
-        elif all(m>1):
+        elif all(m > 1):
             prolate = True
-        elif any(m<0):
-            raise ValueError('Cannot have negative form factors')
+        elif any(m < 0):
+            raise ValueError("Cannot have negative form factors")
         else:
-            raise ValueError('Cannot mix oblate and prolate form factors in a singel call to _compute_theoretical_blockages')
-        
+            raise ValueError(
+                "Cannot mix oblate and prolate form factors in a singel call to _compute_theoretical_blockages"
+            )
+
         if not prolate:
             gamma_parallel = 1 / (
                 1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
@@ -1934,7 +1936,16 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _generate_vm_ensemble(
-        self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True, cutoff_std=4
+        self,
+        N_target,
+        mean_max,
+        std_max,
+        mean_min,
+        std_min,
+        d,
+        L,
+        prolate=True,
+        cutoff_std=4,
     ):
         """
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
@@ -1943,7 +1954,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         accepted_V = []
         accepted_m = []
-        x = np.minimum(d,L)
+        x = np.minimum(d, L)
         # --- Dynamic Bounds Calculation ---
         K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
         gamma_min = 1
