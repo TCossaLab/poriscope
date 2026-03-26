@@ -40,12 +40,13 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
+    QMessageBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -79,7 +80,8 @@ class ProteinView(MetaView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-
+    request_plugin_refresh = Signal(str)
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._init()
@@ -95,6 +97,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param kwargs: Keyword arguments passed to parent constructors.
         """
         self._clear_cache()
+        self.fit_data = None
         self.plot_initialized = False
         self.no_cached_data = False
 
@@ -212,6 +215,101 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.display_stack.setCurrentIndex(0)
             self._display_mode = "distribution"
 
+
+    @log(logger=logger)
+    def _commit_fits(self, loader):
+        """
+        Commits fitted data to the database
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        """
+        if self.fit_data is None:
+            raise AttributeError("fit data has not been set, unable to commit")
+        fit_data = self.fit_data[["id", "prolate_volume", "prolate_shape_factor", "prolate_major_axis", "prolate_minor_axis", "oblate_volume", "oblate_shape_factor", "oblate_major_axis", "oblate_minor_axis", "min_fractional_blockage", "min_fractional_blockage_std", "max_fractional_blockage", "max_fractional_blockage_std"]]
+        units = ["nm^3", None, "nm", "nm", "nm^3", None, "nm", "nm", None, None, None, None]
+        table_name = 'events'
+    
+        self.column_table = None
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "get_table_by_column",
+            ("prolate_volume"),
+            "check_column_exists",
+            (),
+        )
+        if self.column_table is not None:
+            reply = QMessageBox.question(
+                self,
+                "Confirm Overwrite",
+                "fit data data already exists, are you sure you want to overwrite? This action cannot be undone.",
+                QMessageBox.Ok | QMessageBox.Cancel,
+            )
+            if reply == QMessageBox.Ok:
+                self.operation_success = False
+                queries = [
+                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_volume",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_shape_factor",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_major_axis",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_minor_axis",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN min_fractional_blockage",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN min_fractional_blockage_std",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN max_fractional_blockage",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN max_fractional_blockage_std",
+                    "DELETE FROM columns WHERE name = 'prolate_volume'",
+                    "DELETE FROM columns WHERE name = 'prolate_shape_factor'",
+                    "DELETE FROM columns WHERE name = 'prolate_major_axis'",
+                    "DELETE FROM columns WHERE name = 'prolate_minor_axis'",
+                    "DELETE FROM columns WHERE name = 'min_fractional_blockage'",
+                    "DELETE FROM columns WHERE name = 'min_fractional_blockage_std'",
+                    "DELETE FROM columns WHERE name = 'max_fractional_blockage'",
+                    "DELETE FROM columns WHERE name = 'max_fractional_blockage_std'",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_volume",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_shape_factor",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_major_axis",
+                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_minor_axis",
+                    "DELETE FROM columns WHERE name = 'oblate_volume'",
+                    "DELETE FROM columns WHERE name = 'oblate_shape_factor'",
+                    "DELETE FROM columns WHERE name = 'oblate_major_axis'",
+                    "DELETE FROM columns WHERE name = 'oblate_minor_axis'"
+                ]
+
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "alter_database",
+                    (queries),
+                    "alter_database_status",
+                    (),
+                )
+                if self.operation_success is not True:
+                    self.add_text_to_display.emit(
+                        "Unable to delete fit data, you will have to clean it up manually",
+                        self.__class__.__name__,
+                    )
+                    return
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "add_columns_to_table",
+            (fit_data, units, table_name),
+            "display_write_status",
+            (),
+        )
+        #self.request_plugin_refresh.emit(loader) #this functionality needs to be moved out of the subclasses clusteringview and proteinview and into the base class, with metaclass arg added for generality
+
+
+    @log(logger=logger)
+    def set_alter_database_status(self, status):
+        """
+        Sets the success status of a database operation.
+
+        :param status: True if successful, False otherwise.
+        :type status: bool
+        """
+        self.operation_success = status
+        
     @log(logger=logger)
     @override
     def _set_control_area(self, layout):
@@ -863,10 +961,8 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._analysis_mode = "ensemble"
 
         elif action_name == "commit_individual":
-            self._commit_individual(parameters)
-
-        elif action_name == "commit_all":
-            self._commit_all(parameters)
+            loader = parameters.get("db_loader")
+            self._commit_fits(loader)
 
         else:
             self._handle_other_actions(action_name, parameters)
@@ -1222,45 +1318,42 @@ class ProteinView(MetaView, WalkthroughMixin):
             if plot_data is None:
                 continue
 
-            try:  # try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
+
+            try: #try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
                 popt = self._fit_and_sanity_check_double_gaussian(
                     plot_data["Normalized Current"].values,
                     plot_data["Amplitude"].values,
                 )
                 if popt is None:
-                    raise ValueError("Unable to fit double gaussian")
+                    raise ValueError('Unable to fit double gaussian')
+
 
                 amp1, mean1, std1, amp2, mean2, std2 = popt
 
                 ax.plot(
                     plot_data["Normalized Current"].values,
-                    self._double_gaussian(
-                        plot_data["Normalized Current"].values,
-                        amp1,
-                        mean1,
-                        std1,
-                        amp2,
-                        mean2,
-                        std2,
-                    ),
-                    color="orange",
-                    zorder=2,
-                )
+                    self._double_gaussian(plot_data["Normalized Current"].values,
+                                          amp1,
+                                          mean1,
+                                          std1,
+                                          amp2,
+                                          mean2,
+                                          std2),
+                    color='orange',
+                    zorder=2
+                    )
                 self._update_cache(
-                    (plot_data["Normalized Current"].values, label + " " + x_label),
-                    (
-                        self._double_gaussian(
-                            plot_data["Normalized Current"].values,
-                            amp1,
-                            mean1,
-                            std1,
-                            amp2,
-                            mean2,
-                            std2,
-                        ),
-                        label + " " + y_label,
-                    ),
-                )
+                (plot_data["Normalized Current"].values, label + " " + x_label),
+                (self._double_gaussian(plot_data["Normalized Current"].values,
+                                          amp1,
+                                          mean1,
+                                          std1,
+                                          amp2,
+                                          mean2,
+                                          std2),
+                 label + " " + y_label),
+            )
+
 
             except (ValueError, RuntimeError):
                 pass
@@ -1398,10 +1491,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                     processed = 0
                     prolate_solutions = []
                     oblate_solutions = []
+                    averaged_event_data = []
 
                     for event in self.event_data_generator:
                         processed += 1
-
                         plot_data = self._construct_single_event_histogram(
                             event,
                             plot_type,
@@ -1452,9 +1545,27 @@ class ProteinView(MetaView, WalkthroughMixin):
                             zip(oblate_V, oblate_m, oblate_a, oblate_b)
                         )
 
+                        averaged_event_data.append({
+                            "id": event["id"],
+                            "prolate_volume": np.median(prolate_V) if len(prolate_V) > 0 else np.nan,
+                            "prolate_shape_factor": np.median(prolate_m) if len(prolate_m) > 0 else np.nan,
+                            "prolate_major_axis": np.median(prolate_a) if len(prolate_a) > 0 else np.nan,
+                            "prolate_minor_axis": np.median(prolate_b) if len(prolate_b) > 0 else np.nan,
+                            "oblate_volume": np.median(oblate_V) if len(oblate_V) > 0 else np.nan,
+                            "oblate_shape_factor": np.median(oblate_m) if len(oblate_m) > 0 else np.nan,
+                            "oblate_major_axis": np.median(oblate_a) if len(oblate_a) > 0 else np.nan,
+                            "oblate_minor_axis": np.median(oblate_b) if len(oblate_b) > 0 else np.nan,
+                            "min_fractional_blockage": mean_min,
+                            "min_fractional_blockage_std": std_min,
+                            "max_fractional_blockage": mean_max,
+                            "max_fractional_blockage_std": std_max
+                        })
+
             # --- Create the Pandas DataFrames ---
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
             df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
+
+            self.fit_data = pd.DataFrame(averaged_event_data)
 
             if not df_prolate.empty:
                 self.update_plot(
@@ -1646,9 +1757,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: Optional[List[float]]
         """
         popt, pcov = self._fit_double_gaussian(
-            bins,
-            amplitude,
-        )
+                    bins,
+                    amplitude,
+                )
 
         if (
             popt is None

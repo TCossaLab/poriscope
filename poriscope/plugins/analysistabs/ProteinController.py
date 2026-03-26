@@ -27,6 +27,7 @@
 
 import logging
 
+from PySide6.QtCore import Slot
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -59,15 +60,42 @@ class ProteinController(MetaController):
     @override
     def _setup_connections(self):
         """
-        Setup signal-slot connections between view and controller.
-
-        This method is required to satisfy the abstract base class but may remain empty.
+        Connect internal view signals to their corresponding controller slots.
         """
-        # Implement any required connections here
-        # This function can remain empty if no additional setup is needed,
-        # but it must exist to satisfy the abstract base class requirement.
-        pass
+        self.view.request_plugin_refresh.connect(self.refresh_plugin_list)
 
+    @Slot(str)
+    def refresh_plugin_list(self, loader):
+        """
+        Trigger a global signal to refresh the list of available database plugins.
+        """
+        if loader:
+            self.global_signal.emit(
+                "MetaDatabaseLoader", loader, "list_plugins", (), "update_plugins", ()
+            )
+
+    @log(logger=logger)
+    def alter_database_status(self, status):
+        """
+        Inform the view whether database alteration was successful.
+
+        :param status: Result of the database alteration operation.
+        :type status: bool
+        """
+        self.view.set_alter_database_status(status)
+
+        
+    @log(logger=logger)
+    def update_plugins(self, plugin_list):
+        """
+        Slot to receive updated plugin list from MetaDatabaseLoader and emit update_available_plugins.
+
+        :param plugin_list: List of available plugin keys for MetaDatabaseLoader.
+        :type plugin_list: list
+        """
+        self.update_available_plugins.emit("MetaDatabaseLoader", plugin_list)
+
+        
     @log(logger=logger)
     def relay_table_by_column(self, table):
         """
