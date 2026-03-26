@@ -1231,6 +1231,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 if popt is None:
                     raise ValueError('Unable to fit double gaussian')
 
+
                 amp1, mean1, std1, amp2, mean2, std2 = popt
 
                 ax.plot(
@@ -1257,16 +1258,17 @@ class ProteinView(MetaView, WalkthroughMixin):
                  label + " " + y_label),
             )
 
+
             except (ValueError, RuntimeError):
                 pass
 
             ax.plot(
-                    plot_data["Normalized Current"].values,
-                    plot_data["Amplitude"].values,
-                    color='blue',
-                    zorder=1
-                    )
-            
+                plot_data["Normalized Current"].values,
+                plot_data["Amplitude"].values,
+                color="blue",
+                zorder=1,
+            )
+
             if j % num_cols == 0:
                 ax.set_ylabel(y_label)
             labelnum = (num_rows - 1) * num_cols
