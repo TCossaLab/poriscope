@@ -246,7 +246,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             self.kill_all_button, alignment=Qt.AlignRight
         )
 
-
     @log(logger=logger)
     def set_column_exists(self, exists_in_table):
         """
@@ -257,7 +256,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
         self.column_table = exists_in_table
 
-        
     @log(logger=logger)
     @Slot(float, str)
     def update_progressbar(self, value, identifier):

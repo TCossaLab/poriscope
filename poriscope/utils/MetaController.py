@@ -200,8 +200,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             actions = actions[self.__class__.__name__]  # allow loading from base file
         self.view.update_actions_from_json(actions)
 
-
-
     @log(logger=logger)
     def display_write_status(self, status):
         """
@@ -219,7 +217,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 "Failed to write data", self.__class__.__name__
             )
 
-            
     @log(logger=logger)
     def check_column_exists(self, table_name):
         """
@@ -230,7 +227,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         self.view.set_column_exists(table_name)
 
-        
     @log(logger=logger)
     @Slot(str)
     def relay_add_text_to_display(self, text, source):

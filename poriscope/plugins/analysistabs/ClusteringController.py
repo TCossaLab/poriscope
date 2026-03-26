@@ -56,7 +56,6 @@ class ClusteringController(MetaController):
         self.view = ClusteringView()
         self.model = ClusteringModel()
 
-
     @log(logger=logger)
     def check_cluster_column_exists(self, table_name):
         """

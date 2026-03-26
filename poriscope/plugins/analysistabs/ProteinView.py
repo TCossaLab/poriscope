@@ -81,7 +81,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     logger = logging.getLogger(__name__)
     request_plugin_refresh = Signal(str)
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._init()
@@ -215,7 +215,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.display_stack.setCurrentIndex(0)
             self._display_mode = "distribution"
 
-
     @log(logger=logger)
     def _commit_fits(self, loader):
         """
@@ -226,10 +225,39 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         if self.fit_data is None:
             raise AttributeError("fit data has not been set, unable to commit")
-        fit_data = self.fit_data[["id", "prolate_volume", "prolate_shape_factor", "prolate_major_axis", "prolate_minor_axis", "oblate_volume", "oblate_shape_factor", "oblate_major_axis", "oblate_minor_axis", "min_fractional_blockage", "min_fractional_blockage_std", "max_fractional_blockage", "max_fractional_blockage_std"]]
-        units = ["nm^3", None, "nm", "nm", "nm^3", None, "nm", "nm", None, None, None, None]
-        table_name = 'events'
-    
+        fit_data = self.fit_data[
+            [
+                "id",
+                "prolate_volume",
+                "prolate_shape_factor",
+                "prolate_major_axis",
+                "prolate_minor_axis",
+                "oblate_volume",
+                "oblate_shape_factor",
+                "oblate_major_axis",
+                "oblate_minor_axis",
+                "min_fractional_blockage",
+                "min_fractional_blockage_std",
+                "max_fractional_blockage",
+                "max_fractional_blockage_std",
+            ]
+        ]
+        units = [
+            "nm^3",
+            None,
+            "nm",
+            "nm",
+            "nm^3",
+            None,
+            "nm",
+            "nm",
+            None,
+            None,
+            None,
+            None,
+        ]
+        table_name = "events"
+
         self.column_table = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
@@ -272,7 +300,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "DELETE FROM columns WHERE name = 'oblate_volume'",
                     "DELETE FROM columns WHERE name = 'oblate_shape_factor'",
                     "DELETE FROM columns WHERE name = 'oblate_major_axis'",
-                    "DELETE FROM columns WHERE name = 'oblate_minor_axis'"
+                    "DELETE FROM columns WHERE name = 'oblate_minor_axis'",
                 ]
 
                 self.global_signal.emit(
@@ -297,8 +325,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        #self.request_plugin_refresh.emit(loader) #this functionality needs to be moved out of the subclasses clusteringview and proteinview and into the base class, with metaclass arg added for generality
-
+        # self.request_plugin_refresh.emit(loader) #this functionality needs to be moved out of the subclasses clusteringview and proteinview and into the base class, with metaclass arg added for generality
 
     @log(logger=logger)
     def set_alter_database_status(self, status):
@@ -309,7 +336,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type status: bool
         """
         self.operation_success = status
-        
+
     @log(logger=logger)
     @override
     def _set_control_area(self, layout):
@@ -1318,42 +1345,45 @@ class ProteinView(MetaView, WalkthroughMixin):
             if plot_data is None:
                 continue
 
-
-            try: #try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
+            try:  # try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
                 popt = self._fit_and_sanity_check_double_gaussian(
                     plot_data["Normalized Current"].values,
                     plot_data["Amplitude"].values,
                 )
                 if popt is None:
-                    raise ValueError('Unable to fit double gaussian')
-
+                    raise ValueError("Unable to fit double gaussian")
 
                 amp1, mean1, std1, amp2, mean2, std2 = popt
 
                 ax.plot(
                     plot_data["Normalized Current"].values,
-                    self._double_gaussian(plot_data["Normalized Current"].values,
-                                          amp1,
-                                          mean1,
-                                          std1,
-                                          amp2,
-                                          mean2,
-                                          std2),
-                    color='orange',
-                    zorder=2
-                    )
+                    self._double_gaussian(
+                        plot_data["Normalized Current"].values,
+                        amp1,
+                        mean1,
+                        std1,
+                        amp2,
+                        mean2,
+                        std2,
+                    ),
+                    color="orange",
+                    zorder=2,
+                )
                 self._update_cache(
-                (plot_data["Normalized Current"].values, label + " " + x_label),
-                (self._double_gaussian(plot_data["Normalized Current"].values,
-                                          amp1,
-                                          mean1,
-                                          std1,
-                                          amp2,
-                                          mean2,
-                                          std2),
-                 label + " " + y_label),
-            )
-
+                    (plot_data["Normalized Current"].values, label + " " + x_label),
+                    (
+                        self._double_gaussian(
+                            plot_data["Normalized Current"].values,
+                            amp1,
+                            mean1,
+                            std1,
+                            amp2,
+                            mean2,
+                            std2,
+                        ),
+                        label + " " + y_label,
+                    ),
+                )
 
             except (ValueError, RuntimeError):
                 pass
@@ -1545,21 +1575,47 @@ class ProteinView(MetaView, WalkthroughMixin):
                             zip(oblate_V, oblate_m, oblate_a, oblate_b)
                         )
 
-                        averaged_event_data.append({
-                            "id": event["id"],
-                            "prolate_volume": np.median(prolate_V) if len(prolate_V) > 0 else np.nan,
-                            "prolate_shape_factor": np.median(prolate_m) if len(prolate_m) > 0 else np.nan,
-                            "prolate_major_axis": np.median(prolate_a) if len(prolate_a) > 0 else np.nan,
-                            "prolate_minor_axis": np.median(prolate_b) if len(prolate_b) > 0 else np.nan,
-                            "oblate_volume": np.median(oblate_V) if len(oblate_V) > 0 else np.nan,
-                            "oblate_shape_factor": np.median(oblate_m) if len(oblate_m) > 0 else np.nan,
-                            "oblate_major_axis": np.median(oblate_a) if len(oblate_a) > 0 else np.nan,
-                            "oblate_minor_axis": np.median(oblate_b) if len(oblate_b) > 0 else np.nan,
-                            "min_fractional_blockage": mean_min,
-                            "min_fractional_blockage_std": std_min,
-                            "max_fractional_blockage": mean_max,
-                            "max_fractional_blockage_std": std_max
-                        })
+                        averaged_event_data.append(
+                            {
+                                "id": event["id"],
+                                "prolate_volume": (
+                                    np.median(prolate_V)
+                                    if len(prolate_V) > 0
+                                    else np.nan
+                                ),
+                                "prolate_shape_factor": (
+                                    np.median(prolate_m)
+                                    if len(prolate_m) > 0
+                                    else np.nan
+                                ),
+                                "prolate_major_axis": (
+                                    np.median(prolate_a)
+                                    if len(prolate_a) > 0
+                                    else np.nan
+                                ),
+                                "prolate_minor_axis": (
+                                    np.median(prolate_b)
+                                    if len(prolate_b) > 0
+                                    else np.nan
+                                ),
+                                "oblate_volume": (
+                                    np.median(oblate_V) if len(oblate_V) > 0 else np.nan
+                                ),
+                                "oblate_shape_factor": (
+                                    np.median(oblate_m) if len(oblate_m) > 0 else np.nan
+                                ),
+                                "oblate_major_axis": (
+                                    np.median(oblate_a) if len(oblate_a) > 0 else np.nan
+                                ),
+                                "oblate_minor_axis": (
+                                    np.median(oblate_b) if len(oblate_b) > 0 else np.nan
+                                ),
+                                "min_fractional_blockage": mean_min,
+                                "min_fractional_blockage_std": std_min,
+                                "max_fractional_blockage": mean_max,
+                                "max_fractional_blockage_std": std_max,
+                            }
+                        )
 
             # --- Create the Pandas DataFrames ---
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
@@ -1757,9 +1813,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: Optional[List[float]]
         """
         popt, pcov = self._fit_double_gaussian(
-                    bins,
-                    amplitude,
-                )
+            bins,
+            amplitude,
+        )
 
         if (
             popt is None

@@ -84,7 +84,6 @@ class ProteinController(MetaController):
         """
         self.view.set_alter_database_status(status)
 
-        
     @log(logger=logger)
     def update_plugins(self, plugin_list):
         """
@@ -95,7 +94,6 @@ class ProteinController(MetaController):
         """
         self.update_available_plugins.emit("MetaDatabaseLoader", plugin_list)
 
-        
     @log(logger=logger)
     def relay_table_by_column(self, table):
         """
