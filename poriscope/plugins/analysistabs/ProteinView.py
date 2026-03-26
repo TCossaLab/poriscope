@@ -1224,51 +1224,12 @@ class ProteinView(MetaView, WalkthroughMixin):
 
 
             try: #try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
-                popt, pcov = self._fit_double_gaussian(
+                popt = self._fit_and_sanity_check_double_gaussian(
                     plot_data["Normalized Current"].values,
                     plot_data["Amplitude"].values,
                 )
-
-                if (
-                    popt is None
-                    or pcov is None
-                    or np.any(np.isinf(pcov))
-                    or np.any(np.isnan(pcov))
-                ):
-                    raise ValueError('Unable to fit')
-
-                perr = np.sqrt(np.diag(pcov))
-                if np.any(perr > np.abs(popt) * 10):
-                    raise ValueError('Error too large')
-
-                mu1_idx, mu2_idx = 1, 4
-                mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
-                var_mu1, var_mu2 = (
-                    pcov[mu1_idx, mu1_idx],
-                    pcov[mu2_idx, mu2_idx],
-                )
-                cov_mu1_mu2 = pcov[mu1_idx, mu2_idx]
-                variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
-
-                if variance_diff <= 0:
-                    raise ValueError('variance difference subzero')
-
-                se_diff = np.sqrt(variance_diff)
-                t_stat = abs(mu1 - mu2) / se_diff
-                N_points = len(plot_data["Normalized Current"].values)
-                df = N_points - len(popt)
-                p_value = 2 * t.sf(t_stat, df)
-
-                if p_value > 0.05:
-                    raise ValueError('peaks insufficierntly different')
-
-                A1, A2 = popt[0], popt[3]
-                abs_A1, abs_A2 = abs(A1), abs(A2)
-                if max(abs_A1, abs_A2) == 0:
-                    raise ValueError('zero-amplitude peak')
-
-                if min(abs_A1, abs_A2) / max(abs_A1, abs_A2) < 0.05:
-                    raise ValueError('peak amplitude difference too large')
+                if popt is None:
+                    raise ValueError('Unable to fit double gaussian')
 
                 amp1, mean1, std1, amp2, mean2, std2 = popt
 
@@ -1283,7 +1244,18 @@ class ProteinView(MetaView, WalkthroughMixin):
                                           std2),
                     color='orange',
                     zorder=2
-                    )     
+                    )
+                self._update_cache(
+                (plot_data["Normalized Current"].values, label + " " + x_label),
+                (self._double_gaussian(plot_data["Normalized Current"].values,
+                                          amp1,
+                                          mean1,
+                                          std1,
+                                          amp2,
+                                          mean2,
+                                          std2),
+                 label + " " + y_label),
+            )
 
             except (ValueError, RuntimeError):
                 pass
@@ -1434,50 +1406,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                         if plot_data is None:
                             continue
 
-                        popt, pcov = self._fit_double_gaussian(
+                        popt = self._fit_and_sanity_check_double_gaussian(
                             plot_data["Normalized Current"].values,
                             plot_data["Amplitude"].values,
                         )
 
-                        if (
-                            popt is None
-                            or pcov is None
-                            or np.any(np.isinf(pcov))
-                            or np.any(np.isnan(pcov))
-                        ):
-                            continue
-
-                        perr = np.sqrt(np.diag(pcov))
-                        if np.any(perr > np.abs(popt) * 10):
-                            continue
-
-                        mu1_idx, mu2_idx = 1, 4
-                        mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
-                        var_mu1, var_mu2 = (
-                            pcov[mu1_idx, mu1_idx],
-                            pcov[mu2_idx, mu2_idx],
-                        )
-                        cov_mu1_mu2 = pcov[mu1_idx, mu2_idx]
-                        variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
-
-                        if variance_diff <= 0:
-                            continue
-
-                        se_diff = np.sqrt(variance_diff)
-                        t_stat = abs(mu1 - mu2) / se_diff
-                        N_points = len(plot_data["Normalized Current"].values)
-                        df = N_points - len(popt)
-                        p_value = 2 * t.sf(t_stat, df)
-
-                        if p_value > 0.05:
-                            continue
-
-                        A1, A2 = popt[0], popt[3]
-                        abs_A1, abs_A2 = abs(A1), abs(A2)
-                        if max(abs_A1, abs_A2) == 0:
-                            continue
-
-                        if min(abs_A1, abs_A2) / max(abs_A1, abs_A2) < 0.05:
+                        if popt is None:
                             continue
 
                         amp1, mean1, std1, amp2, mean2, std2 = popt
@@ -1695,6 +1629,66 @@ class ProteinView(MetaView, WalkthroughMixin):
                 return None, None
 
     @log(logger=logger)
+    def _fit_and_sanity_check_double_gaussian(self, bins, amplitude):
+        """
+        Attempt to fit a double gaussian to data or None on failure.
+
+        :param bins: numpy array of bin centers
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: numpy array of amplitude in bins
+        :type amplitude: npt.NDArray[np.float64]
+        :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
+        :rtype: Optional[List[float]]
+        """
+        popt, pcov = self._fit_double_gaussian(
+                    bins,
+                    amplitude,
+                )
+
+        if (
+            popt is None
+            or pcov is None
+            or np.any(np.isinf(pcov))
+            or np.any(np.isnan(pcov))
+        ):
+            return None
+
+        perr = np.sqrt(np.diag(pcov))
+        if np.any(perr > np.abs(popt) * 10):
+            return None
+
+        mu1_idx, mu2_idx = 1, 4
+        mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
+        var_mu1, var_mu2 = (
+            pcov[mu1_idx, mu1_idx],
+            pcov[mu2_idx, mu2_idx],
+        )
+        cov_mu1_mu2 = pcov[mu1_idx, mu2_idx]
+        variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
+
+        if variance_diff <= 0:
+            return None
+
+        se_diff = np.sqrt(variance_diff)
+        t_stat = abs(mu1 - mu2) / se_diff
+        N_points = len(bins)
+        df = N_points - len(popt)
+        p_value = 2 * t.sf(t_stat, df)
+
+        if p_value > 0.05:
+            return None
+
+        A1, A2 = popt[0], popt[3]
+        abs_A1, abs_A2 = abs(A1), abs(A2)
+        if max(abs_A1, abs_A2) == 0:
+            return None
+
+        if min(abs_A1, abs_A2) / max(abs_A1, abs_A2) < 0.05:
+            return None
+
+        return popt
+
+    @log(logger=logger)
     @register_action()
     def _update_distribution_ensemble(self, parameters):
         """
@@ -1842,7 +1836,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     )
 
             # --- Fit Double Gaussian ---
-            popt, pcov = self._fit_double_gaussian(
+            popt = self._fit_and_sanity_check_double_gaussian(
                 plot_data["Normalized Current"].values, plot_data["Amplitude"].values
             )
 
