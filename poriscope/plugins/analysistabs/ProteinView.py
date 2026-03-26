@@ -1222,42 +1222,45 @@ class ProteinView(MetaView, WalkthroughMixin):
             if plot_data is None:
                 continue
 
-
-            try: #try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
+            try:  # try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
                 popt = self._fit_and_sanity_check_double_gaussian(
                     plot_data["Normalized Current"].values,
                     plot_data["Amplitude"].values,
                 )
                 if popt is None:
-                    raise ValueError('Unable to fit double gaussian')
-
+                    raise ValueError("Unable to fit double gaussian")
 
                 amp1, mean1, std1, amp2, mean2, std2 = popt
 
                 ax.plot(
                     plot_data["Normalized Current"].values,
-                    self._double_gaussian(plot_data["Normalized Current"].values,
-                                          amp1,
-                                          mean1,
-                                          std1,
-                                          amp2,
-                                          mean2,
-                                          std2),
-                    color='orange',
-                    zorder=2
-                    )
+                    self._double_gaussian(
+                        plot_data["Normalized Current"].values,
+                        amp1,
+                        mean1,
+                        std1,
+                        amp2,
+                        mean2,
+                        std2,
+                    ),
+                    color="orange",
+                    zorder=2,
+                )
                 self._update_cache(
-                (plot_data["Normalized Current"].values, label + " " + x_label),
-                (self._double_gaussian(plot_data["Normalized Current"].values,
-                                          amp1,
-                                          mean1,
-                                          std1,
-                                          amp2,
-                                          mean2,
-                                          std2),
-                 label + " " + y_label),
-            )
-
+                    (plot_data["Normalized Current"].values, label + " " + x_label),
+                    (
+                        self._double_gaussian(
+                            plot_data["Normalized Current"].values,
+                            amp1,
+                            mean1,
+                            std1,
+                            amp2,
+                            mean2,
+                            std2,
+                        ),
+                        label + " " + y_label,
+                    ),
+                )
 
             except (ValueError, RuntimeError):
                 pass
@@ -1643,9 +1646,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         :rtype: Optional[List[float]]
         """
         popt, pcov = self._fit_double_gaussian(
-                    bins,
-                    amplitude,
-                )
+            bins,
+            amplitude,
+        )
 
         if (
             popt is None
