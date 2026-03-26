@@ -117,10 +117,8 @@ class DictDialog(QDialog):
                 if not starting_file_path:
                     starting_file_path = ""
                 if file_types is not None:
-                    filters = []
-                    for ext in file_types:
-                        filters.append(f"Files (*{ext})")
-                        filter_str = ";;".join(filters)
+                    ### Options are already full filter strings e.g "SQLite3 Files (*.sqlite3)"
+                    filter_str = ";;".join(file_types)
                 else:
                     filter_str = "All Files (*)"
                 self.entrywidgets[key] = QPushButton("Select Input File")
@@ -138,10 +136,7 @@ class DictDialog(QDialog):
                 if not starting_file_path:
                     starting_file_path = ""
                 if file_types is not None:
-                    filters = []
-                    for ext in file_types:
-                        filters.append(f"Files (*{ext})")
-                        filter_str = ";;".join(filters)
+                    filter_str = ";;".join(file_types)
                 else:
                     filter_str = "All Files (*)"
 
