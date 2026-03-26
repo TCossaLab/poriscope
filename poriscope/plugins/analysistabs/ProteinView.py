@@ -1222,8 +1222,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             if plot_data is None:
                 continue
 
-
-            try: #try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
+            try:  # try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
                 popt, pcov = self._fit_double_gaussian(
                     plot_data["Normalized Current"].values,
                     plot_data["Amplitude"].values,
@@ -1235,11 +1234,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                     or np.any(np.isinf(pcov))
                     or np.any(np.isnan(pcov))
                 ):
-                    raise ValueError('Unable to fit')
+                    raise ValueError("Unable to fit")
 
                 perr = np.sqrt(np.diag(pcov))
                 if np.any(perr > np.abs(popt) * 10):
-                    raise ValueError('Error too large')
+                    raise ValueError("Error too large")
 
                 mu1_idx, mu2_idx = 1, 4
                 mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
@@ -1251,7 +1250,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
 
                 if variance_diff <= 0:
-                    raise ValueError('variance difference subzero')
+                    raise ValueError("variance difference subzero")
 
                 se_diff = np.sqrt(variance_diff)
                 t_stat = abs(mu1 - mu2) / se_diff
@@ -1260,41 +1259,43 @@ class ProteinView(MetaView, WalkthroughMixin):
                 p_value = 2 * t.sf(t_stat, df)
 
                 if p_value > 0.05:
-                    raise ValueError('peaks insufficierntly different')
+                    raise ValueError("peaks insufficierntly different")
 
                 A1, A2 = popt[0], popt[3]
                 abs_A1, abs_A2 = abs(A1), abs(A2)
                 if max(abs_A1, abs_A2) == 0:
-                    raise ValueError('zero-amplitude peak')
+                    raise ValueError("zero-amplitude peak")
 
                 if min(abs_A1, abs_A2) / max(abs_A1, abs_A2) < 0.05:
-                    raise ValueError('peak amplitude difference too large')
+                    raise ValueError("peak amplitude difference too large")
 
                 amp1, mean1, std1, amp2, mean2, std2 = popt
 
                 ax.plot(
                     plot_data["Normalized Current"].values,
-                    self._double_gaussian(plot_data["Normalized Current"].values,
-                                          amp1,
-                                          mean1,
-                                          std1,
-                                          amp2,
-                                          mean2,
-                                          std2),
-                    color='orange',
-                    zorder=2
-                    )     
+                    self._double_gaussian(
+                        plot_data["Normalized Current"].values,
+                        amp1,
+                        mean1,
+                        std1,
+                        amp2,
+                        mean2,
+                        std2,
+                    ),
+                    color="orange",
+                    zorder=2,
+                )
 
             except (ValueError, RuntimeError):
                 pass
 
             ax.plot(
-                    plot_data["Normalized Current"].values,
-                    plot_data["Amplitude"].values,
-                    color='blue',
-                    zorder=1
-                    )
-            
+                plot_data["Normalized Current"].values,
+                plot_data["Amplitude"].values,
+                color="blue",
+                zorder=1,
+            )
+
             if j % num_cols == 0:
                 ax.set_ylabel(y_label)
             labelnum = (num_rows - 1) * num_cols
