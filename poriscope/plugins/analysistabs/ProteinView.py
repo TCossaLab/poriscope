@@ -535,6 +535,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._plot_scatterplot(
                 ax, data, cols, units, logscales, dataset_label=dataset_label
             )
+        elif plot_type == "Peak Scatterplot":
+            ax = self.ax_hist
+            canvas = self.canvas_hist
+            self._plot_scatterplot(
+                ax, data, cols, units, logscales, dataset_label=dataset_label
+            )
         else:
             raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
 
@@ -1640,6 +1646,23 @@ class ProteinView(MetaView, WalkthroughMixin):
                     ["nm$^{3}$", "arb. units"],
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
+                )
+            if not self.fit_data.empty:
+                self.update_plot(
+                    "Peak Scatterplot",
+                    self.fit_data,
+                    ["min_fractional_blockage", "min_fractional_blockage_std"],
+                    ["arb. units", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label="Minimum Peak Parameters",
+                )
+                self.update_plot(
+                    "Peak Scatterplot",
+                    self.fit_data,
+                    ["max_fractional_blockage", "max_fractional_blockage_std"],
+                    ["arb. units", "arb. units"],
+                    logscales=[False, False],
+                    dataset_label="Maximum Peak Parameters",
                 )
 
     @log(logger=logger)
