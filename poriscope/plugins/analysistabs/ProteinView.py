@@ -516,6 +516,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         dataset_label="",
         bins=None,
         sizes=False,
+        err_cols=None
     ):
         """
         update the plot area
@@ -538,8 +539,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         elif plot_type == "Peak Scatterplot":
             ax = self.ax_hist
             canvas = self.canvas_hist
-            self._plot_scatterplot(
-                ax, data, cols, units, logscales, dataset_label=dataset_label
+            self._plot_xyerr_scatterplot(
+                ax, data, cols, units, logscales, dataset_label=dataset_label, err_cols=err_cols
             )
         else:
             raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
@@ -588,6 +589,74 @@ class ProteinView(MetaView, WalkthroughMixin):
             x, y, log_flags=[logx, logy]
         )
         ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+
+        self._update_cache((xdata, x_label), (ydata, y_label))
+        ax.legend(loc="best")
+
+    @log(logger=logger)
+    def _plot_xyerr_scatterplot(self, ax, data, cols, units, logscales, dataset_label="", err_cols=None):
+        """
+        Create a scatterplot of two metadata columns with error bars.
+
+        :param ax: Matplotlib axes object.
+        :type ax: matplotlib.axes.Axes
+        :param data: DataFrame containing the columns to plot.
+        :type data: pd.DataFrame
+        :param cols: List containing two column names for x and y axes.
+        :type cols: List[str]
+        :param units: List of corresponding units for x and y axes.
+        :type units: List[str]
+        :param logscales: List indicating log-scaling for x and y axes.
+        :type logscales: List[bool]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        :param err_cols: List containing two column names for x and y errors.
+        :type err_cols: List[str]
+        """
+        if err_cols is None or len(err_cols) != 2:
+            raise ValueError('_plot_xyerr_scatterplot() requires exactly two error columns to be specified in err_cols (e.g., [x_err, y_err])')
+            
+        x_label, y_label = cols
+        x_units, y_units = units
+        logx, logy = logscales
+        x_err_label, y_err_label = err_cols
+
+        x = data[x_label].values
+        y = data[y_label].values
+        
+        # Extract error arrays, allowing for None if one axis doesn't have errors
+        x_err = data[x_err_label].values if x_err_label else None
+        y_err = data[y_err_label].values if y_err_label else None
+
+        x_label = format_axis_label(x_label, x_units)
+        y_label = format_axis_label(y_label, y_units)
+
+        if logx:
+            x_label = f"log10({x_label})"
+        if logy:
+            y_label = f"log10({y_label})"
+
+        xdata, ydata = self._logscale_and_filter_multiple_columns(
+            x, y, log_flags=[logx, logy]
+        )
+
+        # Plot the scatter points
+        ax.scatter(xdata, ydata, s=4, alpha=0.5, label=dataset_label)
+        
+        # Plot the error bars
+        # fmt='none' draws only the error bars without adding new markers
+        ax.errorbar(
+            xdata, ydata, 
+            xerr=x_err, 
+            yerr=y_err, 
+            fmt='none',     
+            alpha=0.25, 
+            capsize=1,      # Adds little caps to the ends of the error bars
+            zorder=0        # Puts the error bars behind the scatter points
+        )
+
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
 
@@ -1651,18 +1720,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self.update_plot(
                     "Peak Scatterplot",
                     self.fit_data,
-                    ["min_fractional_blockage", "min_fractional_blockage_std"],
+                    ["min_fractional_blockage", "max_fractional_blockage"],
                     ["arb. units", "arb. units"],
                     logscales=[False, False],
-                    dataset_label="Minimum Peak Parameters",
-                )
-                self.update_plot(
-                    "Peak Scatterplot",
-                    self.fit_data,
-                    ["max_fractional_blockage", "max_fractional_blockage_std"],
-                    ["arb. units", "arb. units"],
-                    logscales=[False, False],
-                    dataset_label="Maximum Peak Parameters",
+                    dataset_label="Event Peak Fit Parameters",
+                    err_cols = ["min_fractional_blockage_std", "max_fractional_blockage_std"]
                 )
 
     @log(logger=logger)
