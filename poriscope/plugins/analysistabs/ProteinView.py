@@ -516,7 +516,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         dataset_label="",
         bins=None,
         sizes=False,
-        err_cols=None
+        err_cols=None,
     ):
         """
         update the plot area
@@ -540,7 +540,13 @@ class ProteinView(MetaView, WalkthroughMixin):
             ax = self.ax_hist
             canvas = self.canvas_hist
             self._plot_xyerr_scatterplot(
-                ax, data, cols, units, logscales, dataset_label=dataset_label, err_cols=err_cols
+                ax,
+                data,
+                cols,
+                units,
+                logscales,
+                dataset_label=dataset_label,
+                err_cols=err_cols,
             )
         else:
             raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
@@ -596,7 +602,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         ax.legend(loc="best")
 
     @log(logger=logger)
-    def _plot_xyerr_scatterplot(self, ax, data, cols, units, logscales, dataset_label="", err_cols=None):
+    def _plot_xyerr_scatterplot(
+        self, ax, data, cols, units, logscales, dataset_label="", err_cols=None
+    ):
         """
         Create a scatterplot of two metadata columns with error bars.
 
@@ -616,8 +624,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type err_cols: List[str]
         """
         if err_cols is None or len(err_cols) != 2:
-            raise ValueError('_plot_xyerr_scatterplot() requires exactly two error columns to be specified in err_cols (e.g., [x_err, y_err])')
-            
+            raise ValueError(
+                "_plot_xyerr_scatterplot() requires exactly two error columns to be specified in err_cols (e.g., [x_err, y_err])"
+            )
+
         x_label, y_label = cols
         x_units, y_units = units
         logx, logy = logscales
@@ -625,7 +635,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         x = data[x_label].values
         y = data[y_label].values
-        
+
         # Extract error arrays, allowing for None if one axis doesn't have errors
         x_err = data[x_err_label].values if x_err_label else None
         y_err = data[y_err_label].values if y_err_label else None
@@ -644,17 +654,18 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         # Plot the scatter points
         ax.scatter(xdata, ydata, s=4, alpha=0.5, label=dataset_label)
-        
+
         # Plot the error bars
         # fmt='none' draws only the error bars without adding new markers
         ax.errorbar(
-            xdata, ydata, 
-            xerr=x_err, 
-            yerr=y_err, 
-            fmt='none',     
-            alpha=0.25, 
-            capsize=1,      # Adds little caps to the ends of the error bars
-            zorder=0        # Puts the error bars behind the scatter points
+            xdata,
+            ydata,
+            xerr=x_err,
+            yerr=y_err,
+            fmt="none",
+            alpha=0.25,
+            capsize=1,  # Adds little caps to the ends of the error bars
+            zorder=0,  # Puts the error bars behind the scatter points
         )
 
         ax.set_xlabel(x_label)
@@ -1724,7 +1735,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                     ["arb. units", "arb. units"],
                     logscales=[False, False],
                     dataset_label="Event Peak Fit Parameters",
-                    err_cols = ["min_fractional_blockage_std", "max_fractional_blockage_std"]
+                    err_cols=[
+                        "min_fractional_blockage_std",
+                        "max_fractional_blockage_std",
+                    ],
                 )
 
     @log(logger=logger)
