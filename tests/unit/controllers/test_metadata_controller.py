@@ -442,7 +442,9 @@ def test_get_experiment_structure_ready_converts_channel_ids_to_strings(
     :param mock_view: Mocked metadata view.
     """
     controller.get_experiment_structure_ready({"exp1": [1, 2, 3]}, "ldr")
-    result: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader["ldr"]
+    result: Dict[str, List[str]] = (
+        mock_view.available_experiment_and_channels_by_loader["ldr"]
+    )
     assert result == {"exp1": ["1", "2", "3"]}
 
 
@@ -485,8 +487,12 @@ def test_get_experiment_structure_ready_selected_equals_available(
     :param mock_view: Mocked metadata view.
     """
     controller.get_experiment_structure_ready({"exp1": [7]}, "ldr")
-    avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader["ldr"]
-    sel: Dict[str, List[str]] = mock_view.selected_experiment_and_channels_by_loader["ldr"]
+    avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
+        "ldr"
+    ]
+    sel: Dict[str, List[str]] = mock_view.selected_experiment_and_channels_by_loader[
+        "ldr"
+    ]
     assert avail == sel
 
 
@@ -505,8 +511,12 @@ def test_get_experiment_structure_ready_selected_is_shallow_copy(
     :param mock_view: Mocked metadata view.
     """
     controller.get_experiment_structure_ready({"exp1": [5]}, "ldr")
-    avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader["ldr"]
-    sel: Dict[str, List[str]] = mock_view.selected_experiment_and_channels_by_loader["ldr"]
+    avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
+        "ldr"
+    ]
+    sel: Dict[str, List[str]] = mock_view.selected_experiment_and_channels_by_loader[
+        "ldr"
+    ]
     avail["exp1"].append("MUTATED")
     assert "MUTATED" in sel["exp1"]
 
@@ -537,7 +547,9 @@ def test_get_experiment_structure_ready_converts_multiple_experiments(
     """
     structure: Dict[str, List[int]] = {"exp1": [1], "exp2": [10, 20]}
     controller.get_experiment_structure_ready(structure, "ldr")
-    result: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader["ldr"]
+    result: Dict[str, List[str]] = (
+        mock_view.available_experiment_and_channels_by_loader["ldr"]
+    )
     assert result == {"exp1": ["1"], "exp2": ["10", "20"]}
 
 
