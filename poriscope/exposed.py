@@ -28,13 +28,13 @@
 # ----------------------
 
 # --- Data Readers ---
-from poriscope.plugins.datareaders.ABF2Reader import ABF2Reader
 from poriscope.plugins.datareaders.BinaryReader1X import BinaryReader1X
 from poriscope.plugins.datareaders.ChimeraReader20240101 import ChimeraReader20240101
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.datareaders.ChimeraReaderVC100 import ChimeraReaderVC100
 from poriscope.plugins.datareaders.LegacyElementsReader import LegacyElementsReader
 from poriscope.plugins.datareaders.SingleBinaryDecoder import SingleBinaryDecoder
+from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 
 # --- Data Writers ---
 from poriscope.plugins.datawriters.SQLiteEventWriter import SQLiteEventWriter
@@ -99,7 +99,7 @@ from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
 
 __all__ = [
     # --- Data Readers ---
-    "ABF2Reader",
+    "TCossaLabABFReader",
     "BinaryReader1X",
     "ChimeraReader20240101",
     "ChimeraReader20240501",
