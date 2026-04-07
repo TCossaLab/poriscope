@@ -2,6 +2,8 @@
 Tests for poriscope.plugins.analysistabs.MetadataController.
 
 Covers:
+- _init creates view and model
+- _setup_connections wires signals
 - relay_table_by_column delegation
 - relay_baseline_duration delegation
 - set_exported_event_count delegation
@@ -62,7 +64,7 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     """
     Construct a MetadataController with view, model, and logger replaced by mocks.
 
-    Uses ``__new__`` to bypass ``__init__`` so no real Qt objects are created.
+    Uses ``MetadataController.__new__`` to bypass ``__init__`` so no real Qt objects are created.
     The class-level ``logger`` is patched on the instance so log calls are
     traceable by the coverage tool and assertable in tests.
 
@@ -70,7 +72,7 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     :param mocker: Pytest-mock fixture.
     :return: Controller under test.
     """
-    ctrl: MetadataController = object.__new__(MetadataController)  # type: ignore[type-abstract]
+    ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
@@ -95,7 +97,7 @@ def test_init_creates_view_and_model(mocker: MockerFixture) -> None:
         "poriscope.plugins.analysistabs.MetadataController.MetadataModel"
     )
 
-    ctrl: MetadataController = object.__new__(MetadataController)  # type: ignore[type-abstract]
+    ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
     ctrl._init()
 
     mock_view_cls.assert_called_once()
@@ -113,7 +115,7 @@ def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
 
     :param mocker: Pytest-mock fixture.
     """
-    ctrl: MetadataController = object.__new__(MetadataController)  # type: ignore[type-abstract]
+    ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
     ctrl.view = mocker.Mock()
     ctrl.model = mocker.Mock()
     ctrl._setup_connections()  # should not raise
@@ -372,7 +374,7 @@ def test_update_column_units_passes_units_and_y_axis_to_view(
     mock_view: MagicMock,
 ) -> None:
     """
-    Forward unit labels and axis identifier ``'y'`` to the view.
+    Forward unit labels and axis identifier 'y' to the view.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -386,7 +388,7 @@ def test_update_column_units_passes_units_and_x_axis_to_view(
     mock_view: MagicMock,
 ) -> None:
     """
-    Forward unit labels and axis identifier ``'x'`` to the view.
+    Forward unit labels and axis identifier 'x' to the view.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -501,11 +503,11 @@ def test_get_experiment_structure_ready_selected_is_shallow_copy(
     mock_view: MagicMock,
 ) -> None:
     """
-    Document that ``str_structure.copy()`` is shallow: inner channel lists are shared.
+    Document that str_structure.copy() is shallow: inner channel lists are shared.
 
-    Mutating a channel list in ``available`` also mutates the same list in
-    ``selected``.  This test pins the current behaviour; consider
-    ``copy.deepcopy`` if independent mutation is required.
+    Mutating a channel list in available also mutates the same list in
+    selected. This test pins the current behaviour; consider
+    copy.deepcopy if independent mutation is required.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -716,7 +718,7 @@ def test_relay_query_new_filter_empty_text_emits_all_rows_message(
     mock_view: MagicMock,
 ) -> None:
     """
-    Emit an informational ``all rows`` message when the filter text is blank.
+    Emit an informational all rows message when the filter text is blank.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -735,7 +737,7 @@ def test_relay_query_new_filter_emits_added_confirmation(
     mock_view: MagicMock,
 ) -> None:
     """
-    Emit a confirmation message containing ``'added'`` after storing the filter.
+    Emit a confirmation message containing 'added' after storing the filter.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -843,7 +845,7 @@ def test_relay_query_edited_filter_empty_text_emits_full_dataset_message(
     mock_view: MagicMock,
 ) -> None:
     """
-    Emit a message containing ``'FULL DATASET'`` when the edited filter text is blank.
+    Emit a message containing 'FULL DATASET' when the edited filter text is blank.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -863,7 +865,7 @@ def test_relay_query_edited_filter_emits_updated_confirmation(
     mock_view: MagicMock,
 ) -> None:
     """
-    Emit a confirmation message containing ``'updated'`` after renaming the filter.
+    Emit a confirmation message containing 'updated' after renaming the filter.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
