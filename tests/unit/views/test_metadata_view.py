@@ -6,8 +6,11 @@ Comprehensive test coverage for:
 - Control area setup (_set_control_area)
 - Figure state management (_clear_figure_state, _reset_actions)
 - File dialog (get_save_filename)
-- Plot methods (_plot_1d_density, _plot_capture_rate)
+- Plot methods (_plot_1d_density, _plot_1d_histogram, _plot_capture_rate, 
+  _plot_heatmap, _plot_scatterplot, _plot_3d_scatterplot, _plot_all_points_histogram)
+- Update plot dispatcher (update_plot)
 - Helper functions (format_axis_label)
+- __init__ method
 """
 
 from __future__ import annotations
@@ -1125,3 +1128,539 @@ def test_format_axis_label_handles_multiple_parentheses() -> None:
     """Verify only last parenthetical is replaced."""
     result: str = format_axis_label("Current (baseline) (pA)", "nA")
     assert "nA" in result
+
+# ----------------------------- Plot 1D Histogram Tests ------------------------------
+
+
+def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:
+    """Verify ValueError is raised for invalid bins list."""
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    with pytest.raises(ValueError, match="Invalid bins entry"):
+        view._plot_1d_histogram(view.axes, data, ["x"], [""], [False], bins=[])
+
+
+def test_plot_1d_histogram_uses_first_bins_entry(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify bins list is reduced to first entry."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
+    )
+
+    view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], bins=[10])
+
+    assert len(view.hist_data) == 1
+
+
+def test_plot_1d_histogram_updates_hist_min_max(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify hist_min and hist_max are updated."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
+    )
+
+    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [False])
+
+    assert view.hist_min == 1.0
+    assert view.hist_max == 10.0
+
+
+def test_plot_1d_histogram_normalizes_when_norm_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify histogram is normalized when norm=True."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
+    )
+
+    view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], norm=True)
+
+    ylabel_call = view.axes.set_ylabel.call_args
+    assert ylabel_call is not None
+    assert "Fraction" in ylabel_call.args[0]
+
+
+def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify log10 label is set when logscale is True."""
+    data = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([0.0, 1.0, 2.0]),)
+    )
+
+    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
+
+    xlabel_call = view.axes.set_xlabel.call_args
+    assert xlabel_call is not None
+    assert "log10" in xlabel_call.args[0]
+
+
+def test_plot_1d_histogram_handles_bin_sizes(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify bin sizes mode calculates bins correctly."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
+    )
+    view.hist_min = 0.0
+    view.hist_max = 10.0
+
+    view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True)
+
+    assert len(view.hist_data) == 1
+
+
+def test_plot_1d_histogram_overlays_multiple_datasets(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify multiple datasets can be overlaid."""
+    data1 = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+    data2 = pd.DataFrame({"x": np.array([4.0, 5.0, 6.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        side_effect=[
+            (np.array([1.0, 2.0, 3.0]),),
+            (np.array([4.0, 5.0, 6.0]),),
+        ]
+    )
+
+    view._plot_1d_histogram(view.axes, data1, ["x"], ["u"], [False], dataset_label="d1")
+    view._plot_1d_histogram(view.axes, data2, ["x"], ["u"], [False], dataset_label="d2")
+
+    assert len(view.hist_data) == 2
+    assert len(view.hist_labels) == 2
+
+
+# ----------------------------- Plot Heatmap Tests ------------------------------
+
+
+def test_plot_heatmap_calls_calculate_heatmap(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _calculate_heatmap is called."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    # Create explicit arrays before mocking to avoid evaluation issues
+    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
+    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
+    z_grid = np.ones((10, 10))
+
+    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(x_bins, y_bins, z_grid)
+    )
+
+    # Mock the colorbar to return proper ticks
+    mock_colorbar = mocker.Mock()
+    mock_colorbar.get_ticks = mocker.Mock(return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0]))
+    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
+
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    view._calculate_heatmap.assert_called_once()
+
+
+def test_plot_heatmap_sets_axis_labels(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify axis labels are set correctly."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
+    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
+    z_grid = np.ones((10, 10))
+
+    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(x_bins, y_bins, z_grid)
+    )
+
+    # Mock the colorbar
+    mock_colorbar = mocker.Mock()
+    mock_colorbar.get_ticks = mocker.Mock(return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0]))
+    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
+
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    view.axes.set_xlabel.assert_called()
+    view.axes.set_ylabel.assert_called()
+
+
+def test_plot_heatmap_sets_log10_labels_when_logscale_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify log10 labels are set when logscales are True."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
+    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
+    z_grid = np.ones((10, 10))
+
+    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(x_bins, y_bins, z_grid)
+    )
+
+    # Mock the colorbar
+    mock_colorbar = mocker.Mock()
+    mock_colorbar.get_ticks = mocker.Mock(return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0]))
+    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
+
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+
+    xlabel_call = view.axes.set_xlabel.call_args
+    ylabel_call = view.axes.set_ylabel.call_args
+    assert xlabel_call is not None
+    assert ylabel_call is not None
+    assert "log10" in xlabel_call.args[0]
+    assert "log10" in ylabel_call.args[0]
+
+
+def test_plot_heatmap_removes_previous_colorbar(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify previous colorbar is removed on overlay."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
+    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
+    z_grid = np.ones((10, 10))
+
+    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(x_bins, y_bins, z_grid)
+    )
+
+    # Mock the colorbar
+    mock_new_colorbar = mocker.Mock()
+    mock_new_colorbar.get_ticks = mocker.Mock(return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0]))
+    view.figure.colorbar = mocker.Mock(return_value=mock_new_colorbar)
+
+    # Create a mock for the previous colorbar
+    mock_old_colorbar = mocker.Mock()
+    mock_old_colorbar.ax = mocker.Mock()
+    mock_old_colorbar.ax.figure = view.figure
+    view._heatmap_colorbar = mock_old_colorbar  # type: ignore[attr-defined]
+
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    mock_old_colorbar.remove.assert_called_once()
+
+
+# ----------------------------- Plot Scatterplot Tests ------------------------------
+
+
+def test_plot_scatterplot_calls_scatter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify scatter is called on axes."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
+    )
+
+    view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    view.axes.scatter.assert_called_once()
+
+
+def test_plot_scatterplot_sets_axis_labels(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify axis labels are set."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
+    )
+
+    view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    view.axes.set_xlabel.assert_called()
+    view.axes.set_ylabel.assert_called()
+
+
+def test_plot_scatterplot_sets_log10_labels_when_logscale_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify log10 labels are set when logscales are True."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
+    )
+
+    view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+
+    xlabel_call = view.axes.set_xlabel.call_args
+    ylabel_call = view.axes.set_ylabel.call_args
+    assert xlabel_call is not None
+    assert ylabel_call is not None
+    assert "log10" in xlabel_call.args[0]
+    assert "log10" in ylabel_call.args[0]
+
+
+# ----------------------------- Plot 3D Scatterplot Tests ------------------------------
+
+
+def test_plot_3d_scatterplot_calls_scatter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify scatter is called on 3D axes."""
+    data = pd.DataFrame({
+        "x": np.array([1.0, 2.0]),
+        "y": np.array([3.0, 4.0]),
+        "z": np.array([5.0, 6.0]),
+    })
+
+    # Make isinstance check pass by setting view.axes as an instance
+    type(view.axes).__name__ = "Axes3D"
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(
+            np.array([1.0, 2.0]),
+            np.array([3.0, 4.0]),
+            np.array([5.0, 6.0]),
+        )
+    )
+
+    view._plot_3d_scatterplot(
+        view.axes, data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+    )
+
+    view.axes.scatter.assert_called_once()
+
+
+def test_plot_3d_scatterplot_sets_axis_labels(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify all three axis labels are set."""
+    data = pd.DataFrame({
+        "x": np.array([1.0, 2.0]),
+        "y": np.array([3.0, 4.0]),
+        "z": np.array([5.0, 6.0]),
+    })
+
+    # Make isinstance check pass
+    type(view.axes).__name__ = "Axes3D"
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(
+            np.array([1.0, 2.0]),
+            np.array([3.0, 4.0]),
+            np.array([5.0, 6.0]),
+        )
+    )
+    view.axes.set_zlabel = mocker.Mock()
+
+    view._plot_3d_scatterplot(
+        view.axes, data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+    )
+
+    view.axes.set_xlabel.assert_called()
+    view.axes.set_ylabel.assert_called()
+    view.axes.set_zlabel.assert_called()
+
+
+# ----------------------------- Plot All Points Histogram Tests ------------------------------
+
+
+def test_plot_all_points_histogram_plots_data(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify plot is called with data."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"])
+
+    view.axes.plot.assert_called()
+
+
+def test_plot_all_points_histogram_normalizes_when_norm_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify data is normalized when norm=True."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([10.0, 20.0])})
+
+    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"], norm=True)
+
+    ylabel_call = view.axes.set_ylabel.call_args
+    assert ylabel_call is not None
+    assert "Normalized" in ylabel_call.args[0]
+
+
+def test_plot_all_points_histogram_clears_axes(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify axes are cleared before plotting."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"])
+
+    view.axes.clear.assert_called()
+
+
+# ----------------------------- Update Plot Tests ------------------------------
+
+
+def test_update_plot_calls_histogram_for_histogram_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _plot_1d_histogram is called for Histogram plot type."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    # Mock the data_cache and _commit_cache
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0, 3.0]),)
+    )
+    view._plot_1d_histogram = mocker.Mock()  # type: ignore[method-assign]
+
+    view.update_plot("Histogram", data, ["x"], ["u"], [False])
+
+    view._plot_1d_histogram.assert_called_once()
+
+
+def test_update_plot_calls_density_for_kernel_density_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _plot_1d_density is called for Kernel Density Plot type."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._plot_1d_density = mocker.Mock()  # type: ignore[method-assign]
+
+    view.update_plot("Kernel Density Plot", data, ["x"], ["u"], [False])
+
+    view._plot_1d_density.assert_called_once()
+
+
+def test_update_plot_calls_capture_rate_for_capture_rate_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _plot_capture_rate is called for Capture Rate type."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._plot_capture_rate = mocker.Mock()  # type: ignore[method-assign]
+
+    view.update_plot("Capture Rate", data, ["x"], ["u"], [False])
+
+    view._plot_capture_rate.assert_called_once()
+
+
+def test_update_plot_handles_capture_rate_value_error(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify ValueError from capture rate is caught and message emitted."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._plot_capture_rate = mocker.Mock(  # type: ignore[method-assign]
+        side_effect=ValueError("Not enough data")
+    )
+
+    view.update_plot("Capture Rate", data, ["x"], ["u"], [False], dataset_label="test")
+
+    view.add_text_to_display.emit.assert_called()
+
+
+def test_update_plot_calls_scatterplot_for_scatterplot_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _plot_scatterplot is called for Scatterplot type."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
+    )
+    view._plot_scatterplot = mocker.Mock()  # type: ignore[method-assign]
+
+    view.update_plot("Scatterplot", data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    view._plot_scatterplot.assert_called_once()
+
+
+def test_update_plot_calls_heatmap_for_heatmap_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _plot_heatmap is called for Heatmap type."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(
+            np.array([1.0, 2.0]),
+            np.array([3.0, 4.0]),
+            np.array([[1.0, 2.0], [3.0, 4.0]]),
+        )
+    )
+    view._plot_heatmap = mocker.Mock()  # type: ignore[method-assign]
+
+    view.update_plot("Heatmap", data, ["x", "y"], ["u1", "u2"], [False, False])
+
+    view._plot_heatmap.assert_called_once()
+
+
+def test_update_plot_calls_3d_scatterplot_for_3d_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _plot_3d_scatterplot is called for 3D Scatterplot type."""
+    data = pd.DataFrame({
+        "x": np.array([1.0, 2.0]),
+        "y": np.array([3.0, 4.0]),
+        "z": np.array([5.0, 6.0]),
+    })
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._plot_3d_scatterplot = mocker.Mock()  # type: ignore[method-assign]
+
+    view.update_plot(
+        "3D Scatterplot", data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+    )
+
+    view._plot_3d_scatterplot.assert_called_once()
+
+
+def test_update_plot_raises_for_unsupported_type(view: MetadataView, mocker: MockerFixture) -> None:
+    """Verify NotImplementedError is raised for unsupported plot types."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+
+    with pytest.raises(NotImplementedError, match="not yet supported"):
+        view.update_plot("Unsupported Type", data, ["x"], ["u"], [False])
+
+
+def test_update_plot_redraws_canvas(view: MetadataView, mocker: MockerFixture) -> None:
+    """Verify canvas is redrawn after plotting."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    view.data_cache = []  # type: ignore[attr-defined]
+    view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([1.0, 2.0, 3.0]),)
+    )
+
+    view.update_plot("Histogram", data, ["x"], ["u"], [False])
+
+    view.canvas.draw.assert_called()
