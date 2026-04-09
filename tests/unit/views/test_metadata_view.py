@@ -68,6 +68,9 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.axes.set_xlabel = mocker.Mock()
     view_instance.axes.set_ylabel = mocker.Mock()
     view_instance.axes.legend = mocker.Mock()
+    view_instance.axes.scatter = mocker.Mock()
+    view_instance.axes.set_xlim = mocker.Mock()
+    view_instance.axes.set_ylim = mocker.Mock()
 
     view_instance.canvas = mocker.Mock()
     view_instance.canvas.draw = mocker.Mock()
@@ -75,6 +78,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock signals
     view_instance.add_text_to_display = mocker.Mock()
     view_instance.add_text_to_display.emit = mocker.Mock()
+    view_instance.update_tab_action_history = mocker.Mock()
+    view_instance.update_tab_action_history.emit = mocker.Mock()
 
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
@@ -82,6 +87,21 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance._logscale_and_filter_multiple_columns = mocker.Mock(
         side_effect=lambda *args, **kwargs: (args[0],) if args else ()
     )
+
+    # Mock methods called by _overlay_plot
+    view_instance.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view_instance.global_signal = mocker.Mock()
+    
+    # Add missing attributes needed by various methods
+    view_instance.query = ""
+    view_instance.plot_data = None
+    view_instance.units = ""
+    view_instance.event_query = ""
+    view_instance.event_data_generator = None
+    view_instance.baseline_duration = 0.0
+    view_instance.selected_experiment_and_channels_by_loader = {}
+    view_instance.data_cache = []
+    view_instance._commit_cache = mocker.Mock()
 
     # Initialize the view
     view_instance._init()
@@ -1664,3 +1684,4 @@ def test_update_plot_redraws_canvas(view: MetadataView, mocker: MockerFixture) -
     view.update_plot("Histogram", data, ["x"], ["u"], [False])
 
     view.canvas.draw.assert_called()
+
