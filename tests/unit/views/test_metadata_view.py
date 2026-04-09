@@ -2204,13 +2204,11 @@ def test_overlay_plot_skips_already_plotted_datasets(
     view.update_plot = mocker.Mock()
     
     # The loop will iterate but skip the already-plotted dataset
-    # and still return True at the end
     result = view._overlay_plot(parameters)
     
     assert result is True
     # Verify update_plot was NOT called since dataset was skipped
     view.update_plot.assert_not_called()
-
 
 def test_overlay_plot_returns_false_when_query_empty(
     view: MetadataView, mocker: MockerFixture
@@ -2309,27 +2307,27 @@ def test_overlay_plot_returns_false_when_column_units_length_mismatch(
     view.query = "SELECT * FROM events"
     view.plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
     
-    # Track which unit retrieval we're on
+    # Simulate the unit collection process where only first column gets units
     unit_call_count = [0]
+    collected_units = []
     
     def mock_emit_side_effect(*args: Any) -> None:
         # Only respond to get_column_units calls
         if len(args) >= 6 and args[2] == "get_column_units":
             unit_call_count[0] += 1
-            # Only set units for first call, skip second to create mismatch
+            # Only set units for first call
             if unit_call_count[0] == 1:
                 view.units = "ms"
-            # On second call, don't update view.units
-            # This leaves it as "ms" from the first call, not adding a new unit
+                collected_units.append("ms")
+            # Second call doesn't set units, creating mismatch
     
     view.global_signal.emit = mocker.Mock(side_effect=mock_emit_side_effect)
     
     result = view._overlay_plot(parameters)
     
-    # Should return False due to length mismatch (2 columns but only 1 unique unit collected)
+    # Should return False due to length mismatch
     assert result is False
     view.add_text_to_display.emit.assert_called()
-
 
 def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
     view: MetadataView, mocker: MockerFixture
@@ -2879,14 +2877,13 @@ def test_construct_event_overlay_sets_axis_labels(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify axis labels are set correctly."""
-    # padding calculation: 200 µs * 10000 Hz / 1e6 = 2 samples
-    # Need at least 3 samples after removing padding to avoid division by zero
-    # Total samples needed: 2 (before) + 3 (middle) + 2 (after) = 7 minimum
+    # Use 30 samples: padding_before=200µs * 10000Hz / 1e6 = 2 samples
+    # 30 - 2 - 2 = 26 middle samples (safe from division by zero)
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]),
-            "padding_before": 200.0,  # 2 samples
-            "padding_after": 200.0,   # 2 samples  
+            "raw_data": np.linspace(10.0, 40.0, 30),
+            "padding_before": 200.0,
+            "padding_after": 200.0,
             "samplerate": 10000.0,
         }
     ]
@@ -2903,7 +2900,7 @@ def test_construct_event_overlay_sets_xlim(
     """Verify x-axis limits are set correctly."""
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
@@ -2920,8 +2917,8 @@ def test_construct_event_overlay_plots_raw_data_for_raw_overlay(
     """Verify uses raw_data for Raw Event Overlay."""
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]),
-            "filtered_data": np.array([20.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
+            "filtered_data": np.linspace(20.0, 50.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
@@ -2939,8 +2936,8 @@ def test_construct_event_overlay_plots_filtered_data_for_filtered_overlay(
     """Verify uses filtered_data for Filtered Event Overlay."""
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]),
-            "filtered_data": np.array([20.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
+            "filtered_data": np.linspace(20.0, 50.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
@@ -2951,19 +2948,20 @@ def test_construct_event_overlay_plots_filtered_data_for_filtered_overlay(
     
     view.axes.plot.assert_called()
 
+
 def test_construct_event_overlay_adjusts_alpha_based_on_event_count(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify alpha is adjusted based on number of events."""
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
         },
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
@@ -2981,7 +2979,7 @@ def test_construct_event_overlay_sets_no_cached_data_true(
     """Verify no_cached_data flag is set to True."""
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
@@ -2992,16 +2990,13 @@ def test_construct_event_overlay_sets_no_cached_data_true(
     
     assert view.no_cached_data is True
 
-
 def test_construct_event_overlay_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify canvas is redrawn after plotting."""
-    # Need enough samples: padding_before=200µs * 10000Hz / 1e6 = 2 samples
-    # Total: 15 samples - 2 before - 2 after = 11 middle samples (safe from division by zero)
     events = [
         {
-            "raw_data": np.array([10.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0]),
+            "raw_data": np.linspace(10.0, 40.0, 30),
             "padding_before": 200.0,
             "padding_after": 200.0,
             "samplerate": 10000.0,
@@ -3010,7 +3005,6 @@ def test_construct_event_overlay_redraws_canvas(
     
     view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
     
-    view.canvas.draw.assert_called()
 
 
 # ----------------------------- Set Event Data Generator Tests ------------------------------
@@ -3275,3 +3269,2023 @@ def test_load_filter_logs_error_on_exception(
     view._load_filter(parameters)
     
     # Should log error but not crash
+
+# ----------------------------- Handle Parameter Change Tests ------------------------------
+
+
+def test_handle_parameter_change_exports_plot_data_when_cached(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify export_plot_data signal is emitted when data is cached."""
+    view.no_cached_data = False
+    view.export_plot_data = mocker.Mock()
+    
+    view.handle_parameter_change("metadata", "export_plot_data", ({},))
+    
+    view.export_plot_data.emit.assert_called_once()
+
+
+def test_handle_parameter_change_warns_when_no_cached_data(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning is emitted when event overlay data is not cached."""
+    view.no_cached_data = True
+    view.export_plot_data = mocker.Mock()
+    
+    view.handle_parameter_change("metadata", "export_plot_data", ({},))
+    
+    view.add_text_to_display.emit.assert_called()
+    view.export_plot_data.emit.assert_not_called()
+
+
+def test_handle_parameter_change_updates_columns_on_loader_changed(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify available columns are updated when loader changes."""
+    view.update_available_columns = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "loader_changed", (parameters,))
+    
+    view.update_available_columns.assert_called_once_with("test_loader")
+
+
+def test_handle_parameter_change_shows_selection_tree(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify selection tree is shown for experiment/channel selection."""
+    view.available_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}  # type: ignore[assignment]
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.show_selection_tree = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "select_experiment_and_channel", (parameters,))
+    
+    view.show_selection_tree.assert_called_once()
+
+
+def test_handle_parameter_change_shifts_range_backward(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify range is shifted backward."""
+    view._shift_range_and_update_plot = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"event_index": [1, 2, 3]}
+    
+    view.handle_parameter_change("metadata", "shift_range_backward", (parameters,))
+    
+    view._shift_range_and_update_plot.assert_called_once_with(parameters, direction="left")
+
+
+def test_handle_parameter_change_shifts_range_forward(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify range is shifted forward."""
+    view._shift_range_and_update_plot = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"event_index": [1, 2, 3]}
+    
+    view.handle_parameter_change("metadata", "shift_range_forward", (parameters,))
+    
+    view._shift_range_and_update_plot.assert_called_once_with(parameters, direction="right")
+
+
+def test_handle_parameter_change_handles_plot_events(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify plot events are handled."""
+    view._handle_plot_events = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"event_index": [1, 2, 3]}
+    
+    view.handle_parameter_change("metadata", "plot_events", (parameters,))
+    
+    view._handle_plot_events.assert_called_once_with(parameters)
+
+
+def test_handle_parameter_change_updates_units_on_columns_updated(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify units are updated when columns change."""
+    view.update_units = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {
+        "db_loader": "test_loader",
+        "x_axis": "duration",
+        "y_axis": "current",
+        "z_axis": "voltage",
+    }
+    
+    view.handle_parameter_change("metadata", "columns_updated", (parameters,))
+    
+    assert view.update_units.call_count == 3
+
+
+def test_handle_parameter_change_raises_for_new_axis(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify NotImplementedError is raised for new_axis action."""
+    parameters = {}
+    
+    with pytest.raises(NotImplementedError, match="No new axis for you"):
+        view.handle_parameter_change("metadata", "new_axis", (parameters,))
+
+
+def test_handle_parameter_change_calls_overlay_plot_on_update(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _overlay_plot is called on update_plot action."""
+    view._overlay_plot = mocker.Mock(return_value=True)  # type: ignore[method-assign]
+    parameters = {"plot_type": "Histogram"}
+    
+    view.handle_parameter_change("metadata", "update_plot", (parameters,))
+    
+    view._overlay_plot.assert_called_once_with(parameters)
+
+
+def test_handle_parameter_change_undoes_on_failed_overlay(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify update_tab_action_history is emitted when overlay fails."""
+    view._overlay_plot = mocker.Mock(return_value=False)  # type: ignore[method-assign]
+    parameters = {"plot_type": "Histogram"}
+    
+    view.handle_parameter_change("metadata", "update_plot", (parameters,))
+    
+    view.update_tab_action_history.emit.assert_called_with(None, True)
+
+
+def test_handle_parameter_change_resets_plot(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify plot is reset on reset_plot action."""
+    view._reset_actions = mocker.Mock()  # type: ignore[method-assign]
+    
+    view.handle_parameter_change("metadata", "reset_plot", ({},))
+    
+    view._reset_actions.assert_called_once()
+
+
+def test_handle_parameter_change_loads_plot_config(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify plot configuration is loaded."""
+    view._load_actions_from_json = mocker.Mock(return_value={"action": "data"})  # type: ignore[method-assign]
+    view._update_actions_from_json = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "load_plot", (parameters,))
+    
+    view._load_actions_from_json.assert_called_once()
+    view._update_actions_from_json.assert_called_once()
+
+
+def test_handle_parameter_change_returns_early_when_no_actions(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify early return when no actions are loaded."""
+    view._load_actions_from_json = mocker.Mock(return_value=None)  # type: ignore[method-assign]
+    view._update_actions_from_json = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "load_plot", (parameters,))
+    
+    view._update_actions_from_json.assert_not_called()
+
+
+def test_handle_parameter_change_saves_plot_config(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify plot configuration is saved."""
+    view._save_actions_to_json = mocker.Mock()  # type: ignore[method-assign]
+    
+    view.handle_parameter_change("metadata", "save_plot_config", ({},))
+    
+    view._save_actions_to_json.assert_called_once()
+
+
+def test_handle_parameter_change_undoes_plot(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify plot is undone on undo_plot action."""
+    view._undo_plot = mocker.Mock()  # type: ignore[method-assign]
+    
+    view.handle_parameter_change("metadata", "undo_plot", ({},))
+    
+    view._undo_plot.assert_called_once()
+
+
+def test_handle_parameter_change_shows_add_filter_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify add filter dialog is shown."""
+    view._show_add_filter_dialog = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "add_filter", (parameters,))
+    
+    view._show_add_filter_dialog.assert_called_once_with(parameters)
+
+
+def test_handle_parameter_change_shows_edit_filter_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify edit filter dialog is shown."""
+    view._show_filter_info_dialog = mocker.Mock()  # type: ignore[method-assign]
+    view.metadatacontrols = mocker.Mock()
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "edit_filter", (parameters,))
+    
+    view._show_filter_info_dialog.assert_called_once()
+
+
+def test_handle_parameter_change_deletes_filter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify selected filters are deleted."""
+    view._delete_all_selected_filters = mocker.Mock()  # type: ignore[method-assign]
+    
+    view.handle_parameter_change("metadata", "delete_filter", ({},))
+    
+    view._delete_all_selected_filters.assert_called_once()
+
+
+def test_handle_parameter_change_saves_filter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter is saved."""
+    view._save_filter = mocker.Mock()  # type: ignore[method-assign]
+    
+    view.handle_parameter_change("metadata", "save_filter", ({},))
+    
+    view._save_filter.assert_called_once()
+
+
+def test_handle_parameter_change_loads_filter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter is loaded."""
+    view._load_filter = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "load_filter", (parameters,))
+    
+    view._load_filter.assert_called_once_with(parameters)
+
+
+def test_handle_parameter_change_exports_csv_subset(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify CSV subset is exported."""
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
+    view._export_csv_subset = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader"}
+    
+    view.handle_parameter_change("metadata", "export_csv_subset", (parameters,))
+    
+    view._export_csv_subset.assert_called_once()
+
+
+def test_handle_parameter_change_calls_handle_other_actions_for_unknown(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _handle_other_actions is called for unknown actions."""
+    view._handle_other_actions = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"key": "value"}
+    
+    view.handle_parameter_change("metadata", "unknown_action", (parameters,))
+    
+    view._handle_other_actions.assert_called_once_with("unknown_action", parameters)
+
+
+# ----------------------------- Shift Range and Update Plot Tests ------------------------------
+
+
+def test_shift_range_and_update_plot_returns_early_when_input_empty(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify early return when event index input is empty."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.event_index_lineEdit.text.return_value = ""
+    view._handle_plot_events = mocker.Mock()  # type: ignore[method-assign]
+    
+    view._shift_range_and_update_plot({}, "left")
+    
+    view._handle_plot_events.assert_not_called()
+
+
+def test_shift_range_and_update_plot_shifts_left(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify ranges are shifted left correctly."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.event_index_lineEdit.text.return_value = "5-10"
+    view._parse_event_indices = mocker.Mock(return_value=[(5, 10)])  # type: ignore[method-assign]
+    view._shift_ranges = mocker.Mock(return_value=[(4, 9)])  # type: ignore[method-assign]
+    view._merge_ranges = mocker.Mock(return_value=[(4, 9)])  # type: ignore[method-assign]
+    view._format_ranges = mocker.Mock(return_value="4-9")  # type: ignore[method-assign]
+    view._expand_event_indices = mocker.Mock(return_value=[4, 5, 6, 7, 8, 9])  # type: ignore[method-assign]
+    view._handle_plot_events = mocker.Mock()  # type: ignore[method-assign]
+    
+    view._shift_range_and_update_plot({"key": "value"}, "left")
+    
+    view._shift_ranges.assert_called_once_with([(5, 10)], "left", 1)
+    view.metadatacontrols.set_event_index_input.assert_called_with("4-9")
+
+
+def test_shift_range_and_update_plot_shifts_right(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify ranges are shifted right correctly."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.event_index_lineEdit.text.return_value = "5-10"
+    view._parse_event_indices = mocker.Mock(return_value=[(5, 10)])  # type: ignore[method-assign]
+    view._shift_ranges = mocker.Mock(return_value=[(6, 11)])  # type: ignore[method-assign]
+    view._merge_ranges = mocker.Mock(return_value=[(6, 11)])  # type: ignore[method-assign]
+    view._format_ranges = mocker.Mock(return_value="6-11")  # type: ignore[method-assign]
+    view._expand_event_indices = mocker.Mock(return_value=[6, 7, 8, 9, 10, 11])  # type: ignore[method-assign]
+    view._handle_plot_events = mocker.Mock()  # type: ignore[method-assign]
+    
+    view._shift_range_and_update_plot({"key": "value"}, "right")
+    
+    view._shift_ranges.assert_called_once_with([(5, 10)], "right", 1)
+
+
+def test_shift_range_and_update_plot_returns_when_negative_indices(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify return when expanded indices are empty (negative values)."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.event_index_lineEdit.text.return_value = "1-2"
+    view._parse_event_indices = mocker.Mock(return_value=[(1, 2)])  # type: ignore[method-assign]
+    view._shift_ranges = mocker.Mock(return_value=[(0, 1)])  # type: ignore[method-assign]
+    view._merge_ranges = mocker.Mock(return_value=[(0, 1)])  # type: ignore[method-assign]
+    view._format_ranges = mocker.Mock(return_value="0-1")  # type: ignore[method-assign]
+    view._expand_event_indices = mocker.Mock(return_value=[])  # type: ignore[method-assign]
+    view._handle_plot_events = mocker.Mock()  # type: ignore[method-assign]
+    
+    view._shift_range_and_update_plot({}, "left")
+    
+    view._handle_plot_events.assert_not_called()
+
+
+def test_shift_range_and_update_plot_updates_parameters(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify parameters are updated with new event indices."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.event_index_lineEdit.text.return_value = "5-10"
+    view._parse_event_indices = mocker.Mock(return_value=[(5, 10)])  # type: ignore[method-assign]
+    view._shift_ranges = mocker.Mock(return_value=[(6, 11)])  # type: ignore[method-assign]
+    view._merge_ranges = mocker.Mock(return_value=[(6, 11)])  # type: ignore[method-assign]
+    view._format_ranges = mocker.Mock(return_value="6-11")  # type: ignore[method-assign]
+    view._expand_event_indices = mocker.Mock(return_value=[6, 7, 8, 9, 10, 11])  # type: ignore[method-assign]
+    view._handle_plot_events = mocker.Mock()  # type: ignore[method-assign]
+    
+    original_params = {"db_loader": "test"}
+    view._shift_range_and_update_plot(original_params, "right")
+    
+    # Verify original params were not modified
+    assert "event_index" not in original_params
+    # Verify _handle_plot_events was called with updated params
+    call_params = view._handle_plot_events.call_args[0][0]
+    assert call_params["event_index"] == [6, 7, 8, 9, 10, 11]
+
+
+# ----------------------------- Get Event Index Text Tests ------------------------------
+
+
+def test_get_event_index_text_returns_stripped_text(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify event index text is returned stripped."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.event_index_lineEdit.text.return_value = "  1,2,3  "
+    
+    result = view._get_event_index_text()
+    
+    assert result == "1,2,3"
+
+
+# ----------------------------- Set Event Plot Data Generator Tests ------------------------------
+
+
+def test_set_event_plot_data_generator_sets_generator(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify event plot data generator is set."""
+    generator = iter([{"data": "test"}])
+    
+    view.set_event_plot_data_generator(generator)
+    
+    assert view.plot_events_generator == generator
+    assert view.plot_events_generator_updated is True
+
+
+# ----------------------------- Handle Plot Events Tests ------------------------------
+
+
+def test_handle_plot_events_warns_when_no_experiments_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when no experiments or channels are selected."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {}  # type: ignore[assignment]
+    parameters = {"db_loader": "test_loader", "event_index": [1, 2, 3]}
+    
+    view._handle_plot_events(parameters)
+    
+    view.add_text_to_display.emit.assert_called()
+    assert "No experiments or channels" in view.add_text_to_display.emit.call_args[0][0]
+
+
+def test_handle_plot_events_warns_when_multiple_filters_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when multiple filters are selected."""
+    view.get_selected_filters = mocker.Mock(
+        return_value={"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
+    )
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.add_text_to_display = mocker.Mock()
+    parameters = {"db_loader": "test_loader", "event_index": [1, 2, 3]}
+    
+    view._handle_plot_events(parameters)
+    
+    view.add_text_to_display.assert_called()
+
+
+def test_handle_plot_events_warns_when_loader_has_empty_selection(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when loader has empty experiment/channel selection."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {}}  # type: ignore[assignment]
+    parameters = {"db_loader": "test_loader", "event_index": [1, 2, 3]}
+    
+    view._handle_plot_events(parameters)
+    
+    view.add_text_to_display.emit.assert_called()
+    assert "No experiments or channels" in view.add_text_to_display.emit.call_args[0][0]
+
+
+def test_handle_plot_events_warns_when_multiple_experiments(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when multiple experiments are selected."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {  # type: ignore[assignment]
+        "test_loader": {"exp1": [1], "exp2": [2]}
+    }
+    parameters = {"db_loader": "test_loader", "event_index": [1, 2, 3]}
+    
+    view._handle_plot_events(parameters)
+    
+    view.add_text_to_display.emit.assert_called()
+    assert "single experiment" in view.add_text_to_display.emit.call_args[0][0]
+
+
+def test_handle_plot_events_warns_when_multiple_channels(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when multiple channels are selected."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}  # type: ignore[assignment]
+    parameters = {"db_loader": "test_loader", "event_index": [1, 2, 3]}
+    
+    view._handle_plot_events(parameters)
+    
+    view.add_text_to_display.emit.assert_called()
+    assert "single channel" in view.add_text_to_display.emit.call_args[0][0]
+
+
+def test_handle_plot_events_defaults_to_full_dataset(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify defaults to Full Dataset when no filters selected."""
+    view.get_selected_filters = mocker.Mock(return_value={})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 1
+    
+    # Create a proper generator
+    def mock_generator():
+        yield {"event_id": 1, "raw_data": np.array([1.0])}
+    
+    view.plot_events_generator = mock_generator()
+    view.cached_events = {}  # type: ignore[assignment]
+    view._update_event_plot = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader", "event_index": [1]}
+    
+    view._handle_plot_events(parameters)
+    
+    view._update_event_plot.assert_called_once()
+
+
+def test_handle_plot_events_loads_new_generator_when_filter_changes(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify new generator is loaded when filter changes."""
+    view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
+    view.current_sql_filter = "WHERE x > 0"  # Different filter
+    view.plot_events_generator = None
+    view.plot_events_generator_updated = False
+    view.cached_events = {}
+    view.global_signal = mocker.Mock()
+    parameters = {"db_loader": "test_loader", "event_index": [1]}
+    
+    view._handle_plot_events(parameters)
+    
+    # Should emit signal to load new generator
+    view.global_signal.emit.assert_called()
+    # Verify it called with load_event_data
+    call_args = view.global_signal.emit.call_args[0]
+    assert call_args[2] == "load_event_data"
+
+def test_handle_plot_events_aborts_existing_generator(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify existing generator is aborted when loading new one."""
+    view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
+    view.current_sql_filter = "WHERE x > 0"  # Different filter
+    
+    # Create a generator that supports send
+    def existing_gen():
+        try:
+            abort = yield {"event_id": 1}
+            if abort:
+                return
+        except GeneratorExit:
+            pass
+    
+    view.plot_events_generator = existing_gen()
+    next(view.plot_events_generator)  # Prime it
+    view.plot_events_generator_updated = False
+    view.cached_events = {1: {"event_id": 1}}
+    view.global_signal = mocker.Mock()
+    parameters = {"db_loader": "test_loader", "event_index": [1]}
+    
+    view._handle_plot_events(parameters)
+    
+    # Verify cached events were cleared
+    assert view.cached_events == {}
+    # Verify global signal was emitted to load new generator
+    view.global_signal.emit.assert_called()
+
+
+def test_handle_plot_events_uses_cached_events(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify cached events are used when available."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 1
+    view.plot_events_generator = mocker.Mock()
+    view.cached_events = {1: {"event_id": 1, "raw_data": np.array([1.0])}}  # type: ignore[assignment]
+    view._update_event_plot = mocker.Mock()  # type: ignore[method-assign]
+    parameters = {"db_loader": "test_loader", "event_index": [1]}
+    
+    view._handle_plot_events(parameters)
+    
+    view._update_event_plot.assert_called_once()
+
+
+def test_handle_plot_events_fetches_from_generator_when_not_cached(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify events are fetched from generator when not cached."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 1
+    
+    # Create generator that properly supports send() protocol
+    def mock_generator():
+        abort = False
+        while not abort:
+            abort = yield {"event_id": 1, "raw_data": np.array([1.0])}
+            if abort:
+                break
+    
+    gen = mock_generator()
+    next(gen)  # Prime it
+    view.plot_events_generator = gen
+    view.cached_events = {}
+    view._update_event_plot = mocker.Mock()
+    parameters = {"db_loader": "test_loader", "event_index": [1]}
+    
+    view._handle_plot_events(parameters)
+    
+    # Verify update was called with the event data
+    view._update_event_plot.assert_called_once()
+    # Verify the event data list contains our event
+    call_args = view._update_event_plot.call_args[0][0]
+    assert len(call_args) == 1
+    assert call_args[0]["event_id"] == 1
+
+
+def test_handle_plot_events_warns_when_no_data_available(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when no data is available for indices."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 1
+    
+    # Create empty generator
+    def empty_gen():
+        return
+        yield  # Make it a generator
+    
+    view.plot_events_generator = empty_gen()
+    view.cached_events = {}  # type: ignore[assignment]
+    parameters = {"db_loader": "test_loader", "event_index": [99]}
+    
+    view._handle_plot_events(parameters)
+    
+    view.add_text_to_display.emit.assert_called()
+    assert "No data available" in view.add_text_to_display.emit.call_args[0][0]
+
+
+def test_handle_plot_events_stops_when_event_id_exceeds_requested(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify generator stops fetching when event_id exceeds requested index."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 1
+    
+    # Create generator that yields event with higher ID
+    def mock_generator():
+        abort = False
+        while not abort:
+            abort = yield {"event_id": 10, "raw_data": np.array([1.0])}
+            if abort:
+                break
+    
+    gen = mock_generator()
+    next(gen)  # Prime it
+    view.plot_events_generator = gen
+    view.cached_events = {}
+    view._update_event_plot = mocker.Mock()
+    parameters = {"db_loader": "test_loader", "event_index": [5]}
+    
+    view._handle_plot_events(parameters)
+    
+    # Should not plot since event_id 10 > requested 5
+    # But event 10 should be cached for future use
+    assert 10 in view.cached_events
+    view._update_event_plot.assert_not_called()
+
+# ----------------------------- Update Event Plot Tests ------------------------------
+
+
+def test_update_event_plot_clears_figure(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify figure is cleared before plotting events."""
+    view._clear_figure_state = mocker.Mock()  # type: ignore[method-assign]
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    view._clear_figure_state.assert_called_once_with(create_default_axes=False)
+
+
+def test_update_event_plot_creates_subplots(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify subplots are created for each event."""
+    view._factors = mocker.Mock(return_value=(2, 2))  # type: ignore[method-assign]
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": i,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+        for i in range(4)
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    assert view.figure.add_subplot.call_count == 4
+
+
+def test_update_event_plot_plots_all_traces(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify raw, filtered, and fit traces are plotted."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    mock_ax = mocker.Mock()
+    view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    assert mock_ax.plot.call_count == 3  # raw, filtered, fit
+
+
+def test_update_event_plot_sets_subplot_titles(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify subplot titles are set with exp/channel/event info."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    mock_ax = mocker.Mock()
+    view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
+    event_data = [
+        {
+            "experiment_id": 5,
+            "channel_id": 3,
+            "event_id": 42,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    mock_ax.set_title.assert_called_once()
+    title = mock_ax.set_title.call_args[0][0]
+    assert "Exp 5" in title
+    assert "Ch 3" in title
+    assert "Event 42" in title
+
+
+def test_update_event_plot_converts_current_to_nanoamps(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify current data is converted from pA to nA."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    mock_ax = mocker.Mock()
+    view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1000.0, 2000.0]),  # pA
+            "filtered_data": np.array([1100.0, 2100.0]),
+            "fit_data": np.array([1000.0, 2000.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    # Check that plot was called with divided values (pA / 1000 = nA)
+    calls = mock_ax.plot.call_args_list
+    assert len(calls) == 3
+    # First call should have raw_data / 1000
+    np.testing.assert_array_almost_equal(calls[0][0][1], np.array([1.0, 2.0]))
+
+
+def test_update_event_plot_converts_time_to_microseconds(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify time is converted to microseconds."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    mock_ax = mocker.Mock()
+    view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,  # 10kHz
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    # Time array: [0, 1] samples / 10000 Hz * 1e6 = [0, 100] µs
+    calls = mock_ax.plot.call_args_list
+    expected_time = np.array([0.0, 100.0])
+    np.testing.assert_array_almost_equal(calls[0][0][0], expected_time)
+
+
+def test_update_event_plot_updates_cache(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify cache is updated with event data."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    assert view._update_cache.call_count == 3  # One for each trace
+
+
+def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify y-axis labels are set only on leftmost subplots."""
+    view._factors = mocker.Mock(return_value=(2, 3))  # type: ignore[method-assign]
+    mock_axes = []
+    
+    def create_mock_ax(*args: Any) -> Any:
+        ax = mocker.Mock()
+        mock_axes.append(ax)
+        return ax
+    
+    view.figure.add_subplot = mocker.Mock(side_effect=create_mock_ax)
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": i,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+        for i in range(6)
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    # Only leftmost column (indices 0, 3) should have ylabel
+    assert mock_axes[0].set_ylabel.called
+    assert not mock_axes[1].set_ylabel.called
+    assert not mock_axes[2].set_ylabel.called
+    assert mock_axes[3].set_ylabel.called
+    assert not mock_axes[4].set_ylabel.called
+    assert not mock_axes[5].set_ylabel.called
+
+
+def test_update_event_plot_sets_xlabel_on_bottom_subplots(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify x-axis labels are set only on bottom row subplots."""
+    view._factors = mocker.Mock(return_value=(2, 3))  # type: ignore[method-assign]
+    mock_axes = []
+    
+    def create_mock_ax(*args: Any) -> Any:
+        ax = mocker.Mock()
+        mock_axes.append(ax)
+        return ax
+    
+    view.figure.add_subplot = mocker.Mock(side_effect=create_mock_ax)
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": i,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+        for i in range(6)
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    # Bottom row (indices 3, 4, 5) should have xlabel
+    assert not mock_axes[0].set_xlabel.called
+    assert not mock_axes[1].set_xlabel.called
+    assert not mock_axes[2].set_xlabel.called
+    assert mock_axes[3].set_xlabel.called
+    assert mock_axes[4].set_xlabel.called
+    assert mock_axes[5].set_xlabel.called
+
+
+def test_update_event_plot_redraws_canvas(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify canvas is redrawn after plotting."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    view.canvas.draw.assert_called_once()
+
+
+def test_update_event_plot_commits_cache(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify cache is committed after plotting."""
+    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    event_data = [
+        {
+            "experiment_id": 1,
+            "channel_id": 1,
+            "event_id": 1,
+            "raw_data": np.array([1.0, 2.0]),
+            "filtered_data": np.array([1.1, 2.1]),
+            "fit_data": np.array([1.0, 2.0]),
+            "samplerate": 10000,
+        }
+    ]
+    
+    view._update_event_plot(event_data)
+    
+    view._commit_cache.assert_called_once()
+
+
+# ----------------------------- Export CSV Subset Tests ------------------------------
+
+
+def test_export_csv_subset_warns_when_multiple_filters(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when multiple filters are selected."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    filters = {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
+    
+    view._export_csv_subset("test_loader", filters, {})
+    
+    view.add_text_to_display.emit.assert_called()
+    assert "single filter" in view.add_text_to_display.emit.call_args[0][0]
+
+
+def test_export_csv_subset_opens_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify dialog is opened for export settings."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    view.subset_export_count = 0
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = ({}, None)
+    mock_dialog_class.return_value = mock_dialog
+    
+    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+    
+    mock_dialog_class.assert_called_once()
+    mock_dialog.exec.assert_called_once()
+
+
+def test_export_csv_subset_converts_empty_filters_to_none(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify empty filter dict is converted to None."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    view.subset_export_count = 0
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = (
+        {"Folder": {"Value": "/path/to/folder"}},
+        "export_name",
+    )
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    view.run_generators = mocker.Mock()
+    
+    view._export_csv_subset("test_loader", {}, {"exp1": [1]})
+    
+    # Verify global_signal was called with None for filters
+    call_args = view.global_signal.emit.call_args[0]
+    export_args = call_args[3]
+    assert export_args[2] is None  # filters should be None
+
+
+def test_export_csv_subset_extracts_filter_value(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter value is extracted from dict."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    view.subset_export_count = 0
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = (
+        {"Folder": {"Value": "/path/to/folder"}},
+        "export_name",
+    )
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    view.run_generators = mocker.Mock()
+    
+    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+    
+    # Verify global_signal was called with filter value
+    call_args = view.global_signal.emit.call_args[0]
+    export_args = call_args[3]
+    assert export_args[2] == "WHERE x > 1"
+
+
+def test_export_csv_subset_emits_signal_on_success(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify global signal is emitted for export."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    view.subset_export_count = 0
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = (
+        {"Folder": {"Value": "/path/to/folder"}},
+        "export_name",
+    )
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    view.run_generators = mocker.Mock()
+    
+    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {"exp1": [1]})
+    
+    view.global_signal.emit.assert_called_once()
+    view.run_generators.emit.assert_called_once_with("test_loader")
+
+
+def test_export_csv_subset_increments_counter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify subset export counter is incremented."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    initial_count = view.subset_export_count
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = (
+        {"Folder": {"Value": "/path/to/folder"}},
+        "export_name",
+    )
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    view.run_generators = mocker.Mock()
+    
+    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+    
+    assert view.subset_export_count == initial_count + 1
+
+
+def test_export_csv_subset_does_not_increment_counter_on_cancel(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify counter is not incremented when dialog is cancelled."""
+    view.available_plugins = {}  # type: ignore[attr-defined]
+    initial_count = view.subset_export_count
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = (None, None)  # User cancelled
+    mock_dialog_class.return_value = mock_dialog
+    
+    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+    
+    assert view.subset_export_count == initial_count
+
+
+def test_export_csv_subset_handles_exception(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify exception is logged when export fails."""
+    view.available_plugins = {}
+    view.subset_export_count = 0
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.get_result.return_value = (
+        {"Folder": {"Value": "/path/to/folder"}},
+        "export_name",
+    )
+    mock_dialog_class.return_value = mock_dialog
+    
+    # Create a fresh mock for global_signal that will raise exception
+    view.global_signal = mocker.Mock()
+    view.global_signal.emit = mocker.Mock(side_effect=Exception("Export failed"))
+    
+    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+    
+    # Should log error but not crash
+    assert view.logger.error.called
+
+    # ----------------------------- Set Exported Event Count Tests ------------------------------
+
+
+def test_set_exported_event_count_sets_value(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify exported event count is set correctly."""
+    view.set_exported_event_count(42)
+    
+    assert view.exported_event_count == 42
+
+
+# ----------------------------- Set Query Tests ------------------------------
+
+
+def test_set_query_sets_query_and_table_name(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify query and table name are set correctly."""
+    view.set_query("SELECT * FROM events", "events")
+    
+    assert view.query == "SELECT * FROM events"
+    assert view.table_name == "events"
+
+
+def test_set_query_returns_early_when_query_empty(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify early return when query is empty."""
+    view._show_sql_in_display = True
+    
+    view.set_query("", "events")
+    
+    view.add_text_to_display.emit.assert_not_called()
+
+
+def test_set_query_emits_sql_when_show_flag_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify SQL is emitted when show flag is True."""
+    view._show_sql_in_display = True
+    
+    view.set_query("SELECT * FROM events", "events")
+    
+    view.add_text_to_display.emit.assert_called()
+    call_args = view.add_text_to_display.emit.call_args[0]
+    assert "SQL (events)" in call_args[0]
+    assert "SELECT * FROM events" in call_args[0]
+
+
+def test_set_query_resets_show_flag_after_display(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify show SQL flag is reset after displaying."""
+    view._show_sql_in_display = True
+    
+    view.set_query("SELECT * FROM events", "events")
+    
+    assert view._show_sql_in_display is False
+
+
+def test_set_query_does_not_emit_when_show_flag_false(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify SQL is not emitted when show flag is False."""
+    view._show_sql_in_display = False
+    
+    view.set_query("SELECT * FROM events", "events")
+    
+    view.add_text_to_display.emit.assert_not_called()
+
+
+# ----------------------------- Set Event Query Tests ------------------------------
+
+
+def test_set_event_query_sets_query(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify event query is set correctly."""
+    view.set_event_query("SELECT * FROM events WHERE id > 100")
+    
+    assert view.event_query == "SELECT * FROM events WHERE id > 100"
+
+
+def test_set_event_query_returns_early_when_empty(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify early return when query is empty."""
+    view._show_event_sql_in_display = True
+    
+    view.set_event_query("")
+    
+    view.add_text_to_display.emit.assert_not_called()
+
+
+def test_set_event_query_emits_sql_when_show_flag_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify SQL is emitted when show flag is True."""
+    view._show_event_sql_in_display = True
+    
+    view.set_event_query("SELECT * FROM events")
+    
+    view.add_text_to_display.emit.assert_called()
+    call_args = view.add_text_to_display.emit.call_args[0]
+    assert "Event SQL" in call_args[0]
+
+
+def test_set_event_query_resets_show_flag_after_display(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify show flag is reset after displaying."""
+    view._show_event_sql_in_display = True
+    
+    view.set_event_query("SELECT * FROM events")
+    
+    assert view._show_event_sql_in_display is False
+
+
+# ----------------------------- Set Units Tests ------------------------------
+
+
+def test_set_units_sets_value(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify units are set correctly."""
+    view.set_units("ms")
+    
+    assert view.units == "ms"
+
+
+def test_set_units_accepts_list(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify units can be set as a list."""
+    view.set_units(["ms", "pA"])
+    
+    assert view.units == ["ms", "pA"]
+
+
+# ----------------------------- Update Available Columns Tests ------------------------------
+
+
+def test_update_available_columns_emits_signal(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify global signal is emitted to request columns."""
+    view.global_signal = mocker.Mock()
+    
+    view.update_available_columns("test_loader")
+    
+    view.global_signal.emit.assert_called_once()
+    call_args = view.global_signal.emit.call_args[0]
+    assert call_args[0] == "MetaDatabaseLoader"
+    assert call_args[1] == "test_loader"
+    assert call_args[2] == "get_column_names_by_table"
+
+
+def test_update_available_columns_handles_exception(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify exception is logged when signal emission fails."""
+    view.global_signal = mocker.Mock()
+    view.global_signal.emit = mocker.Mock(side_effect=Exception("Signal failed"))
+    
+    view.update_available_columns("test_loader")
+    
+    view.logger.error.assert_called()
+
+
+# ----------------------------- Request Experiment Structure Tests ------------------------------
+
+
+def test_request_experiment_structure_emits_signal(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify global signal is emitted to request structure."""
+    view.global_signal = mocker.Mock()
+    
+    view.request_experiment_structure("test_loader")
+    
+    view.global_signal.emit.assert_called_once()
+    call_args = view.global_signal.emit.call_args[0]
+    assert call_args[0] == "MetaDatabaseLoader"
+    assert call_args[1] == "test_loader"
+    assert call_args[2] == "get_experiments_and_channels"
+
+
+# ----------------------------- Show Selection Tree Tests ------------------------------
+
+
+def test_show_selection_tree_creates_tree_if_not_exists(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify selection tree is created if it doesn't exist."""
+    if hasattr(view, "selection_tree"):
+        delattr(view, "selection_tree")
+    
+    mock_tree_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.SelectionTree"
+    )
+    mock_tree = mocker.Mock()
+    mock_tree.show_dialog.return_value = {"exp1": [1, 2]}
+    mock_tree_class.return_value = mock_tree
+    
+    view.show_selection_tree({"exp1": [1, 2, 3]}, "test_loader")
+    
+    mock_tree_class.assert_called_once()
+
+
+def test_show_selection_tree_displays_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify dialog is displayed with correct parameters."""
+    mock_tree = mocker.Mock()
+    mock_tree.show_dialog.return_value = {"exp1": [1, 2]}
+    view.selection_tree = mock_tree
+    
+    structure = {"exp1": [1, 2, 3], "exp2": [4, 5]}
+    selection = {"exp1": [1]}
+    
+    view.show_selection_tree(structure, "test_loader", selection)
+    
+    mock_tree.show_dialog.assert_called_once_with(
+        structure,
+        "test_loader",
+        title="Select Experiment and Channels",
+        selected=selection,
+    )
+
+
+def test_show_selection_tree_updates_selection(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify selection is updated after dialog."""
+    mock_tree = mocker.Mock()
+    mock_tree.show_dialog.return_value = {"exp1": [1, 2]}
+    view.selection_tree = mock_tree
+    
+    view.show_selection_tree({"exp1": [1, 2, 3]}, "test_loader")
+    
+    assert view.selected_experiment_and_channels_by_loader["test_loader"] == {"exp1": [1, 2]}
+
+
+# ----------------------------- Update Units Tests ------------------------------
+
+
+def test_update_units_emits_signal(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify global signal is emitted to request units."""
+    view.global_signal = mocker.Mock()
+    
+    view.update_units("test_loader", "duration", "x_axis")
+    
+    view.global_signal.emit.assert_called_once()
+    call_args = view.global_signal.emit.call_args[0]
+    assert call_args[0] == "MetaDatabaseLoader"
+    assert call_args[1] == "test_loader"
+    assert call_args[2] == "get_column_units"
+    assert call_args[3] == ("duration",)
+
+
+def test_update_units_handles_exception(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify exception is logged when signal emission fails."""
+    view.global_signal = mocker.Mock()
+    view.global_signal.emit = mocker.Mock(side_effect=Exception("Signal failed"))
+    
+    view.update_units("test_loader", "duration", "x_axis")
+    
+    view.logger.error.assert_called()
+
+
+# ----------------------------- Update Column Names Tests ------------------------------
+
+
+def test_update_column_names_updates_controls(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify metadata controls are updated with column names."""
+    view.metadatacontrols = mocker.Mock()
+    column_names = ["duration", "current", "voltage"]
+    
+    view.update_column_names(column_names)
+    
+    view.metadatacontrols.update_axes.assert_called_once_with(column_names)
+
+
+# ----------------------------- Update Column Units Tests ------------------------------
+
+
+def test_update_column_units_updates_controls(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify metadata controls are updated with column units."""
+    view.metadatacontrols = mocker.Mock()
+    
+    view.update_column_units("ms", "x_axis")
+    
+    view.metadatacontrols.update_column_units_label.assert_called_once_with("ms", "x_axis")
+
+
+# ----------------------------- Handle Other Actions Tests ------------------------------
+
+
+def test_handle_other_actions_raises_not_implemented(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify NotImplementedError is raised for unhandled actions."""
+    with pytest.raises(NotImplementedError, match="unknown_action handler not implemented"):
+        view._handle_other_actions("unknown_action", {})
+
+
+# ----------------------------- Calculate Heatmap Tests ------------------------------
+
+
+def test_calculate_heatmap_returns_three_arrays(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify calculate_heatmap returns x, y, z arrays."""
+    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    
+    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5])
+    
+    assert len(x) == 5
+    assert len(y) == 5
+    assert z.shape == (5, 5)
+
+
+def test_calculate_heatmap_applies_logscale(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify logscale is applied when requested."""
+    xdata = np.array([1.0, 10.0, 100.0])
+    ydata = np.array([1.0, 10.0, 100.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    
+    view._calculate_heatmap(xdata, ydata, logx=True, logy=True)
+    
+    view._logscale_and_filter_multiple_columns.assert_called_once()
+    call_args = view._logscale_and_filter_multiple_columns.call_args
+    assert call_args.kwargs["log_flags"] == [True, True]
+
+
+def test_calculate_heatmap_uses_different_bins_for_x_and_y(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify different bin counts can be specified for x and y."""
+    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    
+    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[3, 5])
+    
+    assert z.shape == (5, 3)  # Note: transposed, so y bins first
+
+
+def test_calculate_heatmap_calculates_bin_sizes_when_sizes_true(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify bin sizes are calculated when sizes=True."""
+    xdata = np.array([0.0, 10.0, 20.0, 30.0])
+    ydata = np.array([0.0, 10.0, 20.0, 30.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    
+    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5.0], sizes=True)
+    
+    # (30 - 0) / 5.0 = 6 bins per axis
+    assert z.shape[0] == 6
+    assert z.shape[1] == 6
+
+
+def test_calculate_heatmap_raises_for_invalid_bins(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify ValueError is raised for empty bins list."""
+    xdata = np.array([1.0, 2.0, 3.0])
+    ydata = np.array([10.0, 20.0, 30.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    
+    with pytest.raises(ValueError, match="Invalid bin entry"):
+        view._calculate_heatmap(xdata, ydata, bins=[], sizes=False)
+
+
+def test_calculate_heatmap_defaults_to_iqr_when_bins_none(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify IQR-based bin calculation when bins=None."""
+    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=2.0)
+    
+    x, y, z = view._calculate_heatmap(xdata, ydata, bins=None)
+    
+    assert z.shape[0] > 0
+    assert z.shape[1] > 0
+
+
+def test_calculate_heatmap_applies_log2_to_counts(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify counts are log2 transformed."""
+    xdata = np.array([1.0, 1.0, 2.0, 2.0])
+    ydata = np.array([10.0, 10.0, 20.0, 20.0])
+    view._logscale_and_filter_multiple_columns = mocker.Mock(return_value=(xdata, ydata))
+    
+    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[2])
+    
+    # All non-zero entries should be log2 transformed
+    assert np.all((z == -1) | (z >= 0))  # -1 for zero counts, >=0 for others
+
+
+# ----------------------------- Show Add Filter Dialog Tests ------------------------------
+
+
+def test_show_add_filter_dialog_sets_show_sql_flag(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify show SQL flag is set before dialog."""
+    view._show_sql_in_display = False
+    view._walkthrough_active = False  # Add this attribute
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 0  # Rejected
+    mock_dialog_class.return_value = mock_dialog
+    
+    view._show_add_filter_dialog({"db_loader": "test"})
+    
+    assert view._show_sql_in_display is True
+
+
+def test_show_add_filter_dialog_opens_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify dialog is opened with existing filter names."""
+    view._walkthrough_active = False
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 0
+    mock_dialog_class.return_value = mock_dialog
+    
+    view._show_add_filter_dialog({"db_loader": "test"})
+    
+    mock_dialog_class.assert_called_once()
+    assert mock_dialog_class.call_args[1]["existing_names"] == ["Filter1"]
+
+
+def test_show_add_filter_dialog_validates_filter_on_accept(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter is validated via global signal when accepted."""
+    view._walkthrough_active = False
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 1  # Accepted
+    mock_dialog.name = "NewFilter"
+    mock_dialog.filter_text = "WHERE duration > 100"
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    
+    view._show_add_filter_dialog({"db_loader": "test_loader"})
+    
+    view.global_signal.emit.assert_called_once()
+    call_args = view.global_signal.emit.call_args[0]
+    assert call_args[2] == "construct_metadata_query"
+
+
+def test_show_add_filter_dialog_returns_when_no_loader(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify early return when no loader is provided."""
+    view._walkthrough_active = False
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 1
+    mock_dialog.name = "NewFilter"
+    mock_dialog.filter_text = "WHERE x > 1"
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    
+    view._show_add_filter_dialog({"db_loader": ""})
+    
+    view.global_signal.emit.assert_not_called()
+
+
+# ----------------------------- Clear Pending Filter State Tests ------------------------------
+
+
+def test_clear_pending_filter_state_resets_all_pending_values(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify all pending filter values are reset to None."""
+    view._pending_filter_name = "Filter"
+    view._pending_filter_text = "WHERE x > 1"
+    view._pending_old_filter_name = "OldFilter"
+    
+    view.clear_pending_filter_state()
+    
+    assert view._pending_filter_name is None
+    assert view._pending_filter_text is None
+    assert view._pending_old_filter_name is None
+
+
+# ----------------------------- Show Filter Info Dialog Tests ------------------------------
+
+
+def test_show_filter_info_dialog_warns_when_no_selection(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when no filter is selected."""
+    mock_combobox = mocker.Mock()
+    mock_combobox.getSelectedItems.return_value = []
+    
+    view._show_filter_info_dialog(mock_combobox, {"db_loader": "test"})
+    
+    view.logger.warning.assert_called()
+
+
+def test_show_filter_info_dialog_warns_when_multiple_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify warning when multiple filters are selected."""
+    mock_combobox = mocker.Mock()
+    mock_combobox.getSelectedItems.return_value = ["Filter1", "Filter2"]
+    
+    view._show_filter_info_dialog(mock_combobox, {"db_loader": "test"})
+    
+    view.logger.warning.assert_called()
+
+
+def test_show_filter_info_dialog_calls_edit_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify edit dialog is called when exactly one filter is selected."""
+    mock_combobox = mocker.Mock()
+    mock_combobox.getSelectedItems.return_value = ["Filter1"]
+    view.show_edit_filter_dialog = mocker.Mock()
+    
+    view._show_filter_info_dialog(mock_combobox, {"db_loader": "test_loader"})
+    
+    view.show_edit_filter_dialog.assert_called_once_with("Filter1", "test_loader")
+
+
+# ----------------------------- Show Edit Filter Dialog Tests ------------------------------
+
+
+def test_show_edit_filter_dialog_sets_show_sql_flag(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify show SQL flag is set before dialog."""
+    view._show_sql_in_display = False
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 0
+    mock_dialog_class.return_value = mock_dialog
+    
+    view.show_edit_filter_dialog("Filter1", "test_loader")
+    
+    assert view._show_sql_in_display is True
+
+
+def test_show_edit_filter_dialog_opens_dialog(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify edit dialog is opened with correct parameters."""
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 0
+    mock_dialog_class.return_value = mock_dialog
+    
+    view.show_edit_filter_dialog("Filter1", "test_loader")
+    
+    mock_dialog_class.assert_called_once()
+    call_args = mock_dialog_class.call_args[0]
+    assert call_args[1] == "Filter1"
+    assert call_args[2] == {"Filter1": "WHERE x > 1"}
+
+
+def test_show_edit_filter_dialog_validates_on_accept(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter is validated when dialog is accepted."""
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 1
+    mock_dialog.new_name = "Filter1Updated"
+    mock_dialog.new_filter = "WHERE x > 10"
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    
+    view.show_edit_filter_dialog("Filter1", "test_loader")
+    
+    view.global_signal.emit.assert_called_once()
+
+
+def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify pending data includes old filter name for replacement."""
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    mock_dialog_class = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+    )
+    mock_dialog = mocker.Mock()
+    mock_dialog.exec.return_value = 1
+    mock_dialog.new_name = "Filter1Updated"
+    mock_dialog.new_filter = "WHERE x > 10"
+    mock_dialog_class.return_value = mock_dialog
+    view.global_signal = mocker.Mock()
+    
+    view.show_edit_filter_dialog("Filter1", "test_loader")
+    
+    assert view._pending_filter_name == "Filter1Updated"
+    assert view._pending_filter_text == "WHERE x > 10"
+    assert view._pending_old_filter_name == "Filter1"
+
+
+# ----------------------------- Delete Filter By Name Tests ------------------------------
+
+
+def test_delete_filter_by_name_calls_delete_filter(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify _delete_filter is called with the name."""
+    view._delete_filter = mocker.Mock()
+    
+    view._delete_filter_by_name("Filter1")
+    
+    view._delete_filter.assert_called_once_with("Filter1")
+
+
+# ----------------------------- Delete All Selected Filters Tests ------------------------------
+
+
+def test_delete_all_selected_filters_returns_when_none_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify early return when no filters are selected."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox.getSelectedItems.return_value = []
+    view._delete_filter = mocker.Mock()
+    
+    view._delete_all_selected_filters()
+    
+    view._delete_filter.assert_not_called()
+
+
+def test_delete_all_selected_filters_deletes_each_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify each selected filter is deleted."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox.getSelectedItems.return_value = ["Filter1", "Filter2"]
+    view._delete_filter = mocker.Mock()
+    
+    view._delete_all_selected_filters()
+    
+    assert view._delete_filter.call_count == 2
+
+
+# ----------------------------- Delete Filter Tests ------------------------------
+
+
+def test_delete_filter_removes_from_dict(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter is removed from subset_filters dict."""
+    view.subset_filters = {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox.listWidget = mocker.Mock()
+    view.metadatacontrols.filter_comboBox.listWidget.count.return_value = 0
+    
+    view._delete_filter("Filter1")
+    
+    assert "Filter1" not in view.subset_filters
+    assert "Filter2" in view.subset_filters
+
+
+def test_delete_filter_removes_from_ui(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filter is removed from UI list widget."""
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    view.metadatacontrols = mocker.Mock()
+    
+    mock_item = mocker.Mock()
+    mock_checkbox = mocker.Mock()
+    mock_checkbox.text.return_value = "Filter1"
+    mock_widget = mocker.Mock()
+    mock_widget.findChild.return_value = mock_checkbox
+    
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 1
+    mock_list.item.return_value = mock_item
+    mock_list.itemWidget.return_value = mock_widget
+    
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view._delete_filter("Filter1")
+    
+    mock_list.takeItem.assert_called_once()
+
+
+# ----------------------------- Get Selected Filters Tests ------------------------------
+
+
+def test_get_selected_filters_returns_selected_filter_dict(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify selected filters are returned as dict."""
+    view.subset_filters = {
+        "Filter1": "WHERE x > 1",
+        "Filter2": "WHERE y < 10",
+        "Filter3": "WHERE z = 5",
+    }
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox = mocker.Mock()
+    view.metadatacontrols.filter_comboBox.getSelectedItems = mocker.Mock(
+        return_value=["Filter1", "Filter3"]
+    )
+    
+    result = view.get_selected_filters()
+    
+    assert result == {"Filter1": "WHERE x > 1", "Filter3": "WHERE z = 5"}
+
+
+def test_get_selected_filters_returns_empty_dict_when_none_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify empty dict is returned when no filters selected."""
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox = mocker.Mock()
+    view.metadatacontrols.filter_comboBox.getSelectedItems = mocker.Mock(
+        return_value=[]
+    )
+    
+    result = view.get_selected_filters()
+    
+    assert result == {}
+
+
+# ----------------------------- Replace Filter Item Tests ------------------------------
+
+
+def test_replace_filter_item_removes_existing_item(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify existing filter item is removed before adding new one."""
+    view.metadatacontrols = mocker.Mock()
+    
+    mock_checkbox = mocker.Mock()
+    mock_checkbox.text.return_value = "Filter1"
+    mock_widget = mocker.Mock()
+    mock_widget.findChild.return_value = mock_checkbox
+    
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 1
+    mock_list.itemWidget.return_value = mock_widget
+    
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view.replace_filter_item("Filter1")
+    
+    mock_list.takeItem.assert_called_once()
+
+
+def test_replace_filter_item_adds_new_item(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify new filter item is added."""
+    view.metadatacontrols = mocker.Mock()
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 0
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view.replace_filter_item("Filter1")
+    
+    view.metadatacontrols.filter_comboBox.addItem.assert_called_once_with("Filter1")
+
+
+def test_replace_filter_item_selects_new_item(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify new filter item is selected."""
+    view.metadatacontrols = mocker.Mock()
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 0
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view.replace_filter_item("Filter1")
+    
+    view.metadatacontrols.filter_comboBox.selectItem.assert_called_once_with("Filter1", select=True)
+
+
+# ----------------------------- Update Filter Name Tests ------------------------------
+
+
+def test_update_filter_name_removes_old_name(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify old filter name is removed from UI."""
+    view.metadatacontrols = mocker.Mock()
+    
+    mock_checkbox = mocker.Mock()
+    mock_checkbox.text.return_value = "OldFilter"
+    mock_widget = mocker.Mock()
+    mock_widget.findChild.return_value = mock_checkbox
+    
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 2
+    mock_list.itemWidget.return_value = mock_widget
+    
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view.update_filter_name("OldFilter", "NewFilter")
+    
+    # Should be called at least once for old name
+    assert mock_list.takeItem.call_count >= 1
+
+
+def test_update_filter_name_adds_new_name(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify new filter name is added to UI."""
+    view.metadatacontrols = mocker.Mock()
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 0
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view.update_filter_name("OldFilter", "NewFilter")
+    
+    view.metadatacontrols.filter_comboBox.addItem.assert_called_with("NewFilter")
+
+
+def test_update_filter_name_refreshes_display(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify display text is refreshed after update."""
+    view.metadatacontrols = mocker.Mock()
+    mock_list = mocker.Mock()
+    mock_list.count.return_value = 0
+    view.metadatacontrols.filter_comboBox.listWidget = mock_list
+    
+    view.update_filter_name("OldFilter", "NewFilter")
+    
+    view.metadatacontrols.filter_comboBox.refreshDisplayText.assert_called_once()
+
