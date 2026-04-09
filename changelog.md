@@ -23,6 +23,7 @@
     * Fixed cross-table SQL filtering
     * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
     * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
+    * Fixed plugins' settings not being able to be edited 
 
 
 ## Poriscope 1.5: 2025-12-08
