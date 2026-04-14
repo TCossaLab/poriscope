@@ -28,6 +28,7 @@ class TestSQLiteDBLoader:
         yield db_path
         # Clean up with retry for Windows
         import gc
+
         gc.collect()  # Force garbage collection to close any remaining connections
         for i in range(10):  # More retries
             try:
@@ -40,6 +41,7 @@ class TestSQLiteDBLoader:
                 else:
                     # If still locked after retries, log but don't fail
                     import warnings
+
                     warnings.warn(f"Could not delete {db_path} - file may be locked")
 
     @pytest.fixture
@@ -142,11 +144,12 @@ class TestSQLiteDBLoader:
         conn.commit()
         cursor.close()
         conn.close()
-        
+
         yield temp_db_path
-        
+
         # Explicit cleanup - ensure no connections remain
         import gc
+
         gc.collect()
 
     @pytest.fixture
@@ -169,7 +172,7 @@ class TestSQLiteDBLoader:
 
     def test_init_with_invalid_settings(self) -> None:
         """Test initialization with invalid settings raises ValueError.
-        
+
         Note: The actual validation happens in the parent class initialization chain,
         specifically in _validate_settings which is called during __init__.
         """
@@ -297,9 +300,7 @@ class TestSQLiteDBLoader:
         channels = loader.get_channels_by_experiment("nonexistent_experiment")
         assert channels is None
 
-    def test_get_channels_by_experiment_db_error(
-        self, loader: SQLiteDBLoader
-    ) -> None:
+    def test_get_channels_by_experiment_db_error(self, loader: SQLiteDBLoader) -> None:
         """Test getting channels with database error."""
         loader.db_path = Path("/nonexistent/path.db")
         channels = loader.get_channels_by_experiment("test_experiment_1")
@@ -482,9 +483,7 @@ class TestSQLiteDBLoader:
         assert cursor.fetchone() is not None
         conn.close()
 
-    def test_alter_database_error(
-        self, loader: SQLiteDBLoader, mock_db: Path
-    ) -> None:
+    def test_alter_database_error(self, loader: SQLiteDBLoader, mock_db: Path) -> None:
         """Test altering database with invalid query."""
         loader.db_path = mock_db
         queries = ["INVALID SQL STATEMENT;"]
@@ -603,9 +602,7 @@ class TestSQLiteDBLoader:
         """Test retrieving sample rate for invalid combination."""
         loader.db_path = mock_db
         with pytest.raises(ValueError, match="Unable to extract samplerate"):
-            loader.get_samplerate_by_experiment_and_channel(
-                "test_experiment_1", 999
-            )
+            loader.get_samplerate_by_experiment_and_channel("test_experiment_1", 999)
 
     def test_get_samplerate_db_error(self, loader: SQLiteDBLoader) -> None:
         """Test getting sample rate with database error."""
@@ -633,9 +630,7 @@ class TestSQLiteDBLoader:
         assert "Input File" in settings
         assert len(settings["Input File"]["Options"]) == 3
 
-    def test_load_metadata_success(
-        self, loader: SQLiteDBLoader, mock_db: Path
-    ) -> None:
+    def test_load_metadata_success(self, loader: SQLiteDBLoader, mock_db: Path) -> None:
         """Test loading metadata with valid query."""
         loader.db_path = mock_db
         df = loader._load_metadata("SELECT * FROM experiments")
@@ -792,7 +787,7 @@ class TestSQLiteDBLoader:
         fd, tmp_path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
         test_db_path = Path(tmp_path)
-        
+
         try:
             # Create minimal database without event_counts
             conn = sqlite3.connect(test_db_path)
@@ -821,7 +816,9 @@ class TestSQLiteDBLoader:
             # Verify table exists and is populated
             conn = sqlite3.connect(test_db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM event_counts WHERE experiment_id=1 AND channel_id=0;")
+            cursor.execute(
+                "SELECT * FROM event_counts WHERE experiment_id=1 AND channel_id=0;"
+            )
             result = cursor.fetchone()
             cursor.close()
             conn.close()
@@ -831,6 +828,7 @@ class TestSQLiteDBLoader:
         finally:
             # Clean up
             import gc
+
             gc.collect()
             for _ in range(5):
                 try:
@@ -857,15 +855,15 @@ class TestSQLiteDBLoader:
         assert cursor.fetchone() is not None
         conn.close()
 
-    def test_validate_settings_missing_input_file(
-        self, loader: SQLiteDBLoader
-    ) -> None:
+    def test_validate_settings_missing_input_file(self, loader: SQLiteDBLoader) -> None:
         """Test settings validation with missing Input File."""
         invalid_settings: Dict[str, Any] = {}
         with pytest.raises(ValueError, match="requires an Input File"):
             loader._validate_settings(invalid_settings)
 
-    def test_validate_settings_valid(self, loader: SQLiteDBLoader, mock_db: Path) -> None:
+    def test_validate_settings_valid(
+        self, loader: SQLiteDBLoader, mock_db: Path
+    ) -> None:
         """Test settings validation with valid settings."""
         valid_settings = {"Input File": {"Value": str(mock_db)}}
         # Should not raise

@@ -56,7 +56,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     def get_llm_prompt(self):
         """
         Return a prompt that will tell the LLM the structure of the database to be queried
-    
+
         :return: a prompt that gives an LLM context for the database and  how to query it
         :rtype: str
         """
@@ -65,14 +65,14 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-    
+
             metadata = ""
-    
+
             # 1. List all tables in the database
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = cursor.fetchall()
             metadata += "Tables:\n" + "\n".join([table[0] for table in tables]) + "\n\n"
-    
+
             # 2. List all columns in each table
             for table in tables:
                 table_name = table[0]
@@ -82,21 +82,21 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 for column in columns:
                     metadata += f"  - {column[1]} (Type: {column[2]}, Not Null: {column[3]}, Default: {column[4]})\n"
                 metadata += "\n"
-    
+
             # 3. List all indices in the database
             cursor.execute("SELECT name FROM sqlite_master WHERE type='index';")
             indices = cursor.fetchall()
             metadata += (
                 "Indices:\n" + "\n".join([index[0] for index in indices]) + "\n\n"
             )
-    
+
             # 4. List all triggers in the database
             cursor.execute("SELECT name FROM sqlite_master WHERE type='trigger';")
             triggers = cursor.fetchall()
             metadata += (
                 "Triggers:\n" + "\n".join([trigger[0] for trigger in triggers]) + "\n\n"
             )
-    
+
             # 5. List all foreign key constraints
             for table in tables:
                 table_name = table[0]
@@ -107,12 +107,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                     for fk in foreign_keys:
                         metadata += f"  - {fk[3]} -> {fk[4]} (on {fk[2]})\n"
                     metadata += "\n"
-    
+
             # 6. Schema of the database (full dump)
             cursor.execute("SELECT sql FROM sqlite_master WHERE type='table';")
             schema = cursor.fetchall()
             metadata += "Schema:\n" + "\n".join([s[0] for s in schema]) + "\n\n"
-    
+
             return metadata
         except sqlite3.Error as e:
             self.logger.error(
@@ -124,7 +124,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 cursor.close()
             if conn:
                 conn.close()
-    
 
     @log(logger=logger)
     @override
@@ -192,7 +191,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     def get_channels_by_experiment(self, experiment: str) -> Optional[List[int]]:
         """
         Retrieve a list of all channel IDs associated with a given experiment name or None on failure
-    
+
         :param experiment: The name of the experiment.
         :type experiment: str
         :return: List of channel IDs.
@@ -233,12 +232,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         Return the number of events in the database matching the experiment name and channel name.
         If no channel name is provided, count across all channels for that experiment.
         If no experiment is provided, ignore channel and return the number of events in the entire database
-    
+
         :param experiment: The name of the experiment.
         :type experiment: Optional[str]
         :param channel: The index of the channel
         :type channel: Optional[int]
-    
+
         :return: event count matching the conditions
         :rtype: int
         """
@@ -247,7 +246,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             if experiment is None:
                 query = "SELECT COUNT(*) FROM events"
                 cursor.execute(query)
@@ -268,7 +267,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                     AND events.channel_id = ?;
                 """
                 cursor.execute(query, (experiment, channel))
-    
+
             num_events = cursor.fetchone()
             if num_events:
                 return num_events[0]
@@ -290,7 +289,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     def get_column_units(self, column_name: str) -> Optional[str]:
         """
         Retrieve the units associated with a specific column name, or None on failure
-    
+
         :param column_name: The name of the column.
         :type column_name: str
         :return: The units of the column, empty string is units is NULL
@@ -322,7 +321,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 cursor.close()
             if conn:
                 conn.close()
- 
 
     @log(logger=logger)
     @override
@@ -331,7 +329,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     ) -> Optional[List[str]]:
         """
         Retrieve the column names available in a specified table.
-    
+
         :param table: The name of the table.
         :type table: Optional[str]
         :return: List of column names.
@@ -340,7 +338,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         query_stub = ""
         if table is not None:
             query_stub = f"""WHERE table_name='{table}'"""
-        
+
         conn = None
         cursor = None
         try:
@@ -363,14 +361,13 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 cursor.close()
             if conn:
                 conn.close()
- 
 
     @log(logger=logger)
     @override
     def get_table_names(self) -> Optional[List[str]]:
         """
         Retrieve the names of available tables in the database.
-    
+
         :return: List of table names.
         :rtype: Optional[List[str]]
         """
@@ -383,11 +380,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             cursor.execute(query)
             result = cursor.fetchall()
             if result:
-                return [
-                    table[0]
-                    for table in result
-                    if table[0] != "sqlite_sequence"
-                ]
+                return [table[0] for table in result if table[0] != "sqlite_sequence"]
             else:
                 return None
         except sqlite3.Error as e:
@@ -407,10 +400,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         """
         :param column: The name of the column.
         :type column: str
-    
+
         :return: List of table names.
         :rtype: List[str]
-    
+
         **Purpose:** Retrieve the names of the table in which the given column is found, or None on failure
         """
         conn = None
@@ -644,7 +637,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     ) -> Optional[float]:
         """
         Retrieve the sampling rate for a given experiment and channel id
-    
+
         :param experiment: The name of the experiment in the database.
         :type experiment: str
         :param channel: The channel id to get sampling rate for.
@@ -754,10 +747,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
         """
         Load and return the data specified by a valid SQL query formatted as a pandas dataframe
-    
+
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
-    
+
         :return: A dataframe containing the requested event data as columns or None on failure
         :rtype: Optional[pd.DataFrame]
         """
@@ -769,9 +762,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             cursor.execute(query)
             result = cursor.fetchall()
             if result:
-                column_names = [
-                    description[0] for description in cursor.description
-                ]
+                column_names = [description[0] for description in cursor.description]
                 return pd.DataFrame(result, columns=column_names)
             else:
                 return None
@@ -792,10 +783,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         """
         Load and return the data specified by a valid SQL query formatted as a pandas dataframe
         Make sure you exhaust the generator, or else connections will remain open
-    
+
         :param query: query to  run on the database
         :type query: str
-    
+
         :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
         :rtype: Generator[pd.DataFrame, None, None]
         """
@@ -830,10 +821,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         You can assume that the query was generated by self.construct_event_data_query() and will have 10 colums:
         event_id, channel_id, experiment_id, data_format, baseline, stdev, padding_before, padding_after, samplerate, data
         where data is a bytes object to be interpreted using data_format
-    
+
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
-    
+
         :return: a generator that returns primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, samplerate, and three numpy arrays with raw event data, filtered event data, and fitted event data
         :rtype: Generator[Dict[str,Union[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]], bool, None]
         """
