@@ -19,7 +19,7 @@ class MockEventLoader(MetaEventLoader):
         self.channels = [0, 1]
         self.num_events = {0: 10, 1: 10}
         self.events: Dict[int, Dict[int, dict]] = {0: {}, 1: {}}
-        
+
         # Populate mock events
         for ch in self.channels:
             for i in range(self.num_events[ch]):
@@ -108,6 +108,7 @@ class ConcreteEventFitter(MetaEventFitter):
         # Call parent's parent to skip MetaEventFitter's strict check
         # but still allow initialization to proceed
         from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+
         BaseDataPlugin._validate_param_types(self, settings)
 
     def construct_fitted_event(
@@ -116,11 +117,11 @@ class ConcreteEventFitter(MetaEventFitter):
         """Construct fitted event - simple step function."""
         if not self.get_eventfitting_status(channel):
             return None
-        
+
         # Get event length
         length = self.event_lengths[channel][index]
         sublevel_starts = self.sublevel_starts[channel][index]
-        
+
         # Build step function
         fitted = np.zeros(length)
         for i in range(len(sublevel_starts) - 1):
@@ -130,7 +131,7 @@ class ConcreteEventFitter(MetaEventFitter):
             fitted[start:end] = self.sublevel_metadata[channel][index][
                 "sublevel_current"
             ][i]
-        
+
         return fitted
 
     def _pre_process_events(self, channel: int) -> None:
@@ -149,20 +150,20 @@ class ConcreteEventFitter(MetaEventFitter):
         """Locate sublevel transitions - simple threshold-based."""
         if baseline_mean is None or baseline_std is None:
             raise ValueError("Missing baseline statistics")
-        
+
         # Find simple step changes
         threshold = 2 * baseline_std
         diff = np.abs(np.diff(data))
         transitions = [0]  # Start with beginning of data
-        
+
         # Add transitions where change exceeds threshold
         for i in np.where(diff > threshold)[0]:
             if i - transitions[-1] > 10:  # Minimum spacing
                 transitions.append(int(i))
-        
+
         # Always add the end
         transitions.append(len(data))
-        
+
         return transitions
 
     def _populate_sublevel_metadata(
@@ -176,23 +177,25 @@ class ConcreteEventFitter(MetaEventFitter):
         """Populate sublevel metadata."""
         num_levels = len(sublevel_starts) - 1
         metadata: Dict[str, npt.NDArray[Any]] = {}
-        
+
         metadata["sublevel_current"] = np.zeros(num_levels)
         metadata["sublevel_stdev"] = np.zeros(num_levels)
         metadata["sublevel_duration"] = np.zeros(num_levels)
-        
+
         for i in range(num_levels):
             start = sublevel_starts[i]
             end = sublevel_starts[i + 1]
             segment = data[start:end]
-            
+
             metadata["sublevel_current"][i] = np.mean(segment)
             metadata["sublevel_stdev"][i] = np.std(segment)
             metadata["sublevel_duration"][i] = (end - start) / samplerate * 1e6  # us
-        
+
         return metadata
 
-    def _define_event_metadata_types(self) -> Dict[str, Type[Union[int, float, str, bool]]]:
+    def _define_event_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """Define event metadata types."""
         return {
             "duration": float,
@@ -208,7 +211,9 @@ class ConcreteEventFitter(MetaEventFitter):
             "min_blockage": "pA",
         }
 
-    def _define_sublevel_metadata_types(self) -> Dict[str, Type[Union[int, float, str, bool]]]:
+    def _define_sublevel_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """Define sublevel metadata types."""
         return {
             "sublevel_current": float,
@@ -284,9 +289,7 @@ class TestMetaEventFitter:
         fitter.close_resources()
         fitter.close_resources(channel=0)
 
-    def test_force_serial_channel_operations(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_force_serial_channel_operations(self, fitter: ConcreteEventFitter) -> None:
         """Test force serial channel operations."""
         assert fitter.force_serial_channel_operations() is False
 
@@ -298,16 +301,12 @@ class TestMetaEventFitter:
         """Test getting channels."""
         assert fitter.get_channels() == [0, 1]
 
-    def test_get_empty_settings_standalone(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_empty_settings_standalone(self, fitter: ConcreteEventFitter) -> None:
         """Test getting empty settings in standalone mode."""
         settings = fitter.get_empty_settings(standalone=True)
         assert "MetaEventLoader" in settings
 
-    def test_get_empty_settings_with_plugins(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_empty_settings_with_plugins(self, fitter: ConcreteEventFitter) -> None:
         """Test getting empty settings with plugins."""
         plugins = {"MetaEventLoader": ["Loader1", "Loader2"]}
         settings = fitter.get_empty_settings(globally_available_plugins=plugins)
@@ -329,16 +328,12 @@ class TestMetaEventFitter:
         assert 0 not in fitter.event_metadata
         assert 0 not in fitter.sublevel_metadata
 
-    def test_get_metadata_columns_not_fitted(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_metadata_columns_not_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test getting metadata columns before fitting."""
         with pytest.raises(RuntimeError, match="Fitting has not finished"):
             fitter.get_metadata_columns(0)
 
-    def test_get_sublevel_columns_not_fitted(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_sublevel_columns_not_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test getting sublevel columns before fitting."""
         with pytest.raises(RuntimeError, match="Fitting has not finished"):
             fitter.get_sublevel_columns(0)
@@ -357,17 +352,13 @@ class TestMetaEventFitter:
         assert units["duration"] == "us"
         assert units["start_time"] == "s"
 
-    def test_get_sublevel_metadata_types(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_sublevel_metadata_types(self, fitter: ConcreteEventFitter) -> None:
         """Test getting sublevel metadata types."""
         types = fitter.get_sublevel_metadata_types()
         assert "sublevel_current" in types
         assert types["sublevel_current"] is float
 
-    def test_get_sublevel_metadata_units(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_sublevel_metadata_units(self, fitter: ConcreteEventFitter) -> None:
         """Test getting sublevel metadata units."""
         units = fitter.get_sublevel_metadata_units()
         assert "sublevel_current" in units
@@ -395,6 +386,7 @@ class TestMetaEventFitter:
 
     def test_fit_events_with_filter(self, fitter: ConcreteEventFitter) -> None:
         """Test fitting events with data filter."""
+
         def simple_filter(data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
             return data * 2
 
@@ -428,9 +420,7 @@ class TestMetaEventFitter:
         columns = fitter.get_sublevel_columns(0)
         assert "sublevel_current" in columns
 
-    def test_get_num_events_after_fitting(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_num_events_after_fitting(self, fitter: ConcreteEventFitter) -> None:
         """Test getting number of events after fitting."""
         gen = fitter.fit_events(0, indices=[0, 1])
         list(gen)
@@ -450,7 +440,7 @@ class TestMetaEventFitter:
         """Test successfully getting single event metadata."""
         gen = fitter.fit_events(0, indices=[0])
         list(gen)
-        
+
         event_meta, sublevel_meta, filtered_data, raw_data, fitted_data = (
             fitter.get_single_event_metadata(0, 0)
         )
@@ -460,13 +450,11 @@ class TestMetaEventFitter:
         assert raw_data is not None
         assert fitted_data is not None
 
-    def test_get_event_metadata_generator(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_get_event_metadata_generator(self, fitter: ConcreteEventFitter) -> None:
         """Test getting event metadata generator."""
         gen = fitter.fit_events(0, indices=[0, 1])
         list(gen)
-        
+
         metadata_gen = fitter.get_event_metadata_generator(0)
         events = list(metadata_gen)
         assert len(events) > 0
@@ -478,25 +466,19 @@ class TestMetaEventFitter:
         status = fitter.report_channel_status(0)
         assert "incomplete" in status
 
-    def test_report_channel_status_fitted(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_report_channel_status_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status after fitting."""
         gen = fitter.fit_events(0, indices=[0, 1])
         list(gen)
         status = fitter.report_channel_status(0)
         assert "good fits" in status
 
-    def test_report_channel_status_init(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_report_channel_status_init(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status during init."""
         status = fitter.report_channel_status(0, init=True)
         assert status == ""
 
-    def test_report_channel_status_all(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_report_channel_status_all(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting all channel statuses."""
         gen = fitter.fit_events(0, indices=[0])
         list(gen)
@@ -517,9 +499,7 @@ class TestMetaEventFitter:
         fitted = fitter.construct_fitted_event(0, 0)
         assert fitted is None
 
-    def test_construct_fitted_event_success(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_construct_fitted_event_success(self, fitter: ConcreteEventFitter) -> None:
         """Test successfully constructing fitted event."""
         gen = fitter.fit_events(0, indices=[0])
         list(gen)
@@ -533,7 +513,7 @@ class TestMetaEventFitter:
         """Test that get_fitted_event validates returned length."""
         gen = fitter.fit_events(0, indices=[0])
         list(gen)
-        
+
         # This should work - correct length
         fitted = fitter.get_fitted_event(0, 0)
         assert fitted is not None
@@ -543,7 +523,7 @@ class TestMetaEventFitter:
         fitter = ConcreteEventFitter.__new__(ConcreteEventFitter)
         fitter.eventloader = None
         fitter.eventfitting_status = {}
-        
+
         with pytest.raises(RuntimeError, match="not been initialized"):
             fitter.get_samplerate(0)
 
@@ -551,7 +531,7 @@ class TestMetaEventFitter:
         """Test fitting events without loader."""
         fitter = ConcreteEventFitter.__new__(ConcreteEventFitter)
         fitter.eventloader = None
-        
+
         gen = fitter.fit_events(0)
         with pytest.raises(RuntimeError, match="not been initialized"):
             next(gen)
