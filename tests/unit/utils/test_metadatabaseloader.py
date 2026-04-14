@@ -125,7 +125,7 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
     def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
         if "SELECT" not in query:
             return None
-        
+
         # Determine what kind of query and return appropriate mock data
         if "events" in query.lower():
             return pd.DataFrame(
@@ -204,11 +204,9 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
             for _, row in df.iterrows():
                 yield pd.DataFrame([row])
 
-    def _load_event_data(
-        self, query: str
-    ) -> Generator[Any, bool, None]:
+    def _load_event_data(self, query: str) -> Generator[Any, bool, None]:
         """Load event data and yield tuples.
-        
+
         The base class load_event_data() unpacks these tuples into dicts.
         """
         for i in range(3):
@@ -236,7 +234,7 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
 
     def get_experiment_id_by_name(self, experiment_name: str) -> Optional[int]:
         """Override to provide test data.
-        
+
         Note: The base class implementation queries the database. We mock it here
         but need to return None for invalid experiments so the base class validation
         can raise KeyError appropriately.
@@ -263,9 +261,7 @@ class TestMetaDatabaseLoader:
         assert loader is not None
         assert hasattr(loader, "settings")
 
-    def test_get_empty_settings_default(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_get_empty_settings_default(self, loader: ConcreteDatabaseLoader) -> None:
         """Test getting empty settings with defaults."""
         settings = loader.get_empty_settings()
         assert "Input File" in settings
@@ -286,9 +282,7 @@ class TestMetaDatabaseLoader:
         """Test force serial channel operations default."""
         assert loader.force_serial_channel_operations() is False
 
-    def test_get_experiments_and_channels(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_get_experiments_and_channels(self, loader: ConcreteDatabaseLoader) -> None:
         """Test getting experiments and channels mapping."""
         result = loader.get_experiments_and_channels()
         assert "exp1" in result
@@ -304,9 +298,7 @@ class TestMetaDatabaseLoader:
         result = loader.get_experiments_and_channels()
         assert result == {}
 
-    def test_get_experiment_id_by_name(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_get_experiment_id_by_name(self, loader: ConcreteDatabaseLoader) -> None:
         """Test getting experiment ID by name."""
         assert loader.get_experiment_id_by_name("exp1") == 1
         assert loader.get_experiment_id_by_name("exp2") == 2
@@ -425,9 +417,7 @@ class TestMetaDatabaseLoader:
         self, loader: ConcreteDatabaseLoader
     ) -> None:
         """Test constructing metadata query with experiments table columns."""
-        query, debug, table = loader.construct_metadata_query(
-            ["dwell_time", "name"]
-        )
+        query, debug, table = loader.construct_metadata_query(["dwell_time", "name"])
         assert query != ""
         assert debug == ""
         assert "JOIN experiments" in query
@@ -458,9 +448,7 @@ class TestMetaDatabaseLoader:
         self, loader: ConcreteDatabaseLoader
     ) -> None:
         """Test constructing event data query with conditions."""
-        query, debug = loader.construct_event_data_query(
-            conditions="event_id > 5"
-        )
+        query, debug = loader.construct_event_data_query(conditions="event_id > 5")
         assert query != ""
         assert debug == ""
         assert "WHERE" in query
@@ -493,9 +481,7 @@ class TestMetaDatabaseLoader:
         assert isinstance(df, pd.DataFrame)
         assert "dwell_time" in df.columns
 
-    def test_load_metadata_invalid_query(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_load_metadata_invalid_query(self, loader: ConcreteDatabaseLoader) -> None:
         """Test loading metadata with invalid query."""
         # Make validate_filter_query fail
         with patch.object(
@@ -512,9 +498,7 @@ class TestMetaDatabaseLoader:
         assert all("raw_data" in event for event in events)
         assert all("filtered_data" in event for event in events)
 
-    def test_load_event_data_with_abort(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_load_event_data_with_abort(self, loader: ConcreteDatabaseLoader) -> None:
         """Test loading event data with abort."""
         gen = loader.load_event_data()
         first_event = next(gen)
@@ -544,9 +528,7 @@ class TestMetaDatabaseLoader:
         self, loader: ConcreteDatabaseLoader
     ) -> None:
         """Test querying database and getting generator."""
-        gen = loader.query_database_directly_and_get_generator(
-            "SELECT * FROM events"
-        )
+        gen = loader.query_database_directly_and_get_generator("SELECT * FROM events")
         rows = list(gen)
         assert len(rows) == 3
         assert all(isinstance(row, pd.DataFrame) for row in rows)
@@ -565,9 +547,7 @@ class TestMetaDatabaseLoader:
         self, loader: ConcreteDatabaseLoader
     ) -> None:
         """Test querying database generator with abort."""
-        gen = loader.query_database_directly_and_get_generator(
-            "SELECT * FROM events"
-        )
+        gen = loader.query_database_directly_and_get_generator("SELECT * FROM events")
         first_row = next(gen)
         assert first_row is not None
         # Send abort
@@ -645,9 +625,7 @@ class TestMetaDatabaseLoader:
         with pytest.raises(ValueError, match="Input File is required"):
             loader._validate_settings({})
 
-    def test_validate_settings_valid(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_validate_settings_valid(self, loader: ConcreteDatabaseLoader) -> None:
         """Test settings validation with valid settings."""
         settings = {"Input File": {"Value": "/path/to/file.db"}}
         # Should not raise
@@ -682,7 +660,7 @@ class TestMetaDatabaseLoader:
         # Create DataFrame then add duplicate column
         df_with_dupes = pd.DataFrame({"id": [1, 2], "dwell_time": [10, 20]})
         df_with_dupes["id"] = [1, 2]  # Add duplicate column
-        
+
         with patch.object(loader, "_load_metadata", return_value=df_with_dupes):
             result = loader.load_metadata(["dwell_time"])
             # Should remove duplicate columns

@@ -597,34 +597,34 @@ class MetaDatabaseLoader(BaseDataPlugin):
     ) -> Tuple[str, str, str]:
         """
         The query to be constructed will take one of three forms, depending on the tables in which the metadata reside.
-    
+
         If all queries are in the events table, then the query executed will be:
-    
+
         .. code-block:: sql
-    
+
             SELECT id, experiment_id, channel_id, event_id, [[columns]]
             FROM events
             WHERE [[conditions]]
-    
+
         If all queries are in the sublevels table, then the query executed will be:
-    
+
         .. code-block:: sql
-    
+
             SELECT id, experiment_id, channel_id, event_id, [[columns]]
             FROM sublevels
             WHERE [[conditions]]
-    
+
         If the columns are mixed between the tables, the query will be:
-    
+
         .. code-block:: sql
-    
+
             SELECT e.id, e.experiment_id, e.channel_id, e.event_id, [[events_columns]], [[sublevels_columns]]
             FROM events e
             JOIN sublevels s on e.id = s.event_db_id
             WHERE [[conditions]]
-    
+
         Note when constructing the conditions clause that it will need to take into account this structure.
-    
+
         :param columns: List of column names to retrieve.
         :type columns: List[str]
         :param conditions: Optional filter condition for query.
@@ -634,7 +634,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :return: a valid SQL query and an empty string, or an empty string and a debug message, and the table name of the affected id column
         :rtype: Tuple[str, str, str]
         """
-    
+
         def tuple_builder(id_list):
             if not id_list:
                 raise ValueError("Unable to build tuple from empty list")
@@ -644,7 +644,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                     "Unable to build tuple from list with only None values"
                 )
             return f"({','.join(filtered_ids)})"
-    
+
         # Qualify conditions for joined queries to avoid "no such column" / ambiguity
         def _qualify_conditions_for_events_sublevels_join(cond: str) -> str:
             """
@@ -657,25 +657,25 @@ class MetaDatabaseLoader(BaseDataPlugin):
             sub_cols = self.get_column_names_by_table("sublevels") or []
             evt_cols = self.get_column_names_by_table("events") or []
             exp_cols = self.get_column_names_by_table("experiments") or []
-    
+
             # Qualify sublevels columns first
             for col in sorted(set(sub_cols), key=len, reverse=True):
                 cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"s.{col}", cond)
-    
+
             # Then events columns
             for col in sorted(set(evt_cols), key=len, reverse=True):
                 cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"e.{col}", cond)
-    
+
             # Then experiments columns (if present in condition text)
             for col in sorted(set(exp_cols), key=len, reverse=True):
                 cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"exp.{col}", cond)
-    
+
             return cond
-    
+
         # Validate input
         if not columns:
             raise ValueError("list of columns cannot be empty")
-    
+
         # Remove redundant columns (before mapping to tables)
         # (include unaliased names so "event_id" doesn't duplicate)
         redundant_cols = {
@@ -689,15 +689,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
             "e.event_id",
         }
         filtered = [col for col in columns if col not in redundant_cols]
-    
+
         # Only apply the filtering if it leaves something usable.
         # Otherwise keep the original columns (so ["event_id"] won't become []).
         if filtered:
             columns = filtered
-    
+
         if not columns:
             raise ValueError("list of columns cannot be empty")
-    
+
         # Identify table sources for each column
         tables = [self.get_table_by_column(col) for col in columns]
         if any(table is None for table in tables):
@@ -707,7 +707,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 f"The following columns could not be mapped to tables: {', '.join(invalid_columns)}"
             )
-    
+
         events_columns = [col for col, tbl in zip(columns, tables) if tbl == "events"]
         sublevels_columns = [
             col for col, tbl in zip(columns, tables) if tbl == "sublevels"
@@ -715,11 +715,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         experiments_columns = [
             col for col, tbl in zip(columns, tables) if tbl == "experiments"
         ]
-    
+
         # "events" anchor to JOIN experiments via events.
         if experiments_columns and not events_columns and not sublevels_columns:
             events_columns = ["event_id"]
-    
+
         # Detect whether we must force a JOIN for cross-table filtering
         force_events_sublevels_join = False
         if conditions and events_columns and not sublevels_columns:
@@ -729,7 +729,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
                     force_events_sublevels_join = True
                     break
-    
+
         # Normalize experiment names to IDs if necessary
         experiments = None
         if experiments_and_channels is not None:
@@ -738,17 +738,17 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 for exp in experiments_and_channels.keys()
             ]
             channels = [channels for channels in experiments_and_channels.values()]
-    
+
             for exp_id, exp_name in zip(experiments, experiments_and_channels.keys()):
                 if exp_id is None:
                     raise KeyError(f"Could not find experiment ID(s) for: {exp_name}")
-    
+
         base_conditions = []
-    
+
         # General conditions (AND logic)
         if conditions:
             base_conditions.append(conditions)
-    
+
         # Experiment/channel conditions (OR logic between each)
         experiment_conditions = []
         if experiments is not None:
@@ -759,22 +759,22 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 if (events_columns and sublevels_columns) or force_events_sublevels_join
                 else ""
             )
-    
+
             for exp, channel_list in zip(experiments, channels):
                 if channel_list:
                     condition = f"({prefix}experiment_id = {exp} AND {prefix}channel_id IN {tuple_builder(channel_list)})"
                 else:
                     condition = f"({prefix}experiment_id = {exp})"
                 experiment_conditions.append(condition)
-    
+
         # Combine all into final WHERE clause
         if experiment_conditions:
             base_conditions.append(f"({' OR '.join(experiment_conditions)})")
-    
+
         condition_clause = (
             f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
         )
-    
+
         # Determine query type and build it
         if force_events_sublevels_join and not experiments_columns:
             # Qualify WHERE clause contents for e./s. usage
@@ -786,7 +786,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 qualified_where = f"WHERE {qualified_conditions}"
             else:
                 qualified_where = ""
-    
+
             events_str = ", ".join([f"e.{col}" for col in events_columns])
             query = f"""SELECT DISTINCT e.id, e.experiment_id, e.channel_id, e.event_id, {events_str}
                         FROM events e
@@ -794,21 +794,21 @@ class MetaDatabaseLoader(BaseDataPlugin):
                         ON e.id = s.event_db_id
                         {qualified_where}"""
             table_name = "events"
-    
+
         elif events_columns and not sublevels_columns and not experiments_columns:
             events_str = ", ".join(events_columns)
             query = f"""SELECT id, experiment_id, channel_id, event_id, {events_str}
                         FROM events
                         {condition_clause}"""
             table_name = "events"
-    
+
         elif sublevels_columns and not events_columns and not experiments_columns:
             sublevels_str = ", ".join(sublevels_columns)
             query = f"""SELECT id, experiment_id, channel_id, event_id, {sublevels_str}
                         FROM sublevels
                         {condition_clause}"""
             table_name = "sublevels"
-    
+
         elif events_columns and sublevels_columns and not experiments_columns:
             events_str = ", ".join([f"e.{col}" for col in events_columns])
             sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
@@ -818,7 +818,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                         ON e.id = s.event_db_id
                         {condition_clause}"""
             table_name = "sublevels"
-    
+
         elif events_columns and not sublevels_columns and experiments_columns:
             events_str = ", ".join([f"e.{col}" for col in events_columns])
             experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
@@ -828,7 +828,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                         ON exp.id = e.experiment_id
                         {condition_clause}"""
             table_name = "events"
-    
+
         elif sublevels_columns and not events_columns and experiments_columns:
             sublevels_str = ", ".join(sublevels_columns)
             experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
@@ -838,7 +838,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                         ON exp.id = s.experiment_id
                         {condition_clause}"""
             table_name = "sublevels"
-    
+
         elif events_columns and sublevels_columns and experiments_columns:
             events_str = ", ".join([f"e.{col}" for col in events_columns])
             sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
@@ -855,7 +855,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             raise ValueError(
                 "No valid table columns specified: You must select at least one column from either the events or sublevels tables"
             )
-    
+
         # Validate query
         valid, debug = self.validate_filter_query(query)
         if valid:
