@@ -16,6 +16,9 @@
 
 * **Documentation**
     * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time
+    
+* **New Frontend Plugins: `ProteinView`/`ProteinController`/`ProteinModel`**	 
+    * Allows fitting, visualization, and postprocessing of the Mayer model to protein volume and shape factors
 
 ### General Fixes and Improvements:
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
