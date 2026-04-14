@@ -933,9 +933,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
             extra_tables = [t for t in existing_tables if t not in expected_tables]
             if extra_tables:
-                raise ValueError(
-                    f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of fitted metadata."
-                )
+                if len(extra_tables) > 1 or extra_tables[0] != "event_counts":
+                    raise ValueError(
+                        f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of fitted metadata."
+                    )
 
             # If there are no issues, log success
             self.logger.info("Database schema is valid.")

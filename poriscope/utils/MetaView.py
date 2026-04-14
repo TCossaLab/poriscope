@@ -247,6 +247,16 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         )
 
     @log(logger=logger)
+    def set_column_exists(self, exists_in_table):
+        """
+        Sets the status indicating if cluster columns already exist.
+
+        :param exists_in_table: Name of table where columns exist or None.
+        :type exists_in_table: str or None
+        """
+        self.column_table = exists_in_table
+
+    @log(logger=logger)
     @Slot(float, str)
     def update_progressbar(self, value, identifier):
         """
