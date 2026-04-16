@@ -662,7 +662,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         for i, (data, label) in enumerate(zip(event_data, labels)):
             if "Data" in label:
                 features_plotted = False
-                legend = False
                 ax = self.figure.add_subplot(
                     num_rows, num_cols, j + 1
                 )  # Create subplots in a grid
@@ -699,7 +698,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         if label is None:
                             ax.axvline(x=line, color="black", linestyle="--")
                         else:
-                            legend = True
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.axvline(x=line, linestyle="--", color=color, label=label)
                             color_idx += 1
@@ -713,7 +711,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         if label is None:
                             ax.axhline(y=line / 1000, color="black", linestyle="--")
                         else:
-                            legend = True
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.axhline(
                                 y=line / 1000, linestyle="--", color=color, label=label
@@ -731,7 +728,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                 x, y / 1000, marker="x", color="black", markersize=10
                             )
                         else:
-                            legend = True
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.plot(
                                 x,
@@ -746,8 +742,31 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
                 ax.grid(True)
 
-            if legend:
-                ax.legend(loc="best")
+        # Build a single shared legend from all axes, deduplicating by label
+        all_handles = {}
+        for ax in self.figure.get_axes():
+            for handle, label in zip(*ax.get_legend_handles_labels()):
+                if label not in all_handles:
+                    all_handles[label] = handle
+                    
+        if all_handles:
+            num_entries = len(all_handles)
+            fig_height = self.figure.get_size_inches()[1]
+            # estimate how many entries fit comfortably at default font size (10pt)
+            # roughly 0.20 inches per entry at 10pt
+            entries_at_default = fig_height / 0.20
+            if num_entries <= entries_at_default:
+                font_size = 10  # plenty of space, use full size
+            else:
+                font_size = max(6, int(10 * entries_at_default / num_entries))
+            
+            self.figure.legend(
+                list(all_handles.values()),
+                list(all_handles.keys()),
+                loc="outside right upper",
+                frameon=True,
+                fontsize=font_size,
+            )
 
         self.figure.set_constrained_layout(True)
         self.canvas.draw()
