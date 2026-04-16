@@ -722,13 +722,22 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         # Detect whether we must force a JOIN for cross-table filtering
         force_events_sublevels_join = False
-        if conditions and events_columns and not sublevels_columns:
+        if conditions:
             sub_cols = self.get_column_names_by_table("sublevels") or []
-            for col in sub_cols:
-                # match word boundaries; also catches "s.col" because it contains "col"
-                if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
-                    force_events_sublevels_join = True
-                    break
+            evt_cols = self.get_column_names_by_table("events") or []
+
+            if events_columns and not sublevels_columns:
+                for col in sub_cols:
+                    # match word boundaries; also catches "s.col" because it contains "col"
+                    if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
+                        force_events_sublevels_join = True
+                        break
+
+            elif sublevels_columns and not events_columns:
+                for col in evt_cols:
+                    if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
+                        force_events_sublevels_join = True
+                        break
 
         # Normalize experiment names to IDs if necessary
         experiments = None
@@ -787,13 +796,22 @@ class MetaDatabaseLoader(BaseDataPlugin):
             else:
                 qualified_where = ""
 
-            events_str = ", ".join([f"e.{col}" for col in events_columns])
-            query = f"""SELECT DISTINCT e.id, e.experiment_id, e.channel_id, e.event_id, {events_str}
-                        FROM events e
-                        JOIN sublevels s
-                        ON e.id = s.event_db_id
-                        {qualified_where}"""
-            table_name = "events"
+            if events_columns and not sublevels_columns:
+                # events plot filtered by sublevels column
+                events_str = ", ".join([f"e.{col}" for col in events_columns])
+                query = f"""SELECT DISTINCT e.id, e.experiment_id, e.channel_id, e.event_id, {events_str}
+                            FROM events e
+                            JOIN sublevels s ON e.id = s.event_db_id
+                            {qualified_where}"""
+                table_name = "events"
+            else:
+                # sublevels plot filtered by events column
+                sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
+                query = f"""SELECT DISTINCT s.id, e.experiment_id, e.channel_id, e.event_id, {sublevels_str}
+                            FROM sublevels s
+                            JOIN events e ON e.id = s.event_db_id
+                            {qualified_where}"""
+                table_name = "sublevels"
 
         elif events_columns and not sublevels_columns and not experiments_columns:
             events_str = ", ".join(events_columns)
