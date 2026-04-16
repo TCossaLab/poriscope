@@ -748,7 +748,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             for handle, label in zip(*ax.get_legend_handles_labels()):
                 if label not in all_handles:
                     all_handles[label] = handle
-                    
+
         if all_handles:
             num_entries = len(all_handles)
             fig_height = self.figure.get_size_inches()[1]
@@ -759,7 +759,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 font_size = 10  # plenty of space, use full size
             else:
                 font_size = max(6, int(10 * entries_at_default / num_entries))
-            
+
             self.figure.legend(
                 list(all_handles.values()),
                 list(all_handles.keys()),
