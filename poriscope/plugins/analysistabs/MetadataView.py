@@ -1643,6 +1643,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         elif action_name == "shift_range_backward":
             self._shift_range_and_update_plot(parameters, direction="left")
         elif action_name == "plot_events":
+            self.logger.debug(f"plot_events parameters: {parameters}")
             self._handle_plot_events(parameters)
         elif action_name == "shift_range_forward":
             self._shift_range_and_update_plot(parameters, direction="right")
@@ -1809,6 +1810,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             selected_filters = {"Full Dataset": ""}
 
         event_index = parameters["event_index"]
+        use_raw = parameters.get("raw", False)
 
         sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
@@ -1888,7 +1890,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         elif new_event["event_id"] > index:
                             break
         if data_list:
-            self._update_event_plot(data_list)
+            self._update_event_plot(data_list, use_raw=use_raw)
         else:
             self.add_text_to_display.emit(
                 f"No data available for plotting with indices in the specified range {event_index}",
@@ -1899,7 +1901,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data):
+    def _update_event_plot(self, event_data, use_raw=False):
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -1933,17 +1935,19 @@ class MetadataView(MetaView, WalkthroughMixin):
             samplerate = event["samplerate"]
 
             time = np.arange(len(raw_data)) / samplerate * 1e6
-            ax.plot(time, raw_data / 1000, zorder=1)
+            if use_raw:
+                ax.plot(time, raw_data / 1000, zorder=1)
             ax.plot(time, filtered_data / 1000, zorder=2)
             ax.plot(time, fit_data / 1000, zorder=3)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
 
-            self._update_cache(
-                (time, label + " " + x_label),
-                (raw_data / 1000, label + " Raw " + y_label),
-            )
+            if use_raw:
+                self._update_cache(
+                    (time, label + " " + x_label),
+                    (raw_data / 1000, label + " Raw " + y_label),
+                )
             self._update_cache(
                 (time, label + " " + x_label),
                 (filtered_data / 1000, label + " Filtered " + y_label),
