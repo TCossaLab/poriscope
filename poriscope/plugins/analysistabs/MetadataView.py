@@ -1117,7 +1117,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ]
                         bins_changed = getattr(self, "allowed_bins", None) != bins
                         sizes_changed = getattr(self, "allowed_sizes", None) != sizes
-                        
+
                         # reset the plot if the plot options change or the figure is in an unexpected state
                         axes_is_stale = (
                             len(self.figure.axes) > 1
