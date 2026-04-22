@@ -1117,9 +1117,23 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ]
                         bins_changed = getattr(self, "allowed_bins", None) != bins
                         sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+                        
+                        # reset the plot if the plot options change or the figure is in an unexpected state
+                        axes_is_stale = (
+                            len(self.figure.axes) > 1
+                            or (
+                                isinstance(getattr(self, "axes", None), Axes3D)
+                                and plot_type != "3D Scatterplot"
+                            )
+                            or (
+                                not isinstance(getattr(self, "axes", None), Axes3D)
+                                and plot_type == "3D Scatterplot"
+                            )
+                        )
 
                         if (
-                            (
+                            axes_is_stale
+                            or (
                                 self.allowed_columns
                                 and not all(
                                     col in self.allowed_columns for col in columns
@@ -1137,7 +1151,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                             )
                             or (bin_sensitive and (bins_changed or sizes_changed))
                         ):
-                            self._reset_actions()  # reset the plot if the plot options change
+                            axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
+                            self._reset_actions(axis_type=axis_type)
 
                         seen = set()
                         for col in columns:
@@ -1949,6 +1964,18 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.figure.set_constrained_layout(True)
         self.canvas.draw()
         self._commit_cache()
+
+        # Reset metadata plot state so the next "Update Plot" click starts fresh instead of trying to overlay onto the event grid
+        self.allowed_plot_type = None
+        self.allowed_columns = []
+        self.allowed_logs = []
+        self.allowed_bins = None
+        self.allowed_sizes = None
+        self.plotted_datasets = set()
+        self.hist_min = None
+        self.hist_max = None
+        self.hist_data = []
+        self.hist_labels = []
 
     @log(logger=logger)
     def _export_csv_subset(self, loader, filters, selection):
