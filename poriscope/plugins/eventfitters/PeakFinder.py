@@ -1069,6 +1069,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["max_deviation"] = "pA"
         metadata_units["unfolded_level"] = "pA"
         metadata_units["baseline_std"] = "pA"
+        metadata_units["baseline"] = "pA"
 
         return metadata_units
 
