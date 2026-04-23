@@ -9,11 +9,15 @@
     * Replaced N×M `COUNT(*)` query loop in `report_channel_status` with a `event_counts` summary table, making DB loading and experiment/channel count reporting ~10x faster.  
     * The `event_counts` summary table is maintained automatically via SQLite triggers in case of manual edits (event removal)
     * Backwards compatible — existing databases are upgraded automatically on first load
+
+* **Updated Frontend Plugin: `MetadataView`**
+    *Added **RAW** checkbox to the Plot Events section — raw data is always shown before fitting; once fitting is complete, checking RAW includes raw traces alongside the fitted results
     
 * **Updated Frontend Plugin: `MetadataView`**
     * Full SQL will always be printed after filter creation/editing, regardless of validity
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
+
 
 * **Documentation**
     * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time

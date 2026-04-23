@@ -29,9 +29,15 @@ import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QSize, Signal
+from PySide6.QtCore import (
+    QCoreApplication,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGridLayout,
     QGroupBox,
@@ -139,9 +145,26 @@ class EventAnalysisControls(QWidget):
         self.right_arrow_button.setIconSize(QSize(16, 16))
         self.right_arrow_button.setFixedWidth(30)
 
+        # RAW label + checkbox stacked vertically
+        raw_col_widget = QWidget(self.plot_events_widget)
+        raw_col_layout = QVBoxLayout(raw_col_widget)
+        raw_col_layout.setContentsMargins(0, 0, 0, 0)
+        raw_col_layout.setSpacing(0)
+
+        self.raw_label = self.createLabel(raw_col_widget, 12, "RAW")
+        self.raw_label.setAlignment(Qt.AlignCenter)
+        self.raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.raw_checkbox = QCheckBox(raw_col_widget)
+        self.raw_checkbox.setObjectName("rawCheckBox")
+
+        raw_col_layout.addWidget(self.raw_label, alignment=Qt.AlignCenter)
+        raw_col_layout.addWidget(self.raw_checkbox, alignment=Qt.AlignCenter)
+
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
+        plot_events_layout.addWidget(raw_col_widget)
 
         group_layout.addWidget(self.plot_events_widget, 4, 0, 1, 2)
 
@@ -485,6 +508,7 @@ class EventAnalysisControls(QWidget):
         self.filters_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.eventfitters_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.writers_comboBox.currentIndexChanged.connect(self.validate_inputs)
+        self.raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     def on_parameter_changed(self):
         parameters = self.collect_parameters()
@@ -535,6 +559,7 @@ class EventAnalysisControls(QWidget):
             "eventfitter": self.eventfitters_comboBox.currentText()
             or "No Event Fitter",
             "event_index": [],
+            "raw": self.raw_checkbox.isChecked(),
             "channel": [item for item in self.channel_comboBox.getSelectedItems()],
         }
 

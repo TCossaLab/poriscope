@@ -529,6 +529,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         vertical_labels,
                         horizontal_labels,
                         plabels,
+                        use_raw=parameters.get("raw", False),
                     )
                 else:
                     self.logger.error("No data available for plotting")
@@ -615,6 +616,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         vlabels,
         hlabels,
         plabels,
+        use_raw=False,
     ):
         """
         Update the event plot with raw data, annotations, and formatting.
@@ -667,9 +669,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 )  # Create subplots in a grid
                 ax.set_title(label)
                 j += 1
-
+                
             time = np.arange(len(data)) / self.plot_samplerate * 1e6
-            ax.plot(time, data / 1000)
+            fitting_done = getattr(self, "eventfitting_status", False)
+            should_plot = "Fit" in label or use_raw or (not fitting_done and "Data" in label)
+            if should_plot:
+                ax.plot(time, data / 1000)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
