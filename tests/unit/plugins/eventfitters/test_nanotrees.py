@@ -27,6 +27,7 @@ from poriscope.plugins.eventfitters.NanoTrees import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_sublevels(*specs):
     """specs: list of (start, end, height)"""
     s = Sublevels()
@@ -65,6 +66,7 @@ def _automation_settings(std=1.0, rise_time=5):
 # SingleSublevel
 # ---------------------------------------------------------------------------
 
+
 class TestSingleSublevel(unittest.TestCase):
     def test_init_positional(self):
         sl = SingleSublevel(2, 10, 3.5)
@@ -97,6 +99,7 @@ class TestSingleSublevel(unittest.TestCase):
 # HackyList
 # ---------------------------------------------------------------------------
 
+
 class TestHackyList(unittest.TestCase):
     def test_is_list(self):
         hl = HackyList([1, 2, 3])
@@ -114,6 +117,7 @@ class TestHackyList(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Sublevels
 # ---------------------------------------------------------------------------
+
 
 class TestSublevels(unittest.TestCase):
     def test_insert_and_len(self):
@@ -171,6 +175,7 @@ class TestSublevels(unittest.TestCase):
 # extractContiniousRegions
 # ---------------------------------------------------------------------------
 
+
 class TestExtractContiniousRegions(unittest.TestCase):
     def test_empty(self):
         w, h = extractContiniousRegions([])
@@ -197,6 +202,7 @@ class TestExtractContiniousRegions(unittest.TestCase):
 
     def test_total_width_invariant(self):
         import random
+
         data = [random.random() for _ in range(50)]
         w, h = extractContiniousRegions(data)
         self.assertEqual(sum(w), 50)
@@ -205,6 +211,7 @@ class TestExtractContiniousRegions(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _check_one_sided_percent_parity
 # ---------------------------------------------------------------------------
+
 
 class TestCheckOneSidedPercentParity(unittest.TestCase):
     def test_balanced_passes(self):
@@ -226,6 +233,7 @@ class TestCheckOneSidedPercentParity(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # BigConfidenceBooster
 # ---------------------------------------------------------------------------
+
 
 class TestBigConfidenceBooster(unittest.TestCase):
     def test_short_sublevel_skipped(self):
@@ -252,6 +260,7 @@ class TestBigConfidenceBooster(unittest.TestCase):
 # normalHeightRefresh
 # ---------------------------------------------------------------------------
 
+
 class TestNormalHeightRefresh(unittest.TestCase):
     def test_refreshes_all_heights(self):
         raw = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
@@ -268,6 +277,7 @@ class TestNormalHeightRefresh(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _check_exceptional_sublevel
 # ---------------------------------------------------------------------------
+
 
 class TestCheckExceptionalSublevel(unittest.TestCase):
     def _base_args(self):
@@ -331,6 +341,7 @@ class TestCheckExceptionalSublevel(unittest.TestCase):
 # NanoTrees – _set_automation_hyperparameters
 # ---------------------------------------------------------------------------
 
+
 class TestSetAutomationHyperparameters(unittest.TestCase):
     def test_required_keys_present(self):
         nt = _make_nt()
@@ -372,6 +383,7 @@ class TestSetAutomationHyperparameters(unittest.TestCase):
 # NanoTrees – l50_max_height
 # ---------------------------------------------------------------------------
 
+
 class TestL50MaxHeight(unittest.TestCase):
     def setUp(self):
         self.nt = _make_nt()
@@ -402,6 +414,7 @@ class TestL50MaxHeight(unittest.TestCase):
 # NanoTrees – get_rise_time / get_skip_region
 # ---------------------------------------------------------------------------
 
+
 class TestRiseTimeHelpers(unittest.TestCase):
     def setUp(self):
         self.nt = _make_nt()
@@ -428,6 +441,7 @@ class TestRiseTimeHelpers(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # NanoTrees – _pass3
 # ---------------------------------------------------------------------------
+
 
 class TestPass3(unittest.TestCase):
     def _s(self, std=0.5):
@@ -461,6 +475,7 @@ class TestPass3(unittest.TestCase):
 # NanoTrees – _pass4
 # ---------------------------------------------------------------------------
 
+
 class TestPass4(unittest.TestCase):
     def _s(self):
         return _automation_settings(std=1.0, rise_time=3)
@@ -490,6 +505,7 @@ class TestPass4(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # NanoTrees – _pass5
 # ---------------------------------------------------------------------------
+
 
 class TestPass5(unittest.TestCase):
     def _s(self):
@@ -521,6 +537,7 @@ class TestPass5(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # NanoTrees – _pass6
 # ---------------------------------------------------------------------------
+
 
 class TestPass6(unittest.TestCase):
     def _s(self):
@@ -565,6 +582,7 @@ class TestPass6(unittest.TestCase):
 # NanoTrees – _pass7
 # ---------------------------------------------------------------------------
 
+
 class TestPass7(unittest.TestCase):
     def _s(self):
         return _automation_settings()
@@ -597,15 +615,14 @@ class TestPass7(unittest.TestCase):
 # NanoTrees – _slope_height_adjust
 # ---------------------------------------------------------------------------
 
+
 class TestSlopeHeightAdjust(unittest.TestCase):
     def _s(self):
         return _automation_settings()
 
     def test_monotone_sublevel_adjusted(self):
         nt = _make_nt()
-        raw = np.array(
-            [0.0] * 5 + [1.0, 2.0, 3.0, 4.0, 5.0] + [6.0] * 5, dtype=float
-        )
+        raw = np.array([0.0] * 5 + [1.0, 2.0, 3.0, 4.0, 5.0] + [6.0] * 5, dtype=float)
         sub = _make_sublevels((0, 5, 0.0), (5, 10, 3.0), (10, 15, 6.0))
         result = nt._slope_height_adjust(self._s(), sub, raw)
         self.assertIsNotNone(result)
@@ -629,6 +646,7 @@ class TestSlopeHeightAdjust(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # NanoTrees – _ml_automation
 # ---------------------------------------------------------------------------
+
 
 class TestMlAutomation(unittest.TestCase):
     def test_output_length_matches_input(self):
@@ -655,6 +673,7 @@ class TestMlAutomation(unittest.TestCase):
 # NanoTrees – construct_fitted_event
 # ---------------------------------------------------------------------------
 
+
 class TestConstructFittedEvent(unittest.TestCase):
     def test_returns_none_when_no_sublevel_metadata(self):
         nt = _make_nt()
@@ -674,6 +693,7 @@ class TestConstructFittedEvent(unittest.TestCase):
 
     def test_missing_event_id_returns_none(self):
         from unittest.mock import MagicMock
+
         nt = _make_nt()
         nt.sublevel_metadata = {0: {99: {}}}  # only index 99, not 0
         nt.eventfitting_status = {0: True}
@@ -687,24 +707,40 @@ class TestConstructFittedEvent(unittest.TestCase):
 # NanoTrees – _define_* metadata types and units
 # ---------------------------------------------------------------------------
 
+
 class TestDefineMetadata(unittest.TestCase):
     def setUp(self):
         self.nt = _make_nt()
 
     def test_event_metadata_types_all_float(self):
         t = self.nt._define_event_metadata_types()
-        for key in ["duration", "fitted_ecd", "raw_ecd", "max_blockage",
-                    "min_blockage", "max_deviation", "max_blockage_duration",
-                    "min_blockage_duration", "max_deviation_duration"]:
+        for key in [
+            "duration",
+            "fitted_ecd",
+            "raw_ecd",
+            "max_blockage",
+            "min_blockage",
+            "max_deviation",
+            "max_blockage_duration",
+            "min_blockage_duration",
+            "max_deviation_duration",
+        ]:
             self.assertIn(key, t)
             self.assertIs(t[key], float)
 
     def test_sublevel_metadata_types_all_float(self):
         t = self.nt._define_sublevel_metadata_types()
-        for key in ["sublevel_current", "sublevel_stdev", "sublevel_blockage",
-                    "sublevel_duration", "sublevel_start_times",
-                    "sublevel_end_times", "sublevel_max_deviation",
-                    "sublevel_raw_ecd", "sublevel_fitted_ecd"]:
+        for key in [
+            "sublevel_current",
+            "sublevel_stdev",
+            "sublevel_blockage",
+            "sublevel_duration",
+            "sublevel_start_times",
+            "sublevel_end_times",
+            "sublevel_max_deviation",
+            "sublevel_raw_ecd",
+            "sublevel_fitted_ecd",
+        ]:
             self.assertIn(key, t)
             self.assertIs(t[key], float)
 
@@ -725,6 +761,7 @@ class TestDefineMetadata(unittest.TestCase):
 # NanoTrees – _populate_event_metadata
 # ---------------------------------------------------------------------------
 
+
 class TestPopulateEventMetadata(unittest.TestCase):
     def _meta(self):
         n = 5
@@ -739,9 +776,17 @@ class TestPopulateEventMetadata(unittest.TestCase):
     def test_all_keys_present(self):
         nt = _make_nt()
         result = nt._populate_event_metadata(np.zeros(50), 1e6, 0.0, 1.0, self._meta())
-        for key in ["duration", "fitted_ecd", "raw_ecd", "max_blockage",
-                    "min_blockage", "max_deviation", "max_blockage_duration",
-                    "min_blockage_duration", "max_deviation_duration"]:
+        for key in [
+            "duration",
+            "fitted_ecd",
+            "raw_ecd",
+            "max_blockage",
+            "min_blockage",
+            "max_deviation",
+            "max_blockage_duration",
+            "min_blockage_duration",
+            "max_deviation_duration",
+        ]:
             self.assertIn(key, result)
 
     def test_duration_sums_inner_sublevels(self):
@@ -763,6 +808,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # NanoTrees – noop overrides
 # ---------------------------------------------------------------------------
+
 
 class TestNoopOverrides(unittest.TestCase):
     def setUp(self):
