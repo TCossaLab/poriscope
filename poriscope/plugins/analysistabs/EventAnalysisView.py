@@ -669,10 +669,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 )  # Create subplots in a grid
                 ax.set_title(label)
                 j += 1
-                
+
             time = np.arange(len(data)) / self.plot_samplerate * 1e6
             fitting_done = getattr(self, "eventfitting_status", False)
-            should_plot = "Fit" in label or use_raw or (not fitting_done and "Data" in label)
+            should_plot = (
+                "Fit" in label or use_raw or (not fitting_done and "Data" in label)
+            )
             if should_plot:
                 ax.plot(time, data / 1000)
 

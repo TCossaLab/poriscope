@@ -1918,7 +1918,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         # Reset metadata plot state so the next "Update Plot" click starts fresh instead of trying to overlay onto the event grid
         self._reset_actions()  # clears figure, creates default axes, draws empty canvas, records in history
-    
+
         self._clear_figure_state(create_default_axes=False)
 
         num_events = len(event_data)
@@ -1971,7 +1971,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.figure.set_constrained_layout(True)
         self.canvas.draw()
         self._commit_cache()
-
 
     @log(logger=logger)
     def _export_csv_subset(self, loader, filters, selection):
