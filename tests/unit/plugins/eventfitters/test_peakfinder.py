@@ -28,6 +28,7 @@ from poriscope.plugins.eventfitters.PeakFinder import PeakFinder
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_pf(**setting_overrides):
     """
     Return a PeakFinder with attributes injected, bypassing __init__.
@@ -40,16 +41,16 @@ def _make_pf(**setting_overrides):
     pf.eventloader = None
     pf.logger = PeakFinder.logger
     pf.settings = {
-        "Event Type":       {"Value": "Unspecified"},
-        "Min Height":       {"Value": 500.0},
-        "Min Prominence":   {"Value": 100.0},
-        "Relative Height":  {"Value": 0.5},
-        "Window Length":    {"Value": 25.0},
-        "Width":            {"Value": 0.0},
-        "Min Distance":     {"Value": 1.0},
-        "Max Unfolded":     {"Value": 750.0},
-        "Number of peaks":  {"Value": 1},
-        "Plot Features":    {"Value": "Some"},
+        "Event Type": {"Value": "Unspecified"},
+        "Min Height": {"Value": 500.0},
+        "Min Prominence": {"Value": 100.0},
+        "Relative Height": {"Value": 0.5},
+        "Window Length": {"Value": 25.0},
+        "Width": {"Value": 0.0},
+        "Min Distance": {"Value": 1.0},
+        "Max Unfolded": {"Value": 750.0},
+        "Number of peaks": {"Value": 1},
+        "Plot Features": {"Value": "Some"},
     }
     for k, v in setting_overrides.items():
         pf.settings[k]["Value"] = v
@@ -60,33 +61,72 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
     """Build a minimal sublevel_starts list as _locate_sublevel_transitions would."""
     peak_index = padding_before + 20
     starts = [
-        {"index": 0,               "type": "start",          "peak_height": None, "prominence": None,
-         "left_base": None, "right_base": None, "width": None, "left_ips": None, "right_ips": None,
-         "filtered": None, "unfolded_level": 200.0},
-        {"index": padding_before,  "type": "padding_before",  "peak_height": None, "prominence": None,
-         "left_base": None, "right_base": None, "width": None, "left_ips": None, "right_ips": None,
-         "filtered": None},
+        {
+            "index": 0,
+            "type": "start",
+            "peak_height": None,
+            "prominence": None,
+            "left_base": None,
+            "right_base": None,
+            "width": None,
+            "left_ips": None,
+            "right_ips": None,
+            "filtered": None,
+            "unfolded_level": 200.0,
+        },
+        {
+            "index": padding_before,
+            "type": "padding_before",
+            "peak_height": None,
+            "prominence": None,
+            "left_base": None,
+            "right_base": None,
+            "width": None,
+            "left_ips": None,
+            "right_ips": None,
+            "filtered": None,
+        },
     ]
     for i in range(n_peaks):
-        starts.append({
-            "index":       peak_index + i * 5,
-            "type":        f"peak_{i+1}",
-            "peak_height": 600.0,
-            "prominence":  150.0,
-            "left_base":   180.0,
-            "right_base":  180.0,
-            "width":       3.0,
-            "left_ips":    peak_index + i * 5 - 1,
-            "right_ips":   peak_index + i * 5 + 1,
-            "filtered":    0,
-        })
+        starts.append(
+            {
+                "index": peak_index + i * 5,
+                "type": f"peak_{i+1}",
+                "peak_height": 600.0,
+                "prominence": 150.0,
+                "left_base": 180.0,
+                "right_base": 180.0,
+                "width": 3.0,
+                "left_ips": peak_index + i * 5 - 1,
+                "right_ips": peak_index + i * 5 + 1,
+                "filtered": 0,
+            }
+        )
     starts += [
-        {"index": data_len - padding_after, "type": "padding_after", "peak_height": None,
-         "prominence": None, "left_base": None, "right_base": None, "width": None,
-         "left_ips": None, "right_ips": None, "filtered": None},
-        {"index": data_len,                 "type": "end",           "peak_height": None,
-         "prominence": None, "left_base": None, "right_base": None, "width": None,
-         "left_ips": None, "right_ips": None, "filtered": None},
+        {
+            "index": data_len - padding_after,
+            "type": "padding_after",
+            "peak_height": None,
+            "prominence": None,
+            "left_base": None,
+            "right_base": None,
+            "width": None,
+            "left_ips": None,
+            "right_ips": None,
+            "filtered": None,
+        },
+        {
+            "index": data_len,
+            "type": "end",
+            "peak_height": None,
+            "prominence": None,
+            "left_base": None,
+            "right_base": None,
+            "width": None,
+            "left_ips": None,
+            "right_ips": None,
+            "filtered": None,
+        },
     ]
     return starts
 
@@ -94,6 +134,7 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
 # ---------------------------------------------------------------------------
 # find_unfolded_blockage_level
 # ---------------------------------------------------------------------------
+
 
 class TestFindUnfoldedBlockageLevel(unittest.TestCase):
     def setUp(self):
@@ -116,10 +157,17 @@ class TestFindUnfoldedBlockageLevel(unittest.TestCase):
         data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
         result = self.pf.find_unfolded_blockage_level(data, 400.0, 0.0, 5.0)
         # Should be halved since abs(level - baseline) > max_unfolded
-        full = np.abs(np.arange(int(min(data)), int(max(data)))[
-            np.argmax([np.sum((data > i - 2.5) & (data < i + 2.5))
-                       for i in np.arange(int(min(data)), int(max(data)))])
-        ] - 0.0)
+        full = np.abs(
+            np.arange(int(min(data)), int(max(data)))[
+                np.argmax(
+                    [
+                        np.sum((data > i - 2.5) & (data < i + 2.5))
+                        for i in np.arange(int(min(data)), int(max(data)))
+                    ]
+                )
+            ]
+            - 0.0
+        )
         self.assertAlmostEqual(result, full / 2, delta=5.0)
 
     def test_nonnegative(self):
@@ -131,6 +179,7 @@ class TestFindUnfoldedBlockageLevel(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # enumerate_peaks
 # ---------------------------------------------------------------------------
+
 
 class TestEnumeratePeaks(unittest.TestCase):
     def setUp(self):
@@ -153,9 +202,9 @@ class TestEnumeratePeaks(unittest.TestCase):
 
     def test_no_peaks_all_none(self):
         starts = [
-            {"index": 0,   "type": "start", "unfolded_level": 200.0},
-            {"index": 50,  "type": "padding_before"},
-            {"index": 90,  "type": "padding_after"},
+            {"index": 0, "type": "start", "unfolded_level": 200.0},
+            {"index": 50, "type": "padding_before"},
+            {"index": 90, "type": "padding_after"},
             {"index": 100, "type": "end"},
         ]
         num_states = len(starts) - 1
@@ -173,13 +222,14 @@ class TestEnumeratePeaks(unittest.TestCase):
 # filter_peaks – Unspecified and Single Peak (pass-through)
 # ---------------------------------------------------------------------------
 
+
 class TestFilterPeaksPassThrough(unittest.TestCase):
     def _make_props(self, n=3):
         return {
-            "filtered":     [0] * n,
-            "prominences":  np.array([200.0, 150.0, 100.0]),
-            "left_bases":   [50.0, 50.0, 50.0],
-            "right_bases":  [50.0, 50.0, 50.0],
+            "filtered": [0] * n,
+            "prominences": np.array([200.0, 150.0, 100.0]),
+            "left_bases": [50.0, 50.0, 50.0],
+            "right_bases": [50.0, 50.0, 50.0],
             "peak_heights": np.array([700.0, 650.0, 600.0]),
         }
 
@@ -202,16 +252,17 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
 # filter_peaks – Barcode type 1 (bases near unfolded level)
 # ---------------------------------------------------------------------------
 
+
 class TestFilterPeaksBarcode(unittest.TestCase):
     def _props(self, left_bases, right_bases, prominences=None):
         n = len(left_bases)
         if prominences is None:
             prominences = [200.0] * n
         return {
-            "filtered":     [0] * n,
-            "prominences":  np.array(prominences, dtype=float),
-            "left_bases":   list(left_bases),
-            "right_bases":  list(right_bases),
+            "filtered": [0] * n,
+            "prominences": np.array(prominences, dtype=float),
+            "left_bases": list(left_bases),
+            "right_bases": list(right_bases),
             "peak_heights": np.array([700.0] * n),
         }
 
@@ -260,8 +311,13 @@ class TestFilterPeaksBarcode(unittest.TestCase):
     def test_empty_peaks_no_crash(self):
         """No peaks at all → filter_peaks should return properties intact."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 1})
-        props = {"filtered": [], "prominences": np.array([]), "left_bases": [],
-                 "right_bases": [], "peak_heights": np.array([])}
+        props = {
+            "filtered": [],
+            "prominences": np.array([]),
+            "left_bases": [],
+            "right_bases": [],
+            "peak_heights": np.array([]),
+        }
         result = pf.filter_peaks(np.array([]), props, 200.0, 10.0, 0.0, 1e6)
         self.assertEqual(result["filtered"], [])
 
@@ -270,15 +326,18 @@ class TestFilterPeaksBarcode(unittest.TestCase):
 # _populate_sublevel_metadata
 # ---------------------------------------------------------------------------
 
+
 class TestPopulateSublevelMetadata(unittest.TestCase):
     def setUp(self):
         self.pf = _make_pf()
         self.samplerate = 1e6
-        self.data = np.concatenate([
-            np.ones(10) * 100.0,    # padding before
-            np.ones(80) * 300.0,    # event body
-            np.ones(10) * 100.0,    # padding after
-        ])
+        self.data = np.concatenate(
+            [
+                np.ones(10) * 100.0,  # padding before
+                np.ones(80) * 300.0,  # event body
+                np.ones(10) * 100.0,  # padding after
+            ]
+        )
         self.starts = _make_sublevel_starts(
             n_peaks=1, padding_before=10, data_len=100, padding_after=10
         )
@@ -288,11 +347,23 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             self.data, self.samplerate, 100.0, 10.0, self.starts
         )
         for key in [
-            "sublevel_current", "sublevel_duration", "sublevel_start_times",
-            "sublevel_end_times", "sublevel_raw_ecd", "sublevel_cumulative_ecd",
-            "sublevel_max_deviation", "peak_id", "peak_height", "peak_loc",
-            "peak_width", "prominence", "left_base", "right_base",
-            "left_ips", "right_ips", "filtered",
+            "sublevel_current",
+            "sublevel_duration",
+            "sublevel_start_times",
+            "sublevel_end_times",
+            "sublevel_raw_ecd",
+            "sublevel_cumulative_ecd",
+            "sublevel_max_deviation",
+            "peak_id",
+            "peak_height",
+            "peak_loc",
+            "peak_width",
+            "prominence",
+            "left_base",
+            "right_base",
+            "left_ips",
+            "right_ips",
+            "filtered",
         ]:
             self.assertIn(key, meta)
 
@@ -311,8 +382,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         # cumulative should be non-decreasing or equal length to raw
         self.assertEqual(
-            len(meta["sublevel_cumulative_ecd"]),
-            len(meta["sublevel_raw_ecd"])
+            len(meta["sublevel_cumulative_ecd"]), len(meta["sublevel_raw_ecd"])
         )
 
     def test_peak_height_positive_for_peak_sublevel(self):
@@ -339,12 +409,13 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             self.data, self.samplerate, 100.0, 10.0, self.starts
         )
         times = meta["sublevel_start_times"]
-        self.assertTrue(all(times[i] <= times[i+1] for i in range(len(times)-1)))
+        self.assertTrue(all(times[i] <= times[i + 1] for i in range(len(times) - 1)))
 
 
 # ---------------------------------------------------------------------------
 # _populate_event_metadata
 # ---------------------------------------------------------------------------
+
 
 class TestPopulateEventMetadata(unittest.TestCase):
     def _make_sublevel_meta(self, n=5):
@@ -353,10 +424,10 @@ class TestPopulateEventMetadata(unittest.TestCase):
         # slice used by _populate_event_metadata: data[10000:40000]
         # so data must have variation in that range
         return {
-            "sublevel_duration":      np.ones(n) * 10.0,
-            "sublevel_raw_ecd":       np.ones(n) * 0.1,
+            "sublevel_duration": np.ones(n) * 10.0,
+            "sublevel_raw_ecd": np.ones(n) * 0.1,
             "sublevel_max_deviation": np.ones(n) * 5.0,
-            "sublevel_start_times":   np.array([0.0, 10000.0, 20000.0, 30000.0, 40000.0]),
+            "sublevel_start_times": np.array([0.0, 10000.0, 20000.0, 30000.0, 40000.0]),
         }
 
     def _make_data(self):
@@ -367,19 +438,32 @@ class TestPopulateEventMetadata(unittest.TestCase):
 
     def test_all_keys_present(self):
         pf = _make_pf()
-        result = pf._populate_event_metadata(self._make_data(), 1e6, 100.0, 10.0, self._make_sublevel_meta())
-        for key in ["number_peaks", "duration", "raw_ecd", "max_deviation",
-                    "baseline", "unfolded_level", "baseline_std"]:
+        result = pf._populate_event_metadata(
+            self._make_data(), 1e6, 100.0, 10.0, self._make_sublevel_meta()
+        )
+        for key in [
+            "number_peaks",
+            "duration",
+            "raw_ecd",
+            "max_deviation",
+            "baseline",
+            "unfolded_level",
+            "baseline_std",
+        ]:
             self.assertIn(key, result)
 
     def test_baseline_matches_input(self):
         pf = _make_pf()
-        result = pf._populate_event_metadata(self._make_data(), 1e6, 123.0, 10.0, self._make_sublevel_meta())
+        result = pf._populate_event_metadata(
+            self._make_data(), 1e6, 123.0, 10.0, self._make_sublevel_meta()
+        )
         self.assertAlmostEqual(result["baseline"], 123.0)
 
     def test_baseline_std_matches_input(self):
         pf = _make_pf()
-        result = pf._populate_event_metadata(self._make_data(), 1e6, 100.0, 7.5, self._make_sublevel_meta())
+        result = pf._populate_event_metadata(
+            self._make_data(), 1e6, 100.0, 7.5, self._make_sublevel_meta()
+        )
         self.assertAlmostEqual(result["baseline_std"], 7.5)
 
     def test_duration_sums_inner(self):
@@ -393,6 +477,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _define_event_metadata_types / units
 # ---------------------------------------------------------------------------
+
 
 class TestDefineEventMetadata(unittest.TestCase):
     def setUp(self):
@@ -410,9 +495,18 @@ class TestDefineEventMetadata(unittest.TestCase):
     def test_sublevel_types_all_present(self):
         t = self.pf._define_sublevel_metadata_types()
         for key in [
-            "sublevel_current", "sublevel_duration", "peak_height",
-            "peak_loc", "peak_width", "prominence", "left_base", "right_base",
-            "left_ips", "right_ips", "filtered", "normalized_height",
+            "sublevel_current",
+            "sublevel_duration",
+            "peak_height",
+            "peak_loc",
+            "peak_width",
+            "prominence",
+            "left_base",
+            "right_base",
+            "left_ips",
+            "right_ips",
+            "filtered",
+            "normalized_height",
             "normalized_prominence",
         ]:
             self.assertIn(key, t)
@@ -435,6 +529,7 @@ class TestDefineEventMetadata(unittest.TestCase):
 # construct_fitted_event – None paths
 # ---------------------------------------------------------------------------
 
+
 class TestConstructFittedEvent(unittest.TestCase):
     def test_no_metadata_returns_none(self):
         pf = _make_pf()
@@ -454,7 +549,7 @@ class TestConstructFittedEvent(unittest.TestCase):
 
     def test_missing_event_index_returns_none(self):
         pf = _make_pf()
-        pf.sublevel_metadata = {0: {99: {}}}   # only index 99
+        pf.sublevel_metadata = {0: {99: {}}}  # only index 99
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: 100}}
         pf.event_metadata = {0: {}}
@@ -475,17 +570,21 @@ class TestConstructFittedEvent(unittest.TestCase):
 
         # Two sublevels: baseline (0→25) and event (25→50)
         starts_us = np.array([0.0, 25.0]) * dt_us
-        ends_us   = np.array([25.0, 50.0]) * dt_us
+        ends_us = np.array([25.0, 50.0]) * dt_us
 
-        pf.sublevel_metadata = {0: {0: {
-            "sublevel_start_times": starts_us,
-            "sublevel_end_times":   ends_us,
-            "sublevel_current":     np.array([100.0, 300.0]),
-            "peak_height":          np.array([0.0, 0.0]),
-            "filtered":             np.array([0.0, 0.0]),
-            "right_ips":            np.array([np.nan, np.nan]),
-            "left_ips":             np.array([np.nan, np.nan]),
-        }}}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "sublevel_start_times": starts_us,
+                    "sublevel_end_times": ends_us,
+                    "sublevel_current": np.array([100.0, 300.0]),
+                    "peak_height": np.array([0.0, 0.0]),
+                    "filtered": np.array([0.0, 0.0]),
+                    "right_ips": np.array([np.nan, np.nan]),
+                    "left_ips": np.array([np.nan, np.nan]),
+                }
+            }
+        }
         pf.event_metadata = {0: {0: {"baseline": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
@@ -506,17 +605,21 @@ class TestConstructFittedEvent(unittest.TestCase):
         pf.eventloader.get_samplerate.return_value = samplerate
 
         starts_us = np.array([0.0, 40.0, 70.0]) * dt_us
-        ends_us   = np.array([40.0, 70.0, 100.0]) * dt_us
+        ends_us = np.array([40.0, 70.0, 100.0]) * dt_us
 
-        pf.sublevel_metadata = {0: {0: {
-            "sublevel_start_times": starts_us,
-            "sublevel_end_times":   ends_us,
-            "sublevel_current":     np.array([100.0, 300.0, 100.0]),
-            "peak_height":          np.array([0.0, 200.0, 0.0]),
-            "filtered":             np.array([0.0, 3.0, 0.0]),
-            "right_ips":            np.array([np.nan, 60.0 * dt_us, np.nan]),
-            "left_ips":             np.array([np.nan, 45.0 * dt_us, np.nan]),
-        }}}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "sublevel_start_times": starts_us,
+                    "sublevel_end_times": ends_us,
+                    "sublevel_current": np.array([100.0, 300.0, 100.0]),
+                    "peak_height": np.array([0.0, 200.0, 0.0]),
+                    "filtered": np.array([0.0, 3.0, 0.0]),
+                    "right_ips": np.array([np.nan, 60.0 * dt_us, np.nan]),
+                    "left_ips": np.array([np.nan, 45.0 * dt_us, np.nan]),
+                }
+            }
+        }
         pf.event_metadata = {0: {0: {"baseline": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
@@ -529,6 +632,7 @@ class TestConstructFittedEvent(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # get_plot_features – None paths
 # ---------------------------------------------------------------------------
+
 
 class TestGetPlotFeatures(unittest.TestCase):
     def test_no_metadata_returns_all_none(self):
@@ -561,20 +665,28 @@ class TestGetPlotFeatures(unittest.TestCase):
 
     def _setup_full_pf(self, plot_value="Some"):
         pf = _make_pf(**{"Plot Features": plot_value})
-        pf.sublevel_metadata = {0: {0: {
-            "right_ips":   np.array([np.nan, 55.0, np.nan]),
-            "peak_id":     [None, 1, None],
-            "left_base":   np.array([np.nan, 180.0, np.nan]),
-            "right_base":  np.array([np.nan, 180.0, np.nan]),
-            "peak_loc":    np.array([np.nan, 50.0, np.nan]),
-            "peak_height": np.array([np.nan, 600.0, np.nan]),
-            "filtered":    [None, 3, None],
-        }}}
-        pf.event_metadata = {0: {0: {
-            "baseline":        100.0,
-            "unfolded_level":  200.0,
-            "baseline_std":    10.0,
-        }}}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "right_ips": np.array([np.nan, 55.0, np.nan]),
+                    "peak_id": [None, 1, None],
+                    "left_base": np.array([np.nan, 180.0, np.nan]),
+                    "right_base": np.array([np.nan, 180.0, np.nan]),
+                    "peak_loc": np.array([np.nan, 50.0, np.nan]),
+                    "peak_height": np.array([np.nan, 600.0, np.nan]),
+                    "filtered": [None, 3, None],
+                }
+            }
+        }
+        pf.event_metadata = {
+            0: {
+                0: {
+                    "baseline": 100.0,
+                    "unfolded_level": 200.0,
+                    "baseline_std": 10.0,
+                }
+            }
+        }
         pf.eventfitting_status = {0: True}
         return pf
 
@@ -606,18 +718,28 @@ class TestGetPlotFeatures(unittest.TestCase):
     def test_unlabeled_peak_not_in_filtered(self):
         """filtered==0 → peak_loc NOT added to peaks_filtered."""
         pf = _make_pf(**{"Plot Features": "All"})
-        pf.sublevel_metadata = {0: {0: {
-            "right_ips":   np.array([np.nan, 55.0, np.nan]),
-            "peak_id":     [None, 1, None],
-            "left_base":   np.array([np.nan, 180.0, np.nan]),
-            "right_base":  np.array([np.nan, 180.0, np.nan]),
-            "peak_loc":    np.array([np.nan, 50.0, np.nan]),
-            "peak_height": np.array([np.nan, 600.0, np.nan]),
-            "filtered":    [None, 0, None],   # ← type 0, should be excluded
-        }}}
-        pf.event_metadata = {0: {0: {
-            "baseline": 100.0, "unfolded_level": 200.0, "baseline_std": 10.0,
-        }}}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "right_ips": np.array([np.nan, 55.0, np.nan]),
+                    "peak_id": [None, 1, None],
+                    "left_base": np.array([np.nan, 180.0, np.nan]),
+                    "right_base": np.array([np.nan, 180.0, np.nan]),
+                    "peak_loc": np.array([np.nan, 50.0, np.nan]),
+                    "peak_height": np.array([np.nan, 600.0, np.nan]),
+                    "filtered": [None, 0, None],  # ← type 0, should be excluded
+                }
+            }
+        }
+        pf.event_metadata = {
+            0: {
+                0: {
+                    "baseline": 100.0,
+                    "unfolded_level": 200.0,
+                    "baseline_std": 10.0,
+                }
+            }
+        }
         pf.eventfitting_status = {0: True}
         peaks_filtered, *_ = pf.get_plot_features(0, 0)
         self.assertEqual(peaks_filtered, [])
@@ -625,18 +747,28 @@ class TestGetPlotFeatures(unittest.TestCase):
     def test_minus1_peak_not_in_filtered(self):
         """filtered==-1 → also excluded from peaks_filtered."""
         pf = _make_pf(**{"Plot Features": "All"})
-        pf.sublevel_metadata = {0: {0: {
-            "right_ips":   np.array([np.nan, 55.0, np.nan]),
-            "peak_id":     [None, 1, None],
-            "left_base":   np.array([np.nan, 180.0, np.nan]),
-            "right_base":  np.array([np.nan, 180.0, np.nan]),
-            "peak_loc":    np.array([np.nan, 50.0, np.nan]),
-            "peak_height": np.array([np.nan, 600.0, np.nan]),
-            "filtered":    [None, -1, None],
-        }}}
-        pf.event_metadata = {0: {0: {
-            "baseline": 100.0, "unfolded_level": 200.0, "baseline_std": 10.0,
-        }}}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "right_ips": np.array([np.nan, 55.0, np.nan]),
+                    "peak_id": [None, 1, None],
+                    "left_base": np.array([np.nan, 180.0, np.nan]),
+                    "right_base": np.array([np.nan, 180.0, np.nan]),
+                    "peak_loc": np.array([np.nan, 50.0, np.nan]),
+                    "peak_height": np.array([np.nan, 600.0, np.nan]),
+                    "filtered": [None, -1, None],
+                }
+            }
+        }
+        pf.event_metadata = {
+            0: {
+                0: {
+                    "baseline": 100.0,
+                    "unfolded_level": 200.0,
+                    "baseline_std": 10.0,
+                }
+            }
+        }
         pf.eventfitting_status = {0: True}
         peaks_filtered, *_ = pf.get_plot_features(0, 0)
         self.assertEqual(peaks_filtered, [])
@@ -645,6 +777,7 @@ class TestGetPlotFeatures(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Noop overrides
 # ---------------------------------------------------------------------------
+
 
 class TestNoopOverrides(unittest.TestCase):
     def setUp(self):
