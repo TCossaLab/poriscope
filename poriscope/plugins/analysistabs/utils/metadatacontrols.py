@@ -399,7 +399,9 @@ class MetadataControls(QWidget):
         filter_layout.addWidget(self.filter_add_button)
         filter_layout.addWidget(self.filter_info_button)
         filter_layout.addWidget(self.filter_delete_button)
-        filter_layout.addStretch(1) # This keeps the label aligned left and the rest of the horizontal space empty
+        filter_layout.addStretch(
+            1
+        )  # This keeps the label aligned left and the rest of the horizontal space empty
 
         self.filter_raw_label = self.createLabel(self.groupBox, 12, "RAW")
         self.filter_raw_label.setAlignment(Qt.AlignCenter)
@@ -407,7 +409,9 @@ class MetadataControls(QWidget):
         filter_layout.addWidget(self.filter_raw_label)
 
         # Adding the horizontal layout to the grid
-        group_layout.addLayout(filter_layout, 0, 2, 1, 1) # Adds the label at row 0, column 2
+        group_layout.addLayout(
+            filter_layout, 0, 2, 1, 1
+        )  # Adds the label at row 0, column 2
 
         self.save_filter_button = self.createButton(
             self.groupBox, "Save Filter", bold=True
@@ -957,7 +961,6 @@ class MetadataControls(QWidget):
                     else None
                 ),
                 "filter_raw": self.filter_raw_checkbox.isChecked(),
-
             }
 
             if (
