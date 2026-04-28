@@ -1968,6 +1968,30 @@ class MetadataView(MetaView, WalkthroughMixin):
             if i >= labelnum:
                 ax.set_xlabel(r"Time ($\mu s$)")
 
+        # Build a single shared legend from all axes, deduplicating by label
+        all_handles = {}
+        for ax in self.figure.get_axes():
+            for handle, label in zip(*ax.get_legend_handles_labels()):
+                if label not in all_handles:
+                    all_handles[label] = handle
+
+        if all_handles:
+            num_entries = len(all_handles)
+            fig_height = self.figure.get_size_inches()[1]
+            entries_at_default = fig_height / 0.20
+            if num_entries <= entries_at_default:
+                font_size = 10
+            else:
+                font_size = max(6, int(10 * entries_at_default / num_entries))
+
+            self.figure.legend(
+                list(all_handles.values()),
+                list(all_handles.keys()),
+                loc="outside right upper",
+                frameon=True,
+                fontsize=font_size,
+            )
+
         self.figure.set_constrained_layout(True)
         self.canvas.draw()
         self._commit_cache()
