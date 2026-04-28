@@ -26,6 +26,7 @@ from poriscope.plugins.analysistabs.utils.walkthrough import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def parent_widget(qtbot):
     w = QWidget()
@@ -58,6 +59,7 @@ def step_dialog(parent_widget, overlay, qtbot):
 # ---------------------------------------------------------------------------
 # Overlay
 # ---------------------------------------------------------------------------
+
 
 class TestOverlay:
     def test_init_geometry_matches_parent(self, overlay, parent_widget):
@@ -108,6 +110,7 @@ class TestOverlay:
 # StepDialog – initialization
 # ---------------------------------------------------------------------------
 
+
 class TestStepDialogInit:
     def test_starts_at_step_zero(self, step_dialog):
         assert step_dialog.current == 0
@@ -137,6 +140,7 @@ class TestStepDialogInit:
 # ---------------------------------------------------------------------------
 # StepDialog – navigation
 # ---------------------------------------------------------------------------
+
 
 class TestStepDialogNavigation:
     def test_next_step_advances_current(self, step_dialog):
@@ -189,6 +193,7 @@ class TestStepDialogNavigation:
 # StepDialog – force_close
 # ---------------------------------------------------------------------------
 
+
 class TestStepDialogForceClose:
     def test_force_close_emits_done_signal(self, step_dialog, qtbot):
         with qtbot.waitSignal(step_dialog.done_signal, timeout=1000):
@@ -202,6 +207,7 @@ class TestStepDialogForceClose:
 # ---------------------------------------------------------------------------
 # StepDialog – reposition
 # ---------------------------------------------------------------------------
+
 
 class TestStepDialogReposition:
     def test_reposition_no_crash_with_no_target(self, step_dialog):
@@ -226,6 +232,7 @@ class TestStepDialogReposition:
 # ---------------------------------------------------------------------------
 # IntroDialog
 # ---------------------------------------------------------------------------
+
 
 class TestIntroDialog:
     @pytest.fixture
@@ -260,6 +267,7 @@ class TestIntroDialog:
 # ---------------------------------------------------------------------------
 # start_walkthrough
 # ---------------------------------------------------------------------------
+
 
 class TestStartWalkthrough:
     def test_returns_step_dialog(self, parent_widget, qtbot):

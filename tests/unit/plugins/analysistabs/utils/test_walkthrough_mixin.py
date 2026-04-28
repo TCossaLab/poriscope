@@ -18,6 +18,7 @@ from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMi
 # Minimal concrete implementation
 # ---------------------------------------------------------------------------
 
+
 class ConcreteWalkthrough(WalkthroughMixin, QWidget):
     """Minimal concrete subclass for testing."""
 
@@ -49,13 +50,17 @@ def _make_step(view="MainView", label="Step", desc="Desc", widget_fn=None):
     """Return a single (label, desc, view, widget_fn) tuple."""
     if widget_fn is None:
         mock_w = MagicMock(spec=QWidget)
-        def widget_fn(): return mock_w
+
+        def widget_fn():
+            return mock_w
+
     return (label, desc, view, widget_fn)
 
 
 # ---------------------------------------------------------------------------
 # _init_walkthrough
 # ---------------------------------------------------------------------------
+
 
 class TestInitWalkthrough:
     def test_sets_active_false(self, widget):
@@ -74,6 +79,7 @@ class TestInitWalkthrough:
 # ---------------------------------------------------------------------------
 # launch_walkthrough
 # ---------------------------------------------------------------------------
+
 
 class TestLaunchWalkthrough:
     def test_invalid_view_sets_active_false(self, qtbot):
@@ -110,6 +116,7 @@ class TestLaunchWalkthrough:
 # ---------------------------------------------------------------------------
 # _run_next_walkthrough_step
 # ---------------------------------------------------------------------------
+
 
 class TestRunNextWalkthroughStep:
     def test_index_past_end_sets_inactive(self, widget):
@@ -193,6 +200,7 @@ class TestRunNextWalkthroughStep:
         w._walkthrough_index = 0
 
         captured = []
+
         def fake_start(parent, s):
             captured.extend(s)
             mock_dialog = MagicMock()
@@ -214,6 +222,7 @@ class TestRunNextWalkthroughStep:
 # _reposition_dialog – fallback branches (lines 240, 253, 265)
 # ---------------------------------------------------------------------------
 
+
 class TestRepositionDialogFallbacks:
     """
     Force each fallback branch by controlling what QRect.contains returns.
@@ -223,6 +232,7 @@ class TestRepositionDialogFallbacks:
 
     def _setup(self, qtbot):
         from poriscope.plugins.analysistabs.utils.walkthrough import Overlay, StepDialog
+
         parent = ConcreteWalkthrough()
         parent.resize(800, 600)
         qtbot.addWidget(parent)
@@ -237,7 +247,9 @@ class TestRepositionDialogFallbacks:
         parent.walkthrough_dialog = dialog
         return parent, dialog
 
-    @pytest.mark.skip(reason="Qt object lifetime makes this unreliable across platforms")
+    @pytest.mark.skip(
+        reason="Qt object lifetime makes this unreliable across platforms"
+    )
     def test_candidate_fits_calls_move_and_returns(self, qtbot):
         """Primary candidate fits → dialog.move(pos) called (lines 240-241).
         Parent is enormous so 'right of widget' candidate fits inside window_rect."""
@@ -253,7 +265,7 @@ class TestRepositionDialogFallbacks:
         # Small target widget positioned near left edge so 'right' candidate fits
         target = QWidget(parent)
         target.resize(50, 50)
-        target.move(10, 1500)   # vertically centred so above/below also fits
+        target.move(10, 1500)  # vertically centred so above/below also fits
         target.show()
 
         overlay = Overlay(parent)
@@ -281,7 +293,9 @@ class TestRepositionDialogFallbacks:
 
         assert len(move_calls) >= 1
 
-    @pytest.mark.skip(reason="Qt object lifetime makes this unreliable across platforms")
+    @pytest.mark.skip(
+        reason="Qt object lifetime makes this unreliable across platforms"
+    )
     def test_fallback_below_branch(self, qtbot):
         """All candidates fail, fallback_below fits → lines 253-254 hit."""
         parent, dialog = self._setup(qtbot)
@@ -298,9 +312,9 @@ class TestRepositionDialogFallbacks:
         def fake_contains(self_rect, other):
             call_count[0] += 1
             if call_count[0] <= 4:
-                return False   # candidates fail
+                return False  # candidates fail
             if call_count[0] == 5:
-                return True    # fallback_below succeeds
+                return True  # fallback_below succeeds
             return False
 
         with patch.object(QRect, "contains", fake_contains):
@@ -322,9 +336,9 @@ class TestRepositionDialogFallbacks:
         def fake_contains(self_rect, other):
             call_count[0] += 1
             if call_count[0] <= 5:
-                return False   # candidates + below fail
+                return False  # candidates + below fail
             if call_count[0] == 6:
-                return True    # fallback_above succeeds
+                return True  # fallback_above succeeds
             return False
 
         with patch.object(QRect, "contains", fake_contains):
@@ -353,6 +367,7 @@ class TestRepositionDialogFallbacks:
 # ---------------------------------------------------------------------------
 # check_next_view auto-advance (line 128-131) and pseudo while-loop (line 197)
 # ---------------------------------------------------------------------------
+
 
 class TestCheckNextViewAndPseudo:
     def test_check_next_view_auto_advances_on_view_change(self, qtbot):
@@ -408,14 +423,14 @@ class TestCheckNextViewAndPseudo:
         qtbot.addWidget(real_widget)
 
         steps = [
-            _make_step("MainView",  label="S0", widget_fn=lambda: real_widget),
+            _make_step("MainView", label="S0", widget_fn=lambda: real_widget),
             _make_step("OtherView", label="S1", widget_fn=lambda: real_widget),
-            _make_step("MainView",  label="S2", widget_fn=lambda: real_widget),
+            _make_step("MainView", label="S2", widget_fn=lambda: real_widget),
         ]
         w = ConcreteWalkthrough(view="MainView", steps=steps)
         qtbot.addWidget(w)
         w._global_walkthrough_steps = steps
-        w._walkthrough_index = 1   # already past S0, now pointing at OtherView
+        w._walkthrough_index = 1  # already past S0, now pointing at OtherView
 
         dialog = MagicMock()
         dialog._was_completed = False
@@ -433,6 +448,7 @@ class TestCheckNextViewAndPseudo:
 # ---------------------------------------------------------------------------
 # _advance_walkthrough_index
 # ---------------------------------------------------------------------------
+
 
 class TestAdvanceWalkthroughIndex:
     def test_increments_index(self, widget):
@@ -459,6 +475,7 @@ class TestAdvanceWalkthroughIndex:
 # ---------------------------------------------------------------------------
 # _handle_walkthrough_done
 # ---------------------------------------------------------------------------
+
 
 class TestHandleWalkthroughDone:
     def _make_mock_dialog(self, was_completed=True):
@@ -579,6 +596,7 @@ class TestHandleWalkthroughDone:
 # show_walkthrough_intro
 # ---------------------------------------------------------------------------
 
+
 class TestShowWalkthroughIntro:
     def test_skips_if_already_active(self, widget):
         widget._walkthrough_active = True
@@ -616,6 +634,7 @@ class TestShowWalkthroughIntro:
 # get_current_view / get_walkthrough_steps – abstract method contract
 # ---------------------------------------------------------------------------
 
+
 class TestAbstractMethods:
     def test_get_current_view_raises_if_not_implemented(self):
         mixin = WalkthroughMixin()
@@ -632,12 +651,14 @@ class TestAbstractMethods:
 # _reposition_dialog
 # ---------------------------------------------------------------------------
 
+
 class TestRepositionDialog:
     def _make_dialog_with_steps(self, widget_instance, qtbot):
         from poriscope.plugins.analysistabs.utils.walkthrough import (
             Overlay,
             StepDialog,
         )
+
         overlay = Overlay(widget_instance)
         qtbot.addWidget(overlay)
         steps = [("Title", "Msg", widget_instance)]
@@ -670,6 +691,7 @@ class TestRepositionDialog:
 # ---------------------------------------------------------------------------
 # _force_close_walkthrough_dialog
 # ---------------------------------------------------------------------------
+
 
 class TestForceCloseWalkthroughDialog:
     def test_no_dialog_no_crash(self, widget):
