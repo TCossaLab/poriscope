@@ -748,7 +748,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             ]
             channels = [channels for channels in experiments_and_channels.values()]
 
-            for exp_name, exp_id in zip(experiments, experiments_and_channels.keys()):
+            for exp_id, exp_name in zip(experiments, experiments_and_channels.keys()):
                 if exp_id is None:
                     raise KeyError(f"Could not find experiment ID(s) for: {exp_name}")
 
@@ -917,7 +917,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             ]
             channels = [channels for channels in experiments_and_channels.values()]
 
-            for exp_name, exp_id in zip(experiments, experiments_and_channels.keys()):
+            for exp_id, exp_name in zip(experiments, experiments_and_channels.keys()):
                 if exp_id is None:
                     raise KeyError(f"Could not find experiment ID(s) for: {exp_name}")
 

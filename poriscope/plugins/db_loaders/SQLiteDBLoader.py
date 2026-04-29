@@ -60,6 +60,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: a prompt that gives an LLM context for the database and  how to query it
         :rtype: str
         """
+        conn = None
+        cursor = None
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -111,7 +113,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             schema = cursor.fetchall()
             metadata += "Schema:\n" + "\n".join([s[0] for s in schema]) + "\n\n"
 
-            # Close the connection
             return metadata
         except sqlite3.Error as e:
             self.logger.error(
@@ -196,21 +197,23 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: List of channel IDs.
         :rtype: Optional[List[int]]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    query = """
-                    SELECT channels.channel_id
-                    FROM channels
-                    JOIN experiments ON channels.experiment_id = experiments.id
-                    WHERE experiments.name = ?;
-                    """
-                    cursor.execute(query, (experiment,))
-                    channels = cursor.fetchall()
-                    if channels:
-                        return [int(channel[0]) for channel in channels]
-                    else:
-                        return None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = """
+            SELECT channels.channel_id
+            FROM channels
+            JOIN experiments ON channels.experiment_id = experiments.id
+            WHERE experiments.name = ?;
+            """
+            cursor.execute(query, (experiment,))
+            channels = cursor.fetchall()
+            if channels:
+                return [int(channel[0]) for channel in channels]
+            else:
+                return None
         except sqlite3.Error as e:
             self.logger.error(
                 f"Database error getting channels available for experiment {experiment}: {e}"
@@ -238,36 +241,38 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: event count matching the conditions
         :rtype: int
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    if experiment is None:
-                        query = """
-                        SELECT COUNT(*)
-                        FROM events
-                        """
-                    elif experiment is not None and channel is None:
-                        query = """
-                                SELECT COUNT(*)
-                                FROM events
-                                JOIN experiments ON events.experiment_id = experiments.id
-                                WHERE experiments.name = ?;
-                                """
-                    elif experiment is not None and channel is not None:
-                        query = """
-                                SELECT COUNT(*)
-                                FROM events
-                                JOIN experiments ON events.experiment_id = experiments.id
-                                WHERE experiments.name = ?
-                                AND events.channel_id = ?;
-                                """
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
 
-                    cursor.execute(query, (experiment, channel))
-                    num_events = cursor.fetchone()
-                    if num_events:
-                        return num_events[0]
-                    else:
-                        return 0
+            if experiment is None:
+                query = "SELECT COUNT(*) FROM events"
+                cursor.execute(query)
+            elif experiment is not None and channel is None:
+                query = """
+                    SELECT COUNT(*)
+                    FROM events
+                    JOIN experiments ON events.experiment_id = experiments.id
+                    WHERE experiments.name = ?;
+                """
+                cursor.execute(query, (experiment,))
+            elif experiment is not None and channel is not None:
+                query = """
+                    SELECT COUNT(*)
+                    FROM events
+                    JOIN experiments ON events.experiment_id = experiments.id
+                    WHERE experiments.name = ?
+                    AND events.channel_id = ?;
+                """
+                cursor.execute(query, (experiment, channel))
+
+            num_events = cursor.fetchone()
+            if num_events:
+                return num_events[0]
+            else:
+                return 0
         except sqlite3.Error as e:
             self.logger.error(
                 f"Database error getting event counts for experiment {experiment} and channel {channel}: {e}"
@@ -290,20 +295,22 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: The units of the column, empty string is units is NULL
         :rtype: Optional[str]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    query = """
-                    SELECT units
-                    FROM columns
-                    WHERE name = ?;
-                    """
-                    cursor.execute(query, (column_name,))
-                    result = cursor.fetchone()
-                    if result and result[0] is not None:
-                        return result[0]
-                    else:
-                        return ""
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = """
+            SELECT units
+            FROM columns
+            WHERE name = ?;
+            """
+            cursor.execute(query, (column_name,))
+            result = cursor.fetchone()
+            if result and result[0] is not None:
+                return result[0]
+            else:
+                return ""
         except sqlite3.Error as e:
             self.logger.error(
                 f"Database error getting units for column {column_name}: {e}"
@@ -331,16 +338,19 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         query_stub = ""
         if table is not None:
             query_stub = f"""WHERE table_name='{table}'"""
+
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    query = f"""SELECT name FROM columns {query_stub};"""
-                    cursor.execute(query)
-                    result = cursor.fetchall()
-                    if result:
-                        return [column[0] for column in result]
-                    else:
-                        return None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = f"""SELECT name FROM columns {query_stub};"""
+            cursor.execute(query)
+            result = cursor.fetchall()
+            if result:
+                return [column[0] for column in result]
+            else:
+                return None
         except sqlite3.Error as e:
             self.logger.warning(
                 f"Database error fetching columns for table {table}: {e}"
@@ -361,20 +371,18 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: List of table names.
         :rtype: Optional[List[str]]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    query = "SELECT name FROM sqlite_master WHERE type = 'table';"
-                    cursor.execute(query)
-                    result = cursor.fetchall()
-                    if result:
-                        return [
-                            table[0]
-                            for table in result
-                            if table[0] != "sqlite_sequence"
-                        ]
-                    else:
-                        return None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = "SELECT name FROM sqlite_master WHERE type = 'table';"
+            cursor.execute(query)
+            result = cursor.fetchall()
+            if result:
+                return [table[0] for table in result if table[0] != "sqlite_sequence"]
+            else:
+                return None
         except sqlite3.Error as e:
             self.logger.warning(
                 f"Database error fetching table names from database: {e}"
@@ -398,16 +406,18 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
         **Purpose:** Retrieve the names of the table in which the given column is found, or None on failure
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    query = "SELECT table_name FROM columns WHERE name = ?;"
-                    cursor.execute(query, (column,))
-                    result = cursor.fetchone()
-                    if result:
-                        return result[0]
-                    else:
-                        return None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = "SELECT table_name FROM columns WHERE name = ?;"
+            cursor.execute(query, (column,))
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+            else:
+                return None
         except sqlite3.Error as e:
             self.logger.warning(
                 f"Database error fetching table corresponding to column {column}: {e}"
@@ -635,23 +645,25 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: sampling rate for the specific expreiment-channel combination, or None on failure
         :rtype: Optional[float]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    query = """
-                    SELECT ch.samplerate
-                    FROM channels ch
-                    JOIN experiments exp ON ch.experiment_id = exp.id
-                    WHERE exp.name = ? AND ch.channel_id = ?;
-                    """
-                    cursor.execute(query, (experiment, channel))
-                    result = cursor.fetchone()
-                    if result:
-                        return float(result[0])
-                    else:
-                        raise ValueError(
-                            f"Unable to extract samplerate for experiment {experiment} and channel {channel}. Double check your values"
-                        )
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = """
+            SELECT ch.samplerate
+            FROM channels ch
+            JOIN experiments exp ON ch.experiment_id = exp.id
+            WHERE exp.name = ? AND ch.channel_id = ?;
+            """
+            cursor.execute(query, (experiment, channel))
+            result = cursor.fetchone()
+            if result:
+                return float(result[0])
+            else:
+                raise ValueError(
+                    f"Unable to extract samplerate for experiment {experiment} and channel {channel}. Double check your values"
+                )
         except sqlite3.Error as e:
             self.logger.warning(
                 f"Database error fetching sampling rate for channel {channel} for experiment {experiment}: {e}"
@@ -742,18 +754,18 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: A dataframe containing the requested event data as columns or None on failure
         :rtype: Optional[pd.DataFrame]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(query)
-                result = cursor.fetchall()
-                if result:
-                    column_names = [
-                        description[0] for description in cursor.description
-                    ]
-                    return pd.DataFrame(result, columns=column_names)
-                else:
-                    return None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            result = cursor.fetchall()
+            if result:
+                column_names = [description[0] for description in cursor.description]
+                return pd.DataFrame(result, columns=column_names)
+            else:
+                return None
         except sqlite3.Error as e:
             self.logger.warning(f"Database error executing query {query}: {e}")
             return None
@@ -778,17 +790,19 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
         :rtype: Generator[pd.DataFrame, None, None]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(query)
-                column_names = [description[0] for description in cursor.description]
-                while True:
-                    result = cursor.fetchone()
-                    if result is None:
-                        break
-                    else:
-                        yield pd.DataFrame([result], columns=column_names)
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            column_names = [description[0] for description in cursor.description]
+            while True:
+                result = cursor.fetchone()
+                if result is None:
+                    break
+                else:
+                    yield pd.DataFrame([result], columns=column_names)
         except sqlite3.Error as e:
             self.logger.warning(f"Database error executing query {query}: {e}")
             return None
@@ -814,62 +828,64 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: a generator that returns primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, samplerate, and three numpy arrays with raw event data, filtered event data, and fitted event data
         :rtype: Generator[Dict[str,Union[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]], bool, None]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    cursor.execute(query)
-                    abort = False
-                    while True:
-                        result = cursor.fetchone()
-                        if result is None:
-                            break
-                        else:
-                            (
-                                db_id,
-                                event_id,
-                                channel_id,
-                                experiment_id,
-                                data_format,
-                                samplerate,
-                                padding_before,
-                                padding_after,
-                                raw_data,
-                                filtered_data,
-                                fit_data,
-                            ) = result
-                            try:
-                                abort = (
-                                    yield int(db_id),
-                                    int(experiment_id),
-                                    int(channel_id),
-                                    int(event_id),
-                                    float(samplerate),
-                                    int(padding_before),
-                                    int(padding_after),
-                                    cast(
-                                        npt.NDArray[np.float64],
-                                        np.frombuffer(raw_data, dtype=data_format),
-                                    ),
-                                    cast(
-                                        npt.NDArray[np.float64],
-                                        np.frombuffer(filtered_data, dtype=data_format),
-                                    ),
-                                    cast(
-                                        npt.NDArray[np.float64],
-                                        np.frombuffer(fit_data, dtype=data_format),
-                                    ),
-                                )
-                            except Exception:
-                                self.logger.info(
-                                    "Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
-                                )
-                                continue
-                            abort = bool(abort)
-                            if abort is True:
-                                break
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            abort = False
+            while True:
+                result = cursor.fetchone()
+                if result is None:
+                    break
+                else:
+                    (
+                        db_id,
+                        event_id,
+                        channel_id,
+                        experiment_id,
+                        data_format,
+                        samplerate,
+                        padding_before,
+                        padding_after,
+                        raw_data,
+                        filtered_data,
+                        fit_data,
+                    ) = result
+                    try:
+                        abort = (
+                            yield int(db_id),
+                            int(experiment_id),
+                            int(channel_id),
+                            int(event_id),
+                            float(samplerate),
+                            int(padding_before),
+                            int(padding_after),
+                            cast(
+                                npt.NDArray[np.float64],
+                                np.frombuffer(raw_data, dtype=data_format),
+                            ),
+                            cast(
+                                npt.NDArray[np.float64],
+                                np.frombuffer(filtered_data, dtype=data_format),
+                            ),
+                            cast(
+                                npt.NDArray[np.float64],
+                                np.frombuffer(fit_data, dtype=data_format),
+                            ),
+                        )
+                    except Exception:
+                        self.logger.info(
+                            "Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
+                        )
+                        continue
+                    abort = bool(abort)
                     if abort is True:
-                        self.logger.info("Generator aborted")
-                        return
+                        break
+            if abort is True:
+                self.logger.info("Generator aborted")
+                return
         except sqlite3.Error as e:
             self.logger.warning(f"Database error executing query {query}: {e}")
             return
