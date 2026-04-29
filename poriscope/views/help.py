@@ -26,25 +26,155 @@
 import logging
 import os
 import sys
+import webbrowser
 
-from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QSize, Qt
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QRectF, Qt
+from PySide6.QtGui import QCursor, QFont, QImage, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QSpacerItem,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from poriscope.utils.LogDecorator import log
 
+_ICON_PX = 64  # logical icon size
+_RENDER_PX = _ICON_PX * 2  # render at 2× for crisp display
 
-class HelpCentreMain(QWidget):
+
+class LinkCard(QFrame):
+    """
+    Clickable card that opens a URL on click.
+
+    initial_bg='black'  -> resting: black bg / white text; hover: white bg / black text.
+    initial_bg='white'  -> resting: white bg / black text; hover: black bg / white text.
+
+    Supply two icon paths so the icon colour matches the card bg at all times.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        url: str,
+        icon_path_normal: str,
+        icon_path_hover: str,
+        initial_bg: str = "black",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._url = url
+        self._initial_bg = initial_bg
+        self._icon_path_normal = icon_path_normal
+        self._icon_path_hover = icon_path_hover
+
+        self.setFixedHeight(150)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setCursor(QCursor(Qt.PointingHandCursor))
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(24, 18, 24, 18)
+        row.setSpacing(18)
+
+        self._icon_label = QLabel()
+        self._icon_label.setFixedSize(_ICON_PX, _ICON_PX)
+        self._icon_label.setAlignment(Qt.AlignCenter)
+        self._icon_label.setStyleSheet("background: transparent; border: none;")
+        row.addWidget(self._icon_label)
+
+        col = QVBoxLayout()
+        col.setSpacing(6)
+
+        self._title_label = QLabel(title)
+        self._title_label.setFont(QFont("Arial", 13, QFont.Bold))
+        self._title_label.setWordWrap(True)
+        self._title_label.setStyleSheet("background: transparent; border: none;")
+
+        self._url_label = QLabel(url)
+        self._url_label.setFont(QFont("Arial", 9))
+        self._url_label.setWordWrap(True)
+        self._url_label.setStyleSheet("background: transparent; border: none;")
+
+        col.addWidget(self._title_label)
+        col.addWidget(self._url_label)
+        col.addStretch()
+        row.addLayout(col)
+
+        self._refresh(hovered=False)
+        self.installEventFilter(self)
+
+    def _load_icon(self, path: str):
+        if not path or not os.path.exists(path):
+            return
+
+        ext = os.path.splitext(path)[1].lower()
+
+        if ext == ".svg":
+            renderer = QSvgRenderer(path)
+            if not renderer.isValid():
+                return
+            image = QImage(_RENDER_PX, _RENDER_PX, QImage.Format_ARGB32)
+            image.fill(0)  # transparent
+            painter = QPainter(image)
+            renderer.render(painter, QRectF(0, 0, _RENDER_PX, _RENDER_PX))
+            painter.end()
+            pixmap = QPixmap.fromImage(image)
+        else:
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                return
+            pixmap = pixmap.scaled(
+                _RENDER_PX, _RENDER_PX,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+
+        # Scale down to logical size but mark as high-DPI so Qt renders crisp
+        pixmap.setDevicePixelRatio(2.0)
+        self._icon_label.setPixmap(pixmap)
+
+    def _refresh(self, hovered: bool):
+        if self._initial_bg == "black":
+            bg     = "white" if hovered else "black"
+            fg     = "black" if hovered else "white"
+            url_fg = "#333"  if hovered else "#ccc"
+        else:
+            bg     = "black" if hovered else "white"
+            fg     = "white" if hovered else "black"
+            url_fg = "#ccc"  if hovered else "#555"
+
+        icon = self._icon_path_hover if hovered else self._icon_path_normal
+
+        self.setStyleSheet(
+            f"LinkCard {{ background-color: {bg}; border-radius: 12px;"
+            f" border: 2px solid black; }}"
+        )
+        self._title_label.setStyleSheet(
+            f"background: transparent; border: none; color: {fg};"
+        )
+        self._url_label.setStyleSheet(
+            f"background: transparent; border: none; color: {url_fg};"
+            " text-decoration: underline;"
+        )
+        self._load_icon(icon)
+
+    def eventFilter(self, obj, event):
+        if obj is self:
+            if event.type() == QEvent.Enter:
+                self._refresh(hovered=True)
+            elif event.type() == QEvent.Leave:
+                self._refresh(hovered=False)
+            elif event.type() == QEvent.MouseButtonRelease:
+                webbrowser.open(self._url)
+        return super().eventFilter(obj, event)
+
+
+class HelpCentre(QWidget):
     logger = logging.getLogger(__name__)
 
     def __init__(self):
@@ -56,184 +186,78 @@ class HelpCentreMain(QWidget):
 
     @log(logger=logger)
     def setupUi(self):
-        self.setObjectName("HelpCentreMain")
-        self.setStyleSheet("padding: 20px;")
+        self.setMinimumSize(900, 400)
+        self.resize(1100, 400)
+        self.setStyleSheet("HelpCentre { padding: 20px; }")
 
         main_layout = QVBoxLayout(self)
         self.setLayout(main_layout)
 
-        # Label
+        # Title
         self.help_centre_label = QLabel(self)
         self.help_centre_label.setObjectName("helpCentre_label")
-        help_centre_font = QFont()
-        help_centre_font.setPointSize(20)
-        self.help_centre_label.setFont(help_centre_font)
+        title_font = QFont()
+        title_font.setPointSize(20)
+        self.help_centre_label.setFont(title_font)
         main_layout.addWidget(self.help_centre_label, alignment=Qt.AlignLeft)
 
-        # Spacer item for top margin
         main_layout.addSpacerItem(
             QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
         )
 
-        # Create button layouts
-        top_button_layout = QHBoxLayout()
-        bottom_button_layout = QHBoxLayout()
+        # Cards
+        # 1 (Getting Started):    black bg -> hovers white
+        # 2 (Documentation):      white bg -> hovers black
+        # 3 (Report a Problem):   black bg -> hovers white
+        cards_layout = QHBoxLayout()
+        cards_layout.setSpacing(16)
 
-        # Add buttons to the layouts with spacers for spacing
-        top_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.getting_started_card = LinkCard(
+            title="Tutorial Series",
+            url="https://youtube.com/@tcossalab?si=A8Wy8yHOXiwSXu5F",
+            icon_path_normal=os.path.join(self.icon_path, "rocket-white.svg"),
+            icon_path_hover=os.path.join(self.icon_path, "rocket-black.svg"),
+            initial_bg="black",
         )
-        self.getting_started_button = self.create_push_button(
-            "gettingStarted_pushButton",
-            12,
-            "Getting Started",
-            os.path.join(self.icon_path, "rocket-white.svg"),
-            os.path.join(self.icon_path, "rocket-black.svg"),
-            "black",
+        self.tutorial_card = LinkCard(
+            title="Documentation",
+            url="https://tcossalab.github.io/poriscope/",
+            icon_path_normal=os.path.join(self.icon_path, "documentation-black.png"),
+            icon_path_hover=os.path.join(self.icon_path, "documentation-white.png"),
+            initial_bg="white",
         )
-        top_button_layout.addWidget(self.getting_started_button)
-        top_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.report_card = LinkCard(
+            title="Report a Problem",
+            url="https://github.com/TCossaLab/poriscope/issues/new/choose",
+            icon_path_normal=os.path.join(self.icon_path, "report-white.png"),
+            icon_path_hover=os.path.join(self.icon_path, "report-black.png"),
+            initial_bg="black",
         )
-        self.documentation_button = self.create_push_button(
-            "documentation_pushButton",
-            12,
-            "Documentation",
-            os.path.join(self.icon_path, "documentation-black.png"),
-            os.path.join(self.icon_path, "documentation-white.png"),
-            "white",
-        )
-        top_button_layout.addWidget(self.documentation_button)
-        top_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        )
-        self.adding_plugin_button = self.create_push_button(
-            "addingPlugin_pushButton",
-            12,
-            "Adding A Plugin",
-            os.path.join(self.icon_path, "plugin-white.png"),
-            os.path.join(self.icon_path, "plugin-black.png"),
-            "black",
-        )
-        top_button_layout.addWidget(self.adding_plugin_button)
-        top_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        )
+        cards_layout.addWidget(self.getting_started_card, stretch=1)
+        cards_layout.addWidget(self.tutorial_card, stretch=1)
+        cards_layout.addWidget(self.report_card, stretch=1)
+        main_layout.addLayout(cards_layout)
 
-        bottom_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        )
-        self.building_plugin_button = self.create_push_button(
-            "buildingPlugin_pushButton",
-            12,
-            "Building A Plugin",
-            os.path.join(self.icon_path, "building-black.png"),
-            os.path.join(self.icon_path, "building-white.png"),
-            "white",
-        )
-        bottom_button_layout.addWidget(self.building_plugin_button)
-        bottom_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        )
-        self.error_codes_button = self.create_push_button(
-            "errorCodes_pushButton",
-            12,
-            "Error Codes",
-            os.path.join(self.icon_path, "error-white.png"),
-            os.path.join(self.icon_path, "error-black.png"),
-            "black",
-        )
-        bottom_button_layout.addWidget(self.error_codes_button)
-        bottom_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        )
-        self.report_problem_button = self.create_push_button(
-            "reportProblem_pushButton",
-            12,
-            "Report A Problem",
-            os.path.join(self.icon_path, "report-black.png"),
-            os.path.join(self.icon_path, "report-white.png"),
-            "white",
-        )
-        bottom_button_layout.addWidget(self.report_problem_button)
-        bottom_button_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        )
-
-        # Add button layouts to the main layout
-        main_layout.addLayout(top_button_layout)
         main_layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
+            QSpacerItem(0, 12, QSizePolicy.Minimum, QSizePolicy.Fixed)
         )
-        main_layout.addLayout(bottom_button_layout)
+
+        self.paper_card = LinkCard(
+            title="Poriscope: A Configurable Pipeline for Nanopore Data Analysis",
+            url="https://openresearchsoftware.metajnl.com/articles/10.5334/jors.703",
+            icon_path_normal="",
+            icon_path_hover="",
+            initial_bg="white",
+        )
+        self.paper_card.setFixedHeight(80)
+        main_layout.addWidget(self.paper_card)
+
         main_layout.addSpacerItem(
             QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
         )
 
         self.retranslateUi()
         QMetaObject.connectSlotsByName(self)
-
-    @log(logger=logger)
-    def create_push_button(
-        self, object_name, font_size, text, icon_path, hover_icon_path, initial_color
-    ):
-        button = QPushButton(self)
-        button.setObjectName(object_name)
-        button_font = QFont()
-        button_font.setPointSize(font_size)
-        button.setFont(button_font)
-
-        icon = QIcon(icon_path)
-        button.setIcon(icon)
-        button.setIconSize(QSize(64, 64))
-
-        if initial_color == "black":
-            style_sheet = "background-color: black; color: white; border-radius: 10px; border: 2px solid black; padding: 10px;"
-        else:
-            style_sheet = "background-color: white; color: black; border-radius: 10px; border: 2px solid black; padding: 10px;"
-
-        button.setStyleSheet(style_sheet)
-        button.setText(text)
-        button.setFixedSize(271, 151)
-
-        button.installEventFilter(self)
-        button.hover_icon_path = hover_icon_path
-        button.default_icon_path = icon_path
-        button.initial_color = initial_color
-        return button
-
-    @log(logger=logger, debug_only=True)
-    def eventFilter(self, obj, event):
-        if isinstance(obj, QPushButton):
-            if event.type() == QEvent.Enter:
-                self.on_button_hover_enter(obj)
-            elif event.type() == QEvent.Leave:
-                self.on_button_hover_leave(obj)
-        return super().eventFilter(obj, event)
-
-    @log(logger=logger, debug_only=True)
-    def on_button_hover_enter(self, button):
-        button.setIcon(QIcon(button.hover_icon_path))
-        if button.initial_color == "black":
-            button.setStyleSheet(
-                "background-color: white; color: black; border-radius: 10px; border: 2px solid black; padding: 10px;"
-            )
-        else:
-            button.setStyleSheet(
-                "background-color: black; color: white; border-radius: 10px; border: 2px solid black; padding: 10px;"
-            )
-
-    @log(logger=logger, debug_only=True)
-    def on_button_hover_leave(self, button):
-        button.setIcon(QIcon(button.default_icon_path))
-        if button.initial_color == "black":
-            button.setStyleSheet(
-                "background-color: black; color: white; border-radius: 10px; border: 2px solid black; padding: 10px;"
-            )
-        else:
-            button.setStyleSheet(
-                "background-color: white; color: black; border-radius: 10px; border: 2px solid black; padding: 10px;"
-            )
 
     def retranslateUi(self):
         self.setWindowTitle(QCoreApplication.translate("Form", "Help Centre", None))
@@ -242,88 +266,6 @@ class HelpCentreMain(QWidget):
         )
 
 
-class HelpCentre(QWidget):
-    logger = logging.getLogger(__name__)
-
-    def __init__(self):
-        super().__init__()
-        self.setupUi()
-        self.setupViews()
-
-    def setupUi(self):
-        self.setObjectName("Form")
-        self.resize(939, 588)
-        self.setStyleSheet(
-            "padding: 20px;"
-        )  # Set overall background to white and add padding
-
-        self.main_layout = QVBoxLayout(self)
-        self.setLayout(self.main_layout)
-
-        # Create a QStackedWidget for the views
-        self.stacked_widget = QStackedWidget(self)
-        self.main_layout.addWidget(self.stacked_widget)
-
-    @log(logger=logger)
-    def setupViews(self):
-        # Import the views here
-        from poriscope.views.adding_plugin import AddingPlugin
-        from poriscope.views.building_plugin import BuildingPlugin
-        from poriscope.views.documentation import Documentation
-        from poriscope.views.error_codes import ErrorCodes
-        from poriscope.views.getting_started import GettingStarted
-        from poriscope.views.report_problem import ReportProblem
-
-        # Create instances of the views
-        self.help_centre_main_view = HelpCentreMain()
-        self.getting_started_view = GettingStarted()
-        self.documentation_view = Documentation()
-        self.adding_plugin_view = AddingPlugin()
-        self.building_plugin_view = BuildingPlugin()
-        self.error_codes_view = ErrorCodes()
-        self.report_problem_view = ReportProblem()
-
-        # Add the views to the stacked widget
-        self.stacked_widget.addWidget(
-            self.help_centre_main_view
-        )  # Add HelpCentreMain view
-        self.stacked_widget.addWidget(self.getting_started_view)
-        self.stacked_widget.addWidget(self.documentation_view)
-        self.stacked_widget.addWidget(self.adding_plugin_view)
-        self.stacked_widget.addWidget(self.building_plugin_view)
-        self.stacked_widget.addWidget(self.error_codes_view)
-        self.stacked_widget.addWidget(self.report_problem_view)
-
-        # Connect buttons to their respective slots
-        self.help_centre_main_view.getting_started_button.clicked.connect(
-            lambda: self.display_view(1)
-        )
-        self.help_centre_main_view.documentation_button.clicked.connect(
-            lambda: self.display_view(2)
-        )
-        self.help_centre_main_view.adding_plugin_button.clicked.connect(
-            lambda: self.display_view(3)
-        )
-        self.help_centre_main_view.building_plugin_button.clicked.connect(
-            lambda: self.display_view(4)
-        )
-        self.help_centre_main_view.error_codes_button.clicked.connect(
-            lambda: self.display_view(5)
-        )
-        self.help_centre_main_view.report_problem_button.clicked.connect(
-            lambda: self.display_view(6)
-        )
-
-        # Connect signals from Views to go back to the help centre
-        self.adding_plugin_view.go_back_signal.connect(self.display_view)
-        self.getting_started_view.go_back_signal.connect(self.display_view)
-        self.documentation_view.go_back_signal.connect(self.display_view)
-        self.building_plugin_view.go_back_signal.connect(self.display_view)
-        self.error_codes_view.go_back_signal.connect(self.display_view)
-        self.report_problem_view.go_back_signal.connect(self.display_view)
-
-    def display_view(self, index):
-        self.stacked_widget.setCurrentIndex(index)
 
 
 if __name__ == "__main__":
