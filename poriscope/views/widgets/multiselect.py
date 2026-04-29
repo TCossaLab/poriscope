@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+import sys
 
 from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtWidgets import (
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 
@@ -55,18 +57,22 @@ class MultiSelectComboBox(QComboBox):
         self.listWidget.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         # Adding a container widget to hold title and list
-        self.containerWidget = QDialog(None)
-        self.containerWidget.setWindowFlags(
-            self.containerWidget.windowFlags() | Qt.Popup
-        )
-        self.containerWidget.setWindowTitle("Select Channel")
-        self.containerWidget.setStyleSheet(
-            """
-            QDialog {
-                border-radius: 10px;
-            }
-        """
-        )
+        if sys.platform == "linux":
+            self.containerWidget = QWidget(None)
+            self.containerWidget.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        else:
+            self.containerWidget = QDialog(None)
+            self.containerWidget.setWindowFlags(
+                self.containerWidget.windowFlags() | Qt.Popup
+            )
+            self.containerWidget.setWindowTitle("Select Channel")
+        
+        if sys.platform != "linux":
+            self.containerWidget.setStyleSheet("""
+                QDialog {
+                    border-radius: 10px;
+                }
+            """)
 
         # Create a layout for the container
         layout = QVBoxLayout(self.containerWidget)
