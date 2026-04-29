@@ -1171,22 +1171,23 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ):  # do not overlay the same thing twice
                             continue
 
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_metadata_query",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "relay_query",
-                            (),
-                        )
-                        if self.query == "":
-                            return False
+                        if not parameters.get("filter_raw", False):
+                            self.global_signal.emit(
+                                "MetaDatabaseLoader",
+                                loader,
+                                "construct_metadata_query",
+                                (columns, sql_filter, exp_and_ch_arg),
+                                "relay_query",
+                                (),
+                            )
+                            if self.query == "":
+                                return False
 
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
                             "load_metadata",
-                            (columns, sql_filter, exp_and_ch_arg),
+                            (columns, sql_filter, None if parameters.get("filter_raw", False) else exp_and_ch_arg),
                             "update_plot_data",
                             (),
                         )
@@ -1240,21 +1241,22 @@ class MetadataView(MetaView, WalkthroughMixin):
                         )
 
                     elif plot_type in self.event_data_plots:
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_event_data_query",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_query",
-                            (),
-                        )
-                        if self.event_query == "":
-                            return False
+                        if not parameters.get("filter_raw", False):
+                            self.global_signal.emit(
+                                "MetaDatabaseLoader",
+                                loader,
+                                "construct_event_data_query",
+                                (sql_filter, exp_and_ch_arg),
+                                "relay_event_query",
+                                (),
+                            )
+                            if self.event_query == "":
+                                return False
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
                             "load_event_data",
-                            (sql_filter, exp_and_ch_arg),
+                            (sql_filter, None if parameters.get("filter_raw", False) else exp_and_ch_arg),
                             "relay_event_data_generator",
                             (),
                         )
@@ -1811,6 +1813,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         event_index = parameters["event_index"]
         use_raw = parameters.get("raw", False)
+        use_filter_raw = parameters.get("filter_raw", False)
 
         sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
@@ -1844,7 +1847,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 self.plot_events_generator = None
 
             loader = parameters["db_loader"]
-            load_event_data_args = (sql_filter, exp_and_ch)
+            load_event_data_args = (
+                sql_filter,
+                None if use_filter_raw else exp_and_ch
+            )
             self.plot_events_generator_updated = False
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -2335,6 +2341,14 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_text = filter_text
             self._pending_old_filter_name: Optional[str] = None
 
+            # If raw SQL mode, skip construct_metadata_query validation and save directly
+            if parameters.get("filter_raw", False):
+                self.subset_filters[name] = filter_text
+                self.metadatacontrols.filter_comboBox.addItem(name)
+                self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
+                self.metadatacontrols.filter_comboBox.refreshDisplayText()
+                return
+
             self._show_sql_in_display = True
 
             # Validate filter via construct_metadata_query
@@ -2362,24 +2376,20 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _show_filter_info_dialog(self, comboBox, parameters):
-        """
-        Called when clicking the edit button for filters with multiple selection.
-
-        Validates that exactly one filter is selected and delegates to the edit dialog.
-
-        :param comboBox: The combo box containing the list of selectable filters.
-        :type comboBox: MultiSelectComboBox
-        """
         loader = parameters["db_loader"]
         selected = comboBox.getSelectedItems()
         if len(selected) != 1:
             self.logger.warning("Please select exactly one filter to edit.")
             return
 
-        self.show_edit_filter_dialog(selected[0], loader)
+        self.show_edit_filter_dialog(
+            selected[0],
+            loader,
+            filter_raw=parameters.get("filter_raw", False)
+        )
 
     @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str):
+    def show_edit_filter_dialog(self, name: str, loader: str, filter_raw: bool = False):
         """
         Displays the dialog to edit an existing filter, and validates the updated
         SQL filter syntax via construct_metadata_query before saving it.
@@ -2408,7 +2418,15 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_name = new_name
             self._pending_filter_text = new_filter
             self._pending_old_filter_name = name  # important for replacing key
-
+            
+            # If raw SQL mode, skip construct_metadata_query validation and save directly
+            if filter_raw:
+                if self._pending_old_filter_name and self._pending_old_filter_name in self.subset_filters:
+                    del self.subset_filters[self._pending_old_filter_name]
+                self.subset_filters[new_name] = new_filter
+                self.update_filter_name(name, new_name)
+                return
+            
             self._show_sql_in_display = True
             # Emit signal to validate the updated filter
             self.global_signal.emit(
