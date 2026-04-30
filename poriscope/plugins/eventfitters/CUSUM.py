@@ -342,7 +342,6 @@ class CUSUM(MetaEventFitter):
                 raise ValueError("Too Few Levels")
 
             # iteratively remove steps that are too small, from left to right
-            step_size / 2
             minstepflag = False
             while minstepflag is False:
                 minstepflag = True
