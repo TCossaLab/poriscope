@@ -74,7 +74,6 @@ class ClassicCUSUM(CUSUM):
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "σ"}
         return settings
 
-
     @log(logger=logger)
     @override
     def _locate_sublevel_transitions(
