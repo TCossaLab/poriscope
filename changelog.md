@@ -24,6 +24,9 @@
     
 * **New Frontend Plugins: `ProteinView`/`ProteinController`/`ProteinModel`**	 
     * Allows fitting, visualization, and postprocessing of the Mayer model to protein volume and shape factors
+    
+* **New Data Plugins: `ClassicCUSUM`**	 
+    * Reverts Step Size to being a multiple of the local baseline standard deviation instead of an absolute number
 
 ### General Fixes and Improvements:
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
