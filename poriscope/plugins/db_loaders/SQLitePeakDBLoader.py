@@ -75,15 +75,21 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                         JOIN events e
                         ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
-            
+
         valid, debug = self.validate_filter_query(query)
         if valid:
             result = self.query_database_directly(query)
             if len(result) == 0:
-                self.logger.info("Empty dataframe, no features to plot for event", self.__class__.__name__)
+                self.logger.info(
+                    "Empty dataframe, no features to plot for event",
+                    self.__class__.__name__,
+                )
                 return None, None, None, None, None, None
         else:
-            self.logger.debug(f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}", self.__class__.__name__)
+            self.logger.debug(
+                f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}",
+                self.__class__.__name__,
+            )
             return None, None, None, None, None, None
 
         bases = []
@@ -96,19 +102,19 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         # --- 1. Handle Event-Level Data ---
         # Grab the first row for event-level metrics (since they are identical across all rows for this event)
         first_row = result.iloc[0]
-        baseline = first_row['baseline']
-        unfolded = first_row['unfolded_level']
-        std = first_row['baseline_std']
+        baseline = first_row["baseline"]
+        unfolded = first_row["unfolded_level"]
+        std = first_row["baseline_std"]
 
         bases.append(baseline)
         hlabel.append("Baseline")
-        
+
         bases.append(unfolded + baseline)
         hlabel.append("unfolded level")
-        
+
         bases.append(unfolded + baseline + std)
         hlabel.append("unfolded level + std")
-        
+
         bases.append(unfolded + baseline - 2 * std)
         hlabel.append("unfolded level - 2std")
 
@@ -118,21 +124,21 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         for row in result.itertuples():
             # Check if peak_id is valid (pd.notna safely handles None/NaN in pandas)
             if pd.notna(row.peak_id):
-                
+
                 # No need for [i] indexing anymore, `row` represents the specific sublevel
                 bases.append(row.left_base + row.baseline)
                 bases.append(row.right_base + row.baseline)
-                
+
                 hlabel.append(f"Right base #{j}")
                 hlabel.append(f"Left base #{j}")
-                
+
                 peaks.append((row.peak_loc, row.peak_height + row.baseline))
                 plabel.append(f"Peak #{j}")
-                
+
                 # Filter logic
                 if row.filtered not in (0, -1):
                     peaks_filtered.append(row.peak_loc)
                     vlabel.append(f"Type {row.filtered} Peak {j}")
-                
+
                 j += 1
         return peaks_filtered, bases, peaks, vlabel, hlabel, plabel
