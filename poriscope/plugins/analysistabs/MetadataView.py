@@ -32,6 +32,7 @@ import re
 import warnings
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -1861,6 +1862,12 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         event_index = parameters["event_index"]
         data_list = []
+        vertical_lines: List[Optional[float]] = []
+        vertical_labels: List[Optional[str]] = []
+        horizontal_lines: List[Optional[float]] = []
+        horizontal_labels: List[Optional[str]] = []
+        points: List[Optional[Tuple[float, float]]] = []
+        plabels: List[Optional[str]] = []
 
         for index in event_index:
             cached_event = self.cached_events.get(index)
@@ -1890,7 +1897,64 @@ class MetadataView(MetaView, WalkthroughMixin):
                         elif new_event["event_id"] > index:
                             break
         if data_list:
-            self._update_event_plot(data_list, use_raw=use_raw)
+            for event in data_list:
+                vertical_lines.append(None)
+                vertical_labels.append(None)
+                horizontal_lines.append(None)
+                horizontal_labels.append(None)
+                points.append(None)
+                plabels.append(None)
+                experiment_id = event['experiment_id']
+                channel_id = event['channel_id']
+                event_id = event['event_id']
+                try:
+                    load_feature_args = (experiment_id, channel_id, event_id)
+                    self.global_signal.emit(
+                        "MetaDatabaseLoader",
+                        loader,
+                        "get_plot_features",
+                        load_feature_args,
+                        "update_features",
+                        (),
+                    )
+                except RuntimeError as e:
+                    self.logger.error(
+                        f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
+                    )
+                except KeyError as e:
+                    self.logger.info(
+                        f"Event {event} not found in channel {channel} to get features, skipping: {e}"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"An unexpected error occured while trying to overlay features on the event: {e}"
+                    )
+                else:
+                    if self.vertical is not None:
+                        vertical_lines[-1] = self.vertical
+                        vertical_labels[-1] = self.vlabels
+                        self.vertical_lines = None
+                        self.vlabels = None
+                    if self.horizontal is not None:
+                        horizontal_lines[-1] = self.horizontal
+                        horizontal_labels[-1] = self.hlabels
+                        self.horizontal = None
+                        self.hlabels = None
+                    if self.points is not None:
+                        points[-1] = self.points
+                        plabels[-1] = self.plabels
+                        self.points = None
+                        self.plabels = None
+            self._update_event_plot(
+                        data_list,
+                        horizontal_lines,
+                        vertical_lines,
+                        points,
+                        horizontal_labels,
+                        vertical_labels,
+                        plabels,
+                        use_raw=use_raw,
+                    )
         else:
             self.add_text_to_display.emit(
                 f"No data available for plotting with indices in the specified range {event_index}",
@@ -1900,8 +1964,37 @@ class MetadataView(MetaView, WalkthroughMixin):
                 f"No data available for plotting with indices in the specified range {event_index}"
             )
 
+
     @log(logger=logger)
-    def _update_event_plot(self, event_data, use_raw=False):
+    def update_plot_features(
+        self,
+        vertical=None,
+        horizontal=None,
+        points=None,
+        vlabels=None,
+        hlabels=None,
+        plabels=None,
+    ):
+        """
+        Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
+
+        :param vertical: List of vertical line positions.
+        :param horizontal: List of horizontal line positions.
+        :param points: List of (x, y) point coordinates.
+        :param vlabels: Labels for vertical lines.
+        :param hlabels: Labels for horizontal lines.
+        :param plabels: Labels for points.
+        """
+        self.vertical = vertical
+        self.horizontal = horizontal
+        self.points = points
+        self.vlabels = vlabels
+        self.hlabels = hlabels
+        self.plabels = plabels
+
+        
+    @log(logger=logger)
+    def _update_event_plot(self, event_data, horizontal_lines, vertical_lines, points, horizontal_labels, vertical_labels, point_labels, use_raw=False):
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -1924,7 +2017,19 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
         j = 0
-        for i, event in enumerate(event_data):
+        for i, (event, vlines, hlines, points, hlabels, vlabels, plabels) in enumerate(zip(event_data,
+                                                                                           vertical_lines,
+                                                                                           horizontal_lines,
+                                                                                           points,
+                                                                                           vertical_labels,
+                                                                                           horizontal_labels,
+                                                                                           point_labels)):
+            color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]
+
+            # Filter out black (if black is in the cycle)
+            colors_no_black = [
+                c for c in color_cycle if c.lower() != "black" and c != "#000000"
+            ]
             ax = self.figure.add_subplot(
                 num_rows, num_cols, j + 1
             )  # Create subplots in a grid
@@ -1942,7 +2047,51 @@ class MetadataView(MetaView, WalkthroughMixin):
                 ax.plot(time, raw_data / 1000, zorder=1)
             ax.plot(time, filtered_data / 1000, zorder=2)
             ax.plot(time, fit_data / 1000, zorder=3)
-
+            color_idx = 0
+            if hlines is not None:
+                for line, label in zip(hlines, hlabels):
+                    if label is not None:
+                        if label is None:
+                            ax.axhline(y=line / 1000, color="black", linestyle="--")
+                        else:
+                            color = colors_no_black[color_idx % len(colors_no_black)]
+                            ax.axhline(
+                                y=line / 1000, linestyle="--", color=color, label=label
+                            )
+                            color_idx += 1
+            color_idx = 0
+            if vlines is not None:
+                for line, label in zip(vlines, vlabels):
+                    if label is not None:
+                        if label is None:
+                            ax.axvline(x=line, color="black", linestyle="--")
+                        else:
+                            color = colors_no_black[color_idx % len(colors_no_black)]
+                            ax.axvline(
+                                x=line, linestyle="--", color=color, label=label
+                            )
+                            color_idx += 1
+            
+            color_idx = 0
+            if points is not None:
+                for (x, y), label in zip(points, plabels):
+                    if label is None:
+                        ax.plot(
+                            x, y / 1000, marker="x", color="black", markersize=10
+                        )
+                    else:
+                        color = colors_no_black[color_idx % len(colors_no_black)]
+                        ax.plot(
+                            x,
+                            y / 1000,
+                            marker="x",
+                            linestyle="None",
+                            label=label,
+                            color=color,
+                            markersize=10,
+                        )
+                        color_idx += 1
+                        
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
 

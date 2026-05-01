@@ -79,6 +79,60 @@ class MetadataController(MetaController):
         self.view.set_table_by_column(table)
 
     @log(logger=logger)
+    def update_features(
+        self,
+        vertical=None,
+        horizontal=None,
+        points=None,
+        vlabels=None,
+        hlabels=None,
+        plabels=None,
+    ):
+        """
+        Update the plot with visual annotations including vertical lines, horizontal lines, and point markers.
+
+        Validates that each visual feature has a corresponding label (or explicit None) if labels are provided.
+
+        :param vertical: List of vertical line positions for each subplot.
+        :type vertical: list[list[float]] or None
+        :param horizontal: List of horizontal line positions for each subplot.
+        :type horizontal: list[list[float]] or None
+        :param points: List of (x, y) point coordinates for each subplot.
+        :type points: list[list[tuple[float, float]]] or None
+        :param vlabels: List of labels for vertical lines.
+        :type vlabels: list[list[str or None]] or None
+        :param hlabels: List of labels for horizontal lines.
+        :type hlabels: list[list[str or None]] or None
+        :param plabels: List of labels for point markers.
+        :type plabels: list[list[str or None]] or None
+        :raises ValueError: If a label list is provided and its length does not match the corresponding feature list.
+        """
+        if (
+            vertical is not None
+            and vlabels is not None
+            and len(vlabels) != len(vertical)
+        ):
+            raise ValueError(
+                "There must be a label (which can be explicitly None) for every vertical line feature, or no labels at all"
+            )
+        if (
+            horizontal is not None
+            and hlabels is not None
+            and len(hlabels) != len(horizontal)
+        ):
+            raise ValueError(
+                "There must be a label (which can be explicitly None) for every horizontal line feature, or no labels at all"
+            )
+        if points is not None and plabels is not None and len(points) != len(plabels):
+            raise ValueError(
+                "There must be a label (which can be explicitly None) for every point feature, or no labels at all"
+            )
+        self.view.update_plot_features(
+            vertical, horizontal, points, vlabels, hlabels, plabels
+        )
+
+        
+    @log(logger=logger)
     def relay_baseline_duration(self, duration):
         """
         Relay the computed baseline duration to the view.
