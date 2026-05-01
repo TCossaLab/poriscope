@@ -9,15 +9,13 @@
     * Replaced N×M `COUNT(*)` query loop in `report_channel_status` with a `event_counts` summary table, making DB loading and experiment/channel count reporting ~10x faster.  
     * The `event_counts` summary table is maintained automatically via SQLite triggers in case of manual edits (event removal)
     * Backwards compatible — existing databases are upgraded automatically on first load
-
-* **Updated Frontend Plugin: `MetadataView`**
-    *Added **RAW** checkbox to the Plot Events section — raw data is always shown before fitting; once fitting is complete, checking RAW includes raw traces alongside the fitted results
+    * Added template for `get_plot_features()` function that can be implemented by subclasses that want to visualize data printed by specific `MetaEventFitter` subclasses
     
 * **Updated Frontend Plugin: `MetadataView`**
+    * Added **RAW** checkbox to the Plot Events section — raw data is always shown before fitting; once fitting is complete, checking RAW includes raw traces alongside the fitted results
     * Full SQL will always be printed after filter creation/editing, regardless of validity
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
-
 
 * **Documentation**
     * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time
@@ -25,8 +23,11 @@
 * **New Frontend Plugins: `ProteinView`/`ProteinController`/`ProteinModel`**	 
     * Allows fitting, visualization, and postprocessing of the Mayer model to protein volume and shape factors
     
-* **New Data Plugins: `ClassicCUSUM`**	 
+* **New Data Plugin: `ClassicCUSUM`**	 
     * Reverts Step Size to being a multiple of the local baseline standard deviation instead of an absolute number
+    
+* **New Data plugin: `SQLitePeakDBLoader`**
+    * Subclasses SQLiteDBLoader to add specific plotting features used by the `PeakFinder` plugin - only usable on databases created by `PeakFinder`
 
 ### General Fixes and Improvements:
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
