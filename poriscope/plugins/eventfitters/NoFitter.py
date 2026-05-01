@@ -115,7 +115,7 @@ class NoFitter(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def construct_fitted_event( ##TODO
+    def construct_fitted_event(  ##TODO
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:
         """
@@ -229,10 +229,10 @@ class NoFitter(MetaEventFitter):
         edges = [0]  # first sublevel starts at the start of the data block
 
         k = padding_before
-        while data[k]*sign < baseline_mean*sign: #find starting point
+        while data[k] * sign < baseline_mean * sign:  # find starting point
             k -= 1
             rise_time += 1
-        edges = np.append(edges, k) #add start point as an edge
+        edges = np.append(edges, k)  # add start point as an edge
         edges = np.append(edges, len(data) - padding_after - rise_time)
         edges = np.append(edges, length)  # mark the end of the event as an edge
         self.rise_time = rise_time
@@ -263,7 +263,9 @@ class NoFitter(MetaEventFitter):
         sublevel_metadata = {}
 
         num_states = len(sublevel_starts) - 1
-        rise_time = self.rise_time #multiply this if you want to ignore more in your averaging
+        rise_time = (
+            self.rise_time
+        )  # multiply this if you want to ignore more in your averaging
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
 
@@ -600,4 +602,3 @@ class NoFitter(MetaEventFitter):
         metadata_units["sublevel_raw_ecd"] = "pC"
         metadata_units["sublevel_fitted_ecd"] = "pC"
         return metadata_units
-
