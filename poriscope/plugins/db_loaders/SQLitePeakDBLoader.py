@@ -74,7 +74,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, s.sublevel_blockage
                         FROM sublevels s
                         JOIN events e
-                        ON e.experiment_id = s.experiment_id AND e.channel_id = s.channel_id AND e.event_id = s.event_id
+                        ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
         print(query)
         ##, e.baseline, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered
