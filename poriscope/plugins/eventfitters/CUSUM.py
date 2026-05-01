@@ -283,7 +283,7 @@ class CUSUM(MetaEventFitter):
                 varOldM = varM  # algorithm to calculate running variance, details here: http://www.johndcook.com/blog/standard_deviation/
                 varM = varM + (data[k] - varM) / float(k + 1 - anchor)
                 varS = varS + (data[k] - varOldM) * (data[k] - varM)
-                variance = varS / float(k + 1 - anchor)
+                variance = varS / float(k - anchor)
                 mean = ((k - anchor) * mean + data[k]) / float(k + 1 - anchor)
                 if (
                     variance == 0
@@ -313,14 +313,14 @@ class CUSUM(MetaEventFitter):
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
                     if gpos[k] > threshold:  # significant positive jump detected
-                        jump = anchor + np.argmin(
-                            cpos[anchor : k + 1]
+                        jump = (
+                            1 + anchor + np.argmin(cpos[anchor : k + 1])
                         )  # find the location of the start of the jump
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
                             num_states += 1
                     if gneg[k] > threshold:  # significant negative jump detected
-                        jump = anchor + np.argmin(cneg[anchor : k + 1])
+                        jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
                             num_states += 1
@@ -343,7 +343,7 @@ class CUSUM(MetaEventFitter):
 
             # iteratively remove steps that are too small, from left to right
             minstepflag = False
-            while minstepflag is False:
+            while not minstepflag:
                 minstepflag = True
                 sublevel_means = [
                     (
@@ -358,7 +358,7 @@ class CUSUM(MetaEventFitter):
                     np.absolute(np.diff(sublevel_means)) < step_size * baseline_std / 2
                 )
                 for i in range(len(toosmall)):
-                    if toosmall[i] is True:
+                    if toosmall[i]:
                         edges = np.delete(edges, i + 1)
                         minstepflag = False
                         num_states -= 1
@@ -793,6 +793,6 @@ class CUSUM(MetaEventFitter):
             opth = minimize(
                 g, max_threshold, bounds=((min_threshold, max_threshold),)
             )  # Find the min within the requested range
-            if opth.success is True:
+            if opth.success:
                 threshold = opth.x[0]
         return threshold

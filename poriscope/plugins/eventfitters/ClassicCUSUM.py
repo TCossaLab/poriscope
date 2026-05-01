@@ -127,7 +127,6 @@ class ClassicCUSUM(CUSUM):
         max_sublevels = self.settings["Max Sublevels"]["Value"]
 
         length = len(data)
-
         attempts = 0
         retry = True
         while retry:
@@ -169,7 +168,7 @@ class ClassicCUSUM(CUSUM):
                 varOldM = varM  # algorithm to calculate running variance, details here: http://www.johndcook.com/blog/standard_deviation/
                 varM = varM + (data[k] - varM) / float(k + 1 - anchor)
                 varS = varS + (data[k] - varOldM) * (data[k] - varM)
-                variance = varS / float(k + 1 - anchor)
+                variance = varS / float(k - anchor)
                 mean = ((k - anchor) * mean + data[k]) / float(k + 1 - anchor)
                 if (
                     variance == 0
@@ -199,14 +198,14 @@ class ClassicCUSUM(CUSUM):
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
                     if gpos[k] > threshold:  # significant positive jump detected
-                        jump = anchor + np.argmin(
-                            cpos[anchor : k + 1]
+                        jump = (
+                            1 + anchor + np.argmin(cpos[anchor : k + 1])
                         )  # find the location of the start of the jump
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
                             num_states += 1
                     if gneg[k] > threshold:  # significant negative jump detected
-                        jump = anchor + np.argmin(cneg[anchor : k + 1])
+                        jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
                             num_states += 1
@@ -229,13 +228,13 @@ class ClassicCUSUM(CUSUM):
 
             # iteratively remove steps that are too small, from left to right
             minstepflag = False
-            while minstepflag is False:
+            while not minstepflag:
                 minstepflag = True
                 sublevel_means = [
                     (
                         np.median(data[int(edges[i] + rise_time) : int(edges[i + 1])])
                         if edges[i] + rise_time < edges[i + 1]
-                        else data[int(edges[i + 1]) - 1]
+                        else np.median(data[int(edges[i]) : int(edges[i + 1])])
                     )
                     for i in range(num_states)
                 ]
@@ -244,12 +243,11 @@ class ClassicCUSUM(CUSUM):
                     np.absolute(np.diff(sublevel_means)) < step_size * baseline_std / 2
                 )
                 for i in range(len(toosmall)):
-                    if toosmall[i] is True:
+                    if toosmall[i]:
                         edges = np.delete(edges, i + 1)
                         minstepflag = False
                         num_states -= 1
                         break
-
             if num_states < 3:
                 self.logger.info(
                     "Unable to find at least 3 sublevels after removing small steps, event will be rejected"
@@ -268,5 +266,4 @@ class ClassicCUSUM(CUSUM):
                 "Too many levels, unable to correct. Event will be rejected."
             )
             raise ValueError("Too Many Levels")
-
         return edges
