@@ -2066,7 +2066,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             ax.plot(time, filtered_data / 1000, zorder=2)
             ax.plot(time, fit_data / 1000, zorder=3)
             color_idx = 0
-            if hlines != []:
+            if hlines is not None:
                 for line, label in zip(hlines, hlabels):
                     if label is None:
                         ax.axhline(y=line / 1000, color="black", linestyle="--")
