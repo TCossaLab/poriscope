@@ -131,7 +131,6 @@ class MetadataController(MetaController):
             vertical, horizontal, points, vlabels, hlabels, plabels
         )
 
-        
     @log(logger=logger)
     def relay_baseline_duration(self, duration):
         """

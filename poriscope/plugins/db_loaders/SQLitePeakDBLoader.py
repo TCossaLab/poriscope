@@ -46,7 +46,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
     @log(logger=logger)
     @override
-    def get_plot_features(self, experiment:int, channel: int, index: int) -> Tuple[
+    def get_plot_features(self, experiment: int, channel: int, index: int) -> Tuple[
         Optional[List[float]],
         Optional[List[float]],
         Optional[List[Tuple[float, float]]],

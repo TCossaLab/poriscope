@@ -1910,9 +1910,9 @@ class MetadataView(MetaView, WalkthroughMixin):
                 horizontal_labels.append(None)
                 points.append(None)
                 plabels.append(None)
-                experiment_id = event['experiment_id']
-                channel_id = event['channel_id']
-                event_id = event['event_id']
+                experiment_id = event["experiment_id"]
+                channel_id = event["channel_id"]
+                event_id = event["event_id"]
                 try:
                     load_feature_args = (experiment_id, channel_id, event_id)
                     self.global_signal.emit(
@@ -1952,15 +1952,15 @@ class MetadataView(MetaView, WalkthroughMixin):
                         self.points = None
                         self.plabels = None
             self._update_event_plot(
-                        data_list,
-                        horizontal_lines,
-                        vertical_lines,
-                        points,
-                        horizontal_labels,
-                        vertical_labels,
-                        plabels,
-                        use_raw=use_raw,
-                    )
+                data_list,
+                horizontal_lines,
+                vertical_lines,
+                points,
+                horizontal_labels,
+                vertical_labels,
+                plabels,
+                use_raw=use_raw,
+            )
         else:
             self.add_text_to_display.emit(
                 f"No data available for plotting with indices in the specified range {event_index}",
@@ -1969,7 +1969,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.info(
                 f"No data available for plotting with indices in the specified range {event_index}"
             )
-
 
     @log(logger=logger)
     def update_plot_features(
@@ -1998,9 +1997,18 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.hlabels = hlabels
         self.plabels = plabels
 
-        
     @log(logger=logger)
-    def _update_event_plot(self, event_data, horizontal_lines, vertical_lines, points, horizontal_labels, vertical_labels, point_labels, use_raw=False):
+    def _update_event_plot(
+        self,
+        event_data,
+        horizontal_lines,
+        vertical_lines,
+        points,
+        horizontal_labels,
+        vertical_labels,
+        point_labels,
+        use_raw=False,
+    ):
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -2023,13 +2031,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
         j = 0
-        for i, (event, vlines, hlines, points, hlabels, vlabels, plabels) in enumerate(zip(event_data,
-                                                                                           vertical_lines,
-                                                                                           horizontal_lines,
-                                                                                           points,
-                                                                                           vertical_labels,
-                                                                                           horizontal_labels,
-                                                                                           point_labels)):
+        for i, (event, vlines, hlines, points, hlabels, vlabels, plabels) in enumerate(
+            zip(
+                event_data,
+                vertical_lines,
+                horizontal_lines,
+                points,
+                vertical_labels,
+                horizontal_labels,
+                point_labels,
+            )
+        ):
             color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]
 
             # Filter out black (if black is in the cycle)
@@ -2073,18 +2085,14 @@ class MetadataView(MetaView, WalkthroughMixin):
                             ax.axvline(x=line, color="black", linestyle="--")
                         else:
                             color = colors_no_black[color_idx % len(colors_no_black)]
-                            ax.axvline(
-                                x=line, linestyle="--", color=color, label=label
-                            )
+                            ax.axvline(x=line, linestyle="--", color=color, label=label)
                             color_idx += 1
-            
+
             color_idx = 0
             if points is not None:
                 for (x, y), label in zip(points, plabels):
                     if label is None:
-                        ax.plot(
-                            x, y / 1000, marker="x", color="black", markersize=10
-                        )
+                        ax.plot(x, y / 1000, marker="x", color="black", markersize=10)
                     else:
                         color = colors_no_black[color_idx % len(colors_no_black)]
                         ax.plot(
@@ -2097,7 +2105,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             markersize=10,
                         )
                         color_idx += 1
-                        
+
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
 
