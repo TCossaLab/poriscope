@@ -83,7 +83,12 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             result = self.query_database_directly(query)
             print(result)
         else:
-            raise ValueError(f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}")
-            self.logger.error(f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}", self.__class__.__name__)
-        
-        return [400], [2000], [(400,2000)], ['h'], ['v'], ['p']
+            raise ValueError(
+                f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}"
+            )
+            self.logger.error(
+                f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}",
+                self.__class__.__name__,
+            )
+
+        return [400], [2000], [(400, 2000)], ["h"], ["v"], ["p"]
