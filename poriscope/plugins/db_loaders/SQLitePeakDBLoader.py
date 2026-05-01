@@ -69,9 +69,21 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
         :raises RuntimeError: if fitting is not complete yet
         """
+        print(experiment, channel, index)
 
-        #query = f"""SELECT id, experiment_id, channel_id, event_id, {sublevels_str}
-        #                FROM sublevels
-        #                WHERE experiment={experiment}"""
+        query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, s.sublevel_blockage
+                        FROM sublevels s
+                        JOIN events e
+                        ON e.experiment_id = s.experiment_id AND e.channel_id = s.channel_id AND e.event_id = s.event_id
+                        WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
+        print(query)
+        ##, e.baseline, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered
+        valid, debug = self.validate_filter_query(query)
+        if valid:
+            result = self.query_database_directly(query)
+            print(result)
+        else:
+            raise ValueError(f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}")
+            self.logger.error(f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}", self.__class__.__name__)
         
         return [400], [2000], [(400,2000)], ['h'], ['v'], ['p']

@@ -149,6 +149,12 @@ class MetadataView(MetaView, WalkthroughMixin):
                 Optional[str],
             ]
         ] = set()
+        self.vertical = None
+        self.horizontal = None
+        self.points = None
+        self.vlabels = None
+        self.hlabels = None
+        self.plabels = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
     @log(logger=logger)
