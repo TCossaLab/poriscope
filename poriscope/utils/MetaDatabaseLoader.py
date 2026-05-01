@@ -260,7 +260,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
     # Public API continued, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
-    def get_plot_features(self, experiment:int, channel: int, index: int) -> Tuple[
+    def get_plot_features(self, experiment: int, channel: int, index: int) -> Tuple[
         Optional[List[float]],
         Optional[List[float]],
         Optional[List[Tuple[float, float]]],

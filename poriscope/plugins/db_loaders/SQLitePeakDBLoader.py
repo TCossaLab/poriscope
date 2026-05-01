@@ -46,7 +46,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
     @log(logger=logger)
     @override
-    def get_plot_features(self, experiment:int, channel: int, index: int) -> Tuple[
+    def get_plot_features(self, experiment: int, channel: int, index: int) -> Tuple[
         Optional[List[float]],
         Optional[List[float]],
         Optional[List[Tuple[float, float]]],
@@ -70,8 +70,8 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         :raises RuntimeError: if fitting is not complete yet
         """
 
-        #query = f"""SELECT id, experiment_id, channel_id, event_id, {sublevels_str}
+        # query = f"""SELECT id, experiment_id, channel_id, event_id, {sublevels_str}
         #                FROM sublevels
         #                WHERE experiment={experiment}"""
-        
-        return [400], [2000], [(400,2000)], ['h'], ['v'], ['p']
+
+        return [400], [2000], [(400, 2000)], ["h"], ["v"], ["p"]
