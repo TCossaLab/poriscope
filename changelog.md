@@ -11,6 +11,12 @@
     * Backwards compatible — existing databases are upgraded automatically on first load
     * Added template for `get_plot_features()` function that can be implemented by subclasses that want to visualize data printed by specific `MetaEventFitter` subclasses
     
+* **Updated Data Plugin Base Class: `CUSUM`**
+    * Fixed numerical bug that was causing underestaimtes of sublevel transition probabilities
+    * Fixed numerical bug that was causing shallow steps to be accepted when they should not have been
+    * Reverted threshold loop to exact port of original C code implementation
+    * Added new parameter Sensitivity to allow greater fine-tuning of step detection
+    
 * **Updated Frontend Plugin: `MetadataView`**
     * Added **RAW** checkbox to the Plot Events section — raw data is always shown before fitting; once fitting is complete, checking RAW includes raw traces alongside the fitted results
     * Full SQL will always be printed after filter creation/editing, regardless of validity
@@ -25,6 +31,7 @@
     
 * **New Data Plugin: `ClassicCUSUM`**	 
     * Reverts Step Size to being a multiple of the local baseline standard deviation instead of an absolute number
+    * Ported bug fixes from base CUSUM class
     
 * **New Data plugin: `SQLitePeakDBLoader`**
     * Subclasses SQLiteDBLoader to add specific plotting features used by the `PeakFinder` plugin - only usable on databases created by `PeakFinder`
