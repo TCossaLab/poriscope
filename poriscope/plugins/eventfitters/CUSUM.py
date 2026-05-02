@@ -29,7 +29,6 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
-from scipy.optimize import fsolve, minimize
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -105,6 +104,7 @@ class CUSUM(MetaEventFitter):
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "pA"}
+        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
         settings["Rise Time"] = {"Type": float, "Min": 0.0, "Units": "us"}
         settings["Max Sublevels"] = {"Type": int, "Value": 0, "Min": 0}
         return settings
@@ -271,7 +271,7 @@ class CUSUM(MetaEventFitter):
 
             threshold = self._calculate_threshold(
                 length, step_size
-            )  # determine optimal sensitivity
+            ) # determine optimal sensitivity
             edges = [0]  # first sublevel starts at the start of the data block
 
             k = 0  # current data point index
@@ -313,8 +313,8 @@ class CUSUM(MetaEventFitter):
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
                     if gpos[k] > threshold:  # significant positive jump detected
-                        jump = (
-                            1 + anchor + np.argmin(cpos[anchor : k + 1])
+                        jump = 1 + anchor + np.argmin(
+                            cpos[anchor : k + 1]
                         )  # find the location of the start of the jump
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
@@ -750,49 +750,41 @@ class CUSUM(MetaEventFitter):
 
     # utility functions
     @log(logger=logger)
-    def _calculate_threshold(self, length, step, min_threshold=2.0, max_threshold=10.0):
+    def _calculate_threshold(self, length, step, min_threshold=0.4, max_threshold=10.0):
         """
         Calculate an optimal threshold value based on signal length and step size.
-
-        Uses root finding or minimization to solve a nonlinear equation derived from a probabilistic model.
-
-        :param length: Approximate duration or size of the signal region of interest.
-        :type length: float
-        :param step: Step size used in the signal, typically related to event detection resolution.
-        :type step: float
-        :param min_threshold: Minimum bound for the threshold search.
-        :type min_threshold: float
-        :param max_threshold: Maximum bound for the threshold search.
-        :type max_threshold: float
-        :return: Computed threshold value within the specified range.
-        :rtype: float
+        
+        Exact Python port of the C functions get_cusum_threshold and ARL.
         """
+        # Map the original Python interface variables to match C parameters
+        sigma = step
+        mun = -step / 2.0
         length *= 2
-        delta = step
-        mu = -step / 2
+        
+        # Inner helper to replicate the C ARL() function
+        def ARL(length, s, m, h):
+            term = h / s + 1.166
+            return (np.exp(-2.0 * m * term) - 1.0 + 2.0 * m * term) / (2.0 * m * m) - float(length)
+
         threshold = min_threshold
-
-        def f(h):
-            return (
-                np.exp(-2.0 * mu * (h / delta + 1.166))
-                - 1.0
-                + 2.0 * mu * (h / delta + 1.166)
-            ) / (2.0 * mu**2) - length
-
-        if (
-            f(min_threshold) * f(max_threshold) < 0
-        ):  # if a root exists in the specified range
-            opth, info, ier, mesg = fsolve(f, max_threshold, full_output=True)
-            if ier == 1:  # fit success, return the root
-                threshold = opth[0]
-        else:  # if no root exists, we use the min value
-
-            def g(h):
-                return np.abs(f(h))  # absolute value to minimize
-
-            opth = minimize(
-                g, max_threshold, bounds=((min_threshold, max_threshold),)
-            )  # Find the min within the requested range
-            if opth.success:
-                threshold = opth.x[0]
-        return threshold
+        arlmin = ARL(length, sigma, mun, min_threshold)
+        oldsign = np.sign(arlmin)
+        mindif = abs(arlmin)
+        
+        h = min_threshold
+        
+        # Replicates the C loop: for (h = minthreshold; h < maxthreshold; h += 0.5)
+        while h < max_threshold:
+            arl = ARL(length, sigma, mun, h)
+            sign = np.sign(arl)
+            
+            if sign != oldsign:
+                threshold = h
+                break
+            elif abs(arl) < mindif:
+                mindif = abs(arl)
+                threshold = h
+                
+            h += 0.5
+            
+        return threshold/self.settings['Sensitivity']['Value']

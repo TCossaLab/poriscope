@@ -72,6 +72,7 @@ class ClassicCUSUM(CUSUM):
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "σ"}
+        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
         return settings
 
     @log(logger=logger)
@@ -156,7 +157,8 @@ class ClassicCUSUM(CUSUM):
 
             threshold = self._calculate_threshold(
                 length, step_size
-            )  # determine optimal sensitivity
+            )/5  # determine optimal sensitivity
+            print(threshold, length, step_size)
             edges = [0]  # first sublevel starts at the start of the data block
 
             k = 0  # current data point index
@@ -198,8 +200,8 @@ class ClassicCUSUM(CUSUM):
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
                     if gpos[k] > threshold:  # significant positive jump detected
-                        jump = (
-                            1 + anchor + np.argmin(cpos[anchor : k + 1])
+                        jump = 1 + anchor + np.argmin(
+                            cpos[anchor : k + 1]
                         )  # find the location of the start of the jump
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
