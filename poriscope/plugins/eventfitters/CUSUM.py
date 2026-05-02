@@ -313,26 +313,26 @@ class CUSUM(MetaEventFitter):
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
                     jump_accepted = False
-                    
+
                     if gpos[k] > threshold:  # significant positive jump detected
                         jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
-                        # Note: C also checks `length - jump > rise_time` here, 
+                        # Note: C also checks `length - jump > rise_time` here,
                         # you may want to add that to match C perfectly!
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
                             num_states += 1
                             jump_accepted = True
-                            
+
                     if gneg[k] > threshold:  # significant negative jump detected
                         jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
                             num_states += 1
                             jump_accepted = True
-                            
+
                     if jump_accepted:
                         anchor = k
-                        cpos[0 : len(cpos)] = 0  
+                        cpos[0 : len(cpos)] = 0
                         cneg[0 : len(cneg)] = 0
                         gpos[0 : len(gpos)] = 0
                         gneg[0 : len(gneg)] = 0
