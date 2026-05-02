@@ -271,7 +271,7 @@ class CUSUM(MetaEventFitter):
 
             threshold = self._calculate_threshold(
                 length, step_size
-            ) # determine optimal sensitivity
+            )  # determine optimal sensitivity
             edges = [0]  # first sublevel starts at the start of the data block
 
             k = 0  # current data point index
@@ -313,8 +313,8 @@ class CUSUM(MetaEventFitter):
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
                     if gpos[k] > threshold:  # significant positive jump detected
-                        jump = 1 + anchor + np.argmin(
-                            cpos[anchor : k + 1]
+                        jump = (
+                            1 + anchor + np.argmin(cpos[anchor : k + 1])
                         )  # find the location of the start of the jump
                         if jump - edges[num_states] > rise_time:
                             edges = np.append(edges, jump)
@@ -753,38 +753,40 @@ class CUSUM(MetaEventFitter):
     def _calculate_threshold(self, length, step, min_threshold=0.4, max_threshold=10.0):
         """
         Calculate an optimal threshold value based on signal length and step size.
-        
+
         Exact Python port of the C functions get_cusum_threshold and ARL.
         """
         # Map the original Python interface variables to match C parameters
         sigma = step
         mun = -step / 2.0
         length *= 2
-        
+
         # Inner helper to replicate the C ARL() function
         def ARL(length, s, m, h):
             term = h / s + 1.166
-            return (np.exp(-2.0 * m * term) - 1.0 + 2.0 * m * term) / (2.0 * m * m) - float(length)
+            return (np.exp(-2.0 * m * term) - 1.0 + 2.0 * m * term) / (
+                2.0 * m * m
+            ) - float(length)
 
         threshold = min_threshold
         arlmin = ARL(length, sigma, mun, min_threshold)
         oldsign = np.sign(arlmin)
         mindif = abs(arlmin)
-        
+
         h = min_threshold
-        
+
         # Replicates the C loop: for (h = minthreshold; h < maxthreshold; h += 0.5)
         while h < max_threshold:
             arl = ARL(length, sigma, mun, h)
             sign = np.sign(arl)
-            
+
             if sign != oldsign:
                 threshold = h
                 break
             elif abs(arl) < mindif:
                 mindif = abs(arl)
                 threshold = h
-                
+
             h += 0.5
-            
-        return threshold/self.settings['Sensitivity']['Value']
+
+        return threshold / self.settings["Sensitivity"]["Value"]
