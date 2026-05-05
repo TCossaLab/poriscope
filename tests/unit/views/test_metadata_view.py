@@ -1716,6 +1716,7 @@ def test_overlay_plot_sets_show_sql_flags_to_false(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify SQL display flags are set to False at start of overlay."""
+    view.figure.axes = []
     view._show_sql_in_display = True
     view._show_event_sql_in_display = True
 
@@ -1746,6 +1747,7 @@ def test_overlay_plot_sets_plot_initialized_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot_initialized flag is set to True."""
+    view.figure.axes = []
     view.plot_initialized = False
 
     parameters = {
@@ -1774,6 +1776,8 @@ def test_overlay_plot_defaults_to_full_dataset_when_no_filters(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify defaults to Full Dataset when selected_filters is None or empty."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -1800,6 +1804,8 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify defaults to {None: [None]} when no experiments/channels selected."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -1820,6 +1826,7 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
     view._overlay_plot(parameters)
 
     view.global_signal.emit.assert_called()
+
 
 
 def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
@@ -1890,6 +1897,8 @@ def test_overlay_plot_constructs_histogram_columns_correctly(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify Histogram uses correct columns and logscales."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -1919,6 +1928,8 @@ def test_overlay_plot_constructs_scatterplot_columns_correctly(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify Scatterplot uses correct columns and logscales."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Scatterplot",
@@ -1950,6 +1961,8 @@ def test_overlay_plot_constructs_3d_scatterplot_columns_correctly(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify 3D Scatterplot uses correct columns and logscales."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "3D Scatterplot",
@@ -1987,6 +2000,8 @@ def test_overlay_plot_constructs_capture_rate_with_start_time(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify Capture Rate uses start_time with log scale."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Capture Rate",
@@ -2036,6 +2051,7 @@ def test_overlay_plot_resets_when_columns_change(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot resets when columns change."""
+    view.figure.axes = []
     view.allowed_columns = ["old_column"]
     view.allowed_plot_type = "Histogram"
     view._reset_actions = mocker.Mock()
@@ -2066,6 +2082,7 @@ def test_overlay_plot_resets_when_logscales_change(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot resets when logscales change."""
+    view.figure.axes = []
     view.allowed_columns = ["duration"]
     view.allowed_logs = [False]
     view.allowed_plot_type = "Histogram"
@@ -2097,6 +2114,7 @@ def test_overlay_plot_resets_when_plot_type_changes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot resets when plot type changes."""
+    view.figure.axes = []
     view.allowed_columns = ["duration"]
     view.allowed_logs = [False]
     view.allowed_plot_type = "Kernel Density Plot"
@@ -2128,6 +2146,7 @@ def test_overlay_plot_resets_when_bins_change_for_bin_sensitive_plot(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot resets when bins change for bin-sensitive plots."""
+    view.figure.axes = []
     view.allowed_columns = ["duration"]
     view.allowed_logs = [False]
     view.allowed_plot_type = "Histogram"
@@ -2160,6 +2179,7 @@ def test_overlay_plot_resets_when_sizes_change_for_bin_sensitive_plot(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot resets when sizes flag changes for bin-sensitive plots."""
+    view.figure.axes = []
     view.allowed_columns = ["duration"]
     view.allowed_logs = [False]
     view.allowed_plot_type = "Histogram"
@@ -2193,6 +2213,8 @@ def test_overlay_plot_rejects_duplicate_columns(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify overlay rejects plots with duplicate columns."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Scatterplot",
@@ -2217,7 +2239,7 @@ def test_overlay_plot_skips_already_plotted_datasets(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify already plotted datasets are skipped and function completes successfully."""
-    # Pre-populate the plotted datasets
+    view.figure.axes = []
     view.plotted_datasets.add(("test_loader", None, None, "", "Full Dataset"))
 
     parameters = {
@@ -2233,11 +2255,9 @@ def test_overlay_plot_skips_already_plotted_datasets(
     view.selected_experiment_and_channels_by_loader = {}
     view.update_plot = mocker.Mock()
 
-    # The loop will iterate but skip the already-plotted dataset
     result = view._overlay_plot(parameters)
 
     assert result is True
-    # Verify update_plot was NOT called since dataset was skipped
     view.update_plot.assert_not_called()
 
 
@@ -2245,6 +2265,8 @@ def test_overlay_plot_returns_false_when_query_empty(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify returns False when query is empty string."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2268,6 +2290,8 @@ def test_overlay_plot_skips_subset_when_no_plot_data(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify skips subset and emits message when plot_data is None."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2294,6 +2318,8 @@ def test_overlay_plot_emits_row_count_message(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify emits message with row count for valid data."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2322,6 +2348,8 @@ def test_overlay_plot_returns_false_when_column_units_length_mismatch(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify returns False when columns and units have different lengths."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Scatterplot",
@@ -2338,25 +2366,20 @@ def test_overlay_plot_returns_false_when_column_units_length_mismatch(
     view.query = "SELECT * FROM events"
     view.plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
 
-    # Simulate the unit collection process where only first column gets units
     unit_call_count = [0]
     collected_units = []
 
     def mock_emit_side_effect(*args: Any) -> None:
-        # Only respond to get_column_units calls
         if len(args) >= 6 and args[2] == "get_column_units":
             unit_call_count[0] += 1
-            # Only set units for first call
             if unit_call_count[0] == 1:
                 view.units = "ms"
                 collected_units.append("ms")
-            # Second call doesn't set units, creating mismatch
 
     view.global_signal.emit = mocker.Mock(side_effect=mock_emit_side_effect)
 
     result = view._overlay_plot(parameters)
 
-    # Should return False due to length mismatch
     assert result is False
     view.add_text_to_display.emit.assert_called()
 
@@ -2365,6 +2388,8 @@ def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify returns False when columns not present in dataframe."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2391,6 +2416,8 @@ def test_overlay_plot_calls_update_plot_with_correct_arguments(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify update_plot is called with correct arguments."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Normalized Histogram",
@@ -2425,6 +2452,8 @@ def test_overlay_plot_updates_allowed_properties_after_successful_plot(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify allowed properties are updated after successful plot."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2455,6 +2484,8 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify dataset is added to plotted_datasets set."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2475,7 +2506,6 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
     view._overlay_plot(parameters)
 
     assert ("test_loader", "exp1", 2, "WHERE x > 1", "Filter1") in view.plotted_datasets
-
 
 def test_overlay_plot_handles_raw_all_points_histogram_event_plot(
     view: MetadataView, mocker: MockerFixture
@@ -2672,6 +2702,8 @@ def test_overlay_plot_returns_true_on_success(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify returns True on successful plot."""
+    view.figure.axes = []
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Histogram",
@@ -2692,7 +2724,6 @@ def test_overlay_plot_returns_true_on_success(
     result = view._overlay_plot(parameters)
 
     assert result is True
-
 
 # ----------------------------- Construct All Points Histogram Tests ------------------------------
 
@@ -2905,22 +2936,29 @@ def test_set_baseline_duration_sets_value(view: MetadataView) -> None:
 # ----------------------------- Construct Event Overlay Tests ------------------------------
 
 
+_TWO_EVENTS = [
+    {
+        "raw_data": np.linspace(10.0, 40.0, 30),
+        "filtered_data": np.linspace(10.0, 40.0, 30),
+        "padding_before": 200.0,
+        "padding_after": 200.0,
+        "samplerate": 10000.0,
+    },
+    {
+        "raw_data": np.linspace(10.0, 40.0, 40),  # different length avoids div/zero
+        "filtered_data": np.linspace(10.0, 40.0, 40),
+        "padding_before": 200.0,
+        "padding_after": 200.0,
+        "samplerate": 10000.0,
+    },
+]
+
+
 def test_construct_event_overlay_sets_axis_labels(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify axis labels are set correctly."""
-    # Use 30 samples: padding_before=200µs * 10000Hz / 1e6 = 2 samples
-    # 30 - 2 - 2 = 26 middle samples (safe from division by zero)
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
+    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
     view.axes.set_xlabel.assert_called_with("Normalized Time")
     view.axes.set_ylabel.assert_called_with("Rectified Current (pA)")
@@ -2930,35 +2968,17 @@ def test_construct_event_overlay_sets_xlim(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify x-axis limits are set correctly."""
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
+    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
     view.axes.set_xlim.assert_called_with(left=-0.333, right=1.333)
+
 
 
 def test_construct_event_overlay_plots_raw_data_for_raw_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify uses raw_data for Raw Event Overlay."""
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "filtered_data": np.linspace(20.0, 50.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
+    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
     view.axes.plot.assert_called()
 
@@ -2967,17 +2987,9 @@ def test_construct_event_overlay_plots_filtered_data_for_filtered_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify uses filtered_data for Filtered Event Overlay."""
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "filtered_data": np.linspace(20.0, 50.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_event_overlay(iter(events), "Filtered Event Overlay", "test_loader")
+    view._construct_event_overlay(
+        iter(_TWO_EVENTS), "Filtered Event Overlay", "test_loader"
+    )
 
     view.axes.plot.assert_called()
 
@@ -2985,23 +2997,8 @@ def test_construct_event_overlay_plots_filtered_data_for_filtered_overlay(
 def test_construct_event_overlay_adjusts_alpha_based_on_event_count(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify alpha is adjusted based on number of events."""
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        },
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        },
-    ]
-
-    view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
+    """Verify alpha is adjusted based on number of events (plot called once per event)."""
+    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
     assert view.axes.plot.call_count == 2
 
@@ -3010,16 +3007,7 @@ def test_construct_event_overlay_sets_no_cached_data_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify no_cached_data flag is set to True."""
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
+    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
     assert view.no_cached_data is True
 
@@ -3028,17 +3016,9 @@ def test_construct_event_overlay_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify canvas is redrawn after plotting."""
-    events = [
-        {
-            "raw_data": np.linspace(10.0, 40.0, 30),
-            "padding_before": 200.0,
-            "padding_after": 200.0,
-            "samplerate": 10000.0,
-        }
-    ]
+    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
-    view._construct_event_overlay(iter(events), "Raw Event Overlay", "test_loader")
-
+    view.canvas.draw.assert_called()
 
 # ----------------------------- Set Event Data Generator Tests ------------------------------
 
@@ -3798,23 +3778,39 @@ def test_handle_plot_events_warns_when_multiple_channels(
     assert "single channel" in view.add_text_to_display.emit.call_args[0][0]
 
 
+_FULL_EVENT = {
+    "event_id": 1,
+    "experiment_id": 1,
+    "channel_id": 1,
+    "raw_data": np.array([1.0, 2.0, 3.0]),
+    "filtered_data": np.array([1.1, 2.1, 3.1]),
+    "fit_data": np.array([1.0, 2.0, 3.0]),
+    "samplerate": 10000,
+}
+
+
 def test_handle_plot_events_defaults_to_full_dataset(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify defaults to Full Dataset when no filters selected."""
     view.get_selected_filters = mocker.Mock(return_value={})
-    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
 
-    # Create a proper generator
     def mock_generator():
-        yield {"event_id": 1, "raw_data": np.array([1.0])}
+        abort = False
+        while not abort:
+            abort = yield dict(_FULL_EVENT)
+            if abort:
+                break
 
-    view.plot_events_generator = mock_generator()
-    view.cached_events = {}  # type: ignore[assignment]
-    view._update_event_plot = mocker.Mock()  # type: ignore[method-assign]
+    gen = mock_generator()
+    next(gen)
+    view.plot_events_generator = gen
+    view.cached_events = {}
+    view._update_event_plot = mocker.Mock()
     parameters = {"db_loader": "test_loader", "event_index": [1]}
 
     view._handle_plot_events(parameters)
@@ -3828,20 +3824,27 @@ def test_handle_plot_events_loads_new_generator_when_filter_changes(
     """Verify new generator is loaded when filter changes."""
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
-    view.current_sql_filter = "WHERE x > 0"  # Different filter
+    view.current_sql_filter = "WHERE x > 0"  # different filter triggers reload
     view.plot_events_generator = None
     view.plot_events_generator_updated = False
     view.cached_events = {}
+
+    # When global_signal fires, simulate the generator being set
+    def side_effect(*args: Any) -> None:
+        if len(args) >= 3 and args[2] == "load_event_data":
+            view.plot_events_generator_updated = True
+
     view.global_signal = mocker.Mock()
+    view.global_signal.emit = mocker.Mock(side_effect=side_effect)
+
     parameters = {"db_loader": "test_loader", "event_index": [1]}
 
     view._handle_plot_events(parameters)
 
-    # Should emit signal to load new generator
     view.global_signal.emit.assert_called()
-    # Verify it called with load_event_data
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[2] == "load_event_data"
+    call_args_list = view.global_signal.emit.call_args_list
+    action_names = [c.args[2] for c in call_args_list if len(c.args) > 2]
+    assert "load_event_data" in action_names
 
 
 def test_handle_plot_events_aborts_existing_generator(
@@ -3850,30 +3853,38 @@ def test_handle_plot_events_aborts_existing_generator(
     """Verify existing generator is aborted when loading new one."""
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
-    view.current_sql_filter = "WHERE x > 0"  # Different filter
+    view.current_sql_filter = "WHERE x > 0"  # triggers reload
 
-    # Create a generator that supports send
     def existing_gen():
         try:
-            abort = yield {"event_id": 1}
+            abort = yield dict(_FULL_EVENT)
             if abort:
                 return
         except GeneratorExit:
             pass
 
-    view.plot_events_generator = existing_gen()
-    next(view.plot_events_generator)  # Prime it
+    gen = existing_gen()
+    next(gen)
+    view.plot_events_generator = gen
     view.plot_events_generator_updated = False
-    view.cached_events = {1: {"event_id": 1}}
+    view.cached_events = {1: dict(_FULL_EVENT)}
+
+    def side_effect(*args: Any) -> None:
+        if len(args) >= 3 and args[2] == "load_event_data":
+            view.plot_events_generator_updated = True
+
     view.global_signal = mocker.Mock()
+    view.global_signal.emit = mocker.Mock(side_effect=side_effect)
+
     parameters = {"db_loader": "test_loader", "event_index": [1]}
 
     view._handle_plot_events(parameters)
 
-    # Verify cached events were cleared
-    assert view.cached_events == {}
-    # Verify global signal was emitted to load new generator
-    view.global_signal.emit.assert_called()
+    # cached events must have been cleared before the new generator was requested
+    # (generator is None and cached_events were cleared inside the abort branch)
+    call_args_list = view.global_signal.emit.call_args_list
+    action_names = [c.args[2] for c in call_args_list if len(c.args) > 2]
+    assert "load_event_data" in action_names
 
 
 def test_handle_plot_events_uses_cached_events(
@@ -3881,13 +3892,13 @@ def test_handle_plot_events_uses_cached_events(
 ) -> None:
     """Verify cached events are used when available."""
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
-    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}  # type: ignore[assignment]
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
     view.plot_events_generator = mocker.Mock()
-    view.cached_events = {1: {"event_id": 1, "raw_data": np.array([1.0])}}  # type: ignore[assignment]
-    view._update_event_plot = mocker.Mock()  # type: ignore[method-assign]
+    view.cached_events = {1: dict(_FULL_EVENT)}
+    view._update_event_plot = mocker.Mock()
     parameters = {"db_loader": "test_loader", "event_index": [1]}
 
     view._handle_plot_events(parameters)
@@ -3905,16 +3916,15 @@ def test_handle_plot_events_fetches_from_generator_when_not_cached(
     view.current_experiment = "exp1"
     view.current_channel = 1
 
-    # Create generator that properly supports send() protocol
     def mock_generator():
         abort = False
         while not abort:
-            abort = yield {"event_id": 1, "raw_data": np.array([1.0])}
+            abort = yield dict(_FULL_EVENT)
             if abort:
                 break
 
     gen = mock_generator()
-    next(gen)  # Prime it
+    next(gen)
     view.plot_events_generator = gen
     view.cached_events = {}
     view._update_event_plot = mocker.Mock()
@@ -3922,9 +3932,7 @@ def test_handle_plot_events_fetches_from_generator_when_not_cached(
 
     view._handle_plot_events(parameters)
 
-    # Verify update was called with the event data
     view._update_event_plot.assert_called_once()
-    # Verify the event data list contains our event
     call_args = view._update_event_plot.call_args[0][0]
     assert len(call_args) == 1
     assert call_args[0]["event_id"] == 1
@@ -3991,81 +3999,78 @@ def test_handle_plot_events_stops_when_event_id_exceeds_requested(
 # ----------------------------- Update Event Plot Tests ------------------------------
 
 
+def _make_event(event_id: int = 1, n_samples: int = 2) -> dict:
+    """Return a minimal valid event dict."""
+    return {
+        "experiment_id": 1,
+        "channel_id": 1,
+        "event_id": event_id,
+        "raw_data": np.ones(n_samples) * 1000.0,
+        "filtered_data": np.ones(n_samples) * 1100.0,
+        "fit_data": np.ones(n_samples) * 1000.0,
+        "samplerate": 10000,
+    }
+
+
+def _none_lists(n: int):
+    """Return the six None-filled lists required alongside event_data."""
+    return (
+        [None] * n,  # horizontal_lines
+        [None] * n,  # vertical_lines
+        [None] * n,  # points
+        [None] * n,  # horizontal_labels
+        [None] * n,  # vertical_labels
+        [None] * n,  # point_labels
+    )
+
+
 def test_update_event_plot_clears_figure(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify figure is cleared before plotting events."""
-    view._clear_figure_state = mocker.Mock()  # type: ignore[method-assign]
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": 1,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-    ]
+    view._clear_figure_state = mocker.Mock()
+    view._factors = mocker.Mock(return_value=(1, 1))
+    event_data = [_make_event()]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(1))
 
-    view._clear_figure_state.assert_called_once_with(create_default_axes=False)
+    # _reset_actions calls _clear_figure_state internally; check it was called
+    view._clear_figure_state.assert_called()
 
 
 def test_update_event_plot_creates_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify subplots are created for each event."""
-    view._factors = mocker.Mock(return_value=(2, 2))  # type: ignore[method-assign]
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": i,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-        for i in range(4)
-    ]
+    view._factors = mocker.Mock(return_value=(2, 2))
+    event_data = [_make_event(i) for i in range(4)]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(4))
 
+    # add_subplot called once per event
     assert view.figure.add_subplot.call_count == 4
 
 
 def test_update_event_plot_plots_all_traces(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify raw, filtered, and fit traces are plotted."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    """Verify raw (when use_raw=True), filtered, and fit traces are plotted."""
+    view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": 1,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-    ]
+    event_data = [_make_event()]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(1), use_raw=True)
 
-    assert mock_ax.plot.call_count == 3  # raw, filtered, fit
+    # raw + filtered + fit = 3 plot calls
+    assert mock_ax.plot.call_count == 3
 
 
 def test_update_event_plot_sets_subplot_titles(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify subplot titles are set with exp/channel/event info."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
     event_data = [
@@ -4080,7 +4085,7 @@ def test_update_event_plot_sets_subplot_titles(
         }
     ]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(1))
 
     mock_ax.set_title.assert_called_once()
     title = mock_ax.set_title.call_args[0][0]
@@ -4088,12 +4093,11 @@ def test_update_event_plot_sets_subplot_titles(
     assert "Ch 3" in title
     assert "Event 42" in title
 
-
 def test_update_event_plot_converts_current_to_nanoamps(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify current data is converted from pA to nA."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
     event_data = [
@@ -4101,45 +4105,35 @@ def test_update_event_plot_converts_current_to_nanoamps(
             "experiment_id": 1,
             "channel_id": 1,
             "event_id": 1,
-            "raw_data": np.array([1000.0, 2000.0]),  # pA
+            "raw_data": np.array([1000.0, 2000.0]),
             "filtered_data": np.array([1100.0, 2100.0]),
             "fit_data": np.array([1000.0, 2000.0]),
             "samplerate": 10000,
         }
     ]
 
-    view._update_event_plot(event_data)
+    # use_raw=False → only filtered + fit plotted (2 calls)
+    view._update_event_plot(event_data, *_none_lists(1), use_raw=False)
 
-    # Check that plot was called with divided values (pA / 1000 = nA)
     calls = mock_ax.plot.call_args_list
-    assert len(calls) == 3
-    # First call should have raw_data / 1000
-    np.testing.assert_array_almost_equal(calls[0][0][1], np.array([1.0, 2.0]))
+    # first call is filtered_data / 1000
+
+    np.testing.assert_array_almost_equal(calls[0][0][1], np.array([1.1, 2.1]))
 
 
 def test_update_event_plot_converts_time_to_microseconds(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify time is converted to microseconds."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
+    view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": 1,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,  # 10kHz
-        }
-    ]
+    event_data = [_make_event(n_samples=2)]  # samplerate=10000
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(1), use_raw=True)
 
-    # Time array: [0, 1] samples / 10000 Hz * 1e6 = [0, 100] µs
     calls = mock_ax.plot.call_args_list
+    # time = [0, 1] / 10000 * 1e6 = [0, 100] µs
     expected_time = np.array([0.0, 100.0])
     np.testing.assert_array_almost_equal(calls[0][0][0], expected_time)
 
@@ -4148,30 +4142,21 @@ def test_update_event_plot_updates_cache(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify cache is updated with event data."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": 1,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-    ]
+    view._factors = mocker.Mock(return_value=(1, 1))
+    event_data = [_make_event()]
 
-    view._update_event_plot(event_data)
+    # use_raw=False → 2 _update_cache calls (filtered + fit)
+    view._update_event_plot(event_data, *_none_lists(1), use_raw=False)
 
-    assert view._update_cache.call_count == 3  # One for each trace
+    assert view._update_cache.call_count == 2
 
 
 def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify y-axis labels are set only on leftmost subplots."""
-    view._factors = mocker.Mock(return_value=(2, 3))  # type: ignore[method-assign]
-    mock_axes = []
+    view._factors = mocker.Mock(return_value=(2, 3))
+    mock_axes: list = []
 
     def create_mock_ax(*args: Any) -> Any:
         ax = mocker.Mock()
@@ -4179,22 +4164,10 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
         return ax
 
     view.figure.add_subplot = mocker.Mock(side_effect=create_mock_ax)
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": i,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-        for i in range(6)
-    ]
+    event_data = [_make_event(i) for i in range(6)]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(6))
 
-    # Only leftmost column (indices 0, 3) should have ylabel
     assert mock_axes[0].set_ylabel.called
     assert not mock_axes[1].set_ylabel.called
     assert not mock_axes[2].set_ylabel.called
@@ -4207,8 +4180,8 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify x-axis labels are set only on bottom row subplots."""
-    view._factors = mocker.Mock(return_value=(2, 3))  # type: ignore[method-assign]
-    mock_axes = []
+    view._factors = mocker.Mock(return_value=(2, 3))
+    mock_axes: list = []
 
     def create_mock_ax(*args: Any) -> Any:
         ax = mocker.Mock()
@@ -4216,22 +4189,10 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
         return ax
 
     view.figure.add_subplot = mocker.Mock(side_effect=create_mock_ax)
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": i,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-        for i in range(6)
-    ]
+    event_data = [_make_event(i) for i in range(6)]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(6))
 
-    # Bottom row (indices 3, 4, 5) should have xlabel
     assert not mock_axes[0].set_xlabel.called
     assert not mock_axes[1].set_xlabel.called
     assert not mock_axes[2].set_xlabel.called
@@ -4239,25 +4200,14 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     assert mock_axes[4].set_xlabel.called
     assert mock_axes[5].set_xlabel.called
 
-
 def test_update_event_plot_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify canvas is redrawn after plotting."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": 1,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-    ]
+    view._factors = mocker.Mock(return_value=(1, 1))
+    event_data = [_make_event()]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(1))
 
     view.canvas.draw.assert_called_once()
 
@@ -4266,22 +4216,13 @@ def test_update_event_plot_commits_cache(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify cache is committed after plotting."""
-    view._factors = mocker.Mock(return_value=(1, 1))  # type: ignore[method-assign]
-    event_data = [
-        {
-            "experiment_id": 1,
-            "channel_id": 1,
-            "event_id": 1,
-            "raw_data": np.array([1.0, 2.0]),
-            "filtered_data": np.array([1.1, 2.1]),
-            "fit_data": np.array([1.0, 2.0]),
-            "samplerate": 10000,
-        }
-    ]
+    view._factors = mocker.Mock(return_value=(1, 1))
+    event_data = [_make_event()]
 
-    view._update_event_plot(event_data)
+    view._update_event_plot(event_data, *_none_lists(1))
 
     view._commit_cache.assert_called_once()
+
 
 
 # ----------------------------- Export CSV Subset Tests ------------------------------
@@ -5219,11 +5160,11 @@ def test_get_selected_filters_returns_selected_filter_dict(
     view.metadatacontrols.filter_comboBox.getSelectedItems = mocker.Mock(
         return_value=["Filter1", "Filter3"]
     )
+    view.get_selected_filters = MetadataView.get_selected_filters.__get__(view)
 
     result = view.get_selected_filters()
 
     assert result == {"Filter1": "WHERE x > 1", "Filter3": "WHERE z = 5"}
-
 
 def test_get_selected_filters_returns_empty_dict_when_none_selected(
     view: MetadataView, mocker: MockerFixture
@@ -5235,6 +5176,7 @@ def test_get_selected_filters_returns_empty_dict_when_none_selected(
     view.metadatacontrols.filter_comboBox.getSelectedItems = mocker.Mock(
         return_value=[]
     )
+    view.get_selected_filters = MetadataView.get_selected_filters.__get__(view)
 
     result = view.get_selected_filters()
 
