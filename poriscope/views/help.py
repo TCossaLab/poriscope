@@ -129,7 +129,8 @@ class LinkCard(QFrame):
             if pixmap.isNull():
                 return
             pixmap = pixmap.scaled(
-                _RENDER_PX, _RENDER_PX,
+                _RENDER_PX,
+                _RENDER_PX,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
@@ -140,13 +141,13 @@ class LinkCard(QFrame):
 
     def _refresh(self, hovered: bool):
         if self._initial_bg == "black":
-            bg     = "white" if hovered else "black"
-            fg     = "black" if hovered else "white"
-            url_fg = "#333"  if hovered else "#ccc"
+            bg = "white" if hovered else "black"
+            fg = "black" if hovered else "white"
+            url_fg = "#333" if hovered else "#ccc"
         else:
-            bg     = "black" if hovered else "white"
-            fg     = "white" if hovered else "black"
-            url_fg = "#ccc"  if hovered else "#555"
+            bg = "black" if hovered else "white"
+            fg = "white" if hovered else "black"
+            url_fg = "#ccc" if hovered else "#555"
 
         icon = self._icon_path_hover if hovered else self._icon_path_normal
 
@@ -264,8 +265,6 @@ class HelpCentre(QWidget):
         self.help_centre_label.setText(
             QCoreApplication.translate("Form", "Help Centre", None)
         )
-
-
 
 
 if __name__ == "__main__":

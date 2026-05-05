@@ -66,13 +66,15 @@ class MultiSelectComboBox(QComboBox):
                 self.containerWidget.windowFlags() | Qt.Popup
             )
             self.containerWidget.setWindowTitle("Select Channel")
-        
+
         if sys.platform != "linux":
-            self.containerWidget.setStyleSheet("""
+            self.containerWidget.setStyleSheet(
+                """
                 QDialog {
                     border-radius: 10px;
                 }
-            """)
+            """
+            )
 
         # Create a layout for the container
         layout = QVBoxLayout(self.containerWidget)

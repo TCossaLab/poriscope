@@ -39,7 +39,7 @@ Numeric = Union[int, float, np.number]
 
 
 @inherit_docstrings
-class CUSUM(MetaEventFitter):
+class NoFitter(MetaEventFitter):
     """
     Abstract base class to analyze and flag the start and end times of regions
     of interest in a timeseries for further analysis.
@@ -103,10 +103,6 @@ class CUSUM(MetaEventFitter):
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "pA"}
-        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
-        settings["Rise Time"] = {"Type": float, "Min": 0.0, "Units": "us"}
-        settings["Max Sublevels"] = {"Type": int, "Value": 0, "Min": 0}
         return settings
 
     @log(logger=logger)
@@ -119,7 +115,7 @@ class CUSUM(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def construct_fitted_event(
+    def construct_fitted_event(  ##TODO
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:
         """
@@ -226,170 +222,20 @@ class CUSUM(MetaEventFitter):
         :raises AttributeError: if the fitting method cannot operate without provision of specific padding and baseline metadata and cannot rescue itself. This will cause a stop to processing of the dataset.
         """
 
-        if baseline_std is None:  # the rest of the args can be None without issue
-            if padding_before is not None:
-                baseline_std = np.std(data[:padding_before])
-            elif padding_after is not None:
-                baseline_std = np.std(data[-padding_after:])
-            else:
-                raise ValueError(
-                    "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
-                )
-
-        step_size = self.settings["Step Size"]["Value"] / baseline_std
-        rise_time = int(1.0e-6 * self.settings["Rise Time"]["Value"] * samplerate)
-        max_sublevels = self.settings["Max Sublevels"]["Value"]
-
         length = len(data)
+        sign = np.sign(baseline_mean)
+        rise_time = 0
 
-        attempts = 0
-        retry = True
-        while retry:
-            retry = False
-            logp = 0  # instantaneous log-likelihood for positive jumps
-            logn = 0  # instantaneous log-likelihood for negative jumps
-            cpos = np.zeros(
-                length, dtype=np.float64
-            )  # cumulative log-likelihood function for positive jumps
-            cneg = np.zeros(
-                length, dtype=np.float64
-            )  # cumulative log-likelihood function for negative jumps
-            gpos = np.zeros(
-                length, dtype=np.float64
-            )  # decision function for positive jumps
-            gneg = np.zeros(
-                length, dtype=np.float64
-            )  # decision function for negative jumps
+        edges = [0]  # first sublevel starts at the start of the data block
 
-            # set up running mean and variance calculation
-            mean = data[0]
-            variance = baseline_std * baseline_std
-            num_states = 0
-            varM = data[0]
-            varS = 0
-            mean = data[0]
-
-            threshold = self._calculate_threshold(
-                length, step_size
-            )  # determine optimal sensitivity
-            edges = [0]  # first sublevel starts at the start of the data block
-
-            k = 0  # current data point index
-            anchor = 0  # the last detected change
-            num_states = 0
-
-            while k < length - 1:
-                k += 1
-                varOldM = varM  # algorithm to calculate running variance, details here: http://www.johndcook.com/blog/standard_deviation/
-                varM = varM + (data[k] - varM) / float(k + 1 - anchor)
-                varS = varS + (data[k] - varOldM) * (data[k] - varM)
-                variance = varS / float(k - anchor)
-                mean = ((k - anchor) * mean + data[k]) / float(k + 1 - anchor)
-                if (
-                    variance == 0
-                ):  # with low-precision data sets it is possible that two adjacent values are equal, in which case there is zero variance for the two-vector of sample if this occurs next to a detected jump. This is very, very rare, but it does happen.
-                    variance = (
-                        baseline_std * baseline_std
-                    )  # in that case, we default to the local baseline variance, which is a good an estimate as any.
-                logp = (
-                    step_size
-                    * baseline_std
-                    / variance
-                    * (data[k] - mean - step_size * baseline_std / 2)
-                )  # instantaneous log-likelihood for current sample assuming local baseline has jumped in the positive direction
-                logn = (
-                    -step_size
-                    * baseline_std
-                    / variance
-                    * (data[k] - mean + step_size * baseline_std / 2)
-                )  # instantaneous log-likelihood for current sample assuming local baseline has jumped in the negative direction
-                cpos[k] = cpos[k - 1] + logp  # accumulate positive log-likelihoods
-                cneg[k] = cneg[k - 1] + logn  # accumulate negative log-likelihoods
-                gpos[k] = max(
-                    gpos[k - 1] + logp, 0
-                )  # accumulate or reset positive decision function
-                gneg[k] = max(
-                    gneg[k - 1] + logn, 0
-                )  # accumulate or reset negative decision function
-                if gpos[k] > threshold or gneg[k] > threshold:
-                    jump_accepted = False
-
-                    if gpos[k] > threshold:  # significant positive jump detected
-                        jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
-                        # Note: C also checks `length - jump > rise_time` here,
-                        # you may want to add that to match C perfectly!
-                        if jump - edges[num_states] > rise_time:
-                            edges = np.append(edges, jump)
-                            num_states += 1
-                            jump_accepted = True
-
-                    if gneg[k] > threshold:  # significant negative jump detected
-                        jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
-                        if jump - edges[num_states] > rise_time:
-                            edges = np.append(edges, jump)
-                            num_states += 1
-                            jump_accepted = True
-
-                    if jump_accepted:
-                        anchor = k
-                        cpos[0 : len(cpos)] = 0
-                        cneg[0 : len(cneg)] = 0
-                        gpos[0 : len(gpos)] = 0
-                        gneg[0 : len(gneg)] = 0
-                        mean = data[anchor]
-                        varM = data[anchor]
-            varS = 0
-            edges = np.append(edges, length)  # mark the end of the event as an edge
-            num_states += 1
-
-            if num_states < 3:
-                self.logger.info(
-                    "Unable to find at least 3 sublevels, event will be rejected"
-                )
-                raise ValueError("Too Few Levels")
-
-            # iteratively remove steps that are too small, from left to right
-            minstepflag = False
-            while not minstepflag:
-                minstepflag = True
-                sublevel_means = [
-                    (
-                        np.median(data[int(edges[i] + rise_time) : int(edges[i + 1])])
-                        if edges[i] + rise_time < edges[i + 1]
-                        else data[int(edges[i + 1]) - 1]
-                    )
-                    for i in range(num_states)
-                ]
-
-                toosmall = (
-                    np.absolute(np.diff(sublevel_means)) < step_size * baseline_std / 2
-                )
-                for i in range(len(toosmall)):
-                    if toosmall[i]:
-                        edges = np.delete(edges, i + 1)
-                        minstepflag = False
-                        num_states -= 1
-                        break
-
-            if num_states < 3:
-                self.logger.info(
-                    "Unable to find at least 3 sublevels after removing small steps, event will be rejected"
-                )
-                raise ValueError("Too Few Levels")
-
-            attempts += 1
-            if max_sublevels > 0 and attempts < 5 and num_states > max_sublevels:
-                retry = True
-                step_size *= 1.5  # increase the step size used for next iteration if we found too many levels. Could also try playing with threshold, I suppose.
-
-        if (
-            max_sublevels > 0 and num_states > max_sublevels
-        ):  # still can't get sublevel count low enough
-            self.logger.info(
-                "Too many levels, unable to correct. Event will be rejected."
-            )
-            raise ValueError("Too Many Levels")
-
+        k = padding_before
+        while data[k] * sign < baseline_mean * sign:  # find starting point
+            k -= 1
+            rise_time += 1
+        edges = np.append(edges, k)  # add start point as an edge
+        edges = np.append(edges, len(data) - padding_after - rise_time)
+        edges = np.append(edges, length)  # mark the end of the event as an edge
+        self.rise_time = rise_time
         return edges
 
     @log(logger=logger)
@@ -417,7 +263,9 @@ class CUSUM(MetaEventFitter):
         sublevel_metadata = {}
 
         num_states = len(sublevel_starts) - 1
-        rise_time = int(1.0e-6 * self.settings["Rise Time"]["Value"] * samplerate)
+        rise_time = (
+            self.rise_time
+        )  # multiply this if you want to ignore more in your averaging
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
 
@@ -754,46 +602,3 @@ class CUSUM(MetaEventFitter):
         metadata_units["sublevel_raw_ecd"] = "pC"
         metadata_units["sublevel_fitted_ecd"] = "pC"
         return metadata_units
-
-    # utility functions
-    @log(logger=logger)
-    def _calculate_threshold(self, length, step, min_threshold=0.4, max_threshold=10.0):
-        """
-        Calculate an optimal threshold value based on signal length and step size.
-
-        Exact Python port of the C functions get_cusum_threshold and ARL.
-        """
-        # Map the original Python interface variables to match C parameters
-        sigma = step
-        mun = -step / 2.0
-        length *= 2
-
-        # Inner helper to replicate the C ARL() function
-        def ARL(length, s, m, h):
-            term = h / s + 1.166
-            return (np.exp(-2.0 * m * term) - 1.0 + 2.0 * m * term) / (
-                2.0 * m * m
-            ) - float(length)
-
-        threshold = min_threshold
-        arlmin = ARL(length, sigma, mun, min_threshold)
-        oldsign = np.sign(arlmin)
-        mindif = abs(arlmin)
-
-        h = min_threshold
-
-        # Replicates the C loop: for (h = minthreshold; h < maxthreshold; h += 0.5)
-        while h < max_threshold:
-            arl = ARL(length, sigma, mun, h)
-            sign = np.sign(arl)
-
-            if sign != oldsign:
-                threshold = h
-                break
-            elif abs(arl) < mindif:
-                mindif = abs(arl)
-                threshold = h
-
-            h += 0.5
-
-        return threshold / self.settings["Sensitivity"]["Value"]
