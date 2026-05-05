@@ -180,3 +180,16 @@ class ClusteringController(MetaController):
             self.global_signal.emit(
                 "MetaDatabaseLoader", loader, "list_plugins", (), "update_plugins", ()
             )
+
+    @log(logger=logger)
+    def display_write_status(self, status: bool) -> None:
+        if status:
+            self.add_text_to_display.emit(
+                "Successfully wrote clustering data",
+                self.__class__.__name__,
+            )
+        else:
+            self.add_text_to_display.emit(
+                "Failed to write clustering data",
+                self.__class__.__name__,
+            )
