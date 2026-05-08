@@ -327,7 +327,8 @@ class PeakFinder(MetaEventFitter):
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
-                - 2* np.sign(baseline)
+                - 2
+                * np.sign(baseline)
                 * self.event_metadata[channel][index]["baseline_std"]
             )
             hlabel.append("unfolded level - 2std")
