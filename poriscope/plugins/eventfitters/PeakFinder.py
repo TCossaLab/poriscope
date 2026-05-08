@@ -296,6 +296,7 @@ class PeakFinder(MetaEventFitter):
             ):
                 return None, None, None, None, None, None
 
+            baseline = self.event_metadata[channel][index]["baseline"]
             # Initializing arrays
             bases = []
             peaks = []
@@ -309,20 +310,20 @@ class PeakFinder(MetaEventFitter):
             bases.append(self.event_metadata[channel][index]["baseline"])
             hlabel.append("Baseline")
             bases.append(
-                self.event_metadata[channel][index]["unfolded_level"]
+                -np.sign(baseline)* self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
             )
             hlabel.append("unfolded level")
-            bases.append(
-                self.event_metadata[channel][index]["unfolded_level"]
+            bases.append( 
+                -np.sign(baseline)* self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
-                + self.event_metadata[channel][index]["baseline_std"]
+                -np.sign(baseline)*self.event_metadata[channel][index]["baseline_std"]
             )
             hlabel.append("unfolded level + std")
             bases.append(
-                self.event_metadata[channel][index]["unfolded_level"]
+                -np.sign(baseline)* self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
-                - 2 * self.event_metadata[channel][index]["baseline_std"]
+                -np.sign(baseline)* 2 * self.event_metadata[channel][index]["baseline_std"]
             )
             hlabel.append("unfolded level - 2std")
 
@@ -332,11 +333,11 @@ class PeakFinder(MetaEventFitter):
                     # ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
                     bases.append(
                         self.sublevel_metadata[channel][index]["left_base"][i]
-                        + self.event_metadata[channel][index]["baseline"]
+                        -np.sign(baseline)*self.event_metadata[channel][index]["baseline"]
                     )
                     bases.append(
                         self.sublevel_metadata[channel][index]["right_base"][i]
-                        + self.event_metadata[channel][index]["baseline"]
+                        -np.sign(baseline)*self.event_metadata[channel][index]["baseline"]
                     )
                     # vlabel.append("Left ips #"+str(i+1))
                     # # vlabel.append("Right ips #"+str(i+1))
@@ -346,7 +347,7 @@ class PeakFinder(MetaEventFitter):
                         (
                             self.sublevel_metadata[channel][index]["peak_loc"][i],
                             self.sublevel_metadata[channel][index]["peak_height"][i]
-                            + self.event_metadata[channel][index]["baseline"],
+                            -np.sign(baseline)*self.event_metadata[channel][index]["baseline"],
                         )
                     )
                     plabel.append("Peak #" + str(j))
