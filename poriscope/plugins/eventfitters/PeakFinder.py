@@ -450,7 +450,7 @@ class PeakFinder(MetaEventFitter):
                 raise ValueError(
                     "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
                 )
-                
+
         if baseline_mean > 0:
             # Invert the data to find negative peaks
             data = -data
