@@ -450,6 +450,15 @@ class PeakFinder(MetaEventFitter):
                 raise ValueError(
                     "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
                 )
+                
+        if baseline_mean > 0:
+            # Invert the data to find negative peaks
+            data = -data
+            # The height should be relative to the new, inverted baseline, which is -baseline_mean
+            height_threshold = -baseline_mean + min_height
+        else:
+            # Data is already negative, no need to invert
+            height_threshold = baseline_mean - min_height
 
         """
             scipy find_peaks
@@ -522,7 +531,7 @@ class PeakFinder(MetaEventFitter):
 
         peaks, properties = find_peaks(
             data[padding_before:-padding_after],
-            height=min_height + baseline_mean,
+            height=height_threshold,
             prominence=min_prom,
             wlen=wlen,
             width=width,
