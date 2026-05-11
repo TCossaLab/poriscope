@@ -338,13 +338,13 @@ class PeakFinder(MetaEventFitter):
                     # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
                     # ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
                     bases.append(
-                        - np.sign(baseline)
-                        *self.sublevel_metadata[channel][index]["left_base"][i]
+                        -np.sign(baseline)
+                        * self.sublevel_metadata[channel][index]["left_base"][i]
                         + self.event_metadata[channel][index]["baseline"]
                     )
                     bases.append(
-                        - np.sign(baseline)
-                        *self.sublevel_metadata[channel][index]["right_base"][i]
+                        -np.sign(baseline)
+                        * self.sublevel_metadata[channel][index]["right_base"][i]
                         + self.event_metadata[channel][index]["baseline"]
                     )
                     # vlabel.append("Left ips #"+str(i+1))
@@ -354,7 +354,8 @@ class PeakFinder(MetaEventFitter):
                     peaks.append(
                         (
                             self.sublevel_metadata[channel][index]["peak_loc"][i],
-                            -np.sign(baseline) * self.sublevel_metadata[channel][index]["peak_height"][i]
+                            -np.sign(baseline)
+                            * self.sublevel_metadata[channel][index]["peak_height"][i]
                             + self.event_metadata[channel][index]["baseline"],
                         )
                     )
@@ -460,7 +461,6 @@ class PeakFinder(MetaEventFitter):
                     "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
                 )
 
-
         """
             scipy find_peaks
 
@@ -530,10 +530,9 @@ class PeakFinder(MetaEventFitter):
                 If plateau_size is given, these keys are accessible and contain the indices of a peak’s edges (edges are still part of the plateau) and the calculated plateau sizes.
             """
 
-            
         peaks, properties = find_peaks(
             -np.sign(baseline_mean) * data[padding_before:-padding_after],
-            height= -np.sign(baseline_mean) * baseline_mean + min_height,
+            height=-np.sign(baseline_mean) * baseline_mean + min_height,
             prominence=min_prom,
             wlen=wlen,
             width=width,
@@ -544,9 +543,7 @@ class PeakFinder(MetaEventFitter):
         properties.update(
             {
                 "left_bases": [
-                    np.absolute(
-                        data[properties["left_bases"][i] + padding_before]
-                    )
+                    np.absolute(data[properties["left_bases"][i] + padding_before])
                     for i in range(len(peaks))
                 ]
             }
@@ -554,9 +551,7 @@ class PeakFinder(MetaEventFitter):
         properties.update(
             {
                 "right_bases": [
-                    np.absolute(
-                        data[properties["right_bases"][i] + padding_before]
-                    )
+                    np.absolute(data[properties["right_bases"][i] + padding_before])
                     for i in range(len(peaks))
                 ]
             }
@@ -604,10 +599,19 @@ class PeakFinder(MetaEventFitter):
                     {
                         "index": peaks[i] + padding_before,
                         "type": f"peak_{i+1}",
-                        "peak_height": np.absolute(-np.sign(baseline_mean) * baseline_mean + np.absolute(properties["peak_heights"][i])),
+                        "peak_height": np.absolute(
+                            -np.sign(baseline_mean) * baseline_mean
+                            + np.absolute(properties["peak_heights"][i])
+                        ),
                         "prominence": properties["prominences"][i],
-                        "left_base": np.absolute(-np.sign(baseline_mean) * baseline_mean + np.absolute(properties["left_bases"][i])),
-                        "right_base": np.absolute(-np.sign(baseline_mean) * baseline_mean + np.absolute(properties["right_bases"][i])),
+                        "left_base": np.absolute(
+                            -np.sign(baseline_mean) * baseline_mean
+                            + np.absolute(properties["left_bases"][i])
+                        ),
+                        "right_base": np.absolute(
+                            -np.sign(baseline_mean) * baseline_mean
+                            + np.absolute(properties["right_bases"][i])
+                        ),
                         "width": properties["widths"][i],
                         "left_ips": padding_before + properties["left_ips"][i],
                         "right_ips": padding_before + properties["right_ips"][i],
