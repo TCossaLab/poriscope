@@ -327,7 +327,7 @@ class PeakFinder(MetaEventFitter):
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
-                - 2
+                + 2
                 * np.sign(baseline)
                 * self.event_metadata[channel][index]["baseline_std"]
             )
@@ -338,25 +338,24 @@ class PeakFinder(MetaEventFitter):
                     # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
                     # ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
                     bases.append(
-                        self.sublevel_metadata[channel][index]["left_base"][i]
                         - np.sign(baseline)
-                        * self.event_metadata[channel][index]["baseline"]
+                        *self.sublevel_metadata[channel][index]["left_base"][i]
+                        + self.event_metadata[channel][index]["baseline"]
                     )
                     bases.append(
-                        self.sublevel_metadata[channel][index]["right_base"][i]
                         - np.sign(baseline)
-                        * self.event_metadata[channel][index]["baseline"]
+                        *self.sublevel_metadata[channel][index]["right_base"][i]
+                        + self.event_metadata[channel][index]["baseline"]
                     )
                     # vlabel.append("Left ips #"+str(i+1))
-                    # # vlabel.append("Right ips #"+str(i+1))
+                    # vlabel.append("Right ips #"+str(i+1))
                     hlabel.append("Right base #" + str(j))
                     hlabel.append("Left base #" + str(j))
                     peaks.append(
                         (
                             self.sublevel_metadata[channel][index]["peak_loc"][i],
-                            self.sublevel_metadata[channel][index]["peak_height"][i]
-                            - np.sign(baseline)
-                            * self.event_metadata[channel][index]["baseline"],
+                            -np.sign(baseline) * self.sublevel_metadata[channel][index]["peak_height"][i]
+                            + self.event_metadata[channel][index]["baseline"],
                         )
                     )
                     plabel.append("Peak #" + str(j))
@@ -461,14 +460,6 @@ class PeakFinder(MetaEventFitter):
                     "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
                 )
 
-        if baseline_mean > 0:
-            # Invert the data to find negative peaks
-            data = -data
-            # The height should be relative to the new, inverted baseline, which is -baseline_mean
-            height_threshold = -baseline_mean + min_height
-        else:
-            # Data is already negative, no need to invert
-            height_threshold = baseline_mean - min_height
 
         """
             scipy find_peaks
@@ -539,9 +530,10 @@ class PeakFinder(MetaEventFitter):
                 If plateau_size is given, these keys are accessible and contain the indices of a peak’s edges (edges are still part of the plateau) and the calculated plateau sizes.
             """
 
+            
         peaks, properties = find_peaks(
-            data[padding_before:-padding_after],
-            height=height_threshold,
+            -np.sign(baseline_mean) * data[padding_before:-padding_after],
+            height= -np.sign(baseline_mean) * baseline_mean + min_height,
             prominence=min_prom,
             wlen=wlen,
             width=width,
@@ -554,7 +546,6 @@ class PeakFinder(MetaEventFitter):
                 "left_bases": [
                     np.absolute(
                         data[properties["left_bases"][i] + padding_before]
-                        - baseline_mean
                     )
                     for i in range(len(peaks))
                 ]
@@ -565,7 +556,6 @@ class PeakFinder(MetaEventFitter):
                 "right_bases": [
                     np.absolute(
                         data[properties["right_bases"][i] + padding_before]
-                        - baseline_mean
                     )
                     for i in range(len(peaks))
                 ]
@@ -614,12 +604,10 @@ class PeakFinder(MetaEventFitter):
                     {
                         "index": peaks[i] + padding_before,
                         "type": f"peak_{i+1}",
-                        "peak_height": np.absolute(
-                            properties["peak_heights"][i] - baseline_mean
-                        ),
+                        "peak_height": np.absolute(-np.sign(baseline_mean) * baseline_mean + np.absolute(properties["peak_heights"][i])),
                         "prominence": properties["prominences"][i],
-                        "left_base": properties["left_bases"][i],
-                        "right_base": properties["right_bases"][i],
+                        "left_base": np.absolute(-np.sign(baseline_mean) * baseline_mean + np.absolute(properties["left_bases"][i])),
+                        "right_base": np.absolute(-np.sign(baseline_mean) * baseline_mean + np.absolute(properties["right_bases"][i])),
                         "width": properties["widths"][i],
                         "left_ips": padding_before + properties["left_ips"][i],
                         "right_ips": padding_before + properties["right_ips"][i],
@@ -784,7 +772,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["peak_height"] = np.array(
             [
                 (
-                    np.absolute(sublevel_starts[i]["peak_height"])
+                    sublevel_starts[i]["peak_height"]
                     if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
