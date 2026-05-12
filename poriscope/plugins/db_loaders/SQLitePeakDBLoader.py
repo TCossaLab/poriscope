@@ -111,13 +111,13 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         bases.append(baseline)
         hlabel.append("Baseline")
 
-        bases.append(unfolded + baseline)
+        bases.append(baseline - sign*unfolded)
         hlabel.append("unfolded level")
 
-        bases.append(unfolded + baseline + std)
+        bases.append(-sign*unfolded + baseline - sign*std)
         hlabel.append("unfolded level + std")
 
-        bases.append(unfolded + baseline - 2 * std)
+        bases.append(-sign*unfolded + baseline + sign * 2 * std)
         hlabel.append("unfolded level - 2std")
 
         # --- 2. Handle Sublevel Data ---
