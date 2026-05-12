@@ -26,6 +26,7 @@
 import logging
 from typing import List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 from typing_extensions import override
 
@@ -105,6 +106,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         baseline = first_row["baseline"]
         unfolded = first_row["unfolded_level"]
         std = first_row["baseline_std"]
+        sign = np.sign(baseline)
 
         bases.append(baseline)
         hlabel.append("Baseline")
@@ -126,13 +128,13 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             if pd.notna(row.peak_id):
 
                 # No need for [i] indexing anymore, `row` represents the specific sublevel
-                bases.append(row.left_base + row.baseline)
-                bases.append(row.right_base + row.baseline)
+                bases.append(row.baseline - sign*row.left_base)
+                bases.append(row.baseline - sign*row.right_base)
 
                 hlabel.append(f"Right base #{j}")
                 hlabel.append(f"Left base #{j}")
 
-                peaks.append((row.peak_loc, row.peak_height + row.baseline))
+                peaks.append((row.peak_loc, row.baseline - sign*row.peak_height))
                 plabel.append(f"Peak #{j}")
 
                 # Filter logic
