@@ -279,13 +279,19 @@ class HelpCentre(QWidget):
         cite_heading_font = QFont("Arial", 14)
         cite_heading_font.setBold(True)
         cite_heading.setFont(cite_heading_font)
-        cite_heading.setStyleSheet("background: transparent; border: none; color: #111111;")
+        cite_heading.setStyleSheet(
+            "background: transparent; border: none; color: #111111;"
+        )
         cite_layout.addWidget(cite_heading)
 
         # Instruction line
-        cite_instruction = QLabel("If you use this software, please cite the following paper:")
+        cite_instruction = QLabel(
+            "If you use this software, please cite the following paper:"
+        )
         cite_instruction.setFont(QFont("Arial", 10))
-        cite_instruction.setStyleSheet("background: transparent; border: none; color: #444444;")
+        cite_instruction.setStyleSheet(
+            "background: transparent; border: none; color: #444444;"
+        )
         cite_layout.addWidget(cite_instruction)
 
         # Primary citation line
@@ -299,7 +305,9 @@ class HelpCentre(QWidget):
         self.citation_label.setWordWrap(True)
         self.citation_label.setOpenExternalLinks(True)
         self.citation_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        self.citation_label.setStyleSheet("background: transparent; border: none; color: #222222;")
+        self.citation_label.setStyleSheet(
+            "background: transparent; border: none; color: #222222;"
+        )
         cite_layout.addWidget(self.citation_label)
 
         # Release suggestion line
@@ -312,7 +320,9 @@ class HelpCentre(QWidget):
         self.release_label.setWordWrap(True)
         self.release_label.setOpenExternalLinks(True)
         self.release_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        self.release_label.setStyleSheet("background: transparent; border: none; color: #444444;")
+        self.release_label.setStyleSheet(
+            "background: transparent; border: none; color: #444444;"
+        )
         cite_layout.addWidget(self.release_label)
 
         main_layout.addWidget(self.citation_box)

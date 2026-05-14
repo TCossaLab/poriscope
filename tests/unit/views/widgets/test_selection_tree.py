@@ -40,6 +40,7 @@ def child_item(w: SelectionTree, parent_row: int, child_row: int):
 # populate_tree
 # ===========================================================================
 
+
 class TestPopulateTree(unittest.TestCase):
 
     def setUp(self):
@@ -120,6 +121,7 @@ class TestPopulateTree(unittest.TestCase):
 # on_item_changed — checking/unchecking items
 # ===========================================================================
 
+
 class TestOnItemChanged(unittest.TestCase):
 
     def setUp(self):
@@ -166,6 +168,7 @@ class TestOnItemChanged(unittest.TestCase):
 # ===========================================================================
 # Select All / Deselect All button
 # ===========================================================================
+
 
 class TestSelectAllButton(unittest.TestCase):
 
@@ -220,6 +223,7 @@ class TestSelectAllButton(unittest.TestCase):
 # get_selected
 # ===========================================================================
 
+
 class TestGetSelected(unittest.TestCase):
 
     def setUp(self):
@@ -262,6 +266,7 @@ class TestGetSelected(unittest.TestCase):
 # selection_by_loader caching across loaders
 # ===========================================================================
 
+
 class TestSelectionCache(unittest.TestCase):
 
     def setUp(self):
@@ -285,7 +290,7 @@ class TestSelectionCache(unittest.TestCase):
         self.w.populate_tree(STRUCTURE, "loader1")
         # Should restore from cache
         self.assertEqual(child_item(self.w, 0, 0).checkState(0), Qt.Unchecked)  # ch0
-        self.assertEqual(child_item(self.w, 0, 2).checkState(0), Qt.Checked)   # ch2
+        self.assertEqual(child_item(self.w, 0, 2).checkState(0), Qt.Checked)  # ch2
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ from poriscope.views.widgets.time_widget import (  # noqa: E402
 # FloatRangeValidator
 # ===========================================================================
 
+
 class TestFloatRangeValidatorAcceptable(unittest.TestCase):
     """Inputs that should be fully Acceptable."""
 
@@ -147,6 +148,7 @@ class TestFloatRangeValidatorInvalid(unittest.TestCase):
 # TimeWidget._parse_ranges
 # ===========================================================================
 
+
 class TestParseRanges(unittest.TestCase):
     """_parse_ranges is a pure function; test it directly."""
 
@@ -193,6 +195,7 @@ class TestParseRanges(unittest.TestCase):
 # ===========================================================================
 # TimeWidget initialisation & prepopulation
 # ===========================================================================
+
 
 class TestTimeWidgetInit(unittest.TestCase):
 
@@ -259,6 +262,7 @@ class TestTimeWidgetInit(unittest.TestCase):
 # ===========================================================================
 # TimeWidget result after OK / Cancel
 # ===========================================================================
+
 
 class TestTimeWidgetResult(unittest.TestCase):
 
