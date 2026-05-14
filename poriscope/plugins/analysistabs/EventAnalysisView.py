@@ -435,6 +435,28 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         label_list.append(f"Event {event} Data")
                         num_events += 1
 
+                        # If a filter is active and raw is requested, also load the unfiltered signal
+                        if parameters.get("raw", False) and self.data_filter is not None:
+                            try:
+                                load_raw_args = (channel, event, None)
+                                self.global_signal.emit(
+                                    "MetaEventLoader",
+                                    loader,
+                                    "load_event",
+                                    load_raw_args,
+                                    "update_plot_data",
+                                    (),
+                                )
+                            except (IndexError, ValueError) as e:
+                                self.logger.error(
+                                    f"Unable to retrieve raw data for event {event}: {repr(e)}"
+                                )
+                            if self.plot_data is not None:
+                                data_list.append(self.plot_data)
+                                self.plot_data = None
+                                label_list.append(f"Event {event} Raw")
+                                # Raw trace shares the same subplot — no new feature placeholders needed
+
                         if eventfitter != "No Event Fitter":
                             self.eventfitting_status = False
                             eventfitting_status_args = (channel,)
@@ -671,12 +693,14 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 j += 1
 
             time = np.arange(len(data)) / self.plot_samplerate * 1e6
-            fitting_done = getattr(self, "eventfitting_status", False)
             should_plot = (
-                "Fit" in label or use_raw or (not fitting_done and "Data" in label)
+                "Fit" in label
+                or "Raw" in label
+                or "Data" in label  # always show Data (filtered if filter active, raw if not)
             )
             if should_plot:
-                ax.plot(time, data / 1000)
+                zorder = 1 if "Raw" in label else 2  # Raw below filtered data, filtered below Fit
+                ax.plot(time, data / 1000, zorder=zorder)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
@@ -685,12 +709,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 (time, label + " " + x_label), (data / 1000, label + " " + y_label)
             )
 
-            if i % num_cols == 0:
+            if (j - 1) % num_cols == 0:
                 ax.set_ylabel(y_label)
             labelnum = (num_rows - 1) * num_cols
             if num_events % num_cols > 0:
                 labelnum -= num_cols - num_events % num_cols
-            if i >= labelnum:
+            if (j - 1) >= labelnum:
                 ax.set_xlabel(r"Time ($\mu s$)")
 
             if features_plotted is False:
