@@ -23,6 +23,7 @@
 # Contributors:
 # Alejandra Carolina González González
 
+import sys
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
@@ -209,8 +210,12 @@ class SelectionTree(QWidget):
         selected: Optional[dict[str, list[str]]] = None,
     ) -> dict[str, list[str]]:
         dialog = QDialog()
-        dialog.setWindowFlags(Qt.Popup)
-        dialog.setStyleSheet("QDialog { border-radius: 10px; }")
+        if sys.platform == "linux":
+            dialog.setWindowFlags(Qt.Dialog)
+            dialog.setStyleSheet("")
+        else:
+            dialog.setWindowFlags(Qt.Popup)
+            dialog.setStyleSheet("QDialog { border-radius: 10px; }")
         dialog.setWindowTitle(title)
 
         # Create a new instance to avoid reparenting self
