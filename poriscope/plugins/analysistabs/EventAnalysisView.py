@@ -436,7 +436,10 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         num_events += 1
 
                         # If a filter is active and raw is requested, also load the unfiltered signal
-                        if parameters.get("raw", False) and self.data_filter is not None:
+                        if (
+                            parameters.get("raw", False)
+                            and self.data_filter is not None
+                        ):
                             try:
                                 load_raw_args = (channel, event, None)
                                 self.global_signal.emit(
@@ -696,10 +699,13 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             should_plot = (
                 "Fit" in label
                 or "Raw" in label
-                or "Data" in label  # always show Data (filtered if filter active, raw if not)
+                or "Data"
+                in label  # always show Data (filtered if filter active, raw if not)
             )
             if should_plot:
-                zorder = 1 if "Raw" in label else 2  # Raw below filtered data, filtered below Fit
+                zorder = (
+                    1 if "Raw" in label else 2
+                )  # Raw below filtered data, filtered below Fit
                 ax.plot(time, data / 1000, zorder=zorder)
 
             x_label = r"Time (us)"
