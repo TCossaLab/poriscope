@@ -2239,6 +2239,9 @@ def test_overlay_plot_skips_already_plotted_datasets(
 ) -> None:
     """Verify already plotted datasets are skipped and function completes successfully."""
     view.figure.axes = []
+    view.query = "SELECT * FROM events"
+    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.units = "ms"
     view.plotted_datasets.add(("test_loader", None, None, "", "Full Dataset"))
 
     parameters = {
@@ -2252,6 +2255,7 @@ def test_overlay_plot_skips_already_plotted_datasets(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
+    view.global_signal.emit = mocker.Mock()
     view.update_plot = mocker.Mock()
 
     result = view._overlay_plot(parameters)
@@ -2363,17 +2367,17 @@ def test_overlay_plot_returns_false_when_column_units_length_mismatch(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
 
     unit_call_count = [0]
-    collected_units = []
 
     def mock_emit_side_effect(*args: Any) -> None:
-        if len(args) >= 6 and args[2] == "get_column_units":
+        if len(args) >= 3 and args[2] == "load_metadata":
+            view.plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
+        elif len(args) >= 3 and args[2] == "get_column_units":
             unit_call_count[0] += 1
             if unit_call_count[0] == 1:
                 view.units = "ms"
-                collected_units.append("ms")
+            # second call deliberately sets nothing → len(units)==1, len(columns)==2
 
     view.global_signal.emit = mocker.Mock(side_effect=mock_emit_side_effect)
 
@@ -3825,26 +3829,37 @@ def test_handle_plot_events_loads_new_generator_when_filter_changes(
     """Verify new generator is loaded when filter changes."""
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
-    view.current_sql_filter = "WHERE x > 0"  # different filter triggers reload
+    view.current_sql_filter = "WHERE x > 0"
     view.plot_events_generator = None
     view.plot_events_generator_updated = False
     view.cached_events = {}
+    view._update_event_plot = mocker.Mock()
 
-    # When global_signal fires, simulate the generator being set
     def side_effect(*args: Any) -> None:
         if len(args) >= 3 and args[2] == "load_event_data":
+            def _gen():
+                abort = False
+                while not abort:
+                    abort = yield dict(_FULL_EVENT)
+                    if abort:
+                        break
+            g = _gen()
+            next(g)
+            view.plot_events_generator = g
             view.plot_events_generator_updated = True
+            view.current_sql_filter = "WHERE x > 1"
+            view.current_experiment = "exp1"
+            view.current_channel = 1
 
     view.global_signal = mocker.Mock()
     view.global_signal.emit = mocker.Mock(side_effect=side_effect)
 
     parameters = {"db_loader": "test_loader", "event_index": [1]}
-
     view._handle_plot_events(parameters)
 
-    view.global_signal.emit.assert_called()
-    call_args_list = view.global_signal.emit.call_args_list
-    action_names = [c.args[2] for c in call_args_list if len(c.args) > 2]
+    action_names = [
+        c.args[2] for c in view.global_signal.emit.call_args_list if len(c.args) > 2
+    ]
     assert "load_event_data" in action_names
 
 
@@ -3854,7 +3869,7 @@ def test_handle_plot_events_aborts_existing_generator(
     """Verify existing generator is aborted when loading new one."""
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
-    view.current_sql_filter = "WHERE x > 0"  # triggers reload
+    view.current_sql_filter = "WHERE x > 0"
 
     def existing_gen():
         try:
@@ -3869,22 +3884,33 @@ def test_handle_plot_events_aborts_existing_generator(
     view.plot_events_generator = gen
     view.plot_events_generator_updated = False
     view.cached_events = {1: dict(_FULL_EVENT)}
+    view._update_event_plot = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
         if len(args) >= 3 and args[2] == "load_event_data":
+            def _gen():
+                abort = False
+                while not abort:
+                    abort = yield dict(_FULL_EVENT)
+                    if abort:
+                        break
+            g = _gen()
+            next(g)
+            view.plot_events_generator = g
             view.plot_events_generator_updated = True
+            view.current_sql_filter = "WHERE x > 1"
+            view.current_experiment = "exp1"
+            view.current_channel = 1
 
     view.global_signal = mocker.Mock()
     view.global_signal.emit = mocker.Mock(side_effect=side_effect)
 
     parameters = {"db_loader": "test_loader", "event_index": [1]}
-
     view._handle_plot_events(parameters)
 
-    # cached events must have been cleared before the new generator was requested
-    # (generator is None and cached_events were cleared inside the abort branch)
-    call_args_list = view.global_signal.emit.call_args_list
-    action_names = [c.args[2] for c in call_args_list if len(c.args) > 2]
+    action_names = [
+        c.args[2] for c in view.global_signal.emit.call_args_list if len(c.args) > 2
+    ]
     assert "load_event_data" in action_names
 
 
@@ -4029,13 +4055,15 @@ def test_update_event_plot_clears_figure(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify figure is cleared before plotting events."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._clear_figure_state = mocker.Mock()
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
     view._update_event_plot(event_data, *_none_lists(1))
 
-    # _reset_actions calls _clear_figure_state internally; check it was called
     view._clear_figure_state.assert_called()
 
 
@@ -4043,19 +4071,24 @@ def test_update_event_plot_creates_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify subplots are created for each event."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(2, 2))
     event_data = [_make_event(i) for i in range(4)]
 
     view._update_event_plot(event_data, *_none_lists(4))
 
-    # add_subplot called once per event
     assert view.figure.add_subplot.call_count == 4
 
 
 def test_update_event_plot_plots_all_traces(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify raw (when use_raw=True), filtered, and fit traces are plotted."""
+    """Verify raw (use_raw=True), filtered, and fit traces are plotted."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4063,14 +4096,16 @@ def test_update_event_plot_plots_all_traces(
 
     view._update_event_plot(event_data, *_none_lists(1), use_raw=True)
 
-    # raw + filtered + fit = 3 plot calls
     assert mock_ax.plot.call_count == 3
 
 
 def test_update_event_plot_sets_subplot_titles(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify subplot titles are set with exp/channel/event info."""
+    """Verify subplot titles contain exp/channel/event info."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4098,7 +4133,10 @@ def test_update_event_plot_sets_subplot_titles(
 def test_update_event_plot_converts_current_to_nanoamps(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify current data is converted from pA to nA."""
+    """Verify current data is divided by 1000 (pA to nA)."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4114,49 +4152,53 @@ def test_update_event_plot_converts_current_to_nanoamps(
         }
     ]
 
-    # use_raw=False → only filtered + fit plotted (2 calls)
     view._update_event_plot(event_data, *_none_lists(1), use_raw=False)
 
     calls = mock_ax.plot.call_args_list
-    # first call is filtered_data / 1000
-
     np.testing.assert_array_almost_equal(calls[0][0][1], np.array([1.1, 2.1]))
 
 
 def test_update_event_plot_converts_time_to_microseconds(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify time is converted to microseconds."""
+    """Verify time axis is in microseconds."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
-    event_data = [_make_event(n_samples=2)]  # samplerate=10000
+    event_data = [_make_event(n_samples=2)]
 
     view._update_event_plot(event_data, *_none_lists(1), use_raw=True)
 
     calls = mock_ax.plot.call_args_list
-    # time = [0, 1] / 10000 * 1e6 = [0, 100] µs
-    expected_time = np.array([0.0, 100.0])
-    np.testing.assert_array_almost_equal(calls[0][0][0], expected_time)
+    np.testing.assert_array_almost_equal(calls[0][0][0], np.array([0.0, 100.0]))
 
 
 def test_update_event_plot_updates_cache(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify cache is updated with event data."""
+    """Verify _update_cache is called for each plotted trace."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
-    # use_raw=False → 2 _update_cache calls (filtered + fit)
     view._update_event_plot(event_data, *_none_lists(1), use_raw=False)
 
     assert view._update_cache.call_count == 2
+
 
 
 def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify y-axis labels are set only on leftmost subplots."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(2, 3))
     mock_axes: list = []
 
@@ -4177,11 +4219,13 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     assert not mock_axes[4].set_ylabel.called
     assert not mock_axes[5].set_ylabel.called
 
-
 def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify x-axis labels are set only on bottom row subplots."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(2, 3))
     mock_axes: list = []
 
@@ -4206,7 +4250,10 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
 def test_update_event_plot_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify canvas is redrawn after plotting."""
+    """Verify canvas.draw() is called after plotting."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
@@ -4218,7 +4265,10 @@ def test_update_event_plot_redraws_canvas(
 def test_update_event_plot_commits_cache(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify cache is committed after plotting."""
+    """Verify _commit_cache() is called after plotting."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
