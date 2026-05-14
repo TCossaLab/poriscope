@@ -2372,7 +2372,9 @@ def test_overlay_plot_returns_false_when_column_units_length_mismatch(
 
     def mock_emit_side_effect(*args: Any) -> None:
         if len(args) >= 3 and args[2] == "load_metadata":
-            view.plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
+            view.plot_data = pd.DataFrame(
+                {"duration": [1.0, 2.0], "current": [3.0, 4.0]}
+            )
         elif len(args) >= 3 and args[2] == "get_column_units":
             unit_call_count[0] += 1
             if unit_call_count[0] == 1:
@@ -3837,12 +3839,14 @@ def test_handle_plot_events_loads_new_generator_when_filter_changes(
 
     def side_effect(*args: Any) -> None:
         if len(args) >= 3 and args[2] == "load_event_data":
+
             def _gen():
                 abort = False
                 while not abort:
                     abort = yield dict(_FULL_EVENT)
                     if abort:
                         break
+
             g = _gen()
             next(g)
             view.plot_events_generator = g
@@ -3888,12 +3892,14 @@ def test_handle_plot_events_aborts_existing_generator(
 
     def side_effect(*args: Any) -> None:
         if len(args) >= 3 and args[2] == "load_event_data":
+
             def _gen():
                 abort = False
                 while not abort:
                     abort = yield dict(_FULL_EVENT)
                     if abort:
                         break
+
             g = _gen()
             next(g)
             view.plot_events_generator = g
@@ -4191,7 +4197,6 @@ def test_update_event_plot_updates_cache(
     assert view._update_cache.call_count == 2
 
 
-
 def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -4218,6 +4223,7 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     assert mock_axes[3].set_ylabel.called
     assert not mock_axes[4].set_ylabel.called
     assert not mock_axes[5].set_ylabel.called
+
 
 def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     view: MetadataView, mocker: MockerFixture

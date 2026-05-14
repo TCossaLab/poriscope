@@ -29,6 +29,7 @@ from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox  # no
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_combo() -> MultiSelectComboBox:
     cb = MultiSelectComboBox()
     return cb
@@ -49,6 +50,7 @@ def check_all_boxes(combo: MultiSelectComboBox, checked: bool):
 # ===========================================================================
 # addItem / addItems
 # ===========================================================================
+
 
 class TestAddItems(unittest.TestCase):
 
@@ -91,6 +93,7 @@ class TestAddItems(unittest.TestCase):
 # getSelectedItems
 # ===========================================================================
 
+
 class TestGetSelectedItems(unittest.TestCase):
 
     def setUp(self):
@@ -122,6 +125,7 @@ class TestGetSelectedItems(unittest.TestCase):
 # ===========================================================================
 # selectItem
 # ===========================================================================
+
 
 class TestSelectItem(unittest.TestCase):
 
@@ -157,6 +161,7 @@ class TestSelectItem(unittest.TestCase):
 # ===========================================================================
 # handleItemChanged — line edit text and signal
 # ===========================================================================
+
 
 class TestHandleItemChanged(unittest.TestCase):
 
@@ -205,6 +210,7 @@ class TestHandleItemChanged(unittest.TestCase):
 # ===========================================================================
 # Select All / Deselect All button
 # ===========================================================================
+
 
 class TestSelectAllButton(unittest.TestCase):
 
@@ -272,6 +278,7 @@ class TestSelectAllButton(unittest.TestCase):
 # refreshDisplayText
 # ===========================================================================
 
+
 class TestRefreshDisplayText(unittest.TestCase):
 
     def setUp(self):
@@ -296,6 +303,7 @@ class TestRefreshDisplayText(unittest.TestCase):
 # ===========================================================================
 # clear_selection_list
 # ===========================================================================
+
 
 class TestClearSelectionList(unittest.TestCase):
 
@@ -328,6 +336,7 @@ class TestClearSelectionList(unittest.TestCase):
 # edit_filter / delete_filter callbacks
 # ===========================================================================
 
+
 class TestCallbacks(unittest.TestCase):
 
     def setUp(self):
@@ -344,6 +353,7 @@ class TestCallbacks(unittest.TestCase):
         item = self.c.listWidget.item(0)
         widget = self.c.listWidget.itemWidget(item)
         from PySide6.QtWidgets import QToolButton
+
         buttons = widget.findChildren(QToolButton)
         # delete button is the second tool button
         delete_btn = buttons[1]
@@ -357,6 +367,7 @@ class TestCallbacks(unittest.TestCase):
         item = self.c.listWidget.item(0)
         widget = self.c.listWidget.itemWidget(item)
         from PySide6.QtWidgets import QToolButton
+
         buttons = widget.findChildren(QToolButton)
         # edit button is the first tool button
         edit_btn = buttons[0]
