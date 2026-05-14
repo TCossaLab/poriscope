@@ -188,13 +188,13 @@ class HelpCentre(QWidget):
     @log(logger=logger)
     def setupUi(self):
         self.setMinimumSize(900, 400)
-        self.resize(1100, 400)
+        self.resize(1100, 500)
         self.setStyleSheet("HelpCentre { padding: 20px; }")
 
         main_layout = QVBoxLayout(self)
         self.setLayout(main_layout)
 
-        # Title
+        # ── Title ──────────────────────────────────────────────────────────────
         self.help_centre_label = QLabel(self)
         self.help_centre_label.setObjectName("helpCentre_label")
         title_font = QFont()
@@ -206,7 +206,7 @@ class HelpCentre(QWidget):
             QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
         )
 
-        # Cards
+        # ── Cards ──────────────────────────────────────────────────────────────
         # 1 (Getting Started):    black bg -> hovers white
         # 2 (Documentation):      white bg -> hovers black
         # 3 (Report a Problem):   black bg -> hovers white
@@ -252,6 +252,70 @@ class HelpCentre(QWidget):
         )
         self.paper_card.setFixedHeight(80)
         main_layout.addWidget(self.paper_card)
+
+        main_layout.addSpacerItem(
+            QSpacerItem(0, 16, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        )
+
+        # ── Cite Us ────────────────────────────────────────────────────────────
+        _DOI_URL = "https://doi.org/10.5334/jors.703"
+        _GITHUB_URL = "https://github.com/TCossaLab/poriscope"
+
+        self.citation_box = QFrame(self)
+        self.citation_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.citation_box.setStyleSheet(
+            "QFrame {"
+            "  background-color: #f5f5f5;"
+            "  border: 1px solid #cccccc;"
+            "  border-radius: 8px;"
+            "}"
+        )
+        cite_layout = QVBoxLayout(self.citation_box)
+        cite_layout.setContentsMargins(20, 16, 20, 16)
+        cite_layout.setSpacing(10)
+
+        # Heading
+        cite_heading = QLabel("Cite Us")
+        cite_heading_font = QFont("Arial", 14)
+        cite_heading_font.setBold(True)
+        cite_heading.setFont(cite_heading_font)
+        cite_heading.setStyleSheet("background: transparent; border: none; color: #111111;")
+        cite_layout.addWidget(cite_heading)
+
+        # Instruction line
+        cite_instruction = QLabel("If you use this software, please cite the following paper:")
+        cite_instruction.setFont(QFont("Arial", 10))
+        cite_instruction.setStyleSheet("background: transparent; border: none; color: #444444;")
+        cite_layout.addWidget(cite_instruction)
+
+        # Primary citation line
+        self.citation_label = QLabel(
+            "González González AC, Kerrouri N, Wadhwa D, Tabard-Cossa V, Briggs K "
+            "(2026) Poriscope: A Configurable Pipeline for Nanopore Data Analysis. "
+            "<i>Journal of Open Research Software</i>, 14: 32. "
+            f'DOI: <a href="{_DOI_URL}" style="color: #0057b8;">{_DOI_URL}</a>'
+        )
+        self.citation_label.setFont(QFont("Arial", 10))
+        self.citation_label.setWordWrap(True)
+        self.citation_label.setOpenExternalLinks(True)
+        self.citation_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.citation_label.setStyleSheet("background: transparent; border: none; color: #222222;")
+        cite_layout.addWidget(self.citation_label)
+
+        # Release suggestion line
+        self.release_label = QLabel(
+            "We also suggest citing the specific release you used, which can be found "
+            'in the <b>"Cite this repository"</b> section on the right panel of our '
+            f'GitHub repository: <a href="{_GITHUB_URL}" style="color: #0057b8;">{_GITHUB_URL}</a>'
+        )
+        self.release_label.setFont(QFont("Arial", 10))
+        self.release_label.setWordWrap(True)
+        self.release_label.setOpenExternalLinks(True)
+        self.release_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.release_label.setStyleSheet("background: transparent; border: none; color: #444444;")
+        cite_layout.addWidget(self.release_label)
+
+        main_layout.addWidget(self.citation_box)
 
         main_layout.addSpacerItem(
             QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
