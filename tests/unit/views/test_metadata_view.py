@@ -1828,7 +1828,6 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
     view.global_signal.emit.assert_called()
 
 
-
 def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -2507,6 +2506,7 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
 
     assert ("test_loader", "exp1", 2, "WHERE x > 1", "Filter1") in view.plotted_datasets
 
+
 def test_overlay_plot_handles_raw_all_points_histogram_event_plot(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -2724,6 +2724,7 @@ def test_overlay_plot_returns_true_on_success(
     result = view._overlay_plot(parameters)
 
     assert result is True
+
 
 # ----------------------------- Construct All Points Histogram Tests ------------------------------
 
@@ -2973,7 +2974,6 @@ def test_construct_event_overlay_sets_xlim(
     view.axes.set_xlim.assert_called_with(left=-0.333, right=1.333)
 
 
-
 def test_construct_event_overlay_plots_raw_data_for_raw_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -3019,6 +3019,7 @@ def test_construct_event_overlay_redraws_canvas(
     view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
 
     view.canvas.draw.assert_called()
+
 
 # ----------------------------- Set Event Data Generator Tests ------------------------------
 
@@ -4093,6 +4094,7 @@ def test_update_event_plot_sets_subplot_titles(
     assert "Ch 3" in title
     assert "Event 42" in title
 
+
 def test_update_event_plot_converts_current_to_nanoamps(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -4200,6 +4202,7 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     assert mock_axes[4].set_xlabel.called
     assert mock_axes[5].set_xlabel.called
 
+
 def test_update_event_plot_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -4222,7 +4225,6 @@ def test_update_event_plot_commits_cache(
     view._update_event_plot(event_data, *_none_lists(1))
 
     view._commit_cache.assert_called_once()
-
 
 
 # ----------------------------- Export CSV Subset Tests ------------------------------
@@ -5165,6 +5167,7 @@ def test_get_selected_filters_returns_selected_filter_dict(
     result = view.get_selected_filters()
 
     assert result == {"Filter1": "WHERE x > 1", "Filter3": "WHERE z = 5"}
+
 
 def test_get_selected_filters_returns_empty_dict_when_none_selected(
     view: MetadataView, mocker: MockerFixture
