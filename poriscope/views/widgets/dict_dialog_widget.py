@@ -256,12 +256,6 @@ class DictDialog(QDialog):
             self, "Select File", loc, file_types, options=options
         )
         if input_file:
-            if not os.path.splitext(input_file)[1]:
-                self.logger.info(f"Extension not provided, appending: {input_file}")
-                match = re.search(r"\(\*\.([a-zA-Z0-9]+)\)", file_types)
-                if match:
-                    file_extension = match.group(1)
-                    input_file += file_extension
             self.params["Input File"]["Value"] = input_file
             self.unitwidgets["Input File"].setChecked(True)
             self.check_validity()
@@ -292,7 +286,7 @@ class DictDialog(QDialog):
 
         options = QFileDialog.Options()
         options |= QFileDialog.DontConfirmOverwrite
-        ### FIX: Only apply the non-native flag if the OS is Linux
+        ### Only apply the non-native flag if the OS is Linux
         if sys.platform.startswith("linux"):
             options |= QFileDialog.DontUseNativeDialog
 
@@ -300,6 +294,11 @@ class DictDialog(QDialog):
             self, "Select File", loc, file_types, options=options
         )
         if output_file:
+            # On Linux, file dialogs do not automatically append extensions (add it manually if missing) - caveat, always append first extension found in filter, even if user selected a different filter option (e.g. "All Files")
+            if not os.path.splitext(output_file)[1]:
+                match = re.search(r"\(\*\.([a-zA-Z0-9]+)\)", file_types)
+                if match:
+                    output_file += "." + match.group(1)
             self.params["Output File"]["Value"] = output_file
             self.unitwidgets["Output File"].setChecked(True)
             self.check_validity()
