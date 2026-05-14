@@ -395,18 +395,15 @@ class MetadataControls(QWidget):
 
         # Adding the label to the horizontal layout
         filter_layout.setSpacing(5)
+        filter_layout.setAlignment(Qt.AlignLeft)
         filter_layout.addWidget(self.filter_label)
         filter_layout.addWidget(self.filter_add_button)
         filter_layout.addWidget(self.filter_info_button)
         filter_layout.addWidget(self.filter_delete_button)
+
         filter_layout.addStretch(
             1
         )  # This keeps the label aligned left and the rest of the horizontal space empty
-
-        self.filter_raw_label = self.createLabel(self.groupBox, 12, "RAW")
-        self.filter_raw_label.setAlignment(Qt.AlignCenter)
-        self.filter_raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        filter_layout.addWidget(self.filter_raw_label)
 
         # Adding the horizontal layout to the grid
         group_layout.addLayout(
@@ -420,20 +417,10 @@ class MetadataControls(QWidget):
             self.groupBox, "Load Filter", bold=True
         )
 
-        # filter comboBox + raw checkbox side by side
-        filter_combo_row = QWidget(self.groupBox)
-        filter_combo_layout = QHBoxLayout(filter_combo_row)
-        filter_combo_layout.setContentsMargins(0, 0, 0, 0)
-        filter_combo_layout.setSpacing(5)
-
-        self.filter_raw_checkbox = QCheckBox(filter_combo_row)
-        self.filter_raw_checkbox.setObjectName("filterRawCheckBox")
-        self.filter_raw_checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-        filter_combo_layout.addWidget(self.filter_comboBox, 1)
-        filter_combo_layout.addWidget(self.filter_raw_checkbox, 0)
-
-        group_layout.addWidget(filter_combo_row, 1, 2, 1, 1)
+        # Adding QTextEdit directly to the grid, spanning multiple rows to increase its area
+        group_layout.addWidget(
+            self.filter_comboBox, 1, 2, 1, 1
+        )  # Starts from row 1, spans 6 rows, and takes 2 columns
         group_layout.addWidget(self.save_filter_button, 3, 2, 1, 1)
         group_layout.addWidget(self.load_filter_button, 5, 2, 1, 1)
 
@@ -462,15 +449,12 @@ class MetadataControls(QWidget):
         self.right_arrow_button.setIconSize(QSize(16, 16))
         self.right_arrow_button.setFixedWidth(30)
 
-        self.raw_checkbox = QCheckBox(self.plot_events_widget)
-        self.raw_checkbox.setObjectName("rawCheckBox")
-
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
-        plot_events_layout.addWidget(self.raw_checkbox)
 
         # --- Create Update + Undo group ---
+        # Update + Undo group
         self.update_plot_button = self.createButton(
             self.groupBox, "Update Plot", bold=True
         )
@@ -490,56 +474,7 @@ class MetadataControls(QWidget):
         update_undo_layout.addWidget(self.update_plot_button, 2)  # 2 parts
         update_undo_layout.addWidget(self.undo_button, 1)  # 1 part
 
-        # --- ROW 4: only RAW label, rest are invisible spacers ---
-        # Left half mirrors plot_events_layout
-        plot_events_labels_widget = QWidget(self.groupBox)
-        plot_events_labels_layout = QHBoxLayout(plot_events_labels_widget)
-        plot_events_labels_layout.setContentsMargins(0, 0, 0, 0)
-        plot_events_labels_layout.setSpacing(5)
-
-        prev_spacer = QWidget()
-        prev_spacer.setFixedWidth(30)  # mirrors left_arrow_button
-
-        plot_events_spacer = QWidget()  # mirrors plot_events_pushButton
-        plot_events_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        next_spacer = QWidget()
-        next_spacer.setFixedWidth(30)  # mirrors right_arrow_button
-
-        self.raw_label = self.createLabel(self.groupBox, 12, "RAW")
-        self.raw_label.setAlignment(Qt.AlignCenter)
-        self.raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-        plot_events_labels_layout.addWidget(prev_spacer)
-        plot_events_labels_layout.addWidget(plot_events_spacer)
-        plot_events_labels_layout.addWidget(next_spacer)
-        plot_events_labels_layout.addWidget(self.raw_label)
-
-        # Right half mirrors update_undo_layout — all spacers
-        update_undo_labels_widget = QWidget(self.groupBox)
-        update_undo_labels_layout = QHBoxLayout(update_undo_labels_widget)
-        update_undo_labels_layout.setContentsMargins(0, 0, 0, 0)
-        update_undo_labels_layout.setSpacing(5)
-
-        update_plot_spacer = QWidget()  # mirrors update_plot_button
-        update_plot_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        undo_spacer = QWidget()  # mirrors undo_button
-        undo_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        update_undo_labels_layout.addWidget(update_plot_spacer, 2)
-        update_undo_labels_layout.addWidget(undo_spacer, 1)
-
-        # --- Combine label row into single grid cell (row 4) ---
-        labels_row_container = QWidget(self.groupBox)
-        labels_row_layout = QHBoxLayout(labels_row_container)
-        labels_row_layout.setContentsMargins(0, 0, 0, 0)
-        labels_row_layout.setSpacing(5)
-
-        labels_row_layout.addWidget(plot_events_labels_widget, 1)
-        labels_row_layout.addWidget(update_undo_labels_widget, 1)
-
-        # --- Combine row 5 widgets into single grid cell ---
+        # --- Combine both widgets into a single row inside ONE grid cell ---
         row_container = QWidget(self.groupBox)
         row_layout = QHBoxLayout(row_container)
         row_layout.setContentsMargins(0, 0, 0, 0)
@@ -548,10 +483,9 @@ class MetadataControls(QWidget):
         row_layout.addWidget(self.plot_events_widget, 1)
         row_layout.addWidget(update_undo_container, 1)
 
-        group_layout.addWidget(labels_row_container, 4, 0)
+        # --- Finally, add this full row into ONE cell of your grid layout ---
         group_layout.addWidget(row_container, 5, 0)
 
-        # ------ Actions Layout -------
         action_button_layout = QHBoxLayout()
 
         self.save_plot_button = self.createButton(
@@ -924,11 +858,9 @@ class MetadataControls(QWidget):
         self.event_index_lineEdit.textChanged.connect(self.validate_inputs)
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.bins_lineEdit.textChanged.connect(self.validate_inputs)
-        self.raw_checkbox.stateChanged.connect(self.validate_inputs)  # add here
         self.x_axis_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.y_axis_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.z_axis_comboBox.currentIndexChanged.connect(self.validate_inputs)
-        self.filter_raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     # Data Validation
 
@@ -945,7 +877,6 @@ class MetadataControls(QWidget):
                 or "Select Plot Type",
                 "event_index": [],
                 "sizes": self.sizes_checkbox.isChecked(),
-                "raw": self.raw_checkbox.isChecked(),
                 "x_axis": self.x_axis_comboBox.currentText() or None,
                 "y_axis": self.y_axis_comboBox.currentText() or None,
                 "z_axis": self.z_axis_comboBox.currentText() or None,
@@ -960,7 +891,6 @@ class MetadataControls(QWidget):
                     if self.bins_lineEdit.text()
                     else None
                 ),
-                "filter_raw": self.filter_raw_checkbox.isChecked(),
             }
 
             if (
