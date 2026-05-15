@@ -1431,9 +1431,13 @@ class ProteinView(MetaView, WalkthroughMixin):
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
 
-            plot_data = self._construct_single_event_histogram(
-                event, plot_type, bins=bins, sizes=sizes
-            )
+            try:
+                plot_data = self._construct_single_event_histogram(
+                    event, plot_type, bins=bins, sizes=sizes
+                )
+            except ValueError as e:
+                self.logger.info(f'Unable to construct histogram for event {event["event_id"]}: {e}')
+                continue
             if plot_data is None:
                 continue
 
@@ -1617,12 +1621,15 @@ class ProteinView(MetaView, WalkthroughMixin):
 
                     for event in self.event_data_generator:
                         processed += 1
-                        plot_data = self._construct_single_event_histogram(
-                            event,
-                            plot_type,
-                            bins=bins,
-                            sizes=sizes,
-                        )
+                        try:
+                            plot_data = self._construct_single_event_histogram(
+                                event,
+                                plot_type,
+                                bins=bins,
+                                sizes=sizes,
+                            )
+                        except ValueError as e:
+                            self.logger.info(f'Unable to construct histogram for event {event["event_id"]}: {e}')
                         if plot_data is None:
                             continue
 
