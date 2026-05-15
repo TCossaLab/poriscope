@@ -840,12 +840,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             np.median(timeseries[:padding_before])
             + np.median(timeseries[-padding_after:])
         )
-        
+
         dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
         if dI_I.size == 0:
             return None
-        
+
         min_curr = np.min(dI_I)
         max_curr = np.max(dI_I)
         if min_curr < min_current:
