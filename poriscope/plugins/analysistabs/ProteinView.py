@@ -820,9 +820,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param plot_type: Type of histogram to create (raw or filtered).
         :type plot_type: str
         :param bins: Number of histogram bins.
-        :type bins: int | None
+        :type bins: Optional[int]
+        :param sizes: whether bins represents a number or a binsize
+        :type sizes: Optional[bool]
         :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: pd.DataFrame
+        :rtype: Optional[pd.DataFrame]
         """
         min_current = float("inf")
         max_current = float("-inf")
@@ -838,8 +840,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             np.median(timeseries[:padding_before])
             + np.median(timeseries[-padding_after:])
         )
+        
         dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
+        if dI_I.size == 0:
+            return None
+        
         min_curr = np.min(dI_I)
         max_curr = np.max(dI_I)
         if min_curr < min_current:
