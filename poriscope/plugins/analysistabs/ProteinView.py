@@ -1436,7 +1436,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                     event, plot_type, bins=bins, sizes=sizes
                 )
             except ValueError as e:
-                self.logger.info(f'Unable to construct histogram for event {event["event_id"]}: {e}')
+                self.logger.info(
+                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
+                )
                 continue
             if plot_data is None:
                 continue
@@ -1629,7 +1631,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                                 sizes=sizes,
                             )
                         except ValueError as e:
-                            self.logger.info(f'Unable to construct histogram for event {event["event_id"]}: {e}')
+                            self.logger.info(
+                                f'Unable to construct histogram for event {event["event_id"]}: {e}'
+                            )
                         if plot_data is None:
                             continue
 
