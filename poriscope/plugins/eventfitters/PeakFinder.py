@@ -259,11 +259,15 @@ class PeakFinder(MetaEventFitter):
                 peak_fil,
                 peak_max_blockages,
             ):
-                # Plot peak only if ips exist 
+                # Plot peak only if ips exist
                 if not (np.isnan(lips) or np.isnan(rips)):
                     li = int(max(0, min(true_len, int(lips))))
                     ri = int(max(0, min(true_len, int(rips))))
-                    if ri > li and max_blockage is not None and not np.isnan(max_blockage):
+                    if (
+                        ri > li
+                        and max_blockage is not None
+                        and not np.isnan(max_blockage)
+                    ):
                         # Display the mean blockage level (max_blockage) between ips
                         data[li:ri] = baseline - np.sign(baseline) * max_blockage
 
@@ -350,11 +354,11 @@ class PeakFinder(MetaEventFitter):
 
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
                 if self.sublevel_metadata[channel][index]["peak_id"][i] is not None:
-                    #ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
-                    #ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
-                    #vlabel.append("Right ips #" + str(j))
-                    #vlabel.append("Left ips #" + str(j))
-                    
+                    # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
+                    # ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
+                    # vlabel.append("Right ips #" + str(j))
+                    # vlabel.append("Left ips #" + str(j))
+
                     bases.append(
                         -np.sign(baseline)
                         * self.sublevel_metadata[channel][index]["left_base"][i]
@@ -594,12 +598,15 @@ class PeakFinder(MetaEventFitter):
                     "index": padding_before,
                     "type": "padding_before",
                 },
-
             ]
             for i in range(len(peaks)):
                 left_ip = int(padding_before + properties["left_ips"][i])
                 right_ip = int(padding_before + properties["right_ips"][i])
-                peak_data_segment = data[left_ip:right_ip] if right_ip > left_ip else data[left_ip:left_ip+1]
+                peak_data_segment = (
+                    data[left_ip:right_ip]
+                    if right_ip > left_ip
+                    else data[left_ip : left_ip + 1]
+                )
                 max_blockage = self.find_mode_blockage_level(
                     peak_data_segment,
                     self.settings["Max Unfolded"]["Value"],
@@ -608,9 +615,10 @@ class PeakFinder(MetaEventFitter):
                 )
                 edges.append(
                     {
-                    "index": int(padding_before + properties["left_ips"][i]),
-                    "type": f"event_baseline_{i+1}",
-                })
+                        "index": int(padding_before + properties["left_ips"][i]),
+                        "type": f"event_baseline_{i+1}",
+                    }
+                )
                 edges.append(
                     {
                         "index": peaks[i] + padding_before,
@@ -632,15 +640,19 @@ class PeakFinder(MetaEventFitter):
                         "left_ips": left_ip,
                         "right_ips": right_ip,
                         "max_blockage": max_blockage,
-                        "plateau_size": properties.get("plateau_sizes", [None] * len(peaks))[i],
-                        "filtered": None,#properties["filtered"][i],
-                    })
-                edges.append(                
-                {
-                    "index": int(padding_before + properties["right_ips"][i]),
-                    "type": f"event_baseline_{i+1}",
-                })
-                
+                        "plateau_size": properties.get(
+                            "plateau_sizes", [None] * len(peaks)
+                        )[i],
+                        "filtered": None,  # properties["filtered"][i],
+                    }
+                )
+                edges.append(
+                    {
+                        "index": int(padding_before + properties["right_ips"][i]),
+                        "type": f"event_baseline_{i+1}",
+                    }
+                )
+
             edges.append(
                 {
                     "index": len(data) - padding_after,
@@ -791,7 +803,9 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # get peak id
-        sublevel_metadata["peak_id"] = self.enumerate_peaks(sublevel_starts, num_states, sublevel_metadata["sublevel_type"])
+        sublevel_metadata["peak_id"] = self.enumerate_peaks(
+            sublevel_starts, num_states, sublevel_metadata["sublevel_type"]
+        )
         # get peak height
         sublevel_metadata["peak_height"] = np.array(
             [
@@ -869,7 +883,8 @@ class PeakFinder(MetaEventFitter):
             [
                 (
                     sublevel_starts[i].get("plateau_size") * dt_us
-                    if "peak" in sublevel_starts[i]["type"] and sublevel_starts[i].get("plateau_size") is not None
+                    if "peak" in sublevel_starts[i]["type"]
+                    and sublevel_starts[i].get("plateau_size") is not None
                     else None
                 )
                 for i in range(num_states)
@@ -881,7 +896,8 @@ class PeakFinder(MetaEventFitter):
             [
                 (
                     sublevel_starts[i].get("max_blockage")
-                    if "peak" in sublevel_starts[i]["type"] and sublevel_starts[i].get("max_blockage") is not None
+                    if "peak" in sublevel_starts[i]["type"]
+                    and sublevel_starts[i].get("max_blockage") is not None
                     else None
                 )
                 for i in range(num_states)
@@ -1263,9 +1279,7 @@ class PeakFinder(MetaEventFitter):
         return properties
 
     @log(logger=logger)
-    def find_mode_blockage_level(
-        self, data, max_unfolded, baseline_mean, baseline_std
-    ):
+    def find_mode_blockage_level(self, data, max_unfolded, baseline_mean, baseline_std):
         """
         Estimate the level of unfolded blockage based on data distribution.
 
