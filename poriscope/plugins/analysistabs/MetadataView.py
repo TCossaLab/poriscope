@@ -1266,7 +1266,14 @@ class MetadataView(MetaView, WalkthroughMixin):
                             "MetaDatabaseLoader",
                             loader,
                             "load_event_data",
-                            (sql_filter, None if parameters.get("filter_raw", False) else exp_and_ch_arg),
+                            (
+                                sql_filter,
+                                (
+                                    None
+                                    if parameters.get("filter_raw", False)
+                                    else exp_and_ch_arg
+                                ),
+                            ),
                             "relay_event_data_generator",
                             (),
                         )
@@ -1859,10 +1866,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 self.plot_events_generator = None
 
             loader = parameters["db_loader"]
-            load_event_data_args = (
-                sql_filter,
-                None if use_filter_raw else exp_and_ch
-            )
+            load_event_data_args = (sql_filter, None if use_filter_raw else exp_and_ch)
             self.plot_events_generator_updated = False
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -2396,9 +2400,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         self.show_edit_filter_dialog(
-            selected[0],
-            loader,
-            filter_raw=parameters.get("filter_raw", False)
+            selected[0], loader, filter_raw=parameters.get("filter_raw", False)
         )
 
     @log(logger=logger)
@@ -2431,15 +2433,18 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_name = new_name
             self._pending_filter_text = new_filter
             self._pending_old_filter_name = name  # important for replacing key
-            
+
             # If raw SQL mode, skip construct_metadata_query validation and save directly
             if filter_raw:
-                if self._pending_old_filter_name and self._pending_old_filter_name in self.subset_filters:
+                if (
+                    self._pending_old_filter_name
+                    and self._pending_old_filter_name in self.subset_filters
+                ):
                     del self.subset_filters[self._pending_old_filter_name]
                 self.subset_filters[new_name] = new_filter
                 self.update_filter_name(name, new_name)
                 return
-            
+
             self._show_sql_in_display = True
             # Emit signal to validate the updated filter
             self.global_signal.emit(
