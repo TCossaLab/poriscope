@@ -1596,9 +1596,10 @@ class MetadataView(MetaView, WalkthroughMixin):
 
             for name, filter_text in new_filters.items():
                 if filter_raw or not loader:
-                    self.subset_filters[name] = filter_text
-                    combo.addItem(name)
-                    combo.selectItem(name, select=True)
+                    suffixed_name = f"{name}_raw" if not name.endswith("_raw") else name
+                    self.subset_filters[suffixed_name] = filter_text
+                    combo.addItem(suffixed_name)
+                    combo.selectItem(suffixed_name, select=True)
                 else:
                     self._pending_filter_name = name
                     self._pending_filter_text = filter_text
@@ -2354,6 +2355,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
             # If raw SQL mode, skip construct_metadata_query validation and save directly
             if parameters.get("filter_raw", False):
+                name = f"{name}_raw"
                 self.subset_filters[name] = filter_text
                 self.metadatacontrols.filter_comboBox.addItem(name)
                 self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
