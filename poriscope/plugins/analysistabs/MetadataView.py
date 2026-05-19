@@ -1183,14 +1183,24 @@ class MetadataView(MetaView, WalkthroughMixin):
                             if self.query == "":
                                 return False
 
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_metadata",
-                            (columns, sql_filter, None if parameters.get("filter_raw", False) else exp_and_ch_arg),
-                            "update_plot_data",
-                            (),
-                        )
+                        if parameters.get("filter_raw", False):
+                            self.global_signal.emit(
+                                "MetaDatabaseLoader",
+                                loader,
+                                "load_metadata_raw",
+                                (sql_filter,),
+                                "update_plot_data",
+                                (),
+                            )
+                        else:
+                            self.global_signal.emit(
+                                "MetaDatabaseLoader",
+                                loader,
+                                "load_metadata",
+                                (columns, sql_filter, exp_and_ch_arg),
+                                "update_plot_data",
+                                (),
+                            )
 
                         if self.plot_data is None:
                             self.add_text_to_display.emit(
@@ -1582,9 +1592,14 @@ class MetadataView(MetaView, WalkthroughMixin):
                     "No loader found – filters loaded but not validated."
                 )
 
+            filter_raw = parameters.get("filter_raw", False)
+
             for name, filter_text in new_filters.items():
-                if loader:
-                    # Temporarily store to validate
+                if filter_raw or not loader:
+                    self.subset_filters[name] = filter_text
+                    combo.addItem(name)
+                    combo.selectItem(name, select=True)
+                else:
                     self._pending_filter_name = name
                     self._pending_filter_text = filter_text
 
@@ -1600,10 +1615,6 @@ class MetadataView(MetaView, WalkthroughMixin):
                         "relay_query",
                         ("validate_new_filter",),
                     )
-                else:
-                    self.subset_filters[name] = filter_text
-                    combo.addItem(name)
-                    combo.selectItem(name, select=True)
 
             combo.refreshDisplayText()
             self.logger.info(f"Filters loaded from {path}")

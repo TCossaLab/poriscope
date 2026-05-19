@@ -993,6 +993,23 @@ class MetaDatabaseLoader(BaseDataPlugin):
             return "", self._format_debug_msg(debug)
 
     @log(logger=logger)
+    def load_metadata_raw(
+        self,
+        conditions: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Execute a raw SQL query directly, bypassing all query construction.
+
+        :param conditions: A complete SQL query string.
+        :type conditions: Optional[str]
+        :return: pandas dataframe containing retrieved data
+        :rtype: pd.DataFrame
+        """
+        if not conditions:
+            return self.query_database_directly("SELECT * FROM events")
+        return self.query_database_directly(conditions)
+
+    @log(logger=logger)
     def load_metadata(
         self,
         columns: List[str],
@@ -1026,6 +1043,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 f"Unable to output subset due to malformed query string\n\n{self._format_debug_msg(debug)}"
             )
             return None
+        
 
     @log(logger=logger)
     def load_event_data(
