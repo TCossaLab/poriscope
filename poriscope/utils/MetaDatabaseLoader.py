@@ -1043,7 +1043,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 f"Unable to output subset due to malformed query string\n\n{self._format_debug_msg(debug)}"
             )
             return None
-        
 
     @log(logger=logger)
     def load_event_data(
