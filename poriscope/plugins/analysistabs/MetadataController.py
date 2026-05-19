@@ -127,7 +127,9 @@ class MetadataController(MetaController):
             filter_text = self.view._pending_filter_text
 
             if name is not None:
-                suffixed_name = f"{name}_assisted" if not name.endswith("_assisted") else name
+                suffixed_name = (
+                    f"{name}_assisted" if not name.endswith("_assisted") else name
+                )
                 self.view.subset_filters[suffixed_name] = filter_text or ""
 
                 if not filter_text:
@@ -148,7 +150,11 @@ class MetadataController(MetaController):
             new_filter = self.view._pending_filter_text
 
             if new_name is not None:
-                suffixed_new_name = f"{new_name}_assisted" if not new_name.endswith("_assisted") else new_name
+                suffixed_new_name = (
+                    f"{new_name}_assisted"
+                    if not new_name.endswith("_assisted")
+                    else new_name
+                )
                 if old_name is not None:
                     self.view.subset_filters.pop(old_name, None)
                 self.view.subset_filters[suffixed_new_name] = new_filter or ""
