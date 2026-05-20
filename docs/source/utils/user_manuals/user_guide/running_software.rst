@@ -32,9 +32,9 @@ Relationship to the Tutorial Series
 -----------------------------------
 
 The workflow demonstrated here aligns with the **YouTube Tutorial Series –  
-Part 2: The Core Workflow**:
+Part 2: The Core Workflow**, specifically the video titled **Part 2: Section 2 - Exploring the Raw Data Tab**:
 
-https://youtube.com/playlist?list=PLfD-cE09U9g7vCuUbn_Nugd-F30eMWzHB&si=EbuBGlf_gyLCN1R9
+https://www.youtube.com/watch?v=LdFBJ6Agwhs&t=775s
 
 Notably, the tutorial series uses the **same dataset throughout all steps** of
 the workflow (from raw data loading to event writing). The *Running the
@@ -66,7 +66,7 @@ Loading Data
 3. Click **Select Input File** and choose any ``.log`` file from the data
    directory:
 
-   `<insert link placeholder>`
+   `DOI: https://doi.org/10.20383/103.01599 <https://doi.org/10.20383/103.01599>`_
 
 .. image:: /_static/images/reader_settings.png
    :alt: Reader parameters
