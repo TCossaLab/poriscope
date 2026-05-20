@@ -403,11 +403,6 @@ class MetadataControls(QWidget):
             1
         )  # This keeps the label aligned left and the rest of the horizontal space empty
 
-        self.filter_raw_label = self.createLabel(self.groupBox, 12, "RAW")
-        self.filter_raw_label.setAlignment(Qt.AlignCenter)
-        self.filter_raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        filter_layout.addWidget(self.filter_raw_label)
-
         # Adding the horizontal layout to the grid
         group_layout.addLayout(
             filter_layout, 0, 2, 1, 1
@@ -426,12 +421,7 @@ class MetadataControls(QWidget):
         filter_combo_layout.setContentsMargins(0, 0, 0, 0)
         filter_combo_layout.setSpacing(5)
 
-        self.filter_raw_checkbox = QCheckBox(filter_combo_row)
-        self.filter_raw_checkbox.setObjectName("filterRawCheckBox")
-        self.filter_raw_checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-        filter_combo_layout.addWidget(self.filter_comboBox, 1)
-        filter_combo_layout.addWidget(self.filter_raw_checkbox, 0)
+        filter_combo_layout.addWidget(self.filter_comboBox)
 
         group_layout.addWidget(filter_combo_row, 1, 2, 1, 1)
         group_layout.addWidget(self.save_filter_button, 3, 2, 1, 1)
@@ -928,7 +918,6 @@ class MetadataControls(QWidget):
         self.x_axis_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.y_axis_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.z_axis_comboBox.currentIndexChanged.connect(self.validate_inputs)
-        self.filter_raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     # Data Validation
 
@@ -960,7 +949,7 @@ class MetadataControls(QWidget):
                     if self.bins_lineEdit.text()
                     else None
                 ),
-                "filter_raw": self.filter_raw_checkbox.isChecked(),
+
             }
 
             if (
