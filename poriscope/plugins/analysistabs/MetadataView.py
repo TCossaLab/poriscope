@@ -1055,6 +1055,9 @@ class MetadataView(MetaView, WalkthroughMixin):
                 exp_and_ch_arg = {exp: [channel]}
 
                 for subset_name, sql_filter in selected_filters.items():
+                    # Infer filter mode from suffix — raw filters use load_metadata_raw,
+                    # assisted filters use construct_metadata_query
+                    filter_is_raw = subset_name.endswith("_raw")
                     bins = None
 
                     dataset_label = (
@@ -1171,7 +1174,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ):  # do not overlay the same thing twice
                             continue
 
-                        if not parameters.get("filter_raw", False):
+                        if not filter_is_raw:
                             self.global_signal.emit(
                                 "MetaDatabaseLoader",
                                 loader,
@@ -1183,7 +1186,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             if self.query == "":
                                 return False
 
-                        if parameters.get("filter_raw", False):
+                        if filter_is_raw:
                             self.global_signal.emit(
                                 "MetaDatabaseLoader",
                                 loader,
@@ -1251,7 +1254,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                         )
 
                     elif plot_type in self.event_data_plots:
-                        if not parameters.get("filter_raw", False):
+                        if not filter_is_raw:
                             self.global_signal.emit(
                                 "MetaDatabaseLoader",
                                 loader,
@@ -1270,7 +1273,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 sql_filter,
                                 (
                                     None
-                                    if parameters.get("filter_raw", False)
+                                    if filter_is_raw
                                     else exp_and_ch_arg
                                 ),
                             ),
@@ -1599,14 +1602,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                     "No loader found – filters loaded but not validated."
                 )
 
-            filter_raw = parameters.get("filter_raw", False)
-
             for name, filter_text in new_filters.items():
-                if filter_raw or not loader:
-                    suffixed_name = f"{name}_raw" if not name.endswith("_raw") else name
-                    self.subset_filters[suffixed_name] = filter_text
-                    combo.addItem(suffixed_name)
-                    combo.selectItem(suffixed_name, select=True)
+                if not loader:
+                    self.subset_filters[name] = filter_text
+                    combo.addItem(name)
+                    combo.selectItem(name, select=True)
                 else:
                     self._pending_filter_name = name
                     self._pending_filter_text = filter_text
@@ -1832,7 +1832,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         event_index = parameters["event_index"]
         use_raw = parameters.get("raw", False)
-        use_filter_raw = parameters.get("filter_raw", False)
+        use_filter_raw = next(iter(selected_filters.keys())).endswith("_raw")
 
         sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
@@ -2358,7 +2358,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_old_filter_name: Optional[str] = None
 
             # If raw SQL mode, skip construct_metadata_query validation and save directly
-            if parameters.get("filter_raw", False):
+            if dialog.is_raw:
                 name = f"{name}_raw"
                 self.subset_filters[name] = filter_text
                 self.metadatacontrols.filter_comboBox.addItem(name)
@@ -2400,11 +2400,11 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         self.show_edit_filter_dialog(
-            selected[0], loader, filter_raw=parameters.get("filter_raw", False)
+            selected[0], loader
         )
 
     @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str, filter_raw: bool = False):
+    def show_edit_filter_dialog(self, name: str, loader: str):
         """
         Displays the dialog to edit an existing filter, and validates the updated
         SQL filter syntax via construct_metadata_query before saving it.
@@ -2435,7 +2435,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_old_filter_name = name  # important for replacing key
 
             # If raw SQL mode, skip construct_metadata_query validation and save directly
-            if filter_raw:
+            if dialog.is_raw:
                 if (
                     self._pending_old_filter_name
                     and self._pending_old_filter_name in self.subset_filters
