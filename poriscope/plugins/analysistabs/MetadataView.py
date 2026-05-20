@@ -1271,11 +1271,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             "load_event_data",
                             (
                                 sql_filter,
-                                (
-                                    None
-                                    if filter_is_raw
-                                    else exp_and_ch_arg
-                                ),
+                                (None if filter_is_raw else exp_and_ch_arg),
                             ),
                             "relay_event_data_generator",
                             (),
@@ -2405,9 +2401,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.warning("Please select exactly one filter to edit.")
             return
 
-        self.show_edit_filter_dialog(
-            selected[0], loader
-        )
+        self.show_edit_filter_dialog(selected[0], loader)
 
     @log(logger=logger)
     def show_edit_filter_dialog(self, name: str, loader: str):

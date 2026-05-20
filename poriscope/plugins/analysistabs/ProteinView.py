@@ -2749,7 +2749,6 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         self.show_edit_filter_dialog(selected[0], loader)
 
-
     @log(logger=logger)
     def _delete_filter_by_name(self, name: str):
         """

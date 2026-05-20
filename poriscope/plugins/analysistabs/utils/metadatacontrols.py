@@ -949,7 +949,6 @@ class MetadataControls(QWidget):
                     if self.bins_lineEdit.text()
                     else None
                 ),
-
             }
 
             if (
