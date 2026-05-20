@@ -79,11 +79,16 @@ class BaseSubsetFilterDialog(QDialog):
         mode_layout.addWidget(self.raw_radio)
         self.layout.addLayout(mode_layout)
 
-        # Pre-select mode based on existing suffix when editing
+        # Pre-select mode based on existing suffix when editing,
+        # and lock the radio buttons so mode cannot be changed after creation
         if self.default_name.endswith("_raw"):
             self.raw_radio.setChecked(True)
+            self.assisted_radio.setEnabled(False)
+            self.raw_radio.setEnabled(False)
         elif self.default_name.endswith("_assisted"):
             self.assisted_radio.setChecked(True)
+            self.assisted_radio.setEnabled(False)
+            self.raw_radio.setEnabled(False)
 
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)

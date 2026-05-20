@@ -2359,6 +2359,12 @@ class MetadataView(MetaView, WalkthroughMixin):
 
             # If raw SQL mode, skip construct_metadata_query validation and save directly
             if dialog.is_raw:
+                if not filter_text.strip().upper().startswith("SELECT"):
+                    self.add_text_to_display.emit(
+                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
+                        self.__class__.__name__,
+                    )
+                    return
                 name = f"{name}_raw"
                 self.subset_filters[name] = filter_text
                 self.metadatacontrols.filter_comboBox.addItem(name)
@@ -2377,7 +2383,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                     ["sublevel_current", "voltage", "duration"],
                     filter_text,
                     None,
-                ),  # using event_id as placeholder column
+                ),
                 "relay_query",
                 ("validate_new_filter",),
             )
@@ -2436,6 +2442,12 @@ class MetadataView(MetaView, WalkthroughMixin):
 
             # If raw SQL mode, skip construct_metadata_query validation and save directly
             if dialog.is_raw:
+                if not new_filter.strip().upper().startswith("SELECT"):
+                    self.add_text_to_display.emit(
+                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
+                        self.__class__.__name__,
+                    )
+                    return
                 if (
                     self._pending_old_filter_name
                     and self._pending_old_filter_name in self.subset_filters
@@ -2555,6 +2567,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadatacontrols.filter_comboBox.addItem(new_name)
         self.metadatacontrols.filter_comboBox.selectItem(new_name, select=True)
         self.metadatacontrols.filter_comboBox.refreshDisplayText()
+        return
 
     def get_walkthrough_steps(self):
         return [
