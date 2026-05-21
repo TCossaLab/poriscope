@@ -115,7 +115,7 @@ class MultiSelectComboBox(QComboBox):
     def addItem(self, text, userData=None):
         item = QListWidgetItem(text, self.listWidget)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-        item.setCheckState(Qt.Unchecked)
+        item.setCheckState(Qt.Checked)
 
     def addItems(self, texts):
         try:
@@ -125,6 +125,8 @@ class MultiSelectComboBox(QComboBox):
             self.listWidget.clear()  # Clear all existing items
             for text in texts:
                 self.addItem(text)
+                
+            self.handleItemChanged(None)  # refresh text + signal
         except Exception as e:
             self.logger.exception(f"Error while adding items: {e}")
         finally:
