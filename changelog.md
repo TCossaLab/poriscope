@@ -48,6 +48,8 @@
     * Select all items by default in MultiSelectComboBox
     * Auto-select newly added filter to match reader's, loader's and writer's combobox population behavior
 
+    Disclaimer: As of version 1.6.0, Poriscope has experimental Linux support and is primarily tested through an Ubuntu virtual machine environment.
+
 ## Poriscope 1.5: 2025-12-08
 
 ### What's New since Poriscope 1.4:

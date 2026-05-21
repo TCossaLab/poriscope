@@ -55,22 +55,9 @@ You may be loading the **wrong type** of ``.db`` file for that tab. Both databas
 
    You can also adopt a suffix system that matches your workflow (e.g., ``.db`` for raw, ``.sqlite`` for metadata).
 
-I'm entering SQL in the Metadata View filter box, but it says the format is invalid.
-------------------------------------------------------------------------------------
+Is Linux supported?
+-------------------
 
-Poriscope’s filter fields use a **simplified, SQL-like expression**, not full SQL. The text you enter is appended to a larger query the app builds internally. The GUI **does not** execute raw SQL in this field.
+Disclaimer: Poriscope is currently beta tested on Linux through an Ubuntu VM. As a result, certain UI behaviors may differ from the native Windows experience, particularly around popup windows, which rely on compositor effects that virtual GPU drivers handle inconsistently.
 
-Examples of **valid expressions**:
-
-.. code-block:: text
-
-   duration > 200
-   max_blockage < 800 and num_sublevels >= 3
-   voltage = -200 or sublevel_stdev > 4
-
-You do **not** need ``SELECT``, ``FROM``, or ``WHERE``—just the condition.
-
-.. note::
-
-   To run full SQL directly on your database, use *Scripting mode* (outside the GUI filter).  
-   See the Poriscope documentation for supported operators and additional examples.
+Functionality is in place, and Linux-specific fixes will continue to be refined as support matures.
