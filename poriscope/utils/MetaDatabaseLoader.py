@@ -369,6 +369,31 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 self.logger.info(f"Database query failed: {e}")
                 raise
         return None
+    
+    @log(logger=logger)
+    def get_channel_db_id(self, experiment_name: str, channel_id: int) -> Optional[int]:
+        """
+        Get the channel primary key (channel_db_id) for a given experiment name and channel identifier.
+
+        :param experiment_name: The name of the experiment.
+        :type experiment_name: str
+        :param channel_id: The channel identifier (not the primary key).
+        :type channel_id: int
+        :return: The primary key of the channel, or None on failure.
+        :rtype: Optional[int]
+        """
+        try:
+            exp_id = self.get_experiment_id_by_name(experiment_name)
+            if exp_id is None:
+                return None
+            query = f"SELECT id FROM channels WHERE experiment_id = {exp_id} AND channel_id = {channel_id} LIMIT 1"
+            result = self.query_database_directly(query)
+            if result is not None and not result.empty:
+                return int(result.at[0, "id"])
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to get channel_db_id: {e}")
+            return None
 
     @log(logger=logger)
     def export_subset_to_csv(

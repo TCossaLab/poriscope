@@ -1187,22 +1187,39 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 return False
 
                         if filter_is_raw:
+                            # Scope raw query to selected experiment/channel
+                            self.experiment_id = None
+                            self.channel_db_id = None
+                            if exp is not None:
+                                self.global_signal.emit(
+                                    "MetaDatabaseLoader", loader,
+                                    "get_experiment_id_by_name", (exp,),
+                                    "set_experiment_id", (),
+                                )
+                                self.global_signal.emit(
+                                    "MetaDatabaseLoader", loader,
+                                    "get_channel_db_id", (exp, int(channel)),
+                                    "set_channel_db_id", (),
+                                )
+                            scoped_query = sql_filter
+                            user_query = sql_filter.strip().rstrip(";")
+                            if exp is not None and self.experiment_id is not None and self.channel_db_id is not None:
+                                scope = f"experiment_id = {self.experiment_id} AND channel_db_id = {self.channel_db_id}"
+                                if "WHERE" in user_query.upper():
+                                    scoped_query = f"{user_query} AND {scope}"
+                                else:
+                                    scoped_query = f"{user_query} WHERE {scope}"
                             self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "load_metadata_raw",
-                                (sql_filter,),
-                                "update_plot_data",
-                                (),
+                                "MetaDatabaseLoader", loader,
+                                "load_metadata_raw", (scoped_query,),
+                                "update_plot_data", (),
                             )
                         else:
                             self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
+                                "MetaDatabaseLoader", loader,
                                 "load_metadata",
                                 (columns, sql_filter, exp_and_ch_arg),
-                                "update_plot_data",
-                                (),
+                                "update_plot_data", (),
                             )
 
                         if self.plot_data is None:
@@ -2562,6 +2579,13 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadatacontrols.filter_comboBox.selectItem(new_name, select=True)
         self.metadatacontrols.filter_comboBox.refreshDisplayText()
         return
+    
+    @log(logger=logger)
+    def set_channel_db_id(self, channel_db_id):
+        """
+        a global signal callback that provides the channel_db_id for raw query scoping
+        """
+        self.channel_db_id = channel_db_id
 
     def get_walkthrough_steps(self):
         return [

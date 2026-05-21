@@ -298,3 +298,11 @@ class MetadataController(MetaController):
         self.view.selected_experiment_and_channels_by_loader[loader_name] = (
             str_structure.copy()
         )
+
+    @log(logger=logger)
+    def set_experiment_id(self, experiment_id):
+        self.view.set_experiment_id(experiment_id)
+    @log(logger=logger)
+    def set_channel_db_id(self, channel_db_id):
+        self.view.set_channel_db_id(channel_db_id)
+

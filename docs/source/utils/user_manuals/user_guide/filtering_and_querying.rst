@@ -174,6 +174,18 @@ Saved as: ``<subset_name>_raw``
 
       SELECT duration, max_blockage FROM events WHERE max_blockage > 2000
 
+.. note::
+
+   Computed columns in Raw SQL must be aliased to an existing database column name
+   to be selectable as a plot axis. For example:
+
+   .. code-block:: sql
+
+      SELECT duration, max_blockage - min_blockage AS max_blockage FROM events
+
+   Aliases that do not match an existing column name (e.g. ``AS blockage_range``)
+   will not appear in the axis dropdown and cannot be plotted.
+
 Creating a Filter
 -----------------
 
