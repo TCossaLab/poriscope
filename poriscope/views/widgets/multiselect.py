@@ -125,7 +125,7 @@ class MultiSelectComboBox(QComboBox):
             self.listWidget.clear()  # Clear all existing items
             for text in texts:
                 self.addItem(text)
-                
+
             self.handleItemChanged(None)  # refresh text + signal
         except Exception as e:
             self.logger.exception(f"Error while adding items: {e}")
