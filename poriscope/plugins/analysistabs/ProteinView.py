@@ -374,6 +374,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.available_columns = column_names
 
     @log(logger=logger)
+    def set_channel_db_id(self, channel_db_id):
+        """
+        a global signal callback that provides the channel_db_id for raw query scoping
+        """
+        self.channel_db_id = channel_db_id
+
+    @log(logger=logger)
     def get_save_filename(self):
         """
         Open a file dialog for the user to choose a save location.
@@ -1236,7 +1243,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self.cached_events = {}
                 self.plot_events_generator = None
 
-            load_event_data_args = (sql_filter, exp_and_ch)
+            subset_name = next(iter(selected_filters.keys()))
+            load_event_data_args = self._build_load_event_data_args(
+                sql_filter, subset_name, exp, channel, exp_and_ch, loader_name
+            )
+
             self.plot_events_generator_updated = False
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -1282,6 +1293,56 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         return data_list
 
+    @log(logger=logger)
+    def _build_load_event_data_args(self, sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader):
+        """
+        Build the (filter_or_query, exp_and_ch_or_None) args tuple for load_event_data,
+        handling raw filter scoping automatically.
+
+        :param sql_filter: SQL filter string or complete raw query.
+        :type sql_filter: str
+        :param subset_name: Name of the subset filter, used to detect _raw suffix.
+        :type subset_name: str
+        :param exp: Experiment name, or None.
+        :type exp: Optional[str]
+        :param channel: Channel identifier.
+        :type channel: str
+        :param exp_and_ch_arg: Experiment/channel dict for assisted filters.
+        :type exp_and_ch_arg: dict
+        :param loader: Name of the database loader.
+        :type loader: str
+        :return: Tuple of (query_or_filter, exp_and_ch_or_None) for load_event_data.
+        :rtype: tuple
+        """
+        if subset_name.endswith("_raw"):
+            self.experiment_id = None
+            self.channel_db_id = None
+            if exp is not None:
+                self.global_signal.emit(
+                    "MetaDatabaseLoader", loader,
+                    "get_experiment_id_by_name", (exp,),
+                    "set_experiment_id", (),
+                )
+                self.global_signal.emit(
+                    "MetaDatabaseLoader", loader,
+                    "get_channel_db_id", (exp, int(channel)),
+                    "set_channel_db_id", (),
+                )
+            scoped_query = sql_filter.strip().rstrip(";")
+            if (
+                exp is not None
+                and self.experiment_id is not None
+                and self.channel_db_id is not None
+            ):
+                scope = f"experiment_id = {self.experiment_id} AND channel_db_id = {self.channel_db_id}"
+                if "WHERE" in scoped_query.upper():
+                    scoped_query = f"{scoped_query} AND {scope}"
+                else:
+                    scoped_query = f"{scoped_query} WHERE {scope}"
+            return (scoped_query, None)
+        else:
+            return (sql_filter, exp_and_ch_arg)
+    
     @log(logger=logger)
     def _handle_plot_events(self, parameters):
         """
@@ -1581,11 +1642,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                     if self.event_query == "":
                         return
 
+                    load_event_data_args = self._build_load_event_data_args(
+                        sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
+                    )
                     self.global_signal.emit(
                         "MetaDatabaseLoader",
                         loader,
                         "load_event_data",
-                        (sql_filter, exp_and_ch_arg),
+                        load_event_data_args,
                         "relay_event_data_generator",
                         (),
                     )
@@ -2046,11 +2110,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                     if self.event_query == "":
                         return
 
+                    load_event_data_args = self._build_load_event_data_args(
+                        sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
+                    )
                     self.global_signal.emit(
                         "MetaDatabaseLoader",
                         loader,
                         "load_event_data",
-                        (sql_filter, exp_and_ch_arg),
+                        load_event_data_args,
                         "relay_event_data_generator",
                         (),
                     )
