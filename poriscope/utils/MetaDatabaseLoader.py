@@ -369,7 +369,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 self.logger.info(f"Database query failed: {e}")
                 raise
         return None
-    
+
     @log(logger=logger)
     def get_channel_db_id(self, experiment_name: str, channel_id: int) -> Optional[int]:
         """
