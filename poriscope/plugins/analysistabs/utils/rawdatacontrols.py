@@ -731,7 +731,7 @@ class RawDataControls(QWidget):
         current_selection = self.filters_comboBox.currentText()
 
         self.filters_comboBox.clear()
-        if "No Filter" not in filters:
+        if filters == []:
             filters.insert(0, "No Filter")
         self.filters_comboBox.addItems(filters)
 

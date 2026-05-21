@@ -45,7 +45,8 @@
     * Fixed plugins' settings not being able to be edited 
     * Single shared legend from all axes in the EventAnalysis Tab to prevent overlapping and sublplots shifting
     * Fixed "Update Plot" not working after "Plot Events" due to stale figure state and tracking variables not being reset
-
+    * Select all items by default in MultiSelectComboBox
+    * Auto-select newly added filter to match reader's, loader's and writer's combobox population behavior
 
 ## Poriscope 1.5: 2025-12-08
 
