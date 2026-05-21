@@ -1294,7 +1294,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         return data_list
 
     @log(logger=logger)
-    def _build_load_event_data_args(self, sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader):
+    def _build_load_event_data_args(
+        self, sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
+    ):
         """
         Build the (filter_or_query, exp_and_ch_or_None) args tuple for load_event_data,
         handling raw filter scoping automatically.
@@ -1319,14 +1321,20 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.channel_db_id = None
             if exp is not None:
                 self.global_signal.emit(
-                    "MetaDatabaseLoader", loader,
-                    "get_experiment_id_by_name", (exp,),
-                    "set_experiment_id", (),
+                    "MetaDatabaseLoader",
+                    loader,
+                    "get_experiment_id_by_name",
+                    (exp,),
+                    "set_experiment_id",
+                    (),
                 )
                 self.global_signal.emit(
-                    "MetaDatabaseLoader", loader,
-                    "get_channel_db_id", (exp, int(channel)),
-                    "set_channel_db_id", (),
+                    "MetaDatabaseLoader",
+                    loader,
+                    "get_channel_db_id",
+                    (exp, int(channel)),
+                    "set_channel_db_id",
+                    (),
                 )
             scoped_query = sql_filter.strip().rstrip(";")
             if (
@@ -1342,7 +1350,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             return (scoped_query, None)
         else:
             return (sql_filter, exp_and_ch_arg)
-    
+
     @log(logger=logger)
     def _handle_plot_events(self, parameters):
         """
