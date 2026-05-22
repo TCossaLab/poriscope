@@ -22,6 +22,9 @@
     * Full SQL will always be printed after filter creation/editing, regardless of validity
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
+    
+* **Updated Frontend Plugin: `MetadataView`**
+    * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
 
 * **Documentation**
     * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time
@@ -33,10 +36,17 @@
     * Reverts Step Size to being a multiple of the local baseline standard deviation instead of an absolute number
     * Ported bug fixes from base CUSUM class
     
+* **New Data Plugin: `ClassicBlockageFinder`**	 
+    * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
+    
+* **New Data Plugin: `BoundedBlockageFinder`**	 
+    * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
+    
 * **New Data plugin: `SQLitePeakDBLoader`**
     * Subclasses SQLiteDBLoader to add specific plotting features used by the `PeakFinder` plugin - only usable on databases created by `PeakFinder`
 
 ### General Fixes and Improvements:
+    * Fixed bug with baseline calculation that was causing inaccurate baseline whenever drift was present
     * Fixed crash when resetting or updating heatmaps in the Metadata tab
     * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
     * Cross-table filtering is now supported for events plot filtered by sublevels column, and sublevels plot filtered by events column.

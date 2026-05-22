@@ -329,10 +329,8 @@ class ClassicBlockageFinder(MetaEventFinder):
         mask = (data > bottom) & (data < top)
         data = data[mask]
 
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
+        hist = hist[bottom_index:top_index]
+        centers = centers[bottom_index:top_index]
 
         max_index = np.argmax(hist)
         maxval = hist[max_index]
@@ -352,11 +350,6 @@ class ClassicBlockageFinder(MetaEventFinder):
             )
         except StopIteration:
             bottom_index = 0
-        std_index = (
-            bottom_index
-            if max_index - bottom_index < top_index - max_index
-            else top_index
-        )
 
         try:
             _, mean, std = np.array(
@@ -364,7 +357,7 @@ class ClassicBlockageFinder(MetaEventFinder):
                     hist,
                     centers,
                     centers[max_index],
-                    np.absolute(centers[std_index] - centers[max_index]),
+                    np.absolute(centers[top_index] - centers[bottom_index]),
                 )
             )
         except ValueError:
