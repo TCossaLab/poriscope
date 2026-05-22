@@ -415,7 +415,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         top = np.max(data)
         bottom = np.min(data)
 
-
         median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
         bins = int((top - bottom) / width)
@@ -424,7 +423,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         max_index = np.argmax(hist)
 
         maxval = hist[max_index]
-        
+
         # top_index: the first index where hist[i] <= maxval/5 starting from max_index
         try:
             top_index = next(
@@ -474,7 +473,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                     hist,
                     centers,
                     centers[max_index],
-                    np.absolute(centers[top_index] - centers[bottom_index]), #take an overestimate for std, seems to perform better overall
+                    np.absolute(
+                        centers[top_index] - centers[bottom_index]
+                    ),  # take an overestimate for std, seems to perform better overall
                 )
             )
         except ValueError:

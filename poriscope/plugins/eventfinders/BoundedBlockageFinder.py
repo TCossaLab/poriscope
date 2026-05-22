@@ -144,7 +144,6 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         top = centers[top_index]
         bottom = centers[bottom_index]
 
-       
         hist = hist[bottom_index:top_index]
         centers = centers[bottom_index:top_index]
 
