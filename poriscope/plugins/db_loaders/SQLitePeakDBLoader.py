@@ -72,7 +72,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         :raises RuntimeError: if fitting is not complete yet
         """
 
-        query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered                        FROM sublevels s
+        query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_mean, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
@@ -103,7 +103,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         # --- 1. Handle Event-Level Data ---
         # Grab the first row for event-level metrics (since they are identical across all rows for this event)
         first_row = result.iloc[0]
-        baseline = first_row["baseline"]
+        baseline = first_row["baseline_mean"]
         unfolded = first_row["unfolded_level"]
         std = first_row["baseline_std"]
         sign = np.sign(baseline)
