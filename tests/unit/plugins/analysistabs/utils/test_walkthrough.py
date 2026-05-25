@@ -153,7 +153,7 @@ class TestStepDialogNavigation:
 
     def test_next_step_shows_back_btn(self, step_dialog):
         step_dialog.next_step()
-        assert step_dialog.back_btn.isVisible()
+        assert not step_dialog.back_btn.isHidden()
 
     def test_prev_step_goes_back(self, step_dialog):
         step_dialog.next_step()
