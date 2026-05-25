@@ -103,7 +103,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         # --- 1. Handle Event-Level Data ---
         # Grab the first row for event-level metrics (since they are identical across all rows for this event)
         first_row = result.iloc[0]
-        baseline = first_row["baseline_mean"]
+        baseline = first_row["baseline"]
         unfolded = first_row["unfolded_level"]
         std = first_row["baseline_std"]
         sign = np.sign(baseline)

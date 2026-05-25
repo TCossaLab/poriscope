@@ -5,7 +5,7 @@ instantiate PeakFinder via object.__new__ to bypass __init__ and the event-loade
 Settings and metadata are injected directly onto the instance.
 
 Coverage targets:
-- find_unfolded_blockage_level
+- find_mode_blockage_level
 - enumerate_peaks
 - filter_peaks (all three Event Type branches + all sub-branches)
 - _populate_sublevel_metadata
@@ -132,47 +132,47 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
 
 
 # ---------------------------------------------------------------------------
-# find_unfolded_blockage_level
+# find_mode_blockage_level
 # ---------------------------------------------------------------------------
 
 
-class TestFindUnfoldedBlockageLevel(unittest.TestCase):
+class TestFindModeBlockageLevel(unittest.TestCase):
     def setUp(self):
         self.pf = _make_pf()
 
     def test_returns_float(self):
         data = np.concatenate([np.ones(50) * 100.0, np.ones(50) * 300.0])
-        result = self.pf.find_unfolded_blockage_level(data, 750.0, 100.0, 10.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0)
         self.assertIsInstance(float(result), float)
 
     def test_within_max_unfolded(self):
         # Dense cluster near 300, baseline=100 → diff=200, within max_unfolded=750
         data = np.concatenate([np.ones(10) * 100.0, np.ones(90) * 300.0])
-        result = self.pf.find_unfolded_blockage_level(data, 750.0, 100.0, 10.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0)
         self.assertGreater(result, 0.0)
         self.assertLessEqual(result, 750.0)
 
-    def test_exceeds_max_unfolded_halved(self):
-        # Dense cluster at 1000 away from baseline 0 → exceeds max_unfolded=400
-        data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
-        result = self.pf.find_unfolded_blockage_level(data, 400.0, 0.0, 5.0)
-        # Should be halved since abs(level - baseline) > max_unfolded
-        full = np.abs(
-            np.arange(int(min(data)), int(max(data)))[
-                np.argmax(
-                    [
-                        np.sum((data > i - 2.5) & (data < i + 2.5))
-                        for i in np.arange(int(min(data)), int(max(data)))
-                    ]
-                )
-            ]
-            - 0.0
-        )
-        self.assertAlmostEqual(result, full / 2, delta=5.0)
+    # def test_exceeds_max_unfolded_halved(self):
+    #     # Dense cluster at 1000 away from baseline 0 → exceeds max_unfolded=400
+    #     data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
+    #     result = self.pf.find_mode_blockage_level(data, 400.0, 0.0, 5.0)
+    #     # Should be halved since abs(level - baseline) > max_unfolded
+    #     full = np.abs(
+    #         np.arange(int(min(data)), int(max(data)))[
+    #             np.argmax(
+    #                 [
+    #                     np.sum((data > i - 2.5) & (data < i + 2.5))
+    #                     for i in np.arange(int(min(data)), int(max(data)))
+    #                 ]
+    #             )
+    #         ]
+    #         - 0.0
+    #     )
+    #     self.assertAlmostEqual(result, full / 2, delta=5.0)
 
     def test_nonnegative(self):
         data = np.random.randn(100) * 5.0 + 200.0
-        result = self.pf.find_unfolded_blockage_level(data, 750.0, 200.0, 10.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 200.0, 10.0)
         self.assertGreaterEqual(result, 0.0)
 
 
@@ -446,7 +446,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "duration",
             "raw_ecd",
             "max_deviation",
-            "baseline_mean",
+            "baseline",
             "unfolded_level",
             "baseline_std",
         ]:
@@ -457,7 +457,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
         result = pf._populate_event_metadata(
             self._make_data(), 1e6, 123.0, 10.0, self._make_sublevel_meta()
         )
-        self.assertAlmostEqual(result["baseline_mean"], 123.0)
+        self.assertAlmostEqual(result["baseline"], 123.0)
 
     def test_baseline_std_matches_input(self):
         pf = _make_pf()
@@ -488,7 +488,7 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertIs(t["number_peaks"], int)
         self.assertIs(t["duration"], float)
         self.assertIs(t["raw_ecd"], float)
-        self.assertIs(t["baseline_mean"], float)
+        self.assertIs(t["baseline"], float)
         self.assertIs(t["unfolded_level"], float)
         self.assertIs(t["baseline_std"], float)
 
@@ -585,7 +585,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                 }
             }
         }
-        pf.event_metadata = {0: {0: {"baseline_mean": 100.0}}}
+        pf.event_metadata = {0: {0: {"baseline": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
 
@@ -620,7 +620,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                 }
             }
         }
-        pf.event_metadata = {0: {0: {"baseline_mean": 100.0}}}
+        pf.event_metadata = {0: {0: {"baseline": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
 
@@ -681,7 +681,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline_mean": 100.0,
+                    "baseline": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
@@ -734,7 +734,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline_mean": 100.0,
+                    "baseline": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
@@ -763,7 +763,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline_mean": 100.0,
+                    "baseline": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }

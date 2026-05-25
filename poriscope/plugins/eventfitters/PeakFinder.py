@@ -212,7 +212,7 @@ class PeakFinder(MetaEventFitter):
             sublevel_currents = self.sublevel_metadata[channel][index][
                 "sublevel_current"
             ]
-            baseline = self.event_metadata[channel][index]["baseline_mean"]
+            baseline = self.event_metadata[channel][index]["baseline"]
 
             # Peak-related data (stored in us in metadata; convert to indices)
             peak_heights = self.sublevel_metadata[channel][index]["peak_height"]
@@ -315,7 +315,7 @@ class PeakFinder(MetaEventFitter):
             ):
                 return None, None, None, None, None, None
 
-            baseline = self.event_metadata[channel][index]["baseline_mean"]
+            baseline = self.event_metadata[channel][index]["baseline"]
             # Initializing arrays
             bases: list[float] = []
             peaks: list[tuple[float, float]] = []
@@ -326,18 +326,18 @@ class PeakFinder(MetaEventFitter):
             j = 1
 
             # some gauges for debugging
-            bases.append(self.event_metadata[channel][index]["baseline_mean"])
+            bases.append(self.event_metadata[channel][index]["baseline"])
             hlabel.append("Baseline")
             bases.append(
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_mean"]
+                + self.event_metadata[channel][index]["baseline"]
             )
             hlabel.append("unfolded level")
             bases.append(
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_mean"]
+                + self.event_metadata[channel][index]["baseline"]
                 - np.sign(baseline)
                 * self.event_metadata[channel][index]["baseline_std"]
             )
@@ -345,7 +345,7 @@ class PeakFinder(MetaEventFitter):
             bases.append(
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_mean"]
+                + self.event_metadata[channel][index]["baseline"]
                 + 2
                 * np.sign(baseline)
                 * self.event_metadata[channel][index]["baseline_std"]
@@ -362,12 +362,12 @@ class PeakFinder(MetaEventFitter):
                     bases.append(
                         -np.sign(baseline)
                         * self.sublevel_metadata[channel][index]["left_base"][i]
-                        + self.event_metadata[channel][index]["baseline_mean"]
+                        + self.event_metadata[channel][index]["baseline"]
                     )
                     bases.append(
                         -np.sign(baseline)
                         * self.sublevel_metadata[channel][index]["right_base"][i]
-                        + self.event_metadata[channel][index]["baseline_mean"]
+                        + self.event_metadata[channel][index]["baseline"]
                     )
                     hlabel.append("Right base #" + str(j))
                     hlabel.append("Left base #" + str(j))
@@ -376,7 +376,7 @@ class PeakFinder(MetaEventFitter):
                             self.sublevel_metadata[channel][index]["peak_loc"][i],
                             -np.sign(baseline)
                             * self.sublevel_metadata[channel][index]["peak_height"][i]
-                            + self.event_metadata[channel][index]["baseline_mean"],
+                            + self.event_metadata[channel][index]["baseline"],
                         )
                     )
                     plabel.append("Peak #" + str(j))
@@ -1058,7 +1058,7 @@ class PeakFinder(MetaEventFitter):
         event_metadata["max_deviation"] = np.max(
             sublevel_metadata["sublevel_max_deviation"][1:-1]
         )
-        event_metadata["baseline_mean"] = baseline_mean
+        event_metadata["baseline"] = baseline_mean
         event_metadata["unfolded_level"] = self.find_mode_blockage_level(
             data[
                 int(
@@ -1068,7 +1068,7 @@ class PeakFinder(MetaEventFitter):
                 )
             ],
             self.settings["Max Unfolded"]["Value"],
-            event_metadata["baseline_mean"],
+            event_metadata["baseline"],
             baseline_std,
         )
         event_metadata["baseline_std"] = baseline_std
@@ -1112,7 +1112,7 @@ class PeakFinder(MetaEventFitter):
             "duration": float,
             "raw_ecd": float,
             "max_deviation": float,
-            "baseline_mean": float,
+            "baseline": float,
             "unfolded_level": float,
             "baseline_std": float,
         }
