@@ -2243,7 +2243,7 @@ def test_overlay_plot_skips_already_plotted_datasets(
     view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.units = ["ms"]
     view.plotted_datasets.add(("test_loader", None, None, "", "Full Dataset"))
-    view._reset_actions = mocker.Mock()   # prevent decorator side effects
+    view._reset_actions = mocker.Mock()  # prevent decorator side effects
 
     parameters = {
         "db_loader": "test_loader",
@@ -2346,6 +2346,7 @@ def test_overlay_plot_emits_row_count_message(
     view.add_text_to_display.emit.assert_called()
     call_args = view.add_text_to_display.emit.call_args_list[0]
     assert "5 rows" in call_args.args[0]
+
 
 def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
     view: MetadataView, mocker: MockerFixture
@@ -4030,6 +4031,7 @@ def test_update_event_plot_clears_figure(
 
     view._clear_figure_state.assert_called()
 
+
 def test_update_event_plot_creates_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -4037,7 +4039,7 @@ def test_update_event_plot_creates_subplots(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # <-- add this
+    view._clear_figure_state = mocker.Mock()  # <-- add this
     view._factors = mocker.Mock(return_value=(2, 2))
     event_data = [_make_event(i) for i in range(4)]
 
@@ -4053,7 +4055,7 @@ def test_update_event_plot_plots_all_traces(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4071,7 +4073,7 @@ def test_update_event_plot_sets_subplot_titles(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4103,7 +4105,7 @@ def test_update_event_plot_converts_current_to_nanoamps(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4132,7 +4134,7 @@ def test_update_event_plot_converts_time_to_microseconds(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4151,7 +4153,7 @@ def test_update_event_plot_updates_cache(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
@@ -4167,7 +4169,7 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(2, 3))
     mock_axes: list = []
 
@@ -4196,7 +4198,7 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(2, 3))
     mock_axes: list = []
 
@@ -4225,14 +4227,15 @@ def test_update_event_plot_redraws_canvas(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._reset_actions = mocker.Mock()        # prevents first canvas.draw()
-    view._clear_figure_state = mocker.Mock()   # prevents second figure manipulation
+    view._reset_actions = mocker.Mock()  # prevents first canvas.draw()
+    view._clear_figure_state = mocker.Mock()  # prevents second figure manipulation
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
     view._update_event_plot(event_data, *_none_lists(1))
 
     view.canvas.draw.assert_called_once()
+
 
 def test_update_event_plot_commits_cache(
     view: MetadataView, mocker: MockerFixture
@@ -4241,13 +4244,14 @@ def test_update_event_plot_commits_cache(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._clear_figure_state = mocker.Mock()          # add
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
     view._update_event_plot(event_data, *_none_lists(1))
 
     view._commit_cache.assert_called_once()
+
 
 # ----------------------------- Export CSV Subset Tests ------------------------------
 
