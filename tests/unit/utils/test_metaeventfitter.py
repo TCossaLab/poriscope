@@ -487,10 +487,13 @@ class TestMetaEventFitter:
 
     def test_get_plot_features(self, fitter: ConcreteEventFitter) -> None:
         """Test getting plot features."""
-        vlines, hlines, points, vlabels, hlabels = fitter.get_plot_features(0, 0)
+        vlines, hlines, points, vlabels, hlabels, plabels = fitter.get_plot_features(0, 0)
         assert vlines is None
         assert hlines is None
         assert points is None
+        assert vlabels is None
+        assert hlabels is None
+        assert plabels is None
 
     def test_construct_fitted_event_not_fitted(
         self, fitter: ConcreteEventFitter
