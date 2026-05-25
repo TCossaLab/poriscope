@@ -487,7 +487,9 @@ class TestMetaEventFitter:
 
     def test_get_plot_features(self, fitter: ConcreteEventFitter) -> None:
         """Test getting plot features."""
-        vlines, hlines, points, vlabels, hlabels, plabels = fitter.get_plot_features(0, 0)
+        vlines, hlines, points, vlabels, hlabels, plabels = fitter.get_plot_features(
+            0, 0
+        )
         assert vlines is None
         assert hlines is None
         assert points is None
