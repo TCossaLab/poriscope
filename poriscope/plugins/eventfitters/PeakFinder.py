@@ -1046,9 +1046,10 @@ class PeakFinder(MetaEventFitter):
         """
         event_metadata = {}
 
-        event_metadata["number_peaks"] = len(
-            sublevel_metadata["sublevel_duration"][1:-1] - 1
+        event_metadata["number_peaks"] = np.max(
+            sublevel_metadata["peak_id"][1:-1]
         )
+        
         event_metadata["duration"] = np.sum(
             [sublevel_metadata["sublevel_duration"][1:-1]]
         )
