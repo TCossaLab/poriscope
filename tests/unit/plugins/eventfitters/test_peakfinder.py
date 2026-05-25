@@ -428,6 +428,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "sublevel_raw_ecd": np.ones(n) * 0.1,
             "sublevel_max_deviation": np.ones(n) * 5.0,
             "sublevel_start_times": np.array([0.0, 10000.0, 20000.0, 30000.0, 40000.0]),
+            "peak_id": [None, 1, 2, 3, None],
         }
 
     def _make_data(self):
