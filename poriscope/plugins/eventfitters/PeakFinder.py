@@ -480,6 +480,39 @@ class PeakFinder(MetaEventFitter):
                 raise ValueError(
                     "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
                 )
+        # Find longest continuous segment above threshold 
+        # This trims the event to start/end at the longest above-threshold blockage
+        
+        threshold = 3 * baseline_std
+        event_data = data[padding_before:-padding_after]
+        above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
+        
+        if not np.any(above_threshold):
+            raise ValueError("No data above threshold found")
+
+        # Find all continuous segments
+        diff = np.diff(np.concatenate(([False], above_threshold, [False])).astype(int))
+        segment_starts = np.where(diff == 1)[0]
+        segment_ends = np.where(diff == -1)[0]
+
+        # Find the longest segment
+        segment_lengths = segment_ends - segment_starts
+        longest_segment_idx = np.argmax(segment_lengths)
+
+
+        # Get the start and end indices of the longest segment (relative to event_data)
+        longest_start_idx = segment_starts[longest_segment_idx]
+        longest_end_idx = segment_ends[longest_segment_idx]
+
+        # Adjust padding to trim to the longest segment only
+        # New effective padding_before includes original padding plus everything before longest segment
+        new_padding_before = padding_before + longest_start_idx
+        # New effective padding_after includes original padding plus everything after longest segment
+        new_padding_after = padding_after + (len(event_data) - longest_end_idx)
+
+        # Use adjusted paddings for the rest of processing
+        padding_before = new_padding_before
+        padding_after = new_padding_after
 
         """
             scipy find_peaks
