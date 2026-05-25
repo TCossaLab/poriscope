@@ -480,13 +480,16 @@ class PeakFinder(MetaEventFitter):
                 raise ValueError(
                     "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
                 )
-        # Find longest continuous segment above threshold 
+        # Find longest continuous segment above threshold
         # This trims the event to start/end at the longest above-threshold blockage
-        
+
         threshold = 3 * baseline_std
         event_data = data[padding_before:-padding_after]
-        above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
-        
+        above_threshold = (
+            np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean))
+            > threshold
+        )
+
         if not np.any(above_threshold):
             raise ValueError("No data above threshold found")
 
@@ -498,7 +501,6 @@ class PeakFinder(MetaEventFitter):
         # Find the longest segment
         segment_lengths = segment_ends - segment_starts
         longest_segment_idx = np.argmax(segment_lengths)
-
 
         # Get the start and end indices of the longest segment (relative to event_data)
         longest_start_idx = segment_starts[longest_segment_idx]
