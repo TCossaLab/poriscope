@@ -417,10 +417,15 @@ class MetadataControls(QWidget):
             self.groupBox, "Load Filter", bold=True
         )
 
-        # Adding QTextEdit directly to the grid, spanning multiple rows to increase its area
-        group_layout.addWidget(
-            self.filter_comboBox, 1, 2, 1, 1
-        )  # Starts from row 1, spans 6 rows, and takes 2 columns
+        # filter comboBox + raw checkbox side by side
+        filter_combo_row = QWidget(self.groupBox)
+        filter_combo_layout = QHBoxLayout(filter_combo_row)
+        filter_combo_layout.setContentsMargins(0, 0, 0, 0)
+        filter_combo_layout.setSpacing(5)
+
+        filter_combo_layout.addWidget(self.filter_comboBox)
+
+        group_layout.addWidget(filter_combo_row, 1, 2, 1, 1)
         group_layout.addWidget(self.save_filter_button, 3, 2, 1, 1)
         group_layout.addWidget(self.load_filter_button, 5, 2, 1, 1)
 
