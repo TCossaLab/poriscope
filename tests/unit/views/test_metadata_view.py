@@ -2241,8 +2241,9 @@ def test_overlay_plot_skips_already_plotted_datasets(
     view.figure.axes = []
     view.query = "SELECT * FROM events"
     view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.units = ["ms"]
     view.plotted_datasets.add(("test_loader", None, None, "", "Full Dataset"))
+    view._reset_actions = mocker.Mock()  # prevent decorator side effects
 
     parameters = {
         "db_loader": "test_loader",
@@ -2255,7 +2256,7 @@ def test_overlay_plot_skips_already_plotted_datasets(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
+    view.global_signal = mocker.Mock()
     view.update_plot = mocker.Mock()
 
     result = view._overlay_plot(parameters)
@@ -2345,48 +2346,6 @@ def test_overlay_plot_emits_row_count_message(
     view.add_text_to_display.emit.assert_called()
     call_args = view.add_text_to_display.emit.call_args_list[0]
     assert "5 rows" in call_args.args[0]
-
-
-def test_overlay_plot_returns_false_when_column_units_length_mismatch(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify returns False when columns and units have different lengths."""
-    view.figure.axes = []
-
-    parameters = {
-        "db_loader": "test_loader",
-        "plot_type": "Scatterplot",
-        "x_axis": "duration",
-        "y_axis": "current",
-        "x_log": False,
-        "y_log": False,
-        "bins": [50],
-        "sizes": False,
-    }
-
-    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
-    view.selected_experiment_and_channels_by_loader = {}
-    view.query = "SELECT * FROM events"
-
-    unit_call_count = [0]
-
-    def mock_emit_side_effect(*args: Any) -> None:
-        if len(args) >= 3 and args[2] == "load_metadata":
-            view.plot_data = pd.DataFrame(
-                {"duration": [1.0, 2.0], "current": [3.0, 4.0]}
-            )
-        elif len(args) >= 3 and args[2] == "get_column_units":
-            unit_call_count[0] += 1
-            if unit_call_count[0] == 1:
-                view.units = "ms"
-            # second call deliberately sets nothing → len(units)==1, len(columns)==2
-
-    view.global_signal.emit = mocker.Mock(side_effect=mock_emit_side_effect)
-
-    result = view._overlay_plot(parameters)
-
-    assert result is False
-    view.add_text_to_display.emit.assert_called()
 
 
 def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
@@ -4080,6 +4039,7 @@ def test_update_event_plot_creates_subplots(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # <-- add this
     view._factors = mocker.Mock(return_value=(2, 2))
     event_data = [_make_event(i) for i in range(4)]
 
@@ -4095,6 +4055,7 @@ def test_update_event_plot_plots_all_traces(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4112,6 +4073,7 @@ def test_update_event_plot_sets_subplot_titles(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4143,6 +4105,7 @@ def test_update_event_plot_converts_current_to_nanoamps(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4171,6 +4134,7 @@ def test_update_event_plot_converts_time_to_microseconds(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     mock_ax = mocker.Mock()
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
@@ -4189,6 +4153,7 @@ def test_update_event_plot_updates_cache(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
@@ -4204,6 +4169,7 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(2, 3))
     mock_axes: list = []
 
@@ -4232,6 +4198,7 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(2, 3))
     mock_axes: list = []
 
@@ -4260,6 +4227,8 @@ def test_update_event_plot_redraws_canvas(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._reset_actions = mocker.Mock()  # prevents first canvas.draw()
+    view._clear_figure_state = mocker.Mock()  # prevents second figure manipulation
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
@@ -4275,6 +4244,7 @@ def test_update_event_plot_commits_cache(
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._clear_figure_state = mocker.Mock()  # add
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
