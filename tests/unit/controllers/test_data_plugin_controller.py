@@ -1022,14 +1022,24 @@ def test_edit_plugin_updates_app_settings_for_metaclass_keys(
         "MetaLoader": ["loader1"],
     }
     settings = {"MetaLoader": {"Type": None, "Options": None, "Value": "loader1"}}
-    mock_view.get_user_settings.return_value = (settings, "r1")
+
+    # Capture app_settings at call time before the post-call mutation
+    # (the resolution loop sets Type=None on the same dict object,
+    # so call_args would reflect the mutated state if checked after the fact)
+    captured: dict = {}
+
+    def capture_and_return(app_settings, *args, **kwargs):
+        captured["Type"] = app_settings["MetaLoader"]["Type"]
+        captured["Options"] = app_settings["MetaLoader"]["Options"]
+        return (settings, "r1")
+
+    mock_view.get_user_settings.side_effect = capture_and_return
 
     ctrl.edit_plugin("MetaReader", "r1", settings)
 
     mock_view.get_user_settings.assert_called_once()
-    called_app_settings = mock_view.get_user_settings.call_args[0][0]
-    assert called_app_settings["MetaLoader"]["Type"] is str
-    assert called_app_settings["MetaLoader"]["Options"] == ["loader1"]
+    assert captured["Type"] is str
+    assert captured["Options"] == ["loader1"]
 
 
 # ---- edit_plugin: parents unregister loop (lines 110-111) ----
