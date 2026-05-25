@@ -506,10 +506,10 @@ class PeakFinder(MetaEventFitter):
         longest_start_idx = segment_starts[longest_segment_idx]
         longest_end_idx = segment_ends[longest_segment_idx]
         longest_segment_length = segment_lengths[longest_segment_idx]
-        
+
         if longest_segment_length < 10 or longest_segment_length > len(event_data):
-                raise ValueError("No Carrier Level Found")
-            
+            raise ValueError("No Carrier Level Found")
+
         # Adjust padding to trim to the longest segment only
         # New effective padding_before includes original padding plus everything before longest segment
         new_padding_before = padding_before + longest_start_idx
@@ -771,8 +771,8 @@ class PeakFinder(MetaEventFitter):
                             int(sublevel_starts[i + 1]["index"]) : int(
                                 sublevel_starts[i]["index"]
                             )
-                            ]
-                        )
+                        ]
+                    )
                 )
                 for i in range(num_states)
             ],
@@ -833,26 +833,27 @@ class PeakFinder(MetaEventFitter):
         # get the maximal deviation from the event baseline for each sublevel
         sublevel_metadata["sublevel_max_deviation"] = np.array(
             [
-                np.max(
-                    np.absolute(
-                        data[
-                            int(sublevel_starts[i]["index"]) : int(
-                                sublevel_starts[i + 1]["index"]
-                            )
-                        ]
-                        - event_baseline
+                (
+                    np.max(
+                        np.absolute(
+                            data[
+                                int(sublevel_starts[i]["index"]) : int(
+                                    sublevel_starts[i + 1]["index"]
+                                )
+                            ]
+                            - event_baseline
+                        )
                     )
-                )
-                if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
-                else                 
-                np.max(
-                    np.absolute(
-                        data[
-                            int(sublevel_starts[i+1]["index"]) : int(
-                                sublevel_starts[i]["index"]
-                            )
-                        ]
-                        - event_baseline
+                    if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
+                    else np.max(
+                        np.absolute(
+                            data[
+                                int(sublevel_starts[i + 1]["index"]) : int(
+                                    sublevel_starts[i]["index"]
+                                )
+                            ]
+                            - event_baseline
+                        )
                     )
                 )
                 for i in range(num_states)
@@ -1070,12 +1071,10 @@ class PeakFinder(MetaEventFitter):
 
         # event_metadata["number_peaks"] = np.max(
         #     sublevel_metadata["peak_id"][1:-1]
-            
+
         # )
-        
-        event_metadata["number_peaks"] = np.max(
-            [sublevel_metadata["peak_id"][1:-1]]
-        )
+
+        event_metadata["number_peaks"] = np.max([sublevel_metadata["peak_id"][1:-1]])
         event_metadata["duration"] = np.sum(
             [sublevel_metadata["sublevel_duration"][1:-1]]
         )
