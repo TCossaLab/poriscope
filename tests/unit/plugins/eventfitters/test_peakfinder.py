@@ -152,23 +152,23 @@ class TestFindModeBlockageLevel(unittest.TestCase):
         self.assertGreater(result, 0.0)
         self.assertLessEqual(result, 750.0)
 
-    # def test_exceeds_max_unfolded_halved(self):
-    #     # Dense cluster at 1000 away from baseline 0 → exceeds max_unfolded=400
-    #     data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
-    #     result = self.pf.find_mode_blockage_level(data, 400.0, 0.0, 5.0)
-    #     # Should be halved since abs(level - baseline) > max_unfolded
-    #     full = np.abs(
-    #         np.arange(int(min(data)), int(max(data)))[
-    #             np.argmax(
-    #                 [
-    #                     np.sum((data > i - 2.5) & (data < i + 2.5))
-    #                     for i in np.arange(int(min(data)), int(max(data)))
-    #                 ]
-    #             )
-    #         ]
-    #         - 0.0
-    #     )
-    #     self.assertAlmostEqual(result, full / 2, delta=5.0)
+    def test_exceeds_max_unfolded_halved(self):
+        # Dense cluster at 1000 away from baseline 0 → exceeds max_unfolded=400
+        data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
+        result = self.pf.find_mode_blockage_level(data, 400.0, 0.0, 5.0)
+        # Should be halved since abs(level - baseline) > max_unfolded
+        full = np.abs(
+            np.arange(int(min(data)), int(max(data)))[
+                np.argmax(
+                    [
+                        np.sum((data > i - 2.5) & (data < i + 2.5))
+                        for i in np.arange(int(min(data)), int(max(data)))
+                    ]
+                )
+            ]
+            - 0.0
+        )
+        self.assertAlmostEqual(result, full / 2, delta=5.0)
 
     def test_nonnegative(self):
         data = np.random.randn(100) * 5.0 + 200.0
@@ -404,6 +404,15 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             if "peak" not in self.starts[i]["type"]:
                 self.assertTrue(np.isnan(meta["peak_height"][i]))
 
+    def test_peak_abs_loc_matches_peak_loc_for_peaks(self):
+        meta = self.pf._populate_sublevel_metadata(
+            self.data, self.samplerate, 100.0, 10.0, self.starts
+        )
+        num_states = len(self.starts) - 1
+        for i in range(num_states):
+            if "peak" in self.starts[i]["type"]:
+                self.assertAlmostEqual(meta["peak_abs_loc"][i], meta["peak_loc"][i])
+
     def test_start_times_nondecreasing(self):
         meta = self.pf._populate_sublevel_metadata(
             self.data, self.samplerate, 100.0, 10.0, self.starts
@@ -500,6 +509,7 @@ class TestDefineEventMetadata(unittest.TestCase):
             "sublevel_duration",
             "peak_height",
             "peak_loc",
+            "peak_abs_loc",
             "peak_width",
             "prominence",
             "left_base",
@@ -524,6 +534,7 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertEqual(u["sublevel_duration"], "us")
         self.assertEqual(u["peak_height"], "pA")
         self.assertEqual(u["left_ips"], "us")
+        self.assertEqual(u["peak_abs_loc"], "us")
 
 
 # ---------------------------------------------------------------------------
