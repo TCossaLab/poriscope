@@ -359,12 +359,32 @@ class MetadataController(MetaController):
 
     @log(logger=logger)
     def set_experiment_id(self, experiment_id):
+        """
+        Relay the experiment ID to the view.
+
+        :param experiment_id: Integer ID of the experiment.
+        :type experiment_id: Optional[int]
+        """
         self.view.set_experiment_id(experiment_id)
 
     @log(logger=logger)
     def set_channel_db_id(self, channel_db_id):
+        """
+        Relay the channel database ID to the view.
+
+        :param channel_db_id: Integer database ID of the channel.
+        :type channel_db_id: Optional[int]
+        """
         self.view.set_channel_db_id(channel_db_id)
 
     @log(logger=logger)
     def on_raw_filter_validated(self, valid, error_msg):
+        """
+        Relay the result of raw filter validation to the view.
+
+        :param valid: Whether the query is valid.
+        :type valid: bool
+        :param error_msg: Error message if invalid.
+        :type error_msg: str
+        """
         self.view.on_raw_filter_validated(valid, error_msg)
