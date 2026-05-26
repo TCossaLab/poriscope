@@ -115,14 +115,14 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     fstatus = finder.report_channel_status()
     # Look for the specific lines you asked about
     assert (
-        "Ch3: Found 17 events" in fstatus
+        "Ch3: Found 5 events" in fstatus
     ), f"Finder status didn't match expectation:\n{fstatus}"
     assert (
         "Rejected Events:" in fstatus
     ), f"Finder status missing rejection header:\n{fstatus}"
     assert (
-        "Too Short: 11" in fstatus
-    ), f"Finder status missing 'Too Short: 11':\n{fstatus}"
+        "Too Short: 3" in fstatus
+    ), f"Finder status missing 'Too Short: 3':\n{fstatus}"
 
     # ----- 5) Write events to SQLite
     out_db: Path = tmp_path / "events.sqlite"
@@ -145,7 +145,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     # Check writer status for Ch3 write counts
     wstatus = writer.report_channel_status()
     assert (
-        "Ch3: Wrote 17/17 events" in wstatus
+        "Ch3: Wrote 5/5 events" in wstatus
     ), f"Writer status didn't match expectation:\n{wstatus}"
     # It's fine if no explicit rejection counts follow; we just ensure the header exists
     assert (

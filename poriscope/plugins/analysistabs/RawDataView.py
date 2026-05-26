@@ -412,6 +412,8 @@ class RawDataView(MetaView, WalkthroughMixin):
         :return: Tuple of mean and standard deviation.
         :rtype: tuple[float, float]
         """
+        import matplotlib.pyplot as pl
+        
         top = np.max(data)
         bottom = np.min(data)
 
@@ -421,6 +423,9 @@ class RawDataView(MetaView, WalkthroughMixin):
         hist = histogram1d(data, range=[bottom, top], bins=bins)
         centers = np.linspace(bottom, top, len(hist))
         max_index = np.argmax(hist)
+
+        pl.plot(centers, hist)
+        pl.savefig('C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test1.png')
 
         maxval = hist[max_index]
 
@@ -467,6 +472,8 @@ class RawDataView(MetaView, WalkthroughMixin):
         except StopIteration:
             bottom_index = 0
 
+        
+        
         try:
             baseline_params = np.array(
                 self._gaussian_fit(
@@ -480,6 +487,10 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
         except ValueError:
             raise
+        pl.plot(centers, hist)
+        pl.axvline(x=baseline_params[1])
+        pl.axvline(x=baseline_params[1]+baseline_params[2])
+        pl.savefig('C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test2.png')
         return baseline_params
 
     @log(logger=logger)
@@ -503,64 +514,95 @@ class RawDataView(MetaView, WalkthroughMixin):
         self, histogram, bins, mean_guess: float, stdev_guess: float
     ) -> tuple[float, float, float]:
         """
-        :param histogram: the histogram to fit, assumed unimodal
-        :type histogram: npt.NDArray[np.float64]
-        :param bins: centers of the bins for the histogram
-        :type bins: npt.NDArray[np.float64]
-        :param mean_guess: initial guess for the mean of the fit
-        :type mean_guess: float
-        :param stdev_guess: initial guess for the standard deviation of the fit
-        :type stdev_guess: float
+        Fit a Gaussian function to histogram data using a linearized least squares approach.
 
-        Fit and return best fit parameters for a 1D gaussian fit to a histogram given an initial guess. Use a matrix multiplication instead of nonlinear fitting for speed.
+        :param histogram: Array of counts in each histogram bin.
+        :type histogram: npt.NDArray[np.int64]
+        :param bins: Center positions of histogram bins.
+        :type bins: npt.NDArray[np.float64]
+        :param mean_guess: Initial estimate of the Gaussian mean.
+        :type mean_guess: float
+        :param stdev_guess: Initial estimate of the Gaussian standard deviation.
+        :type stdev_guess: float
+        :return: Tuple containing (amplitude, mean, standard deviation) of the fitted Gaussian.
+        :rtype: tuple[float, float, float]
+        :raises ValueError: If standard deviation guess is invalid or the fit fails.
         """
         if stdev_guess <= 0:
-            raise ValueError("Invalud standard deviation guess")
+            raise ValueError("Invalid standard deviation guess")
+        
         amp = np.max(histogram)
-        localy = histogram / amp
-        localx = (bins - mean_guess) / stdev_guess
+        max_loc = int(np.argmax(histogram))
+        
+        # Clean Windowing: A gaussian drops to ~1.1% height at 3 standard deviations.
+        threshold = np.exp(-4.5) * amp
+        
+        # --- CONTIGUOUS MASKING LOGIC ---
+        # Walk left from the peak until we hit the threshold or the array edge
+        left_bound = max_loc
+        while left_bound > 0 and histogram[left_bound - 1] > threshold:
+            left_bound -= 1
+            
+        # Walk right from the peak until we hit the threshold or the array edge
+        right_bound = max_loc
+        while right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold:
+            right_bound += 1
+            
+        # Slice the arrays using the exclusive right bound
+        y_slice = histogram[left_bound : right_bound + 1]
+        x_slice = bins[left_bound : right_bound + 1]
+        
+        localy = y_slice / amp
+        localx = (x_slice - mean_guess) / stdev_guess
 
+        # Vectorized Matrix Math
         x0 = localy
         x1 = localx * x0
         x2 = localx * x1
         x3 = localx * x2
         x4 = localx * x3
 
-        x0 = np.sum(x0)
-        x1 = np.sum(x1)
-        x2 = np.sum(x2)
-        x3 = np.sum(x3)
-        x4 = np.sum(x4)
+        x0_sum = np.sum(x0)
+        x1_sum = np.sum(x1)
+        x2_sum = np.sum(x2)
+        x3_sum = np.sum(x3)
+        x4_sum = np.sum(x4)
 
-        lny_base = np.array([np.log(y) if y > 0 else 0 for y in localy])
-
-        lny = lny_base * localy
+        # localy is strictly > 0 because of the threshold mask, so log is safe
+        lny = np.log(localy) * localy
         xlny = localx * lny
         x2lny = localx * xlny
 
-        lny = np.sum(lny)
-        xlny = np.sum(xlny)
-        x2lny = np.sum(x2lny)
+        lny_sum = np.sum(lny)
+        xlny_sum = np.sum(xlny)
+        x2lny_sum = np.sum(x2lny)
 
-        xTx = np.array([[x4, x3, x2], [x3, x2, x1], [x2, x1, x0]])
+        xTx = np.array([
+            [x4_sum, x3_sum, x2_sum], 
+            [x3_sum, x2_sum, x1_sum], 
+            [x2_sum, x1_sum, x0_sum]
+        ])
 
-        xnlny = np.array([x2lny, xlny, lny])
-
+        xnlny = np.array([x2lny_sum, xlny_sum, lny_sum])
         xTxinv = np.linalg.inv(xTx)
-
         params = np.dot(xTxinv, xnlny)
 
-        if params[0] < 0:
-            stdev = np.sqrt(-1.0 / (2 * params[0]))
-        else:
-            raise ValueError("Unable to estimate standard deviation")
-        mean = stdev**2 * params[1]
-        amplitude = np.exp(params[2] + mean**2 / (2 * stdev**2))
+        if params[0] >= 0:
+            raise ValueError("Unable to estimate standard deviation (inverted fit)")
+            
+        stdev = np.sqrt(-1.0 / (2 * params[0]))
+        
+        # 'mean_offset' here is the shift in standardized units (mlocal)
+        mean_offset = stdev**2 * params[1] 
+        amplitude = np.exp(params[2] + mean_offset**2 / (2 * stdev**2))
 
+        # --- THE CRITICAL MATH FIX ---
         stdev *= stdev_guess
-        mean += mean_guess
+        mean = (mean_offset * stdev_guess) + mean_guess  # The missing multiplier
         amplitude *= amp
-        return amp, mean, np.absolute(stdev)
+
+        
+        return amplitude, mean, np.absolute(stdev)
 
     @log(logger=logger)
     def _handle_timer(self, parameters):
