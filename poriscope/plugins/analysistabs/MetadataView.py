@@ -2942,6 +2942,12 @@ class MetadataView(MetaView, WalkthroughMixin):
                     self.metadatacontrols.right_arrow_button,
                 ],
             ),
+            (
+                "Metadata Tab",
+                "Check the RAW box to overlay the unfiltered raw signal alongside the filtered trace.",
+                "MetadataView",
+                lambda: [self.metadatacontrols.raw_checkbox],
+            ),
         ]
 
     def get_current_view(self):
