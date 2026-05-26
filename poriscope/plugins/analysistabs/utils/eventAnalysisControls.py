@@ -641,7 +641,11 @@ class EventAnalysisControls(QWidget):
             item = QListWidgetItem(text, self.channel_comboBox.listWidget)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             # On first load select all by default, otherwise restore previous selection
-            state = Qt.Checked if (is_first_load or text in current_selections) else Qt.Unchecked
+            state = (
+                Qt.Checked
+                if (is_first_load or text in current_selections)
+                else Qt.Unchecked
+            )
             item.setCheckState(state)
 
         self.logger.debug(f"Added channels: {new_channels}")
