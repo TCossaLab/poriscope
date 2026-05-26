@@ -80,6 +80,8 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
         "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
     )
     return ctrl
+
+
 # ----------------------- _init / _setup_connections -----------------
 
 
@@ -580,6 +582,7 @@ def test_relay_query_emits_debug_message_when_query_is_empty(
     call_args = mock_warning.call_args[0]
     assert "something went wrong" in call_args[2]
 
+
 def test_relay_query_does_not_call_set_query_when_query_is_empty(
     controller: MetadataController,
     mock_view: MagicMock,
@@ -825,7 +828,9 @@ def test_relay_query_edited_filter_calls_update_filter_name(
     mock_view._pending_filter_name = "new_name"
     mock_view._pending_filter_text = "x > 5"
     controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
-    mock_view.update_filter_name.assert_called_once_with("old_name", "new_name_assisted")
+    mock_view.update_filter_name.assert_called_once_with(
+        "old_name", "new_name_assisted"
+    )
 
 
 def test_relay_query_edited_filter_empty_text_stored_as_empty_string(
@@ -838,6 +843,7 @@ def test_relay_query_edited_filter_empty_text_stored_as_empty_string(
     mock_view._pending_filter_text = ""
     controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
     assert mock_view.subset_filters["beta_assisted"] == ""
+
 
 def test_relay_query_edited_filter_empty_text_emits_full_dataset_message(
     controller: MetadataController,
