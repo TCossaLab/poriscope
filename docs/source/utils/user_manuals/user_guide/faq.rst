@@ -58,6 +58,17 @@ You may be loading the **wrong type** of ``.db`` file for that tab. Both databas
 Is Linux supported?
 -------------------
 
-Disclaimer: Poriscope is currently beta tested on Linux through an Ubuntu VM. As a result, certain UI behaviors may differ from the native Windows experience, particularly around popup windows, which rely on compositor effects that virtual GPU drivers handle inconsistently.
+Poriscope is currently beta tested on Linux through an Ubuntu VM. As a result, certain UI behaviors may differ from the native Windows experience, particularly around popup windows, which rely on compositor effects that virtual GPU drivers handle inconsistently.
 
 Functionality is in place, and Linux-specific fixes will continue to be refined as support matures.
+
+Where can I find the data used in the tutorials?
+-------------------------------------------------
+
+The data used in the YouTube tutorial series is archived on the Federated Research Data Repository (FRDR):
+
+**DOI:** `10.20383/103.01599 <https://doi.org/10.20383/103.01599>`_
+
+The full dataset is ~9.92 GB. Individual ``.log`` and ``.json`` files can be downloaded separately from the FRDR page if you only need specific channels.
+
+The reference ``.db`` files generated during the tutorial are in the process of being archived as well. A link will be added once available.

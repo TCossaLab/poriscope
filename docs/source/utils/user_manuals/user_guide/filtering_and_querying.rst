@@ -266,8 +266,7 @@ Available Columns
 -----------------
 
 The columns available for filtering depend on the loaded database.
-Columns present in the YouTube tutorial database (available in the data directory
-``poriscope/data/tutorial``) are listed below as a reference (see :ref:`running_software`).
+Columns present in the YouTube tutorial database are listed below as a reference (see :ref:`running_software`).
 
 **events table:**
 
@@ -294,3 +293,14 @@ Columns present in the YouTube tutorial database (available in the data director
 
    To inspect your database structure directly, use a SQLite browser such as
    `DB Browser for SQLite <https://sqlitebrowser.org/>`_.
+
+
+.. note:: Tutorial Data
+
+   The data used in the YouTube tutorial series is archived on the Federated Research Data Repository (FRDR):
+
+   **DOI:** `10.20383/103.01599 <https://doi.org/10.20383/103.01599>`_
+
+   The full dataset is ~9.92 GB. Individual ``.log`` and ``.json`` files can be downloaded separately from the FRDR page if you only need specific channels.
+
+   The reference ``.db`` files generated during the tutorial are in the process of being archived as well. A link will be added once available.
