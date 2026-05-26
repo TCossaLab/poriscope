@@ -28,7 +28,7 @@ import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QSize, Signal
+from PySide6.QtCore import QCoreApplication, QSize, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidgetItem,
     QPushButton,
     QSizePolicy,
     QToolButton,
@@ -679,31 +680,44 @@ class RawDataControls(QWidget):
         """
         self.logger.info(f"Updating channels to {channels}")
 
-        # Get current selections from the MultiSelectComboBox
-        current_selections = self.channel_comboBox.getSelectedItems()
+        # Get current selections from the MultiSelectComboBox BEFORE clearing
+        current_selections = set(self.channel_comboBox.getSelectedItems())
         self.logger.debug(
             f"Current selections before restoration: {current_selections}"
         )
 
-        # Clear and add new channels to the MultiSelectComboBox
         new_channels = [str(i) for i in channels]
-        self.channel_comboBox.addItems(new_channels)
-        self.logger.debug(f"Added channels: {new_channels}")
 
-        # Restore previous selections that are still valid
+        # Check if this is a first load (no items exist yet) to default to Select All
+        is_first_load = self.channel_comboBox.listWidget.count() == 0
+
+        # Block signals during the entire rebuild to avoid emitting incorrect states
         self.channel_comboBox.listWidget.itemChanged.disconnect(
             self.channel_comboBox.handleItemChanged
         )
-        for selection in current_selections:
-            if selection in new_channels:
-                self.channel_comboBox.selectItem(selection)
+
+        # Clear and rebuild items, preserving checked state from previous selections.
+        # On first load, default all channels to checked (Select All behavior).
+        self.channel_comboBox.listWidget.clear()
+        for text in new_channels:
+            item = QListWidgetItem(text, self.channel_comboBox.listWidget)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            # On first load select all by default, otherwise restore previous selection
+            state = Qt.Checked if (is_first_load or text in current_selections) else Qt.Unchecked
+            item.setCheckState(state)
+
+        self.logger.debug(f"Added channels: {new_channels}")
+
         self.channel_comboBox.listWidget.itemChanged.connect(
             self.channel_comboBox.handleItemChanged
         )
 
+        # Update display text and Select All button without emitting selectionChanged
+        self.channel_comboBox.refreshDisplayText()
+        self.channel_comboBox.updateSelectAllButton()
+
         # Log the final state of selections
         restored_selections = self.channel_comboBox.getSelectedItems()
-        self.channel_comboBox.refreshDisplayText()
         self.logger.debug(f"Selected items after restoration: {restored_selections}")
 
     def update_readers(self, readers: list[str]) -> None:
