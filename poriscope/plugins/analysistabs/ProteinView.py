@@ -2729,6 +2729,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
         self.clear_pending_filter_state()
+
     @log(logger=logger)
     def _show_add_filter_dialog(self, parameters: dict):
         """
@@ -2791,7 +2792,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 loader,
                 "construct_metadata_query",
                 (
-                    list(self.available_columns[:3]) if hasattr(self, "available_columns") and self.available_columns else ["sublevel_current", "voltage", "duration"],
+                    (
+                        list(self.available_columns[:3])
+                        if hasattr(self, "available_columns") and self.available_columns
+                        else ["sublevel_current", "voltage", "duration"]
+                    ),
                     filter_text,
                     None,
                 ),
@@ -2836,7 +2841,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
-                new_name = f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                new_name = (
+                    f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                )
                 self._pending_filter_name = new_name
                 self.global_signal.emit(
                     "MetaDatabaseLoader",
@@ -2854,7 +2861,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 loader,
                 "construct_metadata_query",
                 (
-                    list(self.available_columns[:3]) if hasattr(self, "available_columns") and self.available_columns else ["sublevel_current", "voltage", "duration"],
+                    (
+                        list(self.available_columns[:3])
+                        if hasattr(self, "available_columns") and self.available_columns
+                        else ["sublevel_current", "voltage", "duration"]
+                    ),
                     new_filter,
                     None,
                 ),

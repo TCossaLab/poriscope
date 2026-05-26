@@ -4923,6 +4923,7 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     call_args = view.global_signal.emit.call_args[0]
     assert call_args[2] == "construct_metadata_query"
 
+
 def test_show_add_filter_dialog_returns_when_no_loader(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -5064,7 +5065,8 @@ def test_show_edit_filter_dialog_validates_on_accept(
     view.show_edit_filter_dialog("Filter1", "test_loader")
 
     view.global_signal.emit.assert_called_once()
-    
+
+
 def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
     view: MetadataView, mocker: MockerFixture
 ) -> None:

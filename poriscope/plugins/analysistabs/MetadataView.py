@@ -2597,7 +2597,9 @@ class MetadataView(MetaView, WalkthroughMixin):
                         "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
                     )
                     return
-                new_name = f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                new_name = (
+                    f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                )
                 self._pending_filter_name = new_name
                 self.global_signal.emit(
                     "MetaDatabaseLoader",
@@ -2619,6 +2621,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "relay_query",
                 ("validate_edited_filter",),
             )
+
     @log(logger=logger)
     def clear_pending_filter_state(self):
         """
@@ -2645,7 +2648,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         self.show_edit_filter_dialog(selected[0], loader)
-
 
     @log(logger=logger)
     def _delete_filter_by_name(self, name: str):
@@ -2753,6 +2755,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         a global signal callback that provides the channel_db_id for raw query scoping
         """
         self.channel_db_id = channel_db_id
+
     @log(logger=logger)
     def on_raw_filter_validated(self, valid, error_msg):
         """
