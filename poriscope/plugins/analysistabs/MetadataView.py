@@ -39,7 +39,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QHBoxLayout
+from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QHBoxLayout, QMessageBox
 from scipy import stats
 from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
@@ -1062,9 +1062,6 @@ class MetadataView(MetaView, WalkthroughMixin):
                 exp_and_ch_arg = {exp: [channel]}
 
                 for subset_name, sql_filter in selected_filters.items():
-                    # Infer filter mode from suffix — raw filters use load_metadata_raw,
-                    # assisted filters use construct_metadata_query
-                    filter_is_raw = subset_name.endswith("_raw")
                     bins = None
 
                     dataset_label = (
@@ -1181,68 +1178,25 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ):  # do not overlay the same thing twice
                             continue
 
-                        if not filter_is_raw:
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "construct_metadata_query",
-                                (columns, sql_filter, exp_and_ch_arg),
-                                "relay_query",
-                                (),
-                            )
-                            if self.query == "":
-                                return False
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "construct_metadata_query",
+                            (columns, sql_filter, exp_and_ch_arg),
+                            "relay_query",
+                            (),
+                        )
+                        if self.query == "":
+                            return False
 
-                        if filter_is_raw:
-                            # Scope raw query to selected experiment/channel
-                            self.experiment_id = None
-                            self.channel_db_id = None
-                            if exp is not None:
-                                self.global_signal.emit(
-                                    "MetaDatabaseLoader",
-                                    loader,
-                                    "get_experiment_id_by_name",
-                                    (exp,),
-                                    "set_experiment_id",
-                                    (),
-                                )
-                                self.global_signal.emit(
-                                    "MetaDatabaseLoader",
-                                    loader,
-                                    "get_channel_db_id",
-                                    (exp, int(channel)),
-                                    "set_channel_db_id",
-                                    (),
-                                )
-                            scoped_query = sql_filter
-                            user_query = sql_filter.strip().rstrip(";")
-                            if (
-                                exp is not None
-                                and self.experiment_id is not None
-                                and self.channel_db_id is not None
-                            ):
-                                scope = f"experiment_id = {self.experiment_id} AND channel_db_id = {self.channel_db_id}"
-                                if "WHERE" in user_query.upper():
-                                    scoped_query = f"{user_query} AND {scope}"
-                                else:
-                                    scoped_query = f"{user_query} WHERE {scope}"
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "load_metadata_raw",
-                                (scoped_query,),
-                                "update_plot_data",
-                                (),
-                            )
-                        else:
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "load_metadata",
-                                (columns, sql_filter, exp_and_ch_arg),
-                                "update_plot_data",
-                                (),
-                            )
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "load_metadata",
+                            (columns, sql_filter, exp_and_ch_arg),
+                            "update_plot_data",
+                            (),
+                        )
 
                         if self.plot_data is None:
                             self.add_text_to_display.emit(
@@ -1293,25 +1247,21 @@ class MetadataView(MetaView, WalkthroughMixin):
                         )
 
                     elif plot_type in self.event_data_plots:
-                        if not filter_is_raw:
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "construct_event_data_query",
-                                (sql_filter, exp_and_ch_arg),
-                                "relay_event_query",
-                                (),
-                            )
-                            if self.event_query == "":
-                                return False
+                        self.global_signal.emit(
+                            "MetaDatabaseLoader",
+                            loader,
+                            "construct_event_data_query",
+                            (sql_filter, exp_and_ch_arg),
+                            "relay_event_query",
+                            (),
+                        )
+                        if self.event_query == "":
+                            return False
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
                             "load_event_data",
-                            (
-                                sql_filter,
-                                (None if filter_is_raw else exp_and_ch_arg),
-                            ),
+                            (sql_filter, exp_and_ch_arg),
                             "relay_event_data_generator",
                             (),
                         )
@@ -1638,11 +1588,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                 )
 
             for name, filter_text in new_filters.items():
-                if not loader:
-                    self.subset_filters[name] = filter_text
-                    combo.addItem(name)
-                    combo.selectItem(name, select=True)
-                else:
+                if loader:
+                    # Temporarily store to validate
                     self._pending_filter_name = name
                     self._pending_filter_text = filter_text
 
@@ -1658,6 +1605,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                         "relay_query",
                         ("validate_new_filter",),
                     )
+                else:
+                    self.subset_filters[name] = filter_text
+                    combo.addItem(name)
+                    combo.selectItem(name, select=True)
 
             combo.refreshDisplayText()
             self.logger.info(f"Filters loaded from {path}")
@@ -1867,7 +1818,6 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         event_index = parameters["event_index"]
         use_raw = parameters.get("raw", False)
-        use_filter_raw = next(iter(selected_filters.keys())).endswith("_raw")
 
         sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
@@ -1901,7 +1851,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 self.plot_events_generator = None
 
             loader = parameters["db_loader"]
-            load_event_data_args = (sql_filter, None if use_filter_raw else exp_and_ch)
+            load_event_data_args = (sql_filter, exp_and_ch)
             self.plot_events_generator_updated = False
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -2570,24 +2520,30 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_text = filter_text
             self._pending_old_filter_name: Optional[str] = None
 
-            # If raw SQL mode, skip construct_metadata_query validation and save directly
             if dialog.is_raw:
+                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
                 if not filter_text.strip().upper().startswith("SELECT"):
-                    self.add_text_to_display.emit(
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Raw SQL Filter",
                         "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                        self.__class__.__name__,
                     )
                     return
-                name = f"{name}_raw"
-                self.subset_filters[name] = filter_text
-                self.metadatacontrols.filter_comboBox.addItem(name)
-                self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-                self.metadatacontrols.filter_comboBox.refreshDisplayText()
+                name = f"{name}_raw" if not name.endswith("_raw") else name
+                self._pending_filter_name = name
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "validate_filter_query",
+                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
+                    "on_raw_filter_validated",
+                    (),
+                )
                 return
 
             self._show_sql_in_display = True
 
-            # Validate filter via construct_metadata_query
+            # Validate assisted filter via construct_metadata_query
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
@@ -2602,32 +2558,13 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def clear_pending_filter_state(self):
-        """
-        reset all filters to factory settings
-        """
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
-
-    @log(logger=logger)
-    def _show_filter_info_dialog(self, comboBox, parameters):
-        loader = parameters["db_loader"]
-        selected = comboBox.getSelectedItems()
-        if len(selected) != 1:
-            self.logger.warning("Please select exactly one filter to edit.")
-            return
-
-        self.show_edit_filter_dialog(selected[0], loader)
-
-    @log(logger=logger)
     def show_edit_filter_dialog(self, name: str, loader: str):
         """
         Displays the dialog to edit an existing filter, and validates the updated
         SQL filter syntax via construct_metadata_query before saving it.
 
         :param name: The name of the filter to edit.
-        :param parameters: Dictionary with context, must include 'db_loader'.
+        :param loader: Name of the active database loader.
         """
         self._show_sql_in_display = True
 
@@ -2651,25 +2588,29 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._pending_filter_text = new_filter
             self._pending_old_filter_name = name  # important for replacing key
 
-            # If raw SQL mode, skip construct_metadata_query validation and save directly
             if dialog.is_raw:
+                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
                 if not new_filter.strip().upper().startswith("SELECT"):
-                    self.add_text_to_display.emit(
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Raw SQL Filter",
                         "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                        self.__class__.__name__,
                     )
                     return
-                if (
-                    self._pending_old_filter_name
-                    and self._pending_old_filter_name in self.subset_filters
-                ):
-                    del self.subset_filters[self._pending_old_filter_name]
-                self.subset_filters[new_name] = new_filter
-                self.update_filter_name(name, new_name)
+                new_name = f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                self._pending_filter_name = new_name
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "validate_filter_query",
+                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
+                    "on_raw_filter_validated",
+                    (),
+                )
                 return
 
             self._show_sql_in_display = True
-            # Emit signal to validate the updated filter
+            # Emit signal to validate the updated assisted filter
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
@@ -2678,6 +2619,33 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "relay_query",
                 ("validate_edited_filter",),
             )
+    @log(logger=logger)
+    def clear_pending_filter_state(self):
+        """
+        reset all filters to factory settings
+        """
+        self._pending_filter_name = None
+        self._pending_filter_text = None
+        self._pending_old_filter_name = None
+
+    @log(logger=logger)
+    def _show_filter_info_dialog(self, comboBox, parameters):
+        """
+        Called when clicking the edit button for filters with multiple selection.
+
+        Validates that exactly one filter is selected and delegates to the edit dialog.
+
+        :param comboBox: The combo box containing the list of selectable filters.
+        :type comboBox: MultiSelectComboBox
+        """
+        loader = parameters["db_loader"]
+        selected = comboBox.getSelectedItems()
+        if len(selected) != 1:
+            self.logger.warning("Please select exactly one filter to edit.")
+            return
+
+        self.show_edit_filter_dialog(selected[0], loader)
+
 
     @log(logger=logger)
     def _delete_filter_by_name(self, name: str):
@@ -2778,7 +2746,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadatacontrols.filter_comboBox.addItem(new_name)
         self.metadatacontrols.filter_comboBox.selectItem(new_name, select=True)
         self.metadatacontrols.filter_comboBox.refreshDisplayText()
-        return
 
     @log(logger=logger)
     def set_channel_db_id(self, channel_db_id):
@@ -2786,6 +2753,48 @@ class MetadataView(MetaView, WalkthroughMixin):
         a global signal callback that provides the channel_db_id for raw query scoping
         """
         self.channel_db_id = channel_db_id
+    @log(logger=logger)
+    def on_raw_filter_validated(self, valid, error_msg):
+        """
+        Relay callback from validate_filter_query for raw SQL filter validation.
+
+        :param valid: Whether the query is valid.
+        :type valid: bool
+        :param error_msg: Error message if invalid.
+        :type error_msg: str
+        """
+        if not valid:
+            QMessageBox.warning(
+                self,
+                "Invalid Raw SQL Filter",
+                f"The filter could not be validated:\n\n{error_msg}",
+            )
+            self.clear_pending_filter_state()
+            return
+
+        name = self._pending_filter_name
+        filter_text = self._pending_filter_text
+        old_name = self._pending_old_filter_name
+
+        if old_name is not None:  # edit path
+            self.subset_filters.pop(old_name, None)
+            self.subset_filters[name] = filter_text
+            self.update_filter_name(old_name, name)
+            self.add_text_to_display.emit(
+                f"Filter '{old_name}' updated to '{name}'.",
+                self.__class__.__name__,
+            )
+        else:  # add path
+            self.subset_filters[name] = filter_text
+            self.metadatacontrols.filter_comboBox.addItem(name)
+            self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
+            self.metadatacontrols.filter_comboBox.refreshDisplayText()
+            self.add_text_to_display.emit(
+                f"Filter '{name}' added.",
+                self.__class__.__name__,
+            )
+
+        self.clear_pending_filter_state()
 
     def get_walkthrough_steps(self):
         return [
