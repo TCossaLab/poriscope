@@ -76,6 +76,9 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
+    mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
+    )
     return ctrl
 
 
@@ -562,17 +565,22 @@ def test_get_experiment_structure_ready_converts_multiple_experiments(
 def test_relay_query_emits_debug_message_when_query_is_empty(
     controller: MetadataController,
     mock_view: MagicMock,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Emit the debug string via add_text_to_display when the query is empty.
+    Show a QMessageBox warning when the query is empty and debug message is provided.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.relay_query("", "something went wrong", "my_table")
-    mock_view.add_text_to_display.emit.assert_called_once_with(
-        "something went wrong", "MetadataController"
+    mock_warning = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
     )
+    controller.relay_query("", "something went wrong", "my_table")
+    mock_warning.assert_called_once()
+    call_args = mock_warning.call_args[0]
+    assert "something went wrong" in call_args[2]
 
 
 def test_relay_query_does_not_call_set_query_when_query_is_empty(
@@ -670,7 +678,7 @@ def test_relay_query_new_filter_stored_in_subset_filters(
     mock_view: MagicMock,
 ) -> None:
     """
-    Store a validated new filter in subset_filters under its pending name.
+    Store a validated new filter in subset_filters under its pending name with _assisted suffix.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -678,7 +686,7 @@ def test_relay_query_new_filter_stored_in_subset_filters(
     mock_view._pending_filter_name = "fast_events"
     mock_view._pending_filter_text = "duration < 1.0"
     controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
-    assert mock_view.subset_filters["fast_events"] == "duration < 1.0"
+    assert mock_view.subset_filters["fast_events_assisted"] == "duration < 1.0"
 
 
 def test_relay_query_new_filter_calls_replace_filter_item(
@@ -686,7 +694,7 @@ def test_relay_query_new_filter_calls_replace_filter_item(
     mock_view: MagicMock,
 ) -> None:
     """
-    Call replace_filter_item on the view after storing the new filter.
+    Call replace_filter_item on the view after storing the new filter with _assisted suffix.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -694,7 +702,7 @@ def test_relay_query_new_filter_calls_replace_filter_item(
     mock_view._pending_filter_name = "fast_events"
     mock_view._pending_filter_text = "duration < 1.0"
     controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
-    mock_view.replace_filter_item.assert_called_once_with("fast_events")
+    mock_view.replace_filter_item.assert_called_once_with("fast_events_assisted")
 
 
 def test_relay_query_new_filter_empty_text_stored_as_empty_string(
@@ -710,7 +718,7 @@ def test_relay_query_new_filter_empty_text_stored_as_empty_string(
     mock_view._pending_filter_name = "all_events"
     mock_view._pending_filter_text = ""
     controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
-    assert mock_view.subset_filters["all_events"] == ""
+    assert mock_view.subset_filters["all_events_assisted"] == ""
 
 
 def test_relay_query_new_filter_empty_text_emits_all_rows_message(
@@ -793,7 +801,7 @@ def test_relay_query_edited_filter_adds_new_key(
     mock_view: MagicMock,
 ) -> None:
     """
-    Add the new filter key with its text to subset_filters after a rename.
+    Add the new filter key with _assisted suffix to subset_filters after a rename.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -803,7 +811,7 @@ def test_relay_query_edited_filter_adds_new_key(
     mock_view._pending_filter_name = "new_name"
     mock_view._pending_filter_text = "x > 5"
     controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
-    assert mock_view.subset_filters["new_name"] == "x > 5"
+    assert mock_view.subset_filters["new_name_assisted"] == "x > 5"
 
 
 def test_relay_query_edited_filter_calls_update_filter_name(
@@ -811,7 +819,7 @@ def test_relay_query_edited_filter_calls_update_filter_name(
     mock_view: MagicMock,
 ) -> None:
     """
-    Call update_filter_name with old and new names on the view.
+    Call update_filter_name with old name and new name with _assisted suffix on the view.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
@@ -820,24 +828,21 @@ def test_relay_query_edited_filter_calls_update_filter_name(
     mock_view._pending_filter_name = "new_name"
     mock_view._pending_filter_text = "x > 5"
     controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
-    mock_view.update_filter_name.assert_called_once_with("old_name", "new_name")
+    mock_view.update_filter_name.assert_called_once_with(
+        "old_name", "new_name_assisted"
+    )
 
 
 def test_relay_query_edited_filter_empty_text_stored_as_empty_string(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
-    """
-    Store an empty string in subset_filters when the edited filter text is blank.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
+    """Store an empty string in subset_filters when the edited filter text is blank."""
     mock_view._pending_old_filter_name = "alpha"
     mock_view._pending_filter_name = "beta"
     mock_view._pending_filter_text = ""
     controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
-    assert mock_view.subset_filters["beta"] == ""
+    assert mock_view.subset_filters["beta_assisted"] == ""
 
 
 def test_relay_query_edited_filter_empty_text_emits_full_dataset_message(

@@ -27,6 +27,7 @@
 
 import logging
 
+from PySide6.QtWidgets import QMessageBox
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -168,7 +169,11 @@ class MetadataController(MetaController):
         intent = args[0] if args else None
 
         if debug and not query:
-            self.view.add_text_to_display.emit(debug, self.__class__.__name__)
+            QMessageBox.warning(
+                self.view,
+                "Invalid Filter",
+                f"The filter could not be validated:\n\n{debug}",
+            )
             if intent in ("validate_new_filter", "validate_edited_filter"):
                 self.view.clear_pending_filter_state()
             return
@@ -180,19 +185,22 @@ class MetadataController(MetaController):
             filter_text = self.view._pending_filter_text
 
             if name is not None:
-                self.view.subset_filters[name] = filter_text or ""
+                suffixed_name = (
+                    f"{name}_assisted" if not name.endswith("_assisted") else name
+                )
+                self.view.subset_filters[suffixed_name] = filter_text or ""
 
                 if not filter_text:
                     self.view.add_text_to_display.emit(
-                        f"Filter '{name}' uses all rows (no WHERE clause).",
+                        f"Filter '{suffixed_name}' uses all rows (no WHERE clause).",
                         self.__class__.__name__,
                     )
 
                 self.view.add_text_to_display.emit(
-                    f"Filter '{name}' added.", self.__class__.__name__
+                    f"Filter '{suffixed_name}' added.", self.__class__.__name__
                 )
 
-                self.view.replace_filter_item(name)
+                self.view.replace_filter_item(suffixed_name)
 
         elif intent == "validate_edited_filter":
             old_name = self.view._pending_old_filter_name
@@ -200,23 +208,27 @@ class MetadataController(MetaController):
             new_filter = self.view._pending_filter_text
 
             if new_name is not None:
+                suffixed_new_name = (
+                    f"{new_name}_assisted"
+                    if not new_name.endswith("_assisted")
+                    else new_name
+                )
                 if old_name is not None:
                     self.view.subset_filters.pop(old_name, None)
-                self.view.subset_filters[new_name] = new_filter or ""
+                self.view.subset_filters[suffixed_new_name] = new_filter or ""
 
                 if not new_filter:
                     self.view.add_text_to_display.emit(
-                        f"Filter '{new_name}' uses all rows (no WHERE clause) -> FULL DATASET.",
+                        f"Filter '{suffixed_new_name}' uses all rows (no WHERE clause) -> FULL DATASET.",
                         self.__class__.__name__,
                     )
 
                 self.view.add_text_to_display.emit(
-                    f"Filter '{old_name}' updated to '{new_name}'.",
+                    f"Filter '{old_name}' updated to '{suffixed_new_name}'.",
                     self.__class__.__name__,
                 )
 
-                self.view.update_filter_name(old_name, new_name)
-
+                self.view.update_filter_name(old_name, suffixed_new_name)
         self.view.clear_pending_filter_state()
 
     @log(logger=logger)
@@ -344,3 +356,35 @@ class MetadataController(MetaController):
         self.view.selected_experiment_and_channels_by_loader[loader_name] = (
             str_structure.copy()
         )
+
+    @log(logger=logger)
+    def set_experiment_id(self, experiment_id):
+        """
+        Relay the experiment ID to the view.
+
+        :param experiment_id: Integer ID of the experiment.
+        :type experiment_id: Optional[int]
+        """
+        self.view.set_experiment_id(experiment_id)
+
+    @log(logger=logger)
+    def set_channel_db_id(self, channel_db_id):
+        """
+        Relay the channel database ID to the view.
+
+        :param channel_db_id: Integer database ID of the channel.
+        :type channel_db_id: Optional[int]
+        """
+        self.view.set_channel_db_id(channel_db_id)
+
+    @log(logger=logger)
+    def on_raw_filter_validated(self, valid, error_msg):
+        """
+        Relay the result of raw filter validation to the view.
+
+        :param valid: Whether the query is valid.
+        :type valid: bool
+        :param error_msg: Error message if invalid.
+        :type error_msg: str
+        """
+        self.view.on_raw_filter_validated(valid, error_msg)

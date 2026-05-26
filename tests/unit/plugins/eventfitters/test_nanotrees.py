@@ -482,8 +482,8 @@ class TestPass4(unittest.TestCase):
 
     def test_wide_sublevels_unchanged(self):
         nt = _make_nt()
-        raw = np.concatenate([np.zeros(15), np.ones(15) * 5.0, np.zeros(15)])
-        sub = _make_sublevels((0, 15, 0.0), (15, 30, 5.0), (30, 45, 0.0))
+        raw = np.concatenate([np.zeros(20), np.ones(20) * 5.0, np.zeros(20)])
+        sub = _make_sublevels((0, 20, 0.0), (20, 40, 5.0), (40, 60, 0.0))
         result = nt._pass4(self._s(), sub, raw)
         self.assertEqual(len(result.sublevels), 3)
 

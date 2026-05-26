@@ -170,24 +170,15 @@ class TestSQLiteDBLoader:
         loader = SQLiteDBLoader(settings=settings)
         assert loader.db_path == mock_db
 
-    def test_init_with_invalid_settings(self) -> None:
+    def test_init_with_invalid_settings(self, loader: SQLiteDBLoader) -> None:
         """Test initialization with invalid settings raises ValueError.
 
-        Note: The actual validation happens in the parent class initialization chain,
-        specifically in _validate_settings which is called during __init__.
+        Note: _validate_settings is called during __init__ but the loader fixture
+        bypasses __init__ via __new__, so we test _validate_settings directly.
         """
-        invalid_settings: Dict[str, Dict[str, Any]] = {}
-        # The class will call _validate_settings during initialization
-        # which will raise ValueError for missing Input File
-        try:
-            with pytest.raises(ValueError, match="requires an Input File"):
-                SQLiteDBLoader(settings=invalid_settings)
-        except Exception:
-            # If the parent class doesn't call _validate_settings in __init__,
-            # we test it directly
-            loader = SQLiteDBLoader.__new__(SQLiteDBLoader)
-            with pytest.raises(ValueError, match="requires an Input File"):
-                loader._validate_settings(invalid_settings)
+        invalid_settings: Dict[str, Any] = {}
+        with pytest.raises(ValueError, match="requires an Input File"):
+            loader._validate_settings(invalid_settings)
 
     def test_init_with_missing_tables(self, temp_db_path: Path) -> None:
         """Test initialization with incomplete database schema."""

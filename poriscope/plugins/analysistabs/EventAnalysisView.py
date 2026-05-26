@@ -1041,6 +1041,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             ),
             (
                 "Event Analysis Tab",
+                "By default the raw trace is shown. When a filter is active, check RAW to also display the unfiltered signal alongside the filtered trace. If a fitter has been run, the fit trace will also appear.",
+                "EventAnalysisView",
+                lambda: [self.eventAnalysisControls.raw_checkbox],
+            ),
+            (
+                "Event Analysis Tab",
                 "Ready to fit the events? Click the '+' button to add a fitter.",
                 "EventAnalysisView",
                 lambda: [self.eventAnalysisControls.eventfitters_add_button],

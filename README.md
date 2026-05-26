@@ -37,3 +37,7 @@ https://tcossalab.github.io/poriscope/
 
 ## Poriscope Tutorial Series
 https://youtube.com/@tcossalab?si=A8Wy8yHOXiwSXu5F 
+
+## Data
+Tutorial Series data is available on FRDR: https://doi.org/10.20383/103.01599  
+See [`data/README.md`](data/README.md) for download instruction
