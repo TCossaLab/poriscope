@@ -413,7 +413,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :rtype: tuple[float, float]
         """
         import matplotlib.pyplot as pl
-        
+
         top = np.max(data)
         bottom = np.min(data)
 
@@ -425,7 +425,9 @@ class RawDataView(MetaView, WalkthroughMixin):
         max_index = np.argmax(hist)
 
         pl.plot(centers, hist)
-        pl.savefig('C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test1.png')
+        pl.savefig(
+            "C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test1.png"
+        )
 
         maxval = hist[max_index]
 
@@ -472,8 +474,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         except StopIteration:
             bottom_index = 0
 
-        
-        
         try:
             baseline_params = np.array(
                 self._gaussian_fit(
@@ -489,8 +489,10 @@ class RawDataView(MetaView, WalkthroughMixin):
             raise
         pl.plot(centers, hist)
         pl.axvline(x=baseline_params[1])
-        pl.axvline(x=baseline_params[1]+baseline_params[2])
-        pl.savefig('C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test2.png')
+        pl.axvline(x=baseline_params[1] + baseline_params[2])
+        pl.savefig(
+            "C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test2.png"
+        )
         return baseline_params
 
     @log(logger=logger)
@@ -530,28 +532,30 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         if stdev_guess <= 0:
             raise ValueError("Invalid standard deviation guess")
-        
+
         amp = np.max(histogram)
         max_loc = int(np.argmax(histogram))
-        
+
         # Clean Windowing: A gaussian drops to ~1.1% height at 3 standard deviations.
         threshold = np.exp(-4.5) * amp
-        
+
         # --- CONTIGUOUS MASKING LOGIC ---
         # Walk left from the peak until we hit the threshold or the array edge
         left_bound = max_loc
         while left_bound > 0 and histogram[left_bound - 1] > threshold:
             left_bound -= 1
-            
+
         # Walk right from the peak until we hit the threshold or the array edge
         right_bound = max_loc
-        while right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold:
+        while (
+            right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold
+        ):
             right_bound += 1
-            
+
         # Slice the arrays using the exclusive right bound
         y_slice = histogram[left_bound : right_bound + 1]
         x_slice = bins[left_bound : right_bound + 1]
-        
+
         localy = y_slice / amp
         localx = (x_slice - mean_guess) / stdev_guess
 
@@ -577,11 +581,13 @@ class RawDataView(MetaView, WalkthroughMixin):
         xlny_sum = np.sum(xlny)
         x2lny_sum = np.sum(x2lny)
 
-        xTx = np.array([
-            [x4_sum, x3_sum, x2_sum], 
-            [x3_sum, x2_sum, x1_sum], 
-            [x2_sum, x1_sum, x0_sum]
-        ])
+        xTx = np.array(
+            [
+                [x4_sum, x3_sum, x2_sum],
+                [x3_sum, x2_sum, x1_sum],
+                [x2_sum, x1_sum, x0_sum],
+            ]
+        )
 
         xnlny = np.array([x2lny_sum, xlny_sum, lny_sum])
         xTxinv = np.linalg.inv(xTx)
@@ -589,11 +595,11 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         if params[0] >= 0:
             raise ValueError("Unable to estimate standard deviation (inverted fit)")
-            
+
         stdev = np.sqrt(-1.0 / (2 * params[0]))
-        
+
         # 'mean_offset' here is the shift in standardized units (mlocal)
-        mean_offset = stdev**2 * params[1] 
+        mean_offset = stdev**2 * params[1]
         amplitude = np.exp(params[2] + mean_offset**2 / (2 * stdev**2))
 
         # --- THE CRITICAL MATH FIX ---
@@ -601,7 +607,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         mean = (mean_offset * stdev_guess) + mean_guess  # The missing multiplier
         amplitude *= amp
 
-        
         return amplitude, mean, np.absolute(stdev)
 
     @log(logger=logger)
