@@ -619,13 +619,13 @@ class PeakFinder(MetaEventFitter):
         )
 
         if len(peaks) > 0:
-            
+
             unfolded_level = self.find_mode_blockage_level(
-            data[padding_before:-padding_after],
-            max_unfolded,
-            baseline_mean,
-            baseline_std,
-        )
+                data[padding_before:-padding_after],
+                max_unfolded,
+                baseline_mean,
+                baseline_std,
+            )
             # Only run peak filtering if the user enabled it in settings. Default to True.
             should_filter = True
             if getattr(self, "settings", None) is not None:
@@ -634,7 +634,12 @@ class PeakFinder(MetaEventFitter):
             if should_filter:
                 try:
                     properties = self.filter_peaks(
-                        peaks, properties, unfolded_level, baseline_std, baseline_mean, samplerate
+                        peaks,
+                        properties,
+                        unfolded_level,
+                        baseline_std,
+                        baseline_mean,
+                        samplerate,
                     )
                 except TypeError as exc:
                     self.logger.error(
@@ -650,7 +655,9 @@ class PeakFinder(MetaEventFitter):
                         "see logged peak base values for details."
                     ) from exc
             else:
-                self.logger.debug("Peak filtering skipped by user setting 'Filter Peaks'")
+                self.logger.debug(
+                    "Peak filtering skipped by user setting 'Filter Peaks'"
+                )
 
             edges = [
                 {
@@ -918,7 +925,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["peak_loc"] = np.array(
             [
                 (
-                    sublevel_starts[i]["index"]* dt_us
+                    sublevel_starts[i]["index"] * dt_us
                     if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
@@ -930,8 +937,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["peak_abs_loc"] = np.array(
             [
                 (
-                    sublevel_starts[i].get("loc", sublevel_starts[i]["index"])
-                    * dt_us
+                    sublevel_starts[i].get("loc", sublevel_starts[i]["index"]) * dt_us
                     if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
@@ -1074,7 +1080,6 @@ class PeakFinder(MetaEventFitter):
             )
             for i in range(num_states)
         ]
-
 
         return sublevel_metadata
 
@@ -1402,7 +1407,7 @@ class PeakFinder(MetaEventFitter):
         ]
         max_count_index = np.argmax(counts)
         if np.abs(range[max_count_index] - baseline_mean) > max_unfolded:
-            return np.abs(range[max_count_index] - baseline_mean)/2
+            return np.abs(range[max_count_index] - baseline_mean) / 2
         return np.abs(range[max_count_index] - baseline_mean)
 
     @log(logger=logger)
