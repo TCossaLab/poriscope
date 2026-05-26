@@ -2944,7 +2944,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             ),
             (
                 "Metadata Tab",
-                "Check the RAW box to overlay the unfiltered raw signal alongside the filtered trace.",
+                "Check the RAW box to overlay the unfiltered raw signal alongside the filtered and fitted traces.",
                 "MetadataView",
                 lambda: [self.metadatacontrols.raw_checkbox],
             ),
