@@ -411,9 +411,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type data: npt.NDArray[np.float64]
         :return: Tuple of mean and standard deviation.
         :rtype: tuple[float, float]
-        """
-        import matplotlib.pyplot as pl
-        
+        """        
         top = np.max(data)
         bottom = np.min(data)
 
@@ -423,9 +421,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         hist = histogram1d(data, range=[bottom, top], bins=bins)
         centers = np.linspace(bottom, top, len(hist))
         max_index = np.argmax(hist)
-
-        pl.plot(centers, hist)
-        pl.savefig('C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test1.png')
 
         maxval = hist[max_index]
 
@@ -487,10 +482,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
         except ValueError:
             raise
-        pl.plot(centers, hist)
-        pl.axvline(x=baseline_params[1])
-        pl.axvline(x=baseline_params[1]+baseline_params[2])
-        pl.savefig('C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/PoriscopeTesting/test2.png')
+        
         return baseline_params
 
     @log(logger=logger)
