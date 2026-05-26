@@ -4873,6 +4873,7 @@ def test_show_add_filter_dialog_sets_show_sql_flag(
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0  # Rejected
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
 
     view._show_add_filter_dialog({"db_loader": "test"})
@@ -4891,6 +4892,7 @@ def test_show_add_filter_dialog_opens_dialog(
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
 
     view._show_add_filter_dialog({"db_loader": "test"})
@@ -4911,6 +4913,7 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     mock_dialog.exec.return_value = 1  # Accepted
     mock_dialog.name = "NewFilter"
     mock_dialog.filter_text = "WHERE duration > 100"
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
     view.global_signal = mocker.Mock()
 
@@ -4919,7 +4922,6 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     view.global_signal.emit.assert_called_once()
     call_args = view.global_signal.emit.call_args[0]
     assert call_args[2] == "construct_metadata_query"
-
 
 def test_show_add_filter_dialog_returns_when_no_loader(
     view: MetadataView, mocker: MockerFixture
@@ -4933,6 +4935,7 @@ def test_show_add_filter_dialog_returns_when_no_loader(
     mock_dialog.exec.return_value = 1
     mock_dialog.name = "NewFilter"
     mock_dialog.filter_text = "WHERE x > 1"
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
     view.global_signal = mocker.Mock()
 
@@ -5013,6 +5016,7 @@ def test_show_edit_filter_dialog_sets_show_sql_flag(
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
 
     view.show_edit_filter_dialog("Filter1", "test_loader")
@@ -5030,6 +5034,7 @@ def test_show_edit_filter_dialog_opens_dialog(
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
 
     view.show_edit_filter_dialog("Filter1", "test_loader")
@@ -5052,14 +5057,14 @@ def test_show_edit_filter_dialog_validates_on_accept(
     mock_dialog.exec.return_value = 1
     mock_dialog.new_name = "Filter1Updated"
     mock_dialog.new_filter = "WHERE x > 10"
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
     view.global_signal = mocker.Mock()
 
     view.show_edit_filter_dialog("Filter1", "test_loader")
 
     view.global_signal.emit.assert_called_once()
-
-
+    
 def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -5072,6 +5077,7 @@ def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
     mock_dialog.exec.return_value = 1
     mock_dialog.new_name = "Filter1Updated"
     mock_dialog.new_filter = "WHERE x > 10"
+    mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
     view.global_signal = mocker.Mock()
 
