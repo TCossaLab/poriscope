@@ -426,7 +426,7 @@ class MetadataControls(QWidget):
 
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
 
-# --- Create Plot Events Container ---
+        # --- Create Plot Events Container ---
         self.plot_events_widget = QWidget(self.groupBox)
         plot_events_layout = QHBoxLayout(self.plot_events_widget)
         plot_events_layout.setContentsMargins(0, 0, 0, 0)
