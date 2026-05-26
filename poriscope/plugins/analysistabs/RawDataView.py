@@ -411,7 +411,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type data: npt.NDArray[np.float64]
         :return: Tuple of mean and standard deviation.
         :rtype: tuple[float, float]
-        """        
+        """
         top = np.max(data)
         bottom = np.min(data)
 
