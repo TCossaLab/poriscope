@@ -28,6 +28,7 @@
 import logging
 
 from PySide6.QtCore import Slot
+from PySide6.QtWidgets import QMessageBox
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -141,7 +142,11 @@ class ProteinController(MetaController):
         intent = args[0] if args else None
 
         if debug and not query:
-            self.view.add_text_to_display.emit(debug, self.__class__.__name__)
+            QMessageBox.warning(
+                self.view,
+                "Invalid Filter",
+                f"The filter could not be validated:\n\n{debug}",
+            )
             if intent in ("validate_new_filter", "validate_edited_filter"):
                 self.view.clear_pending_filter_state()
             return
@@ -333,3 +338,7 @@ class ProteinController(MetaController):
     @log(logger=logger)
     def set_channel_db_id(self, channel_db_id):
         self.view.set_channel_db_id(channel_db_id)
+
+    @log(logger=logger)
+    def on_raw_filter_validated(self, valid, error_msg):
+        self.view.on_raw_filter_validated(valid, error_msg)

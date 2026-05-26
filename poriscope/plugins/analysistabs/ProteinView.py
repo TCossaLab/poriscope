@@ -119,6 +119,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
+        self.available_columns: List[str] = []
         self.selected_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
@@ -2688,6 +2689,47 @@ class ProteinView(MetaView, WalkthroughMixin):
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
+    def on_raw_filter_validated(self, valid, error_msg):
+        """
+        Relay callback from validate_filter_query for raw SQL filter validation.
+
+        :param valid: Whether the query is valid.
+        :type valid: bool
+        :param error_msg: Error message if invalid.
+        :type error_msg: str
+        """
+        if not valid:
+            self.add_text_to_display.emit(
+                f"Raw SQL filter could not be validated:\n\n{error_msg}",
+                self.__class__.__name__,
+            )
+            self.clear_pending_filter_state()
+            return
+
+        name = self._pending_filter_name
+        filter_text = self._pending_filter_text
+        old_name = self._pending_old_filter_name
+
+        if old_name is not None:  # edit path
+            self.subset_filters.pop(old_name, None)
+            self.subset_filters[name] = filter_text
+            self.update_filter_name(old_name, name)
+            self.add_text_to_display.emit(
+                f"Filter '{old_name}' updated to '{name}'.",
+                self.__class__.__name__,
+            )
+        else:  # add path
+            self.subset_filters[name] = filter_text
+            self.proteincontrols.filter_comboBox.addItem(name)
+            self.proteincontrols.filter_comboBox.selectItem(name, select=True)
+            self.proteincontrols.filter_comboBox.refreshDisplayText()
+            self.add_text_to_display.emit(
+                f"Filter '{name}' added.",
+                self.__class__.__name__,
+            )
+
+        self.clear_pending_filter_state()
+    @log(logger=logger)
     def _show_add_filter_dialog(self, parameters: dict):
         """
         Displays the dialog for adding a new subset filter. Validates filter syntax
@@ -2719,12 +2761,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self.logger.error("No database loader selected")
                 return
 
-            # Store pending data for use in relay_query
             self._pending_filter_name = name
             self._pending_filter_text = filter_text
             self._pending_old_filter_name: Optional[str] = None
 
-            # If raw SQL mode, skip construct_metadata_query validation and save directly
             if dialog.is_raw:
                 if not filter_text.strip().upper().startswith("SELECT"):
                     self.add_text_to_display.emit(
@@ -2732,25 +2772,29 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
-                name = f"{name}_raw"
-                self.subset_filters[name] = filter_text
-                self.proteincontrols.filter_comboBox.addItem(name)
-                self.proteincontrols.filter_comboBox.selectItem(name, select=True)
-                self.proteincontrols.filter_comboBox.refreshDisplayText()
+                name = f"{name}_raw" if not name.endswith("_raw") else name
+                self._pending_filter_name = name
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "validate_filter_query",
+                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
+                    "on_raw_filter_validated",
+                    (),
+                )
                 return
 
             self._show_sql_in_display = True
 
-            # Validate filter via construct_metadata_query
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
                 "construct_metadata_query",
                 (
-                    ["sublevel_current", "voltage", "duration"],
+                    list(self.available_columns[:3]) if hasattr(self, "available_columns") and self.available_columns else ["sublevel_current", "voltage", "duration"],
                     filter_text,
                     None,
-                ),  # using event_id as placeholder column
+                ),
                 "relay_query",
                 ("validate_new_filter",),
             )
@@ -2762,7 +2806,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         SQL filter syntax via construct_metadata_query before saving it.
 
         :param name: The name of the filter to edit.
-        :param parameters: Dictionary with context, must include 'db_loader'.
+        :param loader: Name of the active database loader.
         """
         self._show_sql_in_display = True
 
@@ -2781,12 +2825,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self.logger.error("No database loader selected")
                 return
 
-            # Store pending update info to be committed in relay_query after validation
             self._pending_filter_name = new_name
             self._pending_filter_text = new_filter
-            self._pending_old_filter_name = name  # important for replacing key
+            self._pending_old_filter_name = name
 
-            # If raw SQL mode, skip construct_metadata_query validation and save directly
             if dialog.is_raw:
                 if not new_filter.strip().upper().startswith("SELECT"):
                     self.add_text_to_display.emit(
@@ -2794,22 +2836,28 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
-                if (
-                    self._pending_old_filter_name
-                    and self._pending_old_filter_name in self.subset_filters
-                ):
-                    del self.subset_filters[self._pending_old_filter_name]
-                self.subset_filters[new_name] = new_filter
-                self.update_filter_name(name, new_name)
+                new_name = f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                self._pending_filter_name = new_name
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "validate_filter_query",
+                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
+                    "on_raw_filter_validated",
+                    (),
+                )
                 return
 
             self._show_sql_in_display = True
-            # Emit signal to validate the updated filter
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
                 "construct_metadata_query",
-                (["sublevel_current", "voltage", "duration"], new_filter, None),
+                (
+                    list(self.available_columns[:3]) if hasattr(self, "available_columns") and self.available_columns else ["sublevel_current", "voltage", "duration"],
+                    new_filter,
+                    None,
+                ),
                 "relay_query",
                 ("validate_edited_filter",),
             )
