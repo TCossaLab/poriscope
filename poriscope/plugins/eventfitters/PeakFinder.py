@@ -915,30 +915,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["peak_id"] = self.enumerate_peaks(
             sublevel_starts, num_states, sublevel_metadata["sublevel_type"]
         )
-        # get peak height
-        sublevel_metadata["peak_height"] = np.array(
-            [
-                (
-                    sublevel_starts[i]["peak_height"]
-                    if "peak" in sublevel_starts[i]["type"]
-                    else None
-                )
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
-        # get normalized peak height
-        sublevel_metadata["normalized_height"] = np.array(
-            [
-                (
-                    sublevel_starts[i]["peak_height"] / unfolded_level
-                    if "peak" in sublevel_starts[i]["type"]
-                    else None
-                )
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
+
         # get peak location
         sublevel_metadata["peak_loc"] = np.array(
             [
@@ -957,6 +934,30 @@ class PeakFinder(MetaEventFitter):
             [
                 (
                     sublevel_starts[i]["width"] * dt_us
+                    if "peak" in sublevel_starts[i]["type"]
+                    else None
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
+                # get peak height
+        sublevel_metadata["peak_height"] = np.array(
+            [
+                (
+                    sublevel_starts[i]["peak_height"]
+                    if "peak" in sublevel_starts[i]["type"]
+                    else None
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
+        # get normalized peak height
+        sublevel_metadata["normalized_height"] = np.array(
+            [
+                (
+                    sublevel_starts[i]["peak_height"] / unfolded_level
                     if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
@@ -988,6 +989,33 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
+                # get peak max blockage
+        sublevel_metadata["max_blockage"] = np.array(
+            [
+                (
+                    sublevel_starts[i].get("max_blockage")
+                    if "peak" in sublevel_starts[i]["type"]
+                    and sublevel_starts[i].get("max_blockage") is not None
+                    else None
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
+        # get normalized max blockage (max_blockage / unfolded_level) for peak sublevels
+        sublevel_metadata["normalized_blockage"] = np.array(
+            [
+                (
+                    sublevel_starts[i]["max_blockage"] / unfolded_level
+                    if "peak" in sublevel_starts[i]["type"]
+                    and unfolded_level != 0
+                    and sublevel_starts[i].get("max_blockage") is not None
+                    else None
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
         # plateau_size support intentionally disabled.
         # sublevel_metadata["plateau_size"] = np.array(
         #     [
@@ -1001,13 +1029,13 @@ class PeakFinder(MetaEventFitter):
         #     ],
         #     dtype=np.float64,
         # )
-        # get peak max blockage
-        sublevel_metadata["max_blockage"] = np.array(
+
+        # get peak left base
+        sublevel_metadata["left_base"] = np.array(
             [
                 (
-                    sublevel_starts[i].get("max_blockage")
+                    sublevel_starts[i]["left_base"]
                     if "peak" in sublevel_starts[i]["type"]
-                    and sublevel_starts[i].get("max_blockage") is not None
                     else None
                 )
                 for i in range(num_states)
@@ -1019,18 +1047,6 @@ class PeakFinder(MetaEventFitter):
             [
                 (
                     sublevel_starts[i]["right_base"]
-                    if "peak" in sublevel_starts[i]["type"]
-                    else None
-                )
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
-        # get peak left base
-        sublevel_metadata["left_base"] = np.array(
-            [
-                (
-                    sublevel_starts[i]["left_base"]
                     if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
@@ -1229,6 +1245,7 @@ class PeakFinder(MetaEventFitter):
             "filtered": int,
             "normalized_height": float,
             "normalized_prominence": float,
+            "normalized_blockage": float,
         }
 
         return metadata_types
@@ -1291,6 +1308,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["filtered"] = " "
         metadata_units["normalized_height"] = "pA"
         metadata_units["normalized_prominence"] = "pA"
+        metadata_units["normalized_blockage"] = None
 
         return metadata_units
 

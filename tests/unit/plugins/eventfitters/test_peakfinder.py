@@ -74,6 +74,7 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
             "left_ips": None,
             "right_ips": None,
             "filtered": None,
+            "max_blockage": None,
             "unfolded_level": 200.0,
         },
         {
@@ -87,6 +88,7 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
             "left_ips": None,
             "right_ips": None,
             "filtered": None,
+            "max_blockage": None,
         },
     ]
     for i in range(n_peaks):
@@ -102,6 +104,7 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
                 "left_ips": peak_index + i * 5 - 1,
                 "right_ips": peak_index + i * 5 + 1,
                 "filtered": 0,
+                "max_blockage": None,
             }
         )
     starts += [
@@ -116,6 +119,7 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
             "left_ips": None,
             "right_ips": None,
             "filtered": None,
+            "max_blockage": None,
         },
         {
             "index": data_len,
@@ -128,6 +132,7 @@ def _make_sublevel_starts(n_peaks=1, padding_before=10, data_len=100, padding_af
             "left_ips": None,
             "right_ips": None,
             "filtered": None,
+            "max_blockage": None,
         },
     ]
     return starts
@@ -383,6 +388,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             "left_ips",
             "right_ips",
             "filtered",
+            "max_blockage",
         ]:
             self.assertIn(key, meta)
 
@@ -529,6 +535,7 @@ class TestDefineEventMetadata(unittest.TestCase):
             "filtered",
             "normalized_height",
             "normalized_prominence",
+            "normalized_blockage",
         ]:
             self.assertIn(key, t)
 
@@ -544,6 +551,7 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertEqual(u["sublevel_duration"], "us")
         self.assertEqual(u["peak_height"], "pA")
         self.assertEqual(u["left_ips"], "us")
+        self.assertIsNone(u.get("normalized_blockage"))
 
 
 # ---------------------------------------------------------------------------
