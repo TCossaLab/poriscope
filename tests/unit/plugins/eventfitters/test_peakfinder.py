@@ -240,7 +240,7 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Unspecified"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props,100, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(peaks, props, 100, 200.0, 10.0, 100.0, 1e6)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
     def test_single_peak_returns_properties_unchanged(self):
@@ -300,7 +300,9 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         # peaks at indices 20 and 25 (distance=5 samples << max_distance=100/dt_us)
         # stored bases of 195 now classify as type 2 before clustering
         props = self._props([195.0, 195.0], [195.0, 195.0], [300.0, 300.0])
-        result = pf.filter_peaks(np.array([20, 25]), props, 200.0, 100.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(
+            np.array([20, 25]), props, 200.0, 100.0, 10.0, 100.0, 1e6
+        )
         # Both should be type 3 (cluster)
         self.assertTrue(all(f == 3 for f in result["filtered"]))
 
