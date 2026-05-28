@@ -429,7 +429,6 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             if "peak" not in self.starts[i]["type"]:
                 self.assertTrue(np.isnan(meta["peak_height"][i]))
 
-
     def test_start_times_nondecreasing(self):
         meta = self.pf._populate_sublevel_metadata(
             self.data, self.samplerate, 100.0, 10.0, self.starts
