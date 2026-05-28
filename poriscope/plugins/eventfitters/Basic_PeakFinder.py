@@ -321,7 +321,6 @@ class Basic_PeakFinder(MetaEventFitter):
             )
             hlabel.append("unfolded level")
 
-
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
                 if self.sublevel_metadata[channel][index]["peak_id"][i] is not None:
                     # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
@@ -586,9 +585,8 @@ class Basic_PeakFinder(MetaEventFitter):
                 data[padding_before:-padding_after],
                 baseline_mean,
                 baseline_std,
-                
             )
-          
+
             edges = [
                 {
                     "index": 0,
@@ -626,7 +624,9 @@ class Basic_PeakFinder(MetaEventFitter):
                         "type": f"peak_{i+1}",
                         "peak_height": np.absolute(
                             np.sign(baseline_mean) * baseline_mean
-                            + properties["peak_heights"][i] # turned into absolute blockage instead of current
+                            + properties["peak_heights"][
+                                i
+                            ]  # turned into absolute blockage instead of current
                         ),
                         "prominence": properties["prominences"][i],
                         "left_base": np.absolute(
@@ -1212,7 +1212,10 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     def find_mode_blockage_level(
-        self, data, baseline_mean, baseline_std,
+        self,
+        data,
+        baseline_mean,
+        baseline_std,
     ):
         """
         Estimate the level of unfolded blockage based on data distribution.
@@ -1228,7 +1231,7 @@ class Basic_PeakFinder(MetaEventFitter):
         :return: Estimated unfolded blockage level.
         :rtype: float
         """
-        
+
         # range = np.arange(min(data), max(data))
 
         # counts = [
@@ -1243,7 +1246,7 @@ class Basic_PeakFinder(MetaEventFitter):
         # return np.abs(range[max_count_index] - baseline_mean)
 
         # Use histogram binning to estimate the modal blockage level efficiently.
-        
+
         if data is None or len(data) == 0:
             return 0.0
 
@@ -1259,14 +1262,14 @@ class Basic_PeakFinder(MetaEventFitter):
         if data_max <= data_min:
             # Degenerate range
             level = abs(data_min - baseline_mean)
-            return level 
+            return level
 
         nbins = max(10, int(np.ceil((data_max - data_min) / bin_width)))
         counts, edges = np.histogram(data, bins=nbins)
         max_idx = int(np.argmax(counts))
         bin_center = 0.5 * (edges[max_idx] + edges[max_idx + 1])
         level = abs(bin_center - baseline_mean)
-        return level 
+        return level
 
     @log(logger=logger)
     def enumerate_peaks(self, sublevel_starts, num_states, sublevel_types=None):
