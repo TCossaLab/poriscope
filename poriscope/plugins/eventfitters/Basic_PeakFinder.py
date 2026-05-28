@@ -102,12 +102,7 @@ class PeakFinder(MetaEventFitter):
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Event Type"] = {
-            "Type": str,
-            "Value": "Unspecified",
-            "Options": ["Unspecified", "Single Peak", "Barcode"],
-        }
-        settings["Number of peaks"] = {"Type": int, "Value": 1, "Min": 1}
+
         settings["Plot Features"] = {
             "Type": str,
             "Value": "Some",
@@ -139,35 +134,12 @@ class PeakFinder(MetaEventFitter):
             "Min": 0.0,
             "Units": "μs",
         }
-        # settings["Plateau Size"] = {
-        #     "Type": float,
-        #     "Value": 0,
-        #     "Min": 0.0,
-        #     "Units": "μs",
-        # }
-        settings["Max Unfolded"] = {
+        settings["Plateau Size"] = {
             "Type": float,
-            "Value": 750,
-            "Min": 0.1,
-            "Units": "pA",
+            "Value": 0,
+            "Min": 0.0,
+            "Units": "μs",
         }
-
-        settings["Filter Peaks"] = {"Type": bool, "Value": True}
-        settings["Lower Filter Threshold"] = {
-            "Type": int,
-            "Value": -3,
-            "Min": -10,
-            "Max": 10,
-            "Units": "σ",
-        }
-        settings["Higher Filter Threshold"] = {
-            "Type": int,
-            "Value": 3,
-            "Min": -10,
-            "Max": 10,
-            "Units": "σ",
-        }
-
         return settings
 
     @log(logger=logger)
@@ -401,8 +373,8 @@ class PeakFinder(MetaEventFitter):
                         )
                     )
                     plabel.append(
-                        "Peak #" + str(j)+ " Type: " + str(self.sublevel_metadata[channel][index]["filtered"][i]))
-                    
+                        "Peak #" + str(j)
+                    )  # + " Type: " + str(self.sublevel_metadata[channel][index]["filtered"][i]))
 
                     j += 1
 
@@ -1017,18 +989,18 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # plateau_size support intentionally disabled.
-        # sublevel_metadata["plateau_size"] = np.array(
-        #     [
-        #         (
-        #             sublevel_starts[i].get("plateau_size") * dt_us
-        #             if "peak" in sublevel_starts[i]["type"]
-        #             and sublevel_starts[i].get("plateau_size") is not None
-        #             else None
-        #         )
-        #         for i in range(num_states)
-        #     ],
-        #     dtype=np.float64,
-        # )
+        sublevel_metadata["plateau_size"] = np.array(
+            [
+                (
+                    sublevel_starts[i].get("plateau_size") * dt_us
+                    if "peak" in sublevel_starts[i]["type"]
+                    and sublevel_starts[i].get("plateau_size") is not None
+                    else None
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
 
         # get peak left base
         sublevel_metadata["left_base"] = np.array(
@@ -1094,15 +1066,6 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
 
-        # get peak filter success
-        sublevel_metadata["filtered"] = [
-            (
-                sublevel_starts[i]["filtered"]
-                if "peak" in sublevel_starts[i]["type"]
-                else None
-            )
-            for i in range(num_states)
-        ]
 
         return sublevel_metadata
 
@@ -1235,7 +1198,7 @@ class PeakFinder(MetaEventFitter):
             "peak_loc": float,
             "peak_width": float,
             "prominence": float,
-            # "plateau_size": float,
+            "plateau_size": float,
             "max_blockage": float,
             "left_base": float,
             "right_base": float,
@@ -1298,14 +1261,13 @@ class PeakFinder(MetaEventFitter):
         metadata_units["peak_loc"] = "us"
         metadata_units["peak_width"] = "us"
         metadata_units["prominence"] = "pA"
-        # metadata_units["plateau_size"] = "us"
+        metadata_units["plateau_size"] = "us"
         metadata_units["max_blockage"] = "pA"
         metadata_units["left_base"] = "pA"
         metadata_units["right_base"] = "pA"
         metadata_units["left_ips"] = "us"
         metadata_units["right_ips"] = "us"
         metadata_units["height_ips"] = "pA"
-        metadata_units["filtered"] = " "
         metadata_units["normalized_height"] = "pA"
         metadata_units["normalized_prominence"] = "pA"
         metadata_units["normalized_blockage"] = None
@@ -1313,157 +1275,6 @@ class PeakFinder(MetaEventFitter):
         return metadata_units
 
     # utility functions
-
-    @log(logger=logger)
-    def filter_peaks(
-        self,
-        peaks,
-        properties,
-        unfolded_level,
-        length,
-        baseline_std,
-        baseline,
-        samplerate,
-    ):
-        """
-        Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
-        - Type 1: Peaks on the same DNA carrier level (both bases around unfolded_level).
-        - Type 2: Peaks higher than the carrier level (both bases above unfolded_level).
-        - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
-        """
-        dt_us = 1.0 / samplerate * 1e6
-        num_peaks = int(self.settings["Number of peaks"]["Value"])
-        t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
-        t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
-        # event_id = getattr(self, "_debug_event_id", None)
-
-        # # Convert commonly-used properties to numpy arrays for vectorized ops
-        # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
-        # right_bases = np.array(properties.get("right_bases", []), dtype=float) + np.sign(baseline) * baseline
-        prominences = np.array(properties.get("prominences", []), dtype=float)
-        # widths = np.array(properties.get("widths", []), dtype=float)
-        # ips_left = np.array(properties.get("left_ips", []), dtype=float)
-        # ips_right = np.array(properties.get("right_ips", []), dtype=float)
-        event_duration = length * dt_us
-        # Early return if no peaks
-        if len(peaks) == 0:
-            # preserve whatever filtered was provided (likely empty)
-            properties["filtered"] = properties.get("filtered", [])
-            return properties
-
-        # Ensure filtered is a numeric array matching number of peaks
-        filtered_list = list(properties.get("filtered", []))
-        if len(filtered_list) < len(peaks):
-            filtered_list = filtered_list + [0] * (len(peaks) - len(filtered_list))
-        elif len(filtered_list) > len(peaks):
-            filtered_list = filtered_list[: len(peaks)]
-        filtered = np.array(filtered_list, dtype=int)
-        if self.settings["Event Type"]["Value"] == "Barcode":
-            # Classify by ordered ranges, requiring both bases to land in the same band.
-            # 0: both bases below the lower barcode threshold
-            # 1: both bases between the lower threshold and the type-2 lower bound
-            # 2: both bases around twice the unfolded level
-            # -1: either base above the type-2 upper bound
-            # Define thresholds. We treat type-1 as anything from unfolded_level + t1*std
-            # up to (but not including) the type-2 lower bound. Type-2 is centered
-            # around 2*unfolded_level ± thresholds, and anything above that upper
-            # bound is -1 (noise).
-            type0_thresh = t2_std
-            type1_thresh = unfolded_level + t1_std * baseline_std
-            type2_thresh = unfolded_level + t2_std * baseline_std
-
-            # Debug prints to help trace classification during development
-            # print(
-            #     f"[debug] filter_peaks: event_id={event_id}, unfolded_level={unfolded_level}, baseline_std={baseline_std}, t1={t1_std}, t2={t2_std}"
-            # )
-            # print(
-            #     f"[debug] thresholds: event_id={event_id}, type0={type0_thresh}, type1={type1_thresh}, type2={type2_thresh}"
-            # )
-            # try:
-            #     print(
-            #         f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases.tolist()}, right_bases={right_bases.tolist()}"
-            #     )
-            # except Exception:
-            #     print(f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases}, right_bases={right_bases}")
-
-            for i in range(len(peaks)):
-                left_base = properties["left_bases"][i] + np.sign(baseline) * baseline
-                right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
-                # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
-
-                # ignores peaks near the end of a level (missmatched bases)
-                if left_base <= type0_thresh and right_base <= type0_thresh:
-                    filtered[i] = 0
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned 0 (both bases <= type0_thresh)")
-                # Type -1: both bases above the upper type-2 cutoff (noise)
-                elif (
-                    left_base >= type2_thresh + unfolded_level
-                    and right_base >= type2_thresh + unfolded_level
-                ):
-                    filtered[i] = -1
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
-                # Type 2: both bases within the type-2 band around 2*unfolded_level
-                elif left_base >= type2_thresh and right_base >= type2_thresh:
-                    filtered[i] = 2
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
-                # Type 1: both bases within the type-1 band around unfolded_level
-                elif left_base >= type1_thresh and right_base >= type1_thresh:
-                    filtered[i] = 1
-                    # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
-                else:
-                    filtered[i] = -1
-                    # print(f"[debug] event_id={event_id}, peak {i} assigned -1 (does not meet type1 or type2 criteria, bases missmatch)")
-                # if filtered[i] not in [1, 2, -1]:
-                #    print(f"Unlabeled peak {i}: left={left_base:.3f}, right={right_base:.3f}, unfolded_level-2std={unfolded_level - 2 * baseline_std:.3f}, 2*unfolded_level+std={2*unfolded_level+baseline_std:.3f}")
-
-            # Step 2: Identify clusters of same-type peaks (keep only most prominent cluster)
-            max_distance = 0.20 * event_duration
-            best_cluster = []
-            best_prom_sum = 0.0
-
-            # Prominence-sorted indices (descending)
-            prom_indices = np.argsort(prominences)[::-1]
-
-            for label in [1, 2]:
-                # Select indices in prominence order with this label
-                label_mask = filtered == label
-                if not np.any(label_mask):
-                    continue
-
-                label_idxs = [int(i) for i in prom_indices if label_mask[int(i)]]
-                if not label_idxs:
-                    continue
-
-                label_idxs = label_idxs[:num_peaks]
-                # Sort by peak location
-                sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
-
-                for si in range(len(sorted_idxs)):
-                    group = [sorted_idxs[si]]
-                    for sj in range(si + 1, len(sorted_idxs)):
-                        if (
-                            abs(peaks[sorted_idxs[sj]] - peaks[sorted_idxs[si]])
-                            <= max_distance
-                        ):
-                            group.append(sorted_idxs[sj])
-                        else:
-                            break
-                    if len(group) >= num_peaks:
-                        prom_sum = float(np.sum(prominences[group]))
-                        if prom_sum > best_prom_sum:
-                            best_cluster = group
-                            best_prom_sum = prom_sum
-                        break
-
-            for idx in best_cluster:
-                filtered[int(idx)] = 3
-
-        # Other event types can be extended similarly
-
-        # Write back filtered array to properties
-        properties["filtered"] = filtered.tolist()
-
-        return properties
 
     @log(logger=logger)
     def find_mode_blockage_level(
