@@ -421,14 +421,6 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             if "peak" not in self.starts[i]["type"]:
                 self.assertTrue(np.isnan(meta["peak_height"][i]))
 
-    def test_peak_abs_loc_matches_peak_loc_for_peaks(self):
-        meta = self.pf._populate_sublevel_metadata(
-            self.data, self.samplerate, 100.0, 10.0, self.starts
-        )
-        num_states = len(self.starts) - 1
-        for i in range(num_states):
-            if "peak" in self.starts[i]["type"]:
-                self.assertAlmostEqual(meta["peak_abs_loc"][i], meta["peak_loc"][i])
 
     def test_start_times_nondecreasing(self):
         meta = self.pf._populate_sublevel_metadata(
@@ -526,7 +518,6 @@ class TestDefineEventMetadata(unittest.TestCase):
             "sublevel_duration",
             "peak_height",
             "peak_loc",
-            "peak_abs_loc",
             "peak_width",
             "prominence",
             "left_base",
@@ -551,7 +542,6 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertEqual(u["sublevel_duration"], "us")
         self.assertEqual(u["peak_height"], "pA")
         self.assertEqual(u["left_ips"], "us")
-        self.assertEqual(u["peak_abs_loc"], "us")
 
 
 # ---------------------------------------------------------------------------

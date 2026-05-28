@@ -941,18 +941,7 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-        # get peak absolute location (no padding)
-        sublevel_metadata["peak_abs_loc"] = np.array(
-            [
-                (
-                    sublevel_starts[i].get("loc", sublevel_starts[i]["index"]) * dt_us
-                    if "peak" in sublevel_starts[i]["type"]
-                    else None
-                )
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
+
         # get peak widths @relative height
         sublevel_metadata["peak_width"] = np.array(
             [
@@ -1218,7 +1207,6 @@ class PeakFinder(MetaEventFitter):
             "peak_id": int,
             "peak_height": float,
             "peak_loc": float,
-            "peak_abs_loc": float,
             "peak_width": float,
             "prominence": float,
             # "plateau_size": float,
@@ -1281,7 +1269,6 @@ class PeakFinder(MetaEventFitter):
         metadata_units["peak_id"] = " "
         metadata_units["peak_height"] = "pA"
         metadata_units["peak_loc"] = "us"
-        metadata_units["peak_abs_loc"] = "us"
         metadata_units["peak_width"] = "us"
         metadata_units["prominence"] = "pA"
         # metadata_units["plateau_size"] = "us"
