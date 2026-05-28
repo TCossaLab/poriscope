@@ -151,7 +151,7 @@ class PeakFinder(MetaEventFitter):
             "Min": 0.1,
             "Units": "pA",
         }
-        
+
         settings["Filter Peaks"] = {"Type": bool, "Value": True}
         settings["Lower Filter Threshold"] = {
             "Type": int,
@@ -380,18 +380,18 @@ class PeakFinder(MetaEventFitter):
                     # vlabel.append("Left ips #" + str(j))
 
                     # bases.append(
-                    #     -np.sign(baseline) 
-                    #     * self.sublevel_metadata[channel][index]["left_base"][i] 
+                    #     -np.sign(baseline)
+                    #     * self.sublevel_metadata[channel][index]["left_base"][i]
                     #     + self.event_metadata[channel][index]["baseline"]
                     # )
                     # bases.append(
-                    #     -np.sign(baseline) 
-                    #     * self.sublevel_metadata[channel][index]["right_base"][i] 
+                    #     -np.sign(baseline)
+                    #     * self.sublevel_metadata[channel][index]["right_base"][i]
                     #     + self.event_metadata[channel][index]["baseline"]
                     # )
                     # hlabel.append("Right base #" + str(j))
                     # hlabel.append("Left base #" + str(j))
-                    
+
                     peaks.append(
                         (
                             self.sublevel_metadata[channel][index]["peak_loc"][i],
@@ -400,8 +400,10 @@ class PeakFinder(MetaEventFitter):
                             + self.event_metadata[channel][index]["baseline"],
                         )
                     )
-                    plabel.append("Peak #" + str(j) ) #+ " Type: " + str(self.sublevel_metadata[channel][index]["filtered"][i]))
-                    
+                    plabel.append(
+                        "Peak #" + str(j)
+                    )  # + " Type: " + str(self.sublevel_metadata[channel][index]["filtered"][i]))
+
                     j += 1
 
             value = self.settings.get("Plot Features", {}).get("Value")
@@ -632,12 +634,12 @@ class PeakFinder(MetaEventFitter):
         if len(peaks) > 0:
 
             unfolded_level = self.find_mode_blockage_level(
-            data[padding_before:-padding_after],
-            max_unfolded,
-            baseline_mean,
-            baseline_std,
-            True,
-        )
+                data[padding_before:-padding_after],
+                max_unfolded,
+                baseline_mean,
+                baseline_std,
+                True,
+            )
             # Only run peak filtering if the user enabled it in settings. Default to True.
             should_filter = True
             if getattr(self, "settings", None) is not None:
@@ -646,7 +648,13 @@ class PeakFinder(MetaEventFitter):
             if should_filter:
                 try:
                     properties = self.filter_peaks(
-                        peaks, properties, unfolded_level, len(data[padding_before:-padding_after]), baseline_std, baseline_mean, samplerate
+                        peaks,
+                        properties,
+                        unfolded_level,
+                        len(data[padding_before:-padding_after]),
+                        baseline_std,
+                        baseline_mean,
+                        samplerate,
                     )
                 except TypeError as exc:
                     self.logger.error(
@@ -705,11 +713,13 @@ class PeakFinder(MetaEventFitter):
                         "type": f"peak_{i+1}",
                         "peak_height": np.absolute(
                             np.sign(baseline_mean) * baseline_mean
-                            + properties["peak_heights"][i] #turned into absolute blockage instead of current
+                            + properties["peak_heights"][
+                                i
+                            ]  # turned into absolute blockage instead of current
                         ),
                         "prominence": properties["prominences"][i],
                         "left_base": np.absolute(
-                            np.sign(baseline_mean) * baseline_mean 
+                            np.sign(baseline_mean) * baseline_mean
                             + properties["left_bases"][i]
                         ),
                         "right_base": np.absolute(
@@ -1288,7 +1298,14 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     def filter_peaks(
-        self, peaks, properties, unfolded_level, length, baseline_std ,baseline, samplerate
+        self,
+        peaks,
+        properties,
+        unfolded_level,
+        length,
+        baseline_std,
+        baseline,
+        samplerate,
     ):
         """
         Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
@@ -1300,7 +1317,7 @@ class PeakFinder(MetaEventFitter):
         num_peaks = int(self.settings["Number of peaks"]["Value"])
         t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
         t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
-        #event_id = getattr(self, "_debug_event_id", None)
+        # event_id = getattr(self, "_debug_event_id", None)
 
         # # Convert commonly-used properties to numpy arrays for vectorized ops
         # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
@@ -1309,7 +1326,7 @@ class PeakFinder(MetaEventFitter):
         # widths = np.array(properties.get("widths", []), dtype=float)
         # ips_left = np.array(properties.get("left_ips", []), dtype=float)
         # ips_right = np.array(properties.get("right_ips", []), dtype=float)
-        event_duration = length* dt_us
+        event_duration = length * dt_us
         # Early return if no peaks
         if len(peaks) == 0:
             # preserve whatever filtered was provided (likely empty)
@@ -1333,9 +1350,9 @@ class PeakFinder(MetaEventFitter):
             # up to (but not including) the type-2 lower bound. Type-2 is centered
             # around 2*unfolded_level ± thresholds, and anything above that upper
             # bound is -1 (noise).
-            type0_thresh =  t2_std
-            type1_thresh= unfolded_level + t1_std * baseline_std
-            type2_thresh= unfolded_level + t2_std * baseline_std
+            type0_thresh = t2_std
+            type1_thresh = unfolded_level + t1_std * baseline_std
+            type2_thresh = unfolded_level + t2_std * baseline_std
 
             # Debug prints to help trace classification during development
             # print(
@@ -1357,10 +1374,7 @@ class PeakFinder(MetaEventFitter):
                 # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
 
                 # ignores peaks near the end of a level (missmatched bases)
-                if (
-                    left_base <= type0_thresh 
-                    and right_base <= type0_thresh   
-                ):    
+                if left_base <= type0_thresh and right_base <= type0_thresh:
                     filtered[i] = 0
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned 0 (both bases <= type0_thresh)")
                 # Type -1: both bases above the upper type-2 cutoff (noise)
@@ -1371,17 +1385,11 @@ class PeakFinder(MetaEventFitter):
                     filtered[i] = -1
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
                 # Type 2: both bases within the type-2 band around 2*unfolded_level
-                elif (
-                    left_base >= type2_thresh
-                    and right_base >= type2_thresh
-                ):
+                elif left_base >= type2_thresh and right_base >= type2_thresh:
                     filtered[i] = 2
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
                 # Type 1: both bases within the type-1 band around unfolded_level
-                elif (
-                    left_base >= type1_thresh
-                    and right_base >= type1_thresh
-                ):
+                elif left_base >= type1_thresh and right_base >= type1_thresh:
                     filtered[i] = 1
                     # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
                 else:
@@ -1415,7 +1423,10 @@ class PeakFinder(MetaEventFitter):
                 for si in range(len(sorted_idxs)):
                     group = [sorted_idxs[si]]
                     for sj in range(si + 1, len(sorted_idxs)):
-                        if abs(peaks[sorted_idxs[sj]] - peaks[sorted_idxs[si]]) <= max_distance:
+                        if (
+                            abs(peaks[sorted_idxs[sj]] - peaks[sorted_idxs[si]])
+                            <= max_distance
+                        ):
                             group.append(sorted_idxs[sj])
                         else:
                             break
@@ -1437,7 +1448,9 @@ class PeakFinder(MetaEventFitter):
         return properties
 
     @log(logger=logger)
-    def find_mode_blockage_level(self, data, max_unfolded, baseline_mean, baseline_std, is_carrier):
+    def find_mode_blockage_level(
+        self, data, max_unfolded, baseline_mean, baseline_std, is_carrier
+    ):
         """
         Estimate the level of unfolded blockage based on data distribution.
 
@@ -1466,7 +1479,7 @@ class PeakFinder(MetaEventFitter):
         # if np.abs(range[max_count_index] - baseline_mean) > max_unfolded:
         #     return np.abs(range[max_count_index] - baseline_mean)/2
         # return np.abs(range[max_count_index] - baseline_mean)
-        
+
         # Use histogram binning to estimate the modal blockage level efficiently.
         if data is None or len(data) == 0:
             return 0.0
@@ -1479,7 +1492,7 @@ class PeakFinder(MetaEventFitter):
         bin_width = max(baseline_std / 8.0, 1e-6)
         data_min = float(np.min(data))
         data_max = float(np.max(data))
-        
+
         if data_max <= data_min:
             # Degenerate range
             level = abs(data_min - baseline_mean)
