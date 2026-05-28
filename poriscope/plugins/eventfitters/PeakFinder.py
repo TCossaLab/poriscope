@@ -941,7 +941,7 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-                # get peak height
+        # get peak height
         sublevel_metadata["peak_height"] = np.array(
             [
                 (
@@ -989,7 +989,7 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-                # get peak max blockage
+        # get peak max blockage
         sublevel_metadata["max_blockage"] = np.array(
             [
                 (
