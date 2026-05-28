@@ -38,7 +38,7 @@ Numeric = Union[int, float, np.number]
 
 
 @inherit_docstrings
-class PeakFinder(MetaEventFitter):
+class Basic_PeakFinder(MetaEventFitter):
     """
     Abstract base class to analyze and flag the start and end times of regions
     of interest in a timeseries for further analysis.
