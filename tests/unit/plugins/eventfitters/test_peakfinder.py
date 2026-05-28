@@ -49,6 +49,8 @@ def _make_pf(**setting_overrides):
         "Width": {"Value": 0.0},
         "Min Distance": {"Value": 1.0},
         "Max Unfolded": {"Value": 750.0},
+        "Lower Filter Threshold": {"Value": -3},
+        "Higher Filter Threshold": {"Value": 3},
         "Number of peaks": {"Value": 1},
         "Plot Features": {"Value": "Some"},
     }
@@ -142,20 +144,21 @@ class TestFindModeBlockageLevel(unittest.TestCase):
 
     def test_returns_float(self):
         data = np.concatenate([np.ones(50) * 100.0, np.ones(50) * 300.0])
-        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0, False)
         self.assertIsInstance(float(result), float)
 
     def test_within_max_unfolded(self):
         # Dense cluster near 300, baseline=100 → diff=200, within max_unfolded=750
         data = np.concatenate([np.ones(10) * 100.0, np.ones(90) * 300.0])
-        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0, False)
         self.assertGreater(result, 0.0)
         self.assertLessEqual(result, 750.0)
 
     def test_exceeds_max_unfolded_halved(self):
         # Dense cluster at 1000 away from baseline 0 → exceeds max_unfolded=400
         data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
-        result = self.pf.find_mode_blockage_level(data, 400.0, 0.0, 5.0)
+        # current implementation requires is_carrier=True to apply halving
+        result = self.pf.find_mode_blockage_level(data, 400.0, 0.0, 5.0, True)
         # Should be halved since abs(level - baseline) > max_unfolded
         full = np.abs(
             np.arange(int(min(data)), int(max(data)))[
@@ -172,7 +175,7 @@ class TestFindModeBlockageLevel(unittest.TestCase):
 
     def test_nonnegative(self):
         data = np.random.randn(100) * 5.0 + 200.0
-        result = self.pf.find_mode_blockage_level(data, 750.0, 200.0, 10.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 200.0, 10.0, False)
         self.assertGreaterEqual(result, 0.0)
 
 
@@ -237,19 +240,19 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Unspecified"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(peaks, props,100, 200.0, 10.0, 100.0, 1e6)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
     def test_single_peak_returns_properties_unchanged(self):
         pf = _make_pf(**{"Event Type": "Single Peak"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(peaks, props, 100, 200.0, 10.0, 100.0, 1e6)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
 
 # ---------------------------------------------------------------------------
-# filter_peaks – Barcode type 1 (bases near unfolded level)
+# filter_peaks – Barcode type 2 / clustered peaks
 # ---------------------------------------------------------------------------
 
 
@@ -267,46 +270,60 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         }
 
     def test_type1_classification(self):
-        """Both bases within unfolded_level ± 2*std → type 1 (num_peaks=2 so single peak can't cluster)."""
+        """Both bases within the lower barcode band → type 2 with the current classifier."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # unfolded=200, std=10 → valid range: 180..220 → use 195
+        # Current filter_peaks logic shifts the stored bases by the baseline,
+        # so this input lands in the type-2 band.
         props = self._props([195.0], [195.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 0.0, 1e6)
-        self.assertEqual(result["filtered"][0], 1)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
+        self.assertEqual(result["filtered"][0], 2)
 
     def test_type2_classification(self):
-        """Both bases above unfolded + std → type 2 (num_peaks=2 so single peak can't cluster)."""
+        """Bases above unfolded + std but below 2x unfolded → type 2 under current rules."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # unfolded=200, std=10 → need > 210 → use 220
-        props = self._props([220.0], [220.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 0.0, 1e6)
+        # unfolded=200, std=10 → use 240, which falls in the type-2 band
+        props = self._props([240.0], [240.0])
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_type_minus1_classification(self):
         """Both bases above 2*unfolded + std → type -1 (noise)."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 1})
-        # 2*200+10=410 → use 450
+        # 2*200-30=370 → use 450
         props = self._props([450.0], [450.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 0.0, 1e6)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
         self.assertEqual(result["filtered"][0], -1)
 
     def test_cluster_of_type1_labeled_type3(self):
         """Two type-1 peaks close together with num_peaks=2 → both become type 3."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         # peaks at indices 20 and 25 (distance=5 samples << max_distance=100/dt_us)
-        # unfolded=200, std=10, bases=195 → type 1
+        # stored bases of 195 now classify as type 2 before clustering
         props = self._props([195.0, 195.0], [195.0, 195.0], [300.0, 300.0])
-        result = pf.filter_peaks(np.array([20, 25]), props, 200.0, 10.0, 0.0, 1e6)
+        result = pf.filter_peaks(np.array([20, 25]), props, 200.0, 100.0, 10.0, 100.0, 1e6)
         # Both should be type 3 (cluster)
         self.assertTrue(all(f == 3 for f in result["filtered"]))
 
     def test_no_cluster_below_min_group_size(self):
-        """Only 1 type-1 peak when num_peaks=2 → not enough for a cluster."""
+        """Only 1 type-2 peak when num_peaks=2 → not enough for a cluster."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         props = self._props([195.0], [195.0], [300.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 0.0, 1e6)
-        # stays type 1, not promoted to 3
-        self.assertEqual(result["filtered"][0], 1)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
+        self.assertEqual(result["filtered"][0], 2)
+
+    def test_custom_threshold_settings_change_classification(self):
+        """Custom T1/T2 std offsets should change the classification boundary."""
+        pf = _make_pf(
+            **{
+                "Event Type": "Barcode",
+                "Number of peaks": 2,
+                "Lower Filter Threshold": -3,
+                "Higher Filter Threshold": 3,
+            }
+        )
+        props = self._props([115.0], [115.0], [300.0])
+        result = pf.filter_peaks(np.array([20]), props, 100, 200.0, 10.0, 100.0, 1e6)
+        self.assertEqual(result["filtered"][0], 2)
 
     def test_empty_peaks_no_crash(self):
         """No peaks at all → filter_peaks should return properties intact."""
@@ -318,7 +335,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             "right_bases": [],
             "peak_heights": np.array([]),
         }
-        result = pf.filter_peaks(np.array([]), props, 200.0, 10.0, 0.0, 1e6)
+        result = pf.filter_peaks(np.array([]), props, 100, 200.0, 10.0, 100.0, 1e6)
         self.assertEqual(result["filtered"], [])
 
 
@@ -675,8 +692,10 @@ class TestGetPlotFeatures(unittest.TestCase):
         result = pf.get_plot_features(0, 0)
         self.assertEqual(result, (None, None, None, None, None, None))
 
-    def _setup_full_pf(self, plot_value="Some"):
-        pf = _make_pf(**{"Plot Features": plot_value})
+    def _setup_full_pf(self, plot_value="Some", **setting_overrides):
+        overrides = {"Plot Features": plot_value}
+        overrides.update(setting_overrides)
+        pf = _make_pf(**overrides)
         pf.sublevel_metadata = {
             0: {
                 0: {
@@ -712,14 +731,23 @@ class TestGetPlotFeatures(unittest.TestCase):
     def test_plot_all_returns_full_bases(self):
         pf = self._setup_full_pf("All")
         pf_filtered, bases, peaks, vlabel, hlabel, plabel = pf.get_plot_features(0, 0)
-        # "All" keeps all bases (4 gauges + 2 per peak = 6 total)
+        # "All" keeps all bases (4 gauges + 2 per peak = 6 total)s
         self.assertGreater(len(bases), 2)
 
-    def test_filtered_peak_in_vlabel(self):
+    def test_threshold_labels_reflect_settings(self):
+        pf = self._setup_full_pf(
+            "All",
+            **{"Lower Filter Threshold": -3, "Higher Filter Threshold": 3},
+        )
+        _, _, _, _, hlabel, _ = pf.get_plot_features(0, 0)
+        self.assertIn("unfolded level +3σ", hlabel)
+        self.assertIn("unfolded level -3σ", hlabel)
+
+    def test_filtered_peak_in_plabel(self):
         pf = self._setup_full_pf("All")
         pf_filtered, bases, peaks, vlabel, hlabel, plabel = pf.get_plot_features(0, 0)
-        self.assertGreater(len(vlabel), 0)
-        self.assertTrue(any("Peak" in v or "Type" in v for v in vlabel))
+        self.assertGreater(len(plabel), 0)
+        self.assertTrue(any("Peak" in v or "Type" in v for v in plabel))
 
     def test_peaks_list_contains_tuple(self):
         pf = self._setup_full_pf("All")

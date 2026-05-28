@@ -107,6 +107,12 @@ class PeakFinder(MetaEventFitter):
             "Value": "Unspecified",
             "Options": ["Unspecified", "Single Peak", "Barcode"],
         }
+        settings["Number of peaks"] = {"Type": int, "Value": 1, "Min": 1}
+        settings["Plot Features"] = {
+            "Type": str,
+            "Value": "Some",
+            "Options": ["All", "Some", "None"],
+        }
         settings["Min Height"] = {
             "Type": float,
             "Value": 500,
@@ -133,25 +139,35 @@ class PeakFinder(MetaEventFitter):
             "Min": 0.0,
             "Units": "μs",
         }
-        settings["Plateau Size"] = {
-            "Type": float,
-            "Value": 0,
-            "Min": 0.0,
-            "Units": "μs",
-        }
+        # settings["Plateau Size"] = {
+        #     "Type": float,
+        #     "Value": 0,
+        #     "Min": 0.0,
+        #     "Units": "μs",
+        # }
         settings["Max Unfolded"] = {
             "Type": float,
             "Value": 750,
             "Min": 0.1,
             "Units": "pA",
         }
-        settings["Number of peaks"] = {"Type": int, "Value": 1, "Min": 1}
+        
         settings["Filter Peaks"] = {"Type": bool, "Value": True}
-        settings["Plot Features"] = {
-            "Type": str,
-            "Value": "Some",
-            "Options": ["All", "Some", "None"],
+        settings["Lower Filter Threshold"] = {
+            "Type": int,
+            "Value": -3,
+            "Min": -10,
+            "Max": 10,
+            "Units": "σ",
         }
+        settings["Higher Filter Threshold"] = {
+            "Type": int,
+            "Value": 3,
+            "Min": -10,
+            "Max": 10,
+            "Units": "σ",
+        }
+
         return settings
 
     @log(logger=logger)
@@ -317,6 +333,8 @@ class PeakFinder(MetaEventFitter):
                 return None, None, None, None, None, None
 
             baseline = self.event_metadata[channel][index]["baseline"]
+            t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
+            t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
             # Initializing arrays
             bases: list[float] = []
             peaks: list[tuple[float, float]] = []
@@ -340,18 +358,19 @@ class PeakFinder(MetaEventFitter):
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
                 - np.sign(baseline)
+                * t2_std
                 * self.event_metadata[channel][index]["baseline_std"]
             )
-            hlabel.append("unfolded level + std")
+            hlabel.append(f"unfolded level {t2_std:+d}σ")
             bases.append(
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline"]
-                + 2
-                * np.sign(baseline)
+                - np.sign(baseline)
+                * t1_std
                 * self.event_metadata[channel][index]["baseline_std"]
             )
-            hlabel.append("unfolded level - 2std")
+            hlabel.append(f"unfolded level {t1_std:+d}σ")
 
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
                 if self.sublevel_metadata[channel][index]["peak_id"][i] is not None:
@@ -360,18 +379,19 @@ class PeakFinder(MetaEventFitter):
                     # vlabel.append("Right ips #" + str(j))
                     # vlabel.append("Left ips #" + str(j))
 
-                    bases.append(
-                        -np.sign(baseline)
-                        * self.sublevel_metadata[channel][index]["left_base"][i]
-                        + self.event_metadata[channel][index]["baseline"]
-                    )
-                    bases.append(
-                        -np.sign(baseline)
-                        * self.sublevel_metadata[channel][index]["right_base"][i]
-                        + self.event_metadata[channel][index]["baseline"]
-                    )
-                    hlabel.append("Right base #" + str(j))
-                    hlabel.append("Left base #" + str(j))
+                    # bases.append(
+                    #     -np.sign(baseline) 
+                    #     * self.sublevel_metadata[channel][index]["left_base"][i] 
+                    #     + self.event_metadata[channel][index]["baseline"]
+                    # )
+                    # bases.append(
+                    #     -np.sign(baseline) 
+                    #     * self.sublevel_metadata[channel][index]["right_base"][i] 
+                    #     + self.event_metadata[channel][index]["baseline"]
+                    # )
+                    # hlabel.append("Right base #" + str(j))
+                    # hlabel.append("Left base #" + str(j))
+                    
                     peaks.append(
                         (
                             self.sublevel_metadata[channel][index]["peak_loc"][i],
@@ -380,17 +400,8 @@ class PeakFinder(MetaEventFitter):
                             + self.event_metadata[channel][index]["baseline"],
                         )
                     )
-                    plabel.append("Peak #" + str(j))
-
-                    if self.sublevel_metadata[channel][index]["filtered"][i] == 3:
-                        ips.append(
-                            self.sublevel_metadata[channel][index]["peak_loc"][i]
-                        )
-                        vlabel.append(
-                            "Type "
-                            + str(self.sublevel_metadata[channel][index]["filtered"][i])
-                            + " Peak"
-                        )
+                    plabel.append("Peak #" + str(j) ) #+ " Type: " + str(self.sublevel_metadata[channel][index]["filtered"][i]))
+                    
                     j += 1
 
             value = self.settings.get("Plot Features", {}).get("Value")
@@ -467,8 +478,9 @@ class PeakFinder(MetaEventFitter):
         wlen = int(self.settings["Window Length"]["Value"] / dt_us)
         width = int(self.settings["Width"]["Value"] / dt_us)
         min_dist = int(self.settings["Min Distance"]["Value"] / dt_us)
-        plateau_size_us = self.settings["Plateau Size"]["Value"]
-        plateau_size = int(plateau_size_us / dt_us) if plateau_size_us > 0 else 0
+        # plateau_size support intentionally disabled.
+        # plateau_size_us = self.settings["Plateau Size"]["Value"]
+        # plateau_size = int(plateau_size_us / dt_us) if plateau_size_us > 0 else 0
         rel_height = self.settings["Relative Height"]["Value"]
         max_unfolded = self.settings["Max Unfolded"]["Value"]
 
@@ -561,10 +573,10 @@ class PeakFinder(MetaEventFitter):
             Used for calculation of the peaks width, thus it is only used if width is given.
             See argument rel_height in peak_widths for a full description of its effects.
 
-            plateau_size:number or ndarray or sequence, optional
-            Required size of the flat top of peaks in samples.
-            Either a number, None, an array matching x or a 2-element sequence of the former.
-            The first element is always interpreted as the minimal and the second, if supplied as the maximal required plateau size.
+            # plateau_size:number or ndarray or sequence, optional
+            # Required size of the flat top of peaks in samples.
+            # Either a number, None, an array matching x or a 2-element sequence of the former.
+            # The first element is always interpreted as the minimal and the second, if supplied, as the maximal required plateau size.
 
             Returns:
 
@@ -586,8 +598,8 @@ class PeakFinder(MetaEventFitter):
                 ‘widths’, ‘width_heights’, ‘left_ips’, ‘right_ips’
                 If width is given, these keys are accessible. See peak_widths for a description of their content.
 
-                ‘plateau_sizes’, left_edges’, ‘right_edges’
-                If plateau_size is given, these keys are accessible and contain the indices of a peak’s edges (edges are still part of the plateau) and the calculated plateau sizes.
+                # ‘plateau_sizes’, left_edges’, ‘right_edges’
+                # If plateau_size is given, these keys are accessible and contain the indices of a peak’s edges (edges are still part of the plateau) and the calculated plateau sizes.
             """
 
         peaks, properties = find_peaks(
@@ -598,13 +610,12 @@ class PeakFinder(MetaEventFitter):
             width=width,
             distance=min_dist,
             rel_height=rel_height,
-            **({"plateau_size": plateau_size} if plateau_size > 0 else {}),
+            # **({"plateau_size": plateau_size} if plateau_size > 0 else {}),
         )
-        properties.update({"filtered": [0 for i in range(len(peaks))]})
         properties.update(
             {
                 "left_bases": [
-                    np.absolute(data[properties["left_bases"][i] + padding_before])
+                    data[properties["left_bases"][i] + padding_before]
                     for i in range(len(peaks))
                 ]
             }
@@ -612,7 +623,7 @@ class PeakFinder(MetaEventFitter):
         properties.update(
             {
                 "right_bases": [
-                    np.absolute(data[properties["right_bases"][i] + padding_before])
+                    data[properties["right_bases"][i] + padding_before]
                     for i in range(len(peaks))
                 ]
             }
@@ -625,6 +636,7 @@ class PeakFinder(MetaEventFitter):
             max_unfolded,
             baseline_mean,
             baseline_std,
+            True,
         )
             # Only run peak filtering if the user enabled it in settings. Default to True.
             should_filter = True
@@ -634,7 +646,7 @@ class PeakFinder(MetaEventFitter):
             if should_filter:
                 try:
                     properties = self.filter_peaks(
-                        peaks, properties, unfolded_level, baseline_std, baseline_mean, samplerate
+                        peaks, properties, unfolded_level, len(data[padding_before:-padding_after]), baseline_std, baseline_mean, samplerate
                     )
                 except TypeError as exc:
                     self.logger.error(
@@ -676,6 +688,7 @@ class PeakFinder(MetaEventFitter):
                     self.settings["Max Unfolded"]["Value"],
                     baseline_mean,
                     baseline_std,
+                    False,
                 )
                 edges.append(
                     {
@@ -689,26 +702,26 @@ class PeakFinder(MetaEventFitter):
                         "loc": peaks[i],
                         "type": f"peak_{i+1}",
                         "peak_height": np.absolute(
-                            -np.sign(baseline_mean) * baseline_mean
-                            + np.absolute(properties["peak_heights"][i])
+                            np.sign(baseline_mean) * baseline_mean
+                            + properties["peak_heights"][i] #turned into absolute blockage instead of current
                         ),
                         "prominence": properties["prominences"][i],
                         "left_base": np.absolute(
-                            -np.sign(baseline_mean) * baseline_mean
-                            + np.absolute(properties["left_bases"][i])
+                            np.sign(baseline_mean) * baseline_mean 
+                            + properties["left_bases"][i]
                         ),
                         "right_base": np.absolute(
-                            -np.sign(baseline_mean) * baseline_mean
-                            + np.absolute(properties["right_bases"][i])
+                            np.sign(baseline_mean) * baseline_mean
+                            + properties["right_bases"][i]
                         ),
                         "width": properties["widths"][i],
                         "left_ips": left_ip,
                         "right_ips": right_ip,
                         "max_blockage": max_blockage,
-                        "plateau_size": properties.get(
-                            "plateau_sizes", [None] * len(peaks)
-                        )[i],
-                        "filtered": None,  # properties["filtered"][i],
+                        # "plateau_size": properties.get(
+                        #     "plateau_sizes", [None] * len(peaks)
+                        # )[i],
+                        "filtered": properties.get("filtered", [0] * len(peaks))[i],
                     }
                 )
                 edges.append(
@@ -975,19 +988,19 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-        # get peak plateau size
-        sublevel_metadata["plateau_size"] = np.array(
-            [
-                (
-                    sublevel_starts[i].get("plateau_size") * dt_us
-                    if "peak" in sublevel_starts[i]["type"]
-                    and sublevel_starts[i].get("plateau_size") is not None
-                    else None
-                )
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
+        # plateau_size support intentionally disabled.
+        # sublevel_metadata["plateau_size"] = np.array(
+        #     [
+        #         (
+        #             sublevel_starts[i].get("plateau_size") * dt_us
+        #             if "peak" in sublevel_starts[i]["type"]
+        #             and sublevel_starts[i].get("plateau_size") is not None
+        #             else None
+        #         )
+        #         for i in range(num_states)
+        #     ],
+        #     dtype=np.float64,
+        # )
         # get peak max blockage
         sublevel_metadata["max_blockage"] = np.array(
             [
@@ -1131,6 +1144,7 @@ class PeakFinder(MetaEventFitter):
             self.settings["Max Unfolded"]["Value"],
             event_metadata["baseline"],
             baseline_std,
+            True,
         )
         event_metadata["baseline_std"] = baseline_std
 
@@ -1207,7 +1221,7 @@ class PeakFinder(MetaEventFitter):
             "peak_abs_loc": float,
             "peak_width": float,
             "prominence": float,
-            "plateau_size": float,
+            # "plateau_size": float,
             "max_blockage": float,
             "left_base": float,
             "right_base": float,
@@ -1270,7 +1284,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["peak_abs_loc"] = "us"
         metadata_units["peak_width"] = "us"
         metadata_units["prominence"] = "pA"
-        metadata_units["plateau_size"] = "us"
+        # metadata_units["plateau_size"] = "us"
         metadata_units["max_blockage"] = "pA"
         metadata_units["left_base"] = "pA"
         metadata_units["right_base"] = "pA"
@@ -1287,7 +1301,7 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     def filter_peaks(
-        self, peaks, properties, unfolded_level, baseline_std, baseline, samplerate
+        self, peaks, properties, unfolded_level, length, baseline_std ,baseline, samplerate
     ):
         """
         Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
@@ -1296,88 +1310,147 @@ class PeakFinder(MetaEventFitter):
         - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
         """
         dt_us = 1.0 / samplerate * 1e6
-        num_peaks = self.settings["Number of peaks"]["Value"]
-        prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted
+        num_peaks = int(self.settings["Number of peaks"]["Value"])
+        t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
+        t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
+        #event_id = getattr(self, "_debug_event_id", None)
 
-        filtered = properties["filtered"]
+        # # Convert commonly-used properties to numpy arrays for vectorized ops
+        # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
+        # right_bases = np.array(properties.get("right_bases", []), dtype=float) + np.sign(baseline) * baseline
+        prominences = np.array(properties.get("prominences", []), dtype=float)
+        # widths = np.array(properties.get("widths", []), dtype=float)
+        # ips_left = np.array(properties.get("left_ips", []), dtype=float)
+        # ips_right = np.array(properties.get("right_ips", []), dtype=float)
+        event_duration = length* dt_us
+        # Early return if no peaks
+        if len(peaks) == 0:
+            # preserve whatever filtered was provided (likely empty)
+            properties["filtered"] = properties.get("filtered", [])
+            return properties
 
+        # Ensure filtered is a numeric array matching number of peaks
+        filtered_list = list(properties.get("filtered", []))
+        if len(filtered_list) < len(peaks):
+            filtered_list = filtered_list + [0] * (len(peaks) - len(filtered_list))
+        elif len(filtered_list) > len(peaks):
+            filtered_list = filtered_list[: len(peaks)]
+        filtered = np.array(filtered_list, dtype=int)
         if self.settings["Event Type"]["Value"] == "Barcode":
-            # Step 1: Classify peaks based on base levels ---
+            # Classify by ordered ranges, requiring both bases to land in the same band.
+            # 0: both bases below the lower barcode threshold
+            # 1: both bases between the lower threshold and the type-2 lower bound
+            # 2: both bases around twice the unfolded level
+            # -1: either base above the type-2 upper bound
+            # Define thresholds. We treat type-1 as anything from unfolded_level + t1*std
+            # up to (but not including) the type-2 lower bound. Type-2 is centered
+            # around 2*unfolded_level ± thresholds, and anything above that upper
+            # bound is -1 (noise).
+            type0_thresh =  t2_std
+            type1_thresh= unfolded_level + t1_std * baseline_std
+            type2_thresh= unfolded_level + t2_std * baseline_std
+
+            # Debug prints to help trace classification during development
+            # print(
+            #     f"[debug] filter_peaks: event_id={event_id}, unfolded_level={unfolded_level}, baseline_std={baseline_std}, t1={t1_std}, t2={t2_std}"
+            # )
+            # print(
+            #     f"[debug] thresholds: event_id={event_id}, type0={type0_thresh}, type1={type1_thresh}, type2={type2_thresh}"
+            # )
+            # try:
+            #     print(
+            #         f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases.tolist()}, right_bases={right_bases.tolist()}"
+            #     )
+            # except Exception:
+            #     print(f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases}, right_bases={right_bases}")
+
             for i in range(len(peaks)):
-                left_base = properties["left_bases"][i]
-                right_base = properties["right_bases"][i]
+                left_base = properties["left_bases"][i] + np.sign(baseline) * baseline
+                right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
+                # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
 
                 # ignores peaks near the end of a level (missmatched bases)
-
-                # Type 0: both bases above double the unfolded level, useless messes
                 if (
-                    left_base >= 2 * unfolded_level + baseline_std
-                    and right_base >= 2 * unfolded_level + baseline_std
+                    left_base <= type0_thresh 
+                    and right_base <= type0_thresh   
+                ):    
+                    filtered[i] = 0
+                #    print(f"[debug] event_id={event_id}, peak {i} assigned 0 (both bases <= type0_thresh)")
+                # Type -1: both bases above the upper type-2 cutoff (noise)
+                elif (
+                    left_base >= type2_thresh + unfolded_level
+                    and right_base >= type2_thresh + unfolded_level
                 ):
                     filtered[i] = -1
-                # Type 2: both bases near double the unfolded level
+                #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
+                # Type 2: both bases within the type-2 band around 2*unfolded_level
                 elif (
-                    left_base >= unfolded_level + baseline_std
-                    and right_base >= unfolded_level + baseline_std
+                    left_base >= type2_thresh
+                    and right_base >= type2_thresh
                 ):
                     filtered[i] = 2
-                # Type 1: both bases near the unfolded level
+                #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
+                # Type 1: both bases within the type-1 band around unfolded_level
                 elif (
-                    left_base >= unfolded_level - 2 * baseline_std
-                    and right_base >= unfolded_level - 2 * baseline_std
+                    left_base >= type1_thresh
+                    and right_base >= type1_thresh
                 ):
                     filtered[i] = 1
-
+                    # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
+                else:
+                    filtered[i] = -1
+                    # print(f"[debug] event_id={event_id}, peak {i} assigned -1 (does not meet type1 or type2 criteria, bases missmatch)")
                 # if filtered[i] not in [1, 2, -1]:
                 #    print(f"Unlabeled peak {i}: left={left_base:.3f}, right={right_base:.3f}, unfolded_level-2std={unfolded_level - 2 * baseline_std:.3f}, 2*unfolded_level+std={2*unfolded_level+baseline_std:.3f}")
 
-                # Step 2: Identify clusters of same-type peaks, but keep only the most prominent one
-                max_distance = 1000 / dt_us  # in samples
-                min_group_size = num_peaks
+            # Step 2: Identify clusters of same-type peaks (keep only most prominent cluster)
+            max_distance = 0.20 * event_duration
+            best_cluster = []
+            best_prom_sum = 0.0
 
-                best_cluster = []
-                best_prom_sum = 0
+            # Prominence-sorted indices (descending)
+            prom_indices = np.argsort(prominences)[::-1]
 
-                for label in [1, 2]:
-                    label_idxs = [i for i in prom_indices if filtered[i] == label]
-                    if not label_idxs:
-                        continue
+            for label in [1, 2]:
+                # Select indices in prominence order with this label
+                label_mask = filtered == label
+                if not np.any(label_mask):
+                    continue
 
-                    label_idxs = label_idxs[:num_peaks]
-                    sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
+                label_idxs = [int(i) for i in prom_indices if label_mask[int(i)]]
+                if not label_idxs:
+                    continue
 
-                    for i in range(len(sorted_idxs)):
-                        group = [sorted_idxs[i]]
-                        for j in range(i + 1, len(sorted_idxs)):
-                            if (
-                                abs(peaks[sorted_idxs[j]] - peaks[sorted_idxs[i]])
-                                <= max_distance
-                            ):
-                                group.append(sorted_idxs[j])
-                            else:
-                                break
-                        if len(group) >= min_group_size:
-                            prom_sum = sum(
-                                properties["prominences"][idx] for idx in group
-                            )
-                            if prom_sum > best_prom_sum:
-                                best_cluster = group
-                                best_prom_sum = prom_sum
-                            break  # only use first valid cluster per label
+                label_idxs = label_idxs[:num_peaks]
+                # Sort by peak location
+                sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
 
-                    # Relabel best cluster as Type 3
-                    for idx in best_cluster:
-                        filtered[idx] = 3
+                for si in range(len(sorted_idxs)):
+                    group = [sorted_idxs[si]]
+                    for sj in range(si + 1, len(sorted_idxs)):
+                        if abs(peaks[sorted_idxs[sj]] - peaks[sorted_idxs[si]]) <= max_distance:
+                            group.append(sorted_idxs[sj])
+                        else:
+                            break
+                    if len(group) >= num_peaks:
+                        prom_sum = float(np.sum(prominences[group]))
+                        if prom_sum > best_prom_sum:
+                            best_cluster = group
+                            best_prom_sum = prom_sum
+                        break
 
-        if self.settings["Event Type"]["Value"] == "Single Peak":
-            pass  # fill out as needed
-        if self.settings["Event Type"]["Value"] == "Unspecified":
-            pass  # fill out as needed
+            for idx in best_cluster:
+                filtered[int(idx)] = 3
+
+        # Other event types can be extended similarly
+
+        # Write back filtered array to properties
+        properties["filtered"] = filtered.tolist()
 
         return properties
 
     @log(logger=logger)
-    def find_mode_blockage_level(self, data, max_unfolded, baseline_mean, baseline_std):
+    def find_mode_blockage_level(self, data, max_unfolded, baseline_mean, baseline_std, is_carrier):
         """
         Estimate the level of unfolded blockage based on data distribution.
 
@@ -1389,21 +1462,48 @@ class PeakFinder(MetaEventFitter):
         :type baseline_mean: float
         :param baseline_std: Standard deviation of the baseline level.
         :type baseline_std: float
+        :param is_carrier: Flag indicating if the data represents a carrier signal.
+        :type is_carrier: bool
         :return: Estimated unfolded blockage level.
         :rtype: float
         """
-        range = np.arange(min(data), max(data))
+        # range = np.arange(min(data), max(data))
 
-        counts = [
-            np.sum(
-                (data > i - 1 / 2 * baseline_std) & (data < i + 1 / 2 * baseline_std)
-            )
-            for i in range
-        ]
-        max_count_index = np.argmax(counts)
-        if np.abs(range[max_count_index] - baseline_mean) > max_unfolded:
-            return np.abs(range[max_count_index] - baseline_mean)/2
-        return np.abs(range[max_count_index] - baseline_mean)
+        # counts = [
+        #     np.sum(
+        #         (data > i - 1 / 2 * baseline_std) & (data < i + 1 / 2 * baseline_std)
+        #     )
+        #     for i in range
+        # ]
+        # max_count_index = np.argmax(counts)
+        # if np.abs(range[max_count_index] - baseline_mean) > max_unfolded:
+        #     return np.abs(range[max_count_index] - baseline_mean)/2
+        # return np.abs(range[max_count_index] - baseline_mean)
+        
+        # Use histogram binning to estimate the modal blockage level efficiently.
+        if data is None or len(data) == 0:
+            return 0.0
+
+        # Ensure baseline_std is reasonable
+        if baseline_std is None or baseline_std <= 0:
+            baseline_std = np.std(data) if data.size > 0 else 1.0
+
+        # Choose a bin width proportional to baseline_std (half of std gives reasonable resolution)
+        bin_width = max(baseline_std / 8.0, 1e-6)
+        data_min = float(np.min(data))
+        data_max = float(np.max(data))
+        
+        if data_max <= data_min:
+            # Degenerate range
+            level = abs(data_min - baseline_mean)
+            return level / 2.0 if level > max_unfolded else level
+
+        nbins = max(10, int(np.ceil((data_max - data_min) / bin_width)))
+        counts, edges = np.histogram(data, bins=nbins)
+        max_idx = int(np.argmax(counts))
+        bin_center = 0.5 * (edges[max_idx] + edges[max_idx + 1])
+        level = abs(bin_center - baseline_mean)
+        return level / 2.0 if level > max_unfolded and is_carrier else level
 
     @log(logger=logger)
     def enumerate_peaks(self, sublevel_starts, num_states, sublevel_types=None):
