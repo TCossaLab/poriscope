@@ -401,8 +401,11 @@ class PeakFinder(MetaEventFitter):
                         )
                     )
                     plabel.append(
-                        "Peak #" + str(j)+ " Type: " + str(self.sublevel_metadata[channel][index]["filtered"][i]))
-                    
+                        "Peak #"
+                        + str(j)
+                        + " Type: "
+                        + str(self.sublevel_metadata[channel][index]["filtered"][i])
+                    )
 
                     j += 1
 

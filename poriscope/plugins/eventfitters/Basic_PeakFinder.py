@@ -1066,7 +1066,6 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
 
-
         return sublevel_metadata
 
     @log(logger=logger)
