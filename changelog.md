@@ -12,10 +12,17 @@
     * Added template for `get_plot_features()` function that can be implemented by subclasses that want to visualize data printed by specific `MetaEventFitter` subclasses
     
 * **Updated Data Plugin Base Class: `CUSUM`**
-    * Fixed numerical bug that was causing underestaimtes of sublevel transition probabilities
+    * Fixed numerical bug that was causing underestimates of sublevel transition probabilities
     * Fixed numerical bug that was causing shallow steps to be accepted when they should not have been
     * Reverted threshold loop to exact port of original C code implementation
     * Added new parameter Sensitivity to allow greater fine-tuning of step detection
+
+* **Updated Data Plugin Base Class: `Peakfinder`**
+    * Redefined sublevels by regions relative to peak flanks
+    * Added new metadata to calculate peak mean blockage
+    * Added settings for peak filtering fine-tuning
+    * Fixed peak numbering relative to new sublevel definition
+    * Fixed current direction dependance problem for peakfinding function
     
 * **Updated Frontend Plugin: `MetadataView`**
     * Added **RAW** checkbox to the Plot Events section — raw data is always shown before fitting; once fitting is complete, checking RAW includes raw traces alongside the fitted results
@@ -46,6 +53,9 @@
     
 * **New Data plugin: `SQLitePeakDBLoader`**
     * Subclasses SQLiteDBLoader to add specific plotting features used by the `PeakFinder` plugin - only usable on databases created by `PeakFinder`
+    
+* **New Data Plugin: `Basic_Peakfinder`**	 
+    * Stable release of basic and minimal peak finding features
 
 ### General Fixes and Improvements:
     * Fixed bug with baseline calculation that was causing inaccurate baseline whenever drift was present
