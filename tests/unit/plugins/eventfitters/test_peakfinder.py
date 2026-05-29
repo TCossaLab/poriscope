@@ -42,12 +42,12 @@ def _make_pf(**setting_overrides):
     pf.logger = PeakFinder.logger
     pf.settings = {
         "Event Type": {"Value": "Unspecified"},
-        "Min Height": {"Value": 500.0},
-        "Min Prominence": {"Value": 100.0},
+        #"Min Height": {"Value": 500.0},
+        #"Min Prominence": {"Value": 100.0},
         "Relative Height": {"Value": 0.5},
         "Window Length": {"Value": 25.0},
         "Width": {"Value": 0.0},
-        "Min Distance": {"Value": 1.0},
+        #"Min Distance": {"Value": 1.0},
         "Max Unfolded": {"Value": 750.0},
         "Lower Filter Threshold": {"Value": -3},
         "Higher Filter Threshold": {"Value": 3},
@@ -149,39 +149,28 @@ class TestFindModeBlockageLevel(unittest.TestCase):
 
     def test_returns_float(self):
         data = np.concatenate([np.ones(50) * 100.0, np.ones(50) * 300.0])
-        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0, False)
-        self.assertIsInstance(float(result), float)
+        primary, secondary = self.pf.find_mode_blockage_level(
+            data, 100.0, 10.0
+        )
+        self.assertIsInstance(primary, float)
 
     def test_within_max_unfolded(self):
         # Dense cluster near 300, baseline=100 → diff=200, within max_unfolded=750
         data = np.concatenate([np.ones(10) * 100.0, np.ones(90) * 300.0])
-        result = self.pf.find_mode_blockage_level(data, 750.0, 100.0, 10.0, False)
-        self.assertGreater(result, 0.0)
-        self.assertLessEqual(result, 750.0)
+        primary, secondary = self.pf.find_mode_blockage_level(data, 100.0, 10.0)
+        self.assertGreater(primary, 0.0)
+        self.assertLessEqual(primary, self.pf.settings["Max Unfolded"]["Value"])
 
     def test_exceeds_max_unfolded_halved(self):
-        # Dense cluster at 1000 away from baseline 0 → exceeds max_unfolded=400
-        data = np.concatenate([np.zeros(5), np.ones(95) * 1000.0])
-        # current implementation requires is_carrier=True to apply halving
-        result = self.pf.find_mode_blockage_level(data, 400.0, 0.0, 5.0, True)
-        # Should be halved since abs(level - baseline) > max_unfolded
-        full = np.abs(
-            np.arange(int(min(data)), int(max(data)))[
-                np.argmax(
-                    [
-                        np.sum((data > i - 2.5) & (data < i + 2.5))
-                        for i in np.arange(int(min(data)), int(max(data)))
-                    ]
-                )
-            ]
-            - 0.0
-        )
-        self.assertAlmostEqual(result, full / 2, delta=5.0)
+        # When only one dominant level exists, secondary should be None
+        data = np.ones(100) * 1000.0
+        primary, secondary = self.pf.find_mode_blockage_level(data, 0.0, 5.0)
+        self.assertIsNone(secondary)
 
     def test_nonnegative(self):
         data = np.random.randn(100) * 5.0 + 200.0
-        result = self.pf.find_mode_blockage_level(data, 750.0, 200.0, 10.0, False)
-        self.assertGreaterEqual(result, 0.0)
+        primary, secondary = self.pf.find_mode_blockage_level(data, 200.0, 10.0)
+        self.assertGreaterEqual(primary, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -245,14 +234,14 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Unspecified"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 100, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(peaks, props, 100, 200.0, 10.0, 100.0, 1e6,200)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
     def test_single_peak_returns_properties_unchanged(self):
         pf = _make_pf(**{"Event Type": "Single Peak"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 100, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(peaks, props, 100, 200.0, 10.0, 100.0, 1e6,200)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
 
@@ -280,7 +269,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         # Current filter_peaks logic shifts the stored bases by the baseline,
         # so this input lands in the type-2 band.
         props = self._props([195.0], [195.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6, 200.0)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_type2_classification(self):
@@ -288,7 +277,8 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         # unfolded=200, std=10 → use 240, which falls in the type-2 band
         props = self._props([240.0], [240.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6, 200.0
+                                 )
         self.assertEqual(result["filtered"][0], 2)
 
     def test_type_minus1_classification(self):
@@ -296,7 +286,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 1})
         # 2*200-30=370 → use 450
         props = self._props([450.0], [450.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6, 200.0)
         self.assertEqual(result["filtered"][0], -1)
 
     def test_cluster_of_type1_labeled_type3(self):
@@ -306,7 +296,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         # stored bases of 195 now classify as type 2 before clustering
         props = self._props([195.0, 195.0], [195.0, 195.0], [300.0, 300.0])
         result = pf.filter_peaks(
-            np.array([20, 25]), props, 200.0, 100.0, 10.0, 100.0, 1e6
+            np.array([20, 25]), props, 200.0, 100.0, 10.0, 100.0, 1e6, 200.0
         )
         # Both should be type 3 (cluster)
         self.assertTrue(all(f == 3 for f in result["filtered"]))
@@ -315,7 +305,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         """Only 1 type-2 peak when num_peaks=2 → not enough for a cluster."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         props = self._props([195.0], [195.0], [300.0])
-        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(np.array([20]), props, 200.0, 10.0, 10.0, 100.0, 1e6, 200.0)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_custom_threshold_settings_change_classification(self):
@@ -329,7 +319,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             }
         )
         props = self._props([115.0], [115.0], [300.0])
-        result = pf.filter_peaks(np.array([20]), props, 100, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(np.array([20]), props, 100, 200.0, 10.0, 100.0, 1e6, 200.0)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_empty_peaks_no_crash(self):
@@ -342,7 +332,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             "right_bases": [],
             "peak_heights": np.array([]),
         }
-        result = pf.filter_peaks(np.array([]), props, 100, 200.0, 10.0, 100.0, 1e6)
+        result = pf.filter_peaks(np.array([]), props, 100, 200.0, 10.0, 100.0, 1e6, 200.0)
         self.assertEqual(result["filtered"], [])
 
 
@@ -376,7 +366,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             "sublevel_start_times",
             "sublevel_end_times",
             "sublevel_raw_ecd",
-            "sublevel_cumulative_ecd",
+            "cumulative_raw_ecd",
             "sublevel_max_deviation",
             "peak_id",
             "peak_height",
@@ -407,7 +397,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         # cumulative should be non-decreasing or equal length to raw
         self.assertEqual(
-            len(meta["sublevel_cumulative_ecd"]), len(meta["sublevel_raw_ecd"])
+            len(meta["cumulative_raw_ecd"]), len(meta["sublevel_raw_ecd"])
         )
 
     def test_peak_height_positive_for_peak_sublevel(self):
@@ -472,7 +462,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "duration",
             "raw_ecd",
             "max_deviation",
-            "baseline",
+            "baseline_current",
             "unfolded_level",
             "baseline_std",
         ]:
@@ -483,7 +473,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
         result = pf._populate_event_metadata(
             self._make_data(), 1e6, 123.0, 10.0, self._make_sublevel_meta()
         )
-        self.assertAlmostEqual(result["baseline"], 123.0)
+        self.assertAlmostEqual(result["baseline_current"], 123.0)
 
     def test_baseline_std_matches_input(self):
         pf = _make_pf()
@@ -613,7 +603,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                 }
             }
         }
-        pf.event_metadata = {0: {0: {"baseline": 100.0}}}
+        pf.event_metadata = {0: {0: {"baseline_current": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
 
@@ -648,7 +638,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                 }
             }
         }
-        pf.event_metadata = {0: {0: {"baseline": 100.0}}}
+        pf.event_metadata = {0: {0: {"baseline_current": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
 
@@ -711,7 +701,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline": 100.0,
+                    "baseline_current": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
@@ -773,7 +763,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline": 100.0,
+                    "baseline_current": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
@@ -802,7 +792,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline": 100.0,
+                    "baseline_current": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
