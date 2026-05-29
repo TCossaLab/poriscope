@@ -1841,9 +1841,9 @@ class PeakFinder(MetaEventFitter):
                 ratio = cast(float, results["ratio"])
                 classification_report += f"\n  Ratio (folded/unfolded): {ratio:.3f}"
                 if 1.7 <= ratio <= 2.3:
-                    classification_report += " ✓ GOOD"
+                    classification_report += " [OK] GOOD"
                 else:
-                    classification_report += " ⚠ OUTSIDE EXPECTED RANGE"
+                    classification_report += " [!] OUTSIDE EXPECTED RANGE"
             classification_report += f"\n  Threshold: {threshold:.2f} pA"
             classification_report += (
                 f"\n  Folded events: {folded_count} ({folded_count/total_events:.1%})"
