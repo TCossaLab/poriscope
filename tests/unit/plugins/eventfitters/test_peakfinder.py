@@ -504,7 +504,7 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertIs(t["number_peaks"], int)
         self.assertIs(t["duration"], float)
         self.assertIs(t["raw_ecd"], float)
-        self.assertIs(t["baseline"], float)
+        self.assertIs(t["baseline_current"], float)
         self.assertIs(t["unfolded_level"], float)
         self.assertIs(t["baseline_std"], float)
 

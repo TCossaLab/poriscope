@@ -120,7 +120,6 @@ class PeakFinder(MetaEventFitter):
         #     "Units": "μs",
         # }
 
-
         settings["Filter Peaks"] = {"Type": bool, "Value": True}
         settings["Lower Filter Threshold"] = {
             "Type": int,
@@ -138,6 +137,13 @@ class PeakFinder(MetaEventFitter):
         }
 
         settings["Peak to Peak Distance Ratio"] = {
+            "Type": float,
+            "Value": 10.0,  # Default to 10% of event length
+            "Min": 0.1,
+            "Max": 50.0,  # Maximum 50% of event
+            "Units": "%",
+        }
+        settings["Window Length Percentage"] = {
             "Type": float,
             "Value": 10.0,  # Default to 10% of event length
             "Min": 0.1,
@@ -476,6 +482,13 @@ class PeakFinder(MetaEventFitter):
         """
         dt_us = 1.0 / samplerate * 1e6
 
+        low_threshold = abs(
+            self.settings.get("Lower Filter Threshold", {}).get("Value", 3)
+        )
+        high_threshold = abs(
+            self.settings.get("Higher Filter Threshold", {}).get("Value", 3)
+        )
+
         min_height = None  # Will be calculated as carrier_blockage + min_prom
         min_prom = None  # Will be calculated as 6*baseline_std to avoid noise detection
         width = 0  # Minimum width of 0 μs (no width constraint)
@@ -542,29 +555,24 @@ class PeakFinder(MetaEventFitter):
         padding_before = new_padding_before
         padding_after = new_padding_after
 
-        # Calculate minimum prominence based on event characteristics
-        # Strategy: Prominence should scale with both noise AND signal strength
-        #
-        # Method 1: Noise-based minimum (3σ criterion for noise rejection)
-        min_prom_noise = 3.0 * baseline_std
+        # Calculate minimum prominence and height from the user thresholds.
+        # Keep the carrier-aware guardrails so peaks still scale with signal depth.
+        min_prom_noise = max(abs(low_threshold), abs(high_threshold)) * baseline_std
 
         # Method 2: Signal-based minimum (relative to carrier blockage depth)
         # Calculate the carrier level blockage (median of the trimmed event)
         trimmed_data = data[padding_before:-padding_after]
         carrier_blockage = np.abs(np.median(trimmed_data) - baseline_mean)
 
-        # Peaks should be at least 50% of the carrier blockage depth
-        # This ensures peaks are significant relative to the translocation signal
+        # Peaks should still be significant relative to the translocation signal
         min_prom_signal = 0.5 * carrier_blockage
 
         # Use the more stringent of the two criteria
-        # This ensures peaks are both above noise AND significant relative to signal
         min_prom = max(min_prom_noise, min_prom_signal)
 
-        # Calculate minimum height threshold
-        # Peaks must be at least carrier_blockage + min_prom from baseline
-        # This ensures peaks extend significantly beyond the carrier level
-        min_height = min_prom_signal + min_prom
+        # Height is driven by the higher threshold setting, then guarded by the
+        # carrier level so peaks still sit beyond the local blockage.
+        min_height = max(high_threshold * baseline_std, carrier_blockage + min_prom)
 
         # Calculate wlen (prominence window) for finding peak bases
         # wlen is calculated as a user-specified percentage of the trimmed event length
@@ -587,7 +595,6 @@ class PeakFinder(MetaEventFitter):
         wlen = int(window_length_ratio * trimmed_event_length)
 
         # Apply only essential safety bounds
-        wlen = max(wlen, 10)  # Minimum for scipy
         wlen = min(wlen, trimmed_event_length // 3)  # Maximum 1/3 of event
 
         # Set minimum distance between peaks to wlen (smallest reasonable window length)
@@ -608,7 +615,8 @@ class PeakFinder(MetaEventFitter):
         self.logger.debug(
             f"Peak detection parameters: dt_us={dt_us:.3f}, baseline_std={baseline_std:.2f}, "
             f"carrier_blockage={carrier_blockage:.2f} pA, "
-            f"min_prom_noise={min_prom_noise:.2f} pA (6*std), "
+            f"low_threshold={low_threshold}, high_threshold={high_threshold}, "
+            f"min_prom_noise={min_prom_noise:.2f} pA, "
             f"min_prom_signal={min_prom_signal:.2f} pA (50% of carrier), "
             f"final min_prom={min_prom:.2f} pA, "
             f"min_height={min_height:.2f} pA (carrier + min_prom), "
@@ -1062,19 +1070,19 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # get normalized max blockage (max_blockage / unfolded_level) for peak sublevels
-        sublevel_metadata["normalized_blockage"] = np.array(
-            [
-                (
-                    sublevel_starts[i]["max_blockage"] / unfolded_level
-                    if "peak" in sublevel_starts[i]["type"]
-                    and unfolded_level != 0
-                    and sublevel_starts[i].get("max_blockage") is not None
-                    else None
-                )
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
+        # sublevel_metadata["normalized_blockage"] = np.array(
+        #     [
+        #         (
+        #             sublevel_starts[i]["max_blockage"] / unfolded_level
+        #             if "peak" in sublevel_starts[i]["type"]
+        #             and unfolded_level != 0
+        #             and sublevel_starts[i].get("max_blockage") is not None
+        #             else None
+        #         )
+        #         for i in range(num_states)
+        #     ],
+        #     dtype=np.float64,
+        # )
         # plateau_size support intentionally disabled.
         # sublevel_metadata["plateau_size"] = np.array(
         #     [
@@ -1721,6 +1729,9 @@ class PeakFinder(MetaEventFitter):
             self._classification_results = {
                 "error": "Could not find two distinct distributions"
             }
+            # Still collect peak statistics even when classification fails
+            self._collect_peak_statistics(channels)
+
 
         self.logger.info(
             "Post-processing analysis completed with automatic folded/unfolded classification."
@@ -1757,11 +1768,16 @@ class PeakFinder(MetaEventFitter):
 
                 # Count peaks by their filtered type
                 for i, peak_id in enumerate(peak_ids):
-                    if not np.isnan(peak_id):  # This is a peak
+                    if peak_id is not None and not (
+                        isinstance(peak_id, float) and np.isnan(peak_id)
+                    ):
                         total_peaks += 1
                         filtered_type = filtered_values[i]
 
-                        if not np.isnan(filtered_type):
+                        if filtered_type is not None and not (
+                            isinstance(filtered_type, float)
+                            and np.isnan(filtered_type)
+                        ):
                             # Count by type
                             peak_type_counts[int(filtered_type)] = (
                                 peak_type_counts.get(int(filtered_type), 0) + 1
@@ -1807,6 +1823,20 @@ class PeakFinder(MetaEventFitter):
         if init or not hasattr(self, "_classification_results"):
             return base_report
 
+        # During the final post-processing pass, classification results may be
+        # available before the base class flips eventfitting_status[channel].
+        # In that case, report the channel as complete instead of incomplete.
+        if channel is not None and "fitting incomplete" in base_report:
+            if self._classification_results and "error" not in self._classification_results:
+                loader = getattr(self, "eventloader", None)
+                if loader is None:
+                    raise RuntimeError(
+                        "Event loader is not initialized; cannot determine total events"
+                    )
+                event_total = loader.get_num_events(channel)
+                fitted_total = len(self.event_metadata.get(channel, {}))
+                base_report = f"\nCh{channel}: {fitted_total}/{event_total} good fits\n"
+
         # Add classification information to the report
         classification_report = "\n\nClassification Results:"
 
@@ -1841,9 +1871,9 @@ class PeakFinder(MetaEventFitter):
                 ratio = cast(float, results["ratio"])
                 classification_report += f"\n  Ratio (folded/unfolded): {ratio:.3f}"
                 if 1.7 <= ratio <= 2.3:
-                    classification_report += " [OK] GOOD"
+                    classification_report += ":)"
                 else:
-                    classification_report += " [!] OUTSIDE EXPECTED RANGE"
+                    classification_report += "OUTSIDE EXPECTED RANGE!"
             classification_report += f"\n  Threshold: {threshold:.2f} pA"
             classification_report += (
                 f"\n  Folded events: {folded_count} ({folded_count/total_events:.1%})"
@@ -1851,6 +1881,14 @@ class PeakFinder(MetaEventFitter):
             classification_report += f"\n  Unfolded events: {unfolded_count} ({unfolded_count/total_events:.1%})"
 
         # Add peak classification statistics if available
+        if not hasattr(self, "_peak_statistics") and hasattr(self, "sublevel_metadata"):
+            try:
+                self._collect_peak_statistics(list(self.sublevel_metadata.keys()))
+            except Exception as e:
+                self.logger.debug(
+                    f"Unable to collect peak statistics for report: {str(e)}"
+                )
+
         if hasattr(self, "_peak_statistics"):
             peak_stats = self._peak_statistics
             classification_report += "\n\nPeak Classification Statistics:"
@@ -2062,7 +2100,7 @@ class PeakFinder(MetaEventFitter):
             "duration": float,
             "raw_ecd": float,
             "max_deviation": float,
-            "baseline": float,
+            "baseline_current": float,
             "event_baseline": float,
             "unfolded_level": float,
             "folded_level": float,
@@ -2602,6 +2640,13 @@ class PeakFinder(MetaEventFitter):
                 )
                 sublevel_data["normalized_prominence"] = normalized_prominences
 
+            if "max_blockage" in sublevel_data and sublevel_data["max_blockage"] is not None:
+                blockages = np.array(sublevel_data["max_blockage"])
+                valid_mask = ~np.isnan(blockages)
+                normalized_blockages = np.full_like(blockages, np.nan)
+                normalized_blockages[valid_mask] = blockages[valid_mask] / unfolded_level
+                sublevel_data["normalized_blockage"] = normalized_blockages
+
         # Reclassify peaks using global folded/unfolded levels
         if unfolded_level is not None and folded_level is not None:
             # Get baseline and samplerate for this event
@@ -2632,8 +2677,14 @@ class PeakFinder(MetaEventFitter):
                 for i, peak_id in enumerate(sublevel_data.get("peak_id", [])):
                     if peak_id is not None:  # This is a peak
                         peak_indices.append(i)
-                        properties["left_bases"].append(sublevel_data["left_base"][i])
-                        properties["right_bases"].append(sublevel_data["right_base"][i])
+                        properties["left_bases"].append(
+                            sublevel_data["left_base"][i]
+                            - np.sign(baseline_mean) * baseline_mean
+                        )
+                        properties["right_bases"].append(
+                            sublevel_data["right_base"][i]
+                            - np.sign(baseline_mean) * baseline_mean
+                        )
                         properties["prominences"].append(sublevel_data["prominence"][i])
                         properties["peak_heights"].append(
                             sublevel_data["peak_height"][i]
