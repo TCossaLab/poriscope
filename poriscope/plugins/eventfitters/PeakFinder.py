@@ -654,10 +654,10 @@ class PeakFinder(MetaEventFitter):
                         peaks,
                         properties,
                         unfolded_level,
-                        len(data[padding_before:-padding_after]),
                         baseline_std,
                         baseline_mean,
                         samplerate,
+                        len(data[padding_before:-padding_after]),
                     )
                 except TypeError as exc:
                     self.logger.error(
@@ -1323,10 +1323,10 @@ class PeakFinder(MetaEventFitter):
         peaks,
         properties,
         unfolded_level,
-        length,
         baseline_std,
         baseline,
         samplerate,
+        event_length,
     ):
         """
         Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
@@ -1334,20 +1334,20 @@ class PeakFinder(MetaEventFitter):
         - Type 2: Peaks higher than the carrier level (both bases above unfolded_level).
         - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
         """
-        dt_us = 1.0 / samplerate * 1e6
+        #dt_us = 1.0 / samplerate * 1e6
         num_peaks = int(self.settings["Number of peaks"]["Value"])
         t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
         t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
-        # event_id = getattr(self, "_debug_event_id", None)
+        prom_indices = np.argsort(properties["prominences"])[::-1]
 
         # # Convert commonly-used properties to numpy arrays for vectorized ops
         # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
         # right_bases = np.array(properties.get("right_bases", []), dtype=float) + np.sign(baseline) * baseline
-        prominences = np.array(properties.get("prominences", []), dtype=float)
+        #prominences = np.array(properties.get("prominences", []), dtype=float)
         # widths = np.array(properties.get("widths", []), dtype=float)
         # ips_left = np.array(properties.get("left_ips", []), dtype=float)
         # ips_right = np.array(properties.get("right_ips", []), dtype=float)
-        event_duration = length * dt_us
+
         # Early return if no peaks
         if len(peaks) == 0:
             # preserve whatever filtered was provided (likely empty)
@@ -1371,7 +1371,7 @@ class PeakFinder(MetaEventFitter):
             # up to (but not including) the type-2 lower bound. Type-2 is centered
             # around 2*unfolded_level ± thresholds, and anything above that upper
             # bound is -1 (noise).
-            type0_thresh = t2_std
+            type0_thresh = t2_std * baseline_std
             type1_thresh = unfolded_level + t1_std * baseline_std
             type2_thresh = unfolded_level + t2_std * baseline_std
 
@@ -1394,23 +1394,19 @@ class PeakFinder(MetaEventFitter):
                 right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
                 # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
 
-                # ignores peaks near the end of a level (missmatched bases)
-                if left_base <= type0_thresh and right_base <= type0_thresh:
+                # Type 0: both bases are below the lower carrier threshold.
+                if left_base <= type0_thresh and right_base <= type0_thresh :
                     filtered[i] = 0
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned 0 (both bases <= type0_thresh)")
                 # Type -1: both bases above the upper type-2 cutoff (noise)
-                elif (
-                    left_base >= type2_thresh + unfolded_level
-                    and right_base >= type2_thresh + unfolded_level
-                ):
+                elif left_base >= type2_thresh + unfolded_level and right_base >= type2_thresh + unfolded_level:
                     filtered[i] = -1
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
                 # Type 2: both bases within the type-2 band around 2*unfolded_level
-                elif left_base >= type2_thresh and right_base >= type2_thresh:
+                elif left_base >= type2_thresh and right_base >= type2_thresh and left_base <= type2_thresh + unfolded_level and right_base <=  type2_thresh + unfolded_level:
                     filtered[i] = 2
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
                 # Type 1: both bases within the type-1 band around unfolded_level
-                elif left_base >= type1_thresh and right_base >= type1_thresh:
+                elif left_base >= type1_thresh and right_base >= type1_thresh and left_base <= type2_thresh and right_base <= type2_thresh:
                     filtered[i] = 1
                     # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
                 else:
@@ -1419,52 +1415,67 @@ class PeakFinder(MetaEventFitter):
                 # if filtered[i] not in [1, 2, -1]:
                 #    print(f"Unlabeled peak {i}: left={left_base:.3f}, right={right_base:.3f}, unfolded_level-2std={unfolded_level - 2 * baseline_std:.3f}, 2*unfolded_level+std={2*unfolded_level+baseline_std:.3f}")
 
-            # Step 2: Identify clusters of same-type peaks (keep only most prominent cluster)
-            max_distance = 0.20 * event_duration
-            best_cluster = []
-            best_prom_sum = 0.0
+            # Step 2: Identify clusters of same-type peaks, but keep only the most prominent one
+            # Calculate max_distance as percentage of event length
+            max_distance_percentage = self.settings.get(
+                "Peak to Peak Distance Ratio", {}
+            ).get("Value", 10.0)
+            event_length_samples = (
+                event_length * samplerate * 1e-6
+            )  # Convert us to samples
+            max_distance = int((max_distance_percentage / 100.0) * event_length_samples)
+            self.logger.debug(
+                f"filter_peaks: event_length={event_length:.1f} us, "
+                f"event_length_samples={event_length_samples:.1f}, "
+                f"max_distance_percentage={max_distance_percentage}%, "
+                f"max_distance={max_distance} samples"
+            )
+            min_group_size = num_peaks
 
-            # Prominence-sorted indices (descending)
-            prom_indices = np.argsort(prominences)[::-1]
+            best_cluster = []
+            best_prom_sum = 0
 
             for label in [1, 2]:
-                # Select indices in prominence order with this label
-                label_mask = filtered == label
-                if not np.any(label_mask):
-                    continue
-
-                label_idxs = [int(i) for i in prom_indices if label_mask[int(i)]]
+                label_idxs = [i for i in prom_indices if filtered[i] == label]
                 if not label_idxs:
                     continue
 
                 label_idxs = label_idxs[:num_peaks]
-                # Sort by peak location
                 sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
 
-                for si in range(len(sorted_idxs)):
-                    group = [sorted_idxs[si]]
-                    for sj in range(si + 1, len(sorted_idxs)):
-                        if (
-                            abs(peaks[sorted_idxs[sj]] - peaks[sorted_idxs[si]])
-                            <= max_distance
-                        ):
-                            group.append(sorted_idxs[sj])
+                # Find clusters where consecutive peaks are within max_distance
+                for i in range(len(sorted_idxs)):
+                    group = [sorted_idxs[i]]
+
+                    # Add consecutive peaks that are close enough
+                    for j in range(i + 1, len(sorted_idxs)):
+                        # Check distance between consecutive peaks in the group
+                        prev_peak_idx = group[-1]
+                        curr_peak_idx = sorted_idxs[j]
+                        distance = abs(peaks[curr_peak_idx] - peaks[prev_peak_idx])
+
+                        if distance <= max_distance:
+                            group.append(curr_peak_idx)
                         else:
+                            # Stop when we find a gap larger than max_distance
                             break
-                    if len(group) >= num_peaks:
-                        prom_sum = float(np.sum(prominences[group]))
+
+                    # Check if this group is large enough and has higher total prominence
+                    if len(group) >= min_group_size:
+                        prom_sum = sum(properties["prominences"][idx] for idx in group)
                         if prom_sum > best_prom_sum:
                             best_cluster = group
                             best_prom_sum = prom_sum
-                        break
+                        break  # only use first valid cluster per label
 
-            for idx in best_cluster:
-                filtered[int(idx)] = 3
+                # Relabel best cluster as Type 3
+                for idx in best_cluster:
+                    filtered[idx] = 3
 
-        # Other event types can be extended similarly
 
-        # Write back filtered array to properties
-        properties["filtered"] = filtered.tolist()
+            # Persist filtered labels back to properties
+            properties["filtered"] = list(filtered.tolist())
+
 
         return properties
 
