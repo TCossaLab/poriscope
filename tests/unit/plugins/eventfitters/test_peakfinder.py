@@ -245,14 +245,14 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Unspecified"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6,200)
+        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6, 200)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
     def test_single_peak_returns_properties_unchanged(self):
         pf = _make_pf(**{"Event Type": "Single Peak"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6,200)
+        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6, 200)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
 

@@ -1334,7 +1334,7 @@ class PeakFinder(MetaEventFitter):
         - Type 2: Peaks higher than the carrier level (both bases above unfolded_level).
         - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
         """
-        #dt_us = 1.0 / samplerate * 1e6
+        # dt_us = 1.0 / samplerate * 1e6
         num_peaks = int(self.settings["Number of peaks"]["Value"])
         t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
         t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
@@ -1343,7 +1343,7 @@ class PeakFinder(MetaEventFitter):
         # # Convert commonly-used properties to numpy arrays for vectorized ops
         # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
         # right_bases = np.array(properties.get("right_bases", []), dtype=float) + np.sign(baseline) * baseline
-        #prominences = np.array(properties.get("prominences", []), dtype=float)
+        # prominences = np.array(properties.get("prominences", []), dtype=float)
         # widths = np.array(properties.get("widths", []), dtype=float)
         # ips_left = np.array(properties.get("left_ips", []), dtype=float)
         # ips_right = np.array(properties.get("right_ips", []), dtype=float)
@@ -1395,18 +1395,31 @@ class PeakFinder(MetaEventFitter):
                 # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
 
                 # Type 0: both bases are below the lower carrier threshold.
-                if left_base <= type0_thresh and right_base <= type0_thresh :
+                if left_base <= type0_thresh and right_base <= type0_thresh:
                     filtered[i] = 0
                 # Type -1: both bases above the upper type-2 cutoff (noise)
-                elif left_base >= type2_thresh + unfolded_level and right_base >= type2_thresh + unfolded_level:
+                elif (
+                    left_base >= type2_thresh + unfolded_level
+                    and right_base >= type2_thresh + unfolded_level
+                ):
                     filtered[i] = -1
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
                 # Type 2: both bases within the type-2 band around 2*unfolded_level
-                elif left_base >= type2_thresh and right_base >= type2_thresh and left_base <= type2_thresh + unfolded_level and right_base <=  type2_thresh + unfolded_level:
+                elif (
+                    left_base >= type2_thresh
+                    and right_base >= type2_thresh
+                    and left_base <= type2_thresh + unfolded_level
+                    and right_base <= type2_thresh + unfolded_level
+                ):
                     filtered[i] = 2
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
                 # Type 1: both bases within the type-1 band around unfolded_level
-                elif left_base >= type1_thresh and right_base >= type1_thresh and left_base <= type2_thresh and right_base <= type2_thresh:
+                elif (
+                    left_base >= type1_thresh
+                    and right_base >= type1_thresh
+                    and left_base <= type2_thresh
+                    and right_base <= type2_thresh
+                ):
                     filtered[i] = 1
                     # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
                 else:
@@ -1472,10 +1485,8 @@ class PeakFinder(MetaEventFitter):
                 for idx in best_cluster:
                     filtered[idx] = 3
 
-
             # Persist filtered labels back to properties
             properties["filtered"] = list(filtered.tolist())
-
 
         return properties
 
