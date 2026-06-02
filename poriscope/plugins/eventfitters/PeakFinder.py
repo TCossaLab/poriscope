@@ -1855,39 +1855,31 @@ class PeakFinder(MetaEventFitter):
             #Optionally visualize the classification
             #For visualization, create labels for all events based on threshold
             if self.settings.get("Visualize Classification", {}).get("Value", False):
-                plot_path = None
-                loader = getattr(self, "eventloader", None)
-                if loader is None:
-                    self.logger.warning(
-                        "Visualization enabled, but no event loader is available to derive an output path"
+                try:
+                    plot_path = None
+                    loader = getattr(self, "eventloader", None)
+                    if loader is None:
+                        self.logger.warning(
+                            "Visualization enabled, but no event loader is available to derive an output path"
+                        )
+                    else:
+                        base_file = loader.get_base_file()
+                        plot_path = base_file.with_name(f"{base_file.stem}_classification.png")
+
+                    ecd_outlier_levels = all_longest_levels_array[~combined_filter_mask]
+
+                    self.visualize_classification(
+                        data=filtered_longest_levels,
+                        labels=labels_1d_filtered,
+                        centers=centers_1d,
+                        gmm_model=gmm_model,
+                        threshold=threshold,
+                        title="GMM Classification: Folded vs Unfolded DNA (ECD-filtered)",
+                        ecd_outliers=ecd_outlier_levels,
+                        save_path=plot_path,
                     )
-                else:
-                    base_file = loader.get_base_file()
-                    plot_path = base_file.with_name(f"{base_file.stem}_classification.png")
-
-                ecd_outlier_levels = all_longest_levels_array[~combined_filter_mask]
-
-                self.visualize_classification(
-                    data=filtered_longest_levels,
-                    labels=labels_1d_filtered,
-                    centers=centers_1d,
-                    gmm_model=gmm_model,
-                    threshold=threshold,
-                    title="GMM Classification: Folded vs Unfolded DNA (ECD-filtered)",
-                    ecd_outliers=ecd_outlier_levels,
-                    save_path=plot_path,
-                )
-
-                prominence_plot_path = None
-                if loader is not None:
-                    base_file = loader.get_base_file()
-                    prominence_plot_path = base_file.with_name(
-                        f"{base_file.stem}_peak_prominence_classification.png"
-                    )
-
-                self._visualize_peak_prominence_classification(
-                    save_path=str(prominence_plot_path) if prominence_plot_path is not None else None
-                )
+                except Exception as e:
+                    self.logger.error(f"Error during visualization: {str(e)}", exc_info=True)
 
         else:
             self.logger.warning(
