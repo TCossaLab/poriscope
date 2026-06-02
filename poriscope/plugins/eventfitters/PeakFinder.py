@@ -113,13 +113,6 @@ class PeakFinder(MetaEventFitter):
             "Value": 1,
             "Min": 1,
         }
-        # settings["Plateau Size"] = {
-        #     "Type": float,
-        #     "Value": 0,
-        #     "Min": 0.0,
-        #     "Units": "μs",
-        # }
-
         settings["Filter Peaks"] = {"Type": bool, "Value": True}
         settings["Lower Filter Threshold"] = {
             "Type": int,
@@ -154,6 +147,10 @@ class PeakFinder(MetaEventFitter):
             "Type": bool,
             "Value": True,
         }
+        # settings["Plot classification"] = {
+        #     "Type": bool,
+        #     "Value": True,
+        # }
         settings["Min Carrier Blockage"] = {
             "Type": float,
             "Value": 300.0,  # Default minimum blockage for classification
@@ -161,6 +158,11 @@ class PeakFinder(MetaEventFitter):
             "Max": 10000.0,
             "Units": "pA",
         }
+        settings["Visualize Classification"] = {
+            "Type": bool,
+            "Value": False,
+        }
+
         # settings["Plateau Size"] = {
         #     "Type": str,
         #     "Value": "None",  # Default to no plateau size filtering. Can be "None", a single value (e.g. "5.0"), or a range (e.g. "2.0,10.0")
@@ -401,8 +403,10 @@ class PeakFinder(MetaEventFitter):
                     plabel.append(
                         "Peak #"
                         + str(j)
-                        + " Type: "
-                        + str(self.sublevel_metadata[channel][index]["filtered"][i])
+                        + " Filter: "
+                        + str(self.sublevel_metadata[channel][index]["filtered"][i])                        
+                        + " Class: "
+                        + str(self.sublevel_metadata[channel][index]["classified"][i])
                     )
 
                     j += 1
@@ -508,7 +512,7 @@ class PeakFinder(MetaEventFitter):
         # Find longest continuous segment above threshold 
         # This trims the event to start/end at the longest above-threshold blockage
         
-        threshold = 3 * baseline_std
+        threshold = min(abs(low_threshold), abs(high_threshold),3) * baseline_std
         event_data = data[padding_before:-padding_after]
         above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
         
@@ -565,14 +569,12 @@ class PeakFinder(MetaEventFitter):
         carrier_blockage = np.abs(np.median(trimmed_data) - baseline_mean)
 
         # Peaks should still be significant relative to the translocation signal
-        min_prom_signal = 0.5 * carrier_blockage
-
+        min_prom_signal = carrier_blockage
         # Use the more stringent of the two criteria
         min_prom = max(min_prom_noise, min_prom_signal)
-
         # Height is driven by the higher threshold setting, then guarded by the
         # carrier level so peaks still sit beyond the local blockage.
-        min_height = max(high_threshold * baseline_std, carrier_blockage + min_prom)
+        min_height = max(max(abs(low_threshold), abs(high_threshold)) * baseline_std, carrier_blockage + min_prom)
 
         # Calculate wlen (prominence window) for finding peak bases
         # wlen is calculated as a user-specified percentage of the trimmed event length
@@ -593,13 +595,13 @@ class PeakFinder(MetaEventFitter):
 
         # Calculate wlen directly from user setting
         wlen = int(window_length_ratio * trimmed_event_length)
-
         # Apply only essential safety bounds
         wlen = min(wlen, trimmed_event_length // 3)  # Maximum 1/3 of event
+        wlen = max(wlen, 2)
 
         # Set minimum distance between peaks to wlen (smallest reasonable window length)
         # This ensures peaks are separated by at least the prominence window width
-        min_dist = wlen // 2
+        min_dist = max(1, wlen // 2)
 
         # Calculate SNR for logging/diagnostics only
         signal_step = max(min_prom, min_height)
@@ -936,7 +938,7 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # get cumulative sum of raw_ecd (sum of all previous sublevels at each sublevel)
-        sublevel_metadata["cumulative_raw_ecd"] = np.cumsum(
+        sublevel_metadata["sublevel_cumulative_ecd"] = np.cumsum(
             sublevel_metadata["sublevel_raw_ecd"]
         )
 
@@ -1056,6 +1058,18 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
+        # get peak prominence-based classification (will be assigned in post-processing)
+        sublevel_metadata["classified"] = np.array(
+            [
+                (
+                    np.nan
+                    if "peak" in sublevel_starts[i]["type"]
+                    else np.nan
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
         # get peak max blockage
         sublevel_metadata["max_blockage"] = np.array(
             [
@@ -1070,32 +1084,20 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # get normalized max blockage (max_blockage / unfolded_level) for peak sublevels
-        # sublevel_metadata["normalized_blockage"] = np.array(
-        #     [
-        #         (
-        #             sublevel_starts[i]["max_blockage"] / unfolded_level
-        #             if "peak" in sublevel_starts[i]["type"]
-        #             and unfolded_level != 0
-        #             and sublevel_starts[i].get("max_blockage") is not None
-        #             else None
-        #         )
-        #         for i in range(num_states)
-        #     ],
-        #     dtype=np.float64,
-        # )
-        # plateau_size support intentionally disabled.
-        # sublevel_metadata["plateau_size"] = np.array(
-        #     [
-        #         (
-        #             sublevel_starts[i].get("plateau_size") * dt_us
-        #             if "peak" in sublevel_starts[i]["type"]
-        #             and sublevel_starts[i].get("plateau_size") is not None
-        #             else None
-        #         )
-        #         for i in range(num_states)
-        #     ],
-        #     dtype=np.float64,
-        # )
+        sublevel_metadata["normalized_blockage"] = np.array(
+            [
+                (
+                    sublevel_starts[i]["max_blockage"] / unfolded_level
+                    if "peak" in sublevel_starts[i]["type"]
+                    and unfolded_level != 0
+                    and sublevel_starts[i].get("max_blockage") is not None
+                    else None
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
+
 
         # get peak left base
         sublevel_metadata["left_base"] = np.array(
@@ -1287,6 +1289,152 @@ class PeakFinder(MetaEventFitter):
         event_metadata["baseline_std"] = baseline_std
 
         return event_metadata
+
+
+    @log(logger=logger)
+    @override
+    def _validate_settings(self, settings: dict) -> None:
+        """
+        Validate that the settings dict contains the correct information for use by the subclass.
+
+        :param settings: Parameters for event detection.
+        :type settings: dict
+        :raises ValueError: If the settings dict does not contain the correct information.
+        """
+        pass
+
+    @log(logger=logger)
+    @override
+    def _define_event_metadata_types(self):
+        """
+        Build a dict of metadata along with associated datatypes for use by the database writer downstream.
+        Keys must match columns defined in _populate_event_metadata()
+        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
+
+        :return: a dict of metadata keys and associated base dtypes
+        :rtype: Mapping[str, Union[int, float, str, bool]]
+        """
+        metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
+            "number_peaks": int,
+            "duration": float,
+            "raw_ecd": float,
+            "max_deviation": float,
+            "baseline_current": float,
+            "unfolded_level": float,
+            "folded_level": float,
+            "longest_blockage_level": float,
+            "baseline_std": float,
+        }
+
+        return metadata_types
+
+    @log(logger=logger)
+    @override
+    def _define_sublevel_metadata_types(self):
+        """
+        Build a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
+        Keys must match columns defined in _populate_sublevel_metadata()
+        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool. Note that this is the type of entries in the associated list,
+        it should not include the list element
+
+        :return: a dict of metadata keys and associated base dtypes
+        :rtype: Mapping[str, Union[int, float, str, bool]]
+        """
+        metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
+            "sublevel_current": float,
+            "sublevel_duration": float,
+            "sublevel_start_times": float,
+            "sublevel_end_times": float,
+            "sublevel_raw_ecd": float,
+            "sublevel_cumulative_ecd": float,
+            "sublevel_max_deviation": float,
+            "sublevel_type": str,
+            "peak_id": int,
+            "peak_height": float,
+            "peak_loc": float,
+            "peak_width": float,
+            "prominence": float,
+            "classified": float,
+            # "plateau_size": float,
+            "max_blockage": float,
+            "left_base": float,
+            "right_base": float,
+            "left_ips": float,
+            "right_ips": float,
+            "height_ips": float,
+            "filtered": float,  # Changed to float to support NaN for non-peaks
+            "normalized_height": float,
+            "normalized_prominence": float,
+            "normalized_blockage": float,
+        }
+
+        return metadata_types
+
+    @log(logger=logger)
+    @override
+    def _define_event_metadata_units(self):
+        """
+        Build a dict of metadata along with associated datatypes for use by the database writer downstream.
+        Keys must match columns defined in _populate_event_metadata()
+        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
+
+        :return: a dict of metadata keys and associated base dtypes
+        :rtype: Mapping[str, Union[int, float, str, bool]]
+        """
+        metadata_units = {}
+
+        metadata_units["number_peaks"] = " "
+        metadata_units["duration"] = "μs"
+        metadata_units["raw_ecd"] = "pC"
+        metadata_units["max_deviation"] = "pA"
+        metadata_units["baseline_current"] = "pA"
+        metadata_units["unfolded_level"] = "pA"
+        metadata_units["folded_level"] = "pA"
+        metadata_units["longest_blockage_level"] = "pA"
+        metadata_units["baseline_std"] = "pA"
+
+        return metadata_units
+
+    @log(logger=logger)
+    @override
+    def _define_sublevel_metadata_units(self):
+        """
+        Build a dict of sublevel metadata units , or None if unitless. Keys must match columns defined in _populate_sublevel_metadata()
+        All of this metadata must be populated during fitting.
+        it should not include the list element
+
+        :return: a dict of metadata keys and associated base dtypes
+        :rtype: Mapping[str, Optional[str]]
+        """
+        metadata_units = {}
+
+        metadata_units["sublevel_current"] = "pA"
+        metadata_units["sublevel_duration"] = "us"
+        metadata_units["sublevel_start_times"] = "us"
+        metadata_units["sublevel_end_times"] = "us"
+        metadata_units["sublevel_max_deviation"] = "pA"
+        metadata_units["sublevel_raw_ecd"] = "pC"
+        metadata_units["sublevel_cumulative_ecd"] = "pC"
+        metadata_units["sublevel_type"] = " "
+        metadata_units["peak_id"] = " "
+        metadata_units["peak_height"] = "pA"
+        metadata_units["peak_loc"] = "us"
+        metadata_units["peak_width"] = "us"
+        metadata_units["prominence"] = "pA"
+        metadata_units["classified"] = " "
+        # metadata_units["plateau_size"] = "us"
+        metadata_units["max_blockage"] = "pA"
+        metadata_units["left_base"] = "pA"
+        metadata_units["right_base"] = "pA"
+        metadata_units["left_ips"] = "us"
+        metadata_units["right_ips"] = "us"
+        metadata_units["height_ips"] = "pA"
+        metadata_units["filtered"] = " "
+        metadata_units["normalized_height"] = None
+        metadata_units["normalized_prominence"] = None
+        metadata_units["normalized_blockage"] = None
+
+        return metadata_units
 
     @log(logger=logger)
     @override
@@ -1701,20 +1849,44 @@ class PeakFinder(MetaEventFitter):
             # Collect peak classification statistics across all events
             self._collect_peak_statistics(channels)
 
-            # Optionally visualize the classification
-            # For visualization, create labels for all events based on threshold
-            if self.settings.get("show_classification_plot", False):
-                # Create labels for all events based on threshold (0=unfolded, 1=folded)
-                labels_all = (all_longest_levels_array >= threshold).astype(int)
+            # Classify peak prominences for peaks that survived the type filter.
+            self._classify_peak_prominences(channels)
+
+            #Optionally visualize the classification
+            #For visualization, create labels for all events based on threshold
+            if self.settings.get("Visualize Classification", {}).get("Value", False):
+                plot_path = None
+                loader = getattr(self, "eventloader", None)
+                if loader is None:
+                    self.logger.warning(
+                        "Visualization enabled, but no event loader is available to derive an output path"
+                    )
+                else:
+                    base_file = loader.get_base_file()
+                    plot_path = base_file.with_name(f"{base_file.stem}_classification.png")
+
+                ecd_outlier_levels = all_longest_levels_array[~combined_filter_mask]
 
                 self.visualize_classification(
-                    data=all_longest_levels_array,
-                    labels=labels_all,
+                    data=filtered_longest_levels,
+                    labels=labels_1d_filtered,
                     centers=centers_1d,
                     gmm_model=gmm_model,
                     threshold=threshold,
                     title="GMM Classification: Folded vs Unfolded DNA (ECD-filtered)",
-                    save_path=self.settings.get("classification_plot_path", None),
+                    ecd_outliers=ecd_outlier_levels,
+                    save_path=plot_path,
+                )
+
+                prominence_plot_path = None
+                if loader is not None:
+                    base_file = loader.get_base_file()
+                    prominence_plot_path = base_file.with_name(
+                        f"{base_file.stem}_peak_prominence_classification.png"
+                    )
+
+                self._visualize_peak_prominence_classification(
+                    save_path=str(prominence_plot_path) if prominence_plot_path is not None else None
                 )
 
         else:
@@ -1736,830 +1908,6 @@ class PeakFinder(MetaEventFitter):
         self.logger.info(
             "Post-processing analysis completed with automatic folded/unfolded classification."
         )
-
-    @log(logger=logger)
-    def _collect_peak_statistics(self, channels: List[int]) -> None:
-        """
-        Collect statistics about peak classifications across all events.
-
-        :param channels: List of channel indices to process
-        :type channels: List[int]
-        """
-        # Initialize counters
-        peak_type_counts: Dict[int, int] = {}
-        total_peaks = 0
-        total_classified = 0
-        total_unclassified = 0
-
-        # Iterate through all channels and events
-        for ch in channels:
-            if ch not in self.sublevel_metadata:
-                continue
-
-            for event_index in self.sublevel_metadata[ch]:
-                sublevel_data = self.sublevel_metadata[ch][event_index]
-
-                # Check if filtered data exists
-                if "filtered" not in sublevel_data:
-                    continue
-
-                filtered_values = sublevel_data["filtered"]
-                peak_ids = sublevel_data.get("peak_id", [])
-
-                # Count peaks by their filtered type
-                for i, peak_id in enumerate(peak_ids):
-                    if peak_id is not None and not (
-                        isinstance(peak_id, float) and np.isnan(peak_id)
-                    ):
-                        total_peaks += 1
-                        filtered_type = filtered_values[i]
-
-                        if filtered_type is not None and not (
-                            isinstance(filtered_type, float)
-                            and np.isnan(filtered_type)
-                        ):
-                            # Count by type
-                            peak_type_counts[int(filtered_type)] = (
-                                peak_type_counts.get(int(filtered_type), 0) + 1
-                            )
-
-                            # Classify as classified or unclassified
-                            if filtered_type > 0:
-                                total_classified += 1
-                            else:
-                                total_unclassified += 1
-
-        # Store results
-        self._peak_statistics = {
-            "total_peaks": total_peaks,
-            "total_classified": total_classified,
-            "total_unclassified": total_unclassified,
-            "peak_type_counts": peak_type_counts,
-        }
-
-        self.logger.info(
-            f"Peak statistics collected: {total_peaks} total peaks, "
-            f"{total_classified} classified, {total_unclassified} unclassified"
-        )
-        self.logger.info(f"Peak type distribution: {peak_type_counts}")
-
-    @log(logger=logger)
-    @override
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
-        """
-        Return a string detailing fitting and classification status.
-
-        :param channel: the channel to report on, or None for all channels
-        :type channel: Optional[int]
-        :param init: whether this is an initialization report
-        :type init: bool
-        :return: the status report as a string
-        :rtype: str
-        """
-        # Get the base fitting report from parent class
-        base_report = super().report_channel_status(channel, init)
-
-        # If initialization or no classification results yet, return base report
-        if init or not hasattr(self, "_classification_results"):
-            return base_report
-
-        # During the final post-processing pass, classification results may be
-        # available before the base class flips eventfitting_status[channel].
-        # In that case, report the channel as complete instead of incomplete.
-        if channel is not None and "fitting incomplete" in base_report:
-            if self._classification_results and "error" not in self._classification_results:
-                loader = getattr(self, "eventloader", None)
-                if loader is None:
-                    raise RuntimeError(
-                        "Event loader is not initialized; cannot determine total events"
-                    )
-                event_total = loader.get_num_events(channel)
-                fitted_total = len(self.event_metadata.get(channel, {}))
-                base_report = f"\nCh{channel}: {fitted_total}/{event_total} good fits\n"
-
-        # Add classification information to the report
-        classification_report = "\n\nClassification Results:"
-
-        if "skipped" in self._classification_results:
-            classification_report += (
-                f"\n  Classification skipped: {self._classification_results['reason']}"
-            )
-        elif "error" in self._classification_results:
-            classification_report += f"\n  {self._classification_results['error']}"
-        else:
-            results = self._classification_results
-            total_events = cast(int, results["total_events"])
-            lower_center = cast(float, results["lower_center"])
-            higher_center = cast(float, results["higher_center"])
-            threshold = cast(float, results["threshold"])
-            folded_count = cast(int, results["folded_count"])
-            unfolded_count = cast(int, results["unfolded_count"])
-
-            classification_report += f"\n  Total classified: {total_events} events"
-            if "ecd_filtered_events" in results:
-                ecd_filtered = cast(int, results["ecd_filtered_events"])
-                classification_report += (
-                    f"\n  ECD-filtered outliers: {ecd_filtered} events"
-                )
-            classification_report += (
-                f"\n  Lower center (unfolded): {lower_center:.2f} pA"
-            )
-            classification_report += (
-                f"\n  Higher center (folded): {higher_center:.2f} pA"
-            )
-            if "ratio" in results:
-                ratio = cast(float, results["ratio"])
-                classification_report += f"\n  Ratio (folded/unfolded): {ratio:.3f}"
-                if 1.7 <= ratio <= 2.3:
-                    classification_report += ":)"
-                else:
-                    classification_report += "OUTSIDE EXPECTED RANGE!"
-            classification_report += f"\n  Threshold: {threshold:.2f} pA"
-            classification_report += (
-                f"\n  Folded events: {folded_count} ({folded_count/total_events:.1%})"
-            )
-            classification_report += f"\n  Unfolded events: {unfolded_count} ({unfolded_count/total_events:.1%})"
-
-        # Add peak classification statistics if available
-        if not hasattr(self, "_peak_statistics") and hasattr(self, "sublevel_metadata"):
-            try:
-                self._collect_peak_statistics(list(self.sublevel_metadata.keys()))
-            except Exception as e:
-                self.logger.debug(
-                    f"Unable to collect peak statistics for report: {str(e)}"
-                )
-
-        if hasattr(self, "_peak_statistics"):
-            peak_stats = self._peak_statistics
-            classification_report += "\n\nPeak Classification Statistics:"
-
-            # Cast values to proper types for type checking
-            total_peaks = cast(int, peak_stats["total_peaks"])
-            total_classified = cast(int, peak_stats["total_classified"])
-            total_unclassified = cast(int, peak_stats["total_unclassified"])
-            peak_type_counts = cast(Dict[int, int], peak_stats["peak_type_counts"])
-
-            classification_report += f"\n  Total peaks detected: {total_peaks}"
-            classification_report += f"\n  Classified peaks: {total_classified}"
-            classification_report += f"\n  Unclassified peaks: {total_unclassified}"
-
-            if total_peaks > 0:
-                classified_pct = total_classified / total_peaks * 100
-                unclassified_pct = total_unclassified / total_peaks * 100
-                classification_report += f" ({classified_pct:.1f}% classified, {unclassified_pct:.1f}% unclassified)"
-
-            # Break down by peak type
-            if peak_type_counts:
-                classification_report += "\n\n  Peak types breakdown:"
-                # Sort by type number for consistent display
-                for peak_type in sorted(peak_type_counts.keys()):
-                    count = peak_type_counts[peak_type]
-                    pct = count / total_peaks * 100 if total_peaks > 0 else 0
-
-                    # Provide meaningful labels for peak types
-                    if peak_type == -1:
-                        type_label = "Type -1 (Rejected/Unclassified)"
-                    elif peak_type == 0:
-                        type_label = "Type 0 (Unprocessed)"
-                    elif peak_type == 1:
-                        type_label = "Type 1 (Carrier Level)"
-                    elif peak_type == 2:
-                        type_label = "Type 2 (Above Carrier)"
-                    elif peak_type == 3:
-                        type_label = "Type 3 (Bundle/Cluster)"
-                    elif peak_type == 11:
-                        type_label = "Type 11 (1U - Unfolding)"
-                    elif peak_type == 12:
-                        type_label = "Type 12 (1P - Peak with Height)"
-                    elif peak_type == 13:
-                        type_label = "Type 13 (1/2F - Folding)"
-                    elif peak_type == 21:
-                        type_label = "Type 21 (2U/2P - Higher Level)"
-                    elif peak_type == 22:
-                        type_label = "Type 22 (2P/1/2F - General)"
-                    else:
-                        type_label = f"Type {peak_type}"
-
-                    classification_report += (
-                        f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
-                    )
-
-        return base_report + classification_report
-
-    @log(logger=logger)
-    def visualize_classification(
-        self,
-        data: np.ndarray,
-        labels: np.ndarray,
-        centers: np.ndarray,
-        gmm_model: GaussianMixture,
-        threshold: float,
-        title: str = "GMM Classification of Longest Blockage Levels",
-        save_path: Optional[str] = None,
-    ) -> None:
-        """
-        Visualize the GMM classification results with histogram and fitted Gaussians.
-
-        :param data: Original 1D data array
-        :type data: np.ndarray
-        :param labels: Cluster labels for each data point
-        :type labels: np.ndarray
-        :param centers: Cluster centers (means)
-        :type centers: np.ndarray
-        :param gmm_model: Fitted GaussianMixture model
-        :type gmm_model: GaussianMixture
-        :param threshold: Classification threshold between folded/unfolded
-        :type threshold: float
-        :param title: Plot title
-        :type title: str
-        :param save_path: Optional path to save the figure
-        :type save_path: Optional[str]
-        """
-        import matplotlib.pyplot as plt
-        from scipy.stats import norm
-
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        # Plot histogram of all data
-        n_bins = 50
-        counts, bins, patches = ax.hist(
-            data, bins=n_bins, density=True, alpha=0.5, color="gray", label="All Data"
-        )
-
-        # Sort centers to identify folded/unfolded
-        sorted_indices = np.argsort(centers)
-        lower_center = centers[sorted_indices[0]]
-        higher_center = centers[sorted_indices[1]]
-
-        # Plot histogram for each cluster
-        colors = ["blue", "red"]
-        cluster_labels = ["Unfolded (lower)", "Folded (higher)"]
-
-        for i, (cluster_idx, center) in enumerate(
-            zip(sorted_indices, [lower_center, higher_center])
-        ):
-            cluster_data = data[labels == cluster_idx]
-            ax.hist(
-                cluster_data,
-                bins=n_bins,
-                density=True,
-                alpha=0.6,
-                color=colors[i],
-                label=f"{cluster_labels[i]}: {center:.2f} pA ({len(cluster_data)} events)",
-            )
-
-        # Plot fitted Gaussian distributions
-        x_range = np.linspace(data.min(), data.max(), 1000)
-
-        for i, (cluster_idx, center) in enumerate(
-            zip(sorted_indices, [lower_center, higher_center])
-        ):
-            mean = gmm_model.means_[cluster_idx][0]
-            std = np.sqrt(gmm_model.covariances_[cluster_idx][0][0])
-            weight = gmm_model.weights_[cluster_idx]
-
-            gaussian = weight * norm.pdf(x_range, mean, std)
-            ax.plot(
-                x_range,
-                gaussian,
-                color=colors[i],
-                linewidth=2,
-                linestyle="--",
-                label=f"{cluster_labels[i]} Gaussian (mu={mean:.2f}, std={std:.2f})",
-            )
-
-        # Plot threshold line
-        ax.axvline(
-            threshold,
-            color="black",
-            linestyle="-",
-            linewidth=2,
-            label=f"Threshold: {threshold:.2f} pA",
-        )
-
-        # Add labels and formatting
-        ax.set_xlabel("Longest Blockage Level (pA)", fontsize=12)
-        ax.set_ylabel("Probability Density", fontsize=12)
-        ax.set_title(title, fontsize=14, fontweight="bold")
-        ax.legend(loc="best", fontsize=10)
-        ax.grid(True, alpha=0.3)
-
-        # Add text annotation with classification info
-        folded_count = len(data[data >= threshold])
-        unfolded_count = len(data[data < threshold])
-        total = len(data)
-
-        info_text = (
-            f"Total Events: {total}\n"
-            f"Folded (≥ threshold): {folded_count} ({folded_count/total:.1%})\n"
-            f"Unfolded (< threshold): {unfolded_count} ({unfolded_count/total:.1%})"
-        )
-        ax.text(
-            0.02,
-            0.98,
-            info_text,
-            transform=ax.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
-        )
-
-        plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            self.logger.info(f"Classification visualization saved to {save_path}")
-
-        plt.show()
-
-    @log(logger=logger)
-    @override
-    def _validate_settings(self, settings: dict) -> None:
-        """
-        Validate that the settings dict contains the correct information for use by the subclass.
-
-        :param settings: Parameters for event detection.
-        :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
-        """
-        pass
-
-    @log(logger=logger)
-    @override
-    def _define_event_metadata_types(self):
-        """
-        Build a dict of metadata along with associated datatypes for use by the database writer downstream.
-        Keys must match columns defined in _populate_event_metadata()
-        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
-
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
-        """
-        metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
-            "number_peaks": int,
-            "duration": float,
-            "raw_ecd": float,
-            "max_deviation": float,
-            "baseline_current": float,
-            "event_baseline": float,
-            "unfolded_level": float,
-            "folded_level": float,
-            "longest_blockage_level": float,
-            "baseline_std": float,
-        }
-
-        return metadata_types
-
-    @log(logger=logger)
-    @override
-    def _define_sublevel_metadata_types(self):
-        """
-        Build a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
-        Keys must match columns defined in _populate_sublevel_metadata()
-        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool. Note that this is the type of entries in the associated list,
-        it should not include the list element
-
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
-        """
-        metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
-            "sublevel_current": float,
-            "sublevel_duration": float,
-            "sublevel_start_times": float,
-            "sublevel_end_times": float,
-            "sublevel_raw_ecd": float,
-            "cumulative_raw_ecd": float,
-            "sublevel_max_deviation": float,
-            "sublevel_type": str,
-            "peak_id": int,
-            "peak_height": float,
-            "peak_loc": float,
-            "peak_width": float,
-            "prominence": float,
-            # "plateau_size": float,
-            "max_blockage": float,
-            "left_base": float,
-            "right_base": float,
-            "left_ips": float,
-            "right_ips": float,
-            "height_ips": float,
-            "filtered": float,  # Changed to float to support NaN for non-peaks
-            "normalized_height": float,
-            "normalized_prominence": float,
-            "normalized_blockage": float,
-        }
-
-        return metadata_types
-
-    @log(logger=logger)
-    @override
-    def _define_event_metadata_units(self):
-        """
-        Build a dict of metadata along with associated datatypes for use by the database writer downstream.
-        Keys must match columns defined in _populate_event_metadata()
-        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
-
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
-        """
-        metadata_units = {}
-
-        metadata_units["number_peaks"] = " "
-        metadata_units["duration"] = "μs"
-        metadata_units["raw_ecd"] = "pC"
-        metadata_units["max_deviation"] = "pA"
-        metadata_units["event_baseline"] = "pA"
-        metadata_units["unfolded_level"] = "pA"
-        metadata_units["folded_level"] = "pA"
-        metadata_units["longest_blockage_level"] = "pA"
-        metadata_units["baseline_std"] = "pA"
-
-        return metadata_units
-
-    @log(logger=logger)
-    @override
-    def _define_sublevel_metadata_units(self):
-        """
-        Build a dict of sublevel metadata units , or None if unitless. Keys must match columns defined in _populate_sublevel_metadata()
-        All of this metadata must be populated during fitting.
-        it should not include the list element
-
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Optional[str]]
-        """
-        metadata_units = {}
-
-        metadata_units["sublevel_current"] = "pA"
-        metadata_units["sublevel_duration"] = "us"
-        metadata_units["sublevel_start_times"] = "us"
-        metadata_units["sublevel_end_times"] = "us"
-        metadata_units["sublevel_max_deviation"] = "pA"
-        metadata_units["sublevel_raw_ecd"] = "pC"
-        metadata_units["sublevel_cumulative_ecd"] = "pC"
-        metadata_units["sublevel_type"] = " "
-        metadata_units["peak_id"] = " "
-        metadata_units["peak_height"] = "pA"
-        metadata_units["peak_loc"] = "us"
-        metadata_units["peak_width"] = "us"
-        metadata_units["prominence"] = "pA"
-        # metadata_units["plateau_size"] = "us"
-        metadata_units["max_blockage"] = "pA"
-        metadata_units["left_base"] = "pA"
-        metadata_units["right_base"] = "pA"
-        metadata_units["left_ips"] = "us"
-        metadata_units["right_ips"] = "us"
-        metadata_units["height_ips"] = "pA"
-        metadata_units["filtered"] = " "
-        metadata_units["normalized_height"] = "pA"
-        metadata_units["normalized_prominence"] = "pA"
-        metadata_units["normalized_blockage"] = None
-
-        return metadata_units
-
-    # utility functions
-
-    @log(logger=logger)
-    def classify_1d_distribution(
-        self,
-        data: np.ndarray,
-        n_components: int = 2,
-        return_centers: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
-        """
-        Classify 1D data into clusters using Gaussian Mixture Model.
-
-        :param data: 1D array of data to classify
-        :type data: np.ndarray
-        :param n_components: Number of Gaussian components to fit
-        :type n_components: int
-        :param return_centers: Whether to return cluster centers and GMM model along with labels
-        :type return_centers: bool
-        :return: Cluster labels, optionally with centers and fitted GMM model
-        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
-        """
-        data_reshaped = np.array(data).reshape(-1, 1)
-
-        gmm = GaussianMixture(n_components=n_components, random_state=42)
-        labels = gmm.fit_predict(data_reshaped)
-        centers = gmm.means_.flatten()
-
-        if return_centers:
-            return labels, centers, gmm
-        return labels
-
-    @log(logger=logger)
-    def filter_peaks(
-        self,
-        peaks,
-        properties,
-        unfolded_level,
-        folded_level,
-        baseline_std,
-        baseline,
-        samplerate,
-        event_length,
-    ):
-      
-        #Defining variables and thresholds
-          
-        num_peaks = int(self.settings["Number of peaks"]["Value"])
-        t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
-        t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
-        
-
-        # event_id = getattr(self, "_debug_event_id", None)
-
-
-        num_peaks = self.settings["Number of peaks"]["Value"]
-        prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted
-
-        filtered = properties["filtered"]
-
-        # Helper thresholds for classification
-
-        # lower_bound = t1_std * baseline_std
-
-        unfolded_lower_bound = (
-            (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0
-        )
-        unfolded_upper_bound = (
-            (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0
-        )
-
-        folded_lower_bound = (
-            (folded_level - t1_std * baseline_std) if folded_level is not None else 0
-        )
-        folded_upper_bound = (
-            (folded_level + t2_std * baseline_std) if folded_level is not None else 0
-        )
-
-        # BARCODE
-        """
-        Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
-        - Type 1: Peaks on the same DNA carrier level (both bases around unfolded_level).
-        - Type 2: Peaks higher than the carrier level (both bases above unfolded_level).
-        - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
-        """
-        # # Convert commonly-used properties to numpy arrays for vectorized ops
-        # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
-        # right_bases = np.array(properties.get("right_bases", []), dtype=float) + np.sign(baseline) * baseline
-        # prominences = np.array(properties.get("prominences", []), dtype=float)
-        # widths = np.array(properties.get("widths", []), dtype=float)
-        # ips_left = np.array(properties.get("left_ips", []), dtype=float)
-        # ips_right = np.array(properties.get("right_ips", []), dtype=float)
-
-
-        # Early return if no peaks
-        if len(peaks) == 0:
-            # preserve whatever filtered was provided (likely empty)
-            properties["filtered"] = properties.get("filtered", [])
-            return properties
-
-        # Ensure filtered is a numeric array matching number of peaks
-        filtered_list = list(properties.get("filtered", []))
-        if len(filtered_list) < len(peaks):
-            filtered_list = filtered_list + [0] * (len(peaks) - len(filtered_list))
-        elif len(filtered_list) > len(peaks):
-            filtered_list = filtered_list[: len(peaks)]
-        filtered = np.array(filtered_list, dtype=int)
-        if self.settings["Event Type"]["Value"] == "Barcode":
-            # Classify by ordered ranges, requiring both bases to land in the same band.
-            # 0: both bases below the lower barcode threshold
-            # 1: both bases between the lower threshold and the type-2 lower bound
-            # 2: both bases around twice the unfolded level
-            # -1: either base above the type-2 upper bound
-            # Define thresholds. We treat type-1 as anything from unfolded_level + t1*std
-            # up to (but not including) the type-2 lower bound. Type-2 is centered
-            # around 2*unfolded_level ± thresholds, and anything above that upper
-            # bound is -1 (noise).
-            type0_thresh = t2_std
-            type1_thresh = unfolded_level + t1_std * baseline_std
-            type2_thresh = unfolded_level + t2_std * baseline_std
-
-            # Debug prints to help trace classification during development
-            # print(
-            #     f"[debug] filter_peaks: event_id={event_id}, unfolded_level={unfolded_level}, baseline_std={baseline_std}, t1={t1_std}, t2={t2_std}"
-            # )
-            # print(
-            #     f"[debug] thresholds: event_id={event_id}, type0={type0_thresh}, type1={type1_thresh}, type2={type2_thresh}"
-            # )
-            # try:
-            #     print(
-            #         f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases.tolist()}, right_bases={right_bases.tolist()}"
-            #     )
-            # except Exception:
-            #     print(f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases}, right_bases={right_bases}")
-
-            for i in range(len(peaks)):
-                left_base = properties["left_bases"][i] + np.sign(baseline) * baseline
-                right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
-                # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
-
-                # ignores peaks near the end of a level (missmatched bases)
-                if left_base <= type0_thresh and right_base <= type0_thresh:
-                    filtered[i] = 0
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned 0 (both bases <= type0_thresh)")
-                # Type -1: both bases above the upper type-2 cutoff (noise)
-                elif (
-                    left_base >= type2_thresh + unfolded_level
-                    and right_base >= type2_thresh + unfolded_level
-                ):
-                    filtered[i] = -1
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
-                # Type 2: both bases within the type-2 band around 2*unfolded_level
-                elif left_base >= type2_thresh and right_base >= type2_thresh:
-                    filtered[i] = 2
-                #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
-                # Type 1: both bases within the type-1 band around unfolded_level
-                elif left_base >= type1_thresh and right_base >= type1_thresh:
-                    filtered[i] = 1
-                    # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
-                else:
-                    filtered[i] = -1
-                    # print(f"[debug] event_id={event_id}, peak {i} assigned -1 (does not meet type1 or type2 criteria, bases missmatch)")
-                # if filtered[i] not in [1, 2, -1]:
-                #    print(f"Unlabeled peak {i}: left={left_base:.3f}, right={right_base:.3f}, unfolded_level-2std={unfolded_level - 2 * baseline_std:.3f}, 2*unfolded_level+std={2*unfolded_level+baseline_std:.3f}")
-
-            # Step 2: Identify clusters of same-type peaks, but keep only the most prominent one
-            # Calculate max_distance as percentage of event length
-            max_distance_percentage = self.settings.get(
-                "Peak to Peak Distance Ratio", {}
-            ).get("Value", 10.0)
-            event_length_samples = (
-                event_length * samplerate * 1e-6
-            )  # Convert us to samples
-            max_distance = int((max_distance_percentage / 100.0) * event_length_samples)
-            self.logger.debug(
-                f"filter_peaks: event_length={event_length:.1f} us, "
-                f"event_length_samples={event_length_samples:.1f}, "
-                f"max_distance_percentage={max_distance_percentage}%, "
-                f"max_distance={max_distance} samples"
-            )
-            min_group_size = num_peaks
-
-            best_cluster = []
-            best_prom_sum = 0
-
-            for label in [1, 2]:
-                label_idxs = [i for i in prom_indices if filtered[i] == label]
-                if not label_idxs:
-                    continue
-
-                label_idxs = label_idxs[:num_peaks]
-                sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
-
-                # Find clusters where consecutive peaks are within max_distance
-                for i in range(len(sorted_idxs)):
-                    group = [sorted_idxs[i]]
-
-                    # Add consecutive peaks that are close enough
-                    for j in range(i + 1, len(sorted_idxs)):
-                        # Check distance between consecutive peaks in the group
-                        prev_peak_idx = group[-1]
-                        curr_peak_idx = sorted_idxs[j]
-                        distance = abs(peaks[curr_peak_idx] - peaks[prev_peak_idx])
-
-                        if distance <= max_distance:
-                            group.append(curr_peak_idx)
-                        else:
-                            # Stop when we find a gap larger than max_distance
-                            break
-
-                    # Check if this group is large enough and has higher total prominence
-                    if len(group) >= min_group_size:
-                        prom_sum = sum(properties["prominences"][idx] for idx in group)
-                        if prom_sum > best_prom_sum:
-                            best_cluster = group
-                            best_prom_sum = prom_sum
-                        break  # only use first valid cluster per label
-
-            # Relabel best cluster as Type 3
-            for idx in best_cluster:
-                filtered[idx] = 3
-
-            # Persist filtered labels back to properties
-            properties["filtered"] = list(filtered.tolist())
-
-        # SINGLE PEAK CARRIER
-        if self.settings["Event Type"]["Value"] == "Single Peak":
-            classified_peaks = []
-            for i in range(len(peaks)):
-                left_base = properties["left_bases"][i]+ np.sign(baseline) * baseline
-                right_base = properties["right_bases"][i]+ np.sign(baseline) * baseline
-                prom = properties["prominences"][i]
-                height = properties["peak_heights"][i]
-
-                # Classify peak type based on base levels - ordered from most specific to most general
-                if right_base >= folded_upper_bound and left_base >= folded_upper_bound:
-                    filtered[i] = -1  # Reject peaks that are too high
-                elif (
-                    right_base >= unfolded_lower_bound
-                    and right_base <= unfolded_upper_bound
-                    and left_base >= folded_lower_bound
-                    and left_base <= folded_upper_bound
-                    and height >= folded_upper_bound
-                ):
-                    filtered[i] = (
-                        12  # Type 1P - Most specific case with height requirement
-                    )
-                elif (
-                    right_base >= unfolded_lower_bound
-                    and right_base <= unfolded_upper_bound
-                    and left_base <= unfolded_lower_bound
-                ):
-                    filtered[i] = 11  # Type 1U - Clear unfolding transition
-                elif (
-                    left_base >= folded_lower_bound
-                    and left_base <= folded_upper_bound
-                    and right_base <= unfolded_lower_bound
-                ):
-                    filtered[i] = 13  # Type 1/2F - Specific folding transition
-                elif (
-                    left_base >= unfolded_lower_bound
-                    and left_base <= unfolded_upper_bound
-                    and right_base <= unfolded_lower_bound
-                ):
-                    filtered[i] = 21  # Type 2U or 2P - Unfolding/Peak from higher level
-                elif (
-                    left_base >= unfolded_upper_bound
-                    and right_base <= unfolded_lower_bound
-                ):
-                    filtered[i] = 22  # Type 2P or 1/2F - Most general case
-                else:
-                    filtered[i] = -1
-                    continue
-
-                classified_peaks.append((i, prom))
-
-            # Step 2: Keep only the most prominent valid classified peak at the end
-            if classified_peaks:
-                # Sort by: prominence (descending) then index (descending)
-                classified_peaks.sort(key=lambda x: (-x[1], -x[0]))
-                best_idx = classified_peaks[0][0]
-
-                # Set all other peaks to -1
-                for i in range(len(peaks)):
-                    if i != best_idx:
-                        filtered[i] = -1
-
-        # MISC
-        if self.settings["Event Type"]["Value"] == "Unspecified":
-            pass  # fill out as needed
-
-        # Debug log the classification results
-        filtered_counts = {}
-        for f in filtered:
-            filtered_counts[f] = filtered_counts.get(f, 0) + 1
-        self.logger.debug(
-            f"filter_peaks: Event Type={self.settings['Event Type']['Value']}, classified {len(peaks)} peaks: {filtered_counts}"
-        )
-
-        return properties
-
-    @log(logger=logger)
-    def find_mode_blockage_level(self, data, baseline_mean, baseline_std):
-        """
-        Extract the most populated blockage level from the data.
-
-        Uses numpy histogram to find the most common current level.
-        Data should already be trimmed to the longest continuous segment above threshold
-        by _locate_sublevel_transitions. Folded/unfolded classification is deferred
-        to post-processing across all events.
-
-        :param data: Array of current values (already trimmed to longest segment).
-        :type data: numpy.ndarray
-        :param baseline_mean: Mean value of the baseline level.
-        :type baseline_mean: float
-        :param baseline_std: Standard deviation of the baseline level.
-        :type baseline_std: float
-        :return: Tuple of (primary_blockage_level, secondary_blockage_level) - the 2 most populated distinct blockage levels
-        :rtype: Tuple[Optional[float], Optional[float]]
-        """
-        # Data is already trimmed to longest segment in _locate_sublevel_transitions
-        # Find the 2 most populated levels using histogram
-
-        # Fast histogram-based level detection using numpy
-        # Create bins with baseline_std/2 spacing for precise level detection
-        bin_width = baseline_std / 2
-        min_val = np.min(data)
-        max_val = np.max(data)
-        bins = np.arange(min_val - bin_width / 2, max_val + bin_width, bin_width)
-
-        # Get histogram counts and bin centers
-        counts, bin_edges = np.histogram(data, bins=bins)
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-        # Find the 2 bins with maximum counts
-        top_2_indices = np.argsort(counts)[-2:][::-1]  # Sort descending, take top 2
-
-        primary_level = np.abs(bin_centers[top_2_indices[0]] - baseline_mean)
-        secondary_level = (
-            np.abs(bin_centers[top_2_indices[1]] - baseline_mean)
-            if len(top_2_indices) > 1 and counts[top_2_indices[1]] > 0
-            else None
-        )
-
-        return primary_level, secondary_level
 
     @log(logger=logger)
     def update_event_metadata_post_processing(
@@ -2730,6 +2078,1000 @@ class PeakFinder(MetaEventFitter):
                     self.logger.debug(
                         f"Channel {channel}, Event {event_index}: Reclassified {len(peak_indices)} peaks, filtered values: {filtered_data}"
                     )
+                    
+    @log(logger=logger)
+    @override
+    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+        """
+        Return a string detailing fitting and classification status.
+
+        :param channel: the channel to report on, or None for all channels
+        :type channel: Optional[int]
+        :param init: whether this is an initialization report
+        :type init: bool
+        :return: the status report as a string
+        :rtype: str
+        """
+        # Get the base fitting report from parent class
+        
+        base_report = super().report_channel_status(channel, init)
+        # event_total = loader.get_num_events(channel)
+        # fitted_total = len(self.event_metadata.get(channel, {}))
+        # base_report = f"\nCh{channel}: {fitted_total}/{event_total} good fits\n"
+        # rejected_events = self.rejected.get(channel) if getattr(self, "rejected", None) else None
+        # if rejected_events:
+        #     base_report += "Rejected Events:\n"
+        #     for reason, count in sorted(
+        #         rejected_events.items(), key=lambda item: (-item[1], item[0])
+        #     ):
+        #         base_report += f"  {reason}: {count}\n"
+
+        # If initialization or no classification results yet, return base report
+        if init or not hasattr(self, "_classification_results"):              
+            return base_report
+
+        # During the final post-processing pass, classification results may be
+        # available before the base class flips eventfitting_status[channel].
+        # In that case, report the channel as complete instead of incomplete.
+        if channel is not None and "fitting incomplete" in base_report:
+            if self._classification_results and "error" not in self._classification_results:
+                loader = getattr(self, "eventloader", None)
+                if loader is None:
+                    raise RuntimeError(
+                        "Event loader is not initialized; cannot determine total events"
+                    )
+  
+
+        # Add classification information to the report
+        classification_report = "\n\nClassification Results:"
+
+        if "skipped" in self._classification_results:
+            classification_report += (
+                f"\n  Classification skipped: {self._classification_results['reason']}"
+            )
+        elif "error" in self._classification_results:
+            classification_report += f"\n  {self._classification_results['error']}"
+        else:
+            results = self._classification_results
+            total_events = cast(int, results["total_events"])
+            lower_center = cast(float, results["lower_center"])
+            higher_center = cast(float, results["higher_center"])
+            threshold = cast(float, results["threshold"])
+            folded_count = cast(int, results["folded_count"])
+            unfolded_count = cast(int, results["unfolded_count"])
+
+            classification_report += f"\n  Total classified: {total_events} events"
+            if "ecd_filtered_events" in results:
+                ecd_filtered = cast(int, results["ecd_filtered_events"])
+                classification_report += (
+                    f"\n  ECD-filtered outliers: {ecd_filtered} events"
+                )
+            classification_report += (
+                f"\n  Lower center (unfolded): {lower_center:.2f} pA"
+            )
+            classification_report += (
+                f"\n  Higher center (folded): {higher_center:.2f} pA"
+            )
+            if "ratio" in results:
+                ratio = cast(float, results["ratio"])
+                classification_report += f"\n  Ratio (folded/unfolded): {ratio:.3f}"
+                if 1.7 <= ratio <= 2.3:
+                    classification_report += "✔ (within expected 2:1 ratio)"
+                else:
+                    classification_report += "✖ (outside expected 2:1 ratio)"
+            classification_report += f"\n  Threshold: {threshold:.2f} pA"
+            classification_report += (
+                f"\n  Folded events: {folded_count} ({folded_count/total_events:.1%})"
+            )
+            classification_report += f"\n  Unfolded events: {unfolded_count} ({unfolded_count/total_events:.1%})"
+
+        # Add peak classification statistics if available
+        if not hasattr(self, "_peak_statistics") and hasattr(self, "sublevel_metadata"):
+            try:
+                self._collect_peak_statistics(list(self.sublevel_metadata.keys()))
+            except Exception as e:
+                self.logger.debug(
+                    f"Unable to collect peak statistics for report: {str(e)}"
+                )
+
+        if hasattr(self, "_peak_statistics"):
+            peak_stats = self._peak_statistics
+            classification_report += "\n\nPeak Classification Statistics:"
+
+            # Cast values to proper types for type checking
+            total_peaks = cast(int, peak_stats["total_peaks"])
+            total_classified = cast(int, peak_stats["total_classified"])
+            total_unclassified = cast(int, peak_stats["total_unclassified"])
+            peak_type_counts = cast(Dict[int, int], peak_stats["peak_type_counts"])
+
+            classification_report += f"\n  Total peaks detected: {total_peaks}"
+            classification_report += f"\n  Classified peaks: {total_classified}"
+            classification_report += f"\n  Unclassified peaks: {total_unclassified}"
+
+            if total_peaks > 0:
+                classified_pct = total_classified / total_peaks * 100
+                unclassified_pct = total_unclassified / total_peaks * 100
+                classification_report += f" ({classified_pct:.1f}% classified, {unclassified_pct:.1f}% unclassified)"
+
+            # Break down by peak type
+            if peak_type_counts:
+                classification_report += "\n\n  Peak Filtering breakdown:"
+                # Sort by type number for consistent display
+                for peak_type in sorted(peak_type_counts.keys()):
+                    count = peak_type_counts[peak_type]
+                    pct = count / total_peaks * 100 if total_peaks > 0 else 0
+
+                    # Provide meaningful labels for peak types
+                    if peak_type == -1:
+                        type_label = "Type -1 (Rejected/Unclassified)"
+                    elif peak_type == 0:
+                        type_label = "Type 0 (Unprocessed)"
+                    elif peak_type == 1:
+                        type_label = "Type 1 (Carrier Level)"
+                    elif peak_type == 2:
+                        type_label = "Type 2 (Above Carrier)"
+                    elif peak_type == 3:
+                        type_label = "Type 3 (Bundle/Cluster)"
+                    elif peak_type == 11:
+                        type_label = "Type 11 (1U - Unfolding)"
+                    elif peak_type == 12:
+                        type_label = "Type 12 (1P - Peak with Height)"
+                    elif peak_type == 13:
+                        type_label = "Type 13 (1/2F - Folding)"
+                    elif peak_type == 21:
+                        type_label = "Type 21 (2U/2P - Higher Level)"
+                    elif peak_type == 22:
+                        type_label = "Type 22 (2P/1/2F - General)"
+                    else:
+                        type_label = f"Type {peak_type}"
+
+                    classification_report += (
+                        f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
+                    )
+
+        if hasattr(self, "_peak_prominence_classification_results"):
+            prominence_stats = self._peak_prominence_classification_results
+            classification_report += "\n\nPeak Prominence Classification:"
+
+            total_prominence_peaks = cast(
+                int, prominence_stats.get("total_peaks", 0)
+            )
+            lower_prominence_count = cast(
+                int, prominence_stats.get("lower_count", 0)
+            )
+            higher_prominence_count = cast(
+                int, prominence_stats.get("higher_count", 0)
+            )
+            n_components = cast(int, prominence_stats.get("n_components", 0))
+
+            classification_report += (
+                f"\n  Total classified peaks: {total_prominence_peaks}"
+            )
+            classification_report += (
+                f"\n  Class 0 (lower prominence): {lower_prominence_count}"
+            )
+            classification_report += (
+                f"\n  Class 1 (higher prominence): {higher_prominence_count}"
+            )
+            classification_report += f"\n  Selected populations: {n_components}"
+
+            if total_prominence_peaks > 0:
+                classification_report += (
+                    f" ({lower_prominence_count/total_prominence_peaks:.1%} class 0, "
+                    f"{higher_prominence_count/total_prominence_peaks:.1%} class 1)"
+                )
+                
+            threshold = float(prominence_stats.get("threshold"))  # type: ignore
+            
+            if threshold is not None:
+                classification_report += f"\n  Threshold: {cast(float, threshold):.2f} pA"
+
+            centers = prominence_stats.get("centers") 
+            if isinstance(centers, list) and centers:
+                formatted_centers = ", ".join(f"{center:.2f}" for center in centers)
+                classification_report += f"\n  Centers: {formatted_centers} pA"
+
+
+        return base_report + classification_report
+    
+###################################################################################################################    
+###################################################################################################################    
+ 
+    # utility functions
+
+    @log(logger=logger)
+    def _collect_peak_statistics(self, channels: List[int]) -> None:
+        """
+        Collect statistics about peak classifications across all events.
+
+        :param channels: List of channel indices to process
+        :type channels: List[int]
+        """
+        # Initialize counters
+        peak_type_counts: Dict[int, int] = {}
+        total_peaks = 0
+        total_classified = 0
+        total_unclassified = 0
+
+        # Iterate through all channels and events
+        for ch in channels:
+            if ch not in self.sublevel_metadata:
+                continue
+
+            for event_index in self.sublevel_metadata[ch]:
+                sublevel_data = self.sublevel_metadata[ch][event_index]
+
+                # Check if filtered data exists
+                if "filtered" not in sublevel_data:
+                    continue
+
+                filtered_values = sublevel_data["filtered"]
+                peak_ids = sublevel_data.get("peak_id", [])
+
+                # Count peaks by their filtered type
+                for i, peak_id in enumerate(peak_ids):
+                    if peak_id is not None and not (
+                        isinstance(peak_id, float) and np.isnan(peak_id)
+                    ):
+                        total_peaks += 1
+                        filtered_type = filtered_values[i]
+
+                        if filtered_type is not None and not (
+                            isinstance(filtered_type, float)
+                            and np.isnan(filtered_type)
+                        ):
+                            # Count by type
+                            peak_type_counts[int(filtered_type)] = (
+                                peak_type_counts.get(int(filtered_type), 0) + 1
+                            )
+
+                            # Classify as classified or unclassified
+                            if filtered_type > 0:
+                                total_classified += 1
+                            else:
+                                total_unclassified += 1
+
+        # Store results
+        self._peak_statistics = {
+            "total_peaks": total_peaks,
+            "total_classified": total_classified,
+            "total_unclassified": total_unclassified,
+            "peak_type_counts": peak_type_counts,
+        }
+
+        self.logger.info(
+            f"Peak statistics collected: {total_peaks} total peaks, "
+            f"{total_classified} classified, {total_unclassified} unclassified"
+        )
+        self.logger.info(f"Peak type distribution: {peak_type_counts}")
+
+    @log(logger=logger)
+    def visualize_classification(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        centers: np.ndarray,
+        gmm_model: GaussianMixture,
+        threshold: float,
+        title: str = "GMM Classification of Longest Blockage Levels",
+        ecd_outliers: Optional[np.ndarray] = None,
+        save_path: Optional[str] = None,
+    ) -> None:
+        """
+        Visualize the GMM classification results with histogram and fitted Gaussians.
+
+        :param data: Original 1D data array
+        :type data: np.ndarray
+        :param labels: Cluster labels for each data point
+        :type labels: np.ndarray
+        :param centers: Cluster centers (means)
+        :type centers: np.ndarray
+        :param gmm_model: Fitted GaussianMixture model
+        :type gmm_model: GaussianMixture
+        :param threshold: Classification threshold between folded/unfolded
+        :type threshold: float
+        :param title: Plot title
+        :type title: str
+        :param ecd_outliers: Optional data points excluded by ECD filtering
+        :type ecd_outliers: Optional[np.ndarray]
+        :param save_path: Optional path to save the figure
+        :type save_path: Optional[str]
+        """
+        import matplotlib.pyplot as plt
+        from scipy.stats import norm
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # Plot histogram of all data
+        n_bins = 50
+        counts, bins, patches = ax.hist(
+            data, bins=n_bins, density=True, alpha=0.5, color="gray", label="All Data"
+        )
+
+        if ecd_outliers is not None and len(ecd_outliers) > 0:
+            ax.hist(
+                ecd_outliers,
+                bins=n_bins,
+                density=True,
+                alpha=0.35,
+                color="orange",
+                label=f"ECD outliers ({len(ecd_outliers)} events)",
+                hatch="//",
+                edgecolor="darkorange",
+            )
+
+        # Sort centers to identify folded/unfolded
+        sorted_indices = np.argsort(centers)
+        lower_center = centers[sorted_indices[0]]
+        higher_center = centers[sorted_indices[1]]
+
+        # Plot histogram for each cluster
+        colors = ["blue", "red"]
+        cluster_labels = ["Unfolded (lower)", "Folded (higher)"]
+
+        for i, (cluster_idx, center) in enumerate(
+            zip(sorted_indices, [lower_center, higher_center])
+        ):
+            cluster_data = data[labels == cluster_idx]
+            ax.hist(
+                cluster_data,
+                bins=n_bins,
+                density=True,
+                alpha=0.6,
+                color=colors[i],
+                label=f"{cluster_labels[i]}: {center:.2f} pA ({len(cluster_data)} events)",
+            )
+
+        # Plot fitted Gaussian distributions
+        x_range = np.linspace(data.min(), data.max(), 1000)
+
+        for i, (cluster_idx, center) in enumerate(
+            zip(sorted_indices, [lower_center, higher_center])
+        ):
+            mean = gmm_model.means_[cluster_idx][0]
+            std = np.sqrt(gmm_model.covariances_[cluster_idx][0][0])
+            weight = gmm_model.weights_[cluster_idx]
+
+            gaussian = weight * norm.pdf(x_range, mean, std)
+            ax.plot(
+                x_range,
+                gaussian,
+                color=colors[i],
+                linewidth=2,
+                linestyle="--",
+                label=f"{cluster_labels[i]} Gaussian (mu={mean:.2f}, std={std:.2f})",
+            )
+
+        # Plot threshold line
+        ax.axvline(
+            threshold,
+            color="black",
+            linestyle="-",
+            linewidth=2,
+            label=f"Threshold: {threshold:.2f} pA",
+        )
+
+        # Add labels and formatting
+        ax.set_xlabel("Longest Blockage Level (pA)", fontsize=12)
+        ax.set_ylabel("Probability Density", fontsize=12)
+        ax.set_title(title, fontsize=14, fontweight="bold")
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        # Add text annotation with classification info
+        folded_count = len(data[data >= threshold])
+        unfolded_count = len(data[data < threshold])
+        total = len(data)
+        outlier_count = len(ecd_outliers) if ecd_outliers is not None else 0
+
+        info_text = (
+            f"Total Events: {total}\n"
+            f"Folded (≥ threshold): {folded_count} ({folded_count/total:.1%})\n"
+            f"Unfolded (< threshold): {unfolded_count} ({unfolded_count/total:.1%})\n"
+            f"ECD outliers: {outlier_count}"
+        )
+        ax.text(
+            0.02,
+            0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+        )
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            self.logger.info(f"Classification visualization saved to {save_path}")
+
+        #plt.show()
+
+    @log(logger=logger)
+    def classify_1d_distribution(
+        self,
+        data: np.ndarray,
+        n_components: int = 2,
+        return_centers: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
+        """
+        Classify 1D data into clusters using Gaussian Mixture Model.
+
+        :param data: 1D array of data to classify
+        :type data: np.ndarray
+        :param n_components: Number of Gaussian components to fit
+        :type n_components: int
+        :param return_centers: Whether to return cluster centers and GMM model along with labels
+        :type return_centers: bool
+        :return: Cluster labels, optionally with centers and fitted GMM model
+        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
+        """
+        data_reshaped = np.array(data).reshape(-1, 1)
+
+        gmm = GaussianMixture(n_components=n_components, random_state=42)
+        labels = gmm.fit_predict(data_reshaped)
+        centers = gmm.means_.flatten()
+
+        if return_centers:
+            return labels, centers, gmm
+        return labels   
+    
+    @log(logger=logger)
+    def classify_2d_distribution(
+        self,
+        data: np.ndarray,
+        n_components: int = 2,
+        return_centers: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
+        """
+        Classify 2D data into clusters using Gaussian Mixture Model.
+
+        :param data: 2D array of data to classify
+        :type data: np.ndarray
+        :param n_components: Number of Gaussian components to fit
+        :type n_components: int
+        :param return_centers: Whether to return cluster centers and GMM model along with labels
+        :type return_centers: bool
+        :return: Cluster labels, optionally with centers and fitted GMM model
+        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
+        """
+        data_reshaped = np.array(data).reshape(-1, 2)
+
+        gmm = GaussianMixture(n_components=n_components, random_state=42)
+        labels = gmm.fit_predict(data_reshaped)
+        centers = gmm.means_.flatten()
+
+        if return_centers:
+            return labels, centers, gmm
+        return labels
+
+    @log(logger=logger)
+    def _classify_peak_prominences(self, channels: List[int]) -> None:
+        """
+        Classify peak prominences for peaks whose filtered value is 1, 2, or 3.
+
+        The lower prominence population is written as 0 and the higher population
+        as 1. If a single population is selected by BIC, all eligible peaks are
+        written as 0.
+        """
+        prominence_values: List[float] = []
+        prominence_refs: List[Tuple[int, int, int]] = []
+
+        for ch in channels:
+            if ch not in self.sublevel_metadata:
+                continue
+
+            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
+                filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+                prominences = np.asarray(sublevel_data.get("prominence", []), dtype=float)
+                peak_ids = sublevel_data.get("peak_id", [])
+
+                if "classified" not in sublevel_data or len(sublevel_data["classified"]) != len(peak_ids):
+                    self.sublevel_metadata[ch][event_index]["classified"] = np.full(
+                        len(peak_ids), np.nan, dtype=np.float64
+                    )
+
+                for peak_index, peak_id in enumerate(peak_ids):
+                    if peak_id is None or (isinstance(peak_id, float) and np.isnan(peak_id)):
+                        continue
+                    if peak_index >= len(filtered_values) or peak_index >= len(prominences):
+                        continue
+
+                    peak_type = filtered_values[peak_index]
+                    if np.isnan(peak_type) or int(peak_type) not in {1, 2, 3}:
+                        continue
+
+                    prominence = prominences[peak_index]
+                    if np.isnan(prominence):
+                        continue
+
+                    prominence_values.append(float(prominence))
+                    prominence_refs.append((ch, event_index, peak_index))
+
+        if not prominence_values:
+            self.logger.warning(
+                "No peaks with filtered values 1, 2, or 3 were available for prominence classification"
+            )
+            return
+
+        prominence_array = np.asarray(prominence_values, dtype=np.float64)
+        prominence_reshaped = prominence_array.reshape(-1, 1)
+
+        candidate_models: List[Tuple[float, GaussianMixture]] = []
+        for n_components in (1, 2):
+            if len(prominence_array) < n_components:
+                continue
+            gmm = GaussianMixture(n_components=n_components, random_state=42)
+            gmm.fit(prominence_reshaped)
+            candidate_models.append((gmm.bic(prominence_reshaped), gmm))
+
+        if not candidate_models:
+            self.logger.warning("Unable to fit a prominence classification model")
+            return
+
+        selected_model = min(candidate_models, key=lambda item: item[0])[1]
+        gmm_labels = selected_model.predict(prominence_reshaped)
+        centers = selected_model.means_.flatten()
+
+        if selected_model.n_components == 1:
+            class_labels = np.zeros(len(prominence_array), dtype=np.float64)
+            threshold = None
+        else:
+            sorted_indices = np.argsort(centers)
+            lower_idx = int(sorted_indices[0])
+            higher_idx = int(sorted_indices[1])
+            label_map = {lower_idx: 0.0, higher_idx: 1.0}
+            class_labels = np.array(
+                [label_map[int(label)] for label in gmm_labels], dtype=np.float64
+            )
+            threshold = float((centers[lower_idx] + centers[higher_idx]) / 2.0)
+
+        for class_label, (ch, event_index, peak_index) in zip(class_labels, prominence_refs):
+            self.sublevel_metadata[ch][event_index]["classified"][peak_index] = class_label
+
+        self._peak_prominence_classification_results = {
+            "total_peaks": int(len(prominence_array)),
+            "n_components": int(selected_model.n_components),
+            "threshold": threshold,
+            "centers": centers.tolist(),
+            "lower_count": int(np.sum(class_labels == 0)),
+            "higher_count": int(np.sum(class_labels == 1)),
+        }
+
+        if self.settings.get("Visualize Classification", {}).get("Value", False):
+            loader = getattr(self, "eventloader", None)
+            plot_path = None
+            if loader is None:
+                self.logger.warning(
+                    "Peak prominence visualization enabled, but no event loader is available to derive an output path"
+                )
+            else:
+                base_file = loader.get_base_file()
+                plot_path = base_file.with_name(
+                    f"{base_file.stem}_peak_prominence_classification.png"
+                )
+
+            self._visualize_peak_prominence_classification(
+                data=prominence_array,
+                labels=class_labels,
+                centers=centers,
+                gmm_model=selected_model,
+                threshold=threshold,
+                save_path=str(plot_path) if plot_path is not None else None,
+            )
+
+    @log(logger=logger)
+    def _visualize_peak_prominence_classification(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        centers: np.ndarray,
+        gmm_model: GaussianMixture,
+        threshold: Optional[float] = None,
+        save_path: Optional[str] = None,
+    ) -> None:
+        """
+        Visualize the prominence classification results for peaks.
+        """
+        import matplotlib.pyplot as plt
+        from scipy.stats import norm
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        n_bins = 50
+        ax.hist(
+            data,
+            bins=n_bins,
+            density=True,
+            alpha=0.5,
+            color="gray",
+            label="All Peaks",
+        )
+
+        sorted_indices = np.argsort(centers)
+        colors = ["blue", "red"]
+        class_labels = ["Lower prominence (0)", "Higher prominence (1)"]
+
+        for class_idx, gmm_idx in enumerate(sorted_indices):
+            cluster_data = data[labels == class_idx]
+            ax.hist(
+                cluster_data,
+                bins=n_bins,
+                density=True,
+                alpha=0.6,
+                color=colors[class_idx % len(colors)],
+                label=f"{class_labels[class_idx]}: {centers[gmm_idx]:.2f} pA ({len(cluster_data)} peaks)",
+            )
+
+            mean = gmm_model.means_[gmm_idx][0]
+            std = np.sqrt(gmm_model.covariances_[gmm_idx][0][0])
+            weight = gmm_model.weights_[gmm_idx]
+            x_range = np.linspace(data.min(), data.max(), 1000)
+            ax.plot(
+                x_range,
+                weight * norm.pdf(x_range, mean, std),
+                color=colors[class_idx % len(colors)],
+                linewidth=2,
+                linestyle="--",
+                label=f"{class_labels[class_idx]} Gaussian (mu={mean:.2f}, std={std:.2f})",
+            )
+
+        if threshold is not None:
+            ax.axvline(
+                threshold,
+                color="black",
+                linestyle="-",
+                linewidth=2,
+                label=f"Threshold: {threshold:.2f} pA",
+            )
+
+        ax.set_xlabel("Peak Prominence (pA)", fontsize=12)
+        ax.set_ylabel("Probability Density", fontsize=12)
+        ax.set_title("Peak Prominence Classification", fontsize=14, fontweight="bold")
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        total = len(data)
+        lower_count = int(np.sum(labels == 0))
+        higher_count = int(np.sum(labels == 1))
+
+        info_text = (
+            f"Total Peaks: {total}\n"
+            f"Class 0: {lower_count} ({lower_count/total:.1%})\n"
+            f"Class 1: {higher_count} ({higher_count/total:.1%})"
+        )
+        ax.text(
+            0.02,
+            0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+        )
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            self.logger.info(
+                f"Peak prominence classification visualization saved to {save_path}"
+            )
+
+        plt.close(fig)
+
+    @log(logger=logger)
+    def filter_peaks(
+        self,
+        peaks,
+        properties,
+        unfolded_level,
+        folded_level,
+        baseline_std,
+        baseline,
+        samplerate,
+        event_length,
+    ):
+      
+        #Defining variables and thresholds
+          
+        num_peaks = int(self.settings["Number of peaks"]["Value"])
+        t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
+        t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
+        
+
+        # event_id = getattr(self, "_debug_event_id", None)
+
+
+        num_peaks = self.settings["Number of peaks"]["Value"]
+        prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted
+
+        filtered = properties["filtered"]
+
+        # Helper thresholds for classification
+
+        # lower_bound = t1_std * baseline_std
+
+        unfolded_lower_bound = (
+            (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0
+        )
+        unfolded_upper_bound = (
+            (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0
+        )
+
+        folded_lower_bound = (
+            (folded_level - t1_std * baseline_std) if folded_level is not None else 0
+        )
+        folded_upper_bound = (
+            (folded_level + t2_std * baseline_std) if folded_level is not None else 0
+        )
+
+        # BARCODE
+        """
+        Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
+        - Type 1: Peaks on the same DNA carrier level (both bases around unfolded_level).
+        - Type 2: Peaks higher than the carrier level (both bases above unfolded_level).
+        - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
+        """
+        # # Convert commonly-used properties to numpy arrays for vectorized ops
+        # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
+        # right_bases = np.array(properties.get("right_bases", []), dtype=float) + np.sign(baseline) * baseline
+        # prominences = np.array(properties.get("prominences", []), dtype=float)
+        # widths = np.array(properties.get("widths", []), dtype=float)
+        # ips_left = np.array(properties.get("left_ips", []), dtype=float)
+        # ips_right = np.array(properties.get("right_ips", []), dtype=float)
+
+
+        # Early return if no peaks
+        if len(peaks) == 0:
+            # preserve whatever filtered was provided (likely empty)
+            properties["filtered"] = properties.get("filtered", [])
+            return properties
+
+        # Ensure filtered is a numeric array matching number of peaks
+        filtered_list = list(properties.get("filtered", []))
+        if len(filtered_list) < len(peaks):
+            filtered_list = filtered_list + [0] * (len(peaks) - len(filtered_list))
+        elif len(filtered_list) > len(peaks):
+            filtered_list = filtered_list[: len(peaks)]
+        filtered = np.array(filtered_list, dtype=int)
+        if self.settings["Event Type"]["Value"] == "Barcode":
+            # Classify by ordered ranges, requiring both bases to land in the same band.
+            # 0: both bases below the lower barcode threshold
+            # 1: both bases between the lower threshold and the type-2 lower bound
+            # 2: both bases around twice the unfolded level
+            # -1: either base above the type-2 upper bound
+            # Define thresholds. We treat type-1 as anything from unfolded_level + t1*std
+            # up to (but not including) the type-2 lower bound. Type-2 is centered
+            # around 2*unfolded_level ± thresholds, and anything above that upper
+            # bound is -1 (noise).
+            type0_thresh = t2_std * baseline_std
+            type1_thresh = unfolded_level + t1_std * baseline_std
+            type2_thresh = unfolded_level + t2_std * baseline_std
+
+            # Debug prints to help trace classification during development
+            # print(
+            #     f"[debug] filter_peaks: event_id={event_id}, unfolded_level={unfolded_level}, baseline_std={baseline_std}, t1={t1_std}, t2={t2_std}"
+            # )
+            # print(
+            #     f"[debug] thresholds: event_id={event_id}, type0={type0_thresh}, type1={type1_thresh}, type2={type2_thresh}"
+            # )
+            # try:
+            #     print(
+            #         f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases.tolist()}, right_bases={right_bases.tolist()}"
+            #     )
+            # except Exception:
+            #     print(f"[debug] peaks count={len(peaks)}, event_id={event_id}, left_bases={left_bases}, right_bases={right_bases}")
+
+            for i in range(len(peaks)):
+                left_base = properties["left_bases"][i] + np.sign(baseline) * baseline
+                right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
+                # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
+
+                # Type 0: both bases are below the lower carrier threshold.
+                if left_base <= type0_thresh and right_base <= type0_thresh :
+                    filtered[i] = 0
+                # Type -1: both bases above the upper type-2 cutoff (noise)
+                elif left_base >= type2_thresh + unfolded_level and right_base >= type2_thresh + unfolded_level:
+                    filtered[i] = -1
+                #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
+                # Type 2: both bases within the type-2 band around 2*unfolded_level
+                elif left_base >= type2_thresh and right_base >= type2_thresh and left_base <= type2_thresh + unfolded_level and right_base <=  type2_thresh + unfolded_level:
+                    filtered[i] = 2
+                #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
+                # Type 1: both bases within the type-1 band around unfolded_level
+                elif left_base >= type1_thresh and right_base >= type1_thresh and left_base <= type2_thresh and right_base <= type2_thresh:
+                    filtered[i] = 1
+                    # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
+                else:
+                    filtered[i] = -1
+                    # print(f"[debug] event_id={event_id}, peak {i} assigned -1 (does not meet type1 or type2 criteria, bases missmatch)")
+                # if filtered[i] not in [1, 2, -1]:
+                #    print(f"Unlabeled peak {i}: left={left_base:.3f}, right={right_base:.3f}, unfolded_level-2std={unfolded_level - 2 * baseline_std:.3f}, 2*unfolded_level+std={2*unfolded_level+baseline_std:.3f}")
+
+            # Step 2: Identify clusters of same-type peaks, but keep only the most prominent one
+            # Calculate max_distance as percentage of event length
+            max_distance_percentage = self.settings.get(
+                "Peak to Peak Distance Ratio", {}
+            ).get("Value", 10.0)
+            event_length_samples = (
+                event_length * samplerate * 1e-6
+            )  # Convert us to samples
+            max_distance = int((max_distance_percentage / 100.0) * event_length_samples)
+            self.logger.debug(
+                f"filter_peaks: event_length={event_length:.1f} us, "
+                f"event_length_samples={event_length_samples:.1f}, "
+                f"max_distance_percentage={max_distance_percentage}%, "
+                f"max_distance={max_distance} samples"
+            )
+            min_group_size = num_peaks
+
+            best_cluster = []
+            best_prom_sum = 0
+
+            for label in [1, 2]:
+                label_idxs = [i for i in prom_indices if filtered[i] == label]
+                if not label_idxs:
+                    continue
+
+                label_idxs = label_idxs[:num_peaks]
+                sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
+
+                # Find clusters where consecutive peaks are within max_distance
+                for i in range(len(sorted_idxs)):
+                    group = [sorted_idxs[i]]
+
+                    # Add consecutive peaks that are close enough
+                    for j in range(i + 1, len(sorted_idxs)):
+                        # Check distance between consecutive peaks in the group
+                        prev_peak_idx = group[-1]
+                        curr_peak_idx = sorted_idxs[j]
+                        distance = abs(peaks[curr_peak_idx] - peaks[prev_peak_idx])
+
+                        if distance <= max_distance:
+                            group.append(curr_peak_idx)
+                        else:
+                            # Stop when we find a gap larger than max_distance
+                            break
+
+                    # Check if this group is large enough and has higher total prominence
+                    if len(group) >= min_group_size:
+                        prom_sum = sum(properties["prominences"][idx] for idx in group)
+                        if prom_sum > best_prom_sum:
+                            best_cluster = group
+                            best_prom_sum = prom_sum
+                        break  # only use first valid cluster per label
+
+                # Relabel best cluster as Type 3
+                for idx in best_cluster:
+                    filtered[idx] = 3
+
+
+            # Persist filtered labels back to properties
+            properties["filtered"] = list(filtered.tolist())
+
+        # SINGLE PEAK CARRIER
+        if self.settings["Event Type"]["Value"] == "Single Peak":
+            classified_peaks = []
+            for i in range(len(peaks)):
+                left_base = properties["left_bases"][i]+ np.sign(baseline) * baseline
+                right_base = properties["right_bases"][i]+ np.sign(baseline) * baseline
+                prom = properties["prominences"][i]
+                height = properties["peak_heights"][i]
+
+                # Classify peak type based on base levels - ordered from most specific to most general
+                if right_base >= folded_upper_bound and left_base >= folded_upper_bound:
+                    filtered[i] = -1  # Reject peaks that are too high
+                elif (
+                    right_base >= unfolded_lower_bound
+                    and right_base <= unfolded_upper_bound
+                    and left_base >= folded_lower_bound
+                    and left_base <= folded_upper_bound
+                    and height >= folded_upper_bound
+                ):
+                    filtered[i] = (
+                        12  # Type 1P - Most specific case with height requirement
+                    )
+                elif (
+                    right_base >= unfolded_lower_bound
+                    and right_base <= unfolded_upper_bound
+                    and left_base <= unfolded_lower_bound
+                ):
+                    filtered[i] = 11  # Type 1U - Clear unfolding transition
+                elif (
+                    left_base >= folded_lower_bound
+                    and left_base <= folded_upper_bound
+                    and right_base <= unfolded_lower_bound
+                ):
+                    filtered[i] = 13  # Type 1/2F - Specific folding transition
+                elif (
+                    left_base >= unfolded_lower_bound
+                    and left_base <= unfolded_upper_bound
+                    and right_base <= unfolded_lower_bound
+                ):
+                    filtered[i] = 21  # Type 2U or 2P - Unfolding/Peak from higher level
+                elif (
+                    left_base >= unfolded_upper_bound
+                    and right_base <= unfolded_lower_bound
+                ):
+                    filtered[i] = 22  # Type 2P or 1/2F - Most general case
+                else:
+                    filtered[i] = -1
+                    continue
+
+                classified_peaks.append((i, prom))
+
+            # Step 2: Keep only the most prominent valid classified peak at the end
+            if classified_peaks:
+                # Sort by: prominence (descending) then index (descending)
+                classified_peaks.sort(key=lambda x: (-x[1], -x[0]))
+                best_idx = classified_peaks[0][0]
+
+                # Set all other peaks to -1
+                for i in range(len(peaks)):
+                    if i != best_idx:
+                        filtered[i] = -1
+
+        # MISC
+        if self.settings["Event Type"]["Value"] == "Unspecified":
+            pass  # fill out as needed
+
+        # Debug log the classification results
+        filtered_counts = {}
+        for f in filtered:
+            filtered_counts[f] = filtered_counts.get(f, 0) + 1
+        self.logger.debug(
+            f"filter_peaks: Event Type={self.settings['Event Type']['Value']}, classified {len(peaks)} peaks: {filtered_counts}"
+        )
+
+        return properties
+
+    @log(logger=logger)
+    def find_mode_blockage_level(self, data, baseline_mean, baseline_std):
+        """
+        Extract the most populated blockage level from the data.
+
+        Uses numpy histogram to find the most common current level.
+        Data should already be trimmed to the longest continuous segment above threshold
+        by _locate_sublevel_transitions. Folded/unfolded classification is deferred
+        to post-processing across all events.
+
+        :param data: Array of current values (already trimmed to longest segment).
+        :type data: numpy.ndarray
+        :param baseline_mean: Mean value of the baseline level.
+        :type baseline_mean: float
+        :param baseline_std: Standard deviation of the baseline level.
+        :type baseline_std: float
+        :return: Tuple of (primary_blockage_level, secondary_blockage_level) - the 2 most populated distinct blockage levels
+        :rtype: Tuple[Optional[float], Optional[float]]
+        """
+        # Data is already trimmed to longest segment in _locate_sublevel_transitions
+        # Find the 2 most populated levels using histogram
+
+        # Fast histogram-based level detection using numpy
+        # Create bins with baseline_std/8 spacing for precise level detection
+        bin_width = baseline_std / 8
+        min_val = np.min(data)
+        max_val = np.max(data)
+        bins = np.arange(min_val - bin_width / 2, max_val + bin_width, bin_width)
+
+        # Get histogram counts and bin centers
+        counts, bin_edges = np.histogram(data, bins=bins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+        # Find the 2 bins with maximum counts
+        top_2_indices = np.argsort(counts)[-2:][::-1]  # Sort descending, take top 2
+
+        primary_level = np.abs(bin_centers[top_2_indices[0]] - baseline_mean)
+        secondary_level = (
+            np.abs(bin_centers[top_2_indices[1]] - baseline_mean)
+            if len(top_2_indices) > 1 and counts[top_2_indices[1]] > 0
+            else None
+        )
+
+        return primary_level, secondary_level
+
+
     @log(logger=logger)
     def enumerate_peaks(
         self, sublevel_starts: list[dict], num_states: int, sublevel_types: Optional[list[str]] = None
