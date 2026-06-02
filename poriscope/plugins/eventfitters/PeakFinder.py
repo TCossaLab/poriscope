@@ -1543,10 +1543,7 @@ class PeakFinder(MetaEventFitter):
                 f"Processing channel {ch}, event_metadata type: {type(self.event_metadata[ch])}, length: {len(self.event_metadata[ch]) if hasattr(self.event_metadata[ch], '__len__') else 'N/A'}"
             )
 
-            # event_metadata[ch] is a dict with event indices as keys
-            # Use .items() to iterate over (key, value) pairs instead of enumerate
             for event_index, event_data in self.event_metadata[ch].items():
-                # Ensure event_data is a dictionary
                 if not isinstance(event_data, dict):
                     self.logger.warning(
                         f"Event {event_index} in channel {ch} is not a dict: {type(event_data)}"
@@ -1556,7 +1553,7 @@ class PeakFinder(MetaEventFitter):
                 longest_level = event_data.get("longest_blockage_level")
                 raw_ecd = event_data.get("raw_ecd")
 
-                if event_index < 3:  # Log first 3 events for debugging
+                if event_index < 3:
                     self.logger.info(
                         f"Channel {ch}, Event {event_index}: longest_level = {longest_level}, raw_ecd = {raw_ecd}"
                     )
@@ -1566,7 +1563,6 @@ class PeakFinder(MetaEventFitter):
                     all_raw_ecds.append(raw_ecd)
                     all_event_info.append((ch, event_index))
                 else:
-                    # Log why event was excluded
                     self.logger.info(
                         f"Event {event_index} in channel {ch} excluded: "
                         f"longest_level={'None' if longest_level is None else f'{longest_level:.2f}'}, "
@@ -1589,313 +1585,22 @@ class PeakFinder(MetaEventFitter):
             f"Collected {len(all_longest_levels)} events for classification analysis"
         )
 
-        # Pre-filter using blockage level threshold
-        # Exclude events with blockage levels below the user-specified minimum
-        min_blockage_threshold = self.settings.get("Min Carrier Blockage", {}).get(
-            "Value", 300.0
-        )
-        blockage_threshold_mask = all_longest_levels_array >= min_blockage_threshold
-        n_below_threshold = len(all_longest_levels) - np.sum(blockage_threshold_mask)
-
-        self.logger.info("Blockage level threshold filtering:")
-        self.logger.info(
-            f"  Minimum blockage threshold: {min_blockage_threshold:.1f} pA"
-        )
-        self.logger.info(
-            f"  Filtered out {n_below_threshold} events below threshold ({n_below_threshold/len(all_longest_levels):.1%})"
-        )
-        self.logger.info(f"  Remaining events: {np.sum(blockage_threshold_mask)}")
-
-        # Pre-filter using ECD to remove outliers/noise
-        # Use log10(ECD) and keep events between 5th and 95th percentile
-        log_ecd = np.log10(all_raw_ecds_array)
-        ecd_5th = np.percentile(log_ecd, 5)
-        ecd_95th = np.percentile(log_ecd, 95)
-
-        ecd_filter_mask = (log_ecd >= ecd_5th) & (log_ecd <= ecd_95th)
-
-        # Combine both filters: blockage threshold AND ECD percentile
-        combined_filter_mask = blockage_threshold_mask & ecd_filter_mask
-        n_filtered_out = len(all_longest_levels) - np.sum(combined_filter_mask)
-
-        self.logger.info("ECD-based filtering:")
-        self.logger.info(
-            f"  log10(ECD) range: 5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}"
+        self._classify_folded_unfolded(
+            channels=channels,
+            all_event_info=all_event_info,
+            all_longest_levels_array=all_longest_levels_array,
+            all_raw_ecds_array=all_raw_ecds_array,
         )
 
-        self.logger.info("Combined filtering results:")
-        self.logger.info(
-            f"  Total filtered out: {n_filtered_out} events ({n_filtered_out/len(all_longest_levels):.1%})"
-        )
-        self.logger.info(
-            f"  Remaining events for classification: {np.sum(combined_filter_mask)}"
-        )
+        # Classify peak prominences for peaks that survived the type filter
+        self._classify_peak_prominences(channels)
 
-        # Apply filter to all arrays
-        filtered_longest_levels = all_longest_levels_array[combined_filter_mask]
-        if len(filtered_longest_levels) < 10:
-            self.logger.warning(
-                "Too few events after combined filtering, using unfiltered data"
-            )
-            filtered_longest_levels = all_longest_levels_array
-            combined_filter_mask = np.ones(len(all_longest_levels), dtype=bool)
+        # Mark fitting as complete for all processed channels
+        for channel in channels:
+            self.eventfitting_status[channel] = True
 
-        # Perform 1D classification on filtered longest blockage levels using GMM
-        classification_method_1d = "gmm"  # Always use Gaussian Mixture Model
-        n_clusters_1d = 2  # Default to 2 clusters (folded/unfolded)
-
-        self.logger.info(
-            f"Performing 1D classification using {classification_method_1d} method on {len(filtered_longest_levels)} filtered events"
-        )
-        labels_1d_filtered, centers_1d, gmm_model = self.classify_1d_distribution(
-            filtered_longest_levels,
-            n_components=n_clusters_1d,
-            return_centers=True,
-        )
-
-        # Log summary information
-        self.logger.info("1D Classification Summary (Initial):")
-        self.logger.info(f"  Method: {classification_method_1d}")
-        self.logger.info(f"  Centers: {centers_1d}")
-        self.logger.info(f"  Clusters found: {len(np.unique(labels_1d_filtered))}")
-
-        # Sort centers to identify lower and higher distributions
-        sorted_indices = np.argsort(centers_1d)
-        lower_center = centers_1d[sorted_indices[0]]
-        higher_center = centers_1d[sorted_indices[1]]
-
-        # Check if the ratio fits expected 2:1 folded/unfolded relationship
-        ratio = higher_center / lower_center if lower_center > 0 else 0
-        ratio_fits = 1.7 <= ratio <= 2.3
-
-        self.logger.info(f"  Lower center: {lower_center:.2f} pA")
-        self.logger.info(f"  Higher center: {higher_center:.2f} pA")
-        self.logger.info(
-            f"  Ratio (folded/unfolded): {ratio:.3f} - {'GOOD (within 1.7-2.3)' if ratio_fits else 'WARNING (outside expected 2:1 ratio)'}"
-        )
-
-        # Log cluster sizes for filtered data
-        unique_labels, label_counts = np.unique(labels_1d_filtered, return_counts=True)
-        for label, count in zip(unique_labels, label_counts):
-            cluster_mean = np.mean(filtered_longest_levels[labels_1d_filtered == label])
-            self.logger.info(
-                f"  Cluster {label}: {count} events ({count/len(labels_1d_filtered):.1%}), mean: {cluster_mean:.3f}"
-            )
-
-        # If ratio is bad, apply blockage-level filtering and retry
-        if not ratio_fits:
-            self.logger.info(
-                "Ratio check FAILED - applying blockage-level filtering strategy"
-            )
-
-            # Filter out events below 25th percentile of blockage level
-            blockage_25th = np.percentile(filtered_longest_levels, 25)
-            self.logger.info(
-                f"  Blockage level 25th percentile: {blockage_25th:.2f} pA"
-            )
-
-            # Create mask for events above 25th percentile
-            blockage_filter_mask = filtered_longest_levels >= blockage_25th
-            re_filtered_longest_levels = filtered_longest_levels[blockage_filter_mask]
-
-            n_blockage_filtered = len(filtered_longest_levels) - len(
-                re_filtered_longest_levels
-            )
-            self.logger.info(
-                f"  Filtered out {n_blockage_filtered} additional events below 25th percentile"
-            )
-            self.logger.info(
-                f"  Remaining events for re-classification: {len(re_filtered_longest_levels)}"
-            )
-
-            if len(re_filtered_longest_levels) >= 10:
-                # Re-run GMM on blockage-filtered data
-                self.logger.info("Re-running GMM on blockage-filtered data...")
-                labels_1d_refiltered, centers_1d_new, gmm_model_new = (
-                    self.classify_1d_distribution(
-                        re_filtered_longest_levels,
-                        n_components=n_clusters_1d,
-                        return_centers=True,
-                    )
-                )
-
-                # Check new ratio
-                sorted_indices_new = np.argsort(centers_1d_new)
-                lower_center_new = centers_1d_new[sorted_indices_new[0]]
-                higher_center_new = centers_1d_new[sorted_indices_new[1]]
-                ratio_new = (
-                    higher_center_new / lower_center_new if lower_center_new > 0 else 0
-                )
-                ratio_fits_new = 1.7 <= ratio_new <= 2.3
-
-                self.logger.info(
-                    "1D Classification Summary (After blockage filtering):"
-                )
-                self.logger.info(f"  New centers: {centers_1d_new}")
-                self.logger.info(f"  Lower center: {lower_center_new:.2f} pA")
-                self.logger.info(f"  Higher center: {higher_center_new:.2f} pA")
-                self.logger.info(
-                    f"  New ratio: {ratio_new:.3f} - {'GOOD (within 1.7-2.3)' if ratio_fits_new else 'STILL POOR'}"
-                )
-
-                # If new ratio is better, use the new results
-                if ratio_fits_new or ratio_new < ratio:  # Use if improved
-                    self.logger.info(
-                        "Using blockage-filtered GMM results (ratio improved)"
-                    )
-                    centers_1d = centers_1d_new
-                    gmm_model = gmm_model_new
-                    lower_center = lower_center_new
-                    higher_center = higher_center_new
-                    ratio = ratio_new
-                    ratio_fits = ratio_fits_new
-                    # Update filtered_longest_levels to use for final classification
-                    filtered_longest_levels = re_filtered_longest_levels
-                else:
-                    self.logger.warning(
-                        "Blockage filtering did not improve ratio, using original results"
-                    )
-            else:
-                self.logger.warning(
-                    "Too few events after blockage filtering, using original results"
-                )
-
-        # Automatic folded/unfolded classification based on distribution analysis
-        if len(centers_1d) >= 2:
-            # Calculate threshold based on ratio quality
-            # If ratio is good (1.7-2.3), use simple midpoint
-            # Otherwise, use ratio-aware threshold as fallback
-            if ratio_fits:
-                threshold = (lower_center + higher_center) / 2.0
-                self.logger.info(
-                    f"Using midpoint threshold (ratio is good): {threshold:.2f} pA"
-                )
-            else:
-                threshold = lower_center * 1.5
-                self.logger.info(
-                    f"Using ratio-aware threshold (ratio is poor): {threshold:.2f} pA"
-                )
-
-            self.logger.info("Distribution analysis:")
-            self.logger.info(f"  Lower center: {lower_center:.3f}")
-            self.logger.info(f"  Higher center: {higher_center:.3f}")
-            self.logger.info(f"  Threshold: {threshold:.3f}")
-            self.logger.info(f"  Ratio: {ratio:.3f}")
-            if ratio_fits:
-                self.logger.info("  Ratio quality: GOOD - using midpoint threshold")
-            else:
-                self.logger.info(
-                    "  Ratio quality: POOR - using ratio-aware threshold as fallback"
-                )
-
-            # Classify each event (including filtered-out events) based on its longest_blockage_level
-            # Higher absolute blockage (above threshold) = Folded DNA (more compact)
-            # Lower absolute blockage (below threshold) = Unfolded DNA (more extended)
-            # If above threshold: this IS the folded_level, unfolded_level = folded_level / 2
-            # If below threshold: this IS the unfolded_level, folded_level = unfolded_level * 2
-            folded_count = 0
-            unfolded_count = 0
-
-            # Process ALL events (original unfiltered list) for classification
-            self.logger.info(f"Starting event classification loop: {len(all_event_info)} events to process")
-            for i, (ch, event_index) in enumerate(all_event_info):
-                self.logger.debug(f"Processing event {i+1}/{len(all_event_info)}: Channel {ch}, Event {event_index}")
-                event_longest_level = all_longest_levels_array[i]
-                # Classify based on threshold comparison
-                if event_longest_level >= threshold:
-                    # Above threshold = Folded (higher absolute blockage, more compact)
-                    # This event's longest level IS the folded level
-                    event_folded_level = event_longest_level
-                    event_unfolded_level = event_longest_level / 2.0
-                    folded_count += 1
-                else:
-                    # Below threshold = Unfolded (lower absolute blockage, more extended)
-                    # This event's longest level IS the unfolded level
-                    event_unfolded_level = event_longest_level
-                    event_folded_level = event_longest_level * 2.0
-                    unfolded_count += 1
-
-                # Update metadata with event-specific levels
-                try:
-                    self.update_event_metadata_post_processing(
-                        ch,
-                        event_index,
-                        event_unfolded_level,
-                        event_folded_level,
-                    )
-                except Exception as e:
-                    self.logger.error(f"Error in update_event_metadata_post_processing: {str(e)}")
-
-            self.logger.info("Event classification completed:")
-            self.logger.info(
-                f"  Folded events: {folded_count} ({folded_count/len(all_event_info):.1%})"
-            )
-            self.logger.info(
-                f"  Unfolded events: {unfolded_count} ({unfolded_count/len(all_event_info):.1%})"
-            )
-
-            # Store classification results for status report
-            self._classification_results = {
-                "total_events": len(all_event_info),
-                "folded_count": folded_count,
-                "unfolded_count": unfolded_count,
-                "lower_center": lower_center,
-                "higher_center": higher_center,
-                "threshold": threshold,
-                "ratio": ratio,
-                "ecd_filtered_events": n_filtered_out,
-            }
-
-            # Collect peak classification statistics across all events
-            self._collect_peak_statistics(channels)
-
-            # Classify peak prominences for peaks that survived the type filter.
-            self._classify_peak_prominences(channels)
-
-            #Optionally visualize the classification
-            #For visualization, create labels for all events based on threshold
-            if self.settings.get("Visualize Classification", {}).get("Value", False):
-                try:
-                    plot_path = None
-                    loader = getattr(self, "eventloader", None)
-                    if loader is None:
-                        self.logger.warning(
-                            "Visualization enabled, but no event loader is available to derive an output path"
-                        )
-                    else:
-                        base_file = loader.get_base_file()
-                        plot_path = base_file.with_name(f"{base_file.stem}_classification.png")
-
-                    ecd_outlier_levels = all_longest_levels_array[~combined_filter_mask]
-
-                    self.visualize_classification(
-                        data=filtered_longest_levels,
-                        labels=labels_1d_filtered,
-                        centers=centers_1d,
-                        gmm_model=gmm_model,
-                        threshold=threshold,
-                        title="GMM Classification: Folded vs Unfolded DNA (ECD-filtered)",
-                        ecd_outliers=ecd_outlier_levels,
-                        save_path=plot_path,
-                    )
-                except Exception as e:
-                    self.logger.error(f"Error during visualization: {str(e)}", exc_info=True)
-
-        else:
-            self.logger.warning(
-                "Could not find two distinct distributions for folded/unfolded classification"
-            )
-            self.logger.warning(
-                "Classification requires at least 2 centers from GMM analysis"
-            )
-
-            # Store failure message for status report
-            self._classification_results = {
-                "error": "Could not find two distinct distributions"
-            }
-            # Still collect peak statistics even when classification fails
-            self._collect_peak_statistics(channels)
-
+        # Save classification report after all post-processing is complete
+        self._save_classification_report()
 
         self.logger.info(
             "Post-processing analysis completed with automatic folded/unfolded classification."
@@ -2115,7 +1820,7 @@ class PeakFinder(MetaEventFitter):
   
 
         # Add classification information to the report
-        classification_report = "\n\nClassification Results:"
+        classification_report = "\n\nClassification Results:\n\nFolding Classification Results:"
 
         if "skipped" in self._classification_results:
             classification_report += (
@@ -2185,41 +1890,6 @@ class PeakFinder(MetaEventFitter):
                 unclassified_pct = total_unclassified / total_peaks * 100
                 classification_report += f" ({classified_pct:.1f}% classified, {unclassified_pct:.1f}% unclassified)"
 
-            # Break down by peak type
-            if peak_type_counts:
-                classification_report += "\n\n  Peak Filtering breakdown:"
-                # Sort by type number for consistent display
-                for peak_type in sorted(peak_type_counts.keys()):
-                    count = peak_type_counts[peak_type]
-                    pct = count / total_peaks * 100 if total_peaks > 0 else 0
-
-                    # Provide meaningful labels for peak types
-                    if peak_type == -1:
-                        type_label = "Type -1 (Rejected/Unclassified)"
-                    elif peak_type == 0:
-                        type_label = "Type 0 (Unprocessed)"
-                    elif peak_type == 1:
-                        type_label = "Type 1 (Carrier Level)"
-                    elif peak_type == 2:
-                        type_label = "Type 2 (Above Carrier)"
-                    elif peak_type == 3:
-                        type_label = "Type 3 (Bundle/Cluster)"
-                    elif peak_type == 11:
-                        type_label = "Type 11 (1U - Unfolding)"
-                    elif peak_type == 12:
-                        type_label = "Type 12 (1P - Peak with Height)"
-                    elif peak_type == 13:
-                        type_label = "Type 13 (1/2F - Folding)"
-                    elif peak_type == 21:
-                        type_label = "Type 21 (2U/2P - Higher Level)"
-                    elif peak_type == 22:
-                        type_label = "Type 22 (2P/1/2F - General)"
-                    else:
-                        type_label = f"Type {peak_type}"
-
-                    classification_report += (
-                        f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
-                    )
 
         if hasattr(self, "_peak_prominence_classification_results"):
             prominence_stats = self._peak_prominence_classification_results
@@ -2258,10 +1928,47 @@ class PeakFinder(MetaEventFitter):
             if threshold is not None:
                 classification_report += f"\n  Threshold: {cast(float, threshold):.2f} pA"
 
-            centers = prominence_stats.get("centers") 
+            centers = prominence_stats.get("centers")
+            
+             
             if isinstance(centers, list) and centers:
                 formatted_centers = ", ".join(f"{center:.2f}" for center in centers)
                 classification_report += f"\n  Centers: {formatted_centers} pA"
+            # Break down by peak type
+            if peak_type_counts:
+                classification_report += "\n\n  Peak Filtering breakdown:"
+                # Sort by type number for consistent display
+                for peak_type in sorted(peak_type_counts.keys()):
+                    count = peak_type_counts[peak_type]
+                    pct = count / total_peaks * 100 if total_peaks > 0 else 0
+
+                    # Provide meaningful labels for peak types
+                    if peak_type == -1:
+                        type_label = "Type -1 (Rejected/Unclassified)"
+                    elif peak_type == 0:
+                        type_label = "Type 0 (Unprocessed)"
+                    elif peak_type == 1:
+                        type_label = "Type 1 (Carrier Level)"
+                    elif peak_type == 2:
+                        type_label = "Type 2 (Above Carrier)"
+                    elif peak_type == 3:
+                        type_label = "Type 3 (Bundle/Cluster)"
+                    elif peak_type == 11:
+                        type_label = "Type 11 (1U - Unfolding)"
+                    elif peak_type == 12:
+                        type_label = "Type 12 (1P - Peak with Height)"
+                    elif peak_type == 13:
+                        type_label = "Type 13 (1/2F - Folding)"
+                    elif peak_type == 21:
+                        type_label = "Type 21 (2U/2P - Higher Level)"
+                    elif peak_type == 22:
+                        type_label = "Type 22 (2P/1/2F - General)"
+                    else:
+                        type_label = f"Type {peak_type}"
+
+                    classification_report += (
+                        f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
+                    )
 
 
         return base_report + classification_report
@@ -2336,6 +2043,327 @@ class PeakFinder(MetaEventFitter):
             f"{total_classified} classified, {total_unclassified} unclassified"
         )
         self.logger.info(f"Peak type distribution: {peak_type_counts}")
+
+    @log(logger=logger)
+    def _classify_folded_unfolded(
+        self,
+        channels: List[int],
+        all_event_info: List[Tuple[int, int]],
+        all_longest_levels_array: np.ndarray,
+        all_raw_ecds_array: np.ndarray,
+    ) -> None:
+        """
+        Filter events, run GMM classification, and classify events as folded or unfolded DNA.
+
+        Performs blockage-level and ECD-based pre-filtering, fits a 2-component GMM,
+        validates the folded/unfolded ratio, retries with tighter filtering if needed,
+        then classifies each event and updates metadata.
+
+        :param channels: List of channel indices
+        :param all_event_info: List of (channel, event_index) tuples
+        :param all_longest_levels_array: Array of longest blockage levels for all events
+        :param all_raw_ecds_array: Array of raw ECD values for all events
+        """
+        # Pre-filter using blockage level threshold
+        min_blockage_threshold = self.settings.get("Min Carrier Blockage", {}).get(
+            "Value", 300.0
+        )
+        blockage_threshold_mask = all_longest_levels_array >= min_blockage_threshold
+        n_below_threshold = len(all_event_info) - np.sum(blockage_threshold_mask)
+
+        self.logger.info("Blockage level threshold filtering:")
+        self.logger.info(f"  Minimum blockage threshold: {min_blockage_threshold:.1f} pA")
+        self.logger.info(
+            f"  Filtered out {n_below_threshold} events below threshold ({n_below_threshold/len(all_event_info):.1%})"
+        )
+        self.logger.info(f"  Remaining events: {np.sum(blockage_threshold_mask)}")
+
+        # Pre-filter using ECD to remove outliers/noise (5th–95th percentile of log10 ECD)
+        log_ecd = np.log10(all_raw_ecds_array)
+        ecd_5th = np.percentile(log_ecd, 5)
+        ecd_95th = np.percentile(log_ecd, 95)
+        ecd_filter_mask = (log_ecd >= ecd_5th) & (log_ecd <= ecd_95th)
+
+        combined_filter_mask = blockage_threshold_mask & ecd_filter_mask
+        n_filtered_out = len(all_event_info) - np.sum(combined_filter_mask)
+
+        self.logger.info("ECD-based filtering:")
+        self.logger.info(
+            f"  log10(ECD) range: 5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}"
+        )
+        self.logger.info("Combined filtering results:")
+        self.logger.info(
+            f"  Total filtered out: {n_filtered_out} events ({n_filtered_out/len(all_event_info):.1%})"
+        )
+        self.logger.info(f"  Remaining events for classification: {np.sum(combined_filter_mask)}")
+
+        filtered_longest_levels = all_longest_levels_array[combined_filter_mask]
+        if len(filtered_longest_levels) < 10:
+            self.logger.warning("Too few events after combined filtering, using unfiltered data")
+            filtered_longest_levels = all_longest_levels_array
+            combined_filter_mask = np.ones(len(all_event_info), dtype=bool)
+
+        n_clusters_1d = 2
+
+        self.logger.info(
+            f"Performing 1D GMM classification on {len(filtered_longest_levels)} filtered events"
+        )
+        labels_1d_filtered, centers_1d, gmm_model = self.classify_1d_distribution(
+            filtered_longest_levels,
+            n_components=n_clusters_1d,
+            return_centers=True,
+        )
+
+        self.logger.info("1D Classification Summary (Initial):")
+        self.logger.info(f"  Centers: {centers_1d}")
+        self.logger.info(f"  Clusters found: {len(np.unique(labels_1d_filtered))}")
+
+        sorted_indices = np.argsort(centers_1d)
+        lower_center = centers_1d[sorted_indices[0]]
+        higher_center = centers_1d[sorted_indices[1]]
+        ratio = higher_center / lower_center if lower_center > 0 else 0
+        ratio_fits = 1.7 <= ratio <= 2.3
+
+        self.logger.info(f"  Lower center: {lower_center:.2f} pA")
+        self.logger.info(f"  Higher center: {higher_center:.2f} pA")
+        self.logger.info(
+            f"  Ratio (folded/unfolded): {ratio:.3f} - {'GOOD (within 1.7-2.3)' if ratio_fits else 'WARNING (outside expected 2:1 ratio)'}"
+        )
+
+        unique_labels, label_counts = np.unique(labels_1d_filtered, return_counts=True)
+        for label, count in zip(unique_labels, label_counts):
+            cluster_mean = np.mean(filtered_longest_levels[labels_1d_filtered == label])
+            self.logger.info(
+                f"  Cluster {label}: {count} events ({count/len(labels_1d_filtered):.1%}), mean: {cluster_mean:.3f}"
+            )
+
+        if not ratio_fits:
+            self.logger.info("Ratio check FAILED - applying blockage-level filtering strategy")
+
+            blockage_25th = np.percentile(filtered_longest_levels, 25)
+            self.logger.info(f"  Blockage level 25th percentile: {blockage_25th:.2f} pA")
+
+            blockage_filter_mask = filtered_longest_levels >= blockage_25th
+            re_filtered_longest_levels = filtered_longest_levels[blockage_filter_mask]
+            n_blockage_filtered = len(filtered_longest_levels) - len(re_filtered_longest_levels)
+
+            self.logger.info(
+                f"  Filtered out {n_blockage_filtered} additional events below 25th percentile"
+            )
+            self.logger.info(
+                f"  Remaining events for re-classification: {len(re_filtered_longest_levels)}"
+            )
+
+            if len(re_filtered_longest_levels) >= 10:
+                self.logger.info("Re-running GMM on blockage-filtered data...")
+                _, centers_1d_new, gmm_model_new = self.classify_1d_distribution(
+                    re_filtered_longest_levels,
+                    n_components=n_clusters_1d,
+                    return_centers=True,
+                )
+
+                sorted_indices_new = np.argsort(centers_1d_new)
+                lower_center_new = centers_1d_new[sorted_indices_new[0]]
+                higher_center_new = centers_1d_new[sorted_indices_new[1]]
+                ratio_new = higher_center_new / lower_center_new if lower_center_new > 0 else 0
+                ratio_fits_new = 1.7 <= ratio_new <= 2.3
+
+                self.logger.info("1D Classification Summary (After blockage filtering):")
+                self.logger.info(f"  New centers: {centers_1d_new}")
+                self.logger.info(f"  Lower center: {lower_center_new:.2f} pA")
+                self.logger.info(f"  Higher center: {higher_center_new:.2f} pA")
+                self.logger.info(
+                    f"  New ratio: {ratio_new:.3f} - {'GOOD (within 1.7-2.3)' if ratio_fits_new else 'STILL POOR'}"
+                )
+
+                if ratio_fits_new or ratio_new < ratio:
+                    self.logger.info("Using blockage-filtered GMM results (ratio improved)")
+                    centers_1d = centers_1d_new
+                    gmm_model = gmm_model_new
+                    lower_center = lower_center_new
+                    higher_center = higher_center_new
+                    ratio = ratio_new
+                    ratio_fits = ratio_fits_new
+                    filtered_longest_levels = re_filtered_longest_levels
+                else:
+                    self.logger.warning("Blockage filtering did not improve ratio, using original results")
+            else:
+                self.logger.warning("Too few events after blockage filtering, using original results")
+
+        if len(centers_1d) < 2:
+            self.logger.warning("Could not find two distinct distributions for folded/unfolded classification")
+            self.logger.warning("Classification requires at least 2 centers from GMM analysis")
+            self._classification_results = {"error": "Could not find two distinct distributions"}
+            self._collect_peak_statistics(channels)
+            return
+
+        # Calculate threshold based on ratio quality
+        if ratio_fits:
+            threshold = (lower_center + higher_center) / 2.0
+            self.logger.info(
+                f"Using midpoint threshold (ratio is good): {threshold:.2f} pA"
+            )
+        else:
+            threshold = lower_center * 1.5
+            self.logger.info(
+                f"Using ratio-aware threshold (ratio is poor): {threshold:.2f} pA"
+            )
+
+        self.logger.info("Distribution analysis:")
+        self.logger.info(f"  Lower center: {lower_center:.3f}")
+        self.logger.info(f"  Higher center: {higher_center:.3f}")
+        self.logger.info(f"  Threshold: {threshold:.3f}")
+        self.logger.info(f"  Ratio: {ratio:.3f}")
+        if ratio_fits:
+            self.logger.info("  Ratio quality: GOOD - using midpoint threshold")
+        else:
+            self.logger.info(
+                "  Ratio quality: POOR - using ratio-aware threshold as fallback"
+            )
+
+        # Classify each event (including filtered-out events) based on its longest_blockage_level
+        # Higher absolute blockage (above threshold) = Folded DNA (more compact)
+        # Lower absolute blockage (below threshold) = Unfolded DNA (more extended)
+        folded_count = 0
+        unfolded_count = 0
+
+        # Process ALL events (original unfiltered list) for classification
+        self.logger.info(f"Starting event classification loop: {len(all_event_info)} events to process")
+        for i, (ch, event_index) in enumerate(all_event_info):
+            self.logger.debug(f"Processing event {i+1}/{len(all_event_info)}: Channel {ch}, Event {event_index}")
+            event_longest_level = all_longest_levels_array[i]
+            # Classify based on threshold comparison
+            if event_longest_level >= threshold:
+                # Above threshold = Folded (higher absolute blockage, more compact)
+                event_folded_level = event_longest_level
+                event_unfolded_level = event_longest_level / 2.0
+                folded_count += 1
+            else:
+                # Below threshold = Unfolded (lower absolute blockage, more extended)
+                event_unfolded_level = event_longest_level
+                event_folded_level = event_longest_level * 2.0
+                unfolded_count += 1
+
+            # Update metadata with event-specific levels
+            try:
+                self.update_event_metadata_post_processing(
+                    ch,
+                    event_index,
+                    event_unfolded_level,
+                    event_folded_level,
+                )
+            except Exception as e:
+                self.logger.error(f"Error in update_event_metadata_post_processing: {str(e)}")
+
+        self.logger.info("Event classification completed:")
+        self.logger.info(
+            f"  Folded events: {folded_count} ({folded_count/len(all_event_info):.1%})"
+        )
+        self.logger.info(
+            f"  Unfolded events: {unfolded_count} ({unfolded_count/len(all_event_info):.1%})"
+        )
+
+        # Store classification results for status report
+        self._classification_results = {
+            "total_events": len(all_event_info),
+            "folded_count": folded_count,
+            "unfolded_count": unfolded_count,
+            "lower_center": lower_center,
+            "higher_center": higher_center,
+            "threshold": threshold,
+            "ratio": ratio,
+            "ecd_filtered_events": n_filtered_out,
+        }
+
+        # Optionally visualize the classification
+        if self.settings.get("Visualize Classification", {}).get("Value", False):
+            try:
+                plot_path = None
+                loader = getattr(self, "eventloader", None)
+                if loader is None:
+                    self.logger.warning(
+                        "Visualization enabled, but no event loader is available to derive an output path"
+                    )
+                else:
+                    base_file = loader.get_base_file()
+                    plot_path = base_file.with_name(f"{base_file.stem}_classification.png")
+
+                # Calculate threshold for visualization (same logic as above)
+                if ratio_fits:
+                    viz_threshold = (lower_center + higher_center) / 2.0
+                else:
+                    viz_threshold = lower_center * 1.5
+
+                ecd_outlier_levels = all_longest_levels_array[~combined_filter_mask]
+
+                # For visualization, use filtered data and corresponding labels/centers
+                filtered_data = all_longest_levels_array[combined_filter_mask]
+                filtered_labels = (filtered_data >= viz_threshold).astype(int)
+
+                self.visualize_classification(
+                    data=filtered_data,
+                    labels=filtered_labels,
+                    centers=np.array([lower_center, higher_center]),
+                    gmm_model=gmm_model,
+                    threshold=viz_threshold,
+                    title="GMM Classification: Folded vs Unfolded DNA (ECD-filtered)",
+                    ecd_outliers=ecd_outlier_levels,
+                    save_path=plot_path,
+                )
+            except Exception as e:
+                self.logger.error(f"Error during classification visualization: {str(e)}", exc_info=True)
+
+    @log(logger=logger)
+    def _save_classification_report(self) -> None:
+        """
+        Generate and save a comprehensive classification report to a text file.
+
+        Uses the report from report_channel_status() to avoid code duplication.
+        """
+        try:
+            loader = getattr(self, "eventloader", None)
+            if loader is None:
+                self.logger.warning("No event loader available; skipping classification report save")
+                return
+
+            base_file = loader.get_base_file()
+            report_path = base_file.with_name(f"{base_file.stem}_classification_report.txt")
+
+            # Get the classification report from report_channel_status
+            report_text = self.report_channel_status(channel=None, init=False)
+
+            # Add settings section
+            settings_section = "\n\nFITTING SETTINGS\n" + "-" * 80 + "\n"
+            if self.settings:
+                for key, setting_dict in sorted(self.settings.items()):
+                    if key.lower() == "metaeventloader":
+                        # Save the path of the event loader object
+                        if hasattr(self, "eventloader") and self.eventloader is not None:
+                            if hasattr(self.eventloader, "get_base_file"):
+                                base_file = self.eventloader.get_base_file()
+                                settings_section += f"{key}: {base_file}\n"
+                            else:
+                                settings_section += f"{key}: {self.eventloader}\n"
+                        else:
+                            settings_section += f"{key}: Not available\n"
+                    elif isinstance(setting_dict, dict) and "Value" in setting_dict:
+                        value = setting_dict["Value"]
+                        settings_section += f"{key}: {value}\n"
+            else:
+                settings_section += "No settings available\n"
+
+            # Add header and footer with settings
+            header = "=" * 80 + "\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis\n" + "=" * 80 + "\n"
+            footer = "\n" + "=" * 80
+            report_text = header + report_text.lstrip() + settings_section + footer
+
+            # Write report to file with UTF-8 encoding
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_text)
+
+            self.logger.info(f"Classification report saved to {report_path}")
+        except Exception as e:
+            self.logger.error(f"Error saving classification report: {str(e)}", exc_info=True)
 
     @log(logger=logger)
     def visualize_classification(
