@@ -1266,7 +1266,7 @@ class PeakFinder(MetaEventFitter):
         """
         metadata_units = {}
 
-        metadata_units["number_peaks"] = " "
+        metadata_units["number_peaks"] = None
         metadata_units["duration"] = "μs"
         metadata_units["raw_ecd"] = "pC"
         metadata_units["max_deviation"] = "pA"
@@ -1295,8 +1295,8 @@ class PeakFinder(MetaEventFitter):
         metadata_units["sublevel_max_deviation"] = "pA"
         metadata_units["sublevel_raw_ecd"] = "pC"
         metadata_units["sublevel_cumulative_ecd"] = "pC"
-        metadata_units["sublevel_type"] = " "
-        metadata_units["peak_id"] = " "
+        metadata_units["sublevel_type"] = None
+        metadata_units["peak_id"] = None
         metadata_units["peak_height"] = "pA"
         metadata_units["peak_loc"] = "us"
         metadata_units["peak_width"] = "us"
@@ -1308,7 +1308,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["left_ips"] = "us"
         metadata_units["right_ips"] = "us"
         metadata_units["height_ips"] = "pA"
-        metadata_units["filtered"] = " "
+        metadata_units["filtered"] = None
         metadata_units["normalized_height"] = "pA"
         metadata_units["normalized_prominence"] = "pA"
         metadata_units["normalized_blockage"] = None
