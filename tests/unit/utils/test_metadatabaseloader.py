@@ -78,6 +78,9 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
     def get_table_names(self) -> Optional[List[str]]:
         return ["events", "sublevels", "experiments", "channels", "data", "columns"]
 
+    def get_column_type(self, column_name) -> Optional[str]:
+        return "REAL"
+
     def validate_filter_query(self, query: str) -> Tuple[bool, str]:
         if "INVALID" in query:
             return False, f"Invalid query: {query}"

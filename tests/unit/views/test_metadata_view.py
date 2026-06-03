@@ -24,10 +24,7 @@ import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
 
-from poriscope.plugins.analysistabs.MetadataView import (
-    MetadataView,
-    format_axis_label,
-)
+from poriscope.plugins.analysistabs.MetadataView import MetadataView
 
 # ----------------------------- Fixtures ------------------------------
 
@@ -123,7 +120,7 @@ def test_init_sets_subset_export_count_zero(view: MetadataView) -> None:
 
 def test_init_creates_metadata_plots_list(view: MetadataView) -> None:
     """Verify metadata_plots list is created with correct plots."""
-    assert len(view.metadata_plots) == 7
+    assert len(view.metadata_plots) == 8
     assert "Histogram" in view.metadata_plots
     assert "Normalized Histogram" in view.metadata_plots
     assert "Kernel Density Plot" in view.metadata_plots
@@ -1124,27 +1121,27 @@ def test_plot_capture_rate_handles_overflow_when_estimating_bins(
 # ----------------------------- Format Axis Label Tests ------------------------------
 
 
-def test_format_axis_label_adds_unit() -> None:
+def test_format_axis_label_adds_unit(view: MetadataView) -> None:
     """Verify unit is added in parentheses."""
-    result: str = format_axis_label("Duration", "ms")
+    result: str = view.format_axis_label("Duration", "ms")
     assert result == "Duration (ms)"
 
 
-def test_format_axis_label_replaces_existing_unit() -> None:
+def test_format_axis_label_replaces_existing_unit(view: MetadataView) -> None:
     """Verify existing unit is replaced."""
-    result: str = format_axis_label("Duration (s)", "ms")
+    result: str = view.format_axis_label("Duration (s)", "ms")
     assert result == "Duration (ms)"
 
 
-def test_format_axis_label_no_unit_returns_plain() -> None:
+def test_format_axis_label_no_unit_returns_plain(view: MetadataView) -> None:
     """Verify plain label is returned when no unit."""
-    result: str = format_axis_label("Duration", "")
+    result: str = view.format_axis_label("Duration", "")
     assert result == "Duration"
 
 
-def test_format_axis_label_handles_multiple_parentheses() -> None:
+def test_format_axis_label_handles_multiple_parentheses(view: MetadataView) -> None:
     """Verify only last parenthetical is replaced."""
-    result: str = format_axis_label("Current (baseline) (pA)", "nA")
+    result: str = view.format_axis_label("Current (baseline) (pA)", "nA")
     assert "nA" in result
 
 
