@@ -1287,6 +1287,7 @@ class PeakFinder(MetaEventFitter):
         event_metadata["unfolded_level"] = None
         event_metadata["folded_level"] = None
         event_metadata["baseline_std"] = baseline_std
+        event_metadata["sequence"] = ""
 
         return event_metadata
 
@@ -1324,6 +1325,7 @@ class PeakFinder(MetaEventFitter):
             "folded_level": float,
             "longest_blockage_level": float,
             "baseline_std": float,
+            "sequence": str,
         }
 
         return metadata_types
@@ -1392,6 +1394,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["folded_level"] = "pA"
         metadata_units["longest_blockage_level"] = "pA"
         metadata_units["baseline_std"] = "pA"
+        metadata_units["sequence"] = " "
 
         return metadata_units
 
@@ -1598,6 +1601,24 @@ class PeakFinder(MetaEventFitter):
         # Mark fitting as complete for all processed channels
         for channel in channels:
             self.eventfitting_status[channel] = True
+
+        # Build per-event sequence string from classified filtered-3 peaks
+        for ch in channels:
+            if ch not in self.sublevel_metadata:
+                continue
+            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
+                filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+                classified = sublevel_data.get("classified", [])
+                sequence = "".join(
+                    str(int(classified[i]))
+                    for i in range(len(filtered_values))
+                    if not np.isnan(filtered_values[i])
+                    and int(filtered_values[i]) == 3
+                    and i < len(classified)
+                    and not (isinstance(classified[i], float) and np.isnan(classified[i]))
+                )
+                if ch in self.event_metadata and event_index in self.event_metadata[ch]:
+                    self.event_metadata[ch][event_index]["sequence"] = sequence
 
         # Save classification report after all post-processing is complete
         self._save_classification_report()
@@ -1969,6 +1990,24 @@ class PeakFinder(MetaEventFitter):
                     classification_report += (
                         f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
                     )
+
+        # Sequence statistics across all channels
+        if hasattr(self, "event_metadata"):
+            sequence_counts: Dict[str, int] = {}
+            total_with_sequence = 0
+            for ch, ch_events in self.event_metadata.items():
+                for ev_data in ch_events.values():
+                    seq = ev_data.get("sequence", "")
+                    if seq:
+                        sequence_counts[seq] = sequence_counts.get(seq, 0) + 1
+                        total_with_sequence += 1
+
+            if sequence_counts:
+                classification_report += "\n\nSequence Statistics:"
+                classification_report += f"\n  Events with a sequence: {total_with_sequence}"
+                for seq, count in sorted(sequence_counts.items(), key=lambda x: -x[1]):
+                    pct = count / total_with_sequence * 100
+                    classification_report += f"\n  '{seq}': {count} ({pct:.1f}%)"
 
 
         return base_report + classification_report
