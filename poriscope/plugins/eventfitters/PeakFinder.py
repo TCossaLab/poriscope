@@ -1287,6 +1287,7 @@ class PeakFinder(MetaEventFitter):
         event_metadata["unfolded_level"] = None
         event_metadata["folded_level"] = None
         event_metadata["baseline_std"] = baseline_std
+        event_metadata["translocation_direction"] = ""
         event_metadata["sequence"] = ""
 
         return event_metadata
@@ -1325,6 +1326,7 @@ class PeakFinder(MetaEventFitter):
             "folded_level": float,
             "longest_blockage_level": float,
             "baseline_std": float,
+            "translocation_direction": str,
             "sequence": str,
         }
 
@@ -1394,6 +1396,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["folded_level"] = "pA"
         metadata_units["longest_blockage_level"] = "pA"
         metadata_units["baseline_std"] = "pA"
+        metadata_units["translocation_direction"] = " "
         metadata_units["sequence"] = " "
 
         return metadata_units
@@ -1598,11 +1601,15 @@ class PeakFinder(MetaEventFitter):
         # Classify peak prominences for peaks that survived the type filter
         self._classify_peak_prominences(channels)
 
+        # Classify translocation direction from cumulative ECD before first type-3 peak
+        self._classify_translocation_direction(channels)
+
         # Mark fitting as complete for all processed channels
         for channel in channels:
             self.eventfitting_status[channel] = True
 
         # Build per-event sequence string from classified filtered-3 peaks
+        # Reverse sequence for backward-translocating events
         for ch in channels:
             if ch not in self.sublevel_metadata:
                 continue
@@ -1618,6 +1625,9 @@ class PeakFinder(MetaEventFitter):
                     and not (isinstance(classified[i], float) and np.isnan(classified[i]))
                 )
                 if ch in self.event_metadata and event_index in self.event_metadata[ch]:
+                    direction = self.event_metadata[ch][event_index].get("translocation_direction", "")
+                    if direction == "backward":
+                        sequence = sequence[::-1]
                     self.event_metadata[ch][event_index]["sequence"] = sequence
 
         # Save classification report after all post-processing is complete
@@ -1991,6 +2001,44 @@ class PeakFinder(MetaEventFitter):
                         f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
                     )
 
+        # Translocation direction classification
+        classification_report += "\n\nTranslocation Direction Classification:"
+        if hasattr(self, "_translocation_direction_results"):
+            td = self._translocation_direction_results
+            if "skipped" in td:
+                classification_report += f"\n  Skipped: {td['reason']}"
+                classification_report += "\n  Note: sequences are not dependent on translocation direction"
+            else:
+                total_td = cast(int, td["total_events"])
+                fwd = cast(int, td["forward_count"])
+                bwd = cast(int, td["backward_count"])
+                classification_report += f"\n  Total classified: {total_td} events"
+                classification_report += f"\n  Forward: {fwd} ({fwd/total_td:.1%})"
+                classification_report += f"\n  Backward: {bwd} ({bwd/total_td:.1%})"
+                classification_report += f"\n  Lower center (log10 ECD): {td['lower_center']:.3f}"
+                classification_report += f"\n  Higher center (log10 ECD): {td['higher_center']:.3f}"
+                classification_report += f"\n  Threshold: {td['threshold']:.3f}"
+        else:
+            classification_report += "\n  Not run"
+
+        if hasattr(self, "event_metadata"):
+            fwd_total = bwd_total = unclassified_total = total_events = 0
+            for ch_events in self.event_metadata.values():
+                for ev_data in ch_events.values():
+                    total_events += 1
+                    direction = ev_data.get("translocation_direction", "")
+                    if direction == "forward":
+                        fwd_total += 1
+                    elif direction == "backward":
+                        bwd_total += 1
+                    else:
+                        unclassified_total += 1
+            if total_events > 0:
+                classification_report += "\n\n  Event direction breakdown (all events):"
+                classification_report += f"\n    Forward:      {fwd_total} ({fwd_total/total_events:.1%})"
+                classification_report += f"\n    Backward:     {bwd_total} ({bwd_total/total_events:.1%})"
+                classification_report += f"\n    Unclassified: {unclassified_total} ({unclassified_total/total_events:.1%})"
+
         # Sequence statistics across all channels
         if hasattr(self, "event_metadata"):
             sequence_counts: Dict[str, int] = {}
@@ -2325,7 +2373,7 @@ class PeakFinder(MetaEventFitter):
                     )
                 else:
                     base_file = loader.get_base_file()
-                    plot_path = base_file.with_name(f"{base_file.stem}_classification.png")
+                    plot_path = base_file.with_name(f"{base_file.stem}_folding_classification.png")
 
                 # Calculate threshold for visualization (same logic as above)
                 if ratio_fits:
@@ -2719,6 +2767,207 @@ class PeakFinder(MetaEventFitter):
                 threshold=threshold,
                 save_path=str(plot_path) if plot_path is not None else None,
             )
+
+    @log(logger=logger)
+    def _classify_translocation_direction(self, channels: List[int]) -> None:
+        """
+        Classify events as forward or backward based on log10 cumulative ECD
+        of all sublevels before the first type-3 peak.
+
+        Events with higher pre-peak3 cumulative ECD are labelled 'forward';
+        lower cumulative ECD events are labelled 'backward'.
+        Result stored in event_metadata[ch][event_index]['translocation_direction'].
+        """
+        pre_peak3_ecds: List[float] = []
+        event_refs: List[Tuple[int, int]] = []
+
+        for ch in channels:
+            if ch not in self.sublevel_metadata:
+                continue
+            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
+                filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+                cumulative_ecds = np.asarray(sublevel_data.get("sublevel_cumulative_ecd", []), dtype=float)
+
+                if len(cumulative_ecds) == 0:
+                    continue
+
+                type3_mask = ~np.isnan(filtered_values) & (filtered_values.astype(int) == 3)
+                type3_indices = np.where(type3_mask)[0]
+                if len(type3_indices) == 0:
+                    continue
+
+                first_type3_idx = type3_indices[0]
+                last_type3_idx = type3_indices[-1]
+
+                if first_type3_idx >= len(cumulative_ecds) or last_type3_idx >= len(cumulative_ecds):
+                    continue
+
+                ecd_before = float(cumulative_ecds[first_type3_idx])
+                ecd_after = float(cumulative_ecds[-1] - cumulative_ecds[last_type3_idx])
+
+                if ecd_before <= 0 or ecd_after <= 0:
+                    continue
+
+                pre_peak3_ecds.append(np.log10(ecd_before / ecd_after))
+                event_refs.append((ch, event_index))
+
+        if len(pre_peak3_ecds) < 2:
+            self.logger.warning(
+                "Too few events with type-3 peaks for translocation direction classification"
+            )
+            self._translocation_direction_results = {"skipped": True, "reason": "Too few events with type-3 peaks"}
+            return
+
+        log_ecds = np.array(pre_peak3_ecds)
+        log_ecds_reshaped = log_ecds.reshape(-1, 1)
+
+        gmm_model = GaussianMixture(n_components=2, random_state=42)
+        gmm_model.fit(log_ecds_reshaped)
+        centers = gmm_model.means_.flatten()
+
+        self.logger.info(f"Translocation direction GMM centers (log10 ECD): {centers}")
+
+        sorted_indices = np.argsort(centers)
+        lower_center = centers[sorted_indices[0]]
+        higher_center = centers[sorted_indices[1]]
+        threshold = (lower_center + higher_center) / 2.0
+
+        self.logger.info(
+            f"  Lower center: {lower_center:.3f}, Higher center: {higher_center:.3f}, Threshold: {threshold:.3f}"
+        )
+
+        class_labels = (log_ecds >= threshold).astype(int)
+        forward_count = int(np.sum(class_labels == 1))
+        backward_count = int(np.sum(class_labels == 0))
+
+        for label, (ch, event_index) in zip(class_labels, event_refs):
+            direction = "forward" if label == 1 else "backward"
+            if ch in self.event_metadata and event_index in self.event_metadata[ch]:
+                self.event_metadata[ch][event_index]["translocation_direction"] = direction
+
+        self.logger.info(
+            f"  Forward: {forward_count} ({forward_count/len(event_refs):.1%}), "
+            f"Backward: {backward_count} ({backward_count/len(event_refs):.1%})"
+        )
+
+        self._translocation_direction_results = {
+            "total_events": len(event_refs),
+            "forward_count": forward_count,
+            "backward_count": backward_count,
+            "lower_center": float(lower_center),
+            "higher_center": float(higher_center),
+            "threshold": float(threshold),
+        }
+
+        if self.settings.get("Visualize Classification", {}).get("Value", False):
+            try:
+                plot_path = None
+                loader = getattr(self, "eventloader", None)
+                if loader is None:
+                    self.logger.warning(
+                        "Visualization enabled, but no event loader is available to derive an output path"
+                    )
+                else:
+                    base_file = loader.get_base_file()
+                    plot_path = base_file.with_name(
+                        f"{base_file.stem}_translocation_direction_classification.png"
+                    )
+
+                self._visualize_translocation_direction_classification(
+                    data=log_ecds,
+                    labels=class_labels,
+                    centers=centers,
+                    gmm_model=gmm_model,
+                    threshold=threshold,
+                    save_path=str(plot_path) if plot_path is not None else None,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error during translocation direction visualization: {str(e)}",
+                    exc_info=True,
+                )
+
+    @log(logger=logger)
+    def _visualize_translocation_direction_classification(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        centers: np.ndarray,
+        gmm_model: GaussianMixture,
+        threshold: float,
+        save_path: Optional[str] = None,
+    ) -> None:
+        """Visualize translocation direction classification on log10 cumulative pre-peak3 ECD."""
+        import matplotlib.pyplot as plt
+        from scipy.stats import norm
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        n_bins = 50
+        ax.hist(data, bins=n_bins, density=True, alpha=0.5, color="gray", label="All Events")
+
+        sorted_indices = np.argsort(centers)
+        colors = ["blue", "red"]
+        class_names = ["Backward (0)", "Forward (1)"]
+
+        for class_idx, gmm_idx in enumerate(sorted_indices):
+            cluster_data = data[labels == class_idx]
+            ax.hist(
+                cluster_data,
+                bins=n_bins,
+                density=True,
+                alpha=0.6,
+                color=colors[class_idx],
+                label=f"{class_names[class_idx]}: center={centers[gmm_idx]:.3f} ({len(cluster_data)} events)",
+            )
+
+            mean = gmm_model.means_[gmm_idx][0]
+            std = np.sqrt(gmm_model.covariances_[gmm_idx][0][0])
+            weight = gmm_model.weights_[gmm_idx]
+            x_range = np.linspace(data.min(), data.max(), 1000)
+            ax.plot(
+                x_range,
+                weight * norm.pdf(x_range, mean, std),
+                color=colors[class_idx],
+                linewidth=2,
+                linestyle="--",
+                label=f"{class_names[class_idx]} Gaussian (mu={mean:.3f}, std={std:.3f})",
+            )
+
+        ax.axvline(
+            threshold,
+            color="black",
+            linestyle="-",
+            linewidth=2,
+            label=f"Threshold: {threshold:.3f}",
+        )
+
+        ax.set_xlabel("log\u2081\u2080 (ECD at first type-3 peak / ECD after last type-3 peak)", fontsize=12)
+        ax.set_ylabel("Probability Density", fontsize=12)
+        ax.set_title("Translocation Direction Classification", fontsize=14, fontweight="bold")
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        total = len(data)
+        backward_count = int(np.sum(labels == 0))
+        forward_count = int(np.sum(labels == 1))
+        info_text = (
+            f"Total Events: {total}\n"
+            f"Backward: {backward_count} ({backward_count/total:.1%})\n"
+            f"Forward: {forward_count} ({forward_count/total:.1%})"
+        )
+        ax.text(
+            0.02, 0.98, info_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+        )
+
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            self.logger.info(f"Translocation direction visualization saved to {save_path}")
+        plt.close(fig)
 
     @log(logger=logger)
     def _visualize_peak_prominence_classification(

@@ -159,7 +159,7 @@ class TestFindModeBlockageLevel(unittest.TestCase):
         data = np.concatenate([np.ones(10) * 100.0, np.ones(90) * 300.0])
         primary, secondary = self.pf.find_mode_blockage_level(data, 100.0, 10.0)
         self.assertGreater(primary, 0.0)
-        self.assertLessEqual(primary, self.pf.settings["Max Unfolded"]["Value"])
+        self.assertLessEqual(primary, 750.0)
 
     def test_exceeds_max_unfolded_halved(self):
         # When only one dominant level exists, secondary should be None
@@ -169,8 +169,8 @@ class TestFindModeBlockageLevel(unittest.TestCase):
 
     def test_nonnegative(self):
         data = np.random.randn(100) * 5.0 + 200.0
-        result = self.pf.find_mode_blockage_level(data, 750.0, 200.0, 10.0, False)
-        self.assertGreaterEqual(result, 0.0)
+        result = self.pf.find_mode_blockage_level(data, 750.0, 200.0)
+        self.assertGreaterEqual(result[0], 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -234,14 +234,14 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Unspecified"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6,200)
+        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6, 200, 1000.0)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
     def test_single_peak_returns_properties_unchanged(self):
         pf = _make_pf(**{"Event Type": "Single Peak"})
         peaks = np.array([10, 30, 50])
         props = self._make_props()
-        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6,200)
+        result = pf.filter_peaks(peaks, props, 100, 10.0, 100.0, 1e6, 200, 1000.0)
         self.assertEqual(result["filtered"], [0, 0, 0])
 
 
@@ -264,38 +264,37 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         }
 
     def test_type1_classification(self):
-        """Both bases within the lower barcode band → type 2 with the current classifier."""
+        """Both bases within the type-1 band → type 1."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # Current filter_peaks logic shifts the stored bases by the baseline,
-        # so this input lands in the type-2 band.
+        # unfolded=200, std=10, baseline=100 → type1_thresh=170, type2_thresh=230
+        # effective_base = 100 + 100 = 200, which is in [170, 230] → type 1
         props = self._props([100.0], [100.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, 10.0, 100.0, 1e6, 200.0)
+        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"][0], 1)
 
     def test_type2_classification(self):
-        """Bases above unfolded + std but below 2x unfolded → type 2 under current rules."""
+        """Bases above type-2 threshold → type 2."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # unfolded=200, std=10 → use 240, which falls in the type-2 band
+        # effective_base = 240 + 100 = 340, in [230, 430] → type 2
         props = self._props([240.0], [240.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, 10.0, 100.0, 1e6, 200.0)
+        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_type_minus1_classification(self):
         """Both bases above 2*unfolded + std → type -1 (noise)."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 1})
-        # 2*200-30=370 → use 450
+        # effective_base = 450 + 100 = 550, above type2_upper=430 → type -1
         props = self._props([450.0], [450.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, 10.0, 100.0, 1e6, 200.0)
+        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"][0], -1)
 
     def test_cluster_of_type1_labeled_type3(self):
-        """Two type-1 peaks close together with num_peaks=2 → both become type 3."""
+        """Two type-2 peaks close together with num_peaks=2 → both become type 3."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # peaks at indices 20 and 25 (distance=5 samples << max_distance=100/dt_us)
-        # stored bases of 195 now classify as type 2 before clustering
+        # effective_base = 195 + 100 = 295, in [230, 430] → type 2 before clustering
         props = self._props([195.0, 195.0], [195.0, 195.0], [300.0, 300.0])
         result = pf.filter_peaks(
-            np.array([200, 200]), props, 200.0, 10.0, 100.0, 1e6, 200.0
+            np.array([200, 200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
         )
         # Both should be type 3 (cluster)
         self.assertTrue(all(f == 3 for f in result["filtered"]))
@@ -304,7 +303,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         """Only 1 type-2 peak when num_peaks=2 → not enough for a cluster."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         props = self._props([195.0], [195.0], [300.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, 10.0, 100.0, 1e6, 200.0)
+        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_custom_threshold_settings_change_classification(self):
@@ -318,7 +317,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             }
         )
         props = self._props([215.0], [225.0], [300.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, 10.0, 100.0, 1e6, 200.0)
+        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"][0], 2)
 
     def test_empty_peaks_no_crash(self):
@@ -331,7 +330,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             "right_bases": [],
             "peak_heights": np.array([]),
         }
-        result = pf.filter_peaks(np.array([]), props, 200.0, 10.0, 100.0, 1e6, 200.0)
+        result = pf.filter_peaks(np.array([]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"], [])
 
 
@@ -472,6 +471,8 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "folded_level",
             "longest_blockage_level",
             "baseline_std",
+            "translocation_direction",
+            "sequence",
         ]:
             self.assertIn(key, result)
 
@@ -514,6 +515,8 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertIs(t["baseline_current"], float)
         self.assertIs(t["unfolded_level"], float)
         self.assertIs(t["baseline_std"], float)
+        self.assertIs(t["translocation_direction"], str)
+        self.assertIs(t["sequence"], str)
 
     def test_sublevel_types_all_present(self):
         t = self.pf._define_sublevel_metadata_types()
@@ -702,6 +705,7 @@ class TestGetPlotFeatures(unittest.TestCase):
                     "peak_loc": np.array([np.nan, 50.0, np.nan]),
                     "peak_height": np.array([np.nan, 600.0, np.nan]),
                     "filtered": [None, 3, None],
+                    "classified": np.array([np.nan, np.nan, np.nan]),
                 }
             }
         }
@@ -764,6 +768,7 @@ class TestGetPlotFeatures(unittest.TestCase):
                     "peak_loc": np.array([np.nan, 50.0, np.nan]),
                     "peak_height": np.array([np.nan, 600.0, np.nan]),
                     "filtered": [None, 0, None],  # ← type 0, should be excluded
+                    "classified": np.array([np.nan, np.nan, np.nan]),
                 }
             }
         }
@@ -793,6 +798,7 @@ class TestGetPlotFeatures(unittest.TestCase):
                     "peak_loc": np.array([np.nan, 50.0, np.nan]),
                     "peak_height": np.array([np.nan, 600.0, np.nan]),
                     "filtered": [None, -1, None],
+                    "classified": np.array([np.nan, np.nan, np.nan]),
                 }
             }
         }
