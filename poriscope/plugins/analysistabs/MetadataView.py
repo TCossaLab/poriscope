@@ -638,12 +638,12 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         (x_label,) = cols
         (x_units,) = units
-        
+
         # Extract the specific column's values
         data_vals = data[x_label].values
 
         # Note: If your categories are strings, ensure this method doesn't attempt mathematical log-scaling on them.
-        #(data_vals,) = self._logscale_and_filter_multiple_columns(data_vals)
+        # (data_vals,) = self._logscale_and_filter_multiple_columns(data_vals)
 
         ax.clear()
         self._clear_cache()
@@ -659,7 +659,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
             # Extract unique categorical values and their respective counts
             unique_vals, counts = np.unique(d, return_counts=True)
-            
+
             val = counts.astype(float)
 
             # Convert unique values to strings so matplotlib natively aligns them as discrete categories
@@ -677,9 +677,8 @@ class MetadataView(MetaView, WalkthroughMixin):
 
             ax.set_xlabel(x_lab)
             ax.set_ylabel(y_lab)
-        ax.tick_params(axis='x', rotation=45)
+        ax.tick_params(axis="x", rotation=45)
         ax.legend(loc="best")
-        
 
     @log(logger=logger)
     def _plot_heatmap(
@@ -954,11 +953,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
         elif plot_type == "Categorical Histogram":
             self._plot_categorical_histogram(
-                ax,
-                data,
-                cols,
-                units,
-                dataset_label=dataset_label
+                ax, data, cols, units, dataset_label=dataset_label
             )
         elif plot_type == "Kernel Density Plot":
             self._plot_1d_density(
@@ -1155,7 +1150,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             "Kernel Density Plot",
                             "Histogram",
                             "Normalized Histogram",
-                            "Categorical Histogram"
+                            "Categorical Histogram",
                         ]:
                             columns = [parameters["x_axis"]]
                             logscales = [parameters["x_log"]]
@@ -1754,7 +1749,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             if parameters.get("plot_type") == "Categorical Histogram":
                 loader = parameters["db_loader"]
                 x_axis_col = parameters["x_axis"]
-                
+
                 self.column_type = None
                 self.global_signal.emit(
                     "MetaDatabaseLoader",
@@ -1764,7 +1759,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                     "relay_column_type",
                     (),
                 )
-                
+
                 if not self.is_categorical_type(self.column_type):
                     self.add_text_to_display.emit(
                         f"Categorical histograms can only be plotted for columns that correspond to discrete values: {x_axis_col} has type {self.column_type}",
@@ -3070,20 +3065,20 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         if not data_type:
             return True
-            
+
         dt_upper = data_type.upper()
-        
+
         # Strictly explicit floating-point keywords
         continuous_keywords = [
-            "REAL", 
-            "FLOAT", 
-            "DOUB"  # Catches "DOUBLE" and "DOUBLE PRECISION"
+            "REAL",
+            "FLOAT",
+            "DOUB",  # Catches "DOUBLE" and "DOUBLE PRECISION"
         ]
-        
+
         for keyword in continuous_keywords:
             if keyword in dt_upper:
                 return False
-                
+
         # Allows INT, TEXT, BOOLEAN, BLOB, NUMERIC, DECIMAL, etc.
         return True
 

@@ -347,18 +347,18 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             result = cursor.fetchone()
             if not result or result[0] is None:
                 return None
-                
+
             table_name = result[0]
 
             query = f'PRAGMA table_info("{table_name}");'
             cursor.execute(query)
             columns_info = cursor.fetchall()
-            
+
             # PRAGMA table_info returns rows formatted as:
             # (cid, name, type, notnull, dflt_value, pk)
             for col in columns_info:
                 if col[1] == column_name:
-                    return col[2] # Return the 'type' string  
+                    return col[2]  # Return the 'type' string
             return None
 
         except sqlite3.Error as e:
