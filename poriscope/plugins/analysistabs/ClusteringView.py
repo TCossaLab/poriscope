@@ -682,7 +682,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         for i, cluster_value in enumerate(sorted(unique_clusters)):
             subset = data[data["cluster_label"] == cluster_value]
             alpha = (subset["cluster_confidence"] + 0.3333) / 1.3333
-            color = palette[i]  
+            color = palette[i]
             if dims == 2:
                 ax.scatter(
                     subset[plot_cols[0]],
@@ -716,8 +716,15 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 ax.set_zlabel(col_labels[plot_cols[2]])
 
         handles = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor=palette[i],
-                   markersize=8, label=cluster_value)
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=palette[i],
+                markersize=8,
+                label=cluster_value,
+            )
             for i, cluster_value in enumerate(sorted(unique_clusters))
         ]
         ax.legend(handles=handles, loc="best")
