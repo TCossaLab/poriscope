@@ -101,6 +101,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadata_plots = [
             "Histogram",
             "Normalized Histogram",
+            "Categorical Histogram",
             "Kernel Density Plot",
             "Capture Rate",
             "Heatmap",
@@ -319,7 +320,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             (x_units,) = units
             (logx,) = logscales
             data = data[x_label].values
-            x_label = format_axis_label(x_label, x_units)
+            x_label = self.format_axis_label(x_label, x_units)
             y_label = "Probability Density"
 
             if logx:
@@ -584,7 +585,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         # Plot all datasets using the same bin_edges
         for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = format_axis_label(x_label, x_units)
+            x_lab = self.format_axis_label(x_label, x_units)
             y_lab = "Count" if not norm else "Fraction"
             if logx:
                 x_lab = f"log10({x_lab})"
@@ -611,6 +612,74 @@ class MetadataView(MetaView, WalkthroughMixin):
             ax.set_ylabel(y_lab)
 
         ax.legend(loc="best")
+
+    @log(logger=logger)
+    def _plot_categorical_histogram(
+        self,
+        ax,
+        data,
+        cols,
+        units,
+        dataset_label="",
+    ):
+        """
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param data: Tuple of data, only the first entry will be used
+        :type data: Tuple[npt.NDArray[np.float64]]
+        :param cols: Tuple of column names, only the first will be used
+        :type cols: Tuple[str]
+        :param units: Tuple of unit strings for axis labels, only the first entry will be used
+        :type units: Tuple[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+
+        Calculate and plot a 1d categorical bar chart showing counts of unique values.
+        """
+        (x_label,) = cols
+        (x_units,) = units
+        
+        # Extract the specific column's values
+        data_vals = data[x_label].values
+
+        # Note: If your categories are strings, ensure this method doesn't attempt mathematical log-scaling on them.
+        #(data_vals,) = self._logscale_and_filter_multiple_columns(data_vals)
+
+        ax.clear()
+        self._clear_cache()
+
+        # Store processed data for overlay
+        self.hist_data.append(data_vals)
+        self.hist_labels.append(dataset_label)
+
+        # Plot all datasets
+        for d, lab in zip(self.hist_data, self.hist_labels):
+            x_lab = self.format_axis_label(x_label, x_units)
+            y_lab = "Count"
+
+            # Extract unique categorical values and their respective counts
+            unique_vals, counts = np.unique(d, return_counts=True)
+            
+            val = counts.astype(float)
+
+            # Convert unique values to strings so matplotlib natively aligns them as discrete categories
+            categories = [str(uv) for uv in unique_vals]
+
+            ax.bar(
+                categories,
+                val,
+                alpha=0.5,
+                label=lab,
+                align="center",
+            )
+
+            self._update_cache((categories, x_lab), (val, y_lab))
+
+            ax.set_xlabel(x_lab)
+            ax.set_ylabel(y_lab)
+        ax.tick_params(axis='x', rotation=45)
+        ax.legend(loc="best")
+        
 
     @log(logger=logger)
     def _plot_heatmap(
@@ -645,8 +714,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         x = data[x_label].values
         y = data[y_label].values
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
 
         if logx:
             x_label = f"log10({x_label})"
@@ -723,8 +792,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         x = data[x_label].values
         y = data[y_label].values
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
 
         if logx:
             x_label = f"log10({x_label})"
@@ -767,9 +836,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         y = data[y_label].values
         z = data[z_label].values
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
-        z_label = format_axis_label(z_label, z_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
+        z_label = self.format_axis_label(z_label, z_units)
 
         if logx:
             x_label = f"log10({x_label})"
@@ -818,8 +887,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         x = data[x_label].values
         y = data[y_label].values
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
         if norm is True:
             y = y.astype(float)
             y /= sum(y)
@@ -882,6 +951,14 @@ class MetadataView(MetaView, WalkthroughMixin):
                 bins=bins,
                 sizes=sizes,
                 norm=norm,
+            )
+        elif plot_type == "Categorical Histogram":
+            self._plot_categorical_histogram(
+                ax,
+                data,
+                cols,
+                units,
+                dataset_label=dataset_label
             )
         elif plot_type == "Kernel Density Plot":
             self._plot_1d_density(
@@ -1078,6 +1155,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             "Kernel Density Plot",
                             "Histogram",
                             "Normalized Histogram",
+                            "Categorical Histogram"
                         ]:
                             columns = [parameters["x_axis"]]
                             logscales = [parameters["x_log"]]
@@ -1449,6 +1527,13 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.baseline_duration = duration
 
     @log(logger=logger)
+    def set_column_type(self, column_type):
+        """
+        a callback from a global_signal call that sets the column type of a specified variable
+        """
+        self.column_type = column_type
+
+    @log(logger=logger)
     def _construct_event_overlay(self, event_generator, plot_type, loader):
         """
         Overlay multiple event traces in a normalized time plot.
@@ -1666,6 +1751,28 @@ class MetadataView(MetaView, WalkthroughMixin):
             raise NotImplementedError("No new axis for you")
             # self._undo_plot()
         elif action_name == "update_plot":
+            if parameters.get("plot_type") == "Categorical Histogram":
+                loader = parameters["db_loader"]
+                x_axis_col = parameters["x_axis"]
+                
+                self.column_type = None
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "get_column_type",
+                    x_axis_col,
+                    "relay_column_type",
+                    (),
+                )
+                
+                if not self.is_categorical_type(self.column_type):
+                    self.add_text_to_display.emit(
+                        f"Categorical histograms can only be plotted for columns that correspond to discrete values: {x_axis_col} has type {self.column_type}",
+                        self.__class__.__name__,
+                    )
+                    # Exit immediately out of handle_parameter_change.
+                    # This prevents _overlay_plot from running and avoids the history rollback entirely.
+                    return
             success = self._overlay_plot(parameters)
             if success is False:
                 self.update_tab_action_history.emit(None, True)
@@ -2799,6 +2906,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         self.clear_pending_filter_state()
 
+    @log(logger=logger)
     def get_walkthrough_steps(self):
         return [
             (
@@ -2950,14 +3058,40 @@ class MetadataView(MetaView, WalkthroughMixin):
             ),
         ]
 
+    @log(logger=logger)
     def get_current_view(self):
         return "MetadataView"
 
+    @log(logger=logger)
+    def is_categorical_type(self, data_type: Optional[str]) -> bool:
+        """
+        Evaluates an SQLite column datatype string.
+        Returns True if categorical/discrete (or blank/None), False if explicitly continuous.
+        """
+        if not data_type:
+            return True
+            
+        dt_upper = data_type.upper()
+        
+        # Strictly explicit floating-point keywords
+        continuous_keywords = [
+            "REAL", 
+            "FLOAT", 
+            "DOUB"  # Catches "DOUBLE" and "DOUBLE PRECISION"
+        ]
+        
+        for keyword in continuous_keywords:
+            if keyword in dt_upper:
+                return False
+                
+        # Allows INT, TEXT, BOOLEAN, BLOB, NUMERIC, DECIMAL, etc.
+        return True
 
-def format_axis_label(label: str, unit: str) -> str:
-    """
-    Ensure the axis label contains the correct unit exactly once.
-    Removes any existing trailing unit in parentheses.
-    """
-    label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-    return f"{label} ({unit})" if unit else label
+    @log(logger=logger)
+    def format_axis_label(self, label: str, unit: str) -> str:
+        """
+        Ensure the axis label contains the correct unit exactly once.
+        Removes any existing trailing unit in parentheses.
+        """
+        label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
+        return f"{label} ({unit})" if unit.strip() else label

@@ -138,6 +138,7 @@ class MetadataControls(QWidget):
             "Select Plot Type",
             "Histogram",
             "Normalized Histogram",
+            "Categorical Histogram",
             "Kernel Density Plot",
             "Capture Rate",
             "Heatmap",

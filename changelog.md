@@ -29,6 +29,7 @@
     * Full SQL will always be printed after filter creation/editing, regardless of validity
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
+    * New plot type: Categorical Histogram that plots bar charts of data counts for unique values of the specified database column
     
 * **Updated Frontend Plugin: `MetadataView`**
     * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present

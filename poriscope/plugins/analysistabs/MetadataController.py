@@ -80,6 +80,16 @@ class MetadataController(MetaController):
         self.view.set_table_by_column(table)
 
     @log(logger=logger)
+    def relay_column_type(self, column_type):
+        """
+        Relay the data type of a specified column to the view
+
+        :param table: Dictionary representing a table organized by column.
+        :type table: dict
+        """
+        self.view.set_column_type(column_type)
+
+    @log(logger=logger)
     def update_features(
         self,
         vertical=None,
