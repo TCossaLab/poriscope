@@ -36,6 +36,7 @@ import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from pandas.api.types import is_float_dtype
 from PySide6.QtCore import Signal, Slot
@@ -638,6 +639,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         :param plot: Flags indicating if a column should be plotted.
         :type plot: list[bool]
         """
+
         self.labels = labels
         self.logs = logs
         self.normalized = normalized
@@ -674,15 +676,20 @@ class ClusteringView(MetaView, WalkthroughMixin):
 
         ax = self.axes
         unique_clusters = data["cluster_label"].unique()
-        for cluster_value in sorted(unique_clusters):
+
+        palette = [cm.tab20(i % 20) for i in range(len(unique_clusters))]
+
+        for i, cluster_value in enumerate(sorted(unique_clusters)):
             subset = data[data["cluster_label"] == cluster_value]
             alpha = (subset["cluster_confidence"] + 0.3333) / 1.3333
+            color = palette[i]  
             if dims == 2:
                 ax.scatter(
                     subset[plot_cols[0]],
                     subset[plot_cols[1]],
                     s=3,
                     alpha=alpha.values,
+                    color=color,
                     label=cluster_value,
                 )
                 ax.set_xlabel(col_labels[plot_cols[0]])
@@ -691,9 +698,6 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 if not isinstance(ax, Axes3D):
                     self._reset_actions(axis_type="3d")
                     ax = self.axes
-                color = cm.tab10(
-                    cluster_value % 10
-                )  # Pick a base color from a colormap
                 base_color = mcolors.to_rgba_array([color] * len(subset))
                 base_color[:, -1] = (
                     alpha.values
@@ -711,8 +715,15 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 ax.set_ylabel(col_labels[plot_cols[1]])
                 ax.set_zlabel(col_labels[plot_cols[2]])
 
+        handles = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor=palette[i],
+                   markersize=8, label=cluster_value)
+            for i, cluster_value in enumerate(sorted(unique_clusters))
+        ]
+        ax.legend(handles=handles, loc="best")
+
         self.clusteringcontrols.update_clusters(sorted(unique_clusters))
-        ax.legend(loc="best")
+
         self.canvas.draw()
         col_labels["cluster_label"] = "cluster_label"
         col_labels["cluster_confidence"] = "cluster_confidence"
