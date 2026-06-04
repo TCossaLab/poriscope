@@ -371,8 +371,18 @@ class PeakFinder(MetaEventFitter):
                 * self.event_metadata[channel][index]["baseline_std"]
             )
             hlabel.append(f"unfolded level {t1_std:+d}σ")
+            
+            if self.event_metadata[channel][index]["sequence"] is not None:
+                if self.event_metadata[channel][index]["translocation_direction"] == "forward":
+                    peaks_filtered.append(self.sublevel_metadata[channel][index]["sublevel_start_times"][1])
+                    vlabel.append(f"Forward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}")
+                elif self.event_metadata[channel][index]["translocation_direction"] == "backward":
+                    peaks_filtered.append(self.sublevel_metadata[channel][index]["sublevel_start_times"][-1])
+                    vlabel.append(f"Backward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}")
 
+                    
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
+                
                 if self.sublevel_metadata[channel][index]["peak_id"][i] is not None:
                     # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
                     # ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
@@ -728,19 +738,13 @@ class PeakFinder(MetaEventFitter):
                 ]
             }
         )
-        unfolded_level, folded_level = self.find_mode_blockage_level(
-            data[padding_before:-padding_after],
-            baseline_mean,
-            baseline_std,
-        )
-        self.logger.info(f"DEBUG: unfolded_level={unfolded_level}, folded_level={folded_level}")
+
 
         if len(peaks) > 0:
             edges = [
                 {
                     "index": 0,
                     "type": "start",
-                    "unfolded_level": unfolded_level,
                 },
                 {
                     "index": padding_before,
@@ -851,7 +855,7 @@ class PeakFinder(MetaEventFitter):
         # rise_time = int(1.0e-6 * 10 * samplerate)
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
-        unfolded_level = sublevel_starts[0]["unfolded_level"]
+        
         # Determine sublevel types: "peak" (if edge contains peak) or "event_baseline" (other transitions)
         sublevel_metadata["sublevel_type"] = []
         for i in range(num_states):
@@ -1006,9 +1010,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["normalized_height"] = np.array(
             [
                 (
-                    sublevel_starts[i]["width"] * dt_us
-                    if "peak" in sublevel_starts[i]["type"]
-                    else None
+                np.nan
                 )
                 for i in range(num_states)
             ],
@@ -1030,9 +1032,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["normalized_height"] = np.array(
             [
                 (
-                    sublevel_starts[i]["peak_height"] / unfolded_level
-                    if "peak" in sublevel_starts[i]["type"]
-                    else np.nan
+                    np.nan
                 )
                 for i in range(num_states)
             ],
@@ -1053,23 +1053,14 @@ class PeakFinder(MetaEventFitter):
         # get normalized peak prominence (will be calculated in post-processing when unfolded_level is determined)
         sublevel_metadata["normalized_prominence"] = np.array(
             [
-                (np.nan)  # Will be calculated in post-processing
-                for i in range(num_states)
-            ],
-            dtype=np.float64,
-        )
-        # get peak prominence-based classification (will be assigned in post-processing)
-        sublevel_metadata["classified"] = np.array(
-            [
                 (
                     np.nan
-                    if "peak" in sublevel_starts[i]["type"]
-                    else np.nan
                 )
                 for i in range(num_states)
             ],
             dtype=np.float64,
         )
+
         # get peak max blockage
         sublevel_metadata["max_blockage"] = np.array(
             [
@@ -1087,11 +1078,7 @@ class PeakFinder(MetaEventFitter):
         sublevel_metadata["normalized_blockage"] = np.array(
             [
                 (
-                    sublevel_starts[i]["max_blockage"] / unfolded_level
-                    if "peak" in sublevel_starts[i]["type"]
-                    and unfolded_level != 0
-                    and sublevel_starts[i].get("max_blockage") is not None
-                    else None
+                    np.nan
                 )
                 for i in range(num_states)
             ],
@@ -1176,7 +1163,20 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-
+        # get peak prominence-based classification (will be assigned in post-processing)
+        sublevel_metadata["classified"] = np.array(
+            [
+                (
+                    np.nan
+                    if "peak" in sublevel_starts[i]["type"]
+                    else np.nan
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
+        
+        
         # # get plateau size (flat top of peak in samples)
         # sublevel_metadata["plateau_size"] = np.array(
         #     [
@@ -1270,9 +1270,9 @@ class PeakFinder(MetaEventFitter):
         slice_data = data[start_idx:end_idx]
 
         self.logger.debug(
-            f"find_longest_blockage_level: data len={len(data)}, start_idx={start_idx}, end_idx={end_idx}, slice len={len(slice_data)}"
+            f"find_primary_level: data len={len(data)}, start_idx={start_idx}, end_idx={end_idx}, slice len={len(slice_data)}"
         )
-        event_metadata["longest_blockage_level"],_ = self.find_mode_blockage_level(
+        event_metadata["primary_level"],_ = self.find_mode_blockage_level(
                 data[
                     int(
                         sublevel_metadata["sublevel_start_times"][1] * samplerate * 1e-6
@@ -1287,8 +1287,8 @@ class PeakFinder(MetaEventFitter):
         event_metadata["unfolded_level"] = None
         event_metadata["folded_level"] = None
         event_metadata["baseline_std"] = baseline_std
-        event_metadata["translocation_direction"] = ""
-        event_metadata["sequence"] = ""
+        event_metadata["translocation_direction"] = None
+        event_metadata["sequence"] = None
 
         return event_metadata
 
@@ -1324,7 +1324,7 @@ class PeakFinder(MetaEventFitter):
             "baseline_current": float,
             "unfolded_level": float,
             "folded_level": float,
-            "longest_blockage_level": float,
+            "primary_level": float,
             "baseline_std": float,
             "translocation_direction": str,
             "sequence": str,
@@ -1394,7 +1394,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["baseline_current"] = "pA"
         metadata_units["unfolded_level"] = "pA"
         metadata_units["folded_level"] = "pA"
-        metadata_units["longest_blockage_level"] = "pA"
+        metadata_units["primary_level"] = "pA"
         metadata_units["baseline_std"] = "pA"
         metadata_units["translocation_direction"] = None
         metadata_units["sequence"] = None
@@ -1556,28 +1556,28 @@ class PeakFinder(MetaEventFitter):
                     )
                     continue
 
-                longest_level = event_data.get("longest_blockage_level")
+                primary_level = event_data.get("primary_level")
                 raw_ecd = event_data.get("raw_ecd")
 
                 if event_index < 3:
                     self.logger.info(
-                        f"Channel {ch}, Event {event_index}: longest_level = {longest_level}, raw_ecd = {raw_ecd}"
+                        f"Channel {ch}, Event {event_index}: primary_level = {primary_level}, raw_ecd = {raw_ecd}"
                     )
 
-                if longest_level is not None and raw_ecd is not None and raw_ecd > 0:
-                    all_longest_levels.append(longest_level)
+                if primary_level is not None and raw_ecd is not None and raw_ecd > 0:
+                    all_longest_levels.append(primary_level)
                     all_raw_ecds.append(raw_ecd)
                     all_event_info.append((ch, event_index))
                 else:
                     self.logger.info(
                         f"Event {event_index} in channel {ch} excluded: "
-                        f"longest_level={'None' if longest_level is None else f'{longest_level:.2f}'}, "
+                        f"primary_level={'None' if primary_level is None else f'{primary_level:.2f}'}, "
                         f"raw_ecd={'None' if raw_ecd is None else f'{raw_ecd:.3f}'}"
                     )
 
         if len(all_longest_levels) == 0:
             self.logger.warning(
-                f"No events with valid longest_blockage_level and raw_ecd found for analysis. "
+                f"No events with valid primary_level and raw_ecd found for analysis. "
                 f"Total events checked: {sum(len(self.event_metadata.get(ch, {})) for ch in channels)}. "
                 f"This may indicate that events are too short, have no translocation signal, "
                 f"or were trimmed too aggressively. Check event detection parameters."
@@ -1625,7 +1625,7 @@ class PeakFinder(MetaEventFitter):
                     and not (isinstance(classified[i], float) and np.isnan(classified[i]))
                 )
                 if ch in self.event_metadata and event_index in self.event_metadata[ch]:
-                    direction = self.event_metadata[ch][event_index].get("translocation_direction", "")
+                    direction = self.event_metadata[ch][event_index].get("translocation_direction", None)
                     if direction == "backward":
                         sequence = sequence[::-1]
                     self.event_metadata[ch][event_index]["sequence"] = sequence
@@ -1636,6 +1636,7 @@ class PeakFinder(MetaEventFitter):
         self.logger.info(
             "Post-processing analysis completed with automatic folded/unfolded classification."
         )
+        
 
     @log(logger=logger)
     def update_event_metadata_post_processing(
@@ -1711,12 +1712,13 @@ class PeakFinder(MetaEventFitter):
                 prominences = np.array(sublevel_data["prominence"])
                 valid_mask = ~np.isnan(prominences)
                 normalized_prominences = np.full_like(prominences, np.nan)
-                normalized_prominences[valid_mask] = (
-                    prominences[valid_mask] / unfolded_level
-                )
+                normalized_prominences[valid_mask] = (prominences[valid_mask] / unfolded_level)
                 sublevel_data["normalized_prominence"] = normalized_prominences
 
-            if "max_blockage" in sublevel_data and sublevel_data["max_blockage"] is not None:
+            if (
+                "max_blockage" in sublevel_data 
+                and sublevel_data["max_blockage"] is not None
+            ):
                 blockages = np.array(sublevel_data["max_blockage"])
                 valid_mask = ~np.isnan(blockages)
                 normalized_blockages = np.full_like(blockages, np.nan)
@@ -2243,7 +2245,7 @@ class PeakFinder(MetaEventFitter):
                 "  Ratio quality: POOR - using ratio-aware threshold as fallback"
             )
 
-        # Classify each event (including filtered-out events) based on its longest_blockage_level
+        # Classify each event (including filtered-out events) based on its primary_level
         # Higher absolute blockage (above threshold) = Folded DNA (more compact)
         # Lower absolute blockage (below threshold) = Unfolded DNA (more extended)
         folded_count = 0
@@ -2253,17 +2255,17 @@ class PeakFinder(MetaEventFitter):
         self.logger.info(f"Starting event classification loop: {len(all_event_info)} events to process")
         for i, (ch, event_index) in enumerate(all_event_info):
             self.logger.debug(f"Processing event {i+1}/{len(all_event_info)}: Channel {ch}, Event {event_index}")
-            event_longest_level = all_longest_levels_array[i]
+            event_primary_level = all_longest_levels_array[i]
             # Classify based on threshold comparison
-            if event_longest_level >= threshold:
+            if event_primary_level >= threshold:
                 # Above threshold = Folded (higher absolute blockage, more compact)
-                event_folded_level = event_longest_level
-                event_unfolded_level = event_longest_level / 2.0
+                event_folded_level = event_primary_level
+                event_unfolded_level = event_primary_level / 2.0
                 folded_count += 1
             else:
                 # Below threshold = Unfolded (lower absolute blockage, more extended)
-                event_unfolded_level = event_longest_level
-                event_folded_level = event_longest_level * 2.0
+                event_unfolded_level = event_primary_level
+                event_folded_level = event_primary_level * 2.0
                 unfolded_count += 1
 
             # Update metadata with event-specific levels
