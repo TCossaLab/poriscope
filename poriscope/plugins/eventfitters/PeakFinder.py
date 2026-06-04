@@ -2063,74 +2063,9 @@ class PeakFinder(MetaEventFitter):
 ###################################################################################################################    
 ###################################################################################################################    
  
-    # utility functions
 
-    @log(logger=logger)
-    def _collect_peak_statistics(self, channels: List[int]) -> None:
-        """
-        Collect statistics about peak classifications across all events.
-
-        :param channels: List of channel indices to process
-        :type channels: List[int]
-        """
-        # Initialize counters
-        peak_type_counts: Dict[int, int] = {}
-        total_peaks = 0
-        total_classified = 0
-        total_unclassified = 0
-
-        # Iterate through all channels and events
-        for ch in channels:
-            if ch not in self.sublevel_metadata:
-                continue
-
-            for event_index in self.sublevel_metadata[ch]:
-                sublevel_data = self.sublevel_metadata[ch][event_index]
-
-                # Check if filtered data exists
-                if "filtered" not in sublevel_data:
-                    continue
-
-                filtered_values = sublevel_data["filtered"]
-                peak_ids = sublevel_data.get("peak_id", [])
-
-                # Count peaks by their filtered type
-                for i, peak_id in enumerate(peak_ids):
-                    if peak_id is not None and not (
-                        isinstance(peak_id, float) and np.isnan(peak_id)
-                    ):
-                        total_peaks += 1
-                        filtered_type = filtered_values[i]
-
-                        if filtered_type is not None and not (
-                            isinstance(filtered_type, float)
-                            and np.isnan(filtered_type)
-                        ):
-                            # Count by type
-                            peak_type_counts[int(filtered_type)] = (
-                                peak_type_counts.get(int(filtered_type), 0) + 1
-                            )
-
-                            # Classify as classified or unclassified
-                            if filtered_type > 0:
-                                total_classified += 1
-                            else:
-                                total_unclassified += 1
-
-        # Store results
-        self._peak_statistics = {
-            "total_peaks": total_peaks,
-            "total_classified": total_classified,
-            "total_unclassified": total_unclassified,
-            "peak_type_counts": peak_type_counts,
-        }
-
-        self.logger.info(
-            f"Peak statistics collected: {total_peaks} total peaks, "
-            f"{total_classified} classified, {total_unclassified} unclassified"
-        )
-        self.logger.info(f"Peak type distribution: {peak_type_counts}")
-
+    #classifiers
+    
     @log(logger=logger)
     def _classify_folded_unfolded(
         self,
@@ -2387,7 +2322,7 @@ class PeakFinder(MetaEventFitter):
                 filtered_data = all_longest_levels_array[combined_filter_mask]
                 filtered_labels = (filtered_data >= viz_threshold).astype(int)
 
-                self.visualize_classification(
+                self.visualize_folding_classification(
                     data=filtered_data,
                     labels=filtered_labels,
                     centers=np.array([lower_center, higher_center]),
@@ -2401,59 +2336,7 @@ class PeakFinder(MetaEventFitter):
                 self.logger.error(f"Error during classification visualization: {str(e)}", exc_info=True)
 
     @log(logger=logger)
-    def _save_classification_report(self) -> None:
-        """
-        Generate and save a comprehensive classification report to a text file.
-
-        Uses the report from report_channel_status() to avoid code duplication.
-        """
-        try:
-            loader = getattr(self, "eventloader", None)
-            if loader is None:
-                self.logger.warning("No event loader available; skipping classification report save")
-                return
-
-            base_file = loader.get_base_file()
-            report_path = base_file.with_name(f"{base_file.stem}_classification_report.txt")
-
-            # Get the classification report from report_channel_status
-            report_text = self.report_channel_status(channel=None, init=False)
-
-            # Add settings section
-            settings_section = "\n\nFITTING SETTINGS\n" + "-" * 80 + "\n"
-            if self.settings:
-                for key, setting_dict in sorted(self.settings.items()):
-                    if key.lower() == "metaeventloader":
-                        # Save the path of the event loader object
-                        if hasattr(self, "eventloader") and self.eventloader is not None:
-                            if hasattr(self.eventloader, "get_base_file"):
-                                base_file = self.eventloader.get_base_file()
-                                settings_section += f"{key}: {base_file}\n"
-                            else:
-                                settings_section += f"{key}: {self.eventloader}\n"
-                        else:
-                            settings_section += f"{key}: Not available\n"
-                    elif isinstance(setting_dict, dict) and "Value" in setting_dict:
-                        value = setting_dict["Value"]
-                        settings_section += f"{key}: {value}\n"
-            else:
-                settings_section += "No settings available\n"
-
-            # Add header and footer with settings
-            header = "=" * 80 + "\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis\n" + "=" * 80 + "\n"
-            footer = "\n" + "=" * 80
-            report_text = header + report_text.lstrip() + settings_section + footer
-
-            # Write report to file with UTF-8 encoding
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(report_text)
-
-            self.logger.info(f"Classification report saved to {report_path}")
-        except Exception as e:
-            self.logger.error(f"Error saving classification report: {str(e)}", exc_info=True)
-
-    @log(logger=logger)
-    def visualize_classification(
+    def visualize_folding_classification(
         self,
         data: np.ndarray,
         labels: np.ndarray,
@@ -2596,64 +2479,6 @@ class PeakFinder(MetaEventFitter):
         #plt.show()
 
     @log(logger=logger)
-    def classify_1d_distribution(
-        self,
-        data: np.ndarray,
-        n_components: int = 2,
-        return_centers: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
-        """
-        Classify 1D data into clusters using Gaussian Mixture Model.
-
-        :param data: 1D array of data to classify
-        :type data: np.ndarray
-        :param n_components: Number of Gaussian components to fit
-        :type n_components: int
-        :param return_centers: Whether to return cluster centers and GMM model along with labels
-        :type return_centers: bool
-        :return: Cluster labels, optionally with centers and fitted GMM model
-        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
-        """
-        data_reshaped = np.array(data).reshape(-1, 1)
-
-        gmm = GaussianMixture(n_components=n_components, random_state=42)
-        labels = gmm.fit_predict(data_reshaped)
-        centers = gmm.means_.flatten()
-
-        if return_centers:
-            return labels, centers, gmm
-        return labels   
-    
-    @log(logger=logger)
-    def classify_2d_distribution(
-        self,
-        data: np.ndarray,
-        n_components: int = 2,
-        return_centers: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
-        """
-        Classify 2D data into clusters using Gaussian Mixture Model.
-
-        :param data: 2D array of data to classify
-        :type data: np.ndarray
-        :param n_components: Number of Gaussian components to fit
-        :type n_components: int
-        :param return_centers: Whether to return cluster centers and GMM model along with labels
-        :type return_centers: bool
-        :return: Cluster labels, optionally with centers and fitted GMM model
-        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
-        """
-        data_reshaped = np.array(data).reshape(-1, 2)
-
-        gmm = GaussianMixture(n_components=n_components, random_state=42)
-        labels = gmm.fit_predict(data_reshaped)
-        centers = gmm.means_.flatten()
-
-        if return_centers:
-            return labels, centers, gmm
-        return labels
-
-    @log(logger=logger)
     def _classify_peak_prominences(self, channels: List[int]) -> None:
         """
         Classify peak prominences for peaks whose filtered value is 1, 2, or 3.
@@ -2718,7 +2543,7 @@ class PeakFinder(MetaEventFitter):
             return
 
         selected_model = min(candidate_models, key=lambda item: item[0])[1]
-        gmm_labels = selected_model.predict(prominence_reshaped)
+        #gmm_labels = selected_model.predict(prominence_reshaped)
         centers = selected_model.means_.flatten()
 
         if selected_model.n_components == 1:
@@ -2728,11 +2553,16 @@ class PeakFinder(MetaEventFitter):
             sorted_indices = np.argsort(centers)
             lower_idx = int(sorted_indices[0])
             higher_idx = int(sorted_indices[1])
-            label_map = {lower_idx: 0.0, higher_idx: 1.0}
-            class_labels = np.array(
-                [label_map[int(label)] for label in gmm_labels], dtype=np.float64
-            )
-            threshold = float((centers[lower_idx] + centers[higher_idx]) / 2.0)
+            midpoint = float((centers[lower_idx] + centers[higher_idx]) / 2.0)
+            lower_std = float(np.sqrt(selected_model.covariances_.flatten()[lower_idx]))
+            min_threshold = float(centers[lower_idx]) + 3.0 * lower_std
+            if midpoint >= min_threshold:
+                threshold = midpoint
+                threshold_type = "midpoint"
+            else:
+                threshold = min_threshold
+                threshold_type = "3σ floor"
+            class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(np.float64)
 
         for class_label, (ch, event_index, peak_index) in zip(class_labels, prominence_refs):
             self.sublevel_metadata[ch][event_index]["classified"][peak_index] = class_label
@@ -2741,6 +2571,7 @@ class PeakFinder(MetaEventFitter):
             "total_peaks": int(len(prominence_array)),
             "n_components": int(selected_model.n_components),
             "threshold": threshold,
+            "threshold_type": threshold_type,
             "centers": centers.tolist(),
             "lower_count": int(np.sum(class_labels == 0)),
             "higher_count": int(np.sum(class_labels == 1)),
@@ -2765,8 +2596,179 @@ class PeakFinder(MetaEventFitter):
                 centers=centers,
                 gmm_model=selected_model,
                 threshold=threshold,
+                threshold_type=threshold_type,
                 save_path=str(plot_path) if plot_path is not None else None,
             )
+
+    @log(logger=logger)
+    def _visualize_peak_prominence_classification(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        centers: np.ndarray,
+        gmm_model: GaussianMixture,
+        threshold: Optional[float] = None,
+        threshold_type: Optional[str] = None,
+        save_path: Optional[str] = None,
+    ) -> None:
+        """
+        Visualize the prominence classification results for peaks.
+        """
+        import matplotlib.pyplot as plt
+        from scipy.stats import norm
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        n_bins = 50
+        ax.hist(
+            data,
+            bins=n_bins,
+            density=True,
+            alpha=0.5,
+            color="gray",
+            label="All Peaks",
+        )
+
+        sorted_indices = np.argsort(centers)
+        colors = ["blue", "red"]
+        class_labels = ["Lower prominence (0)", "Higher prominence (1)"]
+
+        for class_idx, gmm_idx in enumerate(sorted_indices):
+            cluster_data = data[labels == class_idx]
+            ax.hist(
+                cluster_data,
+                bins=n_bins,
+                density=True,
+                alpha=0.6,
+                color=colors[class_idx % len(colors)],
+                label=f"{class_labels[class_idx]}: {centers[gmm_idx]:.2f} pA ({len(cluster_data)} peaks)",
+            )
+
+            mean = gmm_model.means_[gmm_idx][0]
+            std = np.sqrt(gmm_model.covariances_[gmm_idx][0][0])
+            weight = gmm_model.weights_[gmm_idx]
+            x_range = np.linspace(data.min(), data.max(), 1000)
+            ax.plot(
+                x_range,
+                weight * norm.pdf(x_range, mean, std),
+                color=colors[class_idx % len(colors)],
+                linewidth=2,
+                linestyle="--",
+                label=f"{class_labels[class_idx]} Gaussian (mu={mean:.2f}, std={std:.2f})",
+            )
+
+        if threshold is not None:
+            ax.axvline(
+                threshold,
+                color="black",
+                linestyle="-",
+                linewidth=2,
+                label=f"Threshold: {threshold:.2f} pA",
+            )
+
+        ax.set_xlabel("Peak Prominence (pA)", fontsize=12)
+        ax.set_ylabel("Probability Density", fontsize=12)
+        ax.set_title("Peak Prominence Classification", fontsize=14, fontweight="bold")
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        total = len(data)
+        lower_count = int(np.sum(labels == 0))
+        higher_count = int(np.sum(labels == 1))
+
+        info_text = (
+            f"Total Peaks: {total}\n"
+            f"Class 0: {lower_count} ({lower_count/total:.1%})\n"
+            f"Class 1: {higher_count} ({higher_count/total:.1%})\n"
+            f"Threshold type: {threshold_type if threshold_type else 'N/A'}"
+        )
+        ax.text(
+            0.02,
+            0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+        )
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            self.logger.info(
+                f"Peak prominence classification visualization saved to {save_path}"
+            )
+
+        plt.close(fig)
+        
+    @log(logger=logger)
+    def _collect_peak_statistics(self, channels: List[int]) -> None:
+        """
+        Collect statistics about peak classifications across all events.
+
+        :param channels: List of channel indices to process
+        :type channels: List[int]
+        """
+        # Initialize counters
+        peak_type_counts: Dict[int, int] = {}
+        total_peaks = 0
+        total_classified = 0
+        total_unclassified = 0
+
+        # Iterate through all channels and events
+        for ch in channels:
+            if ch not in self.sublevel_metadata:
+                continue
+
+            for event_index in self.sublevel_metadata[ch]:
+                sublevel_data = self.sublevel_metadata[ch][event_index]
+
+                # Check if filtered data exists
+                if "filtered" not in sublevel_data:
+                    continue
+
+                filtered_values = sublevel_data["filtered"]
+                peak_ids = sublevel_data.get("peak_id", [])
+
+                # Count peaks by their filtered type
+                for i, peak_id in enumerate(peak_ids):
+                    if peak_id is not None and not (
+                        isinstance(peak_id, float) and np.isnan(peak_id)
+                    ):
+                        total_peaks += 1
+                        filtered_type = filtered_values[i]
+
+                        if filtered_type is not None and not (
+                            isinstance(filtered_type, float)
+                            and np.isnan(filtered_type)
+                        ):
+                            # Count by type
+                            peak_type_counts[int(filtered_type)] = (
+                                peak_type_counts.get(int(filtered_type), 0) + 1
+                            )
+
+                            # Classify as classified or unclassified
+                            if filtered_type > 0:
+                                total_classified += 1
+                            else:
+                                total_unclassified += 1
+
+        # Store results
+        self._peak_statistics = {
+            "total_peaks": total_peaks,
+            "total_classified": total_classified,
+            "total_unclassified": total_unclassified,
+            "peak_type_counts": peak_type_counts,
+            "threshold type": self._peak_prominence_classification_results.get("threshold_type", "N/A")
+        }
+
+        self.logger.info(
+            f"Peak statistics collected: {total_peaks} total peaks, "
+            f"{total_classified} classified, {total_unclassified} unclassified"
+        )
+        self.logger.info(f"Peak type distribution: {peak_type_counts}")
+
+
 
     @log(logger=logger)
     def _classify_translocation_direction(self, channels: List[int]) -> None:
@@ -2895,6 +2897,7 @@ class PeakFinder(MetaEventFitter):
         centers: np.ndarray,
         gmm_model: GaussianMixture,
         threshold: float,
+        threshold_type: Optional[str] = None,
         save_path: Optional[str] = None,
     ) -> None:
         """Visualize translocation direction classification on log10 cumulative pre-peak3 ECD."""
@@ -2969,104 +2972,119 @@ class PeakFinder(MetaEventFitter):
             self.logger.info(f"Translocation direction visualization saved to {save_path}")
         plt.close(fig)
 
+
     @log(logger=logger)
-    def _visualize_peak_prominence_classification(
+    def _save_classification_report(self) -> None:
+        """
+        Generate and save a comprehensive classification report to a text file.
+
+        Uses the report from report_channel_status() to avoid code duplication.
+        """
+        try:
+            loader = getattr(self, "eventloader", None)
+            if loader is None:
+                self.logger.warning("No event loader available; skipping classification report save")
+                return
+
+            base_file = loader.get_base_file()
+            report_path = base_file.with_name(f"{base_file.stem}_classification_report.txt")
+
+            # Get the classification report from report_channel_status
+            report_text = self.report_channel_status(channel=None, init=False)
+
+            # Add settings section
+            settings_section = "\n\nFITTING SETTINGS\n" + "-" * 80 + "\n"
+            if self.settings:
+                for key, setting_dict in sorted(self.settings.items()):
+                    if key.lower() == "metaeventloader":
+                        # Save the path of the event loader object
+                        if hasattr(self, "eventloader") and self.eventloader is not None:
+                            if hasattr(self.eventloader, "get_base_file"):
+                                base_file = self.eventloader.get_base_file()
+                                settings_section += f"{key}: {base_file}\n"
+                            else:
+                                settings_section += f"{key}: {self.eventloader}\n"
+                        else:
+                            settings_section += f"{key}: Not available\n"
+                    elif isinstance(setting_dict, dict) and "Value" in setting_dict:
+                        value = setting_dict["Value"]
+                        settings_section += f"{key}: {value}\n"
+            else:
+                settings_section += "No settings available\n"
+
+            # Add header and footer with settings
+            header = "=" * 80 + "\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis\n" + "=" * 80 + "\n"
+            footer = "\n" + "=" * 80
+            report_text = header + report_text.lstrip() + settings_section + footer
+
+            # Write report to file with UTF-8 encoding
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_text)
+
+            self.logger.info(f"Classification report saved to {report_path}")
+        except Exception as e:
+            self.logger.error(f"Error saving classification report: {str(e)}", exc_info=True)
+
+ 
+
+    @log(logger=logger)
+    def classify_1d_distribution(
         self,
         data: np.ndarray,
-        labels: np.ndarray,
-        centers: np.ndarray,
-        gmm_model: GaussianMixture,
-        threshold: Optional[float] = None,
-        save_path: Optional[str] = None,
-    ) -> None:
+        n_components: int = 2,
+        return_centers: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
         """
-        Visualize the prominence classification results for peaks.
+        Classify 1D data into clusters using Gaussian Mixture Model.
+
+        :param data: 1D array of data to classify
+        :type data: np.ndarray
+        :param n_components: Number of Gaussian components to fit
+        :type n_components: int
+        :param return_centers: Whether to return cluster centers and GMM model along with labels
+        :type return_centers: bool
+        :return: Cluster labels, optionally with centers and fitted GMM model
+        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
         """
-        import matplotlib.pyplot as plt
-        from scipy.stats import norm
+        data_reshaped = np.array(data).reshape(-1, 1)
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-        n_bins = 50
-        ax.hist(
-            data,
-            bins=n_bins,
-            density=True,
-            alpha=0.5,
-            color="gray",
-            label="All Peaks",
-        )
+        gmm = GaussianMixture(n_components=n_components, random_state=42)
+        labels = gmm.fit_predict(data_reshaped)
+        centers = gmm.means_.flatten()
 
-        sorted_indices = np.argsort(centers)
-        colors = ["blue", "red"]
-        class_labels = ["Lower prominence (0)", "Higher prominence (1)"]
+        if return_centers:
+            return labels, centers, gmm
+        return labels   
+    
+    @log(logger=logger)
+    def classify_2d_distribution(
+        self,
+        data: np.ndarray,
+        n_components: int = 2,
+        return_centers: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
+        """
+        Classify 2D data into clusters using Gaussian Mixture Model.
 
-        for class_idx, gmm_idx in enumerate(sorted_indices):
-            cluster_data = data[labels == class_idx]
-            ax.hist(
-                cluster_data,
-                bins=n_bins,
-                density=True,
-                alpha=0.6,
-                color=colors[class_idx % len(colors)],
-                label=f"{class_labels[class_idx]}: {centers[gmm_idx]:.2f} pA ({len(cluster_data)} peaks)",
-            )
+        :param data: 2D array of data to classify
+        :type data: np.ndarray
+        :param n_components: Number of Gaussian components to fit
+        :type n_components: int
+        :param return_centers: Whether to return cluster centers and GMM model along with labels
+        :type return_centers: bool
+        :return: Cluster labels, optionally with centers and fitted GMM model
+        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
+        """
+        data_reshaped = np.array(data).reshape(-1, 2)
 
-            mean = gmm_model.means_[gmm_idx][0]
-            std = np.sqrt(gmm_model.covariances_[gmm_idx][0][0])
-            weight = gmm_model.weights_[gmm_idx]
-            x_range = np.linspace(data.min(), data.max(), 1000)
-            ax.plot(
-                x_range,
-                weight * norm.pdf(x_range, mean, std),
-                color=colors[class_idx % len(colors)],
-                linewidth=2,
-                linestyle="--",
-                label=f"{class_labels[class_idx]} Gaussian (mu={mean:.2f}, std={std:.2f})",
-            )
+        gmm = GaussianMixture(n_components=n_components, random_state=42)
+        labels = gmm.fit_predict(data_reshaped)
+        centers = gmm.means_.flatten()
 
-        if threshold is not None:
-            ax.axvline(
-                threshold,
-                color="black",
-                linestyle="-",
-                linewidth=2,
-                label=f"Threshold: {threshold:.2f} pA",
-            )
+        if return_centers:
+            return labels, centers, gmm
+        return labels
 
-        ax.set_xlabel("Peak Prominence (pA)", fontsize=12)
-        ax.set_ylabel("Probability Density", fontsize=12)
-        ax.set_title("Peak Prominence Classification", fontsize=14, fontweight="bold")
-        ax.legend(loc="best", fontsize=10)
-        ax.grid(True, alpha=0.3)
-
-        total = len(data)
-        lower_count = int(np.sum(labels == 0))
-        higher_count = int(np.sum(labels == 1))
-
-        info_text = (
-            f"Total Peaks: {total}\n"
-            f"Class 0: {lower_count} ({lower_count/total:.1%})\n"
-            f"Class 1: {higher_count} ({higher_count/total:.1%})"
-        )
-        ax.text(
-            0.02,
-            0.98,
-            info_text,
-            transform=ax.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
-        )
-
-        plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            self.logger.info(
-                f"Peak prominence classification visualization saved to {save_path}"
-            )
-
-        plt.close(fig)
 
     @log(logger=logger)
     def filter_peaks(
@@ -3333,6 +3351,8 @@ class PeakFinder(MetaEventFitter):
         )
 
         return properties
+    
+    # utility functions
 
     @log(logger=logger)
     def find_mode_blockage_level(self, data, baseline_mean, baseline_std):
