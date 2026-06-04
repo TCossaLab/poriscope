@@ -57,23 +57,6 @@ class ClusteringController(MetaController):
         self.model = ClusteringModel()
 
     @log(logger=logger)
-    def display_write_status(self, status):
-        """
-        Emit a message indicating whether clustering data was successfully written.
-
-        :param status: True if write was successful, False otherwise.
-        :type status: bool
-        """
-        if status is True:
-            self.add_text_to_display.emit(
-                "Successfully wrote clustering data", self.__class__.__name__
-            )
-        else:
-            self.add_text_to_display.emit(
-                "Failed to write clustering data", self.__class__.__name__
-            )
-
-    @log(logger=logger)
     def check_cluster_column_exists(self, table_name):
         """
         Notify the view to check if a cluster column exists in the given table.
@@ -196,4 +179,17 @@ class ClusteringController(MetaController):
         if loader:
             self.global_signal.emit(
                 "MetaDatabaseLoader", loader, "list_plugins", (), "update_plugins", ()
+            )
+
+    @log(logger=logger)
+    def display_write_status(self, status: bool) -> None:
+        if status:
+            self.add_text_to_display.emit(
+                "Successfully wrote clustering data",
+                self.__class__.__name__,
+            )
+        else:
+            self.add_text_to_display.emit(
+                "Failed to write clustering data",
+                self.__class__.__name__,
             )

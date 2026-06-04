@@ -1,4 +1,84 @@
-## Poriscope 1.5: In Progress
+## Poriscope 1.7: In Progress
+
+## Poriscope 1.6: 2026-06-04
+
+### What's New since Poriscope 1.5:
+    
+* **PyPi integration**
+    * Poriscope is now available on PyPi and can be installed with `pip install poriscope`
+    
+* **Updated Data Plugin Base Class: `MetaDatabaseLoader`**
+    * Replaced N×M `COUNT(*)` query loop in `report_channel_status` with a `event_counts` summary table, making DB loading and experiment/channel count reporting ~10x faster.  
+    * The `event_counts` summary table is maintained automatically via SQLite triggers in case of manual edits (event removal)
+    * Backwards compatible — existing databases are upgraded automatically on first load
+    * Added template for `get_plot_features()` function that can be implemented by subclasses that want to visualize data printed by specific `MetaEventFitter` subclasses
+    
+* **Updated Data Plugin Base Class: `CUSUM`**
+    * Fixed numerical bug that was causing underestimates of sublevel transition probabilities
+    * Fixed numerical bug that was causing shallow steps to be accepted when they should not have been
+    * Reverted threshold loop to exact port of original C code implementation
+    * Added new parameter Sensitivity to allow greater fine-tuning of step detection
+
+* **Updated Data Plugin Base Class: `Peakfinder`**
+    * Redefined sublevels by regions relative to peak flanks
+    * Added new metadata to calculate peak mean blockage
+    * Added settings for peak filtering fine-tuning
+    * Fixed peak numbering relative to new sublevel definition
+    * Fixed current direction dependance problem for peakfinding function
+    
+* **Updated Frontend Plugin: `MetadataView`**
+    * Added **RAW** checkbox to the Plot Events section — raw data is always shown before fitting; once fitting is complete, checking RAW includes raw traces alongside the fitted results
+    * Full SQL will always be printed after filter creation/editing, regardless of validity
+    * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
+    * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
+    * New plot type: Categorical Histogram that plots bar charts of data counts for unique values of the specified database column
+    * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
+    * Two event filter modes: **Assisted SQL** (WHERE clause only, Poriscope builds the query) and **Raw SQL** (complete SELECT statement, executed directly). Raw mode enables aggregations, computed columns, and subqueries not possible in assisted mode. See *Filtering and Querying* in the documentation. `ProteinView` brought to parity with MetadataView. 
+
+* **Updated Frontend Plugin: `RawDataView`**
+    * Fixed bug causing drift in plotted data when scrolling long datasets
+    
+* **Updated Frontend Plugin: `ClusteringView`**
+    * Increased size of color palette cycle when plotting large numbers of clusters
+
+* **Documentation**
+    * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time
+    
+* **New Frontend Plugins: `ProteinView`/`ProteinController`/`ProteinModel`**	 
+    * Allows fitting, visualization, and postprocessing of the Mayer model to protein volume and shape factors
+    
+* **New Data Plugin: `ClassicCUSUM`**	 
+    * Reverts Step Size to being a multiple of the local baseline standard deviation instead of an absolute number
+    * Ported bug fixes from base CUSUM class
+    
+* **New Data Plugin: `ClassicBlockageFinder`**	 
+    * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
+    
+* **New Data Plugin: `BoundedBlockageFinder`**	 
+    * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
+    
+* **New Data plugin: `SQLitePeakDBLoader`**
+    * Subclasses SQLiteDBLoader to add specific plotting features used by the `PeakFinder` plugin - only usable on databases created by `PeakFinder`
+    
+* **New Data Plugin: `Basic_Peakfinder`**	 
+    * Stable release of basic and minimal peak finding features
+
+### General Fixes and Improvements:
+    * Fixed bug with baseline calculation that was causing inaccurate baseline whenever drift was present
+    * Fixed crash when resetting or updating heatmaps in the Metadata tab
+    * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
+    * Cross-table filtering is now supported for events plot filtered by sublevels column, and sublevels plot filtered by events column.
+    * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
+    * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
+    * Fixed plugins' settings not being able to be edited 
+    * Single shared legend from all axes in the EventAnalysis Tab to prevent overlapping and sublplots shifting
+    * Fixed "Update Plot" not working after "Plot Events" due to stale figure state and tracking variables not being reset
+    * Select all items by default in MultiSelectComboBox
+    * Auto-select newly added filter to match reader's, loader's and writer's combobox population behavior
+
+    Disclaimer: As of version 1.6.0, Poriscope has experimental Linux support and is primarily tested through an Ubuntu virtual machine environment.
+
+## Poriscope 1.5: 2025-12-08
 
 ### What's New since Poriscope 1.4:
 * **linting and unit tests**
@@ -72,6 +152,9 @@
     * Now includes pre-commit checks for code quality, linting, and proper type hinting
     * Post-merge pipeline updated to account for docs updates
 
+### General Fixes and Improvements:
+* **Click outside the pop-up or the x button in the selection menus (compatible with MacOs and Linux)**
+* **Append SQL-like filters instead of overriding when loading a new .json file in the Metadata tab**
 
 ## Poriscope 1.4: 2025-06-09
 

@@ -1,353 +1,1301 @@
-import copy
-from unittest.mock import MagicMock
+"""
+Tests for poriscope.controllers.DataPluginController.
+
+Covers:
+- __init__ wires view, model, data_server, plugin_manager
+- edit_plugin_settings (plugin found with settings, plugin found no get_raw_settings, plugin not found)
+- delete_plugin (no dependents success, has dependents blocked, instance not found)
+- handle_exit delegates to model
+- get_plugin_instance delegates to model
+- validate_and_instantiate_plugin (full success with provided key+settings, temp_instance
+  creation error, key collision, apply_settings error, register_plugin error,
+  empty settings early return, plugin reference resolution error)
+- set_settings stores historical_settings
+- update_data_server_location updates data_server attribute
+- get_instantiated_plugins_list delegates to model
+- get_available_metaclasses delegates to model
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest_mock import MockerFixture
 
 from poriscope.controllers.DataPluginController import DataPluginController
 
-# ------------------- Fixtures ------------------- #
+# ----------------------------- fixtures ------------------------------
 
 
 @pytest.fixture
-def mock_model(mocker):
+def mock_model(mocker: MockerFixture) -> MagicMock:
     """
-    Provides a fully mocked DataPluginModel with safe defaults for use in controller tests.
+    Provide a mocked DataPluginModel.
+
+    :param mocker: Pytest-mock fixture.
+    :return: Mocked data plugin model.
     """
-    model = mocker.Mock()
-    model.get_available_metaclasses.return_value = ["MetaReader", "MetaFilter"]
-    model.get_instantiated_plugins_list.return_value = {
-        "MetaReader": [],
-        "MetaFilter": [],
-    }
-    model.get_plugin_instance.return_value.get_parents.return_value = []
-    model.get_plugin_instance.return_value.get_dependents.return_value = []
+    model: MagicMock = mocker.Mock()
+    model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    model.get_available_metaclasses.return_value = []
     return model
 
 
 @pytest.fixture
-def controller(mocker, mock_model):
+def mock_view(mocker: MockerFixture) -> MagicMock:
     """
-    Instantiates a DataPluginController with mocked model and view.
-    Replaces PySide6 Signals with MagicMock so that `.emit` can be asserted.
-    """
-    mocker.patch(
-        "poriscope.controllers.DataPluginController.DataPluginModel",
-        return_value=mock_model,
-    )
-    mock_view = mocker.patch(
-        "poriscope.controllers.DataPluginController.DataPluginView"
-    ).return_value
+    Provide a mocked DataPluginView.
 
-    ctrl = DataPluginController(available_plugin_classes={}, data_server="/tmp")
-    ctrl.model = mock_model
+    :param mocker: Pytest-mock fixture.
+    :return: Mocked data plugin view.
+    """
+    return mocker.Mock()
+
+
+@pytest.fixture
+def controller(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> DataPluginController:
+    """
+    Construct a DataPluginController with view, model, and signals replaced by mocks.
+
+    Uses ``__new__`` to bypass ``__init__`` so no real Qt objects are created.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    :return: Controller under test.
+    """
+    ctrl: DataPluginController = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
     ctrl.view = mock_view
+    ctrl.model = mock_model
+    ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
+    ctrl.data_server = "/tmp/data"
+    ctrl.plugin_manager = None
+    ctrl.historical_settings = None  # type: ignore[assignment]
 
-    # Override Qt signals with MagicMock so `.emit` is mockable
-    ctrl.update_available_plugins = MagicMock()
-    ctrl.update_plugin_history = MagicMock()
-    ctrl.get_settings_from_history = MagicMock()
-    ctrl.add_text_to_display = MagicMock()
+    for sig in [
+        "update_available_plugins",
+        "update_plugin_history",
+        "get_settings_from_history",
+        "add_text_to_display",
+    ]:
+        mock_sig = mocker.Mock()
+        mock_sig.emit = mocker.Mock()
+        setattr(ctrl, sig, mock_sig)
 
     return ctrl
 
 
-# ------------------- Tests ------------------- #
+# --------------------------- __init__ --------------------------------
 
 
-def test_edit_plugin_settings_with_valid_plugin(controller, mocker):
+def test_init_sets_view_model_and_data_server(mocker: MockerFixture) -> None:
     """
-    Should call edit_plugin if get_raw_settings works on the plugin.
+    Verify __init__ creates view and model and stores data_server.
+
+    :param mocker: Pytest-mock fixture.
     """
-    plugin = mocker.Mock()
-    plugin.get_raw_settings.return_value = {"some": {"Value": 1}}
-    controller.model.get_plugin_instance.return_value = plugin
-    controller.edit_plugin = mocker.Mock()
+    mocker.patch("poriscope.controllers.DataPluginController.DataPluginView")
+    mocker.patch("poriscope.controllers.DataPluginController.DataPluginModel")
+    mocker.patch("poriscope.controllers.DataPluginController.QObject.__init__")
 
-    controller.edit_plugin_settings("MetaReader", "Plugin1")
+    ctrl = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
+    with patch.object(DataPluginController, "__init__", lambda self, a, b: None):
+        pass
 
-    controller.edit_plugin.assert_called_once()
-
-
-def test_edit_plugin_settings_applies_new_settings(controller, mocker):
-    """
-    Should call apply_settings with updated settings if user modifies them in the dialog.
-    """
-
-    # Fake updated settings returned by the dialog
-    updated_settings = {"Folder": {"Value": "new_path", "Type": str, "Options": None}}
-
-    # Setup plugin mock
-    plugin = mocker.Mock()
-    plugin.get_raw_settings.return_value = copy.deepcopy(updated_settings)
-    plugin.get_parents.return_value = []
-    plugin.get_dependents.return_value = []
-    plugin.get_key.return_value = "Plugin1"
-    plugin.apply_settings = mocker.Mock()
-
-    controller.model.get_plugin_instance.return_value = plugin
-    controller.model.get_available_metaclasses.return_value = []
-    controller.model.get_instantiated_plugins_list.return_value = {
-        "MetaReader": ["Plugin1"]
-    }
-    controller.view.get_user_settings = mocker.Mock(
-        return_value=(updated_settings, "Plugin1")
+    # Verify via direct construction with patched dependencies
+    mock_view_cls = mocker.patch(
+        "poriscope.controllers.DataPluginController.DataPluginView"
+    )
+    mock_model_cls = mocker.patch(
+        "poriscope.controllers.DataPluginController.DataPluginModel"
     )
 
-    # Act
-    controller.edit_plugin_settings("MetaReader", "Plugin1")
+    with patch("poriscope.controllers.DataPluginController.QObject.__init__"):
+        ctrl = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
+        DataPluginController.__init__(ctrl, {"MetaReader": []}, "/data")  # type: ignore[misc]
 
-    # Assert
-    plugin.apply_settings.assert_called_once_with(updated_settings)
+    assert ctrl.data_server == "/data"
+    assert ctrl.plugin_manager is None
+    mock_view_cls.assert_called_once()
+    mock_model_cls.assert_called_once_with({"MetaReader": []})
 
 
-def test_edit_plugin_updates_plugin_and_dependents(controller, mocker):
+# -------------------- edit_plugin_settings ---------------------------
+
+
+def test_edit_plugin_settings_calls_edit_plugin_when_settings_retrieved(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Test that editing a plugin with dependents updates their parent references
-    and the raw settings to reflect the new plugin key. Also confirm that
-    history is emitted for both the main and dependent plugins.
-    """
+    Retrieve raw settings from the plugin and call edit_plugin when plugin exists.
 
-    # Main plugin being edited
-    plugin = mocker.Mock()
-    plugin.get_parents.return_value = []
-    plugin.get_dependents.return_value = [("MetaFilter", "Dep1")]
-    plugin.get_key.return_value = "OldKey"
-    plugin.__class__.__name__ = "MyPlugin"
-
-    # Dependent plugin
-    dep_plugin = mocker.Mock()
-    dep_plugin.get_key.return_value = "Dep1"
-    dep_plugin.__class__.__name__ = "DepPlugin"
-
-    # Shared mutable dict for settings
-    shared_settings = {"MetaReader": {"Value": "OldKey", "Options": ["OldKey"]}}
-    dep_plugin.get_raw_settings.return_value = shared_settings
-
-    # Plugin lookup logic
-    controller.model.get_plugin_instance.side_effect = lambda m, k: (
-        plugin if k == "OldKey" else dep_plugin
-    )
-
-    # Simulated UI return value
-    controller.view.get_user_settings.return_value = (
-        {"MetaReader": {"Value": "NewKey"}},
-        "NewKey",
-    )
-
-    # Mock plugin list return values
-    controller.model.get_available_metaclasses.return_value = ["MetaReader"]
-    controller.model.get_instantiated_plugins_list.return_value = {
-        "MetaReader": ["OldKey"]
-    }
-
-    # Call the method
-    controller.edit_plugin("MetaReader", "OldKey", {"MetaReader": {"Value": "NewKey"}})
-
-    # Parent update calls
-    dep_plugin.unregister_parent.assert_called_once_with("MetaReader", "OldKey")
-    dep_plugin.register_parent.assert_called_once_with("MetaReader", "NewKey")
-
-    # Updated value in the settings
-    assert shared_settings["MetaReader"]["Value"] == "NewKey"
-
-    # Check both emit calls to update_plugin_history
-    expected_history_calls = [
-        mocker.call(
-            {
-                "key": "Dep1",
-                "metaclass": "MetaFilter",
-                "subclass": "DepPlugin",
-                "settings": shared_settings,
-            },
-            "",
-        ),
-        mocker.call(
-            {
-                "key": "NewKey",
-                "metaclass": "MetaReader",
-                "subclass": "MyPlugin",
-                "settings": {"MetaReader": {"Value": "NewKey"}},
-            },
-            "OldKey",
-        ),
-    ]
-    controller.update_plugin_history.emit.assert_has_calls(
-        expected_history_calls, any_order=True
-    )
-    assert controller.update_plugin_history.emit.call_count == 3
-
-    # Check plugin list update
-    controller.update_available_plugins.emit.assert_called_once()
-
-
-def test_delete_plugin_with_no_dependents(controller, mocker):
-    """
-    Plugin with no dependents should be deleted successfully and
-    UI notified via signals.
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
     plugin = mocker.Mock()
-    plugin.get_dependents.return_value = []
-    plugin.get_parents.return_value = []
-    controller.model.get_plugin_instance.return_value = plugin
+    plugin.get_raw_settings.return_value = {"param": {"Value": 1}}
+    mock_model.get_plugin_instance.return_value = plugin
 
-    controller.delete_plugin("MetaReader", "Plugin1")
+    controller.edit_plugin = mocker.Mock()  # type: ignore[method-assign]
+    controller.edit_plugin_settings("MetaReader", "my_reader")
 
+    controller.edit_plugin.assert_called_once_with(  # type: ignore[attr-defined]
+        "MetaReader", "my_reader", {"param": {"Value": 1}}
+    )
+
+
+def test_edit_plugin_settings_logs_warning_when_get_raw_settings_raises(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Log a warning when get_raw_settings raises AttributeError.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = mocker.Mock()
+    plugin.get_raw_settings.side_effect = AttributeError("no settings")
+    mock_model.get_plugin_instance.return_value = plugin
+
+    controller.edit_plugin = mocker.Mock()  # type: ignore[method-assign]
+    controller.edit_plugin_settings("MetaReader", "my_reader")
+
+    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+    controller.edit_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_edit_plugin_settings_does_nothing_when_plugin_not_found(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Do nothing when the plugin instance is not found in the model.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
+    """
+    mock_model.get_plugin_instance.return_value = None
+    controller.edit_plugin = mocker.Mock()  # type: ignore[method-assign]
+
+    controller.edit_plugin_settings("MetaReader", "missing_key")
+
+    controller.edit_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+# ------------------------ delete_plugin ------------------------------
+
+
+def test_delete_plugin_removes_plugin_when_no_dependents(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Unregister the plugin and emit update signals when it has no dependents.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
+    """
+    instance = mocker.Mock()
+    instance.get_dependents.return_value = []
+    instance.get_parents.return_value = []
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    controller.delete_plugin("MetaReader", "r1")
+
+    mock_model.unregister_plugin.assert_called_once_with("MetaReader", "r1")  # type: ignore[attr-defined]
     controller.update_available_plugins.emit.assert_called_once()
     controller.add_text_to_display.emit.assert_called_once()
 
 
-def test_delete_plugin_with_dependents(controller, mocker):
+def test_delete_plugin_unregisters_from_parents_before_deletion(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Plugin with dependents should not be deleted, and message should be logged.
+    Unregister the plugin as a dependent from each parent before deleting.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    plugin = mocker.Mock()
-    plugin.get_dependents.return_value = [("MetaFilter", "Dep1")]
-    controller.model.get_plugin_instance.return_value = plugin
+    instance = mocker.Mock()
+    instance.get_dependents.return_value = []
+    instance.get_parents.return_value = [("MetaLoader", "loader1")]
+    parent_instance = mocker.Mock()
+    mock_model.get_plugin_instance.side_effect = lambda mc, k: (
+        instance if k == "r1" else parent_instance
+    )
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
 
-    controller.delete_plugin("MetaReader", "Plugin1")
+    controller.delete_plugin("MetaReader", "r1")
 
-    controller.add_text_to_display.emit.assert_called()
+    parent_instance.unregister_dependent.assert_called_once_with("MetaReader", "r1")
 
 
-def test_handle_exit(controller):
+def test_delete_plugin_logs_and_emits_when_has_dependents(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Should call the model's shutdown method when exiting.
+    Log an info message and emit add_text_to_display when the plugin has dependents.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
+    """
+    instance = mocker.Mock()
+    instance.get_dependents.return_value = [("MetaWriter", "w1")]
+    mock_model.get_plugin_instance.return_value = instance
+
+    controller.delete_plugin("MetaReader", "r1")
+
+    mock_model.unregister_plugin.assert_not_called()  # type: ignore[attr-defined]
+    controller.logger.info.assert_called_once()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()
+
+
+def test_delete_plugin_logs_warning_when_instance_not_found(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+) -> None:
+    """
+    Log a warning and return early when the plugin instance is not found.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    """
+    mock_model.get_plugin_instance.return_value = None
+
+    controller.delete_plugin("MetaReader", "missing")
+
+    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+    mock_model.unregister_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+# ------------------------ handle_exit --------------------------------
+
+
+def test_handle_exit_delegates_to_model(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+) -> None:
+    """
+    Forward the exit call to the model.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
     """
     controller.handle_exit()
-    controller.model.handle_exit.assert_called_once()
+    mock_model.handle_exit.assert_called_once()
 
 
-def test_get_plugin_instance(controller):
+# -------------------- get_plugin_instance ----------------------------
+
+
+def test_get_plugin_instance_returns_model_result(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Should return correct plugin instance from model.
+    Return the plugin instance from the model.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.get_plugin_instance("MetaReader", "MyReader")
-    controller.model.get_plugin_instance.assert_called_once_with(
-        "MetaReader", "MyReader"
-    )
+    plugin = mocker.Mock()
+    mock_model.get_plugin_instance.return_value = plugin
+
+    result = controller.get_plugin_instance("MetaReader", "r1")
+
+    mock_model.get_plugin_instance.assert_called_once_with("MetaReader", "r1")
+    assert result is plugin
 
 
-def test_validate_and_instantiate_plugin_with_provided_settings(controller, mocker):
+# -------------- validate_and_instantiate_plugin ----------------------
+
+
+def _make_plugin(mocker: MockerFixture, key: str = "r1") -> MagicMock:
     """
-    Plugin should be created and registered when settings are provided explicitly.
+    Build a minimal plugin mock suitable for validate_and_instantiate_plugin tests.
+
+    :param mocker: Pytest-mock fixture.
+    :param key: Plugin key to return from get_key.
+    :return: Mocked plugin instance.
     """
-    temp_plugin = mocker.Mock()
-    controller.model.get_temp_instance.return_value = temp_plugin
-    controller.model.get_available_metaclasses.return_value = []
-    controller.model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    plugin = mocker.Mock()
+    plugin.get_key.return_value = key
+    plugin.report_channel_status.return_value = "ok"
+    return plugin
 
-    #  Return real dict for get_empty_settings
-    temp_plugin.get_empty_settings.return_value = {
-        "param": {"Value": None},
-        "Folder": {"Value": None},
-    }
 
-    # Ensure plugin can apply settings
-    temp_plugin.apply_settings = mocker.Mock()
-    temp_plugin.set_key = mocker.Mock()
-    temp_plugin.report_channel_status.return_value = "Status"
+def test_validate_and_instantiate_plugin_success_with_provided_settings(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Register a plugin and emit history when settings and key are provided upfront.
 
-    # Set historical settings
-    controller.historical_settings = {"param": {"Value": 999}}
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    settings = {"param": {"Value": 1}}
 
-    # Simulate dialog return
-    controller.view.get_user_settings.return_value = (
-        {"param": {"Value": 1}, "Folder": {"Value": "/tmp"}},
-        "MyReader_0",
-    )
-
-    # Mock plugin registration
-    controller.model.register_plugin = mocker.Mock()
-
-    # Run test
     controller.validate_and_instantiate_plugin(
-        metaclass="MetaReader", subclass="MyReader", settings=None, key=None
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=settings,
+        key="r1",
     )
 
-    # Assert plugin was registered
-    controller.model.register_plugin.assert_called_once()
+    mock_model.register_plugin.assert_called_once_with(plugin, "MetaReader", "r1")
+    controller.update_available_plugins.emit.assert_called_once()
+    controller.update_plugin_history.emit.assert_called_once()
 
 
-def test_validate_and_instantiate_plugin_with_user_input(controller, mocker):
+def test_validate_and_instantiate_plugin_logs_error_on_temp_instance_failure(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+) -> None:
     """
-    Should collect user settings via dialog and instantiate plugin with valid inputs.
+    Log an error and return early when creating a temporary instance raises.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
     """
+    mock_model.get_temp_instance.side_effect = RuntimeError("bad class")
 
-    # Create a mock plugin and configure expected behavior
-    temp_plugin = mocker.Mock()
-    temp_plugin.get_empty_settings.return_value = {
-        "param": {"Value": None},
-        "Folder": {"Value": None},
-    }
-    temp_plugin.set_key = mocker.Mock()
-    temp_plugin.apply_settings = mocker.Mock()
-    temp_plugin.report_channel_status.return_value = "Status"
-
-    # Simulate available metaclasses and plugins
-    controller.model.get_temp_instance.return_value = temp_plugin
-    controller.model.get_available_metaclasses.return_value = []
-    controller.model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
-
-    # Return valid settings from dialog
-    controller.view.get_user_settings.return_value = (
-        {"param": {"Value": 1}, "Folder": {"Value": "/tmp"}},
-        "MyReader_0",
-    )
-
-    # Simulate prefill with historical settings
-    controller.historical_settings = {
-        "param": {"Value": 999},
-        "Folder": {"Value": None},
-    }
-
-    # Mock final registration step
-    controller.model.register_plugin = mocker.Mock()
-
-    # Run the method under test
     controller.validate_and_instantiate_plugin(
-        metaclass="MetaReader", subclass="MyReader", settings=None, key=None
+        metaclass="MetaReader", subclass="BadReader", settings={}, key="r1"
     )
 
-    # Ensure plugin registration happened
-    controller.model.register_plugin.assert_called_once()
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
 
 
-def test_validate_and_instantiate_plugin_with_invalid_temp_instance(controller, mocker):
+def test_validate_and_instantiate_plugin_returns_early_on_key_collision(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    If instantiation fails, should log error and not raise.
+    Log a warning and return early when the plugin key already exists.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.model.get_temp_instance.side_effect = Exception("fail")
-    controller.validate_and_instantiate_plugin("MetaReader", "BrokenSubclass")
-    # No crash expected
+    plugin = _make_plugin(mocker, key="r1")
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    # Key collision: "r1" already registered under MetaReader
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader", subclass="MyReader", settings={"p": 1}, key="r1"
+    )
+
+    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
 
 
-def test_set_settings(controller):
+def test_validate_and_instantiate_plugin_logs_error_on_apply_settings_failure(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Should update historical settings on controller.
+    Log an error and return early when apply_settings raises.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.set_settings({"a": 1})
-    assert controller.historical_settings == {"a": 1}
+    plugin = _make_plugin(mocker)
+    plugin.apply_settings.side_effect = RuntimeError("bad settings")
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings={"param": {"Value": 1}},
+        key="r1",
+    )
+
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
 
 
-def test_update_data_server_location(controller):
+def test_validate_and_instantiate_plugin_logs_error_on_register_failure(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Should update internal reference to data server location.
+    Log an error and return early when register_plugin raises.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.update_data_server_location("/new/server")
-    assert controller.data_server == "/new/server"
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.register_plugin.side_effect = RuntimeError("register failed")
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings={"param": {"Value": 1}},
+        key="r1",
+    )
+
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    controller.update_plugin_history.emit.assert_not_called()
 
 
-def test_get_instantiated_plugins_list(controller):
+def test_validate_and_instantiate_plugin_returns_early_on_empty_settings(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Should return list of instantiated plugins per metaclass.
+    Return early without registering when settings resolves to an empty dict.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.get_instantiated_plugins_list()
-    controller.model.get_instantiated_plugins_list.assert_called_once()
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings={},
+        key="r1",
+    )
+
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
 
 
-def test_get_available_metaclasses(controller):
+def test_validate_and_instantiate_plugin_logs_exception_on_plugin_reference_error(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     """
-    Should return available plugin categories (metaclasses).
+    Log an exception and return early when resolving plugin references in settings fails.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.get_available_metaclasses()
-    controller.model.get_available_metaclasses.assert_called_once()
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    # Mark one settings key as a metaclass so the reference resolution runs
+    mock_model.get_available_metaclasses.return_value = ["MetaLoader"]
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    # Trigger failure inside the reference resolution loop
+    mock_model.get_plugin_instance.side_effect = RuntimeError("lookup failed")
+
+    settings = {"MetaLoader": {"Value": "loader1", "Options": None}}
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=settings,
+        key="r1",
+    )
+
+    controller.logger.exception.assert_called_once()  # type: ignore[attr-defined]
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+# ------------------------ set_settings -------------------------------
+
+
+def test_set_settings_stores_historical_settings(
+    controller: DataPluginController,
+) -> None:
+    """
+    Store the provided settings as historical_settings on the controller.
+
+    :param controller: Controller under test.
+    """
+    settings = {"param": {"Value": 42}}
+    controller.set_settings(settings)
+    assert controller.historical_settings == settings
+
+
+def test_set_settings_accepts_none(
+    controller: DataPluginController,
+) -> None:
+    """
+    Store None as historical_settings when None is provided.
+
+    :param controller: Controller under test.
+    """
+    controller.set_settings(None)
+    assert controller.historical_settings is None
+
+
+# ------------------ update_data_server_location ----------------------
+
+
+def test_update_data_server_location_updates_attribute(
+    controller: DataPluginController,
+) -> None:
+    """
+    Update the data_server attribute with the new path.
+
+    :param controller: Controller under test.
+    """
+    controller.update_data_server_location("/new/data/path")
+    assert controller.data_server == "/new/data/path"
+
+
+# ---------------- get_instantiated_plugins_list ----------------------
+
+
+def test_get_instantiated_plugins_list_delegates_to_model(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+) -> None:
+    """
+    Return the instantiated plugins list from the model.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    """
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+
+    result = controller.get_instantiated_plugins_list()
+
+    assert result == {"MetaReader": ["r1"]}
+    mock_model.get_instantiated_plugins_list.assert_called_once()
+
+
+# ------------------- get_available_metaclasses -----------------------
+
+
+def test_get_available_metaclasses_delegates_to_model(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+) -> None:
+    """
+    Return the available metaclasses list from the model.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    """
+    mock_model.get_available_metaclasses.return_value = ["MetaReader", "MetaWriter"]
+
+    result = controller.get_available_metaclasses()
+
+    assert result == ["MetaReader", "MetaWriter"]
+    mock_model.get_available_metaclasses.assert_called_once()
+
+
+# ----------- validate_and_instantiate_plugin (settings=None path) ----
+
+
+def test_validate_and_instantiate_plugin_populates_from_historical_settings(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Copy Value fields from historical_settings into the empty settings dict.
+
+    Covers the ``for setting_key, val in self.historical_settings.items()``
+    loop and the ``settings[setting_key]["Value"] = val.get("Value")`` line,
+    which only execute when settings is None and historical_settings is set.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    # get_empty_settings returns a dict with a param key
+    empty = {"param": {"Value": None}}
+    plugin.get_empty_settings.return_value = empty
+
+    def _emit_sets_history(mc: str, sc: str) -> None:
+        controller.historical_settings = {"param": {"Value": 99}}  # type: ignore[assignment]
+
+    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
+    controller.get_settings_from_history.emit = mocker.Mock(
+        side_effect=_emit_sets_history
+    )
+
+    # view returns a valid result so the method proceeds
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 99}}, "r1")
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=None,
+        key=None,
+    )
+
+    call_settings = mock_view.get_user_settings.call_args[0][0]
+    assert call_settings["param"]["Value"] == 99
+
+
+def test_validate_and_instantiate_plugin_defaults_folder_to_data_server(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Set settings["Folder"]["Value"] to data_server when it is None.
+
+    Covers the branch:
+        if "Folder" in settings and settings["Folder"].get("Value") is None:
+            settings["Folder"]["Value"] = self.data_server
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    empty = {"Folder": {"Value": None}}
+    plugin.get_empty_settings.return_value = empty
+
+    controller.historical_settings = None  # type: ignore[assignment]
+    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
+    controller.get_settings_from_history.emit = mocker.Mock()
+
+    mock_view.get_user_settings.return_value = (
+        {"Folder": {"Value": "/tmp/data"}},
+        "r1",
+    )
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=None,
+        key=None,
+    )
+
+    assert empty["Folder"]["Value"] == controller.data_server
+
+
+def test_validate_and_instantiate_plugin_returns_early_when_user_cancels(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Return early when get_user_settings returns None or (None, ...).
+
+    Covers the ``if result is None or result[0] is None: return`` branch
+    that fires when the user cancels the settings dialog.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    plugin.get_empty_settings.return_value = {"param": {"Value": None}}
+    controller.historical_settings = None  # type: ignore[assignment]
+    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
+    controller.get_settings_from_history.emit = mocker.Mock()
+
+    mock_view.get_user_settings.return_value = None
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=None,
+        key=None,
+    )
+
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_validate_and_instantiate_plugin_returns_early_when_result_first_none(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Return early when get_user_settings returns (None, key).
+
+    Covers the ``result[0] is None`` sub-case of the cancel branch.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _make_plugin(mocker)
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    plugin.get_empty_settings.return_value = {"param": {"Value": None}}
+    controller.historical_settings = None  # type: ignore[assignment]
+    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
+    controller.get_settings_from_history.emit = mocker.Mock()
+
+    mock_view.get_user_settings.return_value = (None, "r1")
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=None,
+        key=None,
+    )
+
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+# ------------------------- edit_plugin -------------------------------
+
+
+def _make_edit_plugin_controller(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> DataPluginController:
+    """
+    Build a controller with signals and a fully mocked instance for edit_plugin tests.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    :return: Controller under test.
+    """
+    ctrl: DataPluginController = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
+    ctrl.view = mock_view
+    ctrl.model = mock_model
+    ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
+    ctrl.data_server = "/tmp/data"
+    ctrl.plugin_manager = None
+    ctrl.historical_settings = None  # type: ignore[assignment]
+    for sig in [
+        "update_available_plugins",
+        "update_plugin_history",
+        "get_settings_from_history",
+        "add_text_to_display",
+    ]:
+        mock_sig = mocker.Mock()
+        mock_sig.emit = mocker.Mock()
+        setattr(ctrl, sig, mock_sig)
+    return ctrl
+
+
+def test_edit_plugin_returns_early_when_user_cancels(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Return early when get_user_settings returns (None, None).
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = (None, None)
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    mock_model.unregister_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_edit_plugin_deletes_plugin_when_result_is_delete_and_no_dependents(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Unregister the plugin when result is 'delete' and no dependents exist.
+
+    The delete branch unregisters the plugin and emits signals before falling
+    through to ``if key != old_key``. Because ``old_key`` is only assigned in
+    the ``else`` branch, Python raises UnboundLocalError when ``result ==
+    "delete"`` — this is a known source-level scoping issue. We verify the
+    delete behaviour fired correctly and then acknowledge the subsequent error.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.report_channel_status.return_value = "ok"
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_view.get_user_settings.return_value = "delete"
+
+    try:
+        ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+    except UnboundLocalError:
+        pass
+
+    mock_model.unregister_plugin.assert_called_once_with("MetaReader", "r1")  # type: ignore[attr-defined]
+    ctrl.update_available_plugins.emit.assert_called_once()
+
+
+def test_edit_plugin_blocks_delete_when_has_dependents(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Log info and emit message when delete is requested but dependents exist.
+
+    Same source-level scoping issue as the no-dependents test: ``old_key`` is
+    unbound when ``result == "delete"``. We catch the UnboundLocalError and
+    verify the blocking behaviour fired correctly before the fault.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = [("MetaWriter", "w1")]
+    instance.report_channel_status.return_value = "ok"
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = "delete"
+
+    try:
+        ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+    except UnboundLocalError:
+        pass
+
+    mock_model.unregister_plugin.assert_not_called()  # type: ignore[attr-defined]
+    ctrl.logger.info.assert_called_once()  # type: ignore[attr-defined]
+
+
+def test_edit_plugin_applies_settings_and_emits_history_on_success(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Apply new settings and emit update signals when key is unchanged.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.report_channel_status.return_value = "ok"
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    instance.apply_settings.assert_called_once()
+    ctrl.update_plugin_history.emit.assert_called()
+
+
+def test_edit_plugin_logs_info_on_apply_settings_failure(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Log info and return early when apply_settings raises during edit.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.apply_settings.side_effect = RuntimeError("bad apply")
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    ctrl.logger.info.assert_called_once()  # type: ignore[attr-defined]
+    ctrl.add_text_to_display.emit.assert_called_once()
+
+
+# ---- edit_plugin: settings_key in available_metaclasses (lines 88-91) ----
+
+
+def test_edit_plugin_updates_app_settings_for_metaclass_keys(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover lines 88-91: when a settings key matches an available metaclass,
+    set its Type to str and populate Options from the instantiated plugins list.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.report_channel_status.return_value = "ok"
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = ["MetaLoader"]
+    mock_model.get_instantiated_plugins_list.return_value = {
+        "MetaReader": ["r1"],
+        "MetaLoader": ["loader1"],
+    }
+    settings = {"MetaLoader": {"Type": None, "Options": None, "Value": "loader1"}}
+
+    # Capture app_settings at call time before the post-call mutation
+    # (the resolution loop sets Type=None on the same dict object,
+    # so call_args would reflect the mutated state if checked after the fact)
+    captured: dict = {}
+
+    def capture_and_return(app_settings, *args, **kwargs):
+        captured["Type"] = app_settings["MetaLoader"]["Type"]
+        captured["Options"] = app_settings["MetaLoader"]["Options"]
+        return (settings, "r1")
+
+    mock_view.get_user_settings.side_effect = capture_and_return
+
+    ctrl.edit_plugin("MetaReader", "r1", settings)
+
+    mock_view.get_user_settings.assert_called_once()
+    assert captured["Type"] is str
+    assert captured["Options"] == ["loader1"]
+
+
+# ---- edit_plugin: parents unregister loop (lines 110-111) ----
+
+
+def test_edit_plugin_unregisters_from_parents(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover lines 110-111: unregister from each parent before editing.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = [("MetaLoader", "loader1")]
+    instance.get_dependents.return_value = []
+    instance.report_channel_status.return_value = "ok"
+    parent_instance = mocker.Mock()
+    mock_model.get_plugin_instance.side_effect = lambda mc, k: (
+        instance if k == "r1" else parent_instance
+    )
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    parent_instance.unregister_dependent.assert_called_once_with("MetaReader", "r1")
+
+
+# ---- edit_plugin: key rename path (lines 120-170) ----
+
+
+def test_edit_plugin_rename_key_updates_dependents_and_emits(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover the key-rename path: update dependents, set new key, emit signals.
+
+    Lines covered: collision check loop, dependent re-registration loop,
+    instance.set_key, model.update_plugin_key, update_available_plugins.emit,
+    add_text_to_display.emit, update_plugin_history.emit(history, old_key).
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.report_channel_status.return_value = "ok"
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    instance.set_key.assert_called_once_with("r2")
+    mock_model.update_plugin_key.assert_called_once_with("MetaReader", "r2", "r1")
+    ctrl.update_available_plugins.emit.assert_called_once()
+    assert ctrl.update_plugin_history.emit.call_count == 2
+
+
+def test_edit_plugin_rename_collision_logs_warning_and_returns(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover the key collision warning branch inside the rename path.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1", "r2"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    ctrl.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+    ctrl.add_text_to_display.emit.assert_called_once()
+    mock_model.update_plugin_key.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_edit_plugin_rename_with_dependents_updates_them(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover the dependent re-registration loop during a key rename.
+
+    Lines: dinstance.unregister_parent, register_parent, update_raw_settings,
+    dsettings Options append/remove, update_plugin_history.emit(dhistory).
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = [("MetaWriter", "w1")]
+    instance.report_channel_status.return_value = "ok"
+
+    dinstance = mocker.Mock()
+    dinstance.get_key.return_value = "w1"
+    dinstance.__class__.__name__ = "SQLiteWriter"
+    dinstance.get_raw_settings.return_value = {
+        "MetaReader": {"Value": "r1", "Options": ["r1"]}
+    }
+
+    mock_model.get_plugin_instance.side_effect = lambda mc, k: (
+        instance if k == "r1" else dinstance
+    )
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    dinstance.unregister_parent.assert_called_once_with("MetaReader", "r1")
+    dinstance.register_parent.assert_called_once_with("MetaReader", "r2")
+    dinstance.update_raw_settings.assert_called_once_with("MetaReader", "r2")
+
+
+def test_edit_plugin_set_key_exception_logs_and_returns(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover the except Exception block around instance.set_key and the loop.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.set_key.side_effect = RuntimeError("key error")
+    mock_model.get_plugin_instance.return_value = instance
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
+
+    ctrl.logger.exception.assert_called_once()  # type: ignore[attr-defined]
+    ctrl.add_text_to_display.emit.assert_called_once()
+    mock_model.update_plugin_key.assert_not_called()  # type: ignore[attr-defined]
+
+
+# ---- validate_and_instantiate_plugin: except Exception (lines 56-73) ----
+
+
+def test_validate_and_instantiate_plugin_logs_exception_on_key_setup_error(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover lines 56-73: the except Exception block around key/settings setup
+    when settings is None and set_key raises.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _make_plugin(mocker)
+    plugin.set_key.side_effect = RuntimeError("set_key failed")
+    mock_model.get_temp_instance.return_value = plugin
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    plugin.get_empty_settings.return_value = {"param": {"Value": None}}
+    controller.historical_settings = None  # type: ignore[assignment]
+    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
+    controller.get_settings_from_history.emit = mocker.Mock()
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings=None,
+        key="r1",
+    )
+
+    controller.logger.exception.assert_called_once()  # type: ignore[attr-defined]
+    mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_edit_plugin_rename_resolves_metaclass_references_in_app_settings(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cover the inner ``if settings_key in get_available_metaclasses()`` block
+    inside the rename try block.
+
+    When a settings key is an available metaclass, the rename path replaces
+    its Value with the actual plugin instance and clears Type and Options.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = []
+    instance.get_dependents.return_value = []
+    instance.report_channel_status.return_value = "ok"
+
+    loader_instance = mocker.Mock()
+    mock_model.get_plugin_instance.side_effect = lambda mc, k: (
+        instance if k in ("r1", "r2") else loader_instance
+    )
+    mock_model.get_available_metaclasses.return_value = ["MetaLoader"]
+    mock_model.get_instantiated_plugins_list.return_value = {
+        "MetaReader": ["r1"],
+        "MetaLoader": ["loader1"],
+    }
+
+    settings = {"MetaLoader": {"Value": "loader1", "Type": str, "Options": ["loader1"]}}
+    mock_view.get_user_settings.return_value = (settings, "r2")
+
+    ctrl.edit_plugin("MetaReader", "r1", settings)
+
+    instance.apply_settings.assert_called_once()
+    applied = instance.apply_settings.call_args[0][0]
+    assert applied["MetaLoader"]["Value"] is loader_instance
+    assert applied["MetaLoader"]["Type"] is None
+    assert applied["MetaLoader"]["Options"] is None

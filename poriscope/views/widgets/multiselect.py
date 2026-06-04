@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+import sys
 
 from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtWidgets import (
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 
@@ -55,18 +57,24 @@ class MultiSelectComboBox(QComboBox):
         self.listWidget.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         # Adding a container widget to hold title and list
-        self.containerWidget = QDialog(None)
-        self.containerWidget.setWindowFlags(
-            Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint
-        )
-        self.containerWidget.setWindowTitle("Select Channel")
-        self.containerWidget.setStyleSheet(
+        if sys.platform == "linux":
+            self.containerWidget = QWidget(None)
+            self.containerWidget.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        else:
+            self.containerWidget = QDialog(None)
+            self.containerWidget.setWindowFlags(
+                self.containerWidget.windowFlags() | Qt.Popup
+            )
+            self.containerWidget.setWindowTitle("Select Channel")
+
+        if sys.platform != "linux":
+            self.containerWidget.setStyleSheet(
+                """
+                QDialog {
+                    border-radius: 10px;
+                }
             """
-            QDialog {
-                border-radius: 10px;
-            }
-        """
-        )
+            )
 
         # Create a layout for the container
         layout = QVBoxLayout(self.containerWidget)
@@ -107,7 +115,7 @@ class MultiSelectComboBox(QComboBox):
     def addItem(self, text, userData=None):
         item = QListWidgetItem(text, self.listWidget)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-        item.setCheckState(Qt.Unchecked)
+        item.setCheckState(Qt.Checked)
 
     def addItems(self, texts):
         try:
@@ -117,6 +125,8 @@ class MultiSelectComboBox(QComboBox):
             self.listWidget.clear()  # Clear all existing items
             for text in texts:
                 self.addItem(text)
+
+            self.handleItemChanged(None)  # refresh text + signal
         except Exception as e:
             self.logger.exception(f"Error while adding items: {e}")
         finally:

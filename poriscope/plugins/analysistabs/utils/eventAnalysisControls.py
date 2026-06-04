@@ -29,14 +29,21 @@ import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QSize, Signal
+from PySide6.QtCore import (
+    QCoreApplication,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidgetItem,
     QPushButton,
     QSizePolicy,
     QToolButton,
@@ -139,9 +146,26 @@ class EventAnalysisControls(QWidget):
         self.right_arrow_button.setIconSize(QSize(16, 16))
         self.right_arrow_button.setFixedWidth(30)
 
+        # RAW label + checkbox stacked vertically
+        raw_col_widget = QWidget(self.plot_events_widget)
+        raw_col_layout = QVBoxLayout(raw_col_widget)
+        raw_col_layout.setContentsMargins(0, 0, 0, 0)
+        raw_col_layout.setSpacing(0)
+
+        self.raw_label = self.createLabel(raw_col_widget, 12, "RAW")
+        self.raw_label.setAlignment(Qt.AlignCenter)
+        self.raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.raw_checkbox = QCheckBox(raw_col_widget)
+        self.raw_checkbox.setObjectName("rawCheckBox")
+
+        raw_col_layout.addWidget(self.raw_label, alignment=Qt.AlignCenter)
+        raw_col_layout.addWidget(self.raw_checkbox, alignment=Qt.AlignCenter)
+
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
+        plot_events_layout.addWidget(raw_col_widget)
 
         group_layout.addWidget(self.plot_events_widget, 4, 0, 1, 2)
 
@@ -485,6 +509,7 @@ class EventAnalysisControls(QWidget):
         self.filters_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.eventfitters_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.writers_comboBox.currentIndexChanged.connect(self.validate_inputs)
+        self.raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     def on_parameter_changed(self):
         parameters = self.collect_parameters()
@@ -535,6 +560,7 @@ class EventAnalysisControls(QWidget):
             "eventfitter": self.eventfitters_comboBox.currentText()
             or "No Event Fitter",
             "event_index": [],
+            "raw": self.raw_checkbox.isChecked(),
             "channel": [item for item in self.channel_comboBox.getSelectedItems()],
         }
 
@@ -587,18 +613,54 @@ class EventAnalysisControls(QWidget):
         button_mapping.get(button_type, lambda: None).setChecked(False)
 
     def update_channels(self, channels):
+        """
+        Updates the channels displayed in the MultiSelectComboBox widget and restores previous selections.
+        """
         self.logger.info(f"Updating channels to {channels}")
 
-        # Store the current selection(s)
-        current_selections = self.channel_comboBox.getSelectedItems()
+        # Get current selections from the MultiSelectComboBox BEFORE clearing
+        current_selections = set(self.channel_comboBox.getSelectedItems())
+        self.logger.debug(
+            f"Current selections before restoration: {current_selections}"
+        )
 
-        self.channel_comboBox.clear()
-        self.channel_comboBox.addItems([str(i) for i in channels])
+        new_channels = [str(i) for i in channels]
 
-        # Restore selections if they still exist
-        for selection in current_selections:
-            if selection in [str(i) for i in channels]:
-                self.channel_comboBox.selectItem(selection)
+        # Check if this is a first load (no items exist yet) to default to Select All
+        is_first_load = self.channel_comboBox.listWidget.count() == 0
+
+        # Block signals during the entire rebuild to avoid emitting incorrect states
+        self.channel_comboBox.listWidget.itemChanged.disconnect(
+            self.channel_comboBox.handleItemChanged
+        )
+
+        # Clear and rebuild items, preserving checked state from previous selections.
+        # On first load, default all channels to checked (Select All behavior).
+        self.channel_comboBox.listWidget.clear()
+        for text in new_channels:
+            item = QListWidgetItem(text, self.channel_comboBox.listWidget)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            # On first load select all by default, otherwise restore previous selection
+            state = (
+                Qt.Checked
+                if (is_first_load or text in current_selections)
+                else Qt.Unchecked
+            )
+            item.setCheckState(state)
+
+        self.logger.debug(f"Added channels: {new_channels}")
+
+        self.channel_comboBox.listWidget.itemChanged.connect(
+            self.channel_comboBox.handleItemChanged
+        )
+
+        # Update display text and Select All button without emitting selectionChanged
+        self.channel_comboBox.refreshDisplayText()
+        self.channel_comboBox.updateSelectAllButton()
+
+        # Log the final state of selections
+        restored_selections = self.channel_comboBox.getSelectedItems()
+        self.logger.debug(f"Selected items after restoration: {restored_selections}")
 
     def update_loaders(self, loaders: list[str]) -> None:
         self.logger.info(f"Updating loaders: {loaders}")
@@ -625,7 +687,7 @@ class EventAnalysisControls(QWidget):
         current_selection = self.filters_comboBox.currentText()
 
         self.filters_comboBox.clear()
-        if "No Filter" not in filters:
+        if filters == []:
             filters.insert(0, "No Filter")
         self.filters_comboBox.addItems(filters)
 

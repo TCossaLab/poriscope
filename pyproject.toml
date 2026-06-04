@@ -1,14 +1,76 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poriscope"
+dynamic = ["version"]
+description = "A tool for selecting and analyzing nanopore data."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Kyle Briggs & Alejandra Carolina González González", email = "kbriggs@uottawa.ca" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "PySide6==6.9.0",
+    "numpy==2.2.6",
+    "matplotlib==3.10.3",
+    "pandas==2.2.3",
+    "platformdirs==4.3.8",
+    "scipy==1.15.3",
+    "kneed==0.8.5",
+    "fast-histogram==0.14",
+    "scikit-learn==1.6.1",
+    "hdbscan==0.8.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black==25.1.0",
+    "ruff==0.12.9",
+    "mypy==1.9.0",
+    "pytest==8.4.1",
+    "pytest-mock==3.14.1",
+    "pytest-qt==4.5.0",
+    "pytest-timeout==2.4.0",
+]
+docs = [
+    "sphinx==8.2.3",
+    "sphinx-tabs==3.4.7",
+    "furo==2024.8.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/TCossaLab/poriscope"
+
+[project.scripts]
+poriscope = "poriscope.main_app:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "poriscope.constants.__VERSION__"}
+
+[tool.setuptools.package-data] 
+poriscope = [
+    "configs/icons/*",
+    "cdlls/wavelet/dist/*.dll",
+    "cdlls/wavelet/dist/*.so",
+    "cdlls/wavelet/dist/*.dylib",
+]
+
 [tool.ruff]
 line-length = 88
-# <-- belongs here
 src = ["poriscope", "tests"]
 
 [tool.ruff.lint]
-# enable import-sorting rules
 extend-select = ["I"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["poriscope"]
-# optional but helpful to avoid misclassification
 known-third-party = ["PySide6", "matplotlib", "pytest", "numpy", "pandas"]
 combine-as-imports = true

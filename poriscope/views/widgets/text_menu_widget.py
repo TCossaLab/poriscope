@@ -43,6 +43,7 @@ from poriscope.utils.LogDecorator import log
 class IconTextMenuWidget(QWidget):
     rawDataToggled = Signal(bool)
     statsToggled = Signal(bool)
+    metadataToggled = Signal(bool)
     pluginsToggled = Signal(bool)
     helpToggled = Signal(bool)
     settingsToggled = Signal(bool)
@@ -51,6 +52,7 @@ class IconTextMenuWidget(QWidget):
 
     switchToRawData = Signal()
     switchToStatistics = Signal()
+    switchToMetadata = Signal()
     switchToPlugins = Signal()
     switchToHelp = Signal()
     switchToSettings = Signal()
@@ -81,6 +83,7 @@ class IconTextMenuWidget(QWidget):
 
         self.raw_data_text_button.clicked.connect(self.switchToRawData.emit)
         self.stats_text_button.clicked.connect(self.switchToStatistics.emit)
+        self.metadata_text_button.clicked.connect(self.switchToMetadata.emit)
         self.plugins_text_button.clicked.connect(self.switchToPlugins.emit)
         self.settings_text_button.clicked.connect(self.switchToSettings.emit)
         self.help_text_button.clicked.connect(self.switchToHelp.emit)
@@ -124,6 +127,14 @@ class IconTextMenuWidget(QWidget):
             os.path.join(self.icon_path, "stats-black.svg"),
             25,
             "stats",
+        )
+        self.metadata_text_button = self.createTextButton(
+            layout,
+            "metadata_text_button",
+            "    Metadata",
+            os.path.join(self.icon_path, "database-black.svg"),
+            25,
+            "metadata",
         )
         self.plugins_text_button = self.createTextButton(
             layout,
@@ -271,6 +282,7 @@ class IconTextMenuWidget(QWidget):
         signals = {
             "data": self.rawDataToggled,
             "stats": self.statsToggled,
+            "metadata": self.metadataToggled,
             "add": self.pluginsToggled,
             "help": self.helpToggled,
             "settings": self.settingsToggled,
@@ -286,6 +298,10 @@ class IconTextMenuWidget(QWidget):
     @log(logger=logger)
     def setStatsChecked(self, checked):
         self.stats_text_button.setChecked(checked)
+
+    @log(logger=logger)
+    def setMetadataChecked(self, checked):
+        self.metadata_text_button.setChecked(checked)
 
     @log(logger=logger)
     def setPluginsChecked(self, checked):

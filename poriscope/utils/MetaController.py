@@ -201,6 +201,33 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.view.update_actions_from_json(actions)
 
     @log(logger=logger)
+    def display_write_status(self, status):
+        """
+        Emit a message indicating whether data was successfully written.
+
+        :param status: True if write was successful, False otherwise.
+        :type status: bool
+        """
+        if status is True:
+            self.add_text_to_display.emit(
+                "Successfully wrote data", self.__class__.__name__
+            )
+        else:
+            self.add_text_to_display.emit(
+                "Failed to write data", self.__class__.__name__
+            )
+
+    @log(logger=logger)
+    def check_column_exists(self, table_name):
+        """
+        Notify the view to check if a cluster column exists in the given table.
+
+        :param table_name: Name of the table to check.
+        :type table_name: str
+        """
+        self.view.set_column_exists(table_name)
+
+    @log(logger=logger)
     @Slot(str)
     def relay_add_text_to_display(self, text, source):
         """

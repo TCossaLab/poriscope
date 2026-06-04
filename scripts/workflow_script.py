@@ -32,10 +32,10 @@
 import logging
 
 from poriscope import (
-    CUSUM,
-    ABF2Reader,
     BesselFilter,
+    ChimeraReader20240501,
     ClassicBlockageFinder,
+    PeakFinder,
     SQLiteDBLoader,
     SQLiteDBWriter,
     SQLiteEventLoader,
@@ -58,13 +58,22 @@ consoleHandler.setFormatter(formatter)
 root_logger.addHandler(consoleHandler)
 
 
+# paths
+input_data_file = ""  # replace with the path to your input file
+event_output_file_path = (
+    ""  # replace with the path to where you want your event database file to be written
+)
+metadata_output_file_path = (
+    ""  # replace with the path to where you want your metadata database to be written
+)
+
+
 def main():
-    # create a reader object to load our data file. Here we use ABF2Reader, but any other type could be substituted
-    raw_data = ABF2Reader()
+    # create a reader object to load our data file. Here we use ChimeraReader20240501, but any other type could be substituted
+    raw_data = ChimeraReader20240501()
 
     # pull the settings dict. Standalone=True is needed to tell it that this is in a script and not in the GUI
     data_settings = raw_data.get_empty_settings(standalone=True)
-    input_data_file = ""  # replace with the path to your input file
     # print the settings dict:
     for key, value in data_settings.items():
         print(key)
@@ -86,7 +95,7 @@ def main():
     # set up a filter object that we will use to filter our data
     data_filter = BesselFilter()
     filter_settings = data_filter.get_empty_settings()
-    filter_settings["Cutoff"]["Value"] = 250000.0
+    filter_settings["Cutoff"]["Value"] = 100000.0
     filter_settings["Samplerate"]["Value"] = raw_data.get_samplerate()
     data_filter.apply_settings(filter_settings)
 
@@ -98,8 +107,8 @@ def main():
     ] = raw_data  # tell it where to find the raw data in which to find events
     event_finder_settings["Threshold"][
         "Value"
-    ] = 1000.0  # fill in what you think is the correct blockage depth
-    event_finder_settings["Min Duration"]["Value"] = 10.0
+    ] = 500.0  # fill in what you think is the correct blockage depth
+    event_finder_settings["Min Duration"]["Value"] = 50.0
     event_finder_settings["Max Duration"]["Value"] = 10000.0
     event_finder_settings["Min Separation"]["Value"] = 10.0
     event_finder.apply_settings(event_finder_settings)
@@ -128,13 +137,12 @@ def main():
                 break
 
     # Now that we have found all our events we need to write them to a database
-    event_output_file_path = ""  # replace with the path to where you want your event database file to be written
     writer = SQLiteEventWriter()
     writer_settings = writer.get_empty_settings(standalone=True)
     writer_settings["MetaEventFinder"]["Value"] = event_finder
-    writer_settings["Conductivity"]["Value"] = 10.0
+    writer_settings["Conductivity"]["Value"] = 16.74
     writer_settings["Voltage"]["Value"] = 200.0
-    writer_settings["Membrane Thickness"]["Value"] = 10.0
+    writer_settings["Membrane Thickness"]["Value"] = 17.0
     writer_settings["Experiment Name"]["Value"] = "script_demo"
     # replace this with your own output file target
     writer_settings["Output File"]["Value"] = event_output_file_path
@@ -165,12 +173,19 @@ def main():
     print(event_loader.report_channel_status(init=True))
 
     # now we need to fit the events
-    fitter = CUSUM()
+    fitter = PeakFinder()
     fitter_settings = fitter.get_empty_settings(standalone=True)
     fitter_settings["MetaEventLoader"]["Value"] = event_loader
-    fitter_settings["Max Sublevels"]["Value"] = 10
-    fitter_settings["Rise Time"]["Value"] = 10.0
-    fitter_settings["Step Size"]["Value"] = 1000.0
+    fitter_settings["Event Type"]["Value"] = "Single Peak"
+    fitter_settings["Min Height"]["Value"] = 1000.0
+    fitter_settings["Min Prominence"]["Value"] = 500.0
+    fitter_settings["Relative Height"]["Value"] = 0.5
+    fitter_settings["Window Length"]["Value"] = 25.0
+    fitter_settings["Width"]["Value"] = 0.0
+    fitter_settings["Min Distance"]["Value"] = 25.0
+    fitter_settings["Max Unfolded"]["Value"] = 750.0
+    fitter_settings["Number of peaks"]["Value"] = 1
+    fitter_settings["Plot Features"]["Value"] = "Some"
     fitter.apply_settings(fitter_settings)
 
     # we could run this one in parallel in principle but for demo purposes we will keep it simple
@@ -193,13 +208,12 @@ def main():
         print(fitter.report_channel_status())
 
     # now we write the fits to a database
-    metadata_output_file_path = ""  # replace with the path to where you want your metadata database to be written
     metadata_writer = SQLiteDBWriter()
     metadata_writer_settings = metadata_writer.get_empty_settings(standalone=True)
     metadata_writer_settings["MetaEventFitter"]["Value"] = fitter
-    metadata_writer_settings["Conductivity"]["Value"] = 10.0
+    metadata_writer_settings["Conductivity"]["Value"] = 16.74
     metadata_writer_settings["Voltage"]["Value"] = 200.0
-    metadata_writer_settings["Membrane Thickness"]["Value"] = 10.0
+    metadata_writer_settings["Membrane Thickness"]["Value"] = 17.0
     metadata_writer_settings["Experiment Name"]["Value"] = "script_demo"
     metadata_writer_settings["Output File"]["Value"] = metadata_output_file_path
     metadata_writer.apply_settings(metadata_writer_settings)

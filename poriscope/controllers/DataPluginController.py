@@ -130,37 +130,63 @@ class DataPluginController(QObject):
             old_key = instance.get_key()
             settings, key = result
 
-        # Global plugin key collision check
-        if key != old_key:
-            for meta, keys in self.model.get_instantiated_plugins_list().items():
-                if key in keys:
-                    self.logger.warning(
-                        f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'."
+            # Global plugin key collision check
+            if key != old_key:
+                for meta, keys in self.model.get_instantiated_plugins_list().items():
+                    if key in keys:
+                        self.logger.warning(
+                            f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'."
+                        )
+                        self.add_text_to_display.emit(
+                            f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
+                            "DataPluginController",
+                        )
+                        return
+
+                for dmetaclass, dkey in dependents:
+                    dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
+                    dinstance.unregister_parent(metaclass, old_key)
+                    dinstance.register_parent(metaclass, key)
+                    dhistory = {}
+                    dhistory["key"] = dinstance.get_key()
+                    dhistory["metaclass"] = dmetaclass
+                    dhistory["subclass"] = dinstance.__class__.__name__
+                    dsettings = dinstance.get_raw_settings()
+                    dhistory["settings"] = dsettings
+                    dsettings[metaclass]["Value"] = key
+                    dinstance.update_raw_settings(metaclass, key)
+                    if dsettings[metaclass]["Options"] is not None:
+                        dsettings[metaclass]["Options"].append(key)
+                        dsettings[metaclass]["Options"].remove(old_key)
+                    self.update_plugin_history.emit(dhistory, "")
+                try:
+                    instance.set_key(key)
+                except Exception as e:
+                    self.logger.exception(
+                        f"Unable to edit plugin {key} of type {metaclass} : {str(e)}"
                     )
                     self.add_text_to_display.emit(
-                        f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
-                        "DataPluginController",
+                        f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
+                        self.__class__.__name__,
                     )
                     return
 
-            for dmetaclass, dkey in dependents:
-                dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
-                dinstance.unregister_parent(metaclass, old_key)
-                dinstance.register_parent(metaclass, key)
-                dhistory = {}
-                dhistory["key"] = dinstance.get_key()
-                dhistory["metaclass"] = dmetaclass
-                dhistory["subclass"] = dinstance.__class__.__name__
-                dsettings = dinstance.get_raw_settings()
-                dhistory["settings"] = dsettings
-                dsettings[metaclass]["Value"] = key
-                dinstance.update_raw_settings(metaclass, key)
-                if dsettings[metaclass]["Options"] is not None:
-                    dsettings[metaclass]["Options"].append(key)
-                    dsettings[metaclass]["Options"].remove(old_key)
-                self.update_plugin_history.emit(dhistory, "")
+                self.model.update_plugin_key(metaclass, key, old_key)
+                self.update_available_plugins.emit(
+                    metaclass, self.model.get_instantiated_plugins_list()[metaclass]
+                )
+
+                self.add_text_to_display.emit(
+                    instance.report_channel_status(channel=None, init=True), key
+                )
+                history["key"] = key
+                history["metaclass"] = metaclass
+                history["subclass"] = instance.__class__.__name__
+                history["settings"] = settings
+                self.update_plugin_history.emit(history, old_key)
+
+            # Resolve plugin string references to actual objects
             try:
-                instance.set_key(key)
                 for settings_key, val in app_settings.items():
                     if settings_key in self.model.get_available_metaclasses():
                         app_settings[settings_key]["Value"] = (
@@ -170,46 +196,36 @@ class DataPluginController(QObject):
                         app_settings[settings_key]["Options"] = None
             except Exception as e:
                 self.logger.exception(
-                    f"Unable to edit plugin {key} of type {metaclass} : {str(e)}"
+                    f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}"
                 )
                 self.add_text_to_display.emit(
-                    f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
+                    f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
                     self.__class__.__name__,
                 )
                 return
 
-            self.model.update_plugin_key(metaclass, key, old_key)
-            self.update_available_plugins.emit(
-                metaclass, self.model.get_instantiated_plugins_list()[metaclass]
-            )
-
-            self.add_text_to_display.emit(
-                instance.report_channel_status(channel=None, init=True), key
-            )
-            history["key"] = key
-            history["metaclass"] = metaclass
-            history["subclass"] = instance.__class__.__name__
-            history["settings"] = settings
-            self.update_plugin_history.emit(history, old_key)
-
-        # apply the settings to the new plugin object
-        try:
-            instance.apply_settings(app_settings)
-        except Exception as e:
-            self.logger.info(
-                f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}"
-            )
-            self.add_text_to_display.emit(
-                f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
-                self.__class__.__name__,
-            )
-            return
-        else:
-            history["key"] = key
-            history["metaclass"] = metaclass
-            history["subclass"] = instance.__class__.__name__
-            history["settings"] = settings
-            self.update_plugin_history.emit(history, "")
+            # apply the settings to the new plugin object
+            try:
+                instance.apply_settings(app_settings)
+            except Exception as e:
+                self.logger.info(
+                    f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
+                    self.__class__.__name__,
+                )
+                return
+            else:
+                history["key"] = key
+                history["metaclass"] = metaclass
+                history["subclass"] = instance.__class__.__name__
+                history["settings"] = settings
+                self.update_plugin_history.emit(history, "")
+                self.add_text_to_display.emit(
+                    f"Settings updated successfully for {key}",
+                    self.__class__.__name__,
+                )
 
     @log(logger=logger)
     @Slot(str, str)

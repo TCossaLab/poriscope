@@ -8,33 +8,36 @@ pip install poriscope
 
 As a developer:
 
-git clone https://github.com/TCossaLab/poriscope.git
+`git clone https://github.com/TCossaLab/poriscope.git`
 
-cd poriscope
+`cd poriscope`
 
-pip install -e .
+`pip install -e .`
 
 To use a stable version (does not allow retroactive pulls): 
-python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"
+`python -m pip install -U "git+https://github.com/TCossaLab/poriscope.git@main"`
 
-Then from any cmd you will be able to run the 'poriscope' command to open the app.
+Then from any cmd you will be able to run the `poriscope` command to open the app.
 
 *If you have a previous version of poriscope installed, make sure to run: 
 
-pip uninstall poriscope
-
+`pip uninstall poriscope`
 
 ## Post-clone Setup dor developers
 
 After cloning this repo, run:
 
-python scripts/setup_hooks.py (To enable pre-commit and post-merge)
+`python scripts/setup_hooks.py (To enable pre-commit and post-merge)`
 
 To emulate a pulled run:
-python .git/hooks/post-merge
+`python .git/hooks/post-merge`
 
 ## Documentation can be found
 https://tcossalab.github.io/poriscope/ 
 
 ## Poriscope Tutorial Series
 https://youtube.com/@tcossalab?si=A8Wy8yHOXiwSXu5F 
+
+## Data
+Tutorial Series data is available on FRDR: https://doi.org/10.20383/103.01599  
+See [`data/README.md`](data/README.md) for download instruction

@@ -141,19 +141,11 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         except StopIteration:
             bottom_index = 0
 
-
         top = centers[top_index]
         bottom = centers[bottom_index]
 
-        mask = (data > bottom) & (data < top)
-        data = data[mask]
-        if len(data) == 0:
-            raise ValueError("No data found in range")
-
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
+        hist = hist[bottom_index:top_index]
+        centers = centers[bottom_index:top_index]
 
         max_index = np.argmax(hist)
         maxval = hist[max_index]
@@ -174,23 +166,16 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         except StopIteration:
             bottom_index = 0
 
-        std_index = (
-            bottom_index
-            if max_index - bottom_index < top_index - max_index
-            else top_index
-        )
-
-
         try:
             baseline_params = np.array(
                 self._gaussian_fit(
                     hist,
                     centers,
                     centers[max_index],
-                    np.absolute(centers[std_index] - centers[max_index]),
+                    np.absolute(centers[top_index] - centers[bottom_index]),
                 )
             )
-        except ValueError as e:
+        except ValueError:
             raise
         mean = baseline_params[1]
         if (

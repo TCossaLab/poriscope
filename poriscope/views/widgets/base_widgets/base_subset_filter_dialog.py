@@ -27,11 +27,14 @@
 import logging
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QRadioButton,
     QTextEdit,
     QVBoxLayout,
 )
@@ -48,6 +51,7 @@ class BaseSubsetFilterDialog(QDialog):
         self.existing_names = existing_names
         self.name = None
         self.filter_text = None
+        self.is_raw = False
         self.default_name = default_name
         self.default_filter = default_filter
 
@@ -59,6 +63,32 @@ class BaseSubsetFilterDialog(QDialog):
         self.name_input = QLineEdit(self.default_name)
         self.layout.addWidget(QLabel("Subset:"))
         self.layout.addWidget(self.name_input)
+
+        # Mode selection: Assisted builds the query automatically,
+        # Raw SQL passes the filter text directly to the database
+        mode_layout = QHBoxLayout()
+        self.assisted_radio = QRadioButton("Assisted SQL")
+        self.raw_radio = QRadioButton("Raw SQL")
+        self.assisted_radio.setChecked(True)
+
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.addButton(self.assisted_radio)
+        self.mode_group.addButton(self.raw_radio)
+
+        mode_layout.addWidget(self.assisted_radio)
+        mode_layout.addWidget(self.raw_radio)
+        self.layout.addLayout(mode_layout)
+
+        # Pre-select mode based on existing suffix when editing,
+        # and lock the radio buttons so mode cannot be changed after creation
+        if self.default_name.endswith("_raw"):
+            self.raw_radio.setChecked(True)
+            self.assisted_radio.setEnabled(False)
+            self.raw_radio.setEnabled(False)
+        elif self.default_name.endswith("_assisted"):
+            self.assisted_radio.setChecked(True)
+            self.assisted_radio.setEnabled(False)
+            self.raw_radio.setEnabled(False)
 
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)
@@ -93,4 +123,5 @@ class BaseSubsetFilterDialog(QDialog):
 
         self.name = name
         self.filter_text = self.filter_input.toPlainText().strip()
+        self.is_raw = self.raw_radio.isChecked()
         self.accept()

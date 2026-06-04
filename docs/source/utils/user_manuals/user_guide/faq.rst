@@ -24,7 +24,7 @@ Make sure that:
 Otherwise you may apply one dataset’s events to another, leading to mismatched results.
 
 I clicked :menuselection:`Analysis -> New Analysis Tab -> EventAnalysisController` or :menuselection:`RawDataController`, but nothing changes.
-----------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------
 
 Poriscope lets you use the top menu to **open** a plugin tab the first time only.  
 After it’s opened, switch back to any analysis view from the left sidebar:
@@ -55,22 +55,20 @@ You may be loading the **wrong type** of ``.db`` file for that tab. Both databas
 
    You can also adopt a suffix system that matches your workflow (e.g., ``.db`` for raw, ``.sqlite`` for metadata).
 
-I'm entering SQL in the Metadata View filter box, but it says the format is invalid.
-------------------------------------------------------------------------------------
+Is Linux supported?
+-------------------
 
-Poriscope’s filter fields use a **simplified, SQL-like expression**, not full SQL. The text you enter is appended to a larger query the app builds internally. The GUI **does not** execute raw SQL in this field.
+Poriscope is currently beta tested on Linux through an Ubuntu VM. As a result, certain UI behaviors may differ from the native Windows experience, particularly around popup windows, which rely on compositor effects that virtual GPU drivers handle inconsistently.
 
-Examples of **valid expressions**:
+Functionality is in place, and Linux-specific fixes will continue to be refined as support matures.
 
-.. code-block:: text
+Where can I find the data used in the tutorials?
+-------------------------------------------------
 
-   duration > 200
-   max_blockage < 800 and num_sublevels >= 3
-   voltage = -200 or sublevel_stdev > 4
+The data used in the YouTube tutorial series is archived on the Federated Research Data Repository (FRDR):
 
-You do **not** need ``SELECT``, ``FROM``, or ``WHERE``—just the condition.
+**DOI:** `10.20383/103.01599 <https://doi.org/10.20383/103.01599>`_
 
-.. note::
+The full dataset is ~9.92 GB. Individual ``.log`` and ``.json`` files can be downloaded separately from the FRDR page if you only need specific channels.
 
-   To run full SQL directly on your database, use *Scripting mode* (outside the GUI filter).  
-   See the Poriscope documentation for supported operators and additional examples.
+The reference ``.db`` files generated during the tutorial are in the process of being archived as well. A link will be added once available.

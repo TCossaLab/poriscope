@@ -435,6 +435,31 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         label_list.append(f"Event {event} Data")
                         num_events += 1
 
+                        # If a filter is active and raw is requested, also load the unfiltered signal
+                        if (
+                            parameters.get("raw", False)
+                            and self.data_filter is not None
+                        ):
+                            try:
+                                load_raw_args = (channel, event, None)
+                                self.global_signal.emit(
+                                    "MetaEventLoader",
+                                    loader,
+                                    "load_event",
+                                    load_raw_args,
+                                    "update_plot_data",
+                                    (),
+                                )
+                            except (IndexError, ValueError) as e:
+                                self.logger.error(
+                                    f"Unable to retrieve raw data for event {event}: {repr(e)}"
+                                )
+                            if self.plot_data is not None:
+                                data_list.append(self.plot_data)
+                                self.plot_data = None
+                                label_list.append(f"Event {event} Raw")
+                                # Raw trace shares the same subplot — no new feature placeholders needed
+
                         if eventfitter != "No Event Fitter":
                             self.eventfitting_status = False
                             eventfitting_status_args = (channel,)
@@ -452,7 +477,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                     self.global_signal.emit(
                                         "MetaEventFitter",
                                         eventfitter,
-                                        "construct_fitted_event",
+                                        "get_fitted_event",
                                         load_fit_args,
                                         "update_plot_data",
                                         (),
@@ -529,6 +554,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         vertical_labels,
                         horizontal_labels,
                         plabels,
+                        use_raw=parameters.get("raw", False),
                     )
                 else:
                     self.logger.error("No data available for plotting")
@@ -615,6 +641,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         vlabels,
         hlabels,
         plabels,
+        use_raw=False,
     ):
         """
         Update the event plot with raw data, annotations, and formatting.
@@ -662,7 +689,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         for i, (data, label) in enumerate(zip(event_data, labels)):
             if "Data" in label:
                 features_plotted = False
-                legend = False
                 ax = self.figure.add_subplot(
                     num_rows, num_cols, j + 1
                 )  # Create subplots in a grid
@@ -670,7 +696,17 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 j += 1
 
             time = np.arange(len(data)) / self.plot_samplerate * 1e6
-            ax.plot(time, data / 1000)
+            should_plot = (
+                "Fit" in label
+                or "Raw" in label
+                or "Data"
+                in label  # always show Data (filtered if filter active, raw if not)
+            )
+            if should_plot:
+                zorder = (
+                    1 if "Raw" in label else 2
+                )  # Raw below filtered data, filtered below Fit
+                ax.plot(time, data / 1000, zorder=zorder)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
@@ -679,12 +715,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 (time, label + " " + x_label), (data / 1000, label + " " + y_label)
             )
 
-            if i % num_cols == 0:
+            if (j - 1) % num_cols == 0:
                 ax.set_ylabel(y_label)
             labelnum = (num_rows - 1) * num_cols
             if num_events % num_cols > 0:
                 labelnum -= num_cols - num_events % num_cols
-            if i >= labelnum:
+            if (j - 1) >= labelnum:
                 ax.set_xlabel(r"Time ($\mu s$)")
 
             if features_plotted is False:
@@ -699,7 +735,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         if label is None:
                             ax.axvline(x=line, color="black", linestyle="--")
                         else:
-                            legend = True
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.axvline(x=line, linestyle="--", color=color, label=label)
                             color_idx += 1
@@ -713,7 +748,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         if label is None:
                             ax.axhline(y=line / 1000, color="black", linestyle="--")
                         else:
-                            legend = True
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.axhline(
                                 y=line / 1000, linestyle="--", color=color, label=label
@@ -731,7 +765,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                 x, y / 1000, marker="x", color="black", markersize=10
                             )
                         else:
-                            legend = True
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.plot(
                                 x,
@@ -746,8 +779,31 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
                 ax.grid(True)
 
-            if legend:
-                ax.legend(loc="best")
+        # Build a single shared legend from all axes, deduplicating by label
+        all_handles = {}
+        for ax in self.figure.get_axes():
+            for handle, label in zip(*ax.get_legend_handles_labels()):
+                if label not in all_handles:
+                    all_handles[label] = handle
+
+        if all_handles:
+            num_entries = len(all_handles)
+            fig_height = self.figure.get_size_inches()[1]
+            # estimate how many entries fit comfortably at default font size (10pt)
+            # roughly 0.20 inches per entry at 10pt
+            entries_at_default = fig_height / 0.20
+            if num_entries <= entries_at_default:
+                font_size = 10  # plenty of space, use full size
+            else:
+                font_size = max(6, int(10 * entries_at_default / num_entries))
+
+            self.figure.legend(
+                list(all_handles.values()),
+                list(all_handles.keys()),
+                loc="outside right upper",
+                frameon=True,
+                fontsize=font_size,
+            )
 
         self.figure.set_constrained_layout(True)
         self.canvas.draw()
@@ -982,6 +1038,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                     self.eventAnalysisControls.left_arrow_button,
                     self.eventAnalysisControls.right_arrow_button,
                 ],
+            ),
+            (
+                "Event Analysis Tab",
+                "By default the raw trace is shown. When a filter is active, check RAW to also display the unfiltered signal alongside the filtered trace. If a fitter has been run, the fit trace will also appear.",
+                "EventAnalysisView",
+                lambda: [self.eventAnalysisControls.raw_checkbox],
             ),
             (
                 "Event Analysis Tab",

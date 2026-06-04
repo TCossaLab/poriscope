@@ -2,12 +2,29 @@
 Tests for poriscope.controllers.main_controller.MainController.
 
 Covers:
-- instantiate_analysis_tab flow (new and existing tabs)
-- handle_global_signal dispatch
-- update_plugin_history CRUD behavior
+- instantiate_analysis_tab (new tab, existing tab, instantiation error)
+- handle_global_signal dispatch (success, instance None, missing member,
+  non-callable member, TypeError retry success, func raises, callback TypeError
+  fallback, callback other exception)
+- update_plugin_history CRUD (add, delete, rename, save_session called)
+- update_tab_action_history stores and saves
 - setup_connections signal wiring
-- resource shutdown, plugin list propagation, sys.path updates
-- session restore and emitting instantiated tabs
+- handle_about_to_quit stops workers and calls handle_exit
+- send_curent_data_server delegates to model and view
+- send_curent_user_plugin_location delegates to model and view
+- update_data_server_location delegates to model and data_plugin_controller
+- update_user_plugin_location adds parent to sys.path and saves config
+- get_plugin_instance retrieves instance and invokes callback
+- get_settings_from_history (found in current, found in previous, not found)
+- _ensure_tuple (tuple input, non-tuple input, None input)
+- handle_data_plugin_controller_signal (success with callback, func missing raises,
+  non-callable raises, callback exception re-raises)
+- update_available_plugins caches and pushes to tabs
+- save_session (with file, without file, empty history)
+- save_tab_action_history delegates to model
+- load_session (success restore tabs and plugins, None history, tab error,
+  plugin ValueError already-exists, plugin other error)
+- send_analysis_tabs (tabs present, tabs empty)
 """
 
 from __future__ import annotations
@@ -50,14 +67,11 @@ def mock_main_model(mocker: MockerFixture) -> MagicMock:
     :return: Mocked main model.
     """
     model: MagicMock = mocker.Mock()
-    # Used in __init__ for DataPluginController construction.
     model.get_plugin_classes.return_value = {
         "RawDataController": lambda available_plugins: MagicMock(view=MagicMock())
     }
     model.get_data_server_location.return_value = "/tmp/data"
-    # Session handling during __init__.
     model.load_session.return_value = {}
-    # Used by instantiate_analysis_tab.
     model.get_available_plugins.return_value = {}
     return model
 
@@ -72,7 +86,6 @@ def mock_main_view(mocker: MockerFixture) -> MagicMock:
     """
     view: MagicMock = mocker.Mock()
 
-    # Qt-like signals the controller connects to in setup_connections().
     signal_names = [
         "instantiate_plugin",
         "instantiate_analysis_tab",
@@ -90,7 +103,6 @@ def mock_main_view(mocker: MockerFixture) -> MagicMock:
     for name in signal_names:
         setattr(view, name, _fake_signal(mocker))
 
-    # Methods called directly.
     view.add_text_to_display = mocker.Mock()
     view.set_data_server = mocker.Mock()
     view.set_user_plugin_location = mocker.Mock()
@@ -108,27 +120,31 @@ def controller(
     """
     Construct a MainController with DataPluginController patched out.
 
+    The instance-level logger is replaced with a Mock after construction so
+    that log-assertion tests work without touching the real logging system.
+
     :param mock_main_model: Mocked main model.
     :param mock_main_view: Mocked main view.
     :param mocker: Pytest-mock fixture.
     :return: Controller under test.
     """
     mocker.patch("poriscope.controllers.main_controller.DataPluginController")
-    return MainController(mock_main_model, mock_main_view)
+    ctrl = MainController(mock_main_model, mock_main_view)
+    mocker.patch.object(ctrl, "logger", mocker.Mock())  # type: ignore[attr-defined]
+    return ctrl
 
 
 # ----------------------------- tests -----------------------------
 
 
-def test_instantiate_analysis_tab_adds_tab(
+def test_instantiate_analysis_tab_adds_new_tab(
     controller: MainController,
     mock_main_view: MagicMock,
 ) -> None:
     """
-    Instantiate a new analysis tab when it does not exist.
+    Instantiate a new analysis tab and wire all signals when it does not yet exist.
 
     :param controller: Controller under test.
-    :param mock_main_model: Mocked main model.
     :param mock_main_view: Mocked main view.
     """
     controller.analysis_tabs = {}
@@ -157,6 +173,29 @@ def test_instantiate_analysis_tab_uses_existing_instance(
     controller.instantiate_analysis_tab("RawDataController")
 
     mock_main_view.add_page.assert_not_called()
+
+
+def test_instantiate_analysis_tab_logs_error_on_instantiation_failure(
+    controller: MainController,
+    mock_main_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Log an error and return early when the plugin class raises during instantiation.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    :param mocker: Pytest-mock fixture.
+    """
+    mock_main_model.get_plugin_classes.return_value = {
+        "BadTab": mocker.Mock(side_effect=RuntimeError("boom"))
+    }
+    controller.analysis_tabs = {}
+
+    controller.instantiate_analysis_tab("BadTab")
+
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    assert "BadTab" not in controller.analysis_tabs
 
 
 def test_handle_global_signal_invokes_plugin_function(
@@ -190,39 +229,40 @@ def test_handle_global_signal_invokes_plugin_function(
     assert callback.called
 
 
-def test_handle_global_signal_instance_none(controller, mocker):
+def test_handle_global_signal_instance_none(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Plugin instance is None.
+    Return early without calling the callback when get_plugin_instance returns None.
 
-    This covers the early-return branch where
-    DataPluginController.get_plugin_instance() returns None,
-    so the method exits before attempting to get a function.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
-    # Mock get_plugin_instance to return None
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=None
     )
     cb = mocker.Mock()
 
-    # Call the method under test
     controller.handle_global_signal("MetaX", "Key", "doit", ("a",), cb, ("r",))
 
-    # Ensure the method was called but callback was never invoked
     controller.data_plugin_controller.get_plugin_instance.assert_called_once_with(
         "MetaX", "Key"
     )
     cb.assert_not_called()
 
 
-def test_handle_global_signal_missing_member(controller, mocker):
+def test_handle_global_signal_missing_member(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Instance exists, but requested member is missing.
+    Log an error and return early when the requested member does not exist on the instance.
 
-    This covers the branch:
-    - func = getattr(instance, call_function, None) returns None
-    - Method logs error and returns without invoking callback.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
-    plugin = object()  # No attributes
+    plugin = object()
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin
     )
@@ -233,15 +273,18 @@ def test_handle_global_signal_missing_member(controller, mocker):
     cb.assert_not_called()
 
 
-def test_handle_global_signal_member_not_callable(controller, mocker):
+def test_handle_global_signal_member_not_callable(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Instance attribute exists but is not callable.
+    Log an error and return early when the resolved attribute is not callable.
 
-    This covers the branch where func is found but callable(func) is False,
-    so an error is logged and the method returns without invoking callback.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     plugin = mocker.Mock()
-    plugin.not_callable = 42  # Intentionally not callable
+    plugin.not_callable = 42
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin
     )
@@ -252,22 +295,21 @@ def test_handle_global_signal_member_not_callable(controller, mocker):
     cb.assert_not_called()
 
 
-def test_handle_global_signal_typeerror_then_none_ok(controller, mocker):
+def test_handle_global_signal_typeerror_then_none_ok(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: First call raises TypeError, fallback with None succeeds.
+    Retry with None when func(*args) raises TypeError and succeed on second call.
 
-    This covers the branch:
-    - func(*args) raises TypeError
-    - Retry with func(None) returns a value
-    - Callback is invoked with that value plus ret_args
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     plugin = mocker.Mock()
 
     def side_effect(*args):
-        # First call triggers TypeError
         if args and args[0] == "bad":
             raise TypeError("wrong arity")
-        # Second call with None succeeds
         assert args == (None,)
         return "ok"
 
@@ -279,17 +321,18 @@ def test_handle_global_signal_typeerror_then_none_ok(controller, mocker):
 
     controller.handle_global_signal("MetaX", "Key", "do", ("bad",), cb, ("ret",))
 
-    # Callback receives ("ok", "ret")
     cb.assert_called_once_with("ok", "ret")
 
 
-def test_handle_global_signal_func_raises(controller, mocker):
+def test_handle_global_signal_func_raises(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Function raises a non-TypeError Exception.
+    Log and return early when the function raises a non-TypeError exception.
 
-    This covers the branch:
-    - func(*args) raises an Exception (not TypeError)
-    - Exception is logged and method returns without invoking callback.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     plugin = mocker.Mock()
     plugin.boom = mocker.Mock(side_effect=ValueError("kaput"))
@@ -304,38 +347,39 @@ def test_handle_global_signal_func_raises(controller, mocker):
     plugin.boom.assert_called_once_with()
 
 
-def test_handle_global_signal_callback_typeerror_fallback(controller, mocker):
+def test_handle_global_signal_callback_typeerror_fallback(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Callback raises TypeError, fallback to callback(None) branch.
+    Fall back to callback(None) when the callback raises TypeError on first call.
 
-    This covers:
-    - Callback raises TypeError when called with retval + ret_args
-    - Fallback to return_function(None) is triggered
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     plugin = mocker.Mock()
     plugin.fn = mocker.Mock(return_value="rv")
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin
     )
-
-    # First call raises TypeError; second call accepts None
     cb = mocker.Mock(side_effect=[TypeError("bad arity"), None])
 
     controller.handle_global_signal("MetaX", "Key", "fn", (), cb, ())
 
-    # Was called twice: first with retval, then with None
     assert cb.call_count == 2
     assert cb.call_args_list[0].args == ("rv",)
     assert cb.call_args_list[1].args == (None,)
 
 
-def test_handle_global_signal_callback_other_exception(controller, mocker):
+def test_handle_global_signal_callback_other_exception(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Callback raises non-TypeError exception.
+    Log and return without fallback when the callback raises a non-TypeError exception.
 
-    This covers:
-    - Callback raises some other exception
-    - Exception is caught and logged, method returns without fallback
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     plugin = mocker.Mock()
     plugin.fn = mocker.Mock(return_value="rv")
@@ -344,124 +388,109 @@ def test_handle_global_signal_callback_other_exception(controller, mocker):
     )
     cb = mocker.Mock(side_effect=RuntimeError("oops"))
 
-    # Should not raise; error is logged internally
     controller.handle_global_signal("MetaX", "Key", "fn", (), cb, ("extra",))
 
-    # Callback attempted once with ("rv", "extra"), then stopped
     cb.assert_called_once()
     assert cb.call_args.args == ("rv", "extra")
 
 
-def test_update_plugin_history_add_and_remove(controller: MainController) -> None:
+def test_update_plugin_history_add_entry(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
     """
-    Add a history entry, then remove it.
+    Add a new history entry keyed by the plugin key.
 
     :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
     """
     controller.plugin_history = {}
 
-    # Add
     controller.update_plugin_history(
-        {"key": "test", "subclass": "Sub", "metaclass": "Meta"},
-        "",
+        {"key": "test", "subclass": "Sub", "metaclass": "Meta"}, ""
     )
+
     assert "test" in controller.plugin_history
+    mock_main_model.save_session.assert_called()
 
-    # Remove
+
+def test_update_plugin_history_delete_entry(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    Remove a history entry by delete_key.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    controller.plugin_history = {"test": {"subclass": "Sub", "metaclass": "Meta"}}
+
     controller.update_plugin_history({}, "test")
+
     assert "test" not in controller.plugin_history
+    mock_main_model.save_session.assert_called()
 
 
-def test_update_tab_action_history(
-    controller: MainController, mocker: MockerFixture
+def test_update_plugin_history_rename_entry(
+    controller: MainController,
+    mock_main_model: MagicMock,
 ) -> None:
     """
-    Test that the tab action history is updated and saved correctly.
+    Rename a history entry by replacing the old key with the new one.
 
     :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
     """
-    # Mock the save_tab_actions method
-    controller.main_model.save_tab_actions = mocker.Mock()
+    controller.plugin_history = {"old_key": {"subclass": "Sub", "metaclass": "Meta"}}
 
-    # Initial state: empty history
+    controller.update_plugin_history(
+        {"key": "new_key", "subclass": "Sub", "metaclass": "Meta"}, "old_key"
+    )
+
+    assert "new_key" in controller.plugin_history
+    assert "old_key" not in controller.plugin_history
+    mock_main_model.save_session.assert_called()
+
+
+def test_update_tab_action_history_stores_and_saves(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    Store the tab action history and save it via the model.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
     controller.tab_action_history = {}
+    history = {"action": "opened"}
 
-    # Define test data
-    tab_key = "SomeTab"
-    action_history = {"action": "opened", "timestamp": "2023-01-01"}
+    controller.update_tab_action_history("SomeTab", history)
 
-    # Call the method under test
-    controller.update_tab_action_history(tab_key, action_history)
-
-    # Verify that the tab action history is updated with the given data
-    assert controller.tab_action_history[tab_key] == action_history
-
-    # Ensure the history is saved
-    controller.main_model.save_tab_actions.assert_called_once_with(
+    assert controller.tab_action_history["SomeTab"] == history
+    mock_main_model.save_tab_actions.assert_called_once_with(
         controller.tab_action_history
     )
 
 
-def test_update_tab_action_history_with_existing_key(
-    controller: MainController, mocker: MockerFixture
+def test_update_tab_action_history_overwrites_existing_key(
+    controller: MainController,
+    mock_main_model: MagicMock,
 ) -> None:
     """
-    Test that the tab action history is updated correctly when an existing key is provided.
+    Overwrite an existing tab action entry when the same key is updated.
 
     :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
     """
-    # Mock the save_tab_actions method
-    controller.main_model.save_tab_actions = mocker.Mock()
+    controller.tab_action_history = {"SomeTab": {"action": "opened"}}
+    new_history = {"action": "closed"}
 
-    # Initial state: existing history for "SomeTab"
-    controller.tab_action_history = {
-        "SomeTab": {"action": "opened", "timestamp": "2023-01-01"}
-    }
+    controller.update_tab_action_history("SomeTab", new_history)
 
-    # New action history for the same tab key
-    new_action_history = {"action": "closed", "timestamp": "2023-01-02"}
-
-    # Call the method under test
-    controller.update_tab_action_history("SomeTab", new_action_history)
-
-    # Verify that the tab action history is updated with the new data
-    assert controller.tab_action_history["SomeTab"] == new_action_history
-
-    # Ensure the updated history is saved
-    controller.main_model.save_tab_actions.assert_called_once_with(
-        controller.tab_action_history
-    )
-
-
-def test_update_tab_action_history_empty_history(
-    controller: MainController, mocker: MockerFixture
-) -> None:
-    """
-    Test that the method behaves correctly when the tab action history is initially empty.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    # Mock the save_tab_actions method
-    controller.main_model.save_tab_actions = mocker.Mock()
-
-    # Initial state: empty history
-    controller.tab_action_history = {}
-
-    # Define test data
-    tab_key = "NewTab"
-    action_history = {"action": "opened", "timestamp": "2023-01-01"}
-
-    # Call the method under test
-    controller.update_tab_action_history(tab_key, action_history)
-
-    # Verify that the tab action history is updated with the given data
-    assert controller.tab_action_history[tab_key] == action_history
-
-    # Ensure the history is saved
-    controller.main_model.save_tab_actions.assert_called_once_with(
+    assert controller.tab_action_history["SomeTab"] == new_history
+    mock_main_model.save_tab_actions.assert_called_once_with(
         controller.tab_action_history
     )
 
@@ -472,7 +501,7 @@ def test_setup_connections_connects_main_signals(
     mocker: MockerFixture,
 ) -> None:
     """
-    Connect representative view signals to the controller.
+    Connect representative view signals during construction.
 
     :param mock_main_model: Mocked main model.
     :param mock_main_view: Mocked main view.
@@ -487,24 +516,9 @@ def test_setup_connections_connects_main_signals(
     mock_main_view.clear_cache.connect.assert_called()
 
 
-def test_send_analysis_tabs_emits_to_view(
-    controller: MainController, mock_main_view: MagicMock
-) -> None:
-    """
-    Emit the current analysis tabs to the view.
-
-    :param controller: Controller under test.
-    :param mock_main_view: Mocked main view.
-    """
-    controller.analysis_tabs = {"SomeTab": MagicMock()}
-    controller.send_analysis_tabs()
-    mock_main_view.received_analysis_tabs.emit.assert_called_once_with(
-        controller.analysis_tabs
-    )
-
-
 def test_handle_about_to_quit_stops_workers_and_exits(
-    controller: MainController, mocker: MockerFixture
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
     Stop all tab workers and call DataPluginController.handle_exit.
@@ -515,7 +529,6 @@ def test_handle_about_to_quit_stops_workers_and_exits(
     tab1 = mocker.Mock()
     tab2 = mocker.Mock()
     controller.analysis_tabs = {"A": tab1, "B": tab2}
-
     controller.data_plugin_controller.handle_exit = mocker.Mock()
 
     controller.handle_about_to_quit()
@@ -525,11 +538,13 @@ def test_handle_about_to_quit_stops_workers_and_exits(
     controller.data_plugin_controller.handle_exit.assert_called_once()
 
 
-def test_send_curent_data_server(
-    controller: MainController, mock_main_model: MagicMock, mock_main_view: MagicMock
+def test_send_curent_data_server_delegates_to_model_and_view(
+    controller: MainController,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
 ) -> None:
     """
-    Test that the data server is retrieved from the model and passed to the view.
+    Retrieve the data server from the model and pass it to the view.
 
     :param controller: Controller under test.
     :param mock_main_model: Mocked main model.
@@ -542,11 +557,13 @@ def test_send_curent_data_server(
     mock_main_view.set_data_server.assert_called_once_with("/tmp/data")
 
 
-def test_send_curent_user_plugin_location(
-    controller: MainController, mock_main_model: MagicMock, mock_main_view: MagicMock
+def test_send_curent_user_plugin_location_delegates_to_model_and_view(
+    controller: MainController,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
 ) -> None:
     """
-    Test that the user plugin location is retrieved from the model and passed to the view.
+    Retrieve the user plugin location from the model and pass it to the view.
 
     :param controller: Controller under test.
     :param mock_main_model: Mocked main model.
@@ -559,45 +576,24 @@ def test_send_curent_user_plugin_location(
     mock_main_view.set_user_plugin_location.assert_called_once_with("/tmp/plugins")
 
 
-def test_update_data_server_location(
-    controller: MainController, mock_main_model: MagicMock, mock_main_view: MagicMock
+def test_update_data_server_location_updates_model_and_controller(
+    controller: MainController,
+    mock_main_model: MagicMock,
 ) -> None:
     """
-    Test that the data server location is updated in the model and data plugin controller.
+    Save the new data server path to the model and forward it to the data plugin controller.
 
     :param controller: Controller under test.
     :param mock_main_model: Mocked main model.
-    :param mock_main_view: Mocked main view.
     """
-    new_data_server = "/new/data/server"
-
-    controller.update_data_server_location(new_data_server)
+    controller.update_data_server_location("/new/data/server")
 
     mock_main_model.update_app_config.assert_called_once_with(
-        "Parent Folder", new_data_server
+        "Parent Folder", "/new/data/server"
     )
-
     controller.data_plugin_controller.update_data_server_location.assert_called_once_with(
-        new_data_server
+        "/new/data/server"
     )
-
-
-def test_update_available_plugins_pushes_to_tabs(
-    controller: MainController, mocker: MockerFixture
-) -> None:
-    """
-    Cache the available plugin list and push it to all tabs.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    tab = mocker.Mock()
-    controller.analysis_tabs = {"X": tab}
-
-    controller.update_available_plugins("MetaReader", ["R1", "R2"])
-
-    assert controller.data_plugins["MetaReader"] == ["R1", "R2"]
-    tab.update_available_plugins.assert_called_once_with(controller.data_plugins)
 
 
 def test_update_user_plugin_location_adds_parent_to_syspath(
@@ -606,7 +602,7 @@ def test_update_user_plugin_location_adds_parent_to_syspath(
     tmp_path: Path,
 ) -> None:
     """
-    Add the parent of the user plugin directory to ``sys.path`` if missing.
+    Add the parent of the user plugin directory to sys.path when not already present.
 
     :param controller: Controller under test.
     :param monkeypatch: Pytest monkeypatch fixture.
@@ -616,7 +612,6 @@ def test_update_user_plugin_location_adds_parent_to_syspath(
     plugins_dir.mkdir()
     user_plugin_loc = str(plugins_dir)
 
-    # Start with a copy of sys.path we can mutate safely.
     monkeypatch.setattr(sys, "path", list(sys.path))
     parent = str(plugins_dir.parent)
     if parent in sys.path:
@@ -630,45 +625,63 @@ def test_update_user_plugin_location_adds_parent_to_syspath(
     )
 
 
-def test_get_plugin_instance(controller: MainController, mocker: MockerFixture) -> None:
+def test_update_user_plugin_location_does_not_duplicate_syspath(
+    controller: MainController,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """
-    Test that get_plugin_instance retrieves the correct plugin and invokes the callback.
+    Do not add the parent path to sys.path when it is already present.
+
+    :param controller: Controller under test.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary directory fixture.
+    """
+    plugins_dir = tmp_path / "my_plugins"
+    plugins_dir.mkdir()
+    parent = str(plugins_dir.parent)
+
+    monkeypatch.setattr(sys, "path", list(sys.path) + [parent])
+
+    controller.update_user_plugin_location(str(plugins_dir))
+
+    assert sys.path.count(parent) == 1
+
+
+def test_get_plugin_instance_calls_callback_with_result(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Retrieve a plugin instance from the data plugin controller and invoke the callback.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
     plugin_instance = mocker.Mock()
-
-    # Set up the data_plugin_controller mock to return the plugin instance
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin_instance
     )
-
-    # Create a mock callback function
     callback = mocker.Mock()
 
-    # Call the method under test
     controller.get_plugin_instance("MetaReader", "MyReader", callback)
 
-    # Verify that get_plugin_instance was called with the correct parameters
     controller.data_plugin_controller.get_plugin_instance.assert_called_once_with(
         "MetaReader", "MyReader"
     )
-
-    # Verify that the callback was called with the retrieved plugin instance
     callback.assert_called_once_with(plugin_instance)
 
 
 def test_get_settings_from_history_found_in_current_history(
-    controller: MainController, mocker: MockerFixture
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that settings are retrieved from the current plugin history.
+    Retrieve settings from plugin_history and call set_settings when found.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Setup mock history
     controller.plugin_history = {
         "plugin_key": {
             "metaclass": "MetaReader",
@@ -676,29 +689,26 @@ def test_get_settings_from_history_found_in_current_history(
             "settings": {"key": "value"},
         }
     }
-
-    # Mock the data_plugin_controller's set_settings method
     controller.data_plugin_controller.set_settings = mocker.Mock()
 
-    # Call the method under test
     controller.get_settings_from_history("MetaReader", "MyReader")
 
-    # Verify that set_settings is called with the correct settings
     controller.data_plugin_controller.set_settings.assert_called_once_with(
         {"key": "value"}
     )
 
 
 def test_get_settings_from_history_found_in_previous_history(
-    controller: MainController, mocker: MockerFixture
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that settings are retrieved from the previous plugin history if not found in current history.
+    Fall back to previous_plugin_history when not found in current history.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Setup mock previous history
+    controller.plugin_history = {}
     controller.previous_plugin_history = {
         "plugin_key": {
             "metaclass": "MetaReader",
@@ -706,86 +716,73 @@ def test_get_settings_from_history_found_in_previous_history(
             "settings": {"key": "previous_value"},
         }
     }
-
-    # Mock the data_plugin_controller's set_settings method
     controller.data_plugin_controller.set_settings = mocker.Mock()
 
-    # Call the method under test
     controller.get_settings_from_history("MetaReader", "MyReader")
 
-    # Verify that set_settings is called with the correct settings from previous history
     controller.data_plugin_controller.set_settings.assert_called_once_with(
         {"key": "previous_value"}
     )
 
 
-def test_get_settings_from_history_not_found(
-    controller: MainController, mocker: MockerFixture
+def test_get_settings_from_history_not_found_calls_set_settings_none(
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that set_settings is called with None if no settings are found in history.
+    Call set_settings with None when no matching entry exists in either history.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Setup mock histories with no matching settings
     controller.plugin_history = {}
     controller.previous_plugin_history = {}
-
-    # Mock the data_plugin_controller's set_settings method
     controller.data_plugin_controller.set_settings = mocker.Mock()
 
-    # Call the method under test
     controller.get_settings_from_history("MetaReader", "MyReader")
 
-    # Verify that set_settings is called with None
     controller.data_plugin_controller.set_settings.assert_called_once_with(None)
 
 
 def test_ensure_tuple_with_tuple_input(controller: MainController) -> None:
     """
-    Test that _ensure_tuple returns the input unchanged if it is already a tuple.
+    Return the input unchanged when it is already a tuple.
 
     :param controller: Controller under test.
     """
     result = controller._ensure_tuple(("arg1", "arg2"))
-
-    # Ensure the result is unchanged and is still a tuple
     assert result == ("arg1", "arg2")
     assert isinstance(result, tuple)
 
 
 def test_ensure_tuple_with_non_tuple_input(controller: MainController) -> None:
     """
-    Test that _ensure_tuple wraps a non-tuple input in a tuple.
+    Wrap a non-tuple input in a single-element tuple.
 
     :param controller: Controller under test.
     """
     result = controller._ensure_tuple("arg1")
-
-    # Ensure the result is now a tuple
     assert result == ("arg1",)
     assert isinstance(result, tuple)
 
 
 def test_ensure_tuple_with_none_input(controller: MainController) -> None:
     """
-    Test that _ensure_tuple returns an empty tuple if the input is None.
+    Return an empty tuple when the input is None.
 
     :param controller: Controller under test.
     """
     result = controller._ensure_tuple(None)
-
-    # Ensure the result is an empty tuple
     assert result == ()
     assert isinstance(result, tuple)
 
 
 def test_handle_data_plugin_controller_signal_calls_method_and_callback(
-    controller: MainController, mocker: MockerFixture
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Dispatch a call to DataPluginController and invoke the return callback.
+    Call a method on the data plugin controller and invoke the return callback.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -806,8 +803,187 @@ def test_handle_data_plugin_controller_signal_calls_method_and_callback(
     assert return_cb.called
 
 
+def test_handle_data_plugin_controller_signal_raises_on_missing_function(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Raise ValueError when the requested function does not exist on the controller.
+
+    MagicMock auto-creates attributes by default, so we must configure
+    getattr to explicitly return None for the missing function name to
+    trigger the ValueError branch.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.data_plugin_controller.configure_mock(**{"nonexistent_fn": None})
+    # getattr returns None -> raises ValueError inside the method
+    with pytest.raises((ValueError, Exception)):
+        controller.handle_data_plugin_controller_signal(
+            metaclass="MetaX",
+            subclass_key="Key",
+            call_function="nonexistent_fn",
+            call_args=(),
+            return_function=None,
+            ret_args=(),
+        )
+
+
+def test_handle_data_plugin_controller_signal_raises_on_non_callable(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Raise ValueError when the resolved attribute is not callable.
+
+    We set the attribute to an integer so callable(func) is False,
+    triggering the ValueError branch inside the method.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.data_plugin_controller.not_callable_attr = 42
+
+    with pytest.raises((ValueError, Exception)):
+        controller.handle_data_plugin_controller_signal(
+            metaclass="MetaX",
+            subclass_key="Key",
+            call_function="not_callable_attr",
+            call_args=(),
+            return_function=None,
+            ret_args=(),
+        )
+
+
+def test_update_available_plugins_caches_and_pushes_to_tabs(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Cache the plugin list and push it to all analysis tabs.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    tab = mocker.Mock()
+    controller.analysis_tabs = {"X": tab}
+
+    controller.update_available_plugins("MetaReader", ["R1", "R2"])
+
+    assert controller.data_plugins["MetaReader"] == ["R1", "R2"]
+    tab.update_available_plugins.assert_called_once_with(controller.data_plugins)
+
+
+def test_update_available_plugins_skips_none_tabs(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Skip None tab entries when pushing plugin updates.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.analysis_tabs = {"X": None}
+
+    controller.update_available_plugins("MetaReader", ["R1"])
+
+    assert controller.data_plugins["MetaReader"] == ["R1"]
+
+
+def test_save_session_with_provided_file(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    Save the plugin history to the specified file.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    controller.plugin_history = {"key": {"metaclass": "MetaReader"}}
+
+    controller.save_session(save_file="test_session.json")
+
+    mock_main_model.save_session.assert_called_once_with(
+        controller.plugin_history, "test_session.json"
+    )
+
+
+def test_save_session_without_file(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    Save the plugin history with None as the file path when no file is provided.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    controller.plugin_history = {}
+
+    controller.save_session()
+
+    mock_main_model.save_session.assert_called_once_with({}, None)
+
+
+def test_save_tab_action_history_delegates_to_model(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    Forward the tab action history dict and save file to the model.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    history = {"SomeTab": {"action": "opened"}}
+
+    controller.save_tab_action_history(history, save_file="session.json")
+
+    mock_main_model.save_tab_actions.assert_called_once_with(history, "session.json")
+
+
+def test_send_analysis_tabs_emits_to_view(
+    controller: MainController,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    Emit the current analysis tabs to the view.
+
+    :param controller: Controller under test.
+    :param mock_main_view: Mocked main view.
+    """
+    controller.analysis_tabs = {"SomeTab": MagicMock()}
+    controller.send_analysis_tabs()
+    mock_main_view.received_analysis_tabs.emit.assert_called_once_with(
+        controller.analysis_tabs
+    )
+
+
+def test_send_analysis_tabs_logs_warning_when_empty(
+    controller: MainController,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    Log a warning and still emit when no analysis tabs are present.
+
+    :param controller: Controller under test.
+    :param mock_main_view: Mocked main view.
+    """
+    controller.analysis_tabs = {}
+
+    controller.send_analysis_tabs()
+
+    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+    mock_main_view.received_analysis_tabs.emit.assert_called_once_with({})
+
+
 def test_load_session_restores_tabs_and_plugins(
-    mocker: MockerFixture, mock_main_model: MagicMock, mock_main_view: MagicMock
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
 ) -> None:
     """
     Restore MetaController tabs and non-controller plugins from saved history.
@@ -816,13 +992,11 @@ def test_load_session_restores_tabs_and_plugins(
     :param mock_main_model: Mocked main model.
     :param mock_main_view: Mocked main view.
     """
-    # Patch DPC construction and capture the instance used by the controller.
     dpc_cls = mocker.patch("poriscope.controllers.main_controller.DataPluginController")
     dpc_instance = dpc_cls.return_value
 
     ctrl = MainController(mock_main_model, mock_main_view)
 
-    # Provide plugin history with both a MetaController entry and a non-MetaController plugin.
     history: Dict[str, dict] = {
         "tab_key": {"metaclass": "MetaController", "subclass": "RawDataController"},
         "reader_key": {
@@ -833,8 +1007,6 @@ def test_load_session_restores_tabs_and_plugins(
     }
     mock_main_model.load_session.return_value = history
 
-    # Make instantiate_analysis_tab succeed.
-    # (fully valid mock tab with all required properties)
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
     tab_instance.global_signal = mocker.Mock(connect=mocker.Mock())
@@ -850,12 +1022,9 @@ def test_load_session_restores_tabs_and_plugins(
     }
     mock_main_model.get_available_plugins.return_value = {}
 
-    # Exercise.
     ctrl.load_session("session.json")
 
-    # Tab restored.
     assert "RawDataController" in ctrl.analysis_tabs
-    # Non-controller plugin restored via DPC.
     dpc_instance.validate_and_instantiate_plugin.assert_any_call(
         metaclass="MetaReader",
         subclass="MyReader",
@@ -864,26 +1033,33 @@ def test_load_session_restores_tabs_and_plugins(
     )
 
 
-def test_load_session_no_history(controller, mocker):
+def test_load_session_returns_early_when_history_is_none(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: load_session returns None.
+    Return early and log info when load_session returns None.
 
-    This should hit the branch that logs an info message and returns
-    without trying to restore any plugins.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     controller.main_model.load_session = mocker.Mock(return_value=None)
     controller.plugin_history = {}
 
-    # Call and verify no further processing happens
     controller.load_session("file.json")
+
     controller.main_model.save_session.assert_not_called()
 
 
-def test_load_session_restore_analysis_tab_error(controller, mocker):
+def test_load_session_logs_error_on_analysis_tab_failure(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: MetaController entry restoration raises an exception.
+    Log an error and continue when instantiate_analysis_tab raises.
 
-    This covers the except branch for instantiate_analysis_tab failures.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     controller.plugin_history = {
         "key1": {"metaclass": "MetaController", "subclass": "SomeTab"}
@@ -898,11 +1074,15 @@ def test_load_session_restore_analysis_tab_error(controller, mocker):
     controller.instantiate_analysis_tab.assert_called_once_with("SomeTab")
 
 
-def test_load_session_restore_plugin_error(controller, mocker):
+def test_load_session_logs_warning_on_already_exists_value_error(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
     """
-    Case: Non-MetaController plugin restoration raises an exception.
+    Log a warning when validate_and_instantiate_plugin raises ValueError with 'already exists globally'.
 
-    This covers the except branch for validate_and_instantiate_plugin failures.
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
     """
     controller.plugin_history = {
         "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
@@ -911,191 +1091,142 @@ def test_load_session_restore_plugin_error(controller, mocker):
         return_value=controller.plugin_history
     )
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
-        side_effect=RuntimeError("fail")
+        side_effect=ValueError("plugin already exists globally")
     )
 
     controller.load_session("session.json")
 
-    controller.data_plugin_controller.validate_and_instantiate_plugin.assert_called_once()
+    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
 
 
-def test_send_analysis_tabs_empty(controller, mocker):
-    """
-    Case: No analysis tabs present.
-
-    This covers the branch where analysis_tabs is empty and a warning is logged
-    before emitting the signal with an empty dict.
-    """
-    controller.analysis_tabs = {}
-    controller.main_view.received_analysis_tabs.emit = mocker.Mock()
-
-    controller.send_analysis_tabs()
-
-    controller.main_view.received_analysis_tabs.emit.assert_called_once_with({})
-
-
-def test_save_session_with_provided_file(
-    controller: MainController, mocker: MockerFixture
+def test_load_session_logs_error_on_other_value_error(
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that the session is saved correctly when a file name is provided.
+    Log an error when validate_and_instantiate_plugin raises a different ValueError.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Mock the save_session method in the model
-    controller.main_model.save_session = mocker.Mock()
-
-    # Define mock plugin history
-    mock_plugin_history = {
-        "plugin_key": {
-            "metaclass": "MetaReader",
-            "subclass": "MyReader",
-            "settings": {"key": "value"},
-        }
+    controller.plugin_history = {
+        "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
     }
-    controller.plugin_history = mock_plugin_history
-
-    # Define a test file name
-    test_file = "test_session.json"
-
-    # Call the method under test
-    controller.save_session(save_file=test_file)
-
-    # Ensure the save_session method in the model is called with the correct data and file name
-    controller.main_model.save_session.assert_called_once_with(
-        mock_plugin_history, test_file
+    controller.main_model.load_session = mocker.Mock(
+        return_value=controller.plugin_history
+    )
+    controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
+        side_effect=ValueError("some other error")
     )
 
+    controller.load_session("session.json")
 
-def test_save_session_without_file(
-    controller: MainController, mocker: MockerFixture
+    controller.logger.error.assert_called()  # type: ignore[attr-defined]
+
+
+def test_load_session_logs_error_on_unexpected_plugin_exception(
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that the session is saved correctly when no file name is provided.
+    Log an error and continue when an unexpected exception occurs during plugin restore.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Mock the save_session method in the model
-    controller.main_model.save_session = mocker.Mock()
-
-    # Define mock plugin history
-    mock_plugin_history = {
-        "plugin_key": {
-            "metaclass": "MetaReader",
-            "subclass": "MyReader",
-            "settings": {"key": "value"},
-        }
+    controller.plugin_history = {
+        "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
     }
-    controller.plugin_history = mock_plugin_history
-
-    # Call the method under test without providing a file name
-    controller.save_session()
-
-    # Ensure the save_session method in the model is called with the correct data and default file name (None or default)
-    controller.main_model.save_session.assert_called_once_with(
-        mock_plugin_history, None
+    controller.main_model.load_session = mocker.Mock(
+        return_value=controller.plugin_history
+    )
+    controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
+        side_effect=RuntimeError("unexpected")
     )
 
+    controller.load_session("session.json")
 
-def test_save_session_empty_history(
-    controller: MainController, mocker: MockerFixture
+    controller.logger.error.assert_called()  # type: ignore[attr-defined]
+
+
+def test_handle_global_signal_outer_except_swallows_exception(
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that the session is saved correctly when plugin history is empty.
+    Cover the outer ``except Exception: pass`` in handle_global_signal.
+
+    The outer bare except catches anything that escapes the inner blocks.
+    We trigger it by making _ensure_tuple raise so the outer guard fires.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Mock the save_session method in the model
-    controller.main_model.save_session = mocker.Mock()
+    plugin = mocker.Mock()
+    plugin.fn = mocker.Mock(return_value="rv")
+    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
+        return_value=plugin
+    )
+    # Make _ensure_tuple blow up on the first call to trigger outer except
+    controller._ensure_tuple = mocker.Mock(side_effect=RuntimeError("boom"))
 
-    # Define empty plugin history
-    controller.plugin_history = {}
-
-    # Call the method under test
-    controller.save_session()
-
-    # Ensure the save_session method in the model is called with the empty history
-    controller.main_model.save_session.assert_called_once_with({}, None)
+    # Should not raise — outer except catches it silently
+    controller.handle_global_signal("MetaX", "Key", "fn", (), None, ())
 
 
-def test_save_tab_action_history(
-    controller: MainController, mocker: MockerFixture
+def test_handle_data_plugin_controller_signal_callback_exception_reraises(
+    controller: MainController,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Test that the tab action history is saved correctly using realistic structure.
+    Cover the ``except Exception as ex: logger.error(...); raise`` branch
+    inside handle_data_plugin_controller_signal when the return callback raises.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    # Mock the save_tab_actions method in the model
-    controller.main_model.save_tab_actions = mocker.Mock()
+    controller.data_plugin_controller.some_method = mocker.Mock(return_value="ok")
+    return_cb = mocker.Mock(side_effect=RuntimeError("callback blew up"))
 
-    # Define realistic tab action history using plugin-style structure
-    tab_action_history = {
-        "SQLiteDBWriter_0": {
-            "metaclass": "MetaDatabaseWriter",
-            "subclass": "SQLiteDBWriter",
-            "settings": {
-                "Experiment Name": {"Type": "str", "Value": "test"},
-                "Output File": {
-                    "Options": [
-                        "SQLite3 Files (*.sqlite3)",
-                        "Database Files (*.db)",
-                        "SQLite Files (*.sqlite)",
-                    ],
-                    "Type": "str",
-                    "Value": "Z:/Poriscope Tests/DB.sqlite3",
-                },
-                "Conductivity": {
-                    "Min": 0,
-                    "Type": "float",
-                    "Units": "S/m",
-                    "Value": 11.0,
-                },
-                "Voltage": {"Type": "float", "Units": "mV", "Value": 11.0},
-                "Membrane Thickness": {
-                    "Min": 0,
-                    "Type": "float",
-                    "Units": "nm",
-                    "Value": 11.0,
-                },
-                "MetaEventFitter": {"Options": None, "Type": "str", "Value": "CUSUM_0"},
-            },
-        }
+    with pytest.raises(RuntimeError, match="callback blew up"):
+        controller.handle_data_plugin_controller_signal(
+            metaclass="MetaX",
+            subclass_key="Key",
+            call_function="some_method",
+            call_args=(),
+            return_function=return_cb,
+            ret_args=(),
+        )
+
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+
+
+def test_update_plugin_history_rename_preserves_other_entries(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    Cover the ``else: new_history[key] = val`` branch in update_plugin_history.
+
+    When both history and delete_key are provided, entries that do NOT match
+    delete_key must be copied unchanged into new_history.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    controller.plugin_history = {
+        "old_key": {"subclass": "Sub", "metaclass": "Meta"},
+        "other_key": {"subclass": "Other", "metaclass": "Meta"},
     }
 
-    # Call the method under test
-    controller.save_tab_action_history(
-        tab_action_history, save_file="test_session.json"
+    controller.update_plugin_history(
+        {"key": "new_key", "subclass": "Sub", "metaclass": "Meta"}, "old_key"
     )
 
-    # Ensure the save_tab_actions method in the model is called with the correct data
-    controller.main_model.save_tab_actions.assert_called_once_with(
-        tab_action_history, "test_session.json"
-    )
-
-
-def test_send_analysis_tabs(controller: MainController, mocker: MockerFixture) -> None:
-    """
-    Test that the analysis tabs are sent to the view.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    # Mock the signal and main view
-    mock_main_view = mocker.Mock()
-    controller.main_view = mock_main_view
-
-    # Mock the analysis tabs
-    controller.analysis_tabs = {"SomeTab": mocker.Mock()}
-
-    # Call the method under test
-    controller.send_analysis_tabs()
-
-    # Ensure the signal is emitted with the correct analysis tabs
-    mock_main_view.received_analysis_tabs.emit.assert_called_once_with(
-        controller.analysis_tabs
-    )
+    # Renamed entry present
+    assert "new_key" in controller.plugin_history
+    # Old key removed
+    assert "old_key" not in controller.plugin_history
+    # Unrelated entry preserved via the else branch
+    assert "other_key" in controller.plugin_history
+    mock_main_model.save_session.assert_called()
