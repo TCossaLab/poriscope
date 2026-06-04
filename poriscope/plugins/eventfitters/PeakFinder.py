@@ -3139,7 +3139,7 @@ class PeakFinder(MetaEventFitter):
         Filters peaks based on their level and proximity, classifying potential bundles or barcode features.
         - Type 1: Peaks on the same DNA carrier level (both bases around unfolded_level).
         - Type 2: Peaks higher than the carrier level (both bases above unfolded_level).
-        - Type 3: Clusters (bundles) of close peaks with same type (1 or 2).
+        - Type 3: Clusters (bundles) of close peaks with same type (1).
         """
         # # Convert commonly-used properties to numpy arrays for vectorized ops
         # left_bases = np.array(properties.get("left_bases", []), dtype=float) + np.sign(baseline) * baseline
@@ -3237,7 +3237,7 @@ class PeakFinder(MetaEventFitter):
             best_cluster = []
             best_prom_sum = 0
 
-            for label in [1, 2]:
+            for label in [1]:
                 label_idxs = [i for i in prom_indices if filtered[i] == label]
                 if not label_idxs:
                     continue
@@ -3265,6 +3265,7 @@ class PeakFinder(MetaEventFitter):
                     # Check if this group is large enough and has higher total prominence
                     if len(group) >= min_group_size:
                         prom_sum = sum(properties["prominences"][idx] for idx in group)
+                        
                         if prom_sum > best_prom_sum:
                             best_cluster = group
                             best_prom_sum = prom_sum
