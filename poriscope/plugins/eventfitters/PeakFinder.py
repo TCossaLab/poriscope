@@ -3103,7 +3103,6 @@ class PeakFinder(MetaEventFitter):
       
         #Defining variables and thresholds
           
-        num_peaks = int(self.settings["Number of peaks"]["Value"])
         t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
         t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
         
@@ -3113,26 +3112,11 @@ class PeakFinder(MetaEventFitter):
 
         num_peaks = self.settings["Number of peaks"]["Value"]
         prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted
-
         filtered = properties["filtered"]
 
         # Helper thresholds for classification
 
         # lower_bound = t1_std * baseline_std
-
-        unfolded_lower_bound = (
-            (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0
-        )
-        unfolded_upper_bound = (
-            (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0
-        )
-
-        folded_lower_bound = (
-            (folded_level - t1_std * baseline_std) if folded_level is not None else 0
-        )
-        folded_upper_bound = (
-            (folded_level + t2_std * baseline_std) if folded_level is not None else 0
-        )
 
         # BARCODE
         """
@@ -3281,6 +3265,21 @@ class PeakFinder(MetaEventFitter):
 
         # SINGLE PEAK CARRIER
         if self.settings["Event Type"]["Value"] == "Single Peak":
+            
+            unfolded_lower_bound = (
+                (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0
+            )
+            unfolded_upper_bound = (
+                (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0
+            )
+
+            folded_lower_bound = (
+                (folded_level - t1_std * baseline_std) if folded_level is not None else 0
+            )
+            folded_upper_bound = (
+                (folded_level + t2_std * baseline_std) if folded_level is not None else 0
+            )
+
             classified_peaks = []
             for i in range(len(peaks)):
                 left_base = properties["left_bases"][i]+ np.sign(baseline) * baseline
