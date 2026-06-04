@@ -175,7 +175,7 @@ class FloatRangeLineEdit(BaseLineEdit):
             except ValueError:
                 pass
         return None
-    
+
     def set_range(self, start: float, duration: float):
         """
         Sets the displayed text to a formatted range like '1.0-4.0' or '1-4' depending on whether
@@ -187,8 +187,16 @@ class FloatRangeLineEdit(BaseLineEdit):
         else:
             # Use enough decimal places to represent both values cleanly
             decimal_places = max(
-                len(str(round(start, 10)).rstrip('0').split('.')[-1]) if '.' in str(round(start, 10)) else 0,
-                len(str(round(end, 10)).rstrip('0').split('.')[-1]) if '.' in str(round(end, 10)) else 0,
+                (
+                    len(str(round(start, 10)).rstrip("0").split(".")[-1])
+                    if "." in str(round(start, 10))
+                    else 0
+                ),
+                (
+                    len(str(round(end, 10)).rstrip("0").split(".")[-1])
+                    if "." in str(round(end, 10))
+                    else 0
+                ),
             )
             decimal_places = max(decimal_places, 1)
             self.setText(f"{start:.{decimal_places}f}-{end:.{decimal_places}f}")
