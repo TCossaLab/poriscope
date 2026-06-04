@@ -1,4 +1,6 @@
-## Poriscope 1.6: In Progress
+## Poriscope 1.7: In Progress
+
+## Poriscope 1.6: 2026-06-04
 
 ### What's New since Poriscope 1.5:
     
@@ -30,11 +32,14 @@
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
     * New plot type: Categorical Histogram that plots bar charts of data counts for unique values of the specified database column
-    
-* **Updated Frontend Plugin: `MetadataView`**
     * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
     * Two event filter modes: **Assisted SQL** (WHERE clause only, Poriscope builds the query) and **Raw SQL** (complete SELECT statement, executed directly). Raw mode enables aggregations, computed columns, and subqueries not possible in assisted mode. See *Filtering and Querying* in the documentation. `ProteinView` brought to parity with MetadataView. 
 
+* **Updated Frontend Plugin: `RawDataView`**
+    * Fixed bug causing drift in plotted data when scrolling long datasets
+    
+* **Updated Frontend Plugin: `ClusteringView`**
+    * Increased size of color palette cycle when plotting large numbers of clusters
 
 * **Documentation**
     * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time
