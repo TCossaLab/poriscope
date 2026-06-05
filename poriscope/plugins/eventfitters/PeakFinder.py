@@ -343,7 +343,7 @@ class PeakFinder(MetaEventFitter):
             hlabel: list[str] = []
             plabel: list[str] = []
             j = 1
-            
+
             # some gauges for debugging
             bases.append(self.event_metadata[channel][index]["baseline_current"])
             hlabel.append("Baseline")
@@ -362,7 +362,7 @@ class PeakFinder(MetaEventFitter):
                 * self.event_metadata[channel][index]["baseline_std"]
             )
             hlabel.append(f"unfolded level {t2_std:+d}σ")
-            
+
             bases.append(
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
@@ -372,7 +372,7 @@ class PeakFinder(MetaEventFitter):
                 * self.event_metadata[channel][index]["baseline_std"]
             )
             hlabel.append(f"unfolded level {t1_std:+d}σ")
-            
+
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
                 if self.sublevel_metadata[channel][index]["peak_id"][i] is not None:
                     # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
@@ -392,7 +392,7 @@ class PeakFinder(MetaEventFitter):
                     # )
                     # hlabel.append("Right base #" + str(j))
                     # hlabel.append("Left base #" + str(j))
-                    
+
                     peaks.append(
                         (
                             self.sublevel_metadata[channel][index]["peak_loc"][i],

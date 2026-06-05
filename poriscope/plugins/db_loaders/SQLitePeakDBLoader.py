@@ -126,7 +126,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             if "translocation_direction" in first_row
             else None
         )
-        
+
         event_start = event_first["sublevel_start_times"]
         event_end = event_last["sublevel_start_times"]
         # std = first_row["baseline_std"]
@@ -139,8 +139,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             elif direction == "backward":
                 peaks_filtered.append(event_end)
                 vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
-                
-                
+
         bases.append(baseline)
         hlabel.append("Baseline")
 
@@ -152,8 +151,6 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
         # bases.append(-sign * unfolded + baseline + sign * std)
         # hlabel.append("unfolded level - std")
-
-
 
         # --- 2. Handle Sublevel Data ---
         # Iterate over all rows using itertuples for speed
@@ -170,12 +167,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                 # hlabel.append(f"Left base #{j}")
 
                 peaks.append((row.peak_loc, baseline - sign * row.peak_height))
-                plabel.append(
-                    "Peak #"
-                    + str(j)
-                    + " Filter: "
-                    + str(row.filtered)
-                )
+                plabel.append("Peak #" + str(j) + " Filter: " + str(row.filtered))
 
                 # Filter logic
                 # if row.filtered not in (0, -1):
