@@ -76,13 +76,13 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.classified, e.sequence, e.translocation_direction, s.sublevel_start_times                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
-                        WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}""" 
+                        WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
 
         except Exception as e:
-                self.logger.debug(
-                    f"Error constructing query in get_plot_features: {str(e)}",
-                    self.__class__.__name__,
-                )
+            self.logger.debug(
+                f"Error constructing query in get_plot_features: {str(e)}",
+                self.__class__.__name__,
+            )
 
         valid, debug = self.validate_filter_query(query)
         if valid:
@@ -112,13 +112,23 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         first_row = result.iloc[0]
         event_first = result.iloc[1]
         event_last = result.iloc[-1]
-        baseline = first_row["baseline_current"] if "baseline_current" in first_row else first_row["baseline"]
-        unfolded = first_row["unfolded_level"] if "unfolded_level" in first_row else None
+        baseline = (
+            first_row["baseline_current"]
+            if "baseline_current" in first_row
+            else first_row["baseline"]
+        )
+        unfolded = (
+            first_row["unfolded_level"] if "unfolded_level" in first_row else None
+        )
         sequence = first_row["sequence"] if "sequence" in first_row else None
-        direction = first_row["translocation_direction"] if "translocation_direction" in first_row else None
-        event_start = event_first["sublevel_start_times"] 
-        event_end = event_last["sublevel_start_times"] 
-        #std = first_row["baseline_std"]
+        direction = (
+            first_row["translocation_direction"]
+            if "translocation_direction" in first_row
+            else None
+        )
+        event_start = event_first["sublevel_start_times"]
+        event_end = event_last["sublevel_start_times"]
+        # std = first_row["baseline_std"]
         sign = np.sign(baseline)
 
         bases.append(baseline)
@@ -132,7 +142,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
         # bases.append(-sign * unfolded + baseline + sign * std)
         # hlabel.append("unfolded level - std")
-        
+
         if sequence is not None:
             if direction == "forward":
                 peaks_filtered.append(event_start)
@@ -156,13 +166,14 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                 # hlabel.append(f"Left base #{j}")
 
                 peaks.append((row.peak_loc, baseline - sign * row.peak_height))
-                plabel.append("Peak #"
-                        + str(j)
-                        + " Filter: "
-                        + str(row.filtered)                        
-                        + " Class: "
-                        + str(row.classified)
-                    )
+                plabel.append(
+                    "Peak #"
+                    + str(j)
+                    + " Filter: "
+                    + str(row.filtered)
+                    + " Class: "
+                    + str(row.classified)
+                )
 
                 # Filter logic
                 # if row.filtered not in (0, -1):
