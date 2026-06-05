@@ -1150,7 +1150,7 @@ class PeakFinder(MetaEventFitter):
         event_metadata["max_deviation"] = np.max(
             [sublevel_metadata["sublevel_max_deviation"][1:-1]]
         )
-        event_metadata["baseline"] = baseline_mean
+        event_metadata["baseline_current"] = baseline_mean
         event_metadata["unfolded_level"] = self.find_mode_blockage_level(
             data[
                 int(
@@ -1160,7 +1160,7 @@ class PeakFinder(MetaEventFitter):
                 )
             ],
             self.settings["Max Unfolded"]["Value"],
-            event_metadata["baseline"],
+            event_metadata["baseline_current"],
             baseline_std,
             True,
         )
