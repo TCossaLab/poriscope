@@ -121,6 +121,15 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         #std = first_row["baseline_std"]
         sign = np.sign(baseline)
 
+
+        if sequence is not None:
+            if direction == "forward":
+                peaks_filtered.append(event_start)
+                vlabel.append(f"Forward translocation.\n Sequence: {sequence}")
+            elif direction == "backward":
+                peaks_filtered.append(event_end)
+                vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
+
         bases.append(baseline)
         hlabel.append("Baseline")
 
@@ -133,13 +142,6 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         # bases.append(-sign * unfolded + baseline + sign * std)
         # hlabel.append("unfolded level - std")
         
-        if sequence is not None:
-            if direction == "forward":
-                peaks_filtered.append(event_start)
-                vlabel.append(f"Forward translocation.\n Sequence: {sequence}")
-            elif direction == "backward":
-                peaks_filtered.append(event_end)
-                vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
 
         # --- 2. Handle Sublevel Data ---
         # Iterate over all rows using itertuples for speed
