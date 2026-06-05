@@ -73,7 +73,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         """
 
         try:
-            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.classified, e.sequence, e.translocation_direction, s.sublevel_start_times                        FROM sublevels s
+            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.sublevel_start_times                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
@@ -126,11 +126,21 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             if "translocation_direction" in first_row
             else None
         )
+        
         event_start = event_first["sublevel_start_times"]
         event_end = event_last["sublevel_start_times"]
         # std = first_row["baseline_std"]
         sign = np.sign(baseline)
 
+        if sequence is not None:
+            if direction == "forward":
+                peaks_filtered.append(event_start)
+                vlabel.append(f"Forward translocation.\n Sequence: {sequence}")
+            elif direction == "backward":
+                peaks_filtered.append(event_end)
+                vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
+                
+                
         bases.append(baseline)
         hlabel.append("Baseline")
 
@@ -143,13 +153,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         # bases.append(-sign * unfolded + baseline + sign * std)
         # hlabel.append("unfolded level - std")
 
-        if sequence is not None:
-            if direction == "forward":
-                peaks_filtered.append(event_start)
-                vlabel.append(f"Forward translocation.\n Sequence: {sequence}")
-            elif direction == "backward":
-                peaks_filtered.append(event_end)
-                vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
+
 
         # --- 2. Handle Sublevel Data ---
         # Iterate over all rows using itertuples for speed
@@ -171,8 +175,6 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                     + str(j)
                     + " Filter: "
                     + str(row.filtered)
-                    + " Class: "
-                    + str(row.classified)
                 )
 
                 # Filter logic
