@@ -72,10 +72,17 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         :raises RuntimeError: if fitting is not complete yet
         """
 
-        query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_mean, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered                        FROM sublevels s
+        try:
+            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.sublevel_start_times                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
+
+        except Exception as e:
+            self.logger.debug(
+                f"Error constructing query in get_plot_features: {str(e)}",
+                self.__class__.__name__,
+            )
 
         valid, debug = self.validate_filter_query(query)
         if valid:
@@ -103,10 +110,35 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         # --- 1. Handle Event-Level Data ---
         # Grab the first row for event-level metrics (since they are identical across all rows for this event)
         first_row = result.iloc[0]
-        baseline = first_row["baseline"]
-        unfolded = first_row["unfolded_level"]
-        std = first_row["baseline_std"]
+        event_first = result.iloc[1]
+        event_last = result.iloc[-1]
+        baseline = (
+            first_row["baseline_current"]
+            if "baseline_current" in first_row
+            else first_row["baseline"]
+        )
+        unfolded = (
+            first_row["unfolded_level"] if "unfolded_level" in first_row else None
+        )
+        sequence = first_row["sequence"] if "sequence" in first_row else None
+        direction = (
+            first_row["translocation_direction"]
+            if "translocation_direction" in first_row
+            else None
+        )
+
+        event_start = event_first["sublevel_start_times"]
+        event_end = event_last["sublevel_start_times"]
+        # std = first_row["baseline_std"]
         sign = np.sign(baseline)
+
+        if sequence is not None:
+            if direction == "forward":
+                peaks_filtered.append(event_start)
+                vlabel.append(f"Forward translocation.\n Sequence: {sequence}")
+            elif direction == "backward":
+                peaks_filtered.append(event_end)
+                vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
 
         bases.append(baseline)
         hlabel.append("Baseline")
@@ -114,11 +146,11 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         bases.append(baseline - sign * unfolded)
         hlabel.append("unfolded level")
 
-        bases.append(-sign * unfolded + baseline - sign * std)
-        hlabel.append("unfolded level + std")
+        # bases.append(-sign * unfolded + baseline - sign * std)
+        # hlabel.append("unfolded level + std")
 
-        bases.append(-sign * unfolded + baseline + sign * 2 * std)
-        hlabel.append("unfolded level - 2std")
+        # bases.append(-sign * unfolded + baseline + sign * std)
+        # hlabel.append("unfolded level - std")
 
         # --- 2. Handle Sublevel Data ---
         # Iterate over all rows using itertuples for speed
@@ -128,19 +160,19 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             if pd.notna(row.peak_id):
 
                 # No need for [i] indexing anymore, `row` represents the specific sublevel
-                bases.append(row.baseline - sign * row.left_base)
-                bases.append(row.baseline - sign * row.right_base)
+                # bases.append(baseline - sign * row.left_base)
+                # bases.append(baseline - sign * row.right_base)
 
-                hlabel.append(f"Right base #{j}")
-                hlabel.append(f"Left base #{j}")
+                # hlabel.append(f"Right base #{j}")
+                # hlabel.append(f"Left base #{j}")
 
-                peaks.append((row.peak_loc, row.baseline - sign * row.peak_height))
-                plabel.append(f"Peak #{j}")
+                peaks.append((row.peak_loc, baseline - sign * row.peak_height))
+                plabel.append("Peak #" + str(j) + " Filter: " + str(row.filtered))
 
                 # Filter logic
-                if row.filtered not in (0, -1):
-                    peaks_filtered.append(row.peak_loc)
-                    vlabel.append(f"Type {row.filtered} Peak {j}")
+                # if row.filtered not in (0, -1):
+                #     peaks_filtered.append(row.peak_loc)
+                #     vlabel.append(f"Type {row.filtered} Peak {j}")
 
                 j += 1
         return peaks_filtered, bases, peaks, vlabel, hlabel, plabel

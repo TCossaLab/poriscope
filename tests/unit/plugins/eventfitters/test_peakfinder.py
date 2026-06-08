@@ -472,7 +472,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "duration",
             "raw_ecd",
             "max_deviation",
-            "baseline",
+            "baseline_current",
             "unfolded_level",
             "baseline_std",
         ]:
@@ -483,7 +483,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
         result = pf._populate_event_metadata(
             self._make_data(), 1e6, 123.0, 10.0, self._make_sublevel_meta()
         )
-        self.assertAlmostEqual(result["baseline"], 123.0)
+        self.assertAlmostEqual(result["baseline_current"], 123.0)
 
     def test_baseline_std_matches_input(self):
         pf = _make_pf()
@@ -514,7 +514,7 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertIs(t["number_peaks"], int)
         self.assertIs(t["duration"], float)
         self.assertIs(t["raw_ecd"], float)
-        self.assertIs(t["baseline"], float)
+        self.assertIs(t["baseline_current"], float)
         self.assertIs(t["unfolded_level"], float)
         self.assertIs(t["baseline_std"], float)
 
@@ -543,6 +543,7 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertEqual(u["duration"], "μs")
         self.assertEqual(u["raw_ecd"], "pC")
         self.assertEqual(u["max_deviation"], "pA")
+        self.assertEqual(u["baseline_current"], "pA")
 
     def test_sublevel_units_present(self):
         u = self.pf._define_sublevel_metadata_units()
@@ -613,7 +614,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                 }
             }
         }
-        pf.event_metadata = {0: {0: {"baseline": 100.0}}}
+        pf.event_metadata = {0: {0: {"baseline_current": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
 
@@ -648,7 +649,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                 }
             }
         }
-        pf.event_metadata = {0: {0: {"baseline": 100.0}}}
+        pf.event_metadata = {0: {0: {"baseline_current": 100.0}}}
         pf.eventfitting_status = {0: True}
         pf.event_lengths = {0: {0: n}}
 
@@ -711,7 +712,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline": 100.0,
+                    "baseline_current": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
@@ -773,7 +774,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline": 100.0,
+                    "baseline_current": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
@@ -802,7 +803,7 @@ class TestGetPlotFeatures(unittest.TestCase):
         pf.event_metadata = {
             0: {
                 0: {
-                    "baseline": 100.0,
+                    "baseline_current": 100.0,
                     "unfolded_level": 200.0,
                     "baseline_std": 10.0,
                 }
