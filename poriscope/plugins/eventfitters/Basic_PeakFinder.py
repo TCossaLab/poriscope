@@ -1004,7 +1004,9 @@ class Basic_PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # get peak height ips
-        sublevel_metadata["filtered"] = np.array([np.nan for i in range(num_states)], dtype=np.float64)
+        sublevel_metadata["filtered"] = np.array(
+            [np.nan for i in range(num_states)], dtype=np.float64
+        )
         return sublevel_metadata
 
     @log(logger=logger)
