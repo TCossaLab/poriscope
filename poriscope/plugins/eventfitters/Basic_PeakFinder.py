@@ -1003,7 +1003,8 @@ class Basic_PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-
+        # get peak height ips
+        sublevel_metadata["filtered"] = np.array([np.nan for i in range(num_states)], dtype=np.float64)
         return sublevel_metadata
 
     @log(logger=logger)
@@ -1143,6 +1144,7 @@ class Basic_PeakFinder(MetaEventFitter):
             "normalized_height": float,
             "normalized_prominence": float,
             "normalized_blockage": float,
+            "filtered": int,
         }
 
         return metadata_types
@@ -1206,7 +1208,7 @@ class Basic_PeakFinder(MetaEventFitter):
         metadata_units["normalized_height"] = "pA"
         metadata_units["normalized_prominence"] = "pA"
         metadata_units["normalized_blockage"] = None
-
+        metadata_units["filtered"] = None
         return metadata_units
 
     # utility functions
