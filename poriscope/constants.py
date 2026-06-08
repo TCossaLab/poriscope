@@ -27,4 +27,4 @@
 from datetime import datetime
 
 __VERSION__ = "1.6.1"
-VERSION_DATE = datetime.strptime("2025-06-08s", "%Y-%m-%d")
+VERSION_DATE = datetime.strptime("2025-06-08", "%Y-%m-%d")
