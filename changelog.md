@@ -1,5 +1,10 @@
 ## Poriscope 1.7: In Progress
 
+## Poriscope 1.6.1: 2026-06-04
+
+* **Bug hotfix
+    * Fixed plotting bugs with `Peakfinder` plugin families
+
 ## Poriscope 1.6: 2026-06-04
 
 ### What's New since Poriscope 1.5:
