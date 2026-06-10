@@ -1692,6 +1692,7 @@ class PeakFinder(MetaEventFitter):
 
         # Get sublevel data reference once
         sublevel_data = self.sublevel_metadata[channel][event_index]
+        event_data = self.event_metadata[channel][event_index]
 
         # Normalize peak heights and prominences if we have an unfolded level
         if unfolded_level is not None and unfolded_level > 0:
@@ -1728,7 +1729,7 @@ class PeakFinder(MetaEventFitter):
         # Reclassify peaks using global folded/unfolded levels
         if unfolded_level is not None and folded_level is not None:
             # Get baseline and samplerate for this event
-            baseline_mean = self.event_metadata[channel][event_index].get("baseline_current")
+            baseline_mean = event_data.get("baseline_current")
             baseline_std = self.event_metadata[channel][event_index].get("baseline_std")
 
             if baseline_mean is not None and baseline_std is not None:
@@ -1774,7 +1775,7 @@ class PeakFinder(MetaEventFitter):
                     peaks = np.array(peak_indices)
 
                     # Calculate total event length from sublevel durations
-                    event_length = np.sum(sublevel_data.get("sublevel_duration", []))
+                    event_length = np.sum(event_data.get("duration", []))
 
                     # Call filter_peaks with global levels
                     updated_properties = self.filter_peaks(
@@ -3105,18 +3106,11 @@ class PeakFinder(MetaEventFitter):
           
         t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
         t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
-        
 
-        # event_id = getattr(self, "_debug_event_id", None)
-
-
+        # event_id = getattr(self, "_debug_event_id", None
         num_peaks = self.settings["Number of peaks"]["Value"]
-        prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted
         filtered = properties["filtered"]
 
-        # Helper thresholds for classification
-
-        # lower_bound = t1_std * baseline_std
 
         # BARCODE
         """
@@ -3132,7 +3126,6 @@ class PeakFinder(MetaEventFitter):
         # widths = np.array(properties.get("widths", []), dtype=float)
         # ips_left = np.array(properties.get("left_ips", []), dtype=float)
         # ips_right = np.array(properties.get("right_ips", []), dtype=float)
-
 
         # Early return if no peaks
         if len(peaks) == 0:
@@ -3217,7 +3210,7 @@ class PeakFinder(MetaEventFitter):
                 f"max_distance={max_distance} samples"
             )
             min_group_size = num_peaks
-
+            prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted by prominence
             best_cluster = []
             best_prom_sum = 0
 
