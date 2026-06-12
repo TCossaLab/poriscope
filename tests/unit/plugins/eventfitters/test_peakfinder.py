@@ -370,8 +370,10 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         meta = self.pf._populate_sublevel_metadata(
             self.data, self.samplerate, 100.0, 10.0, self.starts
         )
+        
         for key in [
             "sublevel_current",
+            "sublevel_stdev",
             "sublevel_duration",
             "sublevel_start_times",
             "sublevel_end_times",
@@ -399,6 +401,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         num_states = len(self.starts) - 1
         self.assertEqual(len(meta["sublevel_current"]), num_states)
         self.assertEqual(len(meta["sublevel_duration"]), num_states)
+        self.assertEqual(len(meta["sublevel_stdev"]), num_states)
         self.assertEqual(len(meta["peak_id"]), num_states)
 
     def test_cumulative_ecd_monotone(self):
@@ -474,7 +477,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
             "max_deviation",
             "baseline_current",
             "unfolded_level",
-            "baseline_std",
+            "baseline_stdev",
         ]:
             self.assertIn(key, result)
 
@@ -490,7 +493,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
         result = pf._populate_event_metadata(
             self._make_data(), 1e6, 100.0, 7.5, self._make_sublevel_meta()
         )
-        self.assertAlmostEqual(result["baseline_std"], 7.5)
+        self.assertAlmostEqual(result["baseline_stdev"], 7.5)
 
     def test_duration_sums_inner(self):
         pf = _make_pf()
@@ -516,12 +519,13 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertIs(t["raw_ecd"], float)
         self.assertIs(t["baseline_current"], float)
         self.assertIs(t["unfolded_level"], float)
-        self.assertIs(t["baseline_std"], float)
+        self.assertIs(t["baseline_stdev"], float)
 
     def test_sublevel_types_all_present(self):
         t = self.pf._define_sublevel_metadata_types()
         for key in [
             "sublevel_current",
+            "sublevel_stdev",
             "sublevel_duration",
             "peak_height",
             "peak_loc",
@@ -548,6 +552,7 @@ class TestDefineEventMetadata(unittest.TestCase):
     def test_sublevel_units_present(self):
         u = self.pf._define_sublevel_metadata_units()
         self.assertEqual(u["sublevel_current"], "pA")
+        self.assertEqual(u["sublevel_stdev"], "pA")
         self.assertEqual(u["sublevel_duration"], "us")
         self.assertEqual(u["peak_height"], "pA")
         self.assertEqual(u["left_ips"], "us")
@@ -607,6 +612,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                     "sublevel_start_times": starts_us,
                     "sublevel_end_times": ends_us,
                     "sublevel_current": np.array([100.0, 300.0]),
+                    "sublevel_stdev": np.array([10.0, 15.0]),
                     "peak_height": np.array([0.0, 0.0]),
                     "filtered": np.array([0.0, 0.0]),
                     "right_ips": np.array([np.nan, np.nan]),
@@ -642,6 +648,7 @@ class TestConstructFittedEvent(unittest.TestCase):
                     "sublevel_start_times": starts_us,
                     "sublevel_end_times": ends_us,
                     "sublevel_current": np.array([100.0, 300.0, 100.0]),
+                    "sublevel_stdev": np.array([10.0, 15.0, 10.0]),
                     "peak_height": np.array([0.0, 200.0, 0.0]),
                     "filtered": np.array([0.0, 3.0, 0.0]),
                     "right_ips": np.array([np.nan, 60.0 * dt_us, np.nan]),
@@ -714,7 +721,7 @@ class TestGetPlotFeatures(unittest.TestCase):
                 0: {
                     "baseline_current": 100.0,
                     "unfolded_level": 200.0,
-                    "baseline_std": 10.0,
+                    "baseline_stdev": 10.0,
                 }
             }
         }
@@ -776,7 +783,7 @@ class TestGetPlotFeatures(unittest.TestCase):
                 0: {
                     "baseline_current": 100.0,
                     "unfolded_level": 200.0,
-                    "baseline_std": 10.0,
+                    "baseline_stdev": 10.0,
                 }
             }
         }
@@ -805,7 +812,7 @@ class TestGetPlotFeatures(unittest.TestCase):
                 0: {
                     "baseline_current": 100.0,
                     "unfolded_level": 200.0,
-                    "baseline_std": 10.0,
+                    "baseline_stdev": 10.0,
                 }
             }
         }
