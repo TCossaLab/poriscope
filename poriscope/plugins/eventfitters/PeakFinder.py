@@ -508,15 +508,18 @@ class PeakFinder(MetaEventFitter):
         min_dist = None  # Will be set to wlen (smallest reasonable window length)
         rel_height = 0.5  # Fixed at 0.5 (width measured at 50% of peak height)
 
-        if baseline_std is None:  # the rest of the args can be None without issue
-            if padding_before is not None:
-                baseline_std = np.std(data[:padding_before])
-            elif padding_after is not None:
-                baseline_std = np.std(data[-padding_after:])
-            else:
-                raise ValueError(
-                    "Peankfinder requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
-                )
+        if padding_before is not None:
+            baseline_std = np.std(data[:padding_before])
+            
+            baseline_mean = np.mean(data[:padding_before])
+        elif padding_after is not None:
+            baseline_std = np.std(data[-padding_after:])
+            
+            baseline_mean = np.mean(data[-padding_after:])
+        else:
+            raise ValueError(
+                "Peankfinder requires that the standard deviation and mean of the local baseline be reported and is unable to calculate it for this event"
+            )
 
         # Find longest continuous segment above threshold 
         # This trims the event to start/end at the longest above-threshold blockage
