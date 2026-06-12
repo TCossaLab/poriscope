@@ -132,25 +132,23 @@ class PeakFinder(MetaEventFitter):
         settings["Peak to Peak Distance Ratio"] = {
             "Type": float,
             "Value": 10.0,  # Default to 10% of event length
-            "Min": 0.1,
-            "Max": 50.0,  # Maximum 50% of event
+            "Min": 0.01,
+            "Max": 99,  # Maximum 99% of event
             "Units": "%",
         }
         settings["Window Length Percentage"] = {
             "Type": float,
             "Value": 10.0,  # Default to 10% of event length
-            "Min": 0.1,
-            "Max": 50.0,  # Maximum 50% of event
+            "Min": 0.01,
+            "Max": 99,  # Maximum 99% of event
             "Units": "%",
         }
+
         settings["Classify Levels"] = {
             "Type": bool,
             "Value": True,
         }
-        # settings["Plot classification"] = {
-        #     "Type": bool,
-        #     "Value": True,
-        # }
+
         settings["Min Carrier Blockage"] = {
             "Type": float,
             "Value": 300.0,  # Default minimum blockage for classification
@@ -332,6 +330,7 @@ class PeakFinder(MetaEventFitter):
                 return None, None, None, None, None, None
 
             baseline = self.event_metadata[channel][index]["baseline_current"]
+            baseline_stdev = self.event_metadata[channel][index]["baseline_stdev"]
             t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
             t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
             # Initializing arrays
@@ -359,7 +358,7 @@ class PeakFinder(MetaEventFitter):
                 + self.event_metadata[channel][index]["baseline_current"]
                 - np.sign(baseline)
                 * t2_std
-                * self.event_metadata[channel][index]["baseline_std"]
+                * baseline_stdev
             )
             hlabel.append(f"unfolded level {t2_std:+d}σ")
             bases.append(
@@ -368,7 +367,7 @@ class PeakFinder(MetaEventFitter):
                 + self.event_metadata[channel][index]["baseline_current"]
                 - np.sign(baseline)
                 * t1_std
-                * self.event_metadata[channel][index]["baseline_std"]
+                * baseline_stdev
             )
             hlabel.append(f"unfolded level {t1_std:+d}σ")
             
@@ -894,11 +893,10 @@ class PeakFinder(MetaEventFitter):
         )
 
         # get the difference from the local baseline
-        # event_baseline = 0.5 * (
-        #     sublevel_metadata["sublevel_current"][0]
-        #     + sublevel_metadata["sublevel_current"][-1]
-        # )
-        event_baseline=baseline_mean
+        event_baseline = 0.5 * (
+            sublevel_metadata["sublevel_current"][0]
+            + sublevel_metadata["sublevel_current"][-1]
+        )
 
         # get durations between sublevel start times
         sublevel_metadata["sublevel_duration"] = np.array(
@@ -1175,7 +1173,31 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-        
+        # get the standard deviation over the sublevel, ignoring the rise time
+        sublevel_metadata["sublevel_stdev"] = np.array(
+            [
+                (
+                    np.std(
+                        data[
+                            int(sublevel_starts[i]["index"]) : int(
+                                sublevel_starts[i + 1]["index"]
+                            )
+                        ]
+                    )
+                    if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
+                    else  np.std(
+                        data[
+                            int(sublevel_starts[i + 1]["index"]) : int(
+                                sublevel_starts[i]["index"]
+                            )
+                        ]
+                    )
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
+
         
         # # get plateau size (flat top of peak in samples)
         # sublevel_metadata["plateau_size"] = np.array(
@@ -1251,15 +1273,27 @@ class PeakFinder(MetaEventFitter):
         event_metadata["max_deviation"] = np.max(
             [sublevel_metadata["sublevel_max_deviation"][1:-1]]
         )
-        event_metadata["baseline_current"] = baseline_mean
 
-        # Calculate event baseline (average of first and last sublevel currents)
-        # This represents the local baseline estimated from the event boundaries
-        # event_metadata["baseline_current"] = 0.5 * (
-        #     sublevel_metadata["sublevel_current"][0]
-        #     + sublevel_metadata["sublevel_current"][-1]
-        # )
+        event_metadata["baseline_current"] = (
+            sublevel_metadata["sublevel_current"][0]
+            * sublevel_metadata["sublevel_duration"][0]
+            + sublevel_metadata["sublevel_current"][-1]
+            * sublevel_metadata["sublevel_duration"][-1]
+        ) / (
+            sublevel_metadata["sublevel_duration"][0]
+            + sublevel_metadata["sublevel_duration"][-1]
+        )
 
+        event_metadata["baseline_stdev"] = (
+            sublevel_metadata["sublevel_stdev"][0]
+            * sublevel_metadata["sublevel_duration"][0]
+            + sublevel_metadata["sublevel_stdev"][-1]
+            * sublevel_metadata["sublevel_duration"][-1]
+        ) / (
+            sublevel_metadata["sublevel_duration"][0]
+            + sublevel_metadata["sublevel_duration"][-1]
+        )
+        
         # Data has already been trimmed to longest segment in _locate_sublevel_transitions
         # sublevel_start_times[1] is after padding_before (which now includes the trim)
         # So we just use the event data between the first and last sublevel
@@ -1281,12 +1315,11 @@ class PeakFinder(MetaEventFitter):
                     )
                 ],
                 event_metadata["baseline_current"],
-                baseline_std,
+                event_metadata["baseline_stdev"],
         )
         # Leave unfolded_level and folded_level as None - will be determined in post-processing
         event_metadata["unfolded_level"] = None
         event_metadata["folded_level"] = None
-        event_metadata["baseline_std"] = baseline_std
         event_metadata["translocation_direction"] = None
         event_metadata["sequence"] = None
 
@@ -1325,7 +1358,7 @@ class PeakFinder(MetaEventFitter):
             "unfolded_level": float,
             "folded_level": float,
             "primary_level": float,
-            "baseline_std": float,
+            "baseline_stdev": float,
             "translocation_direction": str,
             "sequence": str,
         }
@@ -1346,6 +1379,7 @@ class PeakFinder(MetaEventFitter):
         """
         metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
             "sublevel_current": float,
+            "sublevel_stdev": float,
             "sublevel_duration": float,
             "sublevel_start_times": float,
             "sublevel_end_times": float,
@@ -1395,7 +1429,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["unfolded_level"] = "pA"
         metadata_units["folded_level"] = "pA"
         metadata_units["primary_level"] = "pA"
-        metadata_units["baseline_std"] = "pA"
+        metadata_units["baseline_stdev"] = "pA"
         metadata_units["translocation_direction"] = None
         metadata_units["sequence"] = None
 
@@ -1415,6 +1449,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units = {}
 
         metadata_units["sublevel_current"] = "pA"
+        metadata_units["sublevel_stdev"] = "pA"
         metadata_units["sublevel_duration"] = "us"
         metadata_units["sublevel_start_times"] = "us"
         metadata_units["sublevel_end_times"] = "us"
@@ -1730,9 +1765,9 @@ class PeakFinder(MetaEventFitter):
         if unfolded_level is not None and folded_level is not None:
             # Get baseline and samplerate for this event
             baseline_mean = event_data.get("baseline_current")
-            baseline_std = self.event_metadata[channel][event_index].get("baseline_std")
+            baseline_stdev = self.event_metadata[channel][event_index].get("baseline_stdev")
 
-            if baseline_mean is not None and baseline_std is not None:
+            if baseline_mean is not None and baseline_stdev is not None:
                 # Get event loader to retrieve samplerate
                 if self.eventloader is None:
                     self.logger.warning(
@@ -1783,7 +1818,7 @@ class PeakFinder(MetaEventFitter):
                         properties,
                         unfolded_level,
                         folded_level,
-                        baseline_std,
+                        baseline_stdev,
                         baseline_mean,
                         samplerate,
                         event_length,
@@ -3218,11 +3253,10 @@ class PeakFinder(MetaEventFitter):
                 label_idxs = [i for i in prom_indices if filtered[i] == label]
                 if not label_idxs:
                     continue
-
-                label_idxs = label_idxs[:num_peaks]
+                label_idxs = label_idxs[:num_peaks] # only consider the top N most prominent peaks for clustering 
                 sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
 
-                # Find clusters where consecutive peaks are within max_distance
+                # Find clusters where consecutive peaks (temporally, not prominence wise) are within max_distance
                 for i in range(len(sorted_idxs)):
                     group = [sorted_idxs[i]]
 
@@ -3238,7 +3272,9 @@ class PeakFinder(MetaEventFitter):
                         else:
                             # Stop when we find a gap larger than max_distance
                             break
-
+                    
+                    group = group[:num_peaks]
+                    
                     # Check if this group is large enough and has higher total prominence
                     if len(group) >= min_group_size:
                         prom_sum = sum(properties["prominences"][idx] for idx in group)
@@ -3246,7 +3282,8 @@ class PeakFinder(MetaEventFitter):
                         if prom_sum > best_prom_sum:
                             best_cluster = group
                             best_prom_sum = prom_sum
-                        break  # only use first valid cluster per label
+
+                        break # only break if a valid cluster was found
 
                 # Relabel best cluster as Type 3
                 for idx in best_cluster:
