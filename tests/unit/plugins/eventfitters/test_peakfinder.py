@@ -452,6 +452,8 @@ class TestPopulateEventMetadata(unittest.TestCase):
         # slice used by _populate_event_metadata: data[10000:40000]
         # so data must have variation in that range
         return {
+            "sublevel_current": np.array([123.0, 300.0, 300.0, 300.0, 123.0]),
+            "sublevel_stdev": np.ones(n) * 7.5,
             "sublevel_duration": np.ones(n) * 10.0,
             "sublevel_raw_ecd": np.ones(n) * 0.1,
             "sublevel_max_deviation": np.ones(n) * 5.0,
