@@ -226,7 +226,9 @@ class PeakFinder(MetaEventFitter):
             true_len = int(self.event_lengths[channel][index])
             ends[-1] = true_len
 
-            sublevel_currents = self.sublevel_metadata[channel][index]["sublevel_current"]
+            sublevel_currents = self.sublevel_metadata[channel][index][
+                "sublevel_current"
+            ]
             baseline = self.event_metadata[channel][index]["baseline_current"]
 
             # Peak-related data (stored in us in metadata; convert to indices)
@@ -356,8 +358,7 @@ class PeakFinder(MetaEventFitter):
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline)
-                * t2_std*baseline_stdev
+                - np.sign(baseline) * t2_std * baseline_stdev
             )
             hlabel.append(f"unfolded level {t2_std:+d}σ")
 
@@ -365,8 +366,7 @@ class PeakFinder(MetaEventFitter):
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline)
-                * t1_std*baseline_stdev
+                - np.sign(baseline) * t1_std * baseline_stdev
             )
             hlabel.append(f"unfolded level {t1_std:+d}σ")
 
@@ -486,7 +486,6 @@ class PeakFinder(MetaEventFitter):
         # plateau_size = int(plateau_size_us / dt_us) if plateau_size_us > 0 else 0
         rel_height = self.settings["Relative Height"]["Value"]
         max_unfolded = self.settings["Max Unfolded"]["Value"]
-
 
         if padding_before is not None:
             baseline_std = np.std(data[:padding_before])
@@ -845,7 +844,7 @@ class PeakFinder(MetaEventFitter):
                         ]
                     )
                     if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
-                    else  np.std(
+                    else np.std(
                         data[
                             int(sublevel_starts[i + 1]["index"]) : int(
                                 sublevel_starts[i]["index"]
@@ -857,7 +856,6 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-
 
         # get the difference from the local baseline
         event_baseline = 0.5 * (
@@ -1196,7 +1194,7 @@ class PeakFinder(MetaEventFitter):
             sublevel_metadata["sublevel_duration"][0]
             + sublevel_metadata["sublevel_duration"][-1]
         )
-        
+
         event_metadata["unfolded_level"] = self.find_mode_blockage_level(
             data[
                 int(

@@ -370,7 +370,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         meta = self.pf._populate_sublevel_metadata(
             self.data, self.samplerate, 100.0, 10.0, self.starts
         )
-        
+
         for key in [
             "sublevel_current",
             "sublevel_stdev",
