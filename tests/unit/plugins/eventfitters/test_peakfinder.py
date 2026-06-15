@@ -360,6 +360,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         for key in [
             "sublevel_current",
+            "sublevel_stdev",
             "sublevel_duration",
             "sublevel_start_times",
             "sublevel_end_times",
@@ -444,6 +445,8 @@ class TestPopulateEventMetadata(unittest.TestCase):
         # so data must have variation in that range
         return {
             "sublevel_duration": np.ones(n) * 10.0,
+            "sublevel_current": np.array([123.0, 300.0, 300.0, 300.0, 123.0]),
+            "sublevel_stdev": np.ones(n) * 7.5,
             "sublevel_raw_ecd": np.ones(n) * 0.1,
             "sublevel_max_deviation": np.ones(n) * 5.0,
             "sublevel_start_times": np.array([0.0, 10000.0, 20000.0, 30000.0, 40000.0]),

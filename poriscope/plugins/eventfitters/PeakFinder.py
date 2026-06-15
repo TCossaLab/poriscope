@@ -1788,6 +1788,7 @@ class PeakFinder(MetaEventFitter):
                     "prominences": [],
                     "peak_heights": [],
                     "filtered": [],
+                    "peak_loc": [],
                 }
 
                 # Iterate through sublevels to find peaks
@@ -1807,6 +1808,7 @@ class PeakFinder(MetaEventFitter):
                             sublevel_data["peak_height"][i]
                         )
                         properties["filtered"].append(sublevel_data["filtered"][i])
+                        properties["peak_loc"].append(sublevel_data["peak_loc"][i])
 
                 if len(peak_indices) > 0:
                     # Create dummy peaks array (just indices for compatibility)
@@ -3268,7 +3270,7 @@ class PeakFinder(MetaEventFitter):
                         # Check distance between consecutive peaks in the group
                         prev_peak_idx = group[-1]
                         curr_peak_idx = sorted_idxs[j]
-                        distance = abs(peaks[curr_peak_idx] - peaks[prev_peak_idx])
+                        distance = abs(properties["peak_loc"][curr_peak_idx] - properties["peak_loc"][prev_peak_idx])
 
                         if distance <= max_distance:
                             group.append(curr_peak_idx)
@@ -3287,9 +3289,27 @@ class PeakFinder(MetaEventFitter):
                             best_prom_sum = prom_sum
 
                         break # only break if a valid cluster was found
+                    
+                # Recheck adjacency inside best_cluster before labeling
+                validated_cluster = []
+                best_cluster_sorted = sorted(best_cluster, key=lambda idx: peaks[idx])
 
-                # Relabel best cluster as Type 3
-                for idx in best_cluster:
+                for i, idx in enumerate(best_cluster_sorted):
+                    if i == 0:
+                        validated_cluster.append(idx)
+                        continue
+
+                    prev_idx = validated_cluster[-1]
+                    distance = abs(properties["peak_loc"][idx] - properties["peak_loc"][prev_idx])
+
+                    if distance <= max_distance:
+                        validated_cluster.append(idx)
+                    else:
+                        # break or continue depending on desired behavior
+                        continue
+
+                # Only label validated peaks as type 3
+                for idx in validated_cluster:
                     filtered[idx] = 3
 
 
