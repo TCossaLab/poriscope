@@ -184,7 +184,7 @@ class ClassicBlockageFinder(MetaEventFinder):
         data /= std
 
         threshold = -self.settings["Threshold"]["Value"] / std
-        hysteresis = 0
+        hysteresis = 1
         event_starts = []
         event_ends = []
 
