@@ -200,7 +200,7 @@ class ClassicBlockageFinder(MetaEventFinder):
         while index < len_data:
             if not entry_state:  # we are not in an event
                 pos = np.argmax(data[index:] < threshold)
-                if pos <= 0:
+                if pos == 0 and not (data[index] < threshold):
                     break
                 index += pos
                 event_start = index
