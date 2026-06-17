@@ -377,9 +377,7 @@ class TestPopulateEventMetadata(unittest.TestCase):
         self.assertEqual(result["min_blockage_duration"], meta["sublevel_duration"][0])
         # sublevel_max_deviation inner slice [5, 60, 7] -> relative argmax = 1
         # -> looked up as sublevel_duration[1], same quirk as above.
-        self.assertEqual(
-            result["max_deviation_duration"], meta["sublevel_duration"][1]
-        )
+        self.assertEqual(result["max_deviation_duration"], meta["sublevel_duration"][1])
 
     def test_baseline_current_is_duration_weighted_average_of_endpoints(self):
         pf = object.__new__(NoFitter)

@@ -637,9 +637,7 @@ class TestGetEmptySettings(unittest.TestCase):
     def test_plot_features_options(self):
         pf = object.__new__(Basic_PeakFinder)
         settings = pf.get_empty_settings(standalone=True)
-        self.assertEqual(
-            settings["Plot Features"]["Options"], ["All", "Some", "None"]
-        )
+        self.assertEqual(settings["Plot Features"]["Options"], ["All", "Some", "None"])
         self.assertEqual(settings["Plot Features"]["Value"], "Some")
 
     def test_default_values(self):
