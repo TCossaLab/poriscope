@@ -1,5 +1,8 @@
 ## Poriscope 1.7: In Progress
 
+* **New Data Plugin: `ThresholdBlockageFinder`**	 
+    * Subclass of ClassicBlockageFinder that imposes much tighter bounds on the start and end time flagged in the output.
+
 ## Poriscope 1.6.1: 2026-06-04
 
 * **Bug hotfix
