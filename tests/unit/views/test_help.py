@@ -21,6 +21,7 @@ from poriscope.views.help import HelpCentre, LinkCard
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -61,6 +62,7 @@ def white_card(qt_app):
 # ===========================================================================
 # LinkCard — instantiation
 # ===========================================================================
+
 
 class TestLinkCardInstantiation:
     def test_creates_without_error(self, black_card):
@@ -108,6 +110,7 @@ class TestLinkCardInstantiation:
 # ===========================================================================
 # LinkCard — _refresh (hover states)
 # ===========================================================================
+
 
 class TestLinkCardRefresh:
     def test_black_card_resting_stylesheet_contains_black(self, black_card):
@@ -162,6 +165,7 @@ class TestLinkCardRefresh:
 # LinkCard — _load_icon
 # ===========================================================================
 
+
 class TestLinkCardLoadIcon:
     def test_empty_path_no_error(self, black_card):
         black_card._load_icon("")  # should not raise
@@ -188,10 +192,10 @@ class TestLinkCardLoadIcon:
     def test_valid_png_file_loads(self, black_card, tmp_path):
         # Minimal 1×1 white PNG
         png_bytes = (
-            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
-            b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00'
-            b'\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18'
-            b'\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00"
+            b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18"
+            b"\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
         )
         png = tmp_path / "test.png"
         png.write_bytes(png_bytes)
@@ -201,6 +205,7 @@ class TestLinkCardLoadIcon:
 # ===========================================================================
 # LinkCard — eventFilter
 # ===========================================================================
+
 
 class TestLinkCardEventFilter:
     def test_enter_event_triggers_hover(self, black_card):
@@ -239,6 +244,7 @@ class TestLinkCardEventFilter:
 # HelpCentre — instantiation
 # ===========================================================================
 
+
 class TestHelpCentreInstantiation:
     def test_creates_without_error(self, hc):
         assert hc is not None
@@ -260,6 +266,7 @@ class TestHelpCentreInstantiation:
 # ===========================================================================
 # HelpCentre — cards
 # ===========================================================================
+
 
 class TestHelpCentreCards:
     def test_getting_started_card_exists(self, hc):
@@ -315,6 +322,7 @@ class TestHelpCentreCards:
 # HelpCentre — citation box
 # ===========================================================================
 
+
 class TestHelpCentreCitationBox:
     def test_citation_box_exists(self, hc):
         assert isinstance(hc.citation_box, QFrame)
@@ -356,6 +364,7 @@ class TestHelpCentreCitationBox:
 # ===========================================================================
 # HelpCentre — retranslateUi
 # ===========================================================================
+
 
 class TestHelpCentreRetranslate:
     def test_retranslate_does_not_raise(self, hc):

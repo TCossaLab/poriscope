@@ -22,6 +22,7 @@ from poriscope.views.widgets.clustering_settings_widget import (
 # Fixtures / helpers
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -30,25 +31,29 @@ def qt_app():
     return app
 
 
-COLUMNS   = ["duration", "current", "voltage", "charge"]
-METHODS   = ["KMeans", "DBSCAN", "Agglomerative"]
-UNITS     = {"duration": "ms", "current": "pA", "voltage": "mV", "charge": "fC"}
+COLUMNS = ["duration", "current", "voltage", "charge"]
+METHODS = ["KMeans", "DBSCAN", "Agglomerative"]
+UNITS = {"duration": "ms", "current": "pA", "voltage": "mV", "charge": "fC"}
 METHOD_PARAMS = {
     "KMeans": [
-        {"name": "Clusters",     "type": "int"},
-        {"name": "Init Method",  "type": "str"},
+        {"name": "Clusters", "type": "int"},
+        {"name": "Init Method", "type": "str"},
     ],
     "DBSCAN": [
-        {"name": "Eps",          "type": "float"},
-        {"name": "Min Samples",  "type": "int"},
+        {"name": "Eps", "type": "float"},
+        {"name": "Min Samples", "type": "int"},
     ],
     "Agglomerative": [{"name": "Linkage", "type": "str"}],
 }
 
 
 def _make_dialog(
-    columns=None, methods=None, units=None,
-    method_params=None, preselected=None, qt_app=None
+    columns=None,
+    methods=None,
+    units=None,
+    method_params=None,
+    preselected=None,
+    qt_app=None,
 ):
     dlg = ClusteringSettingsDialog(
         dynamic_title="Test Dialog",
@@ -88,6 +93,7 @@ def dlg_ready(qt_app):
 # ===========================================================================
 # Instantiation / init_ui
 # ===========================================================================
+
 
 class TestInstantiation:
     def test_creates_without_error(self, dlg):
@@ -141,6 +147,7 @@ class TestInstantiation:
 # get_default_config
 # ===========================================================================
 
+
 class TestGetDefaultConfig:
     def test_returns_dict_with_required_keys(self, dlg):
         cfg = dlg.get_default_config()
@@ -163,6 +170,7 @@ class TestGetDefaultConfig:
 # _bold_font
 # ===========================================================================
 
+
 class TestBoldFont:
     def test_returns_bold_font(self, dlg):
         font = dlg._bold_font()
@@ -172,6 +180,7 @@ class TestBoldFont:
 # ===========================================================================
 # update_method_parameters
 # ===========================================================================
+
 
 class TestUpdateMethodParameters:
     def test_kmeans_creates_two_param_widgets(self, dlg):
@@ -219,6 +228,7 @@ class TestUpdateMethodParameters:
     def test_int_param_has_int_validator(self, dlg):
         dlg.update_method_parameters("KMeans")  # Clusters = int
         from PySide6.QtGui import QIntValidator
+
         le = next(
             dlg.param_layout.itemAt(i).widget()
             for i in range(dlg.param_layout.count())
@@ -229,6 +239,7 @@ class TestUpdateMethodParameters:
     def test_float_param_has_double_validator(self, dlg):
         dlg.update_method_parameters("DBSCAN")  # Eps = float
         from PySide6.QtGui import QDoubleValidator
+
         le = next(
             dlg.param_layout.itemAt(i).widget()
             for i in range(dlg.param_layout.count())
@@ -247,10 +258,13 @@ class TestUpdateMethodParameters:
         # Re-trigger to populate
         dlg.update_method_parameters("KMeans")
         le = next(
-            (dlg.param_layout.itemAt(i).widget()
-             for i in range(dlg.param_layout.count())
-             if isinstance(dlg.param_layout.itemAt(i).widget(), QLineEdit)
-             and dlg.param_layout.itemAt(i).widget().objectName() == "KMeans_Clusters_input"),
+            (
+                dlg.param_layout.itemAt(i).widget()
+                for i in range(dlg.param_layout.count())
+                if isinstance(dlg.param_layout.itemAt(i).widget(), QLineEdit)
+                and dlg.param_layout.itemAt(i).widget().objectName()
+                == "KMeans_Clusters_input"
+            ),
             None,
         )
         assert le is not None
@@ -270,9 +284,11 @@ class TestUpdateMethodParameters:
 # update_unit_label / update_unit_label_for_row
 # ===========================================================================
 
+
 class TestUnitLabels:
     def test_update_unit_label_for_row_sets_text(self, dlg):
         from PySide6.QtWidgets import QLabel
+
         label = QLabel()
         dlg.update_unit_label_for_row("duration", label)
         assert label.text() == "(ms)"
@@ -280,6 +296,7 @@ class TestUnitLabels:
 
     def test_update_unit_label_for_row_unknown_column(self, dlg):
         from PySide6.QtWidgets import QLabel
+
         label = QLabel()
         label.setVisible(True)
         dlg.update_unit_label_for_row("unknown_col", label)
@@ -302,6 +319,7 @@ class TestUnitLabels:
 # ===========================================================================
 # add_column_item / add_column_item_with_values
 # ===========================================================================
+
 
 class TestAddColumnItem:
     def test_add_column_item_increments_count(self, dlg):
@@ -361,6 +379,7 @@ class TestAddColumnItem:
 # remove_column_item
 # ===========================================================================
 
+
 class TestRemoveColumnItem:
     def test_remove_decrements_count(self, dlg):
         dlg.add_column_item()
@@ -383,6 +402,7 @@ class TestRemoveColumnItem:
 # ===========================================================================
 # _check_apply_enabled
 # ===========================================================================
+
 
 class TestCheckApplyEnabled:
     def test_disabled_when_default_col_not_selected(self, dlg):
@@ -442,6 +462,7 @@ class TestCheckApplyEnabled:
 # ===========================================================================
 # get_result
 # ===========================================================================
+
 
 class TestGetResult:
     def test_returns_dict(self, dlg_ready):
@@ -514,30 +535,36 @@ class TestGetResult:
 # Preselected config restoration
 # ===========================================================================
 
+
 class TestPreselectedConfig:
     def test_restores_method(self, qt_app):
         pre = {
-            "method": "DBSCAN", "filter": "",
-            "method_params": {}, "columns": [],
+            "method": "DBSCAN",
+            "filter": "",
+            "method_params": {},
+            "columns": [],
         }
         dlg = _make_dialog(preselected=pre, qt_app=qt_app)
         assert dlg.method_combo.currentText() == "DBSCAN"
 
     def test_restores_filter(self, qt_app):
         pre = {
-            "method": "KMeans", "filter": "duration > 50",
-            "method_params": {}, "columns": [],
+            "method": "KMeans",
+            "filter": "duration > 50",
+            "method_params": {},
+            "columns": [],
         }
         dlg = _make_dialog(preselected=pre, qt_app=qt_app)
         assert "duration > 50" in dlg.filter_text.toPlainText()
 
     def test_restores_default_row_column(self, qt_app):
         pre = {
-            "method": "KMeans", "filter": "",
+            "method": "KMeans",
+            "filter": "",
             "method_params": {},
             "columns": [
                 {"column": "voltage", "log": True, "norm": False, "plot": True},
-                {"column": "charge",  "log": False, "norm": True, "plot": True},
+                {"column": "charge", "log": False, "norm": True, "plot": True},
             ],
         }
         dlg = _make_dialog(preselected=pre, qt_app=qt_app)
@@ -546,12 +573,13 @@ class TestPreselectedConfig:
 
     def test_restores_extra_columns_as_dynamic_rows(self, qt_app):
         pre = {
-            "method": "KMeans", "filter": "",
+            "method": "KMeans",
+            "filter": "",
             "method_params": {},
             "columns": [
                 {"column": "duration", "log": False, "norm": False, "plot": True},
-                {"column": "current",  "log": False, "norm": False, "plot": True},
-                {"column": "voltage",  "log": True,  "norm": False, "plot": True},
+                {"column": "current", "log": False, "norm": False, "plot": True},
+                {"column": "voltage", "log": True, "norm": False, "plot": True},
             ],
         }
         dlg = _make_dialog(preselected=pre, qt_app=qt_app)
@@ -566,6 +594,7 @@ class TestPreselectedConfig:
 # ===========================================================================
 # get_walkthrough_steps
 # ===========================================================================
+
 
 class TestGetWalkthroughSteps:
     def test_returns_list(self, dlg):
@@ -589,6 +618,7 @@ class TestGetWalkthroughSteps:
 # ===========================================================================
 # Empty / minimal construction
 # ===========================================================================
+
 
 class TestEdgeCases:
     def test_no_methods_available(self, qt_app):
