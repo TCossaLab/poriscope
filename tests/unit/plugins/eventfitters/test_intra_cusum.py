@@ -96,9 +96,7 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertEqual(hysteresis_setting["Units"], "pA")
 
     def test_forwards_arguments_to_super(self):
-        with patch.object(
-            CUSUM, "get_empty_settings", return_value={}
-        ) as mock_super:
+        with patch.object(CUSUM, "get_empty_settings", return_value={}) as mock_super:
             pf = object.__new__(IntraCUSUM)
             pf.get_empty_settings(
                 globally_available_plugins={"foo": ["bar"]}, standalone=True

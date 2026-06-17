@@ -122,9 +122,7 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertEqual(sensitivity_setting["Max"], 5)
 
     def test_forwards_arguments_to_super(self):
-        with patch.object(
-            CUSUM, "get_empty_settings", return_value={}
-        ) as mock_super:
+        with patch.object(CUSUM, "get_empty_settings", return_value={}) as mock_super:
             pf = object.__new__(ClassicCUSUM)
             pf.get_empty_settings(
                 globally_available_plugins={"foo": ["bar"]}, standalone=True
@@ -141,9 +139,7 @@ class TestLocateSublevelTransitionsBaselineStd(unittest.TestCase):
     def test_missing_baseline_std_and_padding_raises(self):
         pf = _make_pf()
         with self.assertRaises(ValueError):
-            pf._locate_sublevel_transitions(
-                np.zeros(10), 1e6, None, None, 0.0, None
-            )
+            pf._locate_sublevel_transitions(np.zeros(10), 1e6, None, None, 0.0, None)
 
     def test_baseline_std_computed_from_padding_before(self):
         # baseline_std=None with padding_before given -> computed from
@@ -153,8 +149,7 @@ class TestLocateSublevelTransitionsBaselineStd(unittest.TestCase):
         rng = np.random.RandomState(0)
         noise = rng.normal(0, 5.0, 300)
         data = (
-            np.concatenate([np.zeros(100), np.full(100, 50.0), np.zeros(100)])
-            + noise
+            np.concatenate([np.zeros(100), np.full(100, 50.0), np.zeros(100)]) + noise
         )
         pf = _make_pf()
         with _mock_threshold(10.0):
@@ -192,9 +187,7 @@ class TestLocateSublevelTransitionsTooFewLevels(unittest.TestCase):
 class TestLocateSublevelTransitionsHappyPath(unittest.TestCase):
     def test_three_clean_plateaus_detected_correctly(self):
         pf = _make_pf()
-        data = np.concatenate(
-            [np.zeros(100), np.full(100, 50.0), np.zeros(100)]
-        )
+        data = np.concatenate([np.zeros(100), np.full(100, 50.0), np.zeros(100)])
         with _mock_threshold(10.0):
             edges = pf._locate_sublevel_transitions(data, 1e6, None, None, 0.0, 5.0)
         np.testing.assert_array_equal(edges, [0, 100, 200, 300])
@@ -202,18 +195,14 @@ class TestLocateSublevelTransitionsHappyPath(unittest.TestCase):
 
     def test_downward_jump_detected_symmetrically(self):
         pf = _make_pf()
-        data = np.concatenate(
-            [np.zeros(100), np.full(100, -50.0), np.zeros(100)]
-        )
+        data = np.concatenate([np.zeros(100), np.full(100, -50.0), np.zeros(100)])
         with _mock_threshold(10.0):
             edges = pf._locate_sublevel_transitions(data, 1e6, None, None, 0.0, 5.0)
         np.testing.assert_array_equal(edges, [0, 100, 200, 300])
 
     def test_calculate_threshold_called_with_length_and_step_size(self):
         pf = _make_pf(step_size=5.0)
-        data = np.concatenate(
-            [np.zeros(100), np.full(100, 50.0), np.zeros(100)]
-        )
+        data = np.concatenate([np.zeros(100), np.full(100, 50.0), np.zeros(100)])
         with _mock_threshold(10.0) as mock_calc:
             pf._locate_sublevel_transitions(data, 1e6, None, None, 0.0, 5.0)
         mock_calc.assert_called_once_with(300, 5.0)
