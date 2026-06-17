@@ -28,6 +28,7 @@ from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -55,9 +56,9 @@ def view(qt_app):
     layout = QVBoxLayout(container)
     v._set_custom_display_area(layout)
     v._set_control_area(layout)
-    v._test_container = container   # keep Qt parent alive for test duration
+    v._test_container = container  # keep Qt parent alive for test duration
     container.show()
-    qt_app.processEvents()          # flush any pending Qt events at setup
+    qt_app.processEvents()  # flush any pending Qt events at setup
 
     return v
 
@@ -66,8 +67,16 @@ def view(qt_app):
 # Helpers
 # ===========================================================================
 
-def _make_event(event_id=1, n=2000, sr=1_000_000,
-                padding_us=100, blockage=0.3, noise=0.01, rng_seed=0):
+
+def _make_event(
+    event_id=1,
+    n=2000,
+    sr=1_000_000,
+    padding_us=100,
+    blockage=0.3,
+    noise=0.01,
+    rng_seed=0,
+):
     """Synthetic event dict matching what load_event_data yields."""
     rng = np.random.default_rng(rng_seed)
     pb = int(padding_us * sr * 1e-6)
@@ -75,10 +84,10 @@ def _make_event(event_id=1, n=2000, sr=1_000_000,
     baseline = 1000.0
     event_current = baseline * (1.0 - blockage)
     ts = np.full(n, event_current) + rng.normal(0, noise * baseline, n)
-    ts[:pb]  = baseline + rng.normal(0, noise * baseline, pb)
+    ts[:pb] = baseline + rng.normal(0, noise * baseline, pb)
     ts[-pa:] = baseline + rng.normal(0, noise * baseline, pa)
     fit = np.full(n, event_current)
-    fit[:pb]  = baseline
+    fit[:pb] = baseline
     fit[-pa:] = baseline
     return {
         "id": event_id,
@@ -95,12 +104,11 @@ def _make_event(event_id=1, n=2000, sr=1_000_000,
 
 
 def _make_double_gaussian_histogram(
-        mean1=0.2, std1=0.02, amp1=1.0,
-        mean2=0.6, std2=0.03, amp2=0.8,
-        n_bins=200):
+    mean1=0.2, std1=0.02, amp1=1.0, mean2=0.6, std2=0.03, amp2=0.8, n_bins=200
+):
     x = np.linspace(0.0, 1.0, n_bins)
-    g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1 ** 2))
-    g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2 ** 2))
+    g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1**2))
+    g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2**2))
     return x, g1 + g2
 
 
@@ -125,6 +133,7 @@ def _all_filter_names(view):
         widget = lw.itemWidget(item)
         if widget:
             from PySide6.QtWidgets import QCheckBox
+
             cb = widget.findChild(QCheckBox)
             if cb:
                 names.append(cb.text())
@@ -134,6 +143,7 @@ def _all_filter_names(view):
 # ===========================================================================
 # format_axis_label  (module-level function)
 # ===========================================================================
+
 
 class TestFormatAxisLabel:
     def test_adds_unit(self):
@@ -167,6 +177,7 @@ class TestFormatAxisLabel:
 # _double_gaussian
 # ===========================================================================
 
+
 class TestDoubleGaussian:
     def test_peak_at_mean1(self, view):
         r = view._double_gaussian(np.array([0.2]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
@@ -179,7 +190,8 @@ class TestDoubleGaussian:
     def test_zero_amplitudes(self, view):
         x = np.linspace(0, 1, 50)
         np.testing.assert_array_equal(
-            view._double_gaussian(x, 0, 0.3, 0.05, 0, 0.7, 0.05), 0)
+            view._double_gaussian(x, 0, 0.3, 0.05, 0, 0.7, 0.05), 0
+        )
 
     def test_output_shape(self, view):
         x = np.linspace(0, 1, 100)
@@ -204,6 +216,7 @@ class TestDoubleGaussian:
 # _fit_double_gaussian
 # ===========================================================================
 
+
 class TestFitDoubleGaussian:
     def test_clean_two_peak_signal(self, view, qt_app):
         x, y = _make_double_gaussian_histogram()
@@ -214,7 +227,7 @@ class TestFitDoubleGaussian:
     def test_single_peak_fallback_degenerate_bug(self, view, qt_app):
         # BUG: fallback produces a degenerate two-component fit at the same position
         x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05 ** 2))
+        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
         popt, _ = view._fit_double_gaussian(x, y)
         qt_app.processEvents()
         assert popt is not None and len(popt) == 6
@@ -230,6 +243,7 @@ class TestFitDoubleGaussian:
 # ===========================================================================
 # _fit_and_sanity_check_double_gaussian
 # ===========================================================================
+
 
 class TestFitAndSanityCheck:
     def test_clean_signal_passes(self, view):
@@ -252,9 +266,11 @@ class TestFitAndSanityCheck:
     def test_single_peak_behaviour_documented(self, view):
         # Documents that single-peak input may pass or fail the sanity check
         x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05 ** 2))
+        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
         result = view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or (len(result) == 6 and abs(result[1] - result[4]) < 0.05)
+        assert result is None or (
+            len(result) == 6 and abs(result[1] - result[4]) < 0.05
+        )
 
     def test_dominated_peak_behaviour_documented(self, view):
         # BUG: dominated-peak guard is unreliable when fallback co-locates both components
@@ -273,6 +289,7 @@ class TestFitAndSanityCheck:
 # ===========================================================================
 # _compute_theoretical_blockages
 # ===========================================================================
+
 
 class TestComputeTheoreticalBlockages:
     D, L = 20.0, 30.0
@@ -301,8 +318,12 @@ class TestComputeTheoreticalBlockages:
 
     def test_monotone_in_volume(self, view):
         m = np.array([2.0])
-        dmax_s, _ = view._compute_theoretical_blockages(np.array([100.0]), m, self.D, self.L)
-        dmax_l, _ = view._compute_theoretical_blockages(np.array([1000.0]), m, self.D, self.L)
+        dmax_s, _ = view._compute_theoretical_blockages(
+            np.array([100.0]), m, self.D, self.L
+        )
+        dmax_l, _ = view._compute_theoretical_blockages(
+            np.array([1000.0]), m, self.D, self.L
+        )
         assert dmax_l > dmax_s
 
     def test_mixed_raises(self, view):
@@ -325,14 +346,19 @@ class TestComputeTheoreticalBlockages:
 
     def test_linear_scaling_small_objects(self, view):
         m = np.array([2.0])
-        dmax1, _ = view._compute_theoretical_blockages(np.array([10.0]), m, self.D, self.L)
-        dmax2, _ = view._compute_theoretical_blockages(np.array([20.0]), m, self.D, self.L)
+        dmax1, _ = view._compute_theoretical_blockages(
+            np.array([10.0]), m, self.D, self.L
+        )
+        dmax2, _ = view._compute_theoretical_blockages(
+            np.array([20.0]), m, self.D, self.L
+        )
         assert dmax2[0] / dmax1[0] == pytest.approx(2.0, abs=0.5)
 
 
 # ===========================================================================
 # _generate_vm_ensemble
 # ===========================================================================
+
 
 class TestGenerateVmEnsemble:
     D, L = 20.0, 30.0
@@ -341,32 +367,58 @@ class TestGenerateVmEnsemble:
     def test_prolate_count(self, view):
         np.random.seed(0)
         V, m = view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True)
+            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
+        )
         assert len(V) == 20 and len(m) == 20
 
     def test_oblate_count(self, view):
         np.random.seed(1)
         V, m = view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=False)
+            20,
+            self.MMAX,
+            self.SMAX,
+            self.MMIN,
+            self.SMIN,
+            self.D,
+            self.L,
+            prolate=False,
+        )
         assert len(V) == 20 and len(m) == 20
 
     def test_prolate_m_gt1(self, view):
         np.random.seed(2)
         _, m = view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True)
+            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
+        )
         assert np.all(m >= 1.0)
 
     def test_oblate_m_lt1(self, view):
         np.random.seed(3)
         _, m = view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=False)
+            20,
+            self.MMAX,
+            self.SMAX,
+            self.MMIN,
+            self.SMIN,
+            self.D,
+            self.L,
+            prolate=False,
+        )
         assert np.all(m > 0) and np.all(m <= 1.0)
 
     def test_volumes_positive(self, view):
         np.random.seed(4)
         for p in (True, False):
             V, _ = view._generate_vm_ensemble(
-                20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=p)
+                20,
+                self.MMAX,
+                self.SMAX,
+                self.MMIN,
+                self.SMIN,
+                self.D,
+                self.L,
+                prolate=p,
+            )
             assert np.all(V > 0)
 
     def test_unphysical_bails_out(self, view):
@@ -377,15 +429,24 @@ class TestGenerateVmEnsemble:
     def test_zero_target(self, view):
         np.random.seed(6)
         V, m = view._generate_vm_ensemble(
-            0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L)
+            0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
+        )
         assert len(V) == 0 and len(m) == 0
 
     def test_accepted_within_cutoff(self, view):
         np.random.seed(7)
         cutoff = 4
         V, m = view._generate_vm_ensemble(
-            30, self.MMAX, self.SMAX, self.MMIN, self.SMIN,
-            self.D, self.L, prolate=True, cutoff_std=cutoff)
+            30,
+            self.MMAX,
+            self.SMAX,
+            self.MMIN,
+            self.SMIN,
+            self.D,
+            self.L,
+            prolate=True,
+            cutoff_std=cutoff,
+        )
         if len(V) == 0:
             pytest.skip("no results for this seed")
         dmax, dmin = view._compute_theoretical_blockages(V, m, self.D, self.L)
@@ -396,6 +457,7 @@ class TestGenerateVmEnsemble:
 # ===========================================================================
 # _construct_single_event_histogram
 # ===========================================================================
+
 
 class TestConstructSingleEventHistogram:
     def test_returns_dataframe(self, view):
@@ -408,25 +470,36 @@ class TestConstructSingleEventHistogram:
         assert len(df) == 100
 
     def test_custom_bin_count(self, view):
-        df = view._construct_single_event_histogram(_make_event(), "Filtered Histogram", bins=[50])
+        df = view._construct_single_event_histogram(
+            _make_event(), "Filtered Histogram", bins=[50]
+        )
         assert len(df) == 50
 
     def test_custom_bin_size(self, view):
         df = view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[0.01], sizes=True)
+            _make_event(), "Filtered Histogram", bins=[0.01], sizes=True
+        )
         assert len(df) > 0
 
     def test_empty_event_returns_none(self, view):
         ev = {
-            "id": 1, "event_id": 1, "experiment_id": 1, "channel_id": 0,
-            "raw_data": np.zeros(400), "filtered_data": np.zeros(400),
-            "fit_data": np.zeros(400), "samplerate": 1_000_000,
-            "padding_before": 200, "padding_after": 200,
+            "id": 1,
+            "event_id": 1,
+            "experiment_id": 1,
+            "channel_id": 0,
+            "raw_data": np.zeros(400),
+            "filtered_data": np.zeros(400),
+            "fit_data": np.zeros(400),
+            "samplerate": 1_000_000,
+            "padding_before": 200,
+            "padding_after": 200,
         }
         assert view._construct_single_event_histogram(ev, "Filtered Histogram") is None
 
     def test_updates_hist_min_max(self, view):
-        view._construct_single_event_histogram(_make_event(blockage=0.4), "Filtered Histogram")
+        view._construct_single_event_histogram(
+            _make_event(blockage=0.4), "Filtered Histogram"
+        )
         assert view.hist_min is not None
         assert view.hist_max is not None
         assert view.hist_min < view.hist_max
@@ -435,39 +508,49 @@ class TestConstructSingleEventHistogram:
         ev = _make_event()
         ev["raw_data"] = ev["filtered_data"].copy()
         assert view._construct_single_event_histogram(ev, "Raw Histogram") is not None
-        assert view._construct_single_event_histogram(ev, "Filtered Histogram") is not None
+        assert (
+            view._construct_single_event_histogram(ev, "Filtered Histogram") is not None
+        )
 
     def test_invalid_bins_raises(self, view):
         with pytest.raises((ValueError, TypeError)):
             view._construct_single_event_histogram(
-                _make_event(), "Filtered Histogram", bins="bad", sizes=False)
+                _make_event(), "Filtered Histogram", bins="bad", sizes=False
+            )
 
 
 # ===========================================================================
 # _construct_all_points_histogram
 # ===========================================================================
 
+
 class TestConstructAllPointsHistogram:
     def _events(self, n=3):
         return [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(n)]
 
     def test_returns_dataframe(self, view):
-        df = view._construct_all_points_histogram(iter(self._events()), "Filtered Histogram")
+        df = view._construct_all_points_histogram(
+            iter(self._events()), "Filtered Histogram"
+        )
         assert isinstance(df, pd.DataFrame)
         assert "Normalized Current" in df.columns
 
     def test_default_100_bins(self, view):
-        df = view._construct_all_points_histogram(iter(self._events()), "Filtered Histogram")
+        df = view._construct_all_points_histogram(
+            iter(self._events()), "Filtered Histogram"
+        )
         assert len(df) == 100
 
     def test_custom_bins(self, view):
         df = view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[50])
+            iter(self._events()), "Filtered Histogram", bins=[50]
+        )
         assert len(df) == 50
 
     def test_bin_size_mode(self, view):
         df = view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[0.05], sizes=True)
+            iter(self._events()), "Filtered Histogram", bins=[0.05], sizes=True
+        )
         assert len(df) > 0
 
     def test_raw_histogram_type(self, view):
@@ -475,11 +558,16 @@ class TestConstructAllPointsHistogram:
         assert df is not None
 
     def test_amplitude_nonnegative(self, view):
-        df = view._construct_all_points_histogram(iter(self._events()), "Filtered Histogram")
+        df = view._construct_all_points_histogram(
+            iter(self._events()), "Filtered Histogram"
+        )
         assert np.all(df["Amplitude"].values >= 0)
 
     def test_multiple_events_extend_range(self, view):
-        evs = [_make_event(blockage=0.1, rng_seed=0), _make_event(blockage=0.5, rng_seed=1)]
+        evs = [
+            _make_event(blockage=0.1, rng_seed=0),
+            _make_event(blockage=0.5, rng_seed=1),
+        ]
         df = view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
         assert df["Normalized Current"].max() - df["Normalized Current"].min() > 0
 
@@ -488,26 +576,31 @@ class TestConstructAllPointsHistogram:
 # _build_load_event_data_args
 # ===========================================================================
 
+
 class TestBuildLoadEventDataArgs:
     def test_non_raw_returns_filter_and_exp(self, view):
         exp_ch = {"ExpA": ["0"]}
         result = view._build_load_event_data_args(
-            "dur > 100", "myfilter", "ExpA", "0", exp_ch, "loader1")
+            "dur > 100", "myfilter", "ExpA", "0", exp_ch, "loader1"
+        )
         assert result == ("dur > 100", exp_ch)
 
     def test_raw_returns_none_second(self, view):
         result = view._build_load_event_data_args(
-            "SELECT * FROM events", "myfilter_raw", "ExpA", "0", {}, "loader1")
+            "SELECT * FROM events", "myfilter_raw", "ExpA", "0", {}, "loader1"
+        )
         assert result[1] is None
 
     def test_raw_strips_trailing_semicolon(self, view):
         result = view._build_load_event_data_args(
-            "SELECT * FROM events;", "filter_raw", None, "0", {}, "loader1")
+            "SELECT * FROM events;", "filter_raw", None, "0", {}, "loader1"
+        )
         assert not result[0].endswith(";")
 
     def test_raw_no_exp_no_scope(self, view):
         result = view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", None, "0", {}, "loader1")
+            "SELECT * FROM events", "filter_raw", None, "0", {}, "loader1"
+        )
         assert "WHERE" not in result[0].upper()
 
     def test_raw_scope_requires_live_bus(self, view):
@@ -516,7 +609,8 @@ class TestBuildLoadEventDataArgs:
         view.experiment_id = 5
         view.channel_db_id = 2
         result = view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", "ExpA", "0", {}, "loader1")
+            "SELECT * FROM events", "filter_raw", "ExpA", "0", {}, "loader1"
+        )
         assert result[1] is None
         assert "SELECT * FROM events" in result[0]
 
@@ -524,6 +618,7 @@ class TestBuildLoadEventDataArgs:
 # ===========================================================================
 # State setters
 # ===========================================================================
+
 
 class TestStateSetters:
     def test_set_alter_database_status_true(self, view):
@@ -562,7 +657,7 @@ class TestStateSetters:
         assert view.experiment_id == 99
 
     def test_set_table_by_column_appends(self, view):
-        if not hasattr(view, 'involved_tables'):
+        if not hasattr(view, "involved_tables"):
             view.involved_tables = []
         before = len(view.involved_tables)
         view.set_table_by_column("events")
@@ -570,7 +665,7 @@ class TestStateSetters:
         assert "events" in view.involved_tables
 
     def test_set_table_by_column_none_ignored(self, view):
-        if not hasattr(view, 'involved_tables'):
+        if not hasattr(view, "involved_tables"):
             view.involved_tables = []
         before = len(view.involved_tables)
         view.set_table_by_column(None)
@@ -630,6 +725,7 @@ class TestStateSetters:
 # _handle_other_actions
 # ===========================================================================
 
+
 class TestHandleOtherActions:
     def test_raises_not_implemented(self, view):
         with pytest.raises(NotImplementedError, match="unknown_action"):
@@ -639,6 +735,7 @@ class TestHandleOtherActions:
 # ===========================================================================
 # _set_display_mode
 # ===========================================================================
+
 
 class TestSetDisplayMode:
     def test_event_mode(self, view):
@@ -659,6 +756,7 @@ class TestSetDisplayMode:
 # _commit_fits
 # ===========================================================================
 
+
 class TestCommitFits:
     def test_raises_when_no_fit_data(self, view):
         view.fit_data = None
@@ -668,15 +766,23 @@ class TestCommitFits:
     def test_proceeds_with_fit_data(self, view):
         # column_table is None so the overwrite dialog is never shown;
         # global_signal is emitted with no connected handler, which is fine.
-        view.fit_data = pd.DataFrame({
-            "id": [1],
-            "prolate_volume": [100.0], "prolate_shape_factor": [2.0],
-            "prolate_major_axis": [10.0], "prolate_minor_axis": [5.0],
-            "oblate_volume": [80.0], "oblate_shape_factor": [0.5],
-            "oblate_major_axis": [4.0], "oblate_minor_axis": [8.0],
-            "min_fractional_blockage": [0.1], "min_fractional_blockage_std": [0.01],
-            "max_fractional_blockage": [0.3], "max_fractional_blockage_std": [0.02],
-        })
+        view.fit_data = pd.DataFrame(
+            {
+                "id": [1],
+                "prolate_volume": [100.0],
+                "prolate_shape_factor": [2.0],
+                "prolate_major_axis": [10.0],
+                "prolate_minor_axis": [5.0],
+                "oblate_volume": [80.0],
+                "oblate_shape_factor": [0.5],
+                "oblate_major_axis": [4.0],
+                "oblate_minor_axis": [8.0],
+                "min_fractional_blockage": [0.1],
+                "min_fractional_blockage_std": [0.01],
+                "max_fractional_blockage": [0.3],
+                "max_fractional_blockage_std": [0.02],
+            }
+        )
         view.column_table = None
         view._commit_fits("loader1")  # should not raise
 
@@ -684,6 +790,7 @@ class TestCommitFits:
 # ===========================================================================
 # _reset_actions
 # ===========================================================================
+
 
 class TestResetActions:
     def test_clears_hist_state(self, view):
@@ -714,6 +821,7 @@ class TestResetActions:
 # _clear_figure_state
 # ===========================================================================
 
+
 class TestClearFigureState:
     def test_clears_cache(self, view):
         # Just verify _clear_figure_state runs without error
@@ -735,6 +843,7 @@ class TestClearFigureState:
 # _plot_all_points_histogram
 # ===========================================================================
 
+
 class TestPlotAllPointsHistogram:
     def _df(self):
         x = np.linspace(0, 1, 20)
@@ -742,30 +851,36 @@ class TestPlotAllPointsHistogram:
 
     def test_sets_axis_labels(self, view):
         view._plot_all_points_histogram(
-            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""])
+            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""]
+        )
         assert "NC" in view.ax_hist.get_xlabel()
 
     def test_appends_to_hist_data(self, view):
         view._plot_all_points_histogram(
-            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds1")
+            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds1"
+        )
         assert len(view.hist_data) == 1
 
     def test_accumulates_multiple_calls(self, view):
         view._plot_all_points_histogram(
-            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds1")
+            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds1"
+        )
         view._plot_all_points_histogram(
-            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds2")
+            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds2"
+        )
         assert len(view.hist_data) == 2
 
     def test_norm_flag_modifies_ylabel(self, view):
         view._plot_all_points_histogram(
-            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], norm=True)
+            view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], norm=True
+        )
         assert "Normalized" in view.ax_hist.get_ylabel()
 
 
 # ===========================================================================
 # _plot_scatterplot
 # ===========================================================================
+
 
 class TestPlotScatterplot:
     def _df(self):
@@ -774,19 +889,28 @@ class TestPlotScatterplot:
 
     def test_labels_set(self, view):
         view._plot_scatterplot(
-            view.ax_vm, self._df(), ["V", "m"], ["nm^3", "au"], [False, False])
+            view.ax_vm, self._df(), ["V", "m"], ["nm^3", "au"], [False, False]
+        )
         assert "V" in view.ax_vm.get_xlabel()
         assert "m" in view.ax_vm.get_ylabel()
 
     def test_log_x_prefix(self, view):
-        df = pd.DataFrame({"V": np.abs(np.random.rand(10)) + 0.01,
-                           "m": np.abs(np.random.rand(10)) + 0.01})
+        df = pd.DataFrame(
+            {
+                "V": np.abs(np.random.rand(10)) + 0.01,
+                "m": np.abs(np.random.rand(10)) + 0.01,
+            }
+        )
         view._plot_scatterplot(view.ax_vm, df, ["V", "m"], ["", ""], [True, False])
         assert "log10" in view.ax_vm.get_xlabel()
 
     def test_log_y_prefix(self, view):
-        df = pd.DataFrame({"V": np.abs(np.random.rand(10)) + 0.01,
-                           "m": np.abs(np.random.rand(10)) + 0.01})
+        df = pd.DataFrame(
+            {
+                "V": np.abs(np.random.rand(10)) + 0.01,
+                "m": np.abs(np.random.rand(10)) + 0.01,
+            }
+        )
         view._plot_scatterplot(view.ax_vm, df, ["V", "m"], ["", ""], [False, True])
         assert "log10" in view.ax_vm.get_ylabel()
 
@@ -795,34 +919,51 @@ class TestPlotScatterplot:
 # _plot_xyerr_scatterplot
 # ===========================================================================
 
+
 class TestPlotXyerrScatterplot:
     def _df(self):
         n = 10
         rng = np.random.default_rng(0)
-        return pd.DataFrame({
-            "x": rng.random(n), "y": rng.random(n),
-            "xe": rng.random(n) * 0.01, "ye": rng.random(n) * 0.01,
-        })
+        return pd.DataFrame(
+            {
+                "x": rng.random(n),
+                "y": rng.random(n),
+                "xe": rng.random(n) * 0.01,
+                "ye": rng.random(n) * 0.01,
+            }
+        )
 
     def test_requires_err_cols(self, view):
         with pytest.raises(ValueError, match="two error columns"):
             view._plot_xyerr_scatterplot(
-                view.ax_hist, self._df(), ["x", "y"], ["", ""], [False, False])
+                view.ax_hist, self._df(), ["x", "y"], ["", ""], [False, False]
+            )
 
     def test_runs_without_error(self, view):
         view._plot_xyerr_scatterplot(
-            view.ax_hist, self._df(), ["x", "y"], ["", ""],
-            [False, False], err_cols=["xe", "ye"])
+            view.ax_hist,
+            self._df(),
+            ["x", "y"],
+            ["", ""],
+            [False, False],
+            err_cols=["xe", "ye"],
+        )
 
     def test_null_err_col(self, view):
         view._plot_xyerr_scatterplot(
-            view.ax_hist, self._df(), ["x", "y"], ["", ""],
-            [False, False], err_cols=["xe", None])
+            view.ax_hist,
+            self._df(),
+            ["x", "y"],
+            ["", ""],
+            [False, False],
+            err_cols=["xe", None],
+        )
 
 
 # ===========================================================================
 # update_plot
 # ===========================================================================
+
 
 class TestUpdatePlot:
     def _df(self):
@@ -830,8 +971,14 @@ class TestUpdatePlot:
         return pd.DataFrame({"NC": x, "Amp": np.ones(20) * 0.5})
 
     def test_histogram_routes_to_hist(self, view):
-        view.update_plot("Filtered Histogram", self._df(), ["NC", "Amp"],
-                         ["pA", ""], [False, False], dataset_label="d")
+        view.update_plot(
+            "Filtered Histogram",
+            self._df(),
+            ["NC", "Amp"],
+            ["pA", ""],
+            [False, False],
+            dataset_label="d",
+        )
         assert "NC" in view.ax_hist.get_xlabel()
 
     def test_scatterplot_routes_to_vm(self, view):
@@ -840,19 +987,34 @@ class TestUpdatePlot:
         assert "V" in view.ax_vm.get_xlabel()
 
     def test_peak_scatterplot_routes_to_hist(self, view):
-        df = pd.DataFrame({"x": np.random.rand(5), "y": np.random.rand(5),
-                           "xe": np.zeros(5), "ye": np.zeros(5)})
-        view.update_plot("Peak Scatterplot", df, ["x", "y"], ["", ""],
-                         [False, False], err_cols=["xe", "ye"])
+        df = pd.DataFrame(
+            {
+                "x": np.random.rand(5),
+                "y": np.random.rand(5),
+                "xe": np.zeros(5),
+                "ye": np.zeros(5),
+            }
+        )
+        view.update_plot(
+            "Peak Scatterplot",
+            df,
+            ["x", "y"],
+            ["", ""],
+            [False, False],
+            err_cols=["xe", "ye"],
+        )
 
     def test_unknown_raises(self, view):
         with pytest.raises(NotImplementedError):
-            view.update_plot("Heatmap", self._df(), ["NC", "Amp"], ["", ""], [False, False])
+            view.update_plot(
+                "Heatmap", self._df(), ["NC", "Amp"], ["", ""], [False, False]
+            )
 
 
 # ===========================================================================
 # Range helpers (inherited from MetaView, exercised via ProteinView)
 # ===========================================================================
+
 
 class TestRangeHelpers:
     def test_parse_single(self, view):
@@ -934,19 +1096,22 @@ class TestRangeHelpers:
 # _shift_range_and_update_plot
 # ===========================================================================
 
+
 class TestShiftRangeAndUpdatePlot:
     def test_shift_right_updates_input(self, view):
         view.proteincontrols.event_index_lineEdit.setText("3")
         with patch.object(view, "_handle_plot_events"):
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [3]}, "right")
+                {"db_loader": "l", "event_index": [3]}, "right"
+            )
         assert view.proteincontrols.event_index_lineEdit.text() == "4"
 
     def test_shift_left_updates_input(self, view):
         view.proteincontrols.event_index_lineEdit.setText("5")
         with patch.object(view, "_handle_plot_events"):
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [5]}, "left")
+                {"db_loader": "l", "event_index": [5]}, "left"
+            )
         assert view.proteincontrols.event_index_lineEdit.text() == "4"
 
     def test_empty_input_returns_early(self, view):
@@ -958,7 +1123,8 @@ class TestShiftRangeAndUpdatePlot:
         view.proteincontrols.event_index_lineEdit.setText("2")
         with patch.object(view, "_handle_plot_histogram") as mock_hist:
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [2]}, "right")
+                {"db_loader": "l", "event_index": [2]}, "right"
+            )
         mock_hist.assert_called_once()
 
     def test_dispatches_events(self, view):
@@ -966,13 +1132,15 @@ class TestShiftRangeAndUpdatePlot:
         view.proteincontrols.event_index_lineEdit.setText("2")
         with patch.object(view, "_handle_plot_events") as mock_ev:
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [2]}, "right")
+                {"db_loader": "l", "event_index": [2]}, "right"
+            )
         mock_ev.assert_called_once()
 
 
 # ===========================================================================
 # _update_event_plot
 # ===========================================================================
+
 
 class TestUpdateEventPlot:
     def test_switches_to_event_mode(self, view):
@@ -995,6 +1163,7 @@ class TestUpdateEventPlot:
 # _update_event_histogram
 # ===========================================================================
 
+
 class TestUpdateEventHistogram:
     def test_switches_to_event_mode(self, view):
         view._update_event_histogram([_make_event(1)])
@@ -1013,6 +1182,7 @@ class TestUpdateEventHistogram:
 # ===========================================================================
 # Filter management
 # ===========================================================================
+
 
 class TestFilterManagement:
     def test_get_selected_filters_empty(self, view):
@@ -1071,6 +1241,7 @@ class TestFilterManagement:
 # on_raw_filter_validated
 # ===========================================================================
 
+
 class TestOnRawFilterValidated:
     def _setup(self, view, old_name=None):
         view._pending_filter_name = "newfilter"
@@ -1128,6 +1299,7 @@ class TestOnRawFilterValidated:
 # _save_filter / _load_filter (file I/O paths)
 # ===========================================================================
 
+
 class TestSaveLoadFilter:
     @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
     def test_save_filter_writes_json(self, mock_dialog, view):
@@ -1181,6 +1353,7 @@ class TestSaveLoadFilter:
 # Miscellaneous
 # ===========================================================================
 
+
 class TestMiscMethods:
     def test_undo_plot_emits_signal(self, view):
         received = []
@@ -1206,15 +1379,22 @@ class TestMiscMethods:
 
     def test_show_selection_tree_sets_selection(self, view):
         # Patch show_dialog to avoid the blocking exec() modal
-        with patch("poriscope.views.widgets.SelectionTree.SelectionTree.show_dialog",
-                   return_value={"ExpA": ["0"]}):
-            view.show_selection_tree({"ExpA": ["0", "1"]}, "ldr", selection={"ExpA": ["0"]})
-        assert view.selected_experiment_and_channels_by_loader.get("ldr") == {"ExpA": ["0"]}
+        with patch(
+            "poriscope.views.widgets.SelectionTree.SelectionTree.show_dialog",
+            return_value={"ExpA": ["0"]},
+        ):
+            view.show_selection_tree(
+                {"ExpA": ["0", "1"]}, "ldr", selection={"ExpA": ["0"]}
+            )
+        assert view.selected_experiment_and_channels_by_loader.get("ldr") == {
+            "ExpA": ["0"]
+        }
 
     def test_show_filter_info_wrong_count_silent(self, view):
         # 0 selected → returns silently without opening any dialog
         view._show_filter_info_dialog(
-            view.proteincontrols.filter_comboBox, {"db_loader": "l"})
+            view.proteincontrols.filter_comboBox, {"db_loader": "l"}
+        )
 
     def test_analysis_mode_individual_default(self, view):
         assert view._analysis_mode == "individual"
@@ -1226,6 +1406,7 @@ class TestMiscMethods:
 # ===========================================================================
 # Integration: histogram → fit → VM scatter pipeline
 # ===========================================================================
+
 
 class TestPipeline:
     D, L = 20.0, 30.0
@@ -1253,10 +1434,11 @@ class TestPipeline:
         if popt is None:
             pytest.skip("fit did not converge")
         means = sorted([popt[1], popt[4]])
-        stds  = [abs(popt[2]), abs(popt[5])]
+        stds = [abs(popt[2]), abs(popt[5])]
         np.random.seed(42)
         V, m = view._generate_vm_ensemble(
-            20, max(means), stds[1], min(means), stds[0], self.D, self.L)
+            20, max(means), stds[1], min(means), stds[0], self.D, self.L
+        )
         assert len(V) <= 20
 
     def test_update_event_plot_end_to_end(self, view):
