@@ -18,6 +18,7 @@ from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataContro
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -37,6 +38,7 @@ def mc(qt_app):
 # ===========================================================================
 # Instantiation / setupUi
 # ===========================================================================
+
 
 class TestInstantiation:
     def test_creates_without_error(self, mc):
@@ -73,13 +75,24 @@ class TestInstantiation:
 
     def test_has_all_buttons(self, mc):
         for attr in [
-            "update_plot_button", "undo_button", "reset_button",
-            "load_button", "save_plot_button", "export_csv_subset_button",
-            "export_plot_data_pushButton", "filter_add_button",
-            "filter_info_button", "filter_delete_button",
-            "save_filter_button", "load_filter_button",
-            "plot_events_pushButton", "left_arrow_button", "right_arrow_button",
-            "db_loader_add_button", "db_loader_info_button", "db_loader_delete_button",
+            "update_plot_button",
+            "undo_button",
+            "reset_button",
+            "load_button",
+            "save_plot_button",
+            "export_csv_subset_button",
+            "export_plot_data_pushButton",
+            "filter_add_button",
+            "filter_info_button",
+            "filter_delete_button",
+            "save_filter_button",
+            "load_filter_button",
+            "plot_events_pushButton",
+            "left_arrow_button",
+            "right_arrow_button",
+            "db_loader_add_button",
+            "db_loader_info_button",
+            "db_loader_delete_button",
             "selection_tree_button",
         ]:
             assert hasattr(mc, attr), f"Missing button: {attr}"
@@ -94,6 +107,7 @@ class TestInstantiation:
 # ===========================================================================
 # _on_sizes_checkbox_toggled
 # ===========================================================================
+
 
 class TestSizesCheckbox:
     def test_unchecked_uses_int_placeholder(self, mc):
@@ -113,6 +127,7 @@ class TestSizesCheckbox:
 # ===========================================================================
 # createButton / createLabel / create_comboBox
 # ===========================================================================
+
 
 class TestWidgetFactories:
     def test_create_comboBox_returns_combobox(self, mc):
@@ -178,6 +193,7 @@ class TestWidgetFactories:
 # is_placeholder_item / toggle_info_button
 # ===========================================================================
 
+
 class TestPlaceholderAndToggle:
     def test_is_placeholder_no_database(self, mc):
         mc.db_loader_comboBox.clear()
@@ -213,6 +229,7 @@ class TestPlaceholderAndToggle:
 # ===========================================================================
 # _plot_type_changed — axis enable/disable logic
 # ===========================================================================
+
 
 class TestPlotTypeChanged:
     def _set_plot_type(self, mc, plot_type):
@@ -285,6 +302,7 @@ class TestPlotTypeChanged:
 # update_axes
 # ===========================================================================
 
+
 class TestUpdateAxes:
     def test_populates_all_three_comboboxes(self, mc):
         mc.update_axes(["duration", "voltage", "current"])
@@ -326,6 +344,7 @@ class TestUpdateAxes:
 # update_column_units_label
 # ===========================================================================
 
+
 class TestUpdateColumnUnitsLabel:
     def test_sets_x_axis_units(self, mc):
         mc.update_column_units_label("ms", "x_axis")
@@ -357,10 +376,13 @@ class TestUpdateColumnUnitsLabel:
 # show_filter_info_dialog_single / delete_filter_by_name
 # ===========================================================================
 
+
 class TestFilterCallbacks:
     def test_show_filter_info_emits_edit_filter_requested(self, mc):
         received = []
-        mc.edit_filter_requested.connect(lambda name, loader: received.append((name, loader)))
+        mc.edit_filter_requested.connect(
+            lambda name, loader: received.append((name, loader))
+        )
         mc.db_loader_comboBox.addItem("my_loader")
         mc.db_loader_comboBox.setCurrentText("my_loader")
         mc.show_filter_info_dialog_single("my_filter")
@@ -376,6 +398,7 @@ class TestFilterCallbacks:
 # ===========================================================================
 # show_plugin_edit_manager / show_plugin_add_manager / delete_plugin
 # ===========================================================================
+
 
 class TestPluginManagers:
     def test_show_plugin_edit_manager_emits_edit_processed(self, mc):
@@ -405,6 +428,7 @@ class TestPluginManagers:
 # clear_popup_reference
 # ===========================================================================
 
+
 class TestClearPopupReference:
     def test_removes_existing_popup(self, mc):
         cb = mc.create_comboBox(mc)
@@ -421,6 +445,7 @@ class TestClearPopupReference:
 # get_nested_value (static)
 # ===========================================================================
 
+
 class TestGetNestedValue:
     def test_simple_key(self):
         d = {"a": 1}
@@ -436,7 +461,9 @@ class TestGetNestedValue:
 
     def test_missing_nested_key_returns_default(self):
         d = {"a": {"b": 1}}
-        assert MetadataControls.get_nested_value(d, ["a", "z"], default="nope") == "nope"
+        assert (
+            MetadataControls.get_nested_value(d, ["a", "z"], default="nope") == "nope"
+        )
 
     def test_non_dict_intermediate_returns_default(self):
         d = {"a": "not_a_dict"}
@@ -453,6 +480,7 @@ class TestGetNestedValue:
 # ===========================================================================
 # collect_parameters
 # ===========================================================================
+
 
 class TestCollectParameters:
     def test_returns_dict(self, mc):
@@ -522,6 +550,7 @@ class TestCollectParameters:
 # on_loader_changed
 # ===========================================================================
 
+
 class TestOnLoaderChanged:
     def test_emits_loader_changed_action(self, mc):
         received = []
@@ -541,6 +570,7 @@ class TestOnLoaderChanged:
 # get_selected_filter_names
 # ===========================================================================
 
+
 class TestGetSelectedFilterNames:
     def test_empty_by_default(self, mc):
         assert mc.get_selected_filter_names() == []
@@ -554,6 +584,7 @@ class TestGetSelectedFilterNames:
 # ===========================================================================
 # validate_inputs — button state logic
 # ===========================================================================
+
 
 class TestValidateInputs:
     def test_no_loader_disables_load_button(self, mc):
@@ -625,6 +656,7 @@ class TestValidateInputs:
 # ===========================================================================
 # on_button_clicked — signal emission and auto-uncheck
 # ===========================================================================
+
 
 class TestOnButtonClicked:
     def _collect_actions(self, mc):
@@ -738,6 +770,7 @@ class TestOnButtonClicked:
 # update_loaders
 # ===========================================================================
 
+
 class TestUpdateLoaders:
     def test_populates_combobox(self, mc):
         mc.update_loaders(["db1", "db2", "db3"])
@@ -769,6 +802,7 @@ class TestUpdateLoaders:
 # set_event_index_input
 # ===========================================================================
 
+
 class TestSetEventIndexInput:
     def test_sets_value_without_triggering_validate(self, mc):
         # Should not raise and should update the field
@@ -784,6 +818,7 @@ class TestSetEventIndexInput:
 # ===========================================================================
 # update_filters
 # ===========================================================================
+
 
 class TestUpdateFilters:
     def test_populates_filter_combobox(self, mc):
@@ -809,6 +844,7 @@ class TestUpdateFilters:
 # ===========================================================================
 # update_units (signal emission)
 # ===========================================================================
+
 
 class TestUpdateUnits:
     def test_emits_columns_updated(self, mc):
