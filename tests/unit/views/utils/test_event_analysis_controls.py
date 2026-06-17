@@ -21,6 +21,7 @@ from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -41,6 +42,7 @@ def ec(qt_app):
 # Helpers
 # ===========================================================================
 
+
 def _select_channel(ec, channel_text):
     """Add and select a channel in the MultiSelectComboBox."""
     ec.update_channels([channel_text])
@@ -55,6 +57,7 @@ def _collect_actions(ec):
 # ===========================================================================
 # Instantiation / setupUi
 # ===========================================================================
+
 
 class TestInstantiation:
     def test_creates_without_error(self, ec):
@@ -81,12 +84,24 @@ class TestInstantiation:
 
     def test_has_all_buttons(self, ec):
         for attr in [
-            "plot_events_pushButton", "left_arrow_button", "right_arrow_button",
-            "fit_events_pushButton", "commit_btn", "export_plot_data_pushButton",
-            "loaders_add_button", "loaders_info_button", "loaders_delete_button",
-            "filters_add_button", "filters_info_button", "filters_delete_button",
-            "eventfitters_add_button", "eventfitters_info_button", "eventfitters_delete_button",
-            "writers_add_button", "writers_info_button", "writers_delete_button",
+            "plot_events_pushButton",
+            "left_arrow_button",
+            "right_arrow_button",
+            "fit_events_pushButton",
+            "commit_btn",
+            "export_plot_data_pushButton",
+            "loaders_add_button",
+            "loaders_info_button",
+            "loaders_delete_button",
+            "filters_add_button",
+            "filters_info_button",
+            "filters_delete_button",
+            "eventfitters_add_button",
+            "eventfitters_info_button",
+            "eventfitters_delete_button",
+            "writers_add_button",
+            "writers_info_button",
+            "writers_delete_button",
         ]:
             assert hasattr(ec, attr), f"Missing: {attr}"
 
@@ -104,6 +119,7 @@ class TestInstantiation:
 # ===========================================================================
 # Widget factories
 # ===========================================================================
+
 
 class TestWidgetFactories:
     def test_create_combobox(self, ec):
@@ -166,6 +182,7 @@ class TestWidgetFactories:
 # is_placeholder_item / toggle_info_button
 # ===========================================================================
 
+
 class TestPlaceholderAndToggle:
     def test_no_loader_is_placeholder(self, ec):
         ec.loaders_comboBox.clear()
@@ -217,6 +234,7 @@ class TestPlaceholderAndToggle:
 # clear_popup_reference
 # ===========================================================================
 
+
 class TestClearPopupReference:
     def test_removes_existing(self, ec):
         cb = ec.create_comboBox(ec)
@@ -232,6 +250,7 @@ class TestClearPopupReference:
 # ===========================================================================
 # show_plugin_edit_manager / show_plugin_add_manager / delete_plugin
 # ===========================================================================
+
 
 class TestPluginManagers:
     def test_edit_emits_edit_processed(self, ec):
@@ -261,6 +280,7 @@ class TestPluginManagers:
 # get_nested_value (static)
 # ===========================================================================
 
+
 class TestGetNestedValue:
     def test_simple_key(self):
         assert EventAnalysisControls.get_nested_value({"a": 1}, ["a"]) == 1
@@ -284,6 +304,7 @@ class TestGetNestedValue:
 # ===========================================================================
 # collect_parameters
 # ===========================================================================
+
 
 class TestCollectParameters:
     def test_returns_dict(self, ec):
@@ -354,6 +375,7 @@ class TestCollectParameters:
 # on_parameter_changed
 # ===========================================================================
 
+
 class TestOnParameterChanged:
     def test_emits_parameter_changed(self, ec):
         received = []
@@ -393,6 +415,7 @@ class TestOnParameterChanged:
 # ===========================================================================
 # validate_inputs — button state
 # ===========================================================================
+
 
 class TestValidateInputs:
     def test_no_loader_disables_plot_events(self, ec):
@@ -464,6 +487,7 @@ class TestValidateInputs:
 # on_button_clicked — signal emission and auto-uncheck
 # ===========================================================================
 
+
 class TestOnButtonClicked:
     def test_export_plot_data(self, ec):
         received = _collect_actions(ec)
@@ -496,8 +520,14 @@ class TestOnButtonClicked:
         assert any(a == "commit_events" for _, a in received)
 
     def test_all_emit_event_analysis_model(self, ec):
-        for btn in ["export_plot_data", "fit_events", "plot_events",
-                    "left_arrow", "right_arrow", "commit_events"]:
+        for btn in [
+            "export_plot_data",
+            "fit_events",
+            "plot_events",
+            "left_arrow",
+            "right_arrow",
+            "commit_events",
+        ]:
             received = []
             ec.actionTriggered.connect(lambda m, a, p, _b=btn: received.append(m))
             ec.on_button_clicked(btn)
@@ -531,6 +561,7 @@ class TestOnButtonClicked:
 # update_channels
 # ===========================================================================
 
+
 class TestUpdateChannels:
     def test_first_load_selects_all(self, ec):
         ec.update_channels(["0", "1", "2"])
@@ -549,15 +580,19 @@ class TestUpdateChannels:
     def test_new_channels_cleared_on_rebuild(self, ec):
         ec.update_channels(["0", "1"])
         ec.update_channels(["2", "3"])
-        items = [ec.channel_comboBox.listWidget.item(i).text()
-                 for i in range(ec.channel_comboBox.listWidget.count())]
+        items = [
+            ec.channel_comboBox.listWidget.item(i).text()
+            for i in range(ec.channel_comboBox.listWidget.count())
+        ]
         assert "0" not in items
         assert "2" in items
 
     def test_integer_channels_converted_to_str(self, ec):
         ec.update_channels([0, 1, 2])
-        items = [ec.channel_comboBox.listWidget.item(i).text()
-                 for i in range(ec.channel_comboBox.listWidget.count())]
+        items = [
+            ec.channel_comboBox.listWidget.item(i).text()
+            for i in range(ec.channel_comboBox.listWidget.count())
+        ]
         assert "0" in items
 
     def test_single_channel(self, ec):
@@ -568,6 +603,7 @@ class TestUpdateChannels:
 # ===========================================================================
 # update_loaders
 # ===========================================================================
+
 
 class TestUpdateLoaders:
     def test_populates_combobox(self, ec):
@@ -595,6 +631,7 @@ class TestUpdateLoaders:
 # update_filters
 # ===========================================================================
 
+
 class TestUpdateFilters:
     def test_populates_combobox(self, ec):
         ec.update_filters(["f1", "f2"])
@@ -620,6 +657,7 @@ class TestUpdateFilters:
 # ===========================================================================
 # update_writers
 # ===========================================================================
+
 
 class TestUpdateWriters:
     def test_populates_combobox(self, ec):
@@ -647,6 +685,7 @@ class TestUpdateWriters:
 # update_eventfitters
 # ===========================================================================
 
+
 class TestUpdateEventFitters:
     def test_populates_combobox(self, ec):
         ec.update_eventfitters(["ef1", "ef2"])
@@ -672,6 +711,7 @@ class TestUpdateEventFitters:
 # ===========================================================================
 # set_event_index_input
 # ===========================================================================
+
 
 class TestSetEventIndexInput:
     def test_does_not_raise(self, ec):
