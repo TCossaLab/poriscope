@@ -29,6 +29,7 @@ from poriscope.views.widgets.event_segmentation_settings_widget import (
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -48,6 +49,7 @@ def widget(qt_app):
 # Instantiation
 # ===========================================================================
 
+
 class TestInstantiation:
     def test_creates_without_error(self, widget):
         assert widget is not None
@@ -66,6 +68,7 @@ class TestInstantiation:
 # ===========================================================================
 # Labels — presence and text (retranslateUi)
 # ===========================================================================
+
 
 class TestLabels:
     def test_title_label_text(self, widget):
@@ -142,6 +145,7 @@ class TestLabels:
 # Line edits — presence and initial state
 # ===========================================================================
 
+
 class TestLineEdits:
     def test_lineEdit_3_exists(self, widget):
         assert isinstance(widget.lineEdit_3, QLineEdit)
@@ -172,9 +176,15 @@ class TestLineEdits:
 
     def test_all_line_edits_empty_initially(self, widget):
         for le in [
-            widget.lineEdit_3, widget.lineEdit_4, widget.lineEdit_5,
-            widget.lineEdit_6, widget.lineEdit_7, widget.lineEdit_8,
-            widget.lineEdit_9, widget.lineEdit_10, widget.lineEdit_11,
+            widget.lineEdit_3,
+            widget.lineEdit_4,
+            widget.lineEdit_5,
+            widget.lineEdit_6,
+            widget.lineEdit_7,
+            widget.lineEdit_8,
+            widget.lineEdit_9,
+            widget.lineEdit_10,
+            widget.lineEdit_11,
         ]:
             assert le.text() == ""
 
@@ -200,6 +210,7 @@ class TestLineEdits:
 # ===========================================================================
 # Checkbox
 # ===========================================================================
+
 
 class TestCheckBox:
     def test_checkbox_exists(self, widget):
@@ -227,6 +238,7 @@ class TestCheckBox:
 # ===========================================================================
 # ComboBoxes
 # ===========================================================================
+
 
 class TestComboBoxes:
     def test_combobox_exists(self, widget):
@@ -277,6 +289,7 @@ class TestComboBoxes:
 # Buttons
 # ===========================================================================
 
+
 class TestButtons:
     def test_ok_button_exists(self, widget):
         assert isinstance(widget.update_trace_pushButton, QPushButton)
@@ -313,6 +326,7 @@ class TestButtons:
 # Separator line
 # ===========================================================================
 
+
 class TestSeparatorLine:
     def test_line_exists(self, widget):
         assert isinstance(widget.line, QFrame)
@@ -327,6 +341,7 @@ class TestSeparatorLine:
 # ===========================================================================
 # retranslateUi — called directly to confirm idempotency
 # ===========================================================================
+
 
 class TestRetranslateUi:
     def test_retranslate_does_not_raise(self, widget):
@@ -353,6 +368,7 @@ class TestRetranslateUi:
 # Layout widget
 # ===========================================================================
 
+
 class TestLayoutWidget:
     def test_layout_widget_exists(self, widget):
         assert hasattr(widget, "layoutWidget")
@@ -369,6 +385,7 @@ class TestLayoutWidget:
 # ===========================================================================
 # setupUi called again (idempotency check)
 # ===========================================================================
+
 
 class TestSetupUiIdempotency:
     def test_setup_ui_can_be_called_again(self, widget):
