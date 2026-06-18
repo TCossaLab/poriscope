@@ -200,9 +200,11 @@ def test_set_eventfinding_status_false(view):
 # set_data_filter_function
 # ---------------------------------------------------------------------------
 
+
 def test_set_data_filter_function(view):
     def passthrough(x):
         return x
+
     view.set_data_filter_function(passthrough)
     assert view.data_filter is passthrough
 
@@ -426,9 +428,7 @@ def test_handle_load_data_parameter_extraction_failure(view, mocker):
 
 
 def test_handle_load_data_invalid_params_logs_error(view, mocker):
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 0.0, 100.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=False)
     view.update_plot = mocker.Mock()
     view._handle_load_data_and_update_plot({})
@@ -437,9 +437,7 @@ def test_handle_load_data_invalid_params_logs_error(view, mocker):
 
 
 def test_handle_load_data_no_data_skips_plot(view, mocker):
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 0.0, 100.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._load_data = mocker.Mock()
     view.update_plot = mocker.Mock()
@@ -450,9 +448,7 @@ def test_handle_load_data_no_data_skips_plot(view, mocker):
 
 def test_handle_load_data_success_no_filter(view, mocker):
     data = np.array([1.0, 2.0, 3.0])
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 0.0, 100.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._load_data = mocker.Mock()
     view._apply_filter = mocker.Mock()
@@ -466,9 +462,7 @@ def test_handle_load_data_success_no_filter(view, mocker):
 def test_handle_load_data_success_with_filter(view, mocker):
     data = np.array([1.0, 2.0])
     filtered = np.array([0.5, 1.0])
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 0.0, 100.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._load_data = mocker.Mock()
     view._apply_filter = mocker.Mock(return_value=filtered)
@@ -521,7 +515,9 @@ def test_handle_parameter_change_dispatches_shift_forward(view, mocker):
     view._shift_range_and_update_trace = mocker.Mock()
     params = {"reader": "R1", "channel": ["0"], "start_time": "0", "length": "1"}
     view.handle_parameter_change("sub", "shift_trace_forward", (params,))
-    view._shift_range_and_update_trace.assert_called_once_with(params, direction="right")
+    view._shift_range_and_update_trace.assert_called_once_with(
+        params, direction="right"
+    )
 
 
 def test_handle_parameter_change_dispatches_shift_backward(view, mocker):
@@ -592,11 +588,11 @@ def test_update_available_plugins_exception_is_caught(view, mocker):
 
 
 def test_handle_find_events_valid_params(view, mocker):
-    view._extract_event_parameters = mocker.Mock(
-        return_value=("EF1", "No Filter", [0])
-    )
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "No Filter", [0]))
     view._start_eventfinder = mocker.Mock()
-    view._handle_find_events({"eventfinder": "EF1", "filter": "No Filter", "channel": ["0"]})
+    view._handle_find_events(
+        {"eventfinder": "EF1", "filter": "No Filter", "channel": ["0"]}
+    )
     view._start_eventfinder.assert_called_once_with("EF1", "No Filter", [0])
 
 
@@ -621,18 +617,14 @@ def test_handle_find_events_none_params_aborts(view, mocker):
 
 
 def test_handle_commit_events_calls_start_writer(view, mocker):
-    view._extract_commit_event_parameters = mocker.Mock(
-        return_value=("W1", [0])
-    )
+    view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", [0]))
     view._start_writer = mocker.Mock()
     view._handle_commit_events({"writer": "W1", "channel": ["0"]})
     view._start_writer.assert_called_once_with("W1", [0])
 
 
 def test_handle_commit_events_extraction_failure(view, mocker):
-    view._extract_commit_event_parameters = mocker.Mock(
-        side_effect=ValueError("bad")
-    )
+    view._extract_commit_event_parameters = mocker.Mock(side_effect=ValueError("bad"))
     view._start_writer = mocker.Mock()
     view._handle_commit_events({})
     view._start_writer.assert_not_called()
@@ -646,9 +638,7 @@ def test_handle_commit_events_extraction_failure(view, mocker):
 
 def test_handle_timer_no_eventfinder_does_nothing(view, mocker):
     """When finder == 'No Eventfinder', no dialog should open."""
-    mocker.patch(
-        "poriscope.plugins.analysistabs.RawDataView.TimeWidget"
-    )
+    mocker.patch("poriscope.plugins.analysistabs.RawDataView.TimeWidget")
     view._handle_timer({"eventfinder": "No Eventfinder"})
     # TimeWidget should not be instantiated
     # If TimeWidget was patched, confirm it was never called
@@ -662,9 +652,7 @@ def test_handle_timer_no_eventfinder_does_nothing(view, mocker):
 
 
 def test_shift_range_and_update_trace_left(view, mocker):
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 10.0, 5.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 10.0, 5.0))
     view._shift_ranges = mocker.Mock(return_value=[(9.0, 14.0)])
     view.rawdatacontrols.set_range_inputs = mocker.Mock()
     view._handle_load_data_and_update_plot = mocker.Mock()
@@ -676,9 +664,7 @@ def test_shift_range_and_update_trace_left(view, mocker):
 
 def test_shift_range_and_update_trace_negative_start_clamped(view, mocker):
     """If shifting would produce a negative start, it should stay at original."""
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 0.0, 5.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 5.0))
     view._shift_ranges = mocker.Mock(return_value=[(-1.0, 4.0)])
     view.rawdatacontrols.set_range_inputs = mocker.Mock()
     view._handle_load_data_and_update_plot = mocker.Mock()
@@ -689,9 +675,7 @@ def test_shift_range_and_update_trace_negative_start_clamped(view, mocker):
 
 
 def test_shift_range_and_update_trace_invalid_direction(view, mocker):
-    view._extract_plot_parameters = mocker.Mock(
-        return_value=("R", [0], 0.0, 5.0)
-    )
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 5.0))
     view._handle_load_data_and_update_plot = mocker.Mock()
     params = {"reader": "R", "channel": ["0"], "start_time": "0", "length": "5"}
     view._shift_range_and_update_trace(params, "sideways")
@@ -756,9 +740,7 @@ def test_shift_range_and_update_plot_empty_indices_aborts(view, mocker):
 
 def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     view.rawdatacontrols.event_index_lineEdit.text.return_value = ""
-    view._extract_plot_event_parameters = mocker.Mock(
-        return_value=("EF", "F", [0], [])
-    )
+    view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [0], []))
     view.validate_single_channel = mocker.Mock()
     view._handle_plot_events = mocker.Mock()
     params = {"eventfinder": "EF", "filter": "F", "channel": ["0"], "event_index": []}
