@@ -5325,6 +5325,7 @@ def test_update_filter_name_refreshes_display(
 
     view.metadatacontrols.filter_comboBox.refreshDisplayText.assert_called_once()
 
+
 # ===========================================================================
 # get_current_view
 # ===========================================================================
@@ -5435,9 +5436,7 @@ class TestSimpleSetters:
         view.set_table_by_column("events")
         assert "events" in view.involved_tables
 
-    def test_set_table_by_column_none_does_not_append(
-        self, view: MetadataView
-    ) -> None:
+    def test_set_table_by_column_none_does_not_append(self, view: MetadataView) -> None:
         view.involved_tables = []
         view.set_table_by_column(None)
         assert view.involved_tables == []
@@ -5457,15 +5456,11 @@ class TestPlotCategoricalHistogram:
         return pd.DataFrame({"category": ["A", "B", "A", "C", "B", "A"]})
 
     def test_calls_bar(self, view: MetadataView) -> None:
-        view._plot_categorical_histogram(
-            view.axes, self._data(), ["category"], [""]
-        )
+        view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
         view.axes.bar.assert_called()
 
     def test_clears_axes_before_plot(self, view: MetadataView) -> None:
-        view._plot_categorical_histogram(
-            view.axes, self._data(), ["category"], [""]
-        )
+        view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
         view.axes.clear.assert_called()
 
     def test_sets_axis_labels(self, view: MetadataView) -> None:
@@ -5476,9 +5471,7 @@ class TestPlotCategoricalHistogram:
         view.axes.set_ylabel.assert_called()
 
     def test_rotates_x_tick_labels(self, view: MetadataView) -> None:
-        view._plot_categorical_histogram(
-            view.axes, self._data(), ["category"], [""]
-        )
+        view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
         view.axes.tick_params.assert_called()
 
     def test_appends_to_hist_data(self, view: MetadataView) -> None:
@@ -5491,9 +5484,7 @@ class TestPlotCategoricalHistogram:
 
     def test_counts_categories_correctly(self, view: MetadataView) -> None:
         # A=3, B=2, C=1
-        view._plot_categorical_histogram(
-            view.axes, self._data(), ["category"], [""]
-        )
+        view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
         call_args = view.axes.bar.call_args
         categories = list(call_args[0][0])
         counts = list(call_args[0][1])
@@ -5783,7 +5774,13 @@ class TestOverlayPlotNormalizedHistograms:
         view.selected_experiment_and_channels_by_loader = {}
         view.event_query = "SELECT * FROM events"
         view.event_data_generator = iter(
-            [{"raw_data": np.array([1.0, 2.0, 3.0]), "padding_before": 100.0, "samplerate": 10000.0}]
+            [
+                {
+                    "raw_data": np.array([1.0, 2.0, 3.0]),
+                    "padding_before": 100.0,
+                    "samplerate": 10000.0,
+                }
+            ]
         )
         view._construct_all_points_histogram = mocker.Mock(
             return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10.0, 20.0]})
@@ -5810,9 +5807,17 @@ class TestOverlayPlotNormalizedHistograms:
     ) -> None:
         self._setup(view, mocker)
         view.event_data_generator = iter(
-            [{"filtered_data": np.array([1.0, 2.0, 3.0]), "padding_before": 100.0, "samplerate": 10000.0}]
+            [
+                {
+                    "filtered_data": np.array([1.0, 2.0, 3.0]),
+                    "padding_before": 100.0,
+                    "samplerate": 10000.0,
+                }
+            ]
         )
-        view._overlay_plot(self._base_params("Normalized Filtered All Points Histogram"))
+        view._overlay_plot(
+            self._base_params("Normalized Filtered All Points Histogram")
+        )
         view._construct_all_points_histogram.assert_called_once()
 
     def test_normalized_filtered_all_points_histogram_calls_update_plot(
@@ -5820,11 +5825,22 @@ class TestOverlayPlotNormalizedHistograms:
     ) -> None:
         self._setup(view, mocker)
         view.event_data_generator = iter(
-            [{"filtered_data": np.array([1.0, 2.0, 3.0]), "padding_before": 100.0, "samplerate": 10000.0}]
+            [
+                {
+                    "filtered_data": np.array([1.0, 2.0, 3.0]),
+                    "padding_before": 100.0,
+                    "samplerate": 10000.0,
+                }
+            ]
         )
-        view._overlay_plot(self._base_params("Normalized Filtered All Points Histogram"))
+        view._overlay_plot(
+            self._base_params("Normalized Filtered All Points Histogram")
+        )
         view.update_plot.assert_called_once()
-        assert view.update_plot.call_args[0][0] == "Normalized Filtered All Points Histogram"
+        assert (
+            view.update_plot.call_args[0][0]
+            == "Normalized Filtered All Points Histogram"
+        )
 
 
 # ===========================================================================
