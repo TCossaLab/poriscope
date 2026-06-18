@@ -3,6 +3,9 @@
 * **New Data Plugin: `ThresholdBlockageFinder`**	 
     * Subclass of ClassicBlockageFinder that imposes much tighter bounds on the start and end time flagged in the output.
 
+* **Deprecated Data Plugin: `ABF2Reader`**
+    * Renamed to TCossaLabABFReader to reduce ambiguity with file types
+    
 ## Poriscope 1.6.1: 2026-06-04
 
 * **Bug hotfix
