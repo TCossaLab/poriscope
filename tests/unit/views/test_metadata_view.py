@@ -5324,3 +5324,571 @@ def test_update_filter_name_refreshes_display(
     view.update_filter_name("OldFilter", "NewFilter")
 
     view.metadatacontrols.filter_comboBox.refreshDisplayText.assert_called_once()
+
+# ===========================================================================
+# get_current_view
+# ===========================================================================
+
+
+def test_get_current_view_returns_correct_string(view: MetadataView) -> None:
+    assert view.get_current_view() == "MetadataView"
+
+
+# ===========================================================================
+# get_walkthrough_steps
+# ===========================================================================
+
+
+def test_get_walkthrough_steps_returns_list(view: MetadataView) -> None:
+    assert isinstance(view.get_walkthrough_steps(), list)
+
+
+def test_get_walkthrough_steps_has_correct_count(view: MetadataView) -> None:
+    # Source defines 24 steps
+    assert len(view.get_walkthrough_steps()) == 24
+
+
+def test_get_walkthrough_steps_each_is_four_tuple(view: MetadataView) -> None:
+    for step in view.get_walkthrough_steps():
+        assert len(step) == 4
+
+
+def test_get_walkthrough_steps_widget_callables_return_lists(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    # metadatacontrols must exist for the lambdas to not crash
+    view.metadatacontrols = mocker.Mock()
+    for _, _, _, fn in view.get_walkthrough_steps():
+        result = fn()
+        assert isinstance(result, list)
+        assert len(result) >= 1
+
+
+# ===========================================================================
+# is_categorical_type
+# ===========================================================================
+
+
+class TestIsCategoricalType:
+    def test_none_is_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type(None) is True
+
+    def test_empty_string_is_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("") is True
+
+    def test_integer_type_is_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("INTEGER") is True
+
+    def test_text_type_is_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("TEXT") is True
+
+    def test_boolean_type_is_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("BOOLEAN") is True
+
+    def test_numeric_type_is_categorical(self, view: MetadataView) -> None:
+        # NUMERIC does not contain REAL, FLOAT, or DOUB so is categorical
+        assert view.is_categorical_type("NUMERIC") is True
+
+    def test_real_type_is_not_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("REAL") is False
+
+    def test_float_type_is_not_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("FLOAT") is False
+
+    def test_double_type_is_not_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("DOUBLE") is False
+
+    def test_double_precision_is_not_categorical(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("DOUBLE PRECISION") is False
+
+    def test_case_insensitive_real(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("real") is False
+
+    def test_case_insensitive_float(self, view: MetadataView) -> None:
+        assert view.is_categorical_type("float") is False
+
+
+# ===========================================================================
+# Simple state-setter callbacks
+# ===========================================================================
+
+
+class TestSimpleSetters:
+    def test_set_column_type(self, view: MetadataView) -> None:
+        view.set_column_type("REAL")
+        assert view.column_type == "REAL"
+
+    def test_set_column_type_none(self, view: MetadataView) -> None:
+        view.set_column_type(None)
+        assert view.column_type is None
+
+    def test_set_experiment_id(self, view: MetadataView) -> None:
+        view.set_experiment_id(42)
+        assert view.experiment_id == 42
+
+    def test_set_experiment_id_none(self, view: MetadataView) -> None:
+        view.set_experiment_id(None)
+        assert view.experiment_id is None
+
+    def test_set_table_by_column_appends(self, view: MetadataView) -> None:
+        view.involved_tables = []
+        view.set_table_by_column("events")
+        assert "events" in view.involved_tables
+
+    def test_set_table_by_column_none_does_not_append(
+        self, view: MetadataView
+    ) -> None:
+        view.involved_tables = []
+        view.set_table_by_column(None)
+        assert view.involved_tables == []
+
+    def test_set_channel_db_id(self, view: MetadataView) -> None:
+        view.set_channel_db_id(7)
+        assert view.channel_db_id == 7
+
+
+# ===========================================================================
+# _plot_categorical_histogram
+# ===========================================================================
+
+
+class TestPlotCategoricalHistogram:
+    def _data(self) -> pd.DataFrame:
+        return pd.DataFrame({"category": ["A", "B", "A", "C", "B", "A"]})
+
+    def test_calls_bar(self, view: MetadataView) -> None:
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], [""]
+        )
+        view.axes.bar.assert_called()
+
+    def test_clears_axes_before_plot(self, view: MetadataView) -> None:
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], [""]
+        )
+        view.axes.clear.assert_called()
+
+    def test_sets_axis_labels(self, view: MetadataView) -> None:
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], ["unit"]
+        )
+        view.axes.set_xlabel.assert_called()
+        view.axes.set_ylabel.assert_called()
+
+    def test_rotates_x_tick_labels(self, view: MetadataView) -> None:
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], [""]
+        )
+        view.axes.tick_params.assert_called()
+
+    def test_appends_to_hist_data(self, view: MetadataView) -> None:
+        before = len(view.hist_data)
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], [""], dataset_label="ds"
+        )
+        assert len(view.hist_data) == before + 1
+        assert view.hist_labels[-1] == "ds"
+
+    def test_counts_categories_correctly(self, view: MetadataView) -> None:
+        # A=3, B=2, C=1
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], [""]
+        )
+        call_args = view.axes.bar.call_args
+        categories = list(call_args[0][0])
+        counts = list(call_args[0][1])
+        assert set(categories) == {"A", "B", "C"}
+        idx_a = categories.index("A")
+        assert counts[idx_a] == 3.0
+
+    def test_overlays_multiple_datasets(self, view: MetadataView) -> None:
+        data2 = pd.DataFrame({"category": ["A", "D"]})
+        view._plot_categorical_histogram(
+            view.axes, self._data(), ["category"], [""], dataset_label="d1"
+        )
+        view._plot_categorical_histogram(
+            view.axes, data2, ["category"], [""], dataset_label="d2"
+        )
+        assert len(view.hist_data) == 2
+        assert len(view.hist_labels) == 2
+
+
+# ===========================================================================
+# update_plot — Categorical Histogram branch
+# ===========================================================================
+
+
+def test_update_plot_calls_categorical_histogram(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    data = pd.DataFrame({"category": ["A", "B", "C"]})
+    view._plot_categorical_histogram = mocker.Mock()
+    view.update_plot("Categorical Histogram", data, ["category"], [""], [])
+    view._plot_categorical_histogram.assert_called_once()
+
+
+def test_update_plot_categorical_histogram_redraws_canvas(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    data = pd.DataFrame({"category": ["A", "B", "C"]})
+    view.update_plot("Categorical Histogram", data, ["category"], [""], [])
+    view.canvas.draw.assert_called()
+
+
+# ===========================================================================
+# update_plot — Normalized All Points Histogram branches
+# ===========================================================================
+
+
+def test_update_plot_calls_all_points_histogram_for_normalized_raw(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    data = pd.DataFrame(
+        {"Current": np.array([1.0, 2.0]), "Count": np.array([10.0, 20.0])}
+    )
+    view._plot_all_points_histogram = mocker.Mock()
+    view.update_plot(
+        "Normalized Raw All Points Histogram",
+        data,
+        ["Current", "Count"],
+        ["pA", ""],
+        [False, False],
+    )
+    view._plot_all_points_histogram.assert_called_once()
+    call_kwargs = view._plot_all_points_histogram.call_args[1]
+    assert call_kwargs.get("norm") is True
+
+
+def test_update_plot_calls_all_points_histogram_for_normalized_filtered(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    data = pd.DataFrame(
+        {"Current": np.array([1.0, 2.0]), "Count": np.array([10.0, 20.0])}
+    )
+    view._plot_all_points_histogram = mocker.Mock()
+    view.update_plot(
+        "Normalized Filtered All Points Histogram",
+        data,
+        ["Current", "Count"],
+        ["pA", ""],
+        [False, False],
+    )
+    view._plot_all_points_histogram.assert_called_once()
+    call_kwargs = view._plot_all_points_histogram.call_args[1]
+    assert call_kwargs.get("norm") is True
+
+
+# ===========================================================================
+# on_raw_filter_validated
+# ===========================================================================
+
+
+class TestOnRawFilterValidated:
+    def _setup(self, view: MetadataView, mocker: MockerFixture) -> None:
+        view.metadatacontrols = mocker.Mock()
+        view.metadatacontrols.filter_comboBox = mocker.Mock()
+
+    def test_invalid_shows_warning_and_clears_pending(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._pending_filter_name = "F"
+        view._pending_filter_text = "SELECT * FROM events"
+        view._pending_old_filter_name = None
+        mock_warn = mocker.patch(
+            "poriscope.plugins.analysistabs.MetadataView.QMessageBox.warning"
+        )
+        view.on_raw_filter_validated(False, "syntax error")
+        mock_warn.assert_called_once()
+        assert view._pending_filter_name is None
+        assert view._pending_filter_text is None
+
+    def test_valid_add_path_stores_filter(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._pending_filter_name = "NewFilter"
+        view._pending_filter_text = "SELECT * FROM events"
+        view._pending_old_filter_name = None
+        view.on_raw_filter_validated(True, "")
+        assert "NewFilter" in view.subset_filters
+        assert view.subset_filters["NewFilter"] == "SELECT * FROM events"
+        view.metadatacontrols.filter_comboBox.addItem.assert_called_with("NewFilter")
+
+    def test_valid_add_path_emits_message(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._pending_filter_name = "NewFilter"
+        view._pending_filter_text = "SELECT * FROM events"
+        view._pending_old_filter_name = None
+        view.on_raw_filter_validated(True, "")
+        view.add_text_to_display.emit.assert_called()
+
+    def test_valid_add_path_clears_pending(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._pending_filter_name = "NewFilter"
+        view._pending_filter_text = "SELECT * FROM events"
+        view._pending_old_filter_name = None
+        view.on_raw_filter_validated(True, "")
+        assert view._pending_filter_name is None
+        assert view._pending_filter_text is None
+        assert view._pending_old_filter_name is None
+
+    def test_valid_edit_path_replaces_filter(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view.subset_filters = {"OldFilter": "WHERE x > 1"}
+        view._pending_filter_name = "NewFilter"
+        view._pending_filter_text = "WHERE x > 10"
+        view._pending_old_filter_name = "OldFilter"
+        view.update_filter_name = mocker.Mock()
+        view.on_raw_filter_validated(True, "")
+        assert "OldFilter" not in view.subset_filters
+        assert "NewFilter" in view.subset_filters
+        assert view.subset_filters["NewFilter"] == "WHERE x > 10"
+        view.update_filter_name.assert_called_once_with("OldFilter", "NewFilter")
+
+    def test_valid_edit_path_emits_message(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view.subset_filters = {"OldFilter": "WHERE x > 1"}
+        view._pending_filter_name = "NewFilter"
+        view._pending_filter_text = "WHERE x > 10"
+        view._pending_old_filter_name = "OldFilter"
+        view.update_filter_name = mocker.Mock()
+        view.on_raw_filter_validated(True, "")
+        view.add_text_to_display.emit.assert_called()
+
+    def test_valid_edit_path_clears_pending(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view.subset_filters = {"OldFilter": "WHERE x > 1"}
+        view._pending_filter_name = "NewFilter"
+        view._pending_filter_text = "WHERE x > 10"
+        view._pending_old_filter_name = "OldFilter"
+        view.update_filter_name = mocker.Mock()
+        view.on_raw_filter_validated(True, "")
+        assert view._pending_filter_name is None
+        assert view._pending_filter_text is None
+        assert view._pending_old_filter_name is None
+
+
+# ===========================================================================
+# handle_parameter_change — "plot_type_changed" branch
+# ===========================================================================
+
+
+def test_handle_parameter_change_plot_type_changed_does_not_crash(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """The plot_type_changed branch reads loader and plot_type but does nothing else."""
+    view.metadatacontrols = mocker.Mock()
+    params = {"db_loader": "test_loader", "plot_type": "Histogram"}
+    view.handle_parameter_change("metadata", "plot_type_changed", (params,))
+    # No assertion needed — just must not raise
+
+
+# ===========================================================================
+# handle_parameter_change — Categorical Histogram guard in "update_plot"
+# ===========================================================================
+
+
+class TestHandleParameterChangeCategoricalGuard:
+    def _params(self, col: str = "category") -> dict:
+        return {
+            "db_loader": "test_loader",
+            "plot_type": "Categorical Histogram",
+            "x_axis": col,
+        }
+
+    def test_non_categorical_type_emits_warning_and_returns_early(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        """When column type is continuous, emits a message and skips _overlay_plot."""
+        view.column_type = "REAL"
+        view.global_signal = mocker.Mock()
+
+        def side_effect(*args: Any) -> None:
+            if len(args) > 2 and args[2] == "get_column_type":
+                view.column_type = "REAL"
+
+        view.global_signal.emit.side_effect = side_effect
+        view._overlay_plot = mocker.Mock(return_value=True)
+
+        view.handle_parameter_change("metadata", "update_plot", (self._params(),))
+
+        view._overlay_plot.assert_not_called()
+        view.add_text_to_display.emit.assert_called()
+
+    def test_categorical_type_proceeds_to_overlay_plot(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        """When column type is categorical (e.g. INTEGER), _overlay_plot is called."""
+        view.column_type = "INTEGER"
+        view.global_signal = mocker.Mock()
+
+        def side_effect(*args: Any) -> None:
+            if len(args) > 2 and args[2] == "get_column_type":
+                view.column_type = "INTEGER"
+
+        view.global_signal.emit.side_effect = side_effect
+        view._overlay_plot = mocker.Mock(return_value=True)
+
+        view.handle_parameter_change("metadata", "update_plot", (self._params(),))
+
+        view._overlay_plot.assert_called_once()
+
+    def test_none_column_type_proceeds_to_overlay_plot(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        """When column type is None (unknown), treated as categorical — proceeds."""
+        view.column_type = None
+        view.global_signal = mocker.Mock()
+
+        def side_effect(*args: Any) -> None:
+            if len(args) > 2 and args[2] == "get_column_type":
+                view.column_type = None
+
+        view.global_signal.emit.side_effect = side_effect
+        view._overlay_plot = mocker.Mock(return_value=True)
+
+        view.handle_parameter_change("metadata", "update_plot", (self._params(),))
+
+        view._overlay_plot.assert_called_once()
+
+
+# ===========================================================================
+# _overlay_plot — Normalized All Points Histogram branches
+# ===========================================================================
+
+
+class TestOverlayPlotNormalizedHistograms:
+    def _base_params(self, plot_type: str) -> dict:
+        return {
+            "db_loader": "test_loader",
+            "plot_type": plot_type,
+            "bins": [50],
+            "sizes": False,
+        }
+
+    def _setup(self, view: MetadataView, mocker: MockerFixture) -> None:
+        view.global_signal = mocker.Mock()
+        view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+        view.selected_experiment_and_channels_by_loader = {}
+        view.event_query = "SELECT * FROM events"
+        view.event_data_generator = iter(
+            [{"raw_data": np.array([1.0, 2.0, 3.0]), "padding_before": 100.0, "samplerate": 10000.0}]
+        )
+        view._construct_all_points_histogram = mocker.Mock(
+            return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10.0, 20.0]})
+        )
+        view.update_plot = mocker.Mock()
+
+    def test_normalized_raw_all_points_histogram_calls_construct(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
+        view._construct_all_points_histogram.assert_called_once()
+
+    def test_normalized_raw_all_points_histogram_calls_update_plot(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
+        view.update_plot.assert_called_once()
+        assert view.update_plot.call_args[0][0] == "Normalized Raw All Points Histogram"
+
+    def test_normalized_filtered_all_points_histogram_calls_construct(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view.event_data_generator = iter(
+            [{"filtered_data": np.array([1.0, 2.0, 3.0]), "padding_before": 100.0, "samplerate": 10000.0}]
+        )
+        view._overlay_plot(self._base_params("Normalized Filtered All Points Histogram"))
+        view._construct_all_points_histogram.assert_called_once()
+
+    def test_normalized_filtered_all_points_histogram_calls_update_plot(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view.event_data_generator = iter(
+            [{"filtered_data": np.array([1.0, 2.0, 3.0]), "padding_before": 100.0, "samplerate": 10000.0}]
+        )
+        view._overlay_plot(self._base_params("Normalized Filtered All Points Histogram"))
+        view.update_plot.assert_called_once()
+        assert view.update_plot.call_args[0][0] == "Normalized Filtered All Points Histogram"
+
+
+# ===========================================================================
+# _overlay_plot — Categorical Histogram branch
+# ===========================================================================
+
+
+class TestOverlayPlotCategoricalHistogram:
+    def _params(self) -> dict:
+        return {
+            "db_loader": "test_loader",
+            "plot_type": "Categorical Histogram",
+            "x_axis": "category",
+            "x_log": False,
+            "bins": [50],
+            "sizes": False,
+        }
+
+    def test_categorical_histogram_calls_update_plot(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        view.figure.axes = []
+        view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+        view.selected_experiment_and_channels_by_loader = {}
+        view.global_signal = mocker.Mock()
+        view.query = "SELECT * FROM events"
+        view.plot_data = pd.DataFrame({"category": ["A", "B", "A"]})
+        view.units = ""
+        view.update_plot = mocker.Mock()
+
+        view._overlay_plot(self._params())
+
+        view.update_plot.assert_called_once()
+        assert view.update_plot.call_args[0][0] == "Categorical Histogram"
+
+    def test_categorical_histogram_passes_correct_columns(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        view.figure.axes = []
+        view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+        view.selected_experiment_and_channels_by_loader = {}
+        view.global_signal = mocker.Mock()
+        view.query = "SELECT * FROM events"
+        view.plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
+        view.units = ""
+        view.update_plot = mocker.Mock()
+
+        view._overlay_plot(self._params())
+
+        call_args = view.update_plot.call_args
+        assert call_args[0][2] == ["category"]
+
+    def test_categorical_histogram_returns_true_on_success(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        view.figure.axes = []
+        view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+        view.selected_experiment_and_channels_by_loader = {}
+        view.global_signal = mocker.Mock()
+        view.query = "SELECT * FROM events"
+        view.plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
+        view.units = ""
+        view.update_plot = mocker.Mock()
+
+        result = view._overlay_plot(self._params())
+
+        assert result is True
