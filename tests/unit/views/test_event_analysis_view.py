@@ -30,6 +30,7 @@ from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -55,6 +56,7 @@ def view(qt_app):
 # ===========================================================================
 # _factors
 # ===========================================================================
+
 
 class TestFactors:
     def test_perfect_square(self, view):
@@ -88,6 +90,7 @@ class TestFactors:
 # update_plot_data
 # ===========================================================================
 
+
 class TestUpdatePlotData:
     def test_dict_input_stores_data_field(self, view):
         arr = np.array([1, 2, 3])
@@ -111,6 +114,7 @@ class TestUpdatePlotData:
 # ===========================================================================
 # update_plot_features
 # ===========================================================================
+
 
 class TestUpdatePlotFeatures:
     def test_all_params_stored(self, view):
@@ -145,6 +149,7 @@ class TestUpdatePlotFeatures:
 # update_plot_samplerate
 # ===========================================================================
 
+
 class TestUpdatePlotSamplerate:
     def test_stores_samplerate(self, view):
         view.update_plot_samplerate(1_000_000)
@@ -158,6 +163,7 @@ class TestUpdatePlotSamplerate:
 # ===========================================================================
 # set_eventfitting_status
 # ===========================================================================
+
 
 class TestSetEventfittingStatus:
     def test_true(self, view):
@@ -173,6 +179,7 @@ class TestSetEventfittingStatus:
 # set_num_events_allowed
 # ===========================================================================
 
+
 class TestSetNumEventsAllowed:
     def test_sets_value(self, view):
         view.set_num_events_allowed(500)
@@ -187,10 +194,12 @@ class TestSetNumEventsAllowed:
 # set_data_filter_function
 # ===========================================================================
 
+
 class TestSetDataFilterFunction:
     def test_stores_callable(self, view):
         def my_filter(x):
             return x * 2
+
         view.set_data_filter_function(my_filter)
         assert view.data_filter is my_filter
 
@@ -202,6 +211,7 @@ class TestSetDataFilterFunction:
 # ===========================================================================
 # validate_single_channel
 # ===========================================================================
+
 
 class TestValidateSingleChannel:
     def test_single_channel_ok(self, view):
@@ -218,6 +228,7 @@ class TestValidateSingleChannel:
 # ===========================================================================
 # _extract_plot_event_parameters
 # ===========================================================================
+
 
 class TestExtractPlotEventParameters:
     def _params(self):
@@ -255,8 +266,8 @@ class TestExtractPlotEventParameters:
 
     def test_missing_optional_fields(self, view):
         params = {"channel": ["0"], "event_index": []}
-        loader, fitter, filt, channels, events = (
-            view._extract_plot_event_parameters(params)
+        loader, fitter, filt, channels, events = view._extract_plot_event_parameters(
+            params
         )
         assert loader is None
         assert fitter is None
@@ -266,6 +277,7 @@ class TestExtractPlotEventParameters:
 # ===========================================================================
 # _extract_event_fit_parameters
 # ===========================================================================
+
 
 class TestExtractEventFitParameters:
     def _params(self):
@@ -295,6 +307,7 @@ class TestExtractEventFitParameters:
 # _extract_commit_event_parameters
 # ===========================================================================
 
+
 class TestExtractCommitEventParameters:
     def _params(self):
         return {"writer": "my_writer", "channel": ["1"]}
@@ -315,6 +328,7 @@ class TestExtractCommitEventParameters:
 # get_current_view
 # ===========================================================================
 
+
 class TestGetCurrentView:
     def test_returns_correct_string(self, view):
         assert view.get_current_view() == "EventAnalysisView"
@@ -323,6 +337,7 @@ class TestGetCurrentView:
 # ===========================================================================
 # get_walkthrough_steps
 # ===========================================================================
+
 
 class TestGetWalkthroughSteps:
     def test_returns_list(self, view):
@@ -346,6 +361,7 @@ class TestGetWalkthroughSteps:
 # _get_event_index_text
 # ===========================================================================
 
+
 class TestGetEventIndexText:
     def test_empty_initially(self, view):
         text = view._get_event_index_text()
@@ -364,6 +380,7 @@ class TestGetEventIndexText:
 # update_channels
 # ===========================================================================
 
+
 class TestUpdateChannels:
     def test_channels_appear_in_combobox(self, view):
         view.update_channels(["0", "1", "2"])
@@ -379,6 +396,7 @@ class TestUpdateChannels:
 # ===========================================================================
 # update_available_plugins
 # ===========================================================================
+
 
 class TestUpdateAvailablePlugins:
     def test_updates_loaders(self, view):
@@ -401,12 +419,14 @@ class TestUpdateAvailablePlugins:
         view.update_available_plugins({})
 
     def test_all_categories(self, view):
-        view.update_available_plugins({
-            "MetaEventLoader": ["l"],
-            "MetaFilter": ["f"],
-            "MetaDatabaseWriter": ["w"],
-            "MetaEventFitter": ["ef"],
-        })
+        view.update_available_plugins(
+            {
+                "MetaEventLoader": ["l"],
+                "MetaFilter": ["f"],
+                "MetaDatabaseWriter": ["w"],
+                "MetaEventFitter": ["ef"],
+            }
+        )
         assert view.eventAnalysisControls.loaders_comboBox.count() == 1
         assert view.eventAnalysisControls.filters_comboBox.count() == 1
         assert view.eventAnalysisControls.writers_comboBox.count() == 1
@@ -424,11 +444,16 @@ class TestUpdateAvailablePlugins:
 # handle_parameter_change — routing
 # ===========================================================================
 
+
 class TestHandleParameterChange:
     def _params(self):
         return {
-            "loader": "l", "eventfitter": "ef", "filter": "No Filter",
-            "channel": ["0"], "event_index": [1], "writer": "w",
+            "loader": "l",
+            "eventfitter": "ef",
+            "filter": "No Filter",
+            "channel": ["0"],
+            "event_index": [1],
+            "writer": "w",
             "raw": False,
         }
 
@@ -477,6 +502,7 @@ class TestHandleParameterChange:
 # _handle_other_actions
 # ===========================================================================
 
+
 class TestHandleOtherActions:
     def test_with_loader_emits_signal(self, view):
         emitted = []
@@ -496,6 +522,7 @@ class TestHandleOtherActions:
 # _handle_fit_events
 # ===========================================================================
 
+
 class TestHandleFitEvents:
     def _params(self):
         return {
@@ -513,7 +540,9 @@ class TestHandleFitEvents:
             side_effect=ValueError("bad params"),
         ):
             with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
-                view._handle_fit_events({"eventfitter": "ef1", "filter": "No Filter", "channel": ["0"]})
+                view._handle_fit_events(
+                    {"eventfitter": "ef1", "filter": "No Filter", "channel": ["0"]}
+                )
         mock.assert_not_called()
 
     def test_valid_params_calls_start_eventfitter(self, view):
@@ -563,6 +592,7 @@ class TestHandleFitEvents:
 # _handle_commit_events
 # ===========================================================================
 
+
 class TestHandleCommitEvents:
     def test_bad_params_returns_gracefully(self, view):
         # Patch the extractor to raise ValueError — _handle_commit_events must catch it
@@ -610,6 +640,7 @@ class TestHandleCommitEvents:
 # _start_writer
 # ===========================================================================
 
+
 class TestStartWriter:
     def test_emits_signal_per_channel(self, view):
         emitted = []
@@ -641,6 +672,7 @@ class TestStartWriter:
 # _start_eventfitter
 # ===========================================================================
 
+
 class TestStartEventfitter:
     def _setup(self, view):
         view.global_signal = MagicMock()
@@ -651,9 +683,7 @@ class TestStartEventfitter:
     def test_emits_fit_events_signal(self, view):
         self._setup(view)
         view._start_eventfitter("ef1", "No Filter", [0])
-        emitted_actions = [
-            c.args[2] for c in view.global_signal.emit.call_args_list
-        ]
+        emitted_actions = [c.args[2] for c in view.global_signal.emit.call_args_list]
         assert "fit_events" in emitted_actions
 
     def test_run_generators_called(self, view):
@@ -664,9 +694,7 @@ class TestStartEventfitter:
     def test_with_filter_emits_get_callable_filter(self, view):
         self._setup(view)
         view._start_eventfitter("ef1", "MyFilter", [0])
-        emitted_actions = [
-            c.args[2] for c in view.global_signal.emit.call_args_list
-        ]
+        emitted_actions = [c.args[2] for c in view.global_signal.emit.call_args_list]
         assert "get_callable_filter" in emitted_actions
 
     def test_non_list_channels_converted(self, view):
@@ -685,9 +713,7 @@ class TestStartEventfitter:
         ):
             view._start_eventfitter("ef1", "No Filter", [0])
         # Should still emit fit_events since we didn't return early
-        emitted_actions = [
-            c.args[2] for c in view.global_signal.emit.call_args_list
-        ]
+        emitted_actions = [c.args[2] for c in view.global_signal.emit.call_args_list]
         assert "fit_events" in emitted_actions
 
 
@@ -695,11 +721,14 @@ class TestStartEventfitter:
 # _shift_range_and_update_plot
 # ===========================================================================
 
+
 class TestShiftRangeAndUpdatePlot:
     def _base_params(self):
         return {
-            "loader": "l", "eventfitter": "ef",
-            "filter": "No Filter", "channel": ["0"],
+            "loader": "l",
+            "eventfitter": "ef",
+            "filter": "No Filter",
+            "channel": ["0"],
             "event_index": [5, 6, 7],
         }
 
@@ -783,6 +812,7 @@ class TestShiftRangeAndUpdatePlot:
 # ===========================================================================
 # _handle_plot_events
 # ===========================================================================
+
 
 class TestHandlePlotEvents:
     def _params(self, events=None):
@@ -909,6 +939,7 @@ class TestHandlePlotEvents:
 # _update_event_plot
 # ===========================================================================
 
+
 class TestUpdateEventPlot:
     def _make_data(self, n=50):
         return np.ones(n) * 1000.0
@@ -964,7 +995,6 @@ class TestUpdateEventPlot:
         )
         view.figure.add_subplot.assert_called_once()
 
-
     def test_fit_trace_plotted_when_label_contains_fit(self, view):
         mock_ax = self._mock_figure(view)
         view.plot_samplerate = 1_000_000
@@ -994,8 +1024,12 @@ class TestUpdateEventPlot:
             [self._make_data()],
             ["Event 0 Data"],
             1,
-            [[10.0]], [None], [None],
-            [["v_label"]], [None], [None],
+            [[10.0]],
+            [None],
+            [None],
+            [["v_label"]],
+            [None],
+            [None],
         )
         mock_ax.axvline.assert_called()
 
@@ -1006,8 +1040,12 @@ class TestUpdateEventPlot:
             [self._make_data()],
             ["Event 0 Data"],
             1,
-            [None], [[500.0]], [None],
-            [None], [["h_label"]], [None],
+            [None],
+            [[500.0]],
+            [None],
+            [None],
+            [["h_label"]],
+            [None],
         )
         mock_ax.axhline.assert_called()
 
@@ -1018,8 +1056,12 @@ class TestUpdateEventPlot:
             [self._make_data()],
             ["Event 0 Data"],
             1,
-            [None], [None], [[(5.0, 300.0)]],
-            [None], [None], [["p_label"]],
+            [None],
+            [None],
+            [[(5.0, 300.0)]],
+            [None],
+            [None],
+            [["p_label"]],
         )
         assert mock_ax.plot.call_count >= 2
 
@@ -1052,8 +1094,12 @@ class TestUpdateEventPlot:
             [self._make_data()],
             ["Event 0 Data"],
             1,
-            [[10.0]], [None], [None],
-            [[None]], [None], [None],
+            [[10.0]],
+            [None],
+            [None],
+            [[None]],
+            [None],
+            [None],
         )
         mock_ax.axvline.assert_called()
         call_kwargs = mock_ax.axvline.call_args[1]
@@ -1066,8 +1112,12 @@ class TestUpdateEventPlot:
             [self._make_data()],
             ["Event 0 Data"],
             1,
-            [None], [[500.0]], [None],
-            [None], [[None]], [None],
+            [None],
+            [[500.0]],
+            [None],
+            [None],
+            [[None]],
+            [None],
         )
         mock_ax.axhline.assert_called()
         call_kwargs = mock_ax.axhline.call_args[1]
@@ -1077,6 +1127,7 @@ class TestUpdateEventPlot:
 # ===========================================================================
 # get_save_filename
 # ===========================================================================
+
 
 class TestGetSaveFilename:
     def test_returns_selected_path(self, view):
@@ -1100,6 +1151,7 @@ class TestGetSaveFilename:
 # update_plot / _reset_actions / _init (no-ops — coverage only)
 # ===========================================================================
 
+
 class TestNoOpMethods:
     def test_update_plot_no_error(self, view):
         view.update_plot()
@@ -1114,6 +1166,7 @@ class TestNoOpMethods:
 # ===========================================================================
 # _factors — extended edge cases
 # ===========================================================================
+
 
 class TestFactorsExtended:
     def test_three(self, view):
@@ -1143,6 +1196,7 @@ class TestFactorsExtended:
 # update_plot_data — extended
 # ===========================================================================
 
+
 class TestUpdatePlotDataExtended:
     def test_dict_with_extra_keys_uses_data_key(self, view):
         arr = np.array([7.0, 8.0])
@@ -1164,6 +1218,7 @@ class TestUpdatePlotDataExtended:
 # update_plot_features — extended
 # ===========================================================================
 
+
 class TestUpdatePlotFeaturesExtended:
     def test_overwrites_previous_values(self, view):
         view.update_plot_features(vertical=[1.0])
@@ -1172,7 +1227,14 @@ class TestUpdatePlotFeaturesExtended:
 
     def test_all_none_by_default(self, view):
         view.update_plot_features()
-        for attr in ("vertical", "horizontal", "points", "vlabels", "hlabels", "plabels"):
+        for attr in (
+            "vertical",
+            "horizontal",
+            "points",
+            "vlabels",
+            "hlabels",
+            "plabels",
+        ):
             assert getattr(view, attr) is None
 
     def test_points_stored_correctly(self, view):
@@ -1184,6 +1246,7 @@ class TestUpdatePlotFeaturesExtended:
 # ===========================================================================
 # validate_single_channel — extended
 # ===========================================================================
+
 
 class TestValidateSingleChannelExtended:
     def test_exactly_one_channel_ok(self, view):
@@ -1202,6 +1265,7 @@ class TestValidateSingleChannelExtended:
 # set_num_events_allowed — extended
 # ===========================================================================
 
+
 class TestSetNumEventsAllowedExtended:
     def test_large_number(self, view):
         view.set_num_events_allowed(1_000_000)
@@ -1216,6 +1280,7 @@ class TestSetNumEventsAllowedExtended:
 # ===========================================================================
 # set_data_filter_function — extended
 # ===========================================================================
+
 
 class TestSetDataFilterFunctionExtended:
     def test_lambda_stored(self, view):
@@ -1233,11 +1298,12 @@ class TestSetDataFilterFunctionExtended:
 # _extract_plot_event_parameters — edge cases
 # ===========================================================================
 
+
 class TestExtractPlotEventParametersExtended:
     def test_empty_channel_list(self, view):
         params = {"channel": [], "event_index": []}
-        loader, fitter, filt, channels, events = (
-            view._extract_plot_event_parameters(params)
+        loader, fitter, filt, channels, events = view._extract_plot_event_parameters(
+            params
         )
         assert channels == []
 
@@ -1255,6 +1321,7 @@ class TestExtractPlotEventParametersExtended:
 # ===========================================================================
 # _extract_event_fit_parameters — edge cases
 # ===========================================================================
+
 
 class TestExtractEventFitParametersExtended:
     def test_missing_eventfitter_returns_none(self, view):
@@ -1277,6 +1344,7 @@ class TestExtractEventFitParametersExtended:
 # _extract_commit_event_parameters — edge cases
 # ===========================================================================
 
+
 class TestExtractCommitEventParametersExtended:
     def test_missing_writer_returns_none(self, view):
         params = {"channel": ["0"]}
@@ -1292,6 +1360,7 @@ class TestExtractCommitEventParametersExtended:
 # ===========================================================================
 # _handle_other_actions — extended
 # ===========================================================================
+
 
 class TestHandleOtherActionsExtended:
     def test_loader_none_does_not_emit(self, view):
@@ -1321,25 +1390,30 @@ class TestHandleOtherActionsExtended:
 # _handle_fit_events — extended
 # ===========================================================================
 
+
 class TestHandleFitEventsExtended:
     def test_empty_channel_list_does_not_crash(self, view):
         with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
-            view._handle_fit_events({
-                "eventfitter": "ef1",
-                "filter": "No Filter",
-                "channel": [],
-            })
+            view._handle_fit_events(
+                {
+                    "eventfitter": "ef1",
+                    "filter": "No Filter",
+                    "channel": [],
+                }
+            )
         mock.assert_called_once()
         all_args = mock.call_args[0]
         assert [] in all_args
 
     def test_channels_passed_as_ints(self, view):
         with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
-            view._handle_fit_events({
-                "eventfitter": "ef1",
-                "filter": "No Filter",
-                "channel": ["2", "3"],
-            })
+            view._handle_fit_events(
+                {
+                    "eventfitter": "ef1",
+                    "filter": "No Filter",
+                    "channel": ["2", "3"],
+                }
+            )
         mock.assert_called_once()
         all_args = mock.call_args[0]
         assert [2, 3] in all_args
@@ -1348,6 +1422,7 @@ class TestHandleFitEventsExtended:
 # ===========================================================================
 # _handle_commit_events — extended
 # ===========================================================================
+
 
 class TestHandleCommitEventsExtended:
     def test_channels_passed_as_ints(self, view):
@@ -1368,6 +1443,7 @@ class TestHandleCommitEventsExtended:
 # ===========================================================================
 # _start_writer — extended
 # ===========================================================================
+
 
 class TestStartWriterExtended:
     def test_empty_channels_does_not_emit_write(self, view):
@@ -1396,6 +1472,7 @@ class TestStartWriterExtended:
 # _start_eventfitter — extended
 # ===========================================================================
 
+
 class TestStartEventfitterExtended:
     def _setup(self, view):
         view.global_signal = MagicMock()
@@ -1413,7 +1490,8 @@ class TestStartEventfitterExtended:
         self._setup(view)
         view._start_eventfitter("ef1", "No Filter", [0, 1])
         fit_calls = [
-            c for c in view.global_signal.emit.call_args_list
+            c
+            for c in view.global_signal.emit.call_args_list
             if len(c.args) > 2 and c.args[2] == "fit_events"
         ]
         assert len(fit_calls) == 2
@@ -1430,11 +1508,16 @@ class TestStartEventfitterExtended:
 # handle_parameter_change — extended routing
 # ===========================================================================
 
+
 class TestHandleParameterChangeExtended:
     def _params(self):
         return {
-            "loader": "l", "eventfitter": "ef", "filter": "No Filter",
-            "channel": ["0"], "event_index": [1], "writer": "w",
+            "loader": "l",
+            "eventfitter": "ef",
+            "filter": "No Filter",
+            "channel": ["0"],
+            "event_index": [1],
+            "writer": "w",
             "raw": False,
         }
 
@@ -1460,6 +1543,7 @@ class TestHandleParameterChangeExtended:
 # ===========================================================================
 # _handle_plot_events — extended
 # ===========================================================================
+
 
 class TestHandlePlotEventsExtended:
     def _params(self, events=None):
@@ -1536,6 +1620,7 @@ class TestHandlePlotEventsExtended:
 # _update_event_plot — extended
 # ===========================================================================
 
+
 class TestUpdateEventPlotExtended:
     def _make_data(self, n=50):
         return np.ones(n) * 1000.0
@@ -1566,7 +1651,9 @@ class TestUpdateEventPlotExtended:
         self._mock_figure(view)
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
             *self._none_lists(1),
         )
         view.figure.set_constrained_layout.assert_called()
@@ -1581,7 +1668,9 @@ class TestUpdateEventPlotExtended:
         view.data_cache_labels = []
         with patch.object(EventAnalysisView, "_clear_cache") as mock_cc:
             view._update_event_plot(
-                [self._make_data()], ["Event 0 Data"], 1,
+                [self._make_data()],
+                ["Event 0 Data"],
+                1,
                 *self._none_lists(1),
             )
         mock_cc.assert_called()
@@ -1602,9 +1691,15 @@ class TestUpdateEventPlotExtended:
         mock_ax = self._mock_figure(view)
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
-            [[10.0]], [None], [None],
-            [["my_label"]], [None], [None],
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
+            [[10.0]],
+            [None],
+            [None],
+            [["my_label"]],
+            [None],
+            [None],
         )
         mock_ax.axvline.assert_called()
         call_kwargs = mock_ax.axvline.call_args[1]
@@ -1615,9 +1710,15 @@ class TestUpdateEventPlotExtended:
         mock_ax = self._mock_figure(view)
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
-            [None], [[500.0]], [None],
-            [None], [["h_label"]], [None],
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
+            [None],
+            [[500.0]],
+            [None],
+            [None],
+            [["h_label"]],
+            [None],
         )
         mock_ax.axhline.assert_called()
         call_kwargs = mock_ax.axhline.call_args[1]
@@ -1628,13 +1729,18 @@ class TestUpdateEventPlotExtended:
         mock_ax = self._mock_figure(view)
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
-            [None], [None], [[(5.0, 300.0)]],
-            [None], [None], [["pt_label"]],
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
+            [None],
+            [None],
+            [[(5.0, 300.0)]],
+            [None],
+            [None],
+            [["pt_label"]],
         )
         label_calls = [
-            c for c in mock_ax.plot.call_args_list
-            if c[1].get("label") == "pt_label"
+            c for c in mock_ax.plot.call_args_list if c[1].get("label") == "pt_label"
         ]
         assert len(label_calls) >= 1
 
@@ -1642,9 +1748,15 @@ class TestUpdateEventPlotExtended:
         mock_ax = self._mock_figure(view)
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
-            [[5.0, 10.0, 15.0]], [None], [None],
-            [[None, None, None]], [None], [None],
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
+            [[5.0, 10.0, 15.0]],
+            [None],
+            [None],
+            [[None, None, None]],
+            [None],
+            [None],
         )
         assert mock_ax.axvline.call_count == 3
 
@@ -1652,7 +1764,9 @@ class TestUpdateEventPlotExtended:
         mock_ax = self._mock_figure(view)
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
             *self._none_lists(1),
         )
         mock_ax.grid.assert_called_with(True)
@@ -1660,7 +1774,9 @@ class TestUpdateEventPlotExtended:
     def test_legend_built_when_handles_exist(self, view):
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
             *self._none_lists(1),
         )
         view.figure.legend.assert_called_once()
@@ -1668,14 +1784,18 @@ class TestUpdateEventPlotExtended:
     def test_no_legend_when_no_handles(self, view):
         view.plot_samplerate = 1_000_000
         view._update_event_plot(
-            [self._make_data()], ["Event 0 Data"], 1,
+            [self._make_data()],
+            ["Event 0 Data"],
+            1,
             *self._none_lists(1),
         )
         view.figure.legend.assert_not_called()
 
+
 # ===========================================================================
 # get_walkthrough_steps — extended
 # ===========================================================================
+
 
 class TestGetWalkthroughStepsExtended:
     def test_all_step_views_are_event_analysis_view(self, view):
@@ -1695,6 +1815,7 @@ class TestGetWalkthroughStepsExtended:
 # update_channels — extended
 # ===========================================================================
 
+
 class TestUpdateChannelsExtended:
     def test_empty_list_clears_combobox(self, view):
         view.update_channels(["0", "1"])
@@ -1712,6 +1833,7 @@ class TestUpdateChannelsExtended:
 # ===========================================================================
 # update_available_plugins — extended
 # ===========================================================================
+
 
 class TestUpdateAvailablePluginsExtended:
     def test_unknown_key_ignored(self, view):
