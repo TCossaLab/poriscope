@@ -150,7 +150,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
                     break
                 index += pos
                 event_end = index
-                while data[event_end] > threshold:
+                while data[event_end] > threshold and event_end > 0:
                     event_end -= 1
                 event_ends.append(event_end + offset)
                 entry_state = False
