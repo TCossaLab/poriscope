@@ -60,14 +60,7 @@ def view(qt_app):
     container.show()
     qt_app.processEvents()  # flush any pending Qt events at setup
 
-    yield v
-    
-    # Explicit teardown: close and schedule deletion of the widget tree so
-    # Qt's event-filter chain (e.g. MultiSelectComboBox's app-level filter)
-    # is unregistered before the next test constructs a new ProteinView.
-    container.close()
-    container.deleteLater()
-    qt_app.processEvents()
+    return v
 
 
 # ===========================================================================
