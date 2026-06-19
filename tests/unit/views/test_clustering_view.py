@@ -32,7 +32,6 @@ from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 # Fixtures
 # ===========================================================================
 
-
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -59,7 +58,6 @@ def view(qt_app):
 # Helpers
 # ===========================================================================
 
-
 def _make_df(*cols):
     """Small DataFrame with the given column names (float data)."""
     rng = np.random.default_rng(42)
@@ -70,22 +68,19 @@ def _make_df(*cols):
 
 def _make_cluster_data(n=50):
     rng = np.random.default_rng(0)
-    df = pd.DataFrame(
-        {
-            "duration": rng.random(n),
-            "current": rng.random(n),
-            "id": np.arange(n),
-            "cluster_label": np.tile([0, 1], n // 2),
-            "cluster_confidence": np.ones(n),
-        }
-    )
+    df = pd.DataFrame({
+        "duration": rng.random(n),
+        "current":  rng.random(n),
+        "id":       np.arange(n),
+        "cluster_label":      np.tile([0, 1], n // 2),
+        "cluster_confidence": np.ones(n),
+    })
     return df
 
 
 # ===========================================================================
 # _init
 # ===========================================================================
-
 
 class TestInit:
     def test_cluster_data_none(self, view):
@@ -98,7 +93,6 @@ class TestInit:
 # ===========================================================================
 # set_query
 # ===========================================================================
-
 
 class TestSetQuery:
     def test_stores_query_and_table(self, view):
@@ -115,7 +109,6 @@ class TestSetQuery:
 # set_units
 # ===========================================================================
 
-
 class TestSetUnits:
     def test_stores_units(self, view):
         view.set_units({"duration": "ms", "current": "pA"})
@@ -130,7 +123,6 @@ class TestSetUnits:
 # update_column_names
 # ===========================================================================
 
-
 class TestUpdateColumnNames:
     def test_stores_columns(self, view):
         view.update_column_names(["duration", "voltage"])
@@ -144,7 +136,6 @@ class TestUpdateColumnNames:
 # ===========================================================================
 # update_column_units
 # ===========================================================================
-
 
 class TestUpdateColumnUnits:
     def test_stores_unit_for_column(self, view):
@@ -173,7 +164,6 @@ class TestUpdateColumnUnits:
 # set_cluster_column_exists
 # ===========================================================================
 
-
 class TestSetClusterColumnExists:
     def test_stores_table_name(self, view):
         view.set_cluster_column_exists("events")
@@ -187,7 +177,6 @@ class TestSetClusterColumnExists:
 # ===========================================================================
 # set_alter_database_status
 # ===========================================================================
-
 
 class TestSetAlterDatabaseStatus:
     def test_true(self, view):
@@ -203,7 +192,6 @@ class TestSetAlterDatabaseStatus:
 # get_current_view
 # ===========================================================================
 
-
 class TestGetCurrentView:
     def test_returns_clustering_view(self, view):
         assert view.get_current_view() == "ClusteringView"
@@ -212,7 +200,6 @@ class TestGetCurrentView:
 # ===========================================================================
 # get_walkthrough_steps
 # ===========================================================================
-
 
 class TestGetWalkthroughSteps:
     def test_returns_list(self, view):
@@ -236,7 +223,6 @@ class TestGetWalkthroughSteps:
 # _handle_other_actions
 # ===========================================================================
 
-
 class TestHandleOtherActions:
     def test_raises_not_implemented(self, view):
         with pytest.raises(NotImplementedError, match="unknown_action"):
@@ -246,7 +232,6 @@ class TestHandleOtherActions:
 # ===========================================================================
 # _normalize_column_data
 # ===========================================================================
-
 
 class TestNormalizeColumnData:
     def test_normalises_float_columns(self, view):
@@ -287,17 +272,14 @@ class TestNormalizeColumnData:
 # _update_clusters_hdbscan
 # ===========================================================================
 
-
 class TestUpdateClustersHDBSCAN:
     def _data(self):
         rng = np.random.default_rng(1)
-        df = pd.DataFrame(
-            {
-                "a": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
-                "b": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
-                "id": np.arange(200),
-            }
-        )
+        df = pd.DataFrame({
+            "a": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
+            "b": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
+            "id": np.arange(200),
+        })
         return df
 
     def test_returns_labels_and_probs(self, view):
@@ -322,18 +304,14 @@ class TestUpdateClustersHDBSCAN:
 
     def test_custom_params(self, view):
         labels, _ = view._update_clusters_hdbscan(
-            self._data(),
-            min_cluster_size=10,
-            min_samples=2,
-            cluster_selection_epsilon=0.5,
-        )
+            self._data(), min_cluster_size=10, min_samples=2,
+            cluster_selection_epsilon=0.5)
         assert len(labels) == 200
 
 
 # ===========================================================================
 # _merge_clusters
 # ===========================================================================
-
 
 class TestMergeClusters:
     def _setup(self, view):
@@ -371,10 +349,8 @@ class TestMergeClusters:
 
     def test_calls_update_plot_after_merge(self, view):
         self._setup(view)
-        with (
-            patch.object(view, "_reset_actions"),
-            patch.object(view, "update_plot") as mock_plot,
-        ):
+        with patch.object(view, "_reset_actions"), \
+             patch.object(view, "update_plot") as mock_plot:
             view._merge_clusters(0, 1)
         mock_plot.assert_called_once()
 
@@ -383,27 +359,16 @@ class TestMergeClusters:
 # _load_metadata_and_cluster — config parsing (bus parts patched)
 # ===========================================================================
 
-
 class TestLoadMetadataAndCluster:
     def _config_hdbscan(self):
         return {
             "method": "HDBSCAN",
             "filter": "",
             "columns": [
-                {
-                    "column": "duration",
-                    "unit": "ms",
-                    "log": False,
-                    "norm": False,
-                    "plot": True,
-                },
-                {
-                    "column": "current",
-                    "unit": "pA",
-                    "log": False,
-                    "norm": False,
-                    "plot": True,
-                },
+                {"column": "duration", "unit": "ms", "log": False,
+                 "norm": False, "plot": True},
+                {"column": "current",  "unit": "pA", "log": False,
+                 "norm": False, "plot": True},
             ],
             "method_params": {
                 "HDBSCAN_Cluster_Size_input": "5",
@@ -417,20 +382,8 @@ class TestLoadMetadataAndCluster:
             "method": "HDBSCAN",
             "filter": "",
             "columns": [
-                {
-                    "column": "duration",
-                    "unit": "ms",
-                    "log": False,
-                    "norm": False,
-                    "plot": True,
-                },
-                {
-                    "column": "duration",
-                    "unit": "ms",
-                    "log": False,
-                    "norm": False,
-                    "plot": True,
-                },
+                {"column": "duration", "unit": "ms", "log": False, "norm": False, "plot": True},
+                {"column": "duration", "unit": "ms", "log": False, "norm": False, "plot": True},
             ],
             "method_params": {},
         }
@@ -462,9 +415,9 @@ class TestLoadMetadataAndCluster:
         config["method_params"]["HDBSCAN_Cluster_Size_input"] = "not_a_number"
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(0)
-        view.plot_data = pd.DataFrame(
-            {"duration": rng.random(50), "current": rng.random(50), "id": range(50)}
-        )
+        view.plot_data = pd.DataFrame({
+            "duration": rng.random(50), "current": rng.random(50), "id": range(50)
+        })
         with pytest.raises(ValueError, match="parameters"):
             view._load_metadata_and_cluster(config, "loader1")
 
@@ -472,13 +425,11 @@ class TestLoadMetadataAndCluster:
         config = self._config_hdbscan()
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(42)
-        view.plot_data = pd.DataFrame(
-            {
-                "duration": rng.random(100),
-                "current": rng.random(100),
-                "id": np.arange(100),
-            }
-        )
+        view.plot_data = pd.DataFrame({
+            "duration": rng.random(100),
+            "current":  rng.random(100),
+            "id":       np.arange(100),
+        })
         result = view._load_metadata_and_cluster(config, "loader1")
         assert len(result) == 7
         df, labels, probs, logs, norm, units, plot = result
@@ -493,13 +444,15 @@ class TestLoadMetadataAndCluster:
                 {"column": "a", "unit": "", "log": False, "norm": False, "plot": True},
                 {"column": "b", "unit": "", "log": False, "norm": False, "plot": True},
             ],
-            "method_params": {"Gaussian Mixtures_Number_of_Clusters_input": "bad"},
+            "method_params": {
+                "Gaussian Mixtures_Number_of_Clusters_input": "bad"
+            },
         }
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(1)
-        view.plot_data = pd.DataFrame(
-            {"a": rng.random(50), "b": rng.random(50), "id": range(50)}
-        )
+        view.plot_data = pd.DataFrame({
+            "a": rng.random(50), "b": rng.random(50), "id": range(50)
+        })
         with pytest.raises(ValueError, match="parameters"):
             view._load_metadata_and_cluster(config, "loader1")
 
@@ -511,15 +464,17 @@ class TestLoadMetadataAndCluster:
                 {"column": "a", "unit": "", "log": False, "norm": False, "plot": True},
                 {"column": "b", "unit": "", "log": False, "norm": False, "plot": True},
             ],
-            "method_params": {"Gaussian Mixtures_Number_of_Clusters_input": "2"},
+            "method_params": {
+                "Gaussian Mixtures_Number_of_Clusters_input": "2"
+            },
         }
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(7)
-        view.plot_data = pd.DataFrame(
-            {"a": rng.random(60), "b": rng.random(60), "id": range(60)}
-        )
-        df, labels, probs, logs, norm, units, plot = view._load_metadata_and_cluster(
-            config, "loader1"
+        view.plot_data = pd.DataFrame({
+            "a": rng.random(60), "b": rng.random(60), "id": range(60)
+        })
+        df, labels, probs, logs, norm, units, plot = (
+            view._load_metadata_and_cluster(config, "loader1")
         )
         assert len(labels) == 60
 
@@ -527,7 +482,6 @@ class TestLoadMetadataAndCluster:
 # ===========================================================================
 # handle_parameter_change — routing
 # ===========================================================================
-
 
 class TestHandleParameterChange:
     def _p(self, extra=None):
@@ -550,10 +504,8 @@ class TestHandleParameterChange:
 
     def test_routes_open_cluster_settings(self, view):
         view.columns = []
-        with (
-            patch.object(view, "_handle_clustering_settings") as mock,
-            patch.object(view, "update_available_columns"),
-        ):
+        with patch.object(view, "_handle_clustering_settings") as mock, \
+             patch.object(view, "update_available_columns"):
             view.handle_parameter_change("M", "open_cluster_settings", (self._p(),))
         mock.assert_called_once()
 
@@ -574,10 +526,8 @@ class TestHandleParameterChange:
 
     def test_loader_changed_updates_units_per_column(self, view):
         view.columns = ["duration", "current"]
-        with (
-            patch.object(view, "update_available_columns"),
-            patch.object(view, "update_units") as mock_units,
-        ):
+        with patch.object(view, "update_available_columns"), \
+             patch.object(view, "update_units") as mock_units:
             view.handle_parameter_change("M", "loader_changed", (self._p(),))
         assert mock_units.call_count == 2
 
@@ -585,7 +535,6 @@ class TestHandleParameterChange:
 # ===========================================================================
 # update_available_plugins
 # ===========================================================================
-
 
 class TestUpdateAvailablePlugins:
     def test_updates_loaders_combobox(self, view):
@@ -603,18 +552,15 @@ class TestUpdateAvailablePlugins:
 # update_plot — 2-D and 3-D paths
 # ===========================================================================
 
-
 class TestUpdatePlot:
     def _make_labelled_df(self):
         rng = np.random.default_rng(5)
-        df = pd.DataFrame(
-            {
-                "duration": rng.random(30).astype(float),
-                "current": rng.random(30).astype(float),
-                "id": np.arange(30),
-            }
-        )
-        labels = np.tile([0, 1], 15)
+        df = pd.DataFrame({
+            "duration": rng.random(30).astype(float),
+            "current":  rng.random(30).astype(float),
+            "id":       np.arange(30),
+        })
+        labels     = np.tile([0, 1], 15)
         confidence = np.ones(30)
         return df, labels, confidence
 
@@ -630,15 +576,9 @@ class TestUpdatePlot:
     def test_2d_plot_no_error(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
             view.update_plot(
-                df,
-                labels,
-                conf,
+                df, labels, conf,
                 logs=[False, False],
                 normalized=[False, False],
                 units=["ms", "pA"],
@@ -648,150 +588,79 @@ class TestUpdatePlot:
     def test_stores_cluster_data(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False],
-                normalized=[False, False],
-                units=["ms", "pA"],
-                plot=[True, True, False],
-            )
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[False, False], normalized=[False, False],
+                             units=["ms", "pA"], plot=[True, True, False])
         assert view.cluster_data is not None
 
     def test_stores_labels(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False],
-                normalized=[False, False],
-                units=["ms", "pA"],
-                plot=[True, True, False],
-            )
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[False, False], normalized=[False, False],
+                             units=["ms", "pA"], plot=[True, True, False])
         np.testing.assert_array_equal(view.labels, labels)
 
     def test_invalid_plot_dims_returns_early(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw") as mock_draw,
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False],
-                normalized=[False, False],
-                units=["ms", "pA"],
-                plot=[False, False, False],
-            )
+        with patch.object(view.canvas, "draw") as mock_draw,              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[False, False], normalized=[False, False],
+                             units=["ms", "pA"], plot=[False, False, False])
         mock_draw.assert_not_called()
 
     def test_log_flag_reflected_in_label(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[True, False],
-                normalized=[False, False],
-                units=["ms", "pA"],
-                plot=[True, True, False],
-            )
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[True, False], normalized=[False, False],
+                             units=["ms", "pA"], plot=[True, True, False])
         assert "Log10" in view.axes.get_xlabel()
 
     def test_norm_flag_reflected_in_label(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False],
-                normalized=[True, False],
-                units=["ms", "pA"],
-                plot=[True, True, False],
-            )
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[False, False], normalized=[True, False],
+                             units=["ms", "pA"], plot=[True, True, False])
         assert "Normalized" in view.axes.get_xlabel()
 
     def test_unit_in_label(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False],
-                normalized=[False, False],
-                units=["ms", "pA"],
-                plot=[True, True, False],
-            )
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[False, False], normalized=[False, False],
+                             units=["ms", "pA"], plot=[True, True, False])
         assert "ms" in view.axes.get_xlabel()
 
     def test_3d_plot_no_error(self, view):
         rng = np.random.default_rng(9)
-        df = pd.DataFrame(
-            {
-                "a": rng.random(20).astype(float),
-                "b": rng.random(20).astype(float),
-                "c": rng.random(20).astype(float),
-                "id": np.arange(20),
-            }
-        )
+        df = pd.DataFrame({
+            "a": rng.random(20).astype(float),
+            "b": rng.random(20).astype(float),
+            "c": rng.random(20).astype(float),
+            "id": np.arange(20),
+        })
         labels = np.tile([0, 1], 10)
-        conf = np.ones(20)
+        conf   = np.ones(20)
         self._setup_axes(view, axis_type="3d")
-        with (
-            patch.object(view.canvas, "draw"),
-            patch.object(view, "_update_cache"),
-            patch.object(view, "_commit_cache"),
-        ):
-            view.update_plot(
-                df,
-                labels,
-                conf,
-                logs=[False, False, False],
-                normalized=[False, False, False],
-                units=["", "", ""],
-                plot=[True, True, True, False],
-            )
+        with patch.object(view.canvas, "draw"),              patch.object(view, "_update_cache"),              patch.object(view, "_commit_cache"):
+            view.update_plot(df, labels, conf,
+                             logs=[False, False, False],
+                             normalized=[False, False, False],
+                             units=["", "", ""],
+                             plot=[True, True, True, False])
 
 
 # ===========================================================================
 # _commit_clusters — boundary test (no DB)
 # ===========================================================================
-
 
 class TestCommitClusters:
     def test_raises_when_no_cluster_data(self, view):
@@ -800,13 +669,11 @@ class TestCommitClusters:
             view._commit_clusters("loader1")
 
     def test_proceeds_with_cluster_data(self, view):
-        view.cluster_data = pd.DataFrame(
-            {
-                "id": [1, 2],
-                "cluster_label": [0, 1],
-                "cluster_confidence": [1.0, 0.9],
-            }
-        )
+        view.cluster_data = pd.DataFrame({
+            "id": [1, 2],
+            "cluster_label": [0, 1],
+            "cluster_confidence": [1.0, 0.9],
+        })
         view.table_name = "events"
         view.cluster_column_table = None  # no existing columns → skip overwrite dialog
         # global_signal.emit is a Qt signal with no connected slots — no crash expected
@@ -816,7 +683,6 @@ class TestCommitClusters:
 # ===========================================================================
 # _reset_actions
 # ===========================================================================
-
 
 class TestResetActions:
     def test_2d_no_error(self, view):
