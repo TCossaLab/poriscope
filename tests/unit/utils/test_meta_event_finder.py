@@ -763,8 +763,13 @@ class TestGetPaddingLengthClamps:
         # between the channel/range start (last_end) and the first event ->
         # padding_after_previous_end must be clamped down to that gap.
         pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [100], [150], last_end=95, last_duration=50, samplerate=100.0,
-            last_call=True, last_sample=1000,
+            [100],
+            [150],
+            last_end=95,
+            last_duration=50,
+            samplerate=100.0,
+            last_call=True,
+            last_sample=1000,
         )
         assert pa_prev == 5  # clamped to event_starts[0] - last_end
 
@@ -772,7 +777,11 @@ class TestGetPaddingLengthClamps:
         # event0's own target padding (based on its duration) is larger than
         # the gap to the next event's start -> clamp via the 0.75x rule.
         pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [0, 6], [5, 20], last_end=0, last_duration=None, samplerate=100.0,
+            [0, 6],
+            [5, 20],
+            last_end=0,
+            last_duration=None,
+            samplerate=100.0,
             last_sample=1000,
         )
         assert pa[0] == int(0.75 * (6 - 5))
@@ -822,15 +831,24 @@ class TestGetPaddingLength:
     def test_padding_clamped_near_last_end(self, finder):
         # event starts very close to last_end -> padding_before should be clamped
         pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [10], [20], last_end=5, last_duration=None, samplerate=100.0,
+            [10],
+            [20],
+            last_end=5,
+            last_duration=None,
+            samplerate=100.0,
             last_sample=1000,
         )
         assert pb[0] <= 10
 
     def test_padding_after_clamped_near_last_sample(self, finder):
         pb, pa, last_end, pa_prev = finder._get_padding_length(
-            [10, 900], [20, 990], last_end=0, last_duration=None, samplerate=100.0,
-            last_call=True, last_sample=1000,
+            [10, 900],
+            [20, 990],
+            last_end=0,
+            last_duration=None,
+            samplerate=100.0,
+            last_call=True,
+            last_sample=1000,
         )
         assert pa[0] >= 0
 

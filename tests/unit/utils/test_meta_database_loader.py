@@ -679,10 +679,12 @@ class TestMetaDatabaseLoader:
                 ["dwell_time"], experiments_and_channels=experiments_and_channels
             )
 
+
 # ===========================================================================
 # Additional coverage-focused tests below (abstract stub bodies, default
 # implementations, and remaining branch combinations not exercised above).
 # ===========================================================================
+
 
 @pytest.fixture
 def loader() -> ConcreteDatabaseLoader:
@@ -768,8 +770,7 @@ class TestGetExperimentIdByNameBase:
     ) -> None:
         with patch.object(loader, "query_database_directly", return_value=None):
             assert (
-                MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing")
-                is None
+                MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing") is None
             )
 
     def test_base_impl_raises_on_exception(
@@ -823,9 +824,7 @@ class TestExportSubsetToCsvErrorBranches:
         with patch.object(
             loader,
             "validate_filter_query",
-            side_effect=lambda q: (False, "bad")
-            if "FROM events" in q
-            else (True, ""),
+            side_effect=lambda q: (False, "bad") if "FROM events" in q else (True, ""),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed events query"):
@@ -852,17 +851,15 @@ class TestExportSubsetToCsvErrorBranches:
         with patch.object(
             loader,
             "validate_filter_query",
-            side_effect=lambda q: (False, "bad")
-            if "FROM sublevels" in q
-            else (True, ""),
+            side_effect=lambda q: (
+                (False, "bad") if "FROM sublevels" in q else (True, "")
+            ),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed sublevels query"):
                     list(loader.export_subset_to_csv(tmpdir))
 
-    def test_experiments_table_load_fails(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_experiments_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
         original_query = loader.query_database_directly
 
         def fake_query(query):
@@ -881,9 +878,9 @@ class TestExportSubsetToCsvErrorBranches:
         with patch.object(
             loader,
             "validate_filter_query",
-            side_effect=lambda q: (False, "bad")
-            if "FROM experiments" in q
-            else (True, ""),
+            side_effect=lambda q: (
+                (False, "bad") if "FROM experiments" in q else (True, "")
+            ),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed experiments query"):
@@ -908,9 +905,9 @@ class TestExportSubsetToCsvErrorBranches:
         with patch.object(
             loader,
             "validate_filter_query",
-            side_effect=lambda q: (False, "bad")
-            if "FROM channels" in q
-            else (True, ""),
+            side_effect=lambda q: (
+                (False, "bad") if "FROM channels" in q else (True, "")
+            ),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed channels query"):
@@ -935,9 +932,7 @@ class TestExportSubsetToCsvErrorBranches:
         with patch.object(
             loader,
             "validate_filter_query",
-            side_effect=lambda q: (False, "bad")
-            if "FROM columns" in q
-            else (True, ""),
+            side_effect=lambda q: (False, "bad") if "FROM columns" in q else (True, ""),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
                 with pytest.raises(ValueError, match="Malformed columns query"):
@@ -1056,9 +1051,7 @@ class TestConstructMetadataQueryBranches:
         # Force get_table_by_column to report a table outside the
         # events/sublevels/experiments trio so none of the column buckets are
         # populated, triggering the final "else" branch.
-        with patch.object(
-            loader, "get_table_by_column", return_value="channels"
-        ):
+        with patch.object(loader, "get_table_by_column", return_value="channels"):
             with pytest.raises(ValueError, match="No valid table columns specified"):
                 loader.construct_metadata_query(["samplerate"])
 
@@ -1089,9 +1082,7 @@ class TestConstructEventDataQueryBranches:
         self, loader: ConcreteDatabaseLoader
     ) -> None:
         with pytest.raises(ValueError, match="only None values"):
-            loader.construct_event_data_query(
-                experiments_and_channels={"exp1": [None]}
-            )
+            loader.construct_event_data_query(experiments_and_channels={"exp1": [None]})
 
     def test_final_query_validation_failure_returns_debug(
         self, loader: ConcreteDatabaseLoader
@@ -1146,9 +1137,7 @@ class TestQueryGeneratorNoneBranch:
     ) -> None:
         with patch.object(loader, "_load_metadata_generator", return_value=None):
             rows = list(
-                loader.query_database_directly_and_get_generator(
-                    "SELECT * FROM events"
-                )
+                loader.query_database_directly_and_get_generator("SELECT * FROM events")
             )
             assert rows == []
 
@@ -1161,9 +1150,7 @@ class TestQueryGeneratorNoneBranch:
 class TestGetEmptySettingsBase:
     def test_base_impl_default(self, loader: ConcreteDatabaseLoader) -> None:
         settings = MetaDatabaseLoader.get_empty_settings(loader)
-        assert settings == {
-            "Input File": {"Type": str, "Options": ["All Files (*.*)"]}
-        }
+        assert settings == {"Input File": {"Type": str, "Options": ["All Files (*.*)"]}}
 
 
 # ---------------------------------------------------------------------------
