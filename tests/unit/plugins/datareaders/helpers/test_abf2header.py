@@ -1,5 +1,5 @@
 """
-Tests for poriscope.plugins.datareaders.helpers.ABF2Header 
+Tests for poriscope.plugins.datareaders.helpers.ABF2Header
 
 Strategy
 --------
@@ -166,9 +166,11 @@ def build_abf2_bytes(
 
     name_indices = list(range(1, 1 + n_channels))
     unit_indices = list(range(1 + n_channels, 1 + 2 * n_channels))
-    all_strings = [b""] + [n.encode("ascii") for n in channel_names] + [
-        u.encode("ascii") for u in channel_units
-    ]
+    all_strings = (
+        [b""]
+        + [n.encode("ascii") for n in channel_names]
+        + [u.encode("ascii") for u in channel_units]
+    )
     strings_blob = b"\x00\x00" + b"\x00".join(all_strings) + b"\x00"
     strings_size = len(strings_blob)
     struct.pack_into("IIl", buf, 220, STRINGS_BLOCK, strings_size, 1)
@@ -177,7 +179,7 @@ def build_abf2_bytes(
     needed = strings_offset + strings_size
     if needed > len(buf):
         buf.extend(bytearray(needed - len(buf)))
-    buf[strings_offset:strings_offset + strings_size] = strings_blob
+    buf[strings_offset : strings_offset + strings_size] = strings_blob
 
     struct.pack_into("H", buf, 30, data_type)
 
@@ -200,7 +202,7 @@ def build_abf2_bytes(
             units_index=unit_indices[i],
         )
         off = adc_offset + i * ADC_ENTRY_SIZE
-        buf[off:off + ADC_ENTRY_SIZE] = entry
+        buf[off : off + ADC_ENTRY_SIZE] = entry
 
     proto_offset = PROTOCOL_BLOCK * 512
     needed = proto_offset + 130
@@ -240,6 +242,7 @@ class TestSingleChannelDefaults(unittest.TestCase):
     def tearDown(self):
         self.header.f.close()
         import os
+
         os.remove(self.path)
 
     def test_abf_version_is_abf2(self):
@@ -299,6 +302,7 @@ class TestMultiChannel(unittest.TestCase):
     def tearDown(self):
         self.header.f.close()
         import os
+
         os.remove(self.path)
 
     def test_num_channels(self):
@@ -346,6 +350,7 @@ class TestTelegraphGain(unittest.TestCase):
         self.assertAlmostEqual(header.get_scale_factor(0), expected, places=8)
         header.f.close()
         import os
+
         os.remove(path)
 
     def test_telegraph_enabled_applies_additgain(self):
@@ -361,6 +366,7 @@ class TestTelegraphGain(unittest.TestCase):
         self.assertAlmostEqual(header.get_scale_factor(0), expected, places=8)
         header.f.close()
         import os
+
         os.remove(path)
 
 
@@ -383,6 +389,7 @@ class TestFloatDataType(unittest.TestCase):
     def tearDown(self):
         self.header.f.close()
         import os
+
         os.remove(self.path)
 
     def test_data_format_is_float(self):
@@ -407,6 +414,7 @@ class TestOffsetContributions(unittest.TestCase):
         self.assertAlmostEqual(header.get_scale_factor(0), base + 0.5, places=6)
         header.f.close()
         import os
+
         os.remove(path)
 
     def test_signal_offset_subtracted(self):
@@ -417,6 +425,7 @@ class TestOffsetContributions(unittest.TestCase):
         self.assertAlmostEqual(header.get_scale_factor(0), base - 0.3, places=6)
         header.f.close()
         import os
+
         os.remove(path)
 
 
@@ -434,6 +443,7 @@ class TestRescaleToPAFactor(unittest.TestCase):
     def tearDown(self):
         self.header.f.close()
         import os
+
         os.remove(self.path)
 
     def test_fa_factor(self):
@@ -472,6 +482,7 @@ class TestUnsupportedFiles(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             ABF2Header(path)
         import os
+
         os.remove(path)
 
     def test_garbage_file_raises(self):
@@ -481,6 +492,7 @@ class TestUnsupportedFiles(unittest.TestCase):
         with self.assertRaises((NotImplementedError, struct.error)):
             ABF2Header(path)
         import os
+
         os.remove(path)
 
     def test_missing_file_raises_filenotfound(self):
@@ -501,6 +513,7 @@ class TestSamplerateVariants(unittest.TestCase):
         self.assertAlmostEqual(header.get_samplerate(), 1_000_000.0, places=0)
         header.f.close()
         import os
+
         os.remove(path)
 
     def test_low_samplerate(self):
@@ -510,6 +523,7 @@ class TestSamplerateVariants(unittest.TestCase):
         self.assertAlmostEqual(header.get_samplerate(), 1000.0, places=2)
         header.f.close()
         import os
+
         os.remove(path)
 
 
@@ -527,6 +541,7 @@ class TestReadStructHelper(unittest.TestCase):
     def tearDown(self):
         self.header.f.close()
         import os
+
         os.remove(self.path)
 
     def test_reads_at_explicit_offset(self):

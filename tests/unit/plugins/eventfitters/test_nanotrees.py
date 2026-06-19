@@ -292,7 +292,9 @@ class TestExceptionalHeightRefresh(unittest.TestCase):
         event = {"raw": raw}
         original_heights = [sl.height for sl in sub.sublevels]
         result = exceptional_height_refresh(
-            settings={}, event=event, sublevels=sub,
+            settings={},
+            event=event,
+            sublevels=sub,
             exceptionalHeightBaseMaxDiffForHeightRefresh=100.0,
             heightFunction=self._height_fn,
         )
@@ -306,7 +308,9 @@ class TestExceptionalHeightRefresh(unittest.TestCase):
         sub = _make_sublevels((0, 10, 0.0), (10, 20, 50.0), (20, 30, 0.0))
         event = {"raw": raw}
         result = exceptional_height_refresh(
-            settings={}, event=event, sublevels=sub,
+            settings={},
+            event=event,
+            sublevels=sub,
             exceptionalHeightBaseMaxDiffForHeightRefresh=5.0,
             heightFunction=self._height_fn,
         )
@@ -319,7 +323,9 @@ class TestExceptionalHeightRefresh(unittest.TestCase):
         sub = _make_sublevels((0, 10, 0.0), (10, 20, 0.0), (20, 30, 999.0))
         event = {"raw": raw}
         result = exceptional_height_refresh(
-            settings={}, event=event, sublevels=sub,
+            settings={},
+            event=event,
+            sublevels=sub,
             exceptionalHeightBaseMaxDiffForHeightRefresh=1.0,
             heightFunction=self._height_fn,
         )
@@ -789,20 +795,26 @@ class TestDNA(unittest.TestCase):
     def test_returns_widths_and_heights_lists(self):
         nt = _make_nt()
         data = np.concatenate([np.zeros(20), np.ones(20) * 10.0, np.zeros(20)])
-        widths, heights = nt._DNA(data, padding_before=15, padding_after=15, baseline_mean=0.0)
+        widths, heights = nt._DNA(
+            data, padding_before=15, padding_after=15, baseline_mean=0.0
+        )
         self.assertIsInstance(widths, list)
         self.assertIsInstance(heights, list)
 
     def test_widths_heights_same_length(self):
         nt = _make_nt()
         data = np.concatenate([np.zeros(20), np.ones(20) * 10.0, np.zeros(20)])
-        widths, heights = nt._DNA(data, padding_before=15, padding_after=15, baseline_mean=0.0)
+        widths, heights = nt._DNA(
+            data, padding_before=15, padding_after=15, baseline_mean=0.0
+        )
         self.assertEqual(len(widths), len(heights))
 
     def test_flat_data_collapses_to_few_regions(self):
         nt = _make_nt()
         data = np.ones(60) * 3.0
-        widths, heights = nt._DNA(data, padding_before=20, padding_after=20, baseline_mean=3.0)
+        widths, heights = nt._DNA(
+            data, padding_before=20, padding_after=20, baseline_mean=3.0
+        )
         # flat signal should merge into very few filtered regions
         self.assertLessEqual(len(widths), 5)
 
@@ -810,7 +822,9 @@ class TestDNA(unittest.TestCase):
         nt = _make_nt()
         rng = np.random.default_rng(0)
         data = rng.normal(0, 1, 100)
-        widths, heights = nt._DNA(data, padding_before=20, padding_after=20, baseline_mean=0.0)
+        widths, heights = nt._DNA(
+            data, padding_before=20, padding_after=20, baseline_mean=0.0
+        )
         self.assertGreater(len(widths), 0)
 
 
@@ -820,12 +834,19 @@ class TestDNA(unittest.TestCase):
 
 
 class TestLocateSublevelTransitions(unittest.TestCase):
-    def _synthetic_event(self, n=400, baseline=1000.0, blockage_level=500.0,
-                          padding=100, noise_std=2.0, seed=0):
+    def _synthetic_event(
+        self,
+        n=400,
+        baseline=1000.0,
+        blockage_level=500.0,
+        padding=100,
+        noise_std=2.0,
+        seed=0,
+    ):
         """Synthetic event: baseline | blocked | baseline, with light noise."""
         rng = np.random.default_rng(seed)
         data = np.full(n, baseline)
-        data[padding:n - padding] = blockage_level
+        data[padding : n - padding] = blockage_level
         data += rng.normal(0, noise_std, n)
         return data
 
@@ -834,8 +855,12 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
         data = self._synthetic_event()
         result = nt._locate_sublevel_transitions(
-            data, samplerate=1_000_000, padding_before=100, padding_after=100,
-            baseline_mean=None, baseline_std=None,
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
         )
         self.assertIsInstance(result, HackyList)
 
@@ -844,8 +869,12 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
         data = self._synthetic_event()
         result = nt._locate_sublevel_transitions(
-            data, samplerate=1_000_000, padding_before=100, padding_after=100,
-            baseline_mean=None, baseline_std=None,
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
         )
         self.assertEqual(result[0], 0)
         self.assertEqual(result[-1], len(data))
@@ -857,8 +886,12 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
         data = self._synthetic_event(blockage_level=500.0, noise_std=1.0)
         result = nt._locate_sublevel_transitions(
-            data, samplerate=1_000_000, padding_before=100, padding_after=100,
-            baseline_mean=None, baseline_std=None,
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
         )
         # more than 2 edges means more than 1 sublevel was detected
         self.assertGreater(len(result) - 1, 1)
@@ -870,8 +903,12 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
         data = self._synthetic_event(baseline=1000.0, blockage_level=500.0)
         result = nt._locate_sublevel_transitions(
-            data, samplerate=1_000_000, padding_before=100, padding_after=100,
-            baseline_mean=None, baseline_std=None,
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
         )
         heights = result.self.sublevels.heights
         # at least one height should be in the hundreds range (denormalized),
@@ -885,8 +922,12 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         rng = np.random.default_rng(1)
         data = np.full(200, 1000.0) + rng.normal(0, 0.5, 200)
         result = nt._locate_sublevel_transitions(
-            data, samplerate=1_000_000, padding_before=50, padding_after=50,
-            baseline_mean=None, baseline_std=None,
+            data,
+            samplerate=1_000_000,
+            padding_before=50,
+            padding_after=50,
+            baseline_mean=None,
+            baseline_std=None,
         )
         self.assertIsInstance(result, HackyList)
 
@@ -909,13 +950,22 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         embeded = self._embeded_fixture()
         result = nt._populate_sublevel_metadata(
-            data, samplerate=1_000_000, baseline_mean=1000.0, baseline_std=10.0,
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
             sublevel_starts=embeded,
         )
         for key in [
-            "sublevel_current", "sublevel_stdev", "sublevel_blockage",
-            "sublevel_duration", "sublevel_start_times", "sublevel_end_times",
-            "sublevel_max_deviation", "sublevel_raw_ecd", "sublevel_fitted_ecd",
+            "sublevel_current",
+            "sublevel_stdev",
+            "sublevel_blockage",
+            "sublevel_duration",
+            "sublevel_start_times",
+            "sublevel_end_times",
+            "sublevel_max_deviation",
+            "sublevel_raw_ecd",
+            "sublevel_fitted_ecd",
         ]:
             self.assertIn(key, result)
 
@@ -926,7 +976,10 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         embeded = self._embeded_fixture()
         result = nt._populate_sublevel_metadata(
-            data, samplerate=1_000_000, baseline_mean=1000.0, baseline_std=10.0,
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
             sublevel_starts=embeded,
         )
         np.testing.assert_array_almost_equal(
@@ -940,7 +993,10 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         embeded = self._embeded_fixture()
         result = nt._populate_sublevel_metadata(
-            data, samplerate=1_000_000, baseline_mean=1000.0, baseline_std=10.0,
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
             sublevel_starts=embeded,
         )
         lengths = {len(v) for v in result.values()}
@@ -955,7 +1011,10 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         embeded = self._embeded_fixture()
         # samplerate=1e6 -> dt_us = 1.0us per sample
         result = nt._populate_sublevel_metadata(
-            data, samplerate=1_000_000, baseline_mean=1000.0, baseline_std=10.0,
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
             sublevel_starts=embeded,
         )
         np.testing.assert_array_almost_equal(
@@ -971,7 +1030,10 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         )
         embeded = self._embeded_fixture()
         result = nt._populate_sublevel_metadata(
-            data, samplerate=1_000_000, baseline_mean=1000.0, baseline_std=10.0,
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
             sublevel_starts=embeded,
         )
         # middle sublevel (500) is below baseline (1000) -> positive blockage
