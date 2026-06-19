@@ -61,7 +61,7 @@ def view(qt_app):
     qt_app.processEvents()  # flush any pending Qt events at setup
 
     yield v
-    
+
     # Explicit teardown: close and schedule deletion of the widget tree so
     # Qt's event-filter chain (e.g. MultiSelectComboBox's app-level filter)
     # is unregistered before the next test constructs a new ProteinView.
@@ -1538,8 +1538,10 @@ class TestHandleParameterChange:
         assert any("Export Subset as CSV" in m for m in received)
 
     def test_loader_changed_updates_columns_and_structure(self, view):
-        with patch.object(view, "update_available_columns") as mock_cols, \
-             patch.object(view, "request_experiment_structure") as mock_struct:
+        with (
+            patch.object(view, "update_available_columns") as mock_cols,
+            patch.object(view, "request_experiment_structure") as mock_struct,
+        ):
             view.handle_parameter_change(
                 "p", "loader_changed", (self._params(db_loader="ldr1"),)
             )
@@ -1548,9 +1550,7 @@ class TestHandleParameterChange:
 
     def test_loader_changed_no_loader_skips(self, view):
         with patch.object(view, "update_available_columns") as mock_cols:
-            view.handle_parameter_change(
-                "p", "loader_changed", ({"db_loader": None},)
-            )
+            view.handle_parameter_change("p", "loader_changed", ({"db_loader": None},))
         mock_cols.assert_not_called()
 
     def test_select_experiment_and_channel_shows_tree(self, view):
@@ -1564,17 +1564,13 @@ class TestHandleParameterChange:
 
     def test_shift_backward_routes_left(self, view):
         with patch.object(view, "_shift_range_and_update_plot") as mock:
-            view.handle_parameter_change(
-                "p", "shift_range_backward", (self._params(),)
-            )
+            view.handle_parameter_change("p", "shift_range_backward", (self._params(),))
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "left"
 
     def test_shift_forward_routes_right(self, view):
         with patch.object(view, "_shift_range_and_update_plot") as mock:
-            view.handle_parameter_change(
-                "p", "shift_range_forward", (self._params(),)
-            )
+            view.handle_parameter_change("p", "shift_range_forward", (self._params(),))
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "right"
 
@@ -1590,16 +1586,20 @@ class TestHandleParameterChange:
 
     def test_update_plot_individual_mode(self, view):
         view._analysis_mode = "individual"
-        with patch.object(view, "_update_distribution_individual") as mock_ind, \
-             patch.object(view, "_update_distribution_ensemble") as mock_ens:
+        with (
+            patch.object(view, "_update_distribution_individual") as mock_ind,
+            patch.object(view, "_update_distribution_ensemble") as mock_ens,
+        ):
             view.handle_parameter_change("p", "update_plot", (self._params(),))
         mock_ind.assert_called_once()
         mock_ens.assert_not_called()
 
     def test_update_plot_ensemble_mode(self, view):
         view._analysis_mode = "ensemble"
-        with patch.object(view, "_update_distribution_individual") as mock_ind, \
-             patch.object(view, "_update_distribution_ensemble") as mock_ens:
+        with (
+            patch.object(view, "_update_distribution_individual") as mock_ind,
+            patch.object(view, "_update_distribution_ensemble") as mock_ens,
+        ):
             view.handle_parameter_change("p", "update_plot", (self._params(),))
         mock_ens.assert_called_once()
         mock_ind.assert_not_called()
@@ -1694,17 +1694,13 @@ class TestFetchEventData:
 
     def test_multiple_filters_returns_empty(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        view.get_selected_filters = MagicMock(
-            return_value={"f1": "a", "f2": "b"}
-        )
+        view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         result = view._fetch_event_data(self._params())
         assert result == []
 
     def test_multiple_filters_emits_message(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        view.get_selected_filters = MagicMock(
-            return_value={"f1": "a", "f2": "b"}
-        )
+        view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
         view._fetch_event_data(self._params())
@@ -1735,17 +1731,13 @@ class TestFetchEventData:
         assert any("single experiment" in m for m in received)
 
     def test_multiple_channels_returns_empty(self, view):
-        view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
         result = view._fetch_event_data(self._params())
         assert result == []
 
     def test_multiple_channels_emits_message(self, view):
-        view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
@@ -1753,36 +1745,36 @@ class TestFetchEventData:
         assert any("single channel" in m for m in received)
 
     def test_empty_filters_default_to_full_dataset(self, view):
-            """When no filters selected, defaults to {'Full Dataset': ''}. The generator
-            never actually gets populated in this test (global_signal is mocked), so
-            we request only event_index values that are already in cached_events to
-            avoid the code trying to pull from a None generator."""
-            view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-            view.get_selected_filters = MagicMock(return_value={})
-            view.plot_events_generator = None
-            view.current_sql_filter = None
-            view.current_experiment = None
-            view.current_channel = None
-            view.global_signal = MagicMock()
-            view.plot_events_generator_updated = False
-            view.cached_events = {}
-            params = {"db_loader": "ldr", "event_index": []}
-            result = view._fetch_event_data(params)
-            assert result == []
+        """When no filters selected, defaults to {'Full Dataset': ''}. The generator
+        never actually gets populated in this test (global_signal is mocked), so
+        we request only event_index values that are already in cached_events to
+        avoid the code trying to pull from a None generator."""
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        view.get_selected_filters = MagicMock(return_value={})
+        view.plot_events_generator = None
+        view.current_sql_filter = None
+        view.current_experiment = None
+        view.current_channel = None
+        view.global_signal = MagicMock()
+        view.plot_events_generator_updated = False
+        view.cached_events = {}
+        params = {"db_loader": "ldr", "event_index": []}
+        result = view._fetch_event_data(params)
+        assert result == []
 
     def test_uses_cached_events_when_available(self, view):
-            view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-            view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-            view.current_sql_filter = ""
-            view.current_experiment = "exp1"
-            view.current_channel = "0"
-            # current_* matches the requested exp/channel/filter exactly, so the
-            # generator-refresh branch is skipped entirely and only the cache is read.
-            view.plot_events_generator = MagicMock()
-            view.cached_events = {1: _make_event(1)}
-            result = view._fetch_event_data(self._params())
-            assert len(result) == 1
-            assert result[0]["event_id"] == 1
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        view.current_sql_filter = ""
+        view.current_experiment = "exp1"
+        view.current_channel = "0"
+        # current_* matches the requested exp/channel/filter exactly, so the
+        # generator-refresh branch is skipped entirely and only the cache is read.
+        view.plot_events_generator = MagicMock()
+        view.cached_events = {1: _make_event(1)}
+        result = view._fetch_event_data(self._params())
+        assert len(result) == 1
+        assert result[0]["event_id"] == 1
 
 
 # ===========================================================================
@@ -1824,7 +1816,9 @@ class TestHandlePlotHistogram:
         events = [_make_event(1)]
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_histogram") as mock_hist:
-            view._handle_plot_histogram({"event_index": [1], "bins": None, "sizes": False})
+            view._handle_plot_histogram(
+                {"event_index": [1], "bins": None, "sizes": False}
+            )
         mock_hist.assert_called_once()
         call_args = mock_hist.call_args
         assert call_args[0][0] == events
@@ -1857,8 +1851,10 @@ class TestShiftRangeDispatch:
     def test_histogram_action_dispatches_to_histogram(self, view):
         view._last_event_action = "plot_histogram"
         view.proteincontrols.event_index_lineEdit.setText("3")
-        with patch.object(view, "_handle_plot_histogram") as mock_hist, \
-             patch.object(view, "_handle_plot_events") as mock_events:
+        with (
+            patch.object(view, "_handle_plot_histogram") as mock_hist,
+            patch.object(view, "_handle_plot_events") as mock_events,
+        ):
             view._shift_range_and_update_plot(
                 {"db_loader": "l", "event_index": [3]}, "right"
             )
@@ -1868,8 +1864,10 @@ class TestShiftRangeDispatch:
     def test_events_action_dispatches_to_events(self, view):
         view._last_event_action = "plot_events"
         view.proteincontrols.event_index_lineEdit.setText("3")
-        with patch.object(view, "_handle_plot_histogram") as mock_hist, \
-             patch.object(view, "_handle_plot_events") as mock_events:
+        with (
+            patch.object(view, "_handle_plot_histogram") as mock_hist,
+            patch.object(view, "_handle_plot_events") as mock_events,
+        ):
             view._shift_range_and_update_plot(
                 {"db_loader": "l", "event_index": [3]}, "right"
             )
@@ -1883,7 +1881,9 @@ class TestShiftRangeDispatch:
 
 
 class TestShowAddFilterDialog:
-    def _mock_dialog(self, mocker_patch, accepted=True, is_raw=False, name="f1", text="dur>1"):
+    def _mock_dialog(
+        self, mocker_patch, accepted=True, is_raw=False, name="f1", text="dur>1"
+    ):
         dialog = MagicMock()
         dialog.exec.return_value = 1 if accepted else 0
         dialog.name = name
@@ -1954,8 +1954,11 @@ class TestShowAddFilterDialog:
         with patch(
             "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
-                None, accepted=True, is_raw=True,
-                name="f1", text="SELECT * FROM events",
+                None,
+                accepted=True,
+                is_raw=True,
+                name="f1",
+                text="SELECT * FROM events",
             ),
         ):
             view._show_add_filter_dialog({"db_loader": "ldr"})
@@ -1969,8 +1972,11 @@ class TestShowAddFilterDialog:
         with patch(
             "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
-                None, accepted=True, is_raw=True,
-                name="f1", text="SELECT * FROM events",
+                None,
+                accepted=True,
+                is_raw=True,
+                name="f1",
+                text="SELECT * FROM events",
             ),
         ):
             view._show_add_filter_dialog({"db_loader": "ldr"})
@@ -1983,7 +1989,9 @@ class TestShowAddFilterDialog:
 
 
 class TestShowEditFilterDialog:
-    def _mock_dialog(self, accepted=True, is_raw=False, new_name="f1", new_filter="dur>1"):
+    def _mock_dialog(
+        self, accepted=True, is_raw=False, new_name="f1", new_filter="dur>1"
+    ):
         dialog = MagicMock()
         dialog.exec.return_value = 1 if accepted else 0
         dialog.new_name = new_name
@@ -2051,8 +2059,10 @@ class TestShowEditFilterDialog:
         with patch(
             "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
-                accepted=True, is_raw=True,
-                new_name="f1", new_filter="SELECT * FROM events",
+                accepted=True,
+                is_raw=True,
+                new_name="f1",
+                new_filter="SELECT * FROM events",
             ),
         ):
             view.show_edit_filter_dialog("f1", "ldr")
@@ -2099,9 +2109,7 @@ class TestUpdateDistributionIndividual:
         assert any("single experiment" in m for m in received)
 
     def test_multiple_channels_warns_and_returns(self, view):
-        view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
@@ -2110,9 +2118,7 @@ class TestUpdateDistributionIndividual:
 
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        view.get_selected_filters = MagicMock(
-            return_value={"f1": "a", "f2": "b"}
-        )
+        view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
         view._update_distribution_individual(self._params())
@@ -2120,9 +2126,7 @@ class TestUpdateDistributionIndividual:
 
     def test_sets_plot_initialized_true(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        view.get_selected_filters = MagicMock(
-            return_value={"f1": "a", "f2": "b"}
-        )
+        view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         view.plot_initialized = False
         view._update_distribution_individual(self._params())
         assert view.plot_initialized is True
@@ -2154,9 +2158,7 @@ class TestUpdateDistributionEnsemble:
         assert any("single experiment" in m for m in received)
 
     def test_multiple_channels_warns_and_returns(self, view):
-        view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
@@ -2165,9 +2167,7 @@ class TestUpdateDistributionEnsemble:
 
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        view.get_selected_filters = MagicMock(
-            return_value={"f1": "a", "f2": "b"}
-        )
+        view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
         view._update_distribution_ensemble(self._params())
@@ -2190,14 +2190,23 @@ class TestUpdateDistributionEnsemble:
 
 class TestCommitFitsExtended:
     def test_emits_get_table_by_column(self, view):
-        view.fit_data = pd.DataFrame({
-            "id": [1], "prolate_volume": [1.0], "prolate_shape_factor": [1.0],
-            "prolate_major_axis": [1.0], "prolate_minor_axis": [1.0],
-            "oblate_volume": [1.0], "oblate_shape_factor": [1.0],
-            "oblate_major_axis": [1.0], "oblate_minor_axis": [1.0],
-            "min_fractional_blockage": [0.1], "min_fractional_blockage_std": [0.01],
-            "max_fractional_blockage": [0.3], "max_fractional_blockage_std": [0.02],
-        })
+        view.fit_data = pd.DataFrame(
+            {
+                "id": [1],
+                "prolate_volume": [1.0],
+                "prolate_shape_factor": [1.0],
+                "prolate_major_axis": [1.0],
+                "prolate_minor_axis": [1.0],
+                "oblate_volume": [1.0],
+                "oblate_shape_factor": [1.0],
+                "oblate_major_axis": [1.0],
+                "oblate_minor_axis": [1.0],
+                "min_fractional_blockage": [0.1],
+                "min_fractional_blockage_std": [0.01],
+                "max_fractional_blockage": [0.3],
+                "max_fractional_blockage_std": [0.02],
+            }
+        )
         view.column_table = None
         view.global_signal = MagicMock()
         view._commit_fits("ldr")
