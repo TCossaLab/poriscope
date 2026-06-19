@@ -679,6 +679,519 @@ class TestMetaDatabaseLoader:
                 ["dwell_time"], experiments_and_channels=experiments_and_channels
             )
 
+# ===========================================================================
+# Additional coverage-focused tests below (abstract stub bodies, default
+# implementations, and remaining branch combinations not exercised above).
+# ===========================================================================
+
+@pytest.fixture
+def loader() -> ConcreteDatabaseLoader:
+    settings = {"Input File": {"Type": str, "Value": "/path/to/db.db"}}
+    return ConcreteDatabaseLoader(settings=settings)
+
+
+# ---------------------------------------------------------------------------
+# Abstract method stub bodies (the bare ``pass`` lines on MetaDatabaseLoader
+# itself). These are never executed through the concrete subclass because the
+# subclass always overrides them, so we invoke the unbound base implementation
+# directly to exercise those lines.
+# ---------------------------------------------------------------------------
+class TestAbstractStubs:
+    def test_public_abstract_stub_bodies(self, loader: ConcreteDatabaseLoader) -> None:
+        assert MetaDatabaseLoader.get_llm_prompt(loader) is None
+        assert MetaDatabaseLoader.reset_channel(loader) is None
+        assert MetaDatabaseLoader.reset_channel(loader, channel=1) is None
+        assert MetaDatabaseLoader.close_resources(loader) is None
+        assert MetaDatabaseLoader.close_resources(loader, channel=1) is None
+        assert MetaDatabaseLoader.get_experiment_names(loader) is None
+        assert MetaDatabaseLoader.get_experiment_names(loader, experiment_id=1) is None
+        assert MetaDatabaseLoader.get_channels_by_experiment(loader, "exp1") is None
+        assert (
+            MetaDatabaseLoader.get_event_counts_by_experiment_and_channel(loader)
+            is None
+        )
+        assert MetaDatabaseLoader.get_column_units(loader, "dwell_time") is None
+        assert MetaDatabaseLoader.get_column_type(loader, "dwell_time") is None
+        assert MetaDatabaseLoader.get_column_names_by_table(loader) is None
+        assert MetaDatabaseLoader.get_table_names(loader) is None
+        assert MetaDatabaseLoader.validate_filter_query(loader, "SELECT 1") is None
+        assert (
+            MetaDatabaseLoader.get_samplerate_by_experiment_and_channel(
+                loader, "exp1", 0
+            )
+            is None
+        )
+        assert MetaDatabaseLoader.get_table_by_column(loader, "dwell_time") is None
+        assert (
+            MetaDatabaseLoader.add_columns_to_table(
+                loader, pd.DataFrame(), [], "events"
+            )
+            is None
+        )
+        assert MetaDatabaseLoader.alter_database(loader, []) is None
+
+    def test_private_abstract_stub_bodies(self, loader: ConcreteDatabaseLoader) -> None:
+        assert MetaDatabaseLoader._init(loader) is None
+        assert MetaDatabaseLoader._load_metadata(loader, "SELECT 1") is None
+        assert MetaDatabaseLoader._load_metadata_generator(loader, "SELECT 1") is None
+        assert MetaDatabaseLoader._load_event_data(loader, "SELECT 1") is None
+        assert MetaDatabaseLoader._ensure_event_counts(loader) is None
+        assert MetaDatabaseLoader._validate_settings(loader, {}) is None
+
+
+# ---------------------------------------------------------------------------
+# get_plot_features default implementation
+# ---------------------------------------------------------------------------
+class TestGetPlotFeatures:
+    def test_default_returns_all_none(self, loader: ConcreteDatabaseLoader) -> None:
+        result = loader.get_plot_features(1, 0, 0)
+        assert result == (None, None, None, None, None, None)
+
+
+# ---------------------------------------------------------------------------
+# get_experiment_id_by_name - base class implementation (the concrete loader
+# overrides this method for other tests, so call the base implementation
+# explicitly here).
+# ---------------------------------------------------------------------------
+class TestGetExperimentIdByNameBase:
+    def test_base_impl_success(self, loader: ConcreteDatabaseLoader) -> None:
+        result = MetaDatabaseLoader.get_experiment_id_by_name(loader, "exp1")
+        assert result == 1
+
+    def test_base_impl_empty_name_returns_none(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        assert MetaDatabaseLoader.get_experiment_id_by_name(loader, "") is None
+
+    def test_base_impl_not_found_returns_none(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(loader, "query_database_directly", return_value=None):
+            assert (
+                MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing")
+                is None
+            )
+
+    def test_base_impl_raises_on_exception(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader, "query_database_directly", side_effect=RuntimeError("boom")
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                MetaDatabaseLoader.get_experiment_id_by_name(loader, "exp1")
+
+
+# ---------------------------------------------------------------------------
+# get_channel_db_id
+# ---------------------------------------------------------------------------
+class TestGetChannelDbId:
+    def test_success(self, loader: ConcreteDatabaseLoader) -> None:
+        mock_df = pd.DataFrame({"id": [42]})
+        with patch.object(loader, "query_database_directly", return_value=mock_df):
+            result = loader.get_channel_db_id("exp1", 0)
+            assert result == 42
+
+    def test_experiment_not_found(self, loader: ConcreteDatabaseLoader) -> None:
+        with patch.object(loader, "get_experiment_id_by_name", return_value=None):
+            assert loader.get_channel_db_id("nope", 0) is None
+
+    def test_channel_query_returns_none(self, loader: ConcreteDatabaseLoader) -> None:
+        with patch.object(loader, "query_database_directly", return_value=None):
+            assert loader.get_channel_db_id("exp1", 0) is None
+
+    def test_channel_query_returns_empty(self, loader: ConcreteDatabaseLoader) -> None:
+        with patch.object(
+            loader, "query_database_directly", return_value=pd.DataFrame()
+        ):
+            assert loader.get_channel_db_id("exp1", 0) is None
+
+    def test_exception_is_caught(self, loader: ConcreteDatabaseLoader) -> None:
+        with patch.object(
+            loader, "get_experiment_id_by_name", side_effect=RuntimeError("boom")
+        ):
+            assert loader.get_channel_db_id("exp1", 0) is None
+
+
+# ---------------------------------------------------------------------------
+# export_subset_to_csv - error branches for each loaded table
+# ---------------------------------------------------------------------------
+class TestExportSubsetToCsvErrorBranches:
+    def test_malformed_events_query_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader,
+            "validate_filter_query",
+            side_effect=lambda q: (False, "bad")
+            if "FROM events" in q
+            else (True, ""),
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Malformed events query"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_sublevels_load_returns_none_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        original_load_metadata = loader._load_metadata
+
+        def fake_load_metadata(query):
+            if "sublevels" in query.lower():
+                return None
+            return original_load_metadata(query)
+
+        with patch.object(loader, "_load_metadata", side_effect=fake_load_metadata):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Failed to load sublevels"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_malformed_sublevels_query_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader,
+            "validate_filter_query",
+            side_effect=lambda q: (False, "bad")
+            if "FROM sublevels" in q
+            else (True, ""),
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Malformed sublevels query"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_experiments_table_load_fails(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        original_query = loader.query_database_directly
+
+        def fake_query(query):
+            if "FROM experiments" in query:
+                return None
+            return original_query(query)
+
+        with patch.object(loader, "query_database_directly", side_effect=fake_query):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Failed to load experiments"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_malformed_experiments_query_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader,
+            "validate_filter_query",
+            side_effect=lambda q: (False, "bad")
+            if "FROM experiments" in q
+            else (True, ""),
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Malformed experiments query"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_channels_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
+        original_query = loader.query_database_directly
+
+        def fake_query(query):
+            if "FROM channels" in query:
+                return None
+            return original_query(query)
+
+        with patch.object(loader, "query_database_directly", side_effect=fake_query):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Failed to load channels"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_malformed_channels_query_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader,
+            "validate_filter_query",
+            side_effect=lambda q: (False, "bad")
+            if "FROM channels" in q
+            else (True, ""),
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Malformed channels query"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_columns_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
+        original_query = loader.query_database_directly
+
+        def fake_query(query):
+            if "FROM columns" in query:
+                return None
+            return original_query(query)
+
+        with patch.object(loader, "query_database_directly", side_effect=fake_query):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Failed to load columns"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_malformed_columns_query_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader,
+            "validate_filter_query",
+            side_effect=lambda q: (False, "bad")
+            if "FROM columns" in q
+            else (True, ""),
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Malformed columns query"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_data_table_load_fails(self, loader: ConcreteDatabaseLoader) -> None:
+        original_query = loader.query_database_directly
+
+        def fake_query(query):
+            if "FROM data" in query:
+                return None
+            return original_query(query)
+
+        with patch.object(loader, "query_database_directly", side_effect=fake_query):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Failed to load data table"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_malformed_data_query_raises(self, loader: ConcreteDatabaseLoader) -> None:
+        with patch.object(
+            loader,
+            "validate_filter_query",
+            side_effect=lambda q: (False, "bad") if "FROM data" in q else (True, ""),
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with pytest.raises(ValueError, match="Malformed data query"):
+                    list(loader.export_subset_to_csv(tmpdir))
+
+    def test_invalid_experiment_raises_keyerror(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(KeyError, match="Could not find experiment"):
+                list(
+                    loader.export_subset_to_csv(
+                        tmpdir, experiments_and_channels={"nonexistent": [0]}
+                    )
+                )
+
+    def test_with_experiments_and_channels_and_empty_channel_list(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # exercises the "no channel filter" branch -> "(experiment_id = X)"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = loader.export_subset_to_csv(
+                tmpdir, experiments_and_channels={"exp1": None}
+            )
+            progress = list(gen)
+            assert progress[-1] == 1.0
+
+    def test_with_experiments_and_channels_with_channels(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = loader.export_subset_to_csv(
+                tmpdir, experiments_and_channels={"exp1": [0, 1]}
+            )
+            progress = list(gen)
+            assert progress[-1] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# construct_metadata_query - remaining branches
+# ---------------------------------------------------------------------------
+class TestConstructMetadataQueryBranches:
+    def test_forced_join_sublevels_only_condition_on_events_column(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # sublevels columns selected, but the condition references an events
+        # column -> forces the join via the "elif sublevels_columns and not
+        # events_columns" branch, and the "else" (sublevels) arm inside the
+        # forced-join builder.
+        query, debug, table = loader.construct_metadata_query(
+            ["sublevel_duration"], conditions="dwell_time > 5"
+        )
+        assert debug == ""
+        assert query != ""
+        assert "JOIN" in query
+        assert table == "sublevels"
+
+    def test_experiments_and_channels_with_empty_channel_list(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, table = loader.construct_metadata_query(
+            ["dwell_time"], experiments_and_channels={"exp1": None}
+        )
+        assert debug == ""
+        assert "experiment_id = 1)" in query
+
+    def test_sublevels_and_experiments_columns_only(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, table = loader.construct_metadata_query(
+            ["sublevel_duration", "name"]
+        )
+        assert debug == ""
+        assert query != ""
+        assert "JOIN experiments" in query
+        assert table == "sublevels"
+
+    def test_events_sublevels_and_experiments_columns(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, table = loader.construct_metadata_query(
+            ["dwell_time", "sublevel_duration", "name"]
+        )
+        assert debug == ""
+        assert query != ""
+        assert "JOIN sublevels" in query
+        assert "JOIN experiments" in query
+        assert table == "sublevels"
+
+    def test_no_valid_table_columns_raises(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # Force get_table_by_column to report a table outside the
+        # events/sublevels/experiments trio so none of the column buckets are
+        # populated, triggering the final "else" branch.
+        with patch.object(
+            loader, "get_table_by_column", return_value="channels"
+        ):
+            with pytest.raises(ValueError, match="No valid table columns specified"):
+                loader.construct_metadata_query(["samplerate"])
+
+    def test_final_query_validation_failure_returns_debug(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader, "validate_filter_query", return_value=(False, "bad query")
+        ):
+            query, debug, table = loader.construct_metadata_query(["dwell_time"])
+            assert query == ""
+            assert debug != ""
+            assert table == "events"
+
+
+# ---------------------------------------------------------------------------
+# construct_event_data_query - remaining branches
+# ---------------------------------------------------------------------------
+class TestConstructEventDataQueryBranches:
+    def test_empty_channel_list_branch(self, loader: ConcreteDatabaseLoader) -> None:
+        query, debug = loader.construct_event_data_query(
+            experiments_and_channels={"exp1": None}
+        )
+        assert debug == ""
+        assert "(e.experiment_id = 1)" in query
+
+    def test_tuple_builder_raises_on_all_none_channels(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with pytest.raises(ValueError, match="only None values"):
+            loader.construct_event_data_query(
+                experiments_and_channels={"exp1": [None]}
+            )
+
+    def test_final_query_validation_failure_returns_debug(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader, "validate_filter_query", return_value=(False, "bad query")
+        ):
+            query, debug = loader.construct_event_data_query()
+            assert query == ""
+            assert debug != ""
+
+
+# ---------------------------------------------------------------------------
+# load_metadata_raw
+# ---------------------------------------------------------------------------
+class TestLoadMetadataRaw:
+    def test_no_conditions_uses_default_query(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        df = loader.load_metadata_raw()
+        assert df is not None
+        assert isinstance(df, pd.DataFrame)
+
+    def test_with_conditions_runs_raw_query(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        df = loader.load_metadata_raw("SELECT * FROM channels")
+        assert df is not None
+        assert isinstance(df, pd.DataFrame)
+
+
+# ---------------------------------------------------------------------------
+# load_event_data - malformed query branch
+# ---------------------------------------------------------------------------
+class TestLoadEventDataMalformed:
+    def test_malformed_query_logs_warning_and_yields_nothing(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(
+            loader, "validate_filter_query", return_value=(False, "bad query")
+        ):
+            events = list(loader.load_event_data())
+            assert events == []
+
+
+# ---------------------------------------------------------------------------
+# query_database_directly_and_get_generator - generator-is-None branch
+# ---------------------------------------------------------------------------
+class TestQueryGeneratorNoneBranch:
+    def test_none_generator_logs_warning_and_yields_nothing(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with patch.object(loader, "_load_metadata_generator", return_value=None):
+            rows = list(
+                loader.query_database_directly_and_get_generator(
+                    "SELECT * FROM events"
+                )
+            )
+            assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# get_empty_settings - base class default implementation (the concrete
+# loader overrides this for other tests, so invoke the base version
+# explicitly here).
+# ---------------------------------------------------------------------------
+class TestGetEmptySettingsBase:
+    def test_base_impl_default(self, loader: ConcreteDatabaseLoader) -> None:
+        settings = MetaDatabaseLoader.get_empty_settings(loader)
+        assert settings == {
+            "Input File": {"Type": str, "Options": ["All Files (*.*)"]}
+        }
+
+
+# ---------------------------------------------------------------------------
+# tuple_builder "only None values" branches reachable via a channel list
+# containing solely None entries (the channel list is truthy - i.e. non
+# -empty - so the tuple_builder helper actually gets invoked, but every
+# entry is filtered out as None).
+# ---------------------------------------------------------------------------
+class TestTupleBuilderOnlyNoneBranches:
+    def test_export_subset_to_csv_channel_list_all_none(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(ValueError, match="only None values"):
+                list(
+                    loader.export_subset_to_csv(
+                        tmpdir, experiments_and_channels={"exp1": [None]}
+                    )
+                )
+
+    def test_construct_metadata_query_channel_list_all_none(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        with pytest.raises(ValueError, match="only None values"):
+            loader.construct_metadata_query(
+                ["dwell_time"], experiments_and_channels={"exp1": [None]}
+            )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
