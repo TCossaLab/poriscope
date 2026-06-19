@@ -49,15 +49,9 @@ def _prevent_blocking_dialogs(monkeypatch):
     in a QMessageBox), prefer pytest-qt's qtbot + monkeypatching the
     specific dialog class in that test instead of relying on this default.
     """
-    monkeypatch.setattr(
-        QDialog, "exec", lambda self: QDialog.DialogCode.Accepted
-    )
-    monkeypatch.setattr(
-        QDialog, "exec_", lambda self: QDialog.DialogCode.Accepted
-    )
-    monkeypatch.setattr(
-        QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok
-    )
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QDialog, "exec_", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(
         QMessageBox, "exec_", lambda self: QMessageBox.StandardButton.Ok
     )
