@@ -123,7 +123,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
         data /= std
 
         threshold = -self.settings["Threshold"]["Value"]
-        hysteresis = 1
+        hysteresis = 0
         event_starts = []
         event_ends = []
 
@@ -150,7 +150,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
                     break
                 index += pos
                 event_end = index
-                while data[event_end] > threshold and event_end > event_start:
+                while data[event_end] > threshold and event_end > 0:
                     event_end -= 1
                 event_ends.append(event_end + offset)
                 entry_state = False
