@@ -243,8 +243,8 @@ class MetadataControls(QWidget):
         event_id_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
         n_events_label = self.createLabel(self.groupBox, 12, "# EVENTS TO PLOT")
 
-        event_labels_layout.addWidget(event_id_label)   
-        event_labels_layout.addWidget(n_events_label)  
+        event_labels_layout.addWidget(event_id_label)
+        event_labels_layout.addWidget(n_events_label)
 
         labels_row.addLayout(event_labels_layout, 1)
 
@@ -292,8 +292,8 @@ class MetadataControls(QWidget):
         self.n_events_lineEdit.setValidator(self.pos_int_validator)
         self.n_events_lineEdit.setPlaceholderText("1")
 
-        event_inputs_layout.addWidget(self.event_id_lineEdit)    
-        event_inputs_layout.addWidget(self.n_events_lineEdit)    
+        event_inputs_layout.addWidget(self.event_id_lineEdit)
+        event_inputs_layout.addWidget(self.n_events_lineEdit)
 
         inputs_row.addLayout(event_inputs_layout, 1)
 
@@ -1027,7 +1027,9 @@ class MetadataControls(QWidget):
         z_axis = self.z_axis_comboBox.currentText()
         filter_selected = self.filter_comboBox.getSelectedItems()
         event_id_text = self.event_id_lineEdit.text().strip()
-        event_id_valid = (not event_id_text) or (event_id_text.isdigit() and int(event_id_text) >= 0)
+        event_id_valid = (not event_id_text) or (
+            event_id_text.isdigit() and int(event_id_text) >= 0
+        )
 
         db_loader_loaded = True
         is_load_valid = True

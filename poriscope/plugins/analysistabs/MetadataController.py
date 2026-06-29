@@ -399,7 +399,6 @@ class MetadataController(MetaController):
         """
         self.view.on_raw_filter_validated(valid, error_msg)
 
-
     @log(logger=logger)
     def relay_query_result(self, result):
         """
