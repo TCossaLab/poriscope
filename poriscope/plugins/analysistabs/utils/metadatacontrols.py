@@ -1027,7 +1027,7 @@ class MetadataControls(QWidget):
         z_axis = self.z_axis_comboBox.currentText()
         filter_selected = self.filter_comboBox.getSelectedItems()
         event_id_text = self.event_id_lineEdit.text().strip()
-        event_id_valid = bool(event_id_text) and event_id_text.isdigit() and int(event_id_text) >= 0
+        event_id_valid = (not event_id_text) or (event_id_text.isdigit() and int(event_id_text) >= 0)
 
         db_loader_loaded = True
         is_load_valid = True
