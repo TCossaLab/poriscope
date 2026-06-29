@@ -52,7 +52,6 @@ from PySide6.QtWidgets import (
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
-from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox
 
 
@@ -78,7 +77,6 @@ class MetadataControls(QWidget):
         self.connect_signals()
         self.logger.info("MetadataControls initialized")
         self.validate_inputs()
-        self.max_range_size = 16
         self.active_popups = {}
 
     def setupUi(self):
@@ -230,16 +228,25 @@ class MetadataControls(QWidget):
         # Defer this until after the window is visible
         QTimer.singleShot(0, match_widths)
 
-        # 2-3 QH EVENT IDEX + BINS + SIZES
+        # 2-3 QH EVENT ID + # EVENTS TO PLOT + BINS + SIZES
 
         # --- ROW 2: Labels Row ---
         labels_row = QHBoxLayout()
         labels_row.setContentsMargins(0, 0, 0, 0)
         labels_row.setSpacing(5)
 
-        # Left column: EVENT INDEX label
-        event_index_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
-        labels_row.addWidget(event_index_label, 1)
+        # Left column: EVENT ID + # EVENTS TO PLOT labels
+        event_labels_layout = QHBoxLayout()
+        event_labels_layout.setContentsMargins(0, 0, 0, 0)
+        event_labels_layout.setSpacing(5)
+
+        event_id_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
+        n_events_label = self.createLabel(self.groupBox, 12, "# EVENTS TO PLOT")
+
+        event_labels_layout.addWidget(event_id_label)   
+        event_labels_layout.addWidget(n_events_label)  
+
+        labels_row.addLayout(event_labels_layout, 1)
 
         # Right column: BINS + SIZES labels
         right_labels = QHBoxLayout()
@@ -263,11 +270,29 @@ class MetadataControls(QWidget):
         inputs_row.setContentsMargins(0, 0, 0, 0)
         inputs_row.setSpacing(5)
 
-        # Left column: EVENT INDEX input
-        self.event_index_lineEdit = IntegerRangeLineEdit(self.groupBox)
-        self.event_index_lineEdit.setObjectName("eventIndexLineEdit")
-        self.event_index_lineEdit.setPlaceholderText("e.g. 0-15")
-        inputs_row.addWidget(self.event_index_lineEdit, 1)
+        # Left column: EVENT ID + # EVENTS TO PLOT inputs
+        event_inputs_layout = QHBoxLayout()
+        event_inputs_layout.setContentsMargins(0, 0, 0, 0)
+        event_inputs_layout.setSpacing(5)
+
+        # --- Positive integer validator for event_id and n_events fields ---
+        pos_int_regex = QRegularExpression(r"^[1-9]\d*$")
+        self.pos_int_validator = QRegularExpressionValidator(pos_int_regex)
+
+        self.event_id_lineEdit = QLineEdit(self.groupBox)
+        self.event_id_lineEdit.setObjectName("eventIdLineEdit")
+        self.event_id_lineEdit.setValidator(self.pos_int_validator)
+        self.event_id_lineEdit.setPlaceholderText("Default: 0")
+
+        self.n_events_lineEdit = QLineEdit(self.groupBox)
+        self.n_events_lineEdit.setObjectName("nEventsLineEdit")
+        self.n_events_lineEdit.setValidator(self.pos_int_validator)
+        self.n_events_lineEdit.setPlaceholderText("Default: 1")
+
+        event_inputs_layout.addWidget(self.event_id_lineEdit)    
+        event_inputs_layout.addWidget(self.n_events_lineEdit)    
+
+        inputs_row.addLayout(event_inputs_layout, 1)
 
         # Right column: BINS + SIZES inputs
         right_inputs = QHBoxLayout()
@@ -305,7 +330,8 @@ class MetadataControls(QWidget):
         self.db_loader_comboBox.setMinimumWidth(160)
         self.selection_tree_button.setFixedWidth(50)
         self.plot_type_comboBox.setMinimumWidth(200)
-        self.event_index_lineEdit.setMinimumWidth(160)
+        self.event_id_lineEdit.setMinimumWidth(100)
+        self.n_events_lineEdit.setMinimumWidth(60)
         self.bins_lineEdit.setMinimumWidth(100)
 
         # COLUMN 1: AXIS
@@ -909,7 +935,8 @@ class MetadataControls(QWidget):
         # Ensure that validate_inputs is called when inputs change
         self.db_loader_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.plot_type_comboBox.currentIndexChanged.connect(self.validate_inputs)
-        self.event_index_lineEdit.textChanged.connect(self.validate_inputs)
+        self.event_id_lineEdit.textChanged.connect(self.validate_inputs)
+        self.n_events_lineEdit.textChanged.connect(self.validate_inputs)
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.bins_lineEdit.textChanged.connect(self.validate_inputs)
         self.raw_checkbox.stateChanged.connect(self.validate_inputs)  # add here
@@ -925,12 +952,21 @@ class MetadataControls(QWidget):
         # Initialize with default values to handle possible None values
         parameters = {}
         try:
+            # event_id: use value from field if non-empty, else default to 0
+            event_id_text = self.event_id_lineEdit.text().strip()
+            event_id = int(event_id_text) if event_id_text else 0
+
+            # n_events: use value from field if non-empty, else default to 1
+            n_events_text = self.n_events_lineEdit.text().strip()
+            n_events = int(n_events_text) if n_events_text else 1
+
             parameters = {
                 "db_loader": self.db_loader_comboBox.currentText()
                 or "No Event Database",
                 "plot_type": self.plot_type_comboBox.currentText()
                 or "Select Plot Type",
-                "event_index": [],
+                "event_id": event_id,
+                "n_events": n_events,
                 "sizes": self.sizes_checkbox.isChecked(),
                 "raw": self.raw_checkbox.isChecked(),
                 "x_axis": self.x_axis_comboBox.currentText() or None,
@@ -960,10 +996,6 @@ class MetadataControls(QWidget):
             ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
-            # Collect event index values if valid
-            if self.event_index_lineEdit.isValid():
-                parameters["event_index"] = self.event_index_lineEdit.get_values()
-
         except AttributeError:
             pass
 
@@ -991,7 +1023,8 @@ class MetadataControls(QWidget):
         y_axis = self.y_axis_comboBox.currentText()
         z_axis = self.z_axis_comboBox.currentText()
         filter_selected = self.filter_comboBox.getSelectedItems()
-        event_index_valid = self.event_index_lineEdit.isValid()
+        event_id_text = self.event_id_lineEdit.text().strip()
+        event_id_valid = bool(event_id_text) and event_id_text.isdigit() and int(event_id_text) > 0
 
         db_loader_loaded = True
         is_load_valid = True
@@ -1032,10 +1065,10 @@ class MetadataControls(QWidget):
             is_load_valid = False
             is_update_plot_valid = False
 
-        if not event_index_valid:
-            self.logger.debug("Event index is invalid")
+        if not event_id_valid:
+            self.logger.debug("Event ID is invalid")
             is_plot_events_valid = (
-                False  # Disable Plot Events button if event index is not valid
+                False  # Disable Plot Events button if event ID is not valid
             )
 
         if not filter_selected:
@@ -1130,10 +1163,16 @@ class MetadataControls(QWidget):
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
 
-    def set_event_index_input(self, value: str):
-        self.event_index_lineEdit.blockSignals(True)
-        self.event_index_lineEdit.set_range(value)
-        self.event_index_lineEdit.blockSignals(False)
+    def set_event_id_input(self, value: int) -> None:
+        """
+        Update the event_id field with the snapped event_id after navigation.
+
+        :param value: The event_id to display.
+        :type value: int
+        """
+        self.event_id_lineEdit.blockSignals(True)
+        self.event_id_lineEdit.setText(str(value))
+        self.event_id_lineEdit.blockSignals(False)
         self.validate_inputs()
 
     def update_filters(self, filters):
