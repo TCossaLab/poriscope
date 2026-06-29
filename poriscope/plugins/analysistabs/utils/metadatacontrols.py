@@ -275,19 +275,22 @@ class MetadataControls(QWidget):
         event_inputs_layout.setContentsMargins(0, 0, 0, 0)
         event_inputs_layout.setSpacing(5)
 
-        # --- Positive integer validator for event_id and n_events fields ---
+        # --- Validators for event_id (allows 0) and n_events (positive only) fields ---
+        event_id_regex = QRegularExpression(r"^(0|[1-9]\d*)$")
+        self.event_id_validator = QRegularExpressionValidator(event_id_regex)
+
         pos_int_regex = QRegularExpression(r"^[1-9]\d*$")
         self.pos_int_validator = QRegularExpressionValidator(pos_int_regex)
 
         self.event_id_lineEdit = QLineEdit(self.groupBox)
         self.event_id_lineEdit.setObjectName("eventIdLineEdit")
-        self.event_id_lineEdit.setValidator(self.pos_int_validator)
-        self.event_id_lineEdit.setPlaceholderText("Default: 0")
+        self.event_id_lineEdit.setValidator(self.event_id_validator)
+        self.event_id_lineEdit.setPlaceholderText("0")
 
         self.n_events_lineEdit = QLineEdit(self.groupBox)
         self.n_events_lineEdit.setObjectName("nEventsLineEdit")
         self.n_events_lineEdit.setValidator(self.pos_int_validator)
-        self.n_events_lineEdit.setPlaceholderText("Default: 1")
+        self.n_events_lineEdit.setPlaceholderText("1")
 
         event_inputs_layout.addWidget(self.event_id_lineEdit)    
         event_inputs_layout.addWidget(self.n_events_lineEdit)    
@@ -954,7 +957,7 @@ class MetadataControls(QWidget):
         try:
             # event_id: use value from field if non-empty, else default to 0
             event_id_text = self.event_id_lineEdit.text().strip()
-            event_id = int(event_id_text) if event_id_text else 0
+            event_id = int(event_id_text) if event_id_text else None
 
             # n_events: use value from field if non-empty, else default to 1
             n_events_text = self.n_events_lineEdit.text().strip()
@@ -1024,7 +1027,7 @@ class MetadataControls(QWidget):
         z_axis = self.z_axis_comboBox.currentText()
         filter_selected = self.filter_comboBox.getSelectedItems()
         event_id_text = self.event_id_lineEdit.text().strip()
-        event_id_valid = bool(event_id_text) and event_id_text.isdigit() and int(event_id_text) > 0
+        event_id_valid = bool(event_id_text) and event_id_text.isdigit() and int(event_id_text) >= 0
 
         db_loader_loaded = True
         is_load_valid = True
