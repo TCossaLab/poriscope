@@ -3247,6 +3247,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 lambda: [self.metadatacontrols.raw_checkbox],
             ),
         ]
+
     @log(logger=logger)
     def get_current_view(self):
         return "MetadataView"
