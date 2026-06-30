@@ -1880,8 +1880,15 @@ class MetadataView(MetaView, WalkthroughMixin):
         total = len(self.filtered_event_ids)
         first_id = self.filtered_event_ids[0]
         last_id = self.filtered_event_ids[-1]
+        if sql_filter:
+            # Get the filter name from the current selected filters
+            selected_filters = self.get_selected_filters()
+            filter_name = next(iter(selected_filters.keys()), "Filter")
+            label = f'"{filter_name}" subset'
+        else:
+            label = "All events"
         self.add_text_to_display.emit(
-            f"Filtered events: {total} total | first event_id: {first_id} | last event_id: {last_id}",
+            f"{label}: {total} total | first event_id: {first_id} | last event_id: {last_id}",
             self.__class__.__name__,
         )
         return True
@@ -1989,7 +1996,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         if selected_filters is not None and len(selected_filters) > 1:
-            self.add_text_to_display(
+            self.add_text_to_display.emit(
                 "Unable to plot more than one subset at a time, select only one filter to apply",
                 self.__class__.__name__,
             )
