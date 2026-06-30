@@ -1922,7 +1922,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             or not self.filtered_event_ids
         ):
             where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
                 return
 
         if not self.filtered_event_ids:
@@ -1930,6 +1932,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         # Find current position in the cached list using binary search
         import bisect
+
         ids = self.filtered_event_ids
         n = len(ids)
 
@@ -2049,7 +2052,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         )
         if cache_needs_rebuild:
             where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
                 return
         elif not self.filtered_event_ids:
             self.add_text_to_display.emit(
@@ -2060,11 +2065,12 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         # Snap using cache — bisect into filtered_event_ids
         import bisect
+
         ids = self.filtered_event_ids
         snap_idx = bisect.bisect_left(ids, event_id)
         if snap_idx >= len(ids):
             snap_idx = 0  # wrap around to first event
-        snapped_event_ids = ids[snap_idx: snap_idx + n_events]
+        snapped_event_ids = ids[snap_idx : snap_idx + n_events]
         snapped_start_id = snapped_event_ids[0]
 
         # Update the event_id field to reflect the snapped position
