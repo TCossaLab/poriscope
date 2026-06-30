@@ -153,6 +153,12 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.plabels = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
+        # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
+        self.filtered_event_ids: List[int] = []
+        self.current_sql_filter: Optional[str] = None
+        self.current_experiment: Optional[str] = None
+        self.current_channel: Optional[int] = None
+
     @log(logger=logger)
     @override
     def _set_control_area(self, layout):
@@ -1799,27 +1805,22 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
-        """Shift the current event_id forward or backward through the filtered set and update the plot."""
+    def _build_where_clause(self, loader, sql_filter, exp, channel):
+        """
+        Build a WHERE clause for direct DB queries on the events table, scoped to
+        the current filter, experiment, and channel.
 
-        loader = parameters["db_loader"]
-        event_id = parameters.get("event_id", 0)
-        n_events = parameters.get("n_events", 1)
-
-        selected_filters = self.get_selected_filters()
-        if selected_filters is None or selected_filters == {}:
-            selected_filters = {"Full Dataset": ""}
-        sql_filter = next(iter(selected_filters.values()))
-
-        exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
-        if exp_and_ch is None:
-            self.logger.error("No experiments or channels in scope for navigation.")
-            return
-
-        exp = next(iter(exp_and_ch.keys()))
-        channel = next(iter(exp_and_ch.values()))[0]
-
-        # Build filter clause for the events query
+        :param loader: Name of the active database loader.
+        :type loader: str
+        :param sql_filter: SQL filter string (may be empty).
+        :type sql_filter: str
+        :param exp: Experiment name.
+        :type exp: Optional[str]
+        :param channel: Channel identifier.
+        :type channel: Optional[str]
+        :return: WHERE clause string (including the WHERE keyword), or empty string.
+        :rtype: str
+        """
         filter_parts = []
         if sql_filter:
             filter_parts.append(sql_filter)
@@ -1837,100 +1838,107 @@ class MetadataView(MetaView, WalkthroughMixin):
                 filter_parts.append(f"experiment_id = {exp_id}")
                 if channel is not None:
                     filter_parts.append(f"channel_id = {channel}")
+        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
 
-        where_clause = f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
+    @log(logger=logger)
+    def _rebuild_event_id_cache(self, loader, where_clause, sql_filter, exp, channel):
+        """
+        Rebuild the filtered event_id cache when filter or scope changes.
+        Also emits the display panel message (first plot or filter change only).
+
+        :param loader: Name of the active database loader.
+        :param where_clause: Pre-built WHERE clause for the events table.
+        :param sql_filter: Current SQL filter string.
+        :param exp: Current experiment name.
+        :param channel: Current channel identifier.
+        :return: True if cache was rebuilt successfully, False otherwise.
+        :rtype: bool
+        """
+        cache_query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (cache_query,),
+            "relay_query_result",
+            (),
+        )
+        cache_result = getattr(self, "relayed_query_result", None)
+        if cache_result is None or cache_result.empty:
+            self.add_text_to_display.emit(
+                "No filtered events found",
+                self.__class__.__name__,
+            )
+            return False
+
+        self.filtered_event_ids = cache_result["event_id"].tolist()
+        self.current_sql_filter = sql_filter
+        self.current_experiment = exp
+        self.current_channel = channel
+
+        # Display panel — only on cache rebuild (filter change or first plot)
+        total = len(self.filtered_event_ids)
+        first_id = self.filtered_event_ids[0]
+        last_id = self.filtered_event_ids[-1]
+        self.add_text_to_display.emit(
+            f"Filtered events: {total} total | first event_id: {first_id} | last event_id: {last_id}",
+            self.__class__.__name__,
+        )
+        return True
+
+    @log(logger=logger)
+    def _shift_range_and_update_plot(self, parameters, direction):
+        """Shift the current event_id forward or backward through the cached filtered set and update the plot."""
+
+        loader = parameters["db_loader"]
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events", 1)
+
+        selected_filters = self.get_selected_filters()
+        if selected_filters is None or selected_filters == {}:
+            selected_filters = {"Full Dataset": ""}
+        sql_filter = next(iter(selected_filters.values()))
+
+        exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
+        if exp_and_ch is None:
+            self.logger.error("No experiments or channels in scope for navigation.")
+            return
+
+        exp = next(iter(exp_and_ch.keys()))
+        channel = next(iter(exp_and_ch.values()))[0]
+
+        # Rebuild cache if filter or scope changed
+        if (
+            sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+            or not self.filtered_event_ids
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+                return
+
+        if not self.filtered_event_ids:
+            return
+
+        # Find current position in the cached list using binary search
+        import bisect
+        ids = self.filtered_event_ids
+        n = len(ids)
+
+        current_idx = bisect.bisect_left(ids, event_id)
+        current_idx = min(current_idx, n - 1)
 
         if direction == "right":
-            # Move forward: fetch n_events events with event_id strictly greater than current last shown
-            # First get the last event_id currently shown by fetching current window
-            snap_query = (
-                f"SELECT event_id FROM events {where_clause} "
-                f"AND event_id >= {event_id} ORDER BY event_id LIMIT {n_events}"
-            )
-            snap_result = None
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "query_database_directly",
-                (snap_query,),
-                "relay_query_result",
-                (),
-            )
-            snap_result = getattr(self, "relayed_query_result", None)
-            if snap_result is not None and not snap_result.empty:
-                last_shown_id = int(snap_result["event_id"].iloc[-1])
-                # Next window starts after the last shown
-                next_query = (
-                    f"SELECT event_id FROM events {where_clause} "
-                    f"AND event_id > {last_shown_id} ORDER BY event_id LIMIT {n_events}"
-                )
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "query_database_directly",
-                    (next_query,),
-                    "relay_query_result",
-                    (),
-                )
-                next_result = getattr(self, "relayed_query_result", None)
-                if next_result is not None and not next_result.empty:
-                    new_event_id = int(next_result["event_id"].iloc[0])
-                else:
-                    # Wrap around to first event
-                    wrap_query = (
-                        f"SELECT event_id FROM events {where_clause} "
-                        f"ORDER BY event_id LIMIT 1"
-                    )
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "query_database_directly",
-                        (wrap_query,),
-                        "relay_query_result",
-                        (),
-                    )
-                    wrap_result = getattr(self, "relayed_query_result", None)
-                    if wrap_result is None or wrap_result.empty:
-                        return
-                    new_event_id = int(wrap_result["event_id"].iloc[0])
-            else:
-                return
-        else:  # direction == "left"
-            # Move backward: fetch n_events events ending just before the current event_id
-            prev_query = (
-                f"SELECT event_id FROM events {where_clause} "
-                f"AND event_id < {event_id} ORDER BY event_id DESC LIMIT {n_events}"
-            )
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "query_database_directly",
-                (prev_query,),
-                "relay_query_result",
-                (),
-            )
-            prev_result = getattr(self, "relayed_query_result", None)
-            if prev_result is not None and not prev_result.empty:
-                # The first event of that reversed window
-                new_event_id = int(prev_result["event_id"].iloc[-1])
-            else:
-                # Wrap around to last window
-                wrap_query = (
-                    f"SELECT event_id FROM events {where_clause} "
-                    f"ORDER BY event_id DESC LIMIT {n_events}"
-                )
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "query_database_directly",
-                    (wrap_query,),
-                    "relay_query_result",
-                    (),
-                )
-                wrap_result = getattr(self, "relayed_query_result", None)
-                if wrap_result is None or wrap_result.empty:
-                    return
-                new_event_id = int(wrap_result["event_id"].iloc[-1])
+            next_idx = current_idx + n_events
+            if next_idx >= n:
+                next_idx = 0  # wrap around to start
+        else:  # left
+            next_idx = current_idx - n_events
+            if next_idx < 0:
+                next_idx = max(0, n - n_events)  # wrap around to last window
+
+        new_event_id = ids[next_idx]
 
         # Update the UI field and re-plot
         self.metadatacontrols.set_event_id_input(new_event_id)
@@ -2025,92 +2033,32 @@ class MetadataView(MetaView, WalkthroughMixin):
         exp = next(iter(exp_and_ch.keys()))
         channel = next(iter(exp_and_ch.values()))[0]
 
-        # Build filter clause for direct DB queries
-        filter_parts = []
-        if sql_filter:
-            filter_parts.append(sql_filter)
-        if exp is not None:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_experiment_id_by_name",
-                (exp,),
-                "relay_experiment_id",
-                (),
-            )
-            exp_id = getattr(self, "relayed_experiment_id", None)
-            if exp_id is not None:
-                filter_parts.append(f"experiment_id = {exp_id}")
-                if channel is not None:
-                    filter_parts.append(f"channel_id = {channel}")
-
-        where_clause = f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
-
-        # One-time COUNT/MIN/MAX for display panel (cheap, runs on filtered set only)
-        stats_query = f"SELECT COUNT(*) as total, MIN(event_id) as first_id, MAX(event_id) as last_id FROM events {where_clause}"
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "query_database_directly",
-            (stats_query,),
-            "relay_query_result",
-            (),
+        # Rebuild cache only when filter or scope changes — display panel emitted inside
+        cache_needs_rebuild = (
+            sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+            or not self.filtered_event_ids
         )
-        stats_result = getattr(self, "relayed_query_result", None)
-        if stats_result is not None and not stats_result.empty:
-            total = int(stats_result["total"].iloc[0])
-            first_id = int(stats_result["first_id"].iloc[0])
-            last_id = int(stats_result["last_id"].iloc[0])
-            self.add_text_to_display.emit(
-                f"Filtered events: {total} total | first event_id: {first_id} | last event_id: {last_id}",
-                self.__class__.__name__,
-            )
-        else:
+        if cache_needs_rebuild:
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+                return
+        elif not self.filtered_event_ids:
             self.add_text_to_display.emit(
                 "No filtered events found",
                 self.__class__.__name__,
             )
             return
 
-        # Snap: fetch n_events event_ids at or after the requested event_id
-        snap_query = (
-            f"SELECT event_id FROM events {where_clause} "
-            f"AND event_id >= {event_id} ORDER BY event_id LIMIT {n_events}"
-        )
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "query_database_directly",
-            (snap_query,),
-            "relay_query_result",
-            (),
-        )
-        snap_result = getattr(self, "relayed_query_result", None)
-
-        if snap_result is None or snap_result.empty:
-            # Wrap around: start from the first filtered event
-            wrap_query = (
-                f"SELECT event_id FROM events {where_clause} "
-                f"ORDER BY event_id LIMIT {n_events}"
-            )
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "query_database_directly",
-                (wrap_query,),
-                "relay_query_result",
-                (),
-            )
-            snap_result = getattr(self, "relayed_query_result", None)
-            if snap_result is None or snap_result.empty:
-                self.add_text_to_display.emit(
-                    f"No data available for plotting with event_id={event_id}",
-                    self.__class__.__name__,
-                )
-                return
-
-        snapped_event_ids = snap_result["event_id"].tolist()
-        snapped_start_id = int(snapped_event_ids[0])
+        # Snap using cache — bisect into filtered_event_ids
+        import bisect
+        ids = self.filtered_event_ids
+        snap_idx = bisect.bisect_left(ids, event_id)
+        if snap_idx >= len(ids):
+            snap_idx = 0  # wrap around to first event
+        snapped_event_ids = ids[snap_idx: snap_idx + n_events]
+        snapped_start_id = snapped_event_ids[0]
 
         # Update the event_id field to reflect the snapped position
         self.metadatacontrols.set_event_id_input(snapped_start_id)
@@ -2145,7 +2093,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             "relay_event_plot_data_generator",
             (),
         )
-
         event_generator = getattr(self, "plot_events_generator", None)
         if event_generator is None:
             self.add_text_to_display.emit(
@@ -3247,6 +3194,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 lambda: [self.metadatacontrols.raw_checkbox],
             ),
         ]
+
     @log(logger=logger)
     def get_current_view(self):
         return "MetadataView"
