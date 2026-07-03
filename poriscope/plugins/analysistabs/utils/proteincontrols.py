@@ -51,7 +51,6 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
-from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox
 
 
@@ -77,7 +76,6 @@ class ProteinControls(QWidget):
         self.connect_signals()
         self.logger.info("ProteinControls initialized")
         self.validate_inputs()
-        self.max_range_size = 16
         self.active_popups = {}
 
     def setupUi(self):
@@ -179,19 +177,43 @@ class ProteinControls(QWidget):
         self.pore_length_lineEdit = QLineEdit(self.groupBox)
         self.pore_length_lineEdit.setPlaceholderText("Enter pore length")
 
-        # ROW 4: EVENT INDEX
-        self.event_index_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
-        self.event_index_lineEdit = IntegerRangeLineEdit(self.groupBox)
-        self.event_index_lineEdit.setObjectName("eventIndexLineEdit")
-        self.event_index_lineEdit.setPlaceholderText("e.g. 0-15")
+        # ROW 4: EVENT ID + N EVENTS labels
+        event_nav_labels_widget = QWidget(self.groupBox)
+        event_nav_labels_layout = QHBoxLayout(event_nav_labels_widget)
+        event_nav_labels_layout.setContentsMargins(0, 0, 0, 0)
+        event_nav_labels_layout.setSpacing(5)
+        self.event_id_label = self.createLabel(self.groupBox, 12, "EVENT ID")
+        self.n_events_label = self.createLabel(self.groupBox, 12, "# EVENTS TO PLOT")
+        event_nav_labels_layout.addWidget(self.event_id_label)
+        event_nav_labels_layout.addWidget(self.n_events_label)
 
-        # ROW 5: Plot Events (arrows + button)
-        self.plot_events_widget = QWidget(
-            self.groupBox
-        )  # Separate widget to hold the plot events button and arrows, so it can be aligned as one unit
-        plot_events_layout = QHBoxLayout(
-            self.plot_events_widget
-        )  # Separate layout for the plot events button + arrows to keep them together and aligned
+        # ROW 5: EVENT ID + N EVENTS inputs
+        event_nav_inputs_widget = QWidget(self.groupBox)
+        event_nav_inputs_layout = QHBoxLayout(event_nav_inputs_widget)
+        event_nav_inputs_layout.setContentsMargins(0, 0, 0, 0)
+        event_nav_inputs_layout.setSpacing(5)
+
+        event_id_regex = QRegularExpression(r"^(0|[1-9]\d*)$")
+        self.event_id_validator = QRegularExpressionValidator(event_id_regex)
+        pos_int_regex = QRegularExpression(r"^[1-9]\d*$")
+        self.pos_int_validator = QRegularExpressionValidator(pos_int_regex)
+
+        self.event_id_lineEdit = QLineEdit(self.groupBox)
+        self.event_id_lineEdit.setObjectName("eventIdLineEdit")
+        self.event_id_lineEdit.setValidator(self.event_id_validator)
+        self.event_id_lineEdit.setPlaceholderText("0")
+
+        self.n_events_lineEdit = QLineEdit(self.groupBox)
+        self.n_events_lineEdit.setObjectName("nEventsLineEdit")
+        self.n_events_lineEdit.setValidator(self.pos_int_validator)
+        self.n_events_lineEdit.setPlaceholderText("1")
+
+        event_nav_inputs_layout.addWidget(self.event_id_lineEdit)
+        event_nav_inputs_layout.addWidget(self.n_events_lineEdit)
+
+        # ROW 6: Plot Events (arrows + buttons)
+        self.plot_events_widget = QWidget(self.groupBox)
+        plot_events_layout = QHBoxLayout(self.plot_events_widget)
         plot_events_layout.setContentsMargins(0, 0, 0, 0)
         plot_events_layout.setSpacing(5)
 
@@ -223,7 +245,6 @@ class ProteinControls(QWidget):
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.plot_histogram_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
-
         # ---------- MIDDLE COLUMN ----------
 
         # ROW 0: "Distribution event fitting" header
@@ -454,10 +475,10 @@ class ProteinControls(QWidget):
         group_layout.addWidget(self.save_filter_button, 3, 2)
 
         # Row 4
-        group_layout.addWidget(self.event_index_label, 4, 0)
+        group_layout.addWidget(event_nav_labels_widget, 4, 0)
 
         # Row 5
-        group_layout.addWidget(self.event_index_lineEdit, 5, 0)
+        group_layout.addWidget(event_nav_inputs_widget, 5, 0)
         group_layout.addWidget(update_undo_reset_widget, 5, 1)
         group_layout.addWidget(self.load_filter_button, 5, 2)
 
@@ -474,7 +495,8 @@ class ProteinControls(QWidget):
 
         self.pore_diameter_lineEdit.setMinimumWidth(80)
         self.pore_length_lineEdit.setMinimumWidth(80)
-        self.event_index_lineEdit.setMinimumWidth(160)
+        self.event_id_lineEdit.setMinimumWidth(100)
+        self.n_events_lineEdit.setMinimumWidth(60)
         self.n_values_lineEdit.setMinimumWidth(60)
         self.bins_lineEdit.setMinimumWidth(60)
 
@@ -723,7 +745,8 @@ class ProteinControls(QWidget):
         self.db_loader_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.pore_diameter_lineEdit.textChanged.connect(self.validate_inputs)
         self.pore_length_lineEdit.textChanged.connect(self.validate_inputs)
-        self.event_index_lineEdit.textChanged.connect(self.validate_inputs)
+        self.event_id_lineEdit.textChanged.connect(self.validate_inputs)
+        self.n_events_lineEdit.textChanged.connect(self.validate_inputs)
         self.n_values_lineEdit.textChanged.connect(self.validate_inputs)
         self.bins_lineEdit.textChanged.connect(self.validate_inputs)
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
@@ -734,16 +757,20 @@ class ProteinControls(QWidget):
 
     def collect_parameters(self):
         self.logger.info("Collecting parameters")
-
-        # Initialize with default values to handle possible None values
         parameters = {}
         try:
+            event_id_text = self.event_id_lineEdit.text().strip()
+            event_id = int(event_id_text) if event_id_text else None
+
+            n_events_text = self.n_events_lineEdit.text().strip()
+            n_events = int(n_events_text) if n_events_text else 1
+
             parameters = {
-                "db_loader": self.db_loader_comboBox.currentText()
-                or "No Event Database",
-                "pore_diameter": self.pore_diameter_lineEdit.text(),  # TBD: decide on format and parsing in controller
-                "pore_length": self.pore_length_lineEdit.text(),  # TBD: decide on format and parsing in controller
-                "event_index": [],
+                "db_loader": self.db_loader_comboBox.currentText() or "No Event Database",
+                "pore_diameter": self.pore_diameter_lineEdit.text(),
+                "pore_length": self.pore_length_lineEdit.text(),
+                "event_id": event_id,
+                "n_events": n_events,
                 "n_values": self.n_values_lineEdit.text(),
                 "sizes": self.sizes_checkbox.isChecked(),
                 "bins": (
@@ -753,20 +780,10 @@ class ProteinControls(QWidget):
                 ),
             }
 
-            if (
-                self.sizes_checkbox.isChecked() is False
-                and parameters["bins"] is not None
-            ):
+            if self.sizes_checkbox.isChecked() is False and parameters["bins"] is not None:
                 parameters["bins"] = [int(x) for x in parameters["bins"]]
-            elif (
-                self.sizes_checkbox.isChecked() is True
-                and parameters["bins"] is not None
-            ):
+            elif self.sizes_checkbox.isChecked() is True and parameters["bins"] is not None:
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
-
-            # Collect event index values if valid
-            if self.event_index_lineEdit.isValid():
-                parameters["event_index"] = self.event_index_lineEdit.get_values()
 
         except AttributeError:
             pass
@@ -796,7 +813,10 @@ class ProteinControls(QWidget):
         pore_length_valid = bool(self.pore_length_lineEdit.text().strip())
         # bins_text = self.bins_lineEdit.text()
         filter_selected = self.filter_comboBox.getSelectedItems()
-        event_index_valid = self.event_index_lineEdit.isValid()
+        event_id_text = self.event_id_lineEdit.text().strip()
+        event_id_valid = (not event_id_text) or (
+            event_id_text.isdigit() and int(event_id_text) >= 0
+        )
 
         individual_selected = self.individual_button.isChecked()
         ensemble_selected = self.ensemble_button.isChecked()
@@ -844,9 +864,9 @@ class ProteinControls(QWidget):
             is_individual_analysis_valid = False
             is_ensemble_analysis_valid = False
 
-        # Event index validation
-        if not event_index_valid:
-            self.logger.debug("Event index is invalid")
+        # Event ID validation
+        if not event_id_valid:
+            self.logger.debug("Event ID is invalid")
             is_plot_events_valid = False
 
         # Filter validation
@@ -982,10 +1002,10 @@ class ProteinControls(QWidget):
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
 
-    def set_event_index_input(self, value: str):
-        self.event_index_lineEdit.blockSignals(True)
-        self.event_index_lineEdit.set_range(value)
-        self.event_index_lineEdit.blockSignals(False)
+    def set_event_id_input(self, value: int) -> None:
+        self.event_id_lineEdit.blockSignals(True)
+        self.event_id_lineEdit.setText(str(value))
+        self.event_id_lineEdit.blockSignals(False)
         self.validate_inputs()
 
     def update_filters(self, filters):
