@@ -362,3 +362,14 @@ class ProteinController(MetaController):
         :type error_msg: str
         """
         self.view.on_raw_filter_validated(valid, error_msg)
+
+    @log(logger=logger)
+    def relay_query_result(self, result):
+        """
+        Relay a direct database query result to the view.
+        Used by ProteinView._rebuild_event_id_cache to receive the list of filtered event_ids.
+
+        :param result: DataFrame returned by query_database_directly.
+        :type result: pd.DataFrame
+        """
+        self.view.relay_query_result(result)
