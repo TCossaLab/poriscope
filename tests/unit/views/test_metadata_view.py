@@ -94,7 +94,6 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance._commit_cache = mocker.Mock()
     view_instance.logger = mocker.Mock()
     view_instance.metadatacontrols = mocker.Mock()
-    
 
     # Initialize the view - this sets up all attributes with correct types
     view_instance._init()
@@ -217,8 +216,6 @@ def test_init_sets_allowed_bins_none(view: MetadataView) -> None:
 def test_init_sets_allowed_sizes_none(view: MetadataView) -> None:
     """Verify allowed_sizes is initialized to None."""
     assert view.allowed_sizes is None
-
-
 
 
 # ----------------------------- Control Area Tests ------------------------------
@@ -5581,7 +5578,12 @@ def test_handle_plot_events_uses_cache_for_navigation(
             view.plot_events_generator = iter([_FULL_EVENT])
 
     view.global_signal.emit.side_effect = side_effect
-    parameters = {"db_loader": "test_loader", "event_id": 3, "n_events": 1, "raw": False}
+    parameters = {
+        "db_loader": "test_loader",
+        "event_id": 3,
+        "n_events": 1,
+        "raw": False,
+    }
     view._handle_plot_events(parameters)
 
     view.metadatacontrols.set_event_id_input.assert_called_with(5)
@@ -5644,7 +5646,9 @@ def test_rebuild_event_id_cache_updates_current_trackers(
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache("loader", "WHERE duration > 1", "duration > 1", "exp1", 2)
+    view._rebuild_event_id_cache(
+        "loader", "WHERE duration > 1", "duration > 1", "exp1", 2
+    )
 
     assert view.current_sql_filter == "duration > 1"
     assert view.current_experiment == "exp1"
@@ -5683,7 +5687,9 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache("loader", "WHERE duration > 1", "duration > 1", None, None)
+    view._rebuild_event_id_cache(
+        "loader", "WHERE duration > 1", "duration > 1", None, None
+    )
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "my_filter" in msg
@@ -5766,6 +5772,7 @@ def test_shift_range_and_update_plot_wraps_forward_at_end(
 
     view.metadatacontrols.set_event_id_input.assert_called_with(0)
 
+
 def test_shift_range_and_update_plot_wraps_backward_at_start(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -5839,6 +5846,7 @@ def test_handle_plot_events_snaps_to_nearest_filtered_event(
 
     view.metadatacontrols.set_event_id_input.assert_called_with(5)
 
+
 def test_handle_plot_events_wraps_to_first_when_past_last(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -5866,6 +5874,7 @@ def test_handle_plot_events_wraps_to_first_when_past_last(
     )
 
     view.metadatacontrols.set_event_id_input.assert_called_with(0)
+
 
 def test_handle_plot_events_rebuilds_cache_on_filter_change(
     view: MetadataView, mocker: MockerFixture
@@ -5915,6 +5924,7 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     )
 
     view._rebuild_event_id_cache.assert_not_called()
+
 
 def test_handle_plot_events_returns_early_when_no_db_ids(
     view: MetadataView, mocker: MockerFixture

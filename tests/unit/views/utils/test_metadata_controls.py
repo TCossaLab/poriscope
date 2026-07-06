@@ -806,6 +806,7 @@ class TestUpdateLoaders:
 # set_event_index_input
 # ===========================================================================
 
+
 class TestSetEventIdInput:
     def test_sets_value(self, mc):
         mc.set_event_id_input(5)
@@ -815,6 +816,7 @@ class TestSetEventIdInput:
         mc.set_event_id_input(5)
         mc.set_event_id_input(12)
         assert mc.event_id_lineEdit.text() == "12"
+
 
 # ===========================================================================
 # update_filters

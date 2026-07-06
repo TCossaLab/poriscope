@@ -1651,6 +1651,7 @@ class TestHandleParameterChange:
         mock.assert_called_once()
         assert mock.call_args[0][0] == "totally_unknown"
 
+
 class TestFetchEventData:
     def _params(self):
         return {"db_loader": "ldr", "event_index": [1]}
@@ -1768,9 +1769,7 @@ class TestHandlePlotEvents:
         view._fetch_event_data = MagicMock(return_value=[])
         view._last_event_action = "plot_histogram"
         with patch.object(view, "_update_event_plot"):
-            view._handle_plot_events(
-                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
-            )
+            view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
         assert view._last_event_action == "plot_events"
 
     def test_calls_update_event_plot_with_data(self, view):
@@ -1778,9 +1777,7 @@ class TestHandlePlotEvents:
         events = [_make_event(1)]
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_plot") as mock_plot:
-            view._handle_plot_events(
-                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
-            )
+            view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
         mock_plot.assert_called_once_with(events)
 
     def test_no_data_emits_warning(self, view):
@@ -1788,9 +1785,7 @@ class TestHandlePlotEvents:
         view._fetch_event_data = MagicMock(return_value=[])
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._handle_plot_events(
-            {"db_loader": "ldr", "event_id": 1, "n_events": 2}
-        )
+        view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 2})
         assert any("No data available" in m for m in received)
 
 

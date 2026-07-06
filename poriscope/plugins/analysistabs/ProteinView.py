@@ -1225,7 +1225,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(loader)
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
         if not experiments_and_channels:
             return
 
@@ -1241,7 +1243,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             or channel != self.current_channel
         ):
             where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
                 return
 
         cache = self.filtered_event_ids
@@ -1506,7 +1510,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(loader)
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
         if not experiments_and_channels or len(experiments_and_channels) == 0:
             self.add_text_to_display.emit(
                 "No experiments or channels are in scope, select at least one to plot events",
@@ -1526,7 +1532,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             or channel != self.current_channel
         ):
             where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
                 return
 
         cache = self.filtered_event_ids
@@ -1591,7 +1599,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(loader)
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
         if not experiments_and_channels or len(experiments_and_channels) == 0:
             self.add_text_to_display.emit(
                 "No experiments or channels are in scope, select at least one to plot histograms",
@@ -1611,7 +1621,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             or channel != self.current_channel
         ):
             where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(loader, where_clause, sql_filter, exp, channel):
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
                 return
 
         cache = self.filtered_event_ids
@@ -3360,7 +3372,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "Metadata Tab",
                 "Enter the starting event ID and the number of events you want to visualize.",
                 "MetadataView",
-                lambda: [self.proteincontrols.event_id_lineEdit, self.proteincontrols.n_events_lineEdit],
+                lambda: [
+                    self.proteincontrols.event_id_lineEdit,
+                    self.proteincontrols.n_events_lineEdit,
+                ],
             ),
             (
                 "Metadata Tab",

@@ -766,7 +766,8 @@ class ProteinControls(QWidget):
             n_events = int(n_events_text) if n_events_text else 1
 
             parameters = {
-                "db_loader": self.db_loader_comboBox.currentText() or "No Event Database",
+                "db_loader": self.db_loader_comboBox.currentText()
+                or "No Event Database",
                 "pore_diameter": self.pore_diameter_lineEdit.text(),
                 "pore_length": self.pore_length_lineEdit.text(),
                 "event_id": event_id,
@@ -780,9 +781,15 @@ class ProteinControls(QWidget):
                 ),
             }
 
-            if self.sizes_checkbox.isChecked() is False and parameters["bins"] is not None:
+            if (
+                self.sizes_checkbox.isChecked() is False
+                and parameters["bins"] is not None
+            ):
                 parameters["bins"] = [int(x) for x in parameters["bins"]]
-            elif self.sizes_checkbox.isChecked() is True and parameters["bins"] is not None:
+            elif (
+                self.sizes_checkbox.isChecked() is True
+                and parameters["bins"] is not None
+            ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
         except AttributeError:
