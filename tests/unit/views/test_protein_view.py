@@ -1092,47 +1092,52 @@ class TestRangeHelpers:
             pass  # acceptable if MetaView raises on 0
 
 
-# ===========================================================================
-# _shift_range_and_update_plot
-# ===========================================================================
-
-
 class TestShiftRangeAndUpdatePlot:
+    def _setup_cache(
+        self, view, cache=(0, 3, 5, 7), sql_filter="", exp="exp1", channel="0"
+    ):
+        view.selected_experiment_and_channels_by_loader = {"l": {exp: [channel]}}
+        view.get_selected_filters = MagicMock(return_value={})
+        view.filtered_event_ids = list(cache)
+        view.current_sql_filter = sql_filter
+        view.current_experiment = exp
+        view.current_channel = channel
+
     def test_shift_right_updates_input(self, view):
-        view.proteincontrols.event_index_lineEdit.setText("3")
+        self._setup_cache(view)
         with patch.object(view, "_handle_plot_events"):
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [3]}, "right"
+                {"db_loader": "l", "event_id": 3, "n_events": 1}, "right"
             )
-        assert view.proteincontrols.event_index_lineEdit.text() == "4"
+        assert view.proteincontrols.event_id_lineEdit.text() == "5"
 
     def test_shift_left_updates_input(self, view):
-        view.proteincontrols.event_index_lineEdit.setText("5")
+        self._setup_cache(view)
         with patch.object(view, "_handle_plot_events"):
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [5]}, "left"
+                {"db_loader": "l", "event_id": 5, "n_events": 1}, "left"
             )
-        assert view.proteincontrols.event_index_lineEdit.text() == "4"
+        assert view.proteincontrols.event_id_lineEdit.text() == "3"
 
     def test_empty_input_returns_early(self, view):
-        view.proteincontrols.event_index_lineEdit.setText("")
-        view._shift_range_and_update_plot({}, "right")  # must not raise
+        view.selected_experiment_and_channels_by_loader = {}
+        view._shift_range_and_update_plot({"db_loader": "l"}, "right")  # must not raise
 
     def test_dispatches_histogram(self, view):
+        self._setup_cache(view)
         view._last_event_action = "plot_histogram"
-        view.proteincontrols.event_index_lineEdit.setText("2")
         with patch.object(view, "_handle_plot_histogram") as mock_hist:
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [2]}, "right"
+                {"db_loader": "l", "event_id": 3, "n_events": 1}, "right"
             )
         mock_hist.assert_called_once()
 
     def test_dispatches_events(self, view):
+        self._setup_cache(view)
         view._last_event_action = "plot_events"
-        view.proteincontrols.event_index_lineEdit.setText("2")
         with patch.object(view, "_handle_plot_events") as mock_ev:
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [2]}, "right"
+                {"db_loader": "l", "event_id": 3, "n_events": 1}, "right"
             )
         mock_ev.assert_called_once()
 
@@ -1491,28 +1496,13 @@ class TestSetControlArea:
 
 
 # ===========================================================================
-# _get_event_index_text
-# ===========================================================================
-
-
-class TestGetEventIndexText:
-    def test_returns_stripped_text(self, view):
-        view.proteincontrols.event_index_lineEdit.setText("  3,4-6  ")
-        assert view._get_event_index_text() == "3,4-6"
-
-    def test_empty_when_blank(self, view):
-        view.proteincontrols.event_index_lineEdit.setText("")
-        assert view._get_event_index_text() == ""
-
-
-# ===========================================================================
 # handle_parameter_change — dispatch logic
 # ===========================================================================
 
 
 class TestHandleParameterChange:
     def _params(self, **extra):
-        base = {"db_loader": "ldr", "event_index": [1]}
+        base = {"db_loader": "ldr", "event_id": 1, "n_events": 1}
         base.update(extra)
         return base
 
@@ -1661,12 +1651,6 @@ class TestHandleParameterChange:
         mock.assert_called_once()
         assert mock.call_args[0][0] == "totally_unknown"
 
-
-# ===========================================================================
-# _fetch_event_data — validation guards
-# ===========================================================================
-
-
 class TestFetchEventData:
     def _params(self):
         return {"db_loader": "ldr", "event_index": [1]}
@@ -1770,65 +1754,116 @@ class TestFetchEventData:
         assert result[0]["event_id"] == 1
 
 
-# ===========================================================================
-# _handle_plot_events / _handle_plot_histogram
-# ===========================================================================
-
-
 class TestHandlePlotEvents:
+    def _setup(self, view):
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        view.get_selected_filters = MagicMock(return_value={})
+        view.filtered_event_ids = [1, 2, 3]
+        view.current_sql_filter = ""
+        view.current_experiment = "exp1"
+        view.current_channel = "0"
+
     def test_sets_last_event_action(self, view):
+        self._setup(view)
         view._fetch_event_data = MagicMock(return_value=[])
-        view.handle_parameter_change  # noop, just ensure attribute exists
         view._last_event_action = "plot_histogram"
         with patch.object(view, "_update_event_plot"):
-            view._handle_plot_events({"event_index": [1]})
+            view._handle_plot_events(
+                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
+            )
         assert view._last_event_action == "plot_events"
 
     def test_calls_update_event_plot_with_data(self, view):
+        self._setup(view)
         events = [_make_event(1)]
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_plot") as mock_plot:
-            view._handle_plot_events({"event_index": [1]})
+            view._handle_plot_events(
+                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
+            )
         mock_plot.assert_called_once_with(events)
 
     def test_no_data_emits_warning(self, view):
+        self._setup(view)
         view._fetch_event_data = MagicMock(return_value=[])
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._handle_plot_events({"event_index": [1, 2]})
+        view._handle_plot_events(
+            {"db_loader": "ldr", "event_id": 1, "n_events": 2}
+        )
         assert any("No data available" in m for m in received)
 
 
 class TestHandlePlotHistogram:
+    def _setup(self, view):
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        view.get_selected_filters = MagicMock(return_value={})
+        view.filtered_event_ids = [1, 2, 3]
+        view.current_sql_filter = ""
+        view.current_experiment = "exp1"
+        view.current_channel = "0"
+
     def test_sets_last_event_action(self, view):
+        self._setup(view)
         view._fetch_event_data = MagicMock(return_value=[])
-        view._handle_plot_histogram({"event_index": [1]})
+        view._handle_plot_histogram(
+            {
+                "db_loader": "ldr",
+                "event_id": 1,
+                "n_events": 1,
+                "bins": None,
+                "sizes": False,
+            }
+        )
         assert view._last_event_action == "plot_histogram"
 
     def test_calls_update_event_histogram_with_data(self, view):
+        self._setup(view)
         events = [_make_event(1)]
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_histogram") as mock_hist:
             view._handle_plot_histogram(
-                {"event_index": [1], "bins": None, "sizes": False}
+                {
+                    "db_loader": "ldr",
+                    "event_id": 1,
+                    "n_events": 1,
+                    "bins": None,
+                    "sizes": False,
+                }
             )
         mock_hist.assert_called_once()
         call_args = mock_hist.call_args
         assert call_args[0][0] == events
 
     def test_no_data_emits_warning(self, view):
+        self._setup(view)
         view._fetch_event_data = MagicMock(return_value=[])
         received = []
         view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._handle_plot_histogram({"event_index": [1], "bins": None, "sizes": False})
+        view._handle_plot_histogram(
+            {
+                "db_loader": "ldr",
+                "event_id": 1,
+                "n_events": 1,
+                "bins": None,
+                "sizes": False,
+            }
+        )
         assert any("No data available" in m for m in received)
 
     def test_passes_bins_and_sizes(self, view):
+        self._setup(view)
         events = [_make_event(1)]
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_histogram") as mock_hist:
             view._handle_plot_histogram(
-                {"event_index": [1], "bins": [50], "sizes": True}
+                {
+                    "db_loader": "ldr",
+                    "event_id": 1,
+                    "n_events": 1,
+                    "bins": [50],
+                    "sizes": True,
+                }
             )
         kwargs = mock_hist.call_args[1]
         assert kwargs.get("bins") == [50]
@@ -1841,28 +1876,36 @@ class TestHandlePlotHistogram:
 
 
 class TestShiftRangeDispatch:
+    def _setup_cache(self, view):
+        view.selected_experiment_and_channels_by_loader = {"l": {"exp1": ["0"]}}
+        view.get_selected_filters = MagicMock(return_value={})
+        view.filtered_event_ids = [0, 3, 5, 7]
+        view.current_sql_filter = ""
+        view.current_experiment = "exp1"
+        view.current_channel = "0"
+
     def test_histogram_action_dispatches_to_histogram(self, view):
+        self._setup_cache(view)
         view._last_event_action = "plot_histogram"
-        view.proteincontrols.event_index_lineEdit.setText("3")
         with (
             patch.object(view, "_handle_plot_histogram") as mock_hist,
             patch.object(view, "_handle_plot_events") as mock_events,
         ):
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [3]}, "right"
+                {"db_loader": "l", "event_id": 3, "n_events": 1}, "right"
             )
         mock_hist.assert_called_once()
         mock_events.assert_not_called()
 
     def test_events_action_dispatches_to_events(self, view):
+        self._setup_cache(view)
         view._last_event_action = "plot_events"
-        view.proteincontrols.event_index_lineEdit.setText("3")
         with (
             patch.object(view, "_handle_plot_histogram") as mock_hist,
             patch.object(view, "_handle_plot_events") as mock_events,
         ):
             view._shift_range_and_update_plot(
-                {"db_loader": "l", "event_index": [3]}, "right"
+                {"db_loader": "l", "event_id": 3, "n_events": 1}, "right"
             )
         mock_events.assert_called_once()
         mock_hist.assert_not_called()
@@ -2024,9 +2067,10 @@ class TestShowEditFilterDialog:
     def test_assisted_edit_emits_construct_metadata_query(self, view):
         view.subset_filters = {"f1": "dur>1"}
         view.global_signal = MagicMock()
+        dialog = self._mock_dialog(accepted=True, is_raw=False)
         with patch(
             "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
-            return_value=self._mock_dialog(accepted=True, is_raw=False),
+            return_value=dialog,
         ):
             view.show_edit_filter_dialog("f1", "ldr")
         view.global_signal.emit.assert_called_once()
