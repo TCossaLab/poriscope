@@ -1947,23 +1947,56 @@ class PeakFinder(MetaEventFitter):
 
         if hasattr(self, "_peak_statistics"):
             peak_stats = self._peak_statistics
-            classification_report += "\n\nPeak Classification Statistics:"
+            classification_report += "\n\nPeak Filtering Statistics:"
 
             # Cast values to proper types for type checking
             total_peaks = cast(int, peak_stats["total_peaks"])
             total_classified = cast(int, peak_stats["total_classified"])
             total_unclassified = cast(int, peak_stats["total_unclassified"])
             peak_type_counts = cast(Dict[int, int], peak_stats["peak_type_counts"])
-
-            classification_report += f"\n  Total peaks detected: {total_peaks}"
-            classification_report += f"\n  Classified peaks: {total_classified}"
-            classification_report += f"\n  Unclassified peaks: {total_unclassified}"
-
             if total_peaks > 0:
                 classified_pct = total_classified / total_peaks * 100
                 unclassified_pct = total_unclassified / total_peaks * 100
-                classification_report += f" ({classified_pct:.1f}% classified, {unclassified_pct:.1f}% unclassified)"
+                
+            classification_report += f"\n  Total peaks detected: {total_peaks}"
+            classification_report += f"\n  Filtered peaks: {total_classified} ({classified_pct:.1f}%"
+            classification_report += f"\n  Unfiltered peaks: {total_unclassified} ({unclassified_pct:.1f}%"
 
+            # Break down by peak type
+            if peak_type_counts:
+                classification_report += "\n\n  Peak Filtering breakdown:"
+                # Sort by type number for consistent display
+                for peak_type in sorted(peak_type_counts.keys()):
+                    count = peak_type_counts[peak_type]
+                    pct = count / total_peaks * 100 if total_peaks > 0 else 0
+
+                    # Provide meaningful labels for peak types
+                    if peak_type == -1:
+                        type_label = "Type -1 (Rejected/Unclassified)"
+                    elif peak_type == 0:
+                        type_label = "Type 0 (Unprocessed)"
+                    elif peak_type == 1:
+                        type_label = "Type 1 (Carrier Level)"
+                    elif peak_type == 2:
+                        type_label = "Type 2 (Above Carrier)"
+                    elif peak_type == 3:
+                        type_label = "Type 3 (Bundle/Cluster)"
+                    elif peak_type == 11:
+                        type_label = "Type 11 (1U - Unfolding)"
+                    elif peak_type == 12:
+                        type_label = "Type 12 (1P - Peak with Height)"
+                    elif peak_type == 13:
+                        type_label = "Type 13 (1/2F - Folding)"
+                    elif peak_type == 21:
+                        type_label = "Type 21 (2U/2P - Higher Level)"
+                    elif peak_type == 22:
+                        type_label = "Type 22 (2P/1/2F - General)"
+                    else:
+                        type_label = f"Type {peak_type}"
+
+                    classification_report += (
+                        f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
+                    )
 
         if hasattr(self, "_peak_prominence_classification_results"):
             prominence_stats = self._peak_prominence_classification_results
@@ -2009,40 +2042,6 @@ class PeakFinder(MetaEventFitter):
                 formatted_centers = ", ".join(f"{center:.2f}" for center in centers)
                 classification_report += f"\n  Centers: {formatted_centers} pA"
             # Break down by peak type
-            if peak_type_counts:
-                classification_report += "\n\n  Peak Filtering breakdown:"
-                # Sort by type number for consistent display
-                for peak_type in sorted(peak_type_counts.keys()):
-                    count = peak_type_counts[peak_type]
-                    pct = count / total_peaks * 100 if total_peaks > 0 else 0
-
-                    # Provide meaningful labels for peak types
-                    if peak_type == -1:
-                        type_label = "Type -1 (Rejected/Unclassified)"
-                    elif peak_type == 0:
-                        type_label = "Type 0 (Unprocessed)"
-                    elif peak_type == 1:
-                        type_label = "Type 1 (Carrier Level)"
-                    elif peak_type == 2:
-                        type_label = "Type 2 (Above Carrier)"
-                    elif peak_type == 3:
-                        type_label = "Type 3 (Bundle/Cluster)"
-                    elif peak_type == 11:
-                        type_label = "Type 11 (1U - Unfolding)"
-                    elif peak_type == 12:
-                        type_label = "Type 12 (1P - Peak with Height)"
-                    elif peak_type == 13:
-                        type_label = "Type 13 (1/2F - Folding)"
-                    elif peak_type == 21:
-                        type_label = "Type 21 (2U/2P - Higher Level)"
-                    elif peak_type == 22:
-                        type_label = "Type 22 (2P/1/2F - General)"
-                    else:
-                        type_label = f"Type {peak_type}"
-
-                    classification_report += (
-                        f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
-                    )
 
         # Translocation direction classification
         classification_report += "\n\nTranslocation Direction Classification:"
@@ -2410,6 +2409,8 @@ class PeakFinder(MetaEventFitter):
         :param save_path: Optional path to save the figure
         :type save_path: Optional[str]
         """
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
         import matplotlib.pyplot as plt
         from scipy.stats import norm
 
@@ -2462,7 +2463,12 @@ class PeakFinder(MetaEventFitter):
             zip(sorted_indices, [lower_center, higher_center])
         ):
             mean = gmm_model.means_[cluster_idx][0]
-            std = np.sqrt(gmm_model.covariances_[cluster_idx][0][0])
+            # Handle both spherical (scalar) and full (matrix) covariance types
+            cov_value = gmm_model.covariances_[cluster_idx]
+            if np.isscalar(cov_value):
+                std = np.sqrt(cov_value)
+            else:
+                std = np.sqrt(cov_value[0][0])
             weight = gmm_model.weights_[cluster_idx]
 
             gaussian = weight * norm.pdf(x_range, mean, std)
@@ -2528,7 +2534,7 @@ class PeakFinder(MetaEventFitter):
 
         The lower prominence population is written as 0 and the higher population
         as 1. If a single population is selected by BIC, all eligible peaks are
-        written as 0.
+        as 1. 
         """
         prominence_values: List[float] = []
         prominence_refs: List[Tuple[int, int, int]] = []
@@ -2657,6 +2663,8 @@ class PeakFinder(MetaEventFitter):
         """
         Visualize the prominence classification results for peaks.
         """
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
         import matplotlib.pyplot as plt
         from scipy.stats import norm
 
@@ -2944,6 +2952,8 @@ class PeakFinder(MetaEventFitter):
         save_path: Optional[str] = None,
     ) -> None:
         """Visualize translocation direction classification on log10 cumulative pre-peak3 ECD."""
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
         import matplotlib.pyplot as plt
         from scipy.stats import norm
 
