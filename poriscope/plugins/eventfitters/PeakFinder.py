@@ -2545,7 +2545,8 @@ class PeakFinder(MetaEventFitter):
 
             for event_index, sublevel_data in self.sublevel_metadata[ch].items():
                 filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
-                prominences = np.asarray(sublevel_data.get("prominence", []), dtype=float)
+                blockages = np.asarray(sublevel_data.get("max_blockage", []), dtype=float)
+                unfolded_level = self.event_metadata[ch][event_index]["unfolded_level"]
                 peak_ids = sublevel_data.get("peak_id", [])
 
                 if "classified" not in sublevel_data or len(sublevel_data["classified"]) != len(peak_ids):
@@ -2556,18 +2557,18 @@ class PeakFinder(MetaEventFitter):
                 for peak_index, peak_id in enumerate(peak_ids):
                     if peak_id is None or (isinstance(peak_id, float) and np.isnan(peak_id)):
                         continue
-                    if peak_index >= len(filtered_values) or peak_index >= len(prominences):
+                    if peak_index >= len(filtered_values) or peak_index >= len(blockages):
                         continue
 
                     peak_type = filtered_values[peak_index]
-                    if np.isnan(peak_type) or int(peak_type) not in {1, 2, 3}:
+                    if np.isnan(peak_type) or int(peak_type) not in {1,3}:
                         continue
 
-                    prominence = prominences[peak_index]
-                    if np.isnan(prominence):
+                    blockage = blockages[peak_index]
+                    if np.isnan(blockage):
                         continue
 
-                    prominence_values.append(float(prominence))
+                    prominence_values.append(float(blockage)-float(unfolded_level))
                     prominence_refs.append((ch, event_index, peak_index))
 
         if not prominence_values:
@@ -2578,15 +2579,18 @@ class PeakFinder(MetaEventFitter):
 
         prominence_array = np.asarray(prominence_values, dtype=np.float64)
         prominence_reshaped = prominence_array.reshape(-1, 1)
-
+        
         candidate_models: List[Tuple[float, GaussianMixture]] = []
         for n_components in (1, 2):
             if len(prominence_array) < n_components:
                 continue
-            gmm = GaussianMixture(n_components=n_components, random_state=42)
-            gmm.fit(prominence_reshaped)
+            labels, centers, gmm = self.classify_1d_distribution(
+            prominence_reshaped,
+            n_components=n_components,
+            return_centers=True,
+            )
             candidate_models.append((gmm.bic(prominence_reshaped), gmm))
-
+            
         if not candidate_models:
             self.logger.warning("Unable to fit a prominence classification model")
             return
