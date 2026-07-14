@@ -5,13 +5,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.e2e._helpers import (
+    open_menu_hybrid,
+)  # stable helper to open menus in headless CI
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
-from tests.e2e._helpers import (
-    open_menu_hybrid,
-)  # stable helper to open menus in headless CI
 
 # Make sure the repo root is on sys.path so `poriscope.*` imports resolve when running tests directly
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -67,4 +67,6 @@ def test_open_event_analysis_tab_via_clicks(qtbot, tmp_path):
 
     # 3) Basic sanity: the page exists and exposes its controls object
     ea_view = view.pages["EventAnalysisView"]["widget"]
-    assert hasattr(ea_view, "eventAnalysisControls"), "EventAnalysisView controls missing"
+    assert hasattr(
+        ea_view, "eventAnalysisControls"
+    ), "EventAnalysisView controls missing"
