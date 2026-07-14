@@ -1581,7 +1581,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                            event_id (int), n_events (int), bins, and sizes.
         :type parameters: dict
         """
+        
         self._last_event_action = "plot_histogram"
+
+        # Reset bin range so each Plot Histogram click is self-contained
+        # Without this, hist_min/hist_max accumulate across navigation sessions,
+        # causing bin edges to widen and histogram shape/fit to change on return visits
+        self.hist_min = None
+        self.hist_max = None
 
         loader = parameters.get("db_loader")
         if not loader:
@@ -1753,6 +1760,11 @@ class ProteinView(MetaView, WalkthroughMixin):
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
 
+            # Reset per-event so bin edges are determined solely by this event's
+            # current range, not influenced by other events in the same plot call.
+            self.hist_min = None
+            self.hist_max = None
+            
             try:
                 plot_data = self._construct_single_event_histogram(
                     event, plot_type, bins=bins, sizes=sizes
