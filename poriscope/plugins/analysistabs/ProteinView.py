@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import bisect
 import itertools
 import json
 import logging
@@ -114,6 +115,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.current_experiment: Optional[str] = None
         self.current_channel: Optional[int] = None
         self.cached_events: Dict[int, Dict[str, Any]] = {}
+        # Cache of all filtered event_ids for the current scope/filter combination.
+        # Populated by _rebuild_event_id_cache; used by _shift_range_and_update_plot,
+        # _handle_plot_events, and _handle_plot_histogram to resolve event_id + n_events
+        # into a concrete list of event_ids without re-querying the DB on every arrow click.
+        self.filtered_event_ids: List[int] = []
         self.subset_filters: Dict[str, str] = {}
         self.plot_events_generator = None
         self.available_experiment_and_channels_by_loader: Dict[
@@ -1100,57 +1106,176 @@ class ProteinView(MetaView, WalkthroughMixin):
         else:
             self._handle_other_actions(action_name, parameters)
 
+    # -------------------------------------------------------------------------
+    # Filter-aware event_id cache navigation
+    # -------------------------------------------------------------------------
+
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
-        """Shift ranges in the GUI and update plot and input if valid."""
+    def relay_query_result(self, result) -> None:
+        """
+        A global signal callback that stores the result of a direct database query.
+        Used by _rebuild_event_id_cache to receive the list of filtered event_ids.
 
-        original_str = self._get_event_index_text()
-        self.logger.debug(f"Original GUI input string: {original_str}")
-        if not original_str:
-            self.logger.error("Event index input is empty.")
+        :param result: DataFrame returned by query_database_directly.
+        :type result: pd.DataFrame
+        """
+        self.relayed_query_result = result
+
+    @log(logger=logger)
+    def _build_where_clause(self, loader: str, sql_filter: str, exp, channel) -> str:
+        """
+        Build a WHERE clause string suitable for the event_id cache query.
+
+        Experiment/channel scoping is handled downstream by _fetch_event_data
+        via load_event_data; here we only need the SQL filter predicate so that
+        the event_id list reflects the active filter subset.
+
+        :param loader: Name of the database loader (unused here, kept for interface symmetry).
+        :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
+        :param exp: Experiment name (unused here).
+        :param channel: Channel identifier (unused here).
+        :return: "WHERE <sql_filter>" or "" if no filter is active.
+        :rtype: str
+        """
+        return f"WHERE {sql_filter}" if sql_filter else ""
+
+    @log(logger=logger)
+    def _rebuild_event_id_cache(
+        self,
+        loader: str,
+        where_clause: str,
+        sql_filter: str,
+        exp,
+        channel,
+    ) -> bool:
+        """
+        Fetch all event_ids matching the current filter in one DB query and
+        store them sorted in self.filtered_event_ids.
+
+        Also updates current_sql_filter / current_experiment / current_channel
+        so that staleness checks in _shift_range_and_update_plot and
+        _handle_plot_events/_handle_plot_histogram can detect scope changes.
+
+        Emits a display-panel message with the total count and first/last
+        event_id (mirrors MetadataView._rebuild_event_id_cache behaviour).
+
+        :param loader: Name of the database loader.
+        :param where_clause: Full WHERE clause string (may be empty).
+        :param sql_filter: Raw filter expression without WHERE (used for label and staleness tracking).
+        :param exp: Experiment name.
+        :param channel: Channel identifier.
+        :return: True if the cache was populated, False if no events were found.
+        :rtype: bool
+        """
+        query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        self.relayed_query_result = None
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (query,),
+            "relay_query_result",
+            (),
+        )
+        result = getattr(self, "relayed_query_result", None)
+        if result is None or result.empty or "event_id" not in result.columns:
+            self.add_text_to_display.emit(
+                "No filtered events found for the current scope.",
+                self.__class__.__name__,
+            )
+            return False
+
+        self.filtered_event_ids = result["event_id"].tolist()
+        self.current_sql_filter = sql_filter
+        self.current_experiment = exp
+        self.current_channel = channel
+
+        selected_filters = self.get_selected_filters()
+        n = len(self.filtered_event_ids)
+        first = self.filtered_event_ids[0]
+        last = self.filtered_event_ids[-1]
+
+        if not sql_filter:
+            label = "All events"
+        else:
+            filter_name = next(iter(selected_filters.keys()), sql_filter)
+            label = f'"{filter_name}" subset'
+
+        self.add_text_to_display.emit(
+            f"{label}: {n} total | first event_id: {first} | last event_id: {last}",
+            self.__class__.__name__,
+        )
+        return True
+
+    @log(logger=logger)
+    def _shift_range_and_update_plot(self, parameters: dict, direction: str) -> None:
+        """
+        Navigate filtered event_ids by n_events steps in the given direction
+        with wrap-around at both ends, then trigger a plot update.
+
+        :param parameters: Action parameters from ProteinControls (must contain
+                           'db_loader', 'event_id', 'n_events').
+        :param direction: 'left' (backward) or 'right' (forward).
+        """
+        loader = parameters.get("db_loader")
+        if not loader:
             return
 
-        parsed = self._parse_event_indices(original_str, False)
-        self.logger.debug(f"Parsed input into ranges: {parsed}")
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
 
-        shifted = self._shift_ranges(parsed, direction, 1)
-        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
-
-        merged = self._merge_ranges(shifted)
-        self.logger.debug(f"Merged shifted ranges: {merged}")
-
-        new_event_str = self._format_ranges(merged)
-        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
-
-        expanded = self._expand_event_indices(new_event_str)
-        self.logger.debug(f"Expanded list for plotting: {expanded}")
-
-        if not expanded:
-            self.logger.warning("Indices must be positive")
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
+        if not experiments_and_channels:
             return
 
-        # Proceed with valid shift
+        sql_filter = next(iter(selected_filters.values()))
+        exp = next(iter(experiments_and_channels.keys()))
+        channel = next(iter(experiments_and_channels.values()))[0]
+
+        # Rebuild cache if the filter/scope has changed or the cache is empty
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        cache = self.filtered_event_ids
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        # Find current position; bisect_left snaps to the first id >= event_id
+        idx = bisect.bisect_left(cache, event_id)
+        if idx >= len(cache):
+            idx = 0
+
+        if direction == "right":
+            next_idx = idx + n_events
+            if next_idx >= len(cache):
+                next_idx = 0  # wrap to beginning
+        else:
+            next_idx = idx - n_events
+            if next_idx < 0:
+                next_idx = max(0, len(cache) - n_events)  # wrap to end
+
+        new_event_id = cache[next_idx]
+        self.proteincontrols.set_event_id_input(new_event_id)
+
         new_params = parameters.copy()
-        new_params["event_index"] = expanded
-        self.logger.debug(f"Updated parameters for plot: {new_params}")
+        new_params["event_id"] = new_event_id
 
         if self._last_event_action == "plot_histogram":
             self._handle_plot_histogram(new_params)
         else:
             self._handle_plot_events(new_params)
-            self.logger.debug(
-                f"Shifting complete. Updating input field to: {new_event_str}"
-            )
-        self.proteincontrols.set_event_index_input(new_event_str)
-
-    def _get_event_index_text(self) -> str:  # Since params expanded
-        """
-        Get the current text from the event index input field.
-
-        :return: Stripped text content of the event index field.
-        :rtype: str
-        """
-        return self.proteincontrols.event_index_lineEdit.text().strip()
 
     @log(logger=logger)
     def set_event_plot_data_generator(self, generator):
@@ -1359,44 +1484,175 @@ class ProteinView(MetaView, WalkthroughMixin):
             return (sql_filter, exp_and_ch_arg)
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _handle_plot_events(self, parameters: dict) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
-        :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
+        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
+        and bisect, then delegates to _fetch_event_data and
+        uses the generator + cached_events blob cache for actual data fetching.
+
+        :param parameters: Dictionary containing db_loader, filter, channels,
+                           event_id (int), and n_events (int).
         :type parameters: dict
         """
         self._last_event_action = "plot_events"
-        event_index = parameters["event_index"]
-        data_list = self._fetch_event_data(parameters, action_label="events")
+
+        loader = parameters.get("db_loader")
+        if not loader:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot events",
+                self.__class__.__name__,
+            )
+            return
+
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
+
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
+        if not experiments_and_channels or len(experiments_and_channels) == 0:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot events",
+                self.__class__.__name__,
+            )
+            return
+
+        sql_filter = next(iter(selected_filters.values()))
+        exp = next(iter(experiments_and_channels.keys()))
+        channel = next(iter(experiments_and_channels.values()))[0]
+
+        # Rebuild the event_id cache if the filter or scope has changed
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        cache = self.filtered_event_ids
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        # Snap to nearest event_id at or after the requested id; wrap if past end
+        idx = bisect.bisect_left(cache, event_id)
+        if idx >= len(cache):
+            idx = 0
+
+        snapped_event_id = cache[idx]
+        self.proteincontrols.set_event_id_input(snapped_event_id)
+
+        # Resolve n_events consecutive ids from the cache starting at idx
+        event_index = [cache[i] for i in range(idx, min(idx + n_events, len(cache)))]
+
+        # Pass the resolved list into _fetch_event_data via the standard key
+        fetch_params = parameters.copy()
+        fetch_params["event_index"] = event_index
+
+        data_list = self._fetch_event_data(fetch_params, action_label="events")
 
         if data_list:
             self._update_event_plot(data_list)
         else:
             self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_index}",
+                f"No data available for event_id {snapped_event_id}",
                 self.__class__.__name__,
-            )
-            self.logger.info(
-                f"No data available for plotting with indices in the specified range {event_index}"
             )
 
     @log(logger=logger)
-    def _handle_plot_histogram(self, parameters):
+    def _handle_plot_histogram(self, parameters: dict) -> None:
         """
         Handle loading and plotting of the ΔI/I histogram for selected events,
         each in its own subplot on the event canvas.
 
-        :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
+        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
+        and bisect, then delegates to _fetch_event_data which uses
+        the generator + cached_events blob cache for actual data fetching.
+
+
+        :param parameters: Dictionary containing db_loader, filter, channels,
+                           event_id (int), n_events (int), bins, and sizes.
         :type parameters: dict
         """
+
         self._last_event_action = "plot_histogram"
-        event_index = parameters["event_index"]
+
+        # Reset bin range so each Plot Histogram click is self-contained
+        # Without this, hist_min/hist_max accumulate across navigation sessions,
+        # causing bin edges to widen and histogram shape/fit to change on return visits
+        self.hist_min = None
+        self.hist_max = None
+
+        loader = parameters.get("db_loader")
+        if not loader:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot histograms",
+                self.__class__.__name__,
+            )
+            return
+
         bins = parameters.get("bins")
         sizes = parameters.get("sizes", False)
         plot_type = "Filtered Histogram"
 
-        data_list = self._fetch_event_data(parameters, action_label="histograms")
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
+
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
+        if not experiments_and_channels or len(experiments_and_channels) == 0:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot histograms",
+                self.__class__.__name__,
+            )
+            return
+
+        sql_filter = next(iter(selected_filters.values()))
+        exp = next(iter(experiments_and_channels.keys()))
+        channel = next(iter(experiments_and_channels.values()))[0]
+
+        # Rebuild the event_id cache if the filter or scope has changed
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        cache = self.filtered_event_ids
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        # Snap to nearest event_id at or after the requested id; wrap if past end
+        idx = bisect.bisect_left(cache, event_id)
+        if idx >= len(cache):
+            idx = 0
+
+        snapped_event_id = cache[idx]
+        self.proteincontrols.set_event_id_input(snapped_event_id)
+
+        # Resolve n_events consecutive ids from the cache starting at idx
+        event_index = [cache[i] for i in range(idx, min(idx + n_events, len(cache)))]
+
+        # Pass the resolved list into _fetch_event_data via the standard key
+        fetch_params = parameters.copy()
+        fetch_params["event_index"] = event_index
+
+        data_list = self._fetch_event_data(fetch_params, action_label="histograms")
 
         if data_list:
             self._update_event_histogram(
@@ -1404,11 +1660,8 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
         else:
             self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_index}",
+                f"No data available for event_id {snapped_event_id}",
                 self.__class__.__name__,
-            )
-            self.logger.info(
-                f"No data available for plotting with indices in the specified range {event_index}"
             )
 
     @log(logger=logger)
@@ -1506,6 +1759,11 @@ class ProteinView(MetaView, WalkthroughMixin):
             ax = self.fig_event.add_subplot(num_rows, num_cols, j + 1)
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
+
+            # Reset per-event so bin edges are determined solely by this event's
+            # current range, not influenced by other events in the same plot call.
+            self.hist_min = None
+            self.hist_max = None
 
             try:
                 plot_data = self._construct_single_event_histogram(
@@ -3124,9 +3382,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Metadata Tab",
-                "Then, enter the index or ranges of events you want to visualize.",
+                "Enter the starting event ID and the number of events you want to visualize.",
                 "MetadataView",
-                lambda: [self.proteincontrols.event_index_lineEdit],
+                lambda: [
+                    self.proteincontrols.event_id_lineEdit,
+                    self.proteincontrols.n_events_lineEdit,
+                ],
             ),
             (
                 "Metadata Tab",

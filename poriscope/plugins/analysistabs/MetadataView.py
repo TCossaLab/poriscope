@@ -120,12 +120,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.hist_max: Optional[float] = None
         self.hist_data: List[npt.NDArray[float]] = []
         self.hist_labels: List[Optional[str]] = []
-        self.current_sql_filter: Optional[str] = None
-        self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[int] = None
-        self.cached_events: Dict[int, Dict[str, Any]] = {}
         self.subset_filters: Dict[str, str] = {}
-        self.plot_events_generator = None
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
@@ -157,6 +152,12 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.hlabels = None
         self.plabels = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
+
+        # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
+        self.filtered_event_ids: List[int] = []
+        self.current_sql_filter: Optional[str] = None
+        self.current_experiment: Optional[str] = None
+        self.current_channel: Optional[int] = None
 
     @log(logger=logger)
     @override
@@ -1804,64 +1805,178 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
-        """Shift ranges in the GUI and update plot and input if valid."""
-
-        original_str = self._get_event_index_text()
-        self.logger.debug(f"Original GUI input string: {original_str}")
-        if not original_str:
-            self.logger.error("Event index input is empty.")
-            return
-
-        parsed = self._parse_event_indices(original_str, False)
-        self.logger.debug(f"Parsed input into ranges: {parsed}")
-
-        shifted = self._shift_ranges(parsed, direction, 1)
-        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
-
-        merged = self._merge_ranges(shifted)
-        self.logger.debug(f"Merged shifted ranges: {merged}")
-
-        new_event_str = self._format_ranges(merged)
-        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
-
-        expanded = self._expand_event_indices(new_event_str)
-        self.logger.debug(f"Expanded list for plotting: {expanded}")
-
-        if not expanded:
-            self.logger.warning("Indices must be positive")
-            return
-
-        # Proceed with valid shift
-        new_params = parameters.copy()
-        new_params["event_index"] = expanded
-        self.logger.debug(f"Updated parameters for plot: {new_params}")
-
-        self._handle_plot_events(new_params)
-        self.logger.debug(
-            f"Shifting complete. Updating input field to: {new_event_str}"
-        )
-        self.metadatacontrols.set_event_index_input(new_event_str)
-
-    def _get_event_index_text(self) -> str:  # Since params expanded
+    def _build_where_clause(self, loader, sql_filter, exp, channel):
         """
-        Get the current text from the event index input field.
+        Build a WHERE clause for direct DB queries on the events table, scoped to
+        the current filter, experiment, and channel.
 
-        :return: Stripped text content of the event index field.
+        :param loader: Name of the active database loader.
+        :type loader: str
+        :param sql_filter: SQL filter string (may be empty).
+        :type sql_filter: str
+        :param exp: Experiment name.
+        :type exp: Optional[str]
+        :param channel: Channel identifier.
+        :type channel: Optional[str]
+        :return: WHERE clause string (including the WHERE keyword), or empty string.
         :rtype: str
         """
-        return self.metadatacontrols.event_index_lineEdit.text().strip()
+        filter_parts = []
+        if sql_filter:
+            filter_parts.append(sql_filter)
+        if exp is not None:
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_experiment_id_by_name",
+                (exp,),
+                "relay_experiment_id",
+                (),
+            )
+            exp_id = getattr(self, "relayed_experiment_id", None)
+            if exp_id is not None:
+                filter_parts.append(f"experiment_id = {exp_id}")
+                if channel is not None:
+                    filter_parts.append(f"channel_id = {channel}")
+        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
 
     @log(logger=logger)
-    def set_event_plot_data_generator(self, generator):
+    def _rebuild_event_id_cache(self, loader, where_clause, sql_filter, exp, channel):
         """
-        :param generator: a generator of event data
-        :type generator: Generator[Dict[str, Any]]
+        Rebuild the filtered event_id cache when filter or scope changes.
+        Also emits the display panel message (first plot or filter change only).
 
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays
+        :param loader: Name of the active database loader.
+        :param where_clause: Pre-built WHERE clause for the events table.
+        :param sql_filter: Current SQL filter string.
+        :param exp: Current experiment name.
+        :param channel: Current channel identifier.
+        :return: True if cache was rebuilt successfully, False otherwise.
+        :rtype: bool
         """
-        self.plot_events_generator = generator
-        self.plot_events_generator_updated = True
+        cache_query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (cache_query,),
+            "relay_query_result",
+            (),
+        )
+        cache_result = getattr(self, "relayed_query_result", None)
+        if cache_result is None or cache_result.empty:
+            self.add_text_to_display.emit(
+                "No filtered events found",
+                self.__class__.__name__,
+            )
+            return False
+
+        self.filtered_event_ids = cache_result["event_id"].tolist()
+        self.current_sql_filter = sql_filter
+        self.current_experiment = exp
+        self.current_channel = channel
+
+        # Display panel — only on cache rebuild (filter change or first plot)
+        total = len(self.filtered_event_ids)
+        first_id = self.filtered_event_ids[0]
+        last_id = self.filtered_event_ids[-1]
+        if sql_filter:
+            # Get the filter name from the current selected filters
+            selected_filters = self.get_selected_filters()
+            filter_name = next(iter(selected_filters.keys()), "Filter")
+            label = f'"{filter_name}" subset'
+        else:
+            label = "All events"
+        self.add_text_to_display.emit(
+            f"{label}: {total} total | first event_id: {first_id} | last event_id: {last_id}",
+            self.__class__.__name__,
+        )
+        return True
+
+    @log(logger=logger)
+    def _shift_range_and_update_plot(self, parameters, direction):
+        """Shift the current event_id forward or backward through the cached filtered set and update the plot."""
+
+        loader = parameters["db_loader"]
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events", 1)
+
+        selected_filters = self.get_selected_filters()
+        if selected_filters is None or selected_filters == {}:
+            selected_filters = {"Full Dataset": ""}
+        sql_filter = next(iter(selected_filters.values()))
+
+        exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
+        if exp_and_ch is None:
+            self.logger.error("No experiments or channels in scope for navigation.")
+            return
+
+        exp = next(iter(exp_and_ch.keys()))
+        channel = next(iter(exp_and_ch.values()))[0]
+
+        # Rebuild cache if filter or scope changed
+        if (
+            sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+            or not self.filtered_event_ids
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        if not self.filtered_event_ids:
+            return
+
+        # Find current position in the cached list using binary search
+        import bisect
+
+        ids = self.filtered_event_ids
+        n = len(ids)
+
+        current_idx = bisect.bisect_left(ids, event_id)
+        current_idx = min(current_idx, n - 1)
+
+        if direction == "right":
+            next_idx = current_idx + n_events
+            if next_idx >= n:
+                next_idx = 0  # wrap around to start
+        else:  # left
+            next_idx = current_idx - n_events
+            if next_idx < 0:
+                next_idx = max(0, n - n_events)  # wrap around to last window
+
+        new_event_id = ids[next_idx]
+
+        # Update the UI field and re-plot
+        self.metadatacontrols.set_event_id_input(new_event_id)
+        new_params = parameters.copy()
+        new_params["event_id"] = new_event_id
+        self._handle_plot_events(new_params)
+
+    @log(logger=logger)
+    def _get_event_id(self) -> Optional[int]:  # Since params expanded
+        """
+        Get the current event_id from the event_id input field.
+
+        :return: Integer event_id, or None if the field is empty.
+        :rtype: Optional[int]
+        """
+        text = self.metadatacontrols.event_id_lineEdit.text().strip()
+        return int(text) if text else None
+
+    @log(logger=logger)
+    def _get_n_events(self) -> int:
+        """
+        Get the number of events to plot from the n_events input field.
+
+        :return: Number of events, defaulting to 1 if the field is empty.
+        :rtype: int
+        """
+        text = self.metadatacontrols.n_events_lineEdit.text().strip()
+        return int(text) if text else 1
 
     @log(logger=logger)
     def _handle_plot_events(self, parameters):
@@ -1884,7 +1999,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         if selected_filters is not None and len(selected_filters) > 1:
-            self.add_text_to_display(
+            self.add_text_to_display.emit(
                 "Unable to plot more than one subset at a time, select only one filter to apply",
                 self.__class__.__name__,
             )
@@ -1918,57 +2033,87 @@ class MetadataView(MetaView, WalkthroughMixin):
         if selected_filters is None or selected_filters == {}:
             selected_filters = {"Full Dataset": ""}
 
-        event_index = parameters["event_index"]
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events", 1)
         use_raw = parameters.get("raw", False)
 
         sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
-        exp = next(
-            iter(self.selected_experiment_and_channels_by_loader[loader_name].keys())
+        loader = parameters["db_loader"]
+        exp = next(iter(exp_and_ch.keys()))
+        channel = next(iter(exp_and_ch.values()))[0]
+
+        # Rebuild cache only when filter or scope changes — display panel emitted inside
+        cache_needs_rebuild = (
+            sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+            or not self.filtered_event_ids
         )
-        channel = next(
-            iter(self.selected_experiment_and_channels_by_loader[loader_name].values())
-        )[0]
-
-        if not (
-            sql_filter == self.current_sql_filter
-            and self.current_experiment == exp
-            and self.current_channel == channel
-            and self.plot_events_generator is not None
-        ):
-            # only load a new generator if the old one is invalid after explicitly aborting the current one
-            if self.plot_events_generator is not None:
-                try:
-                    try:
-                        new_event = self.plot_events_generator.send(True)
-                    except StopIteration:
-                        pass
-                except TypeError:
-                    try:
-                        new_event = next(self.plot_events_generator)
-                        new_event = self.plot_events_generator.send(True)
-                    except StopIteration:
-                        pass
-                self.cached_events = {}
-                self.plot_events_generator = None
-
-            loader = parameters["db_loader"]
-            load_event_data_args = (sql_filter, exp_and_ch)
-            self.plot_events_generator_updated = False
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "load_event_data",
-                load_event_data_args,
-                "relay_event_plot_data_generator",
-                (),
+        if cache_needs_rebuild:
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+        elif not self.filtered_event_ids:
+            self.add_text_to_display.emit(
+                "No filtered events found",
+                self.__class__.__name__,
             )
-            if self.plot_events_generator_updated is True:
-                self.current_sql_filter = sql_filter
-                self.current_experiment = exp
-                self.current_channel = int(channel) if channel is not None else None
+            return
 
-        event_index = parameters["event_index"]
+        # Snap using cache — bisect into filtered_event_ids
+        import bisect
+
+        ids = self.filtered_event_ids
+        snap_idx = bisect.bisect_left(ids, event_id)
+        if snap_idx >= len(ids):
+            snap_idx = 0  # wrap around to first event
+        snapped_event_ids = ids[snap_idx : snap_idx + n_events]
+        snapped_start_id = snapped_event_ids[0]
+
+        # Update the event_id field to reflect the snapped position
+        self.metadatacontrols.set_event_id_input(snapped_start_id)
+
+        # Resolve snapped event_ids to event_db_ids for load_event_data
+        id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
+        db_id_query = f"SELECT id FROM events WHERE event_id IN {id_tuple}"
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (db_id_query,),
+            "relay_query_result",
+            (),
+        )
+        db_id_result = getattr(self, "relayed_query_result", None)
+        if db_id_result is None or db_id_result.empty:
+            self.add_text_to_display.emit(
+                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
+                self.__class__.__name__,
+            )
+            return
+        db_ids = db_id_result["id"].tolist()
+        db_id_tuple = f"({','.join(str(i) for i in db_ids)})"
+        event_db_id_filter = f"e.id IN {db_id_tuple}"
+
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "load_event_data",
+            (event_db_id_filter, exp_and_ch),
+            "relay_event_plot_data_generator",
+            (),
+        )
+        event_generator = getattr(self, "plot_events_generator", None)
+        if event_generator is None:
+            self.add_text_to_display.emit(
+                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
+                self.__class__.__name__,
+            )
+            return
+
         data_list = []
         vertical_lines: List[Optional[float]] = []
         vertical_labels: List[Optional[str]] = []
@@ -1977,83 +2122,57 @@ class MetadataView(MetaView, WalkthroughMixin):
         points: List[Optional[Tuple[float, float]]] = []
         plabels: List[Optional[str]] = []
 
-        for index in event_index:
-            cached_event = self.cached_events.get(index)
-            if cached_event is not None:
-                data_list.append(cached_event)
-                continue
+        for event in event_generator:
+            data_list.append(event)
+            vertical_lines.append(None)
+            vertical_labels.append(None)
+            horizontal_lines.append(None)
+            horizontal_labels.append(None)
+            points.append(None)
+            plabels.append(None)
+            experiment_id = event["experiment_id"]
+            channel_id = event["channel_id"]
+            event_id_val = event["event_id"]
+            try:
+                load_feature_args = (experiment_id, channel_id, event_id_val)
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "get_plot_features",
+                    load_feature_args,
+                    "update_features",
+                    (),
+                )
+            except RuntimeError as e:
+                self.logger.error(
+                    f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
+                )
+            except KeyError as e:
+                self.logger.info(
+                    f"Event {event} not found in channel {channel} to get features, skipping: {e}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"An unexpected error occured while trying to overlay features on the event: {e}"
+                )
             else:
-                while True:
-                    new_event = None
-                    try:
-                        if self.plot_events_generator is not None:
-                            try:
-                                new_event = self.plot_events_generator.send(False)
-                            except TypeError:
-                                new_event = next(self.plot_events_generator)
-                        else:
-                            raise AttributeError(
-                                "Establish a plot events generator before trying to use it"
-                            )
-                    except StopIteration:
-                        break
-                    if new_event is not None:
-                        self.cached_events[new_event["event_id"]] = new_event
-                        if new_event["event_id"] == index:
-                            data_list.append(new_event)
-                            break
-                        elif new_event["event_id"] > index:
-                            break
-        if data_list:
-            for event in data_list:
-                vertical_lines.append(None)
-                vertical_labels.append(None)
-                horizontal_lines.append(None)
-                horizontal_labels.append(None)
-                points.append(None)
-                plabels.append(None)
-                experiment_id = event["experiment_id"]
-                channel_id = event["channel_id"]
-                event_id = event["event_id"]
-                try:
-                    load_feature_args = (experiment_id, channel_id, event_id)
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "get_plot_features",
-                        load_feature_args,
-                        "update_features",
-                        (),
-                    )
-                except RuntimeError as e:
-                    self.logger.error(
-                        f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
-                    )
-                except KeyError as e:
-                    self.logger.info(
-                        f"Event {event} not found in channel {channel} to get features, skipping: {e}"
-                    )
-                except Exception as e:
-                    self.logger.error(
-                        f"An unexpected error occured while trying to overlay features on the event: {e}"
-                    )
-                else:
-                    if self.vertical is not None:
-                        vertical_lines[-1] = self.vertical
-                        vertical_labels[-1] = self.vlabels
-                        self.vertical_lines = None
-                        self.vlabels = None
-                    if self.horizontal is not None:
-                        horizontal_lines[-1] = self.horizontal
-                        horizontal_labels[-1] = self.hlabels
-                        self.horizontal = None
-                        self.hlabels = None
-                    if self.points is not None:
-                        points[-1] = self.points
-                        plabels[-1] = self.plabels
-                        self.points = None
-                        self.plabels = None
+                if self.vertical is not None:
+                    vertical_lines[-1] = self.vertical
+                    vertical_labels[-1] = self.vlabels
+                    self.vertical_lines = None
+                    self.vlabels = None
+                if self.horizontal is not None:
+                    horizontal_lines[-1] = self.horizontal
+                    horizontal_labels[-1] = self.hlabels
+                    self.horizontal = None
+                    self.hlabels = None
+                if self.points is not None:
+                    points[-1] = self.points
+                    plabels[-1] = self.plabels
+                    self.points = None
+                    self.plabels = None
 
+        if data_list:
             self._update_event_plot(
                 data_list,
                 horizontal_lines,
@@ -2066,12 +2185,42 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
         else:
             self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_index}",
+                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
                 self.__class__.__name__,
             )
             self.logger.info(
-                f"No data available for plotting with indices in the specified range {event_index}"
+                f"No data available for plotting with indices in the specified range {snapped_event_ids}"
             )
+
+    @log(logger=logger)
+    def set_event_plot_data_generator(self, generator):
+        """
+        :param generator: a generator of event data
+        :type generator: Generator[Dict[str, Any]]
+
+        A callback from a global signal call that sets the generator to be used to construct event plots and overlays
+        """
+        self.plot_events_generator = generator
+
+    @log(logger=logger)
+    def relay_query_result(self, result):
+        """
+        A callback from a global_signal call that stores the result of a direct DB query.
+
+        :param result: DataFrame returned by query_database_directly.
+        :type result: Optional[pd.DataFrame]
+        """
+        self.relayed_query_result = result
+
+    @log(logger=logger)
+    def relay_experiment_id(self, exp_id):
+        """
+        A callback from a global_signal call that stores a resolved experiment id.
+
+        :param exp_id: Integer experiment id.
+        :type exp_id: Optional[int]
+        """
+        self.relayed_experiment_id = exp_id
 
     @log(logger=logger)
     def update_plot_features(
@@ -3026,9 +3175,15 @@ class MetadataView(MetaView, WalkthroughMixin):
             ),
             (
                 "Metadata Tab",
-                "Then, enter the index or ranges of events you want to visualize.",
+                "Then, enter the event_id to start from. The system will snap to the nearest filtered event at or after that ID. Default is 0, which will start from the first event.",
                 "MetadataView",
-                lambda: [self.metadatacontrols.event_index_lineEdit],
+                lambda: [self.metadatacontrols.event_id_lineEdit],
+            ),
+            (
+                "Metadata Tab",
+                "You can also specify the number of events to display at once.",
+                "MetadataView",
+                lambda: [self.metadatacontrols.n_events_lineEdit],
             ),
             (
                 "Metadata Tab",
@@ -3038,7 +3193,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             ),
             (
                 "Metadata Tab",
-                "Use the arrows to quickly navigate between filtered/unfiltered events.",
+                "Use the arrows to quickly navigate between filtered/unfiltered events, with wrap-around at both ends.",
                 "MetadataView",
                 lambda: [
                     self.metadatacontrols.left_arrow_button,

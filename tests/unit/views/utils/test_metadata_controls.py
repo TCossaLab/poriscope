@@ -70,8 +70,11 @@ class TestInstantiation:
         assert hasattr(mc, "sizes_checkbox")
         assert not mc.sizes_checkbox.isChecked()
 
-    def test_has_event_index_lineedit(self, mc):
-        assert hasattr(mc, "event_index_lineEdit")
+    def test_has_event_id_lineedit(self, mc):
+        assert hasattr(mc, "event_id_lineEdit")
+
+    def test_has_n_events_lineedit(self, mc):
+        assert hasattr(mc, "n_events_lineEdit")
 
     def test_has_all_buttons(self, mc):
         for attr in [
@@ -96,9 +99,6 @@ class TestInstantiation:
             "selection_tree_button",
         ]:
             assert hasattr(mc, attr), f"Missing button: {attr}"
-
-    def test_max_range_size_set(self, mc):
-        assert mc.max_range_size == 16
 
     def test_active_popups_empty(self, mc):
         assert mc.active_popups == {}
@@ -535,9 +535,13 @@ class TestCollectParameters:
         assert params["x_log"] is True
         assert params["y_log"] is False
 
-    def test_event_index_empty_by_default(self, mc):
+    def test_event_id_none_by_default(self, mc):
         params = mc.collect_parameters()
-        assert params["event_index"] == []
+        assert params["event_id"] is None
+
+    def test_n_events_defaults_to_one(self, mc):
+        params = mc.collect_parameters()
+        assert params["n_events"] == 1
 
     def test_db_loader_reflects_combobox(self, mc):
         mc.db_loader_comboBox.addItem("test_loader")
@@ -803,16 +807,15 @@ class TestUpdateLoaders:
 # ===========================================================================
 
 
-class TestSetEventIndexInput:
-    def test_sets_value_without_triggering_validate(self, mc):
-        # Should not raise and should update the field
-        mc.set_event_index_input("1-5")
-        # The field accepts the value (exact text depends on IntegerRangeLineEdit impl)
-        assert mc.event_index_lineEdit is not None
+class TestSetEventIdInput:
+    def test_sets_value(self, mc):
+        mc.set_event_id_input(5)
+        assert mc.event_id_lineEdit.text() == "5"
 
-    def test_empty_string_clears_field(self, mc):
-        mc.set_event_index_input("1-5")
-        mc.set_event_index_input("")
+    def test_updates_value_on_subsequent_calls(self, mc):
+        mc.set_event_id_input(5)
+        mc.set_event_id_input(12)
+        assert mc.event_id_lineEdit.text() == "12"
 
 
 # ===========================================================================
