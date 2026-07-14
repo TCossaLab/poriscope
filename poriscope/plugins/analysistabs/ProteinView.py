@@ -1581,7 +1581,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                            event_id (int), n_events (int), bins, and sizes.
         :type parameters: dict
         """
-        
+
         self._last_event_action = "plot_histogram"
 
         # Reset bin range so each Plot Histogram click is self-contained
@@ -1764,7 +1764,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             # current range, not influenced by other events in the same plot call.
             self.hist_min = None
             self.hist_max = None
-            
+
             try:
                 plot_data = self._construct_single_event_histogram(
                     event, plot_type, bins=bins, sizes=sizes
