@@ -1,5 +1,5 @@
 """
-E2E/UX flow for Events (Phase C):
+E2E/UX flow for Events:
 1) Open RawData tab.
 2) Add a reader and draw a trace (so there is data in view).
 3) Add an EventFinder:
