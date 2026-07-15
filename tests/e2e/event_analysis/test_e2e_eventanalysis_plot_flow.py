@@ -34,11 +34,11 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
+from tests.e2e._helpers import open_menu_hybrid
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
-from tests.e2e._helpers import open_menu_hybrid
 
 # tests/e2e/event_analysis/this_file.py -> parents[3] == repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -263,16 +263,14 @@ def test_event_analysis_nav_and_plotting_matrix(qtbot, tmp_path, monkeypatch, ca
     if controls.right_arrow_button.isEnabled():
         QTest.mouseClick(controls.right_arrow_button, Qt.LeftButton)
         qtbot.waitUntil(
-            lambda: controls.event_index_lineEdit.text().strip()
-            == EVENT_RANGE_RIGHT,
+            lambda: controls.event_index_lineEdit.text().strip() == EVENT_RANGE_RIGHT,
             timeout=QT_WAIT_TIMEOUT_MS,
         )
 
     if controls.left_arrow_button.isEnabled():
         QTest.mouseClick(controls.left_arrow_button, Qt.LeftButton)
         qtbot.waitUntil(
-            lambda: controls.event_index_lineEdit.text().strip()
-            == EVENT_RANGE_START,
+            lambda: controls.event_index_lineEdit.text().strip() == EVENT_RANGE_START,
             timeout=QT_WAIT_TIMEOUT_MS,
         )
 
@@ -353,9 +351,7 @@ def test_event_analysis_nav_and_plotting_matrix(qtbot, tmp_path, monkeypatch, ca
     )
 
     lines_with_filter_raw_off = _replot_and_count(qtbot, controls, ea_view)
-    print(
-        f"[DEBUG] Stage 3 (filter ON, raw off): {lines_with_filter_raw_off} lines"
-    )
+    print(f"[DEBUG] Stage 3 (filter ON, raw off): {lines_with_filter_raw_off} lines")
     assert lines_with_filter_raw_off == baseline_lines_no_filter_raw_off, (
         "Expected the same line COUNT with filter active but RAW unchecked "
         "(filtered data replaces raw as the single 'Data' trace; content "

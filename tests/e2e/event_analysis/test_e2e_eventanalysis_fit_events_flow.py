@@ -62,11 +62,11 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
+from tests.e2e._helpers import open_menu_hybrid
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
-from tests.e2e._helpers import open_menu_hybrid
 
 # Repo root path
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -376,7 +376,9 @@ def test_event_fitting_flow_clicks(
                 if "name" in (w.objectName() or "").lower() and not w.text().strip():
                     w.setText(f"{FILTER_SUBCLASS_NAME}_e2e")
             filterset = getattr(dlg, "entrywidgets", {})
-            print(f"[DEBUG] {FILTER_SUBCLASS_NAME} dialog entrywidgets keys: {list(filterset.keys())}")
+            print(
+                f"[DEBUG] {FILTER_SUBCLASS_NAME} dialog entrywidgets keys: {list(filterset.keys())}"
+            )
 
             def _set_and_commit(widget, text):
                 widget.setText(text)
@@ -548,15 +550,21 @@ def test_event_fitting_flow_clicks(
                 return
 
             writer_widgets = getattr(dlg, "entrywidgets", {})
-            print(f"[DEBUG] Writer dialog entrywidgets keys: {list(writer_widgets.keys())}")
+            print(
+                f"[DEBUG] Writer dialog entrywidgets keys: {list(writer_widgets.keys())}"
+            )
 
             # Select fitter
             if "MetaEventFitter" in writer_widgets:
                 cb = writer_widgets["MetaEventFitter"]
                 if isinstance(cb, QtWidgets.QComboBox):
                     _fitter_options = [cb.itemText(i) for i in range(cb.count())]
-                    print(f"[DEBUG] Writer MetaEventFitter combo options: {_fitter_options}")
-                    print(f"[DEBUG] Looking for expected_fitter_key: {expected_fitter_key!r}")
+                    print(
+                        f"[DEBUG] Writer MetaEventFitter combo options: {_fitter_options}"
+                    )
+                    print(
+                        f"[DEBUG] Looking for expected_fitter_key: {expected_fitter_key!r}"
+                    )
                     idx = cb.findText(expected_fitter_key)
                     cb.setCurrentIndex(idx if idx >= 0 else 0)
                     print(
@@ -643,7 +651,8 @@ def test_event_fitting_flow_clicks(
                 return None  # table may not exist yet on the very first poll
 
         qtbot.waitUntil(
-            lambda: _current_row_count() == expected_good_fits, timeout=QT_WAIT_TIMEOUT_MS
+            lambda: _current_row_count() == expected_good_fits,
+            timeout=QT_WAIT_TIMEOUT_MS,
         )
 
         with sqlite3.connect(out_db) as conn:
