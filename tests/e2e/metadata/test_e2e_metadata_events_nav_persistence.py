@@ -24,8 +24,8 @@ Stages (no filter active for stages 1-4; filters only enter at stage 5):
    event (raw_data), going from 2x to 3x lines/event - confirmed possible
    from source (use_raw always adds the raw line when checked, regardless
    of filter state - different from EventAnalysisView's filter-gated
-   behavior). In the case of the database being used for this test, 
-   raw_data and filtered_data are identical, so the lines overlap and the plot looks unchanged, 
+   behavior). In the case of the database being used for this test,
+   raw_data and filtered_data are identical, so the lines overlap and the plot looks unchanged,
    but the line count is still 3x/event.
 5) Filters: create two assisted filters (filter_a: "duration>100",
    filter_b: "duration>200") -> Save Filter (writes both to a real JSON
@@ -93,7 +93,7 @@ def _find_button(dlg, label_lower: str):
 
 def _find_button_contains(dlg, snippet: str):
     needle = (snippet or "").lower()
-    for b in (dlg.findChildren(QtWidgets.QPushButton) if dlg else []):
+    for b in dlg.findChildren(QtWidgets.QPushButton) if dlg else []:
         if needle in (b.text() or "").lower():
             return b
     return None
@@ -231,7 +231,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # see test_e2e_metadata_flow.py for full rationale)
     import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
 
-    def _patched_show_dialog(self, structure, loader_name, title="Select Channels", selected=None):
+    def _patched_show_dialog(
+        self, structure, loader_name, title="Select Channels", selected=None
+    ):
         selection_widget = metadata_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
@@ -242,7 +244,10 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree, "show_dialog", _patched_show_dialog, raising=True
+        metadata_view_mod.SelectionTree,
+        "show_dialog",
+        _patched_show_dialog,
+        raising=True,
     )
 
     # Boot MVC
@@ -299,7 +304,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     qtbot.wait(QT_WAIT_SHORT_MS)
     QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    print(f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}")
+    print(
+        f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}"
+    )
 
     # =========================================================
     # STAGE 2: Plot Events, no filter. Confirmed from source:
@@ -318,21 +325,22 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     )
     lines_4events = _count_lines(md_view.figure)
     print(f"[DEBUG] event_id=0, n_events=4: {lines_4events} lines (expect 8)")
-    assert lines_4events == 8, (
-        f"Expected 2 lines/event x 4 events = 8, got {lines_4events}"
-    )
+    assert (
+        lines_4events == 8
+    ), f"Expected 2 lines/event x 4 events = 8, got {lines_4events}"
 
     controls.event_id_lineEdit.setText("3")
     controls.n_events_lineEdit.setText("2")
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(md_view.figure) != lines_4events, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _count_lines(md_view.figure) != lines_4events,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
     lines_2events = _count_lines(md_view.figure)
     print(f"[DEBUG] event_id=3, n_events=2: {lines_2events} lines (expect 4)")
-    assert lines_2events == 4, (
-        f"Expected 2 lines/event x 2 events = 4, got {lines_2events}"
-    )
+    assert (
+        lines_2events == 4
+    ), f"Expected 2 lines/event x 2 events = 4, got {lines_2events}"
 
     # =========================================================
     # STAGE 3: navigation - 1x RIGHT, then 3x LEFT (back). Compute the
@@ -343,7 +351,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     ids = list(md_view.filtered_event_ids)
     n = len(ids)
-    print(f"[DEBUG] filtered_event_ids: n={n}, first={ids[0] if ids else None}, last={ids[-1] if ids else None}")
+    print(
+        f"[DEBUG] filtered_event_ids: n={n}, first={ids[0] if ids else None}, last={ids[-1] if ids else None}"
+    )
     assert n > 0, "Expected a non-empty filtered_event_ids cache after plotting"
 
     n_events = 2  # matches n_events_lineEdit set above
@@ -390,9 +400,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         f"[DEBUG] After 1xRIGHT + 3xLEFT: event_id={actual_event_id}, "
         f"n_events={actual_n_events} (expected event_id={expected_event_id})"
     )
-    assert actual_n_events == n_events, (
-        f"Expected n_events to stay {n_events} through navigation, got {actual_n_events}"
-    )
+    assert (
+        actual_n_events == n_events
+    ), f"Expected n_events to stay {n_events} through navigation, got {actual_n_events}"
     assert actual_event_id == expected_event_id, (
         f"Expected navigation to land on event_id={expected_event_id} "
         f"(computed via the same bisect-shift algorithm the app uses), "
@@ -409,7 +419,8 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     controls.raw_checkbox.setChecked(True)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(md_view.figure) > lines_before_raw, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _count_lines(md_view.figure) > lines_before_raw,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
     lines_with_raw = _count_lines(md_view.figure)
     print(f"[DEBUG] RAW checked: {lines_before_raw} -> {lines_with_raw} lines")
@@ -421,7 +432,8 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     controls.raw_checkbox.setChecked(False)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(md_view.figure) < lines_with_raw, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _count_lines(md_view.figure) < lines_with_raw,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
     lines_after_uncheck = _count_lines(md_view.figure)
     print(f"[DEBUG] RAW unchecked: {lines_with_raw} -> {lines_after_uncheck} lines")
@@ -453,10 +465,13 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         QtCore.QTimer.singleShot(0, auto_complete)
         QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
         qtbot.waitUntil(
-            lambda: any(name in n for n in md_view.subset_filters), timeout=QT_WAIT_TIMEOUT_MS
+            lambda: any(name in n for n in md_view.subset_filters),
+            timeout=QT_WAIT_TIMEOUT_MS,
         )
         full_name = next(n for n in md_view.subset_filters if name in n)
-        print(f"[DEBUG] Filter added: {full_name!r} = {md_view.subset_filters[full_name]!r}")
+        print(
+            f"[DEBUG] Filter added: {full_name!r} = {md_view.subset_filters[full_name]!r}"
+        )
         return full_name
 
     filter_a_name = _add_assisted_filter("filter_a", "duration>100")
@@ -475,16 +490,18 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     with open(filters_json_path) as f:
         saved_json = json.load(f)
     print(f"[DEBUG] Saved JSON contents: {saved_json}")
-    assert saved_json == original_values, (
-        f"Expected saved JSON to match original filter values, got {saved_json}"
-    )
+    assert (
+        saved_json == original_values
+    ), f"Expected saved JSON to match original filter values, got {saved_json}"
 
     # --- Load Filter while both still exist in memory -> expect a
     # "Duplicate filter names" warning and NO change to subset_filters ---
     caplog.clear()
     QTest.mouseClick(controls.load_filter_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    print(f"[DEBUG] subset_filters after duplicate-load attempt: {md_view.subset_filters}")
+    print(
+        f"[DEBUG] subset_filters after duplicate-load attempt: {md_view.subset_filters}"
+    )
     assert md_view.subset_filters == original_values, (
         "Expected subset_filters unchanged after loading duplicates, got "
         f"{md_view.subset_filters}"
@@ -555,9 +572,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     QTest.mouseClick(controls.reset_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    assert _count_bars(md_view.figure) == 0 and _get_legend_labels(md_view.figure) == [], (
-        "Expected Reset to fully clear the plot before the save/load config check"
-    )
+    assert (
+        _count_bars(md_view.figure) == 0 and _get_legend_labels(md_view.figure) == []
+    ), "Expected Reset to fully clear the plot before the save/load config check"
 
     idx = controls.plot_type_comboBox.findText("Histogram")
     assert idx >= 0, "Histogram not found in plot_type_comboBox options"
@@ -571,9 +588,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         lambda: controls.update_plot_button.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS
     )
     QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
-    qtbot.waitUntil(
-        lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS
-    )
+    qtbot.waitUntil(lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS)
     saved_bar_count = _count_bars(md_view.figure)
     saved_legend_labels = _get_legend_labels(md_view.figure)
     print(
@@ -602,14 +617,14 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
 
     QTest.mouseClick(controls.reset_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    assert _count_bars(md_view.figure) == 0, "Expected Reset to clear the plot before reload"
+    assert (
+        _count_bars(md_view.figure) == 0
+    ), "Expected Reset to clear the plot before reload"
     print("[DEBUG] Plot reset before reload")
 
     _dialog_purpose["value"] = "plot_config"
     QTest.mouseClick(controls.load_button, Qt.LeftButton)
-    qtbot.waitUntil(
-        lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS
-    )
+    qtbot.waitUntil(lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS)
     reloaded_bar_count = _count_bars(md_view.figure)
     reloaded_legend_labels = _get_legend_labels(md_view.figure)
     print(
@@ -702,7 +717,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
             name_edit.setText("csv_export_e2e")
             name_edit.editingFinished.emit()
         ok = _find_button(dlg, "ok")
-        print(f"[DEBUG] Export dialog OK button found={ok is not None}, enabled={ok.isEnabled() if ok else None}")
+        print(
+            f"[DEBUG] Export dialog OK button found={ok is not None}, enabled={ok.isEnabled() if ok else None}"
+        )
         if ok and ok.isEnabled():
             QTest.mouseClick(ok, Qt.LeftButton)
             print("[DEBUG] Export dialog OK clicked")
@@ -738,7 +755,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     qtbot.waitUntil(lambda: _new_nonempty_csv() is not None, timeout=QT_WAIT_TIMEOUT_MS)
     new_csv = _new_nonempty_csv()
     print(f"[DEBUG] CSV export (accept path) produced: {new_csv}")
-    assert new_csv is not None, "Expected a new non-empty CSV file after accepting export"
+    assert (
+        new_csv is not None
+    ), "Expected a new non-empty CSV file after accepting export"
     with open(new_csv) as f:
         header = f.readline().strip()
     print(f"[DEBUG] CSV header: {header!r}")
