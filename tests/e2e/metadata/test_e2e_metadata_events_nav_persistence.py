@@ -1,32 +1,30 @@
 """
-E2E/UX flow for Metadata tab: Plot Events + navigation + RAW checkbox +
-filter save/load/edit/delete persistence round-trip.
-
+E2E/UX flow for Metadata tab: Plot Events + navigation + RAW checkbox + SQL
+filter save/load/edit/delete persistence round-trip. CSV export (accept
+and cancel paths) is covered separately in test_e2e_metadata_csv_export.py.
+ 
 Run with:
     pytest tests/e2e/metadata/test_e2e_metadata_events_nav_persistence.py -v -s
-
-Stages (no filter active for stages 1-4; filters only enter at stage 5):
-1) Open tab, add loader, scope select-all (reused patterns from
-   test_e2e_metadata_flow.py).
+ 
+Stages (no SQL filter active for stages 1-4; SQL filters only enter at stage 5):
+1) Open tab, add loader, scope select-all.
 2) Plot Events: event_id=0, n_events=4 -> expect 2 lines/event (filtered
    + fit; MetadataView._update_event_plot plots these UNCONDITIONALLY,
    confirmed from source - unlike EventAnalysisView, filter state doesn't
    gate them). Then event_id=3, n_events=2 -> expect 4 lines total.
 3) Navigation/wraparound: 1x RIGHT then 3x LEFT (back). Rather than
-   hardcoding an expected landing event_id (debug output shows
+   hardcoding an expected landing event_id (manual debug output shows
    "24 total | first:0 | last:24", meaning the id set has a GAP somewhere (19)
    - hardcoding "23" would be a guess), we read the real
    md_view.filtered_event_ids cache and SIMULATE the exact same
    bisect-based shift algorithm the app uses (_shift_range_and_update_plot)
    to compute the expected final event_id, then assert the UI matches
    that computed value exactly.
-4) RAW checkbox: checking it should ADD a third line per
+4) RAW checkbox, still no filter: checking it should ADD a third line per
    event (raw_data), going from 2x to 3x lines/event - confirmed possible
    from source (use_raw always adds the raw line when checked, regardless
    of filter state - different from EventAnalysisView's filter-gated
-   behavior). In the case of the database being used for this test,
-   raw_data and filtered_data are identical, so the lines overlap and the plot looks unchanged,
-   but the line count is still 3x/event.
+   behavior).
 5) Filters: create two assisted filters (filter_a: "duration>100",
    filter_b: "duration>200") -> Save Filter (writes both to a real JSON
    file) -> Load Filter immediately (filters still in memory) -> expect a
@@ -36,6 +34,9 @@ Stages (no filter active for stages 1-4; filters only enter at stage 5):
    ORIGINAL pre-edit text (duration>100 / duration>200), proving Save
    captured the pre-edit state and the later in-memory edit never touched
    the saved file.
+6) Reset -> Histogram/duration -> Save Plot Configuration -> Reset ->
+   Load Plot Configuration -> assert the reloaded plot's legend labels
+   and bar count exactly match what was saved.
 """
 
 import bisect
@@ -93,7 +94,7 @@ def _find_button(dlg, label_lower: str):
 
 def _find_button_contains(dlg, snippet: str):
     needle = (snippet or "").lower()
-    for b in dlg.findChildren(QtWidgets.QPushButton) if dlg else []:
+    for b in (dlg.findChildren(QtWidgets.QPushButton) if dlg else []):
         if needle in (b.text() or "").lower():
             return b
     return None
@@ -194,17 +195,6 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         staticmethod(_smart_get_save_filename),
         raising=False,
     )
-    # Folder-typed DictDialog fields (e.g. "Folder" in the CSV export
-    # dialog) render as a picker QPushButton, not a QLineEdit - confirmed
-    # via a real AttributeError trying .editingFinished on it. Patch the
-    # underlying folder-picker call it presumably makes. NOTE: export_folder
-    # is only assigned later in Stage 7; this closure references it by
-    # name and resolves correctly at call time (Python late-binding).
-    monkeypatch.setattr(
-        "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
-        staticmethod(lambda *_a, **_k: str(export_folder)),
-        raising=False,
-    )
 
     # QMessageBox safety net (see test_e2e_metadata_flow.py for rationale)
     for _mb_method, _mb_return in (
@@ -231,9 +221,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # see test_e2e_metadata_flow.py for full rationale)
     import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
 
-    def _patched_show_dialog(
-        self, structure, loader_name, title="Select Channels", selected=None
-    ):
+    def _patched_show_dialog(self, structure, loader_name, title="Select Channels", selected=None):
         selection_widget = metadata_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
@@ -244,10 +232,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree,
-        "show_dialog",
-        _patched_show_dialog,
-        raising=True,
+        metadata_view_mod.SelectionTree, "show_dialog", _patched_show_dialog, raising=True
     )
 
     # Boot MVC
@@ -304,9 +289,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     qtbot.wait(QT_WAIT_SHORT_MS)
     QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    print(
-        f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}"
-    )
+    print(f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}")
 
     # =========================================================
     # STAGE 2: Plot Events, no filter. Confirmed from source:
@@ -325,22 +308,21 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     )
     lines_4events = _count_lines(md_view.figure)
     print(f"[DEBUG] event_id=0, n_events=4: {lines_4events} lines (expect 8)")
-    assert (
-        lines_4events == 8
-    ), f"Expected 2 lines/event x 4 events = 8, got {lines_4events}"
+    assert lines_4events == 8, (
+        f"Expected 2 lines/event x 4 events = 8, got {lines_4events}"
+    )
 
     controls.event_id_lineEdit.setText("3")
     controls.n_events_lineEdit.setText("2")
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(md_view.figure) != lines_4events,
-        timeout=QT_WAIT_TIMEOUT_MS,
+        lambda: _count_lines(md_view.figure) != lines_4events, timeout=QT_WAIT_TIMEOUT_MS
     )
     lines_2events = _count_lines(md_view.figure)
     print(f"[DEBUG] event_id=3, n_events=2: {lines_2events} lines (expect 4)")
-    assert (
-        lines_2events == 4
-    ), f"Expected 2 lines/event x 2 events = 4, got {lines_2events}"
+    assert lines_2events == 4, (
+        f"Expected 2 lines/event x 2 events = 4, got {lines_2events}"
+    )
 
     # =========================================================
     # STAGE 3: navigation - 1x RIGHT, then 3x LEFT (back). Compute the
@@ -351,9 +333,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     ids = list(md_view.filtered_event_ids)
     n = len(ids)
-    print(
-        f"[DEBUG] filtered_event_ids: n={n}, first={ids[0] if ids else None}, last={ids[-1] if ids else None}"
-    )
+    print(f"[DEBUG] filtered_event_ids: n={n}, first={ids[0] if ids else None}, last={ids[-1] if ids else None}")
     assert n > 0, "Expected a non-empty filtered_event_ids cache after plotting"
 
     n_events = 2  # matches n_events_lineEdit set above
@@ -400,9 +380,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         f"[DEBUG] After 1xRIGHT + 3xLEFT: event_id={actual_event_id}, "
         f"n_events={actual_n_events} (expected event_id={expected_event_id})"
     )
-    assert (
-        actual_n_events == n_events
-    ), f"Expected n_events to stay {n_events} through navigation, got {actual_n_events}"
+    assert actual_n_events == n_events, (
+        f"Expected n_events to stay {n_events} through navigation, got {actual_n_events}"
+    )
     assert actual_event_id == expected_event_id, (
         f"Expected navigation to land on event_id={expected_event_id} "
         f"(computed via the same bisect-shift algorithm the app uses), "
@@ -419,8 +399,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     controls.raw_checkbox.setChecked(True)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(md_view.figure) > lines_before_raw,
-        timeout=QT_WAIT_TIMEOUT_MS,
+        lambda: _count_lines(md_view.figure) > lines_before_raw, timeout=QT_WAIT_TIMEOUT_MS
     )
     lines_with_raw = _count_lines(md_view.figure)
     print(f"[DEBUG] RAW checked: {lines_before_raw} -> {lines_with_raw} lines")
@@ -432,8 +411,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     controls.raw_checkbox.setChecked(False)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(md_view.figure) < lines_with_raw,
-        timeout=QT_WAIT_TIMEOUT_MS,
+        lambda: _count_lines(md_view.figure) < lines_with_raw, timeout=QT_WAIT_TIMEOUT_MS
     )
     lines_after_uncheck = _count_lines(md_view.figure)
     print(f"[DEBUG] RAW unchecked: {lines_with_raw} -> {lines_after_uncheck} lines")
@@ -465,13 +443,10 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         QtCore.QTimer.singleShot(0, auto_complete)
         QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
         qtbot.waitUntil(
-            lambda: any(name in n for n in md_view.subset_filters),
-            timeout=QT_WAIT_TIMEOUT_MS,
+            lambda: any(name in n for n in md_view.subset_filters), timeout=QT_WAIT_TIMEOUT_MS
         )
         full_name = next(n for n in md_view.subset_filters if name in n)
-        print(
-            f"[DEBUG] Filter added: {full_name!r} = {md_view.subset_filters[full_name]!r}"
-        )
+        print(f"[DEBUG] Filter added: {full_name!r} = {md_view.subset_filters[full_name]!r}")
         return full_name
 
     filter_a_name = _add_assisted_filter("filter_a", "duration>100")
@@ -490,18 +465,16 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     with open(filters_json_path) as f:
         saved_json = json.load(f)
     print(f"[DEBUG] Saved JSON contents: {saved_json}")
-    assert (
-        saved_json == original_values
-    ), f"Expected saved JSON to match original filter values, got {saved_json}"
+    assert saved_json == original_values, (
+        f"Expected saved JSON to match original filter values, got {saved_json}"
+    )
 
     # --- Load Filter while both still exist in memory -> expect a
     # "Duplicate filter names" warning and NO change to subset_filters ---
     caplog.clear()
     QTest.mouseClick(controls.load_filter_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    print(
-        f"[DEBUG] subset_filters after duplicate-load attempt: {md_view.subset_filters}"
-    )
+    print(f"[DEBUG] subset_filters after duplicate-load attempt: {md_view.subset_filters}")
     assert md_view.subset_filters == original_values, (
         "Expected subset_filters unchanged after loading duplicates, got "
         f"{md_view.subset_filters}"
@@ -572,9 +545,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     QTest.mouseClick(controls.reset_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    assert (
-        _count_bars(md_view.figure) == 0 and _get_legend_labels(md_view.figure) == []
-    ), "Expected Reset to fully clear the plot before the save/load config check"
+    assert _count_bars(md_view.figure) == 0 and _get_legend_labels(md_view.figure) == [], (
+        "Expected Reset to fully clear the plot before the save/load config check"
+    )
 
     idx = controls.plot_type_comboBox.findText("Histogram")
     assert idx >= 0, "Histogram not found in plot_type_comboBox options"
@@ -588,7 +561,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         lambda: controls.update_plot_button.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS
     )
     QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
-    qtbot.waitUntil(lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     saved_bar_count = _count_bars(md_view.figure)
     saved_legend_labels = _get_legend_labels(md_view.figure)
     print(
@@ -617,14 +592,14 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
 
     QTest.mouseClick(controls.reset_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    assert (
-        _count_bars(md_view.figure) == 0
-    ), "Expected Reset to clear the plot before reload"
+    assert _count_bars(md_view.figure) == 0, "Expected Reset to clear the plot before reload"
     print("[DEBUG] Plot reset before reload")
 
     _dialog_purpose["value"] = "plot_config"
     QTest.mouseClick(controls.load_button, Qt.LeftButton)
-    qtbot.waitUntil(lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     reloaded_bar_count = _count_bars(md_view.figure)
     reloaded_legend_labels = _get_legend_labels(md_view.figure)
     print(
@@ -640,161 +615,6 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         f"Expected reloaded plot to have the same bar count as saved "
         f"({saved_bar_count}), got {reloaded_bar_count}"
     )
-
-    # =========================================================
-    # STAGE 7: Export Subset - CSV. Requires the None-check fix in
-    # _export_csv_subset (dialog.get_result() returns None on Cancel;
-    # the unguarded "result, name = result" unpack crashes without it -
-    # confirmed via a real traceback in manual testing). This test
-    # assumes that fix is applied; the Cancel-path assertion below would
-    # otherwise fail with the same TypeError seen manually.
-    #
-    # IMPORTANT: both filters are still selected at this point (Stage 5's
-    # final reload re-selects on add, same as fresh creation - confirmed
-    # via Stage 6's 2-entry legend). _export_csv_subset silently refuses
-    # to even open its dialog when len(filters) > 1 ("Select a single
-    # filter to export a subset"), which caused a real hang here: the
-    # test's dialog-polling loop spun forever waiting for a dialog that
-    # was never going to appear. Deselect one filter first.
-    #
-    # DictDialog field access follows the same pattern used for the
-    # loader/filter dialogs elsewhere: a Name QLineEdit found generically
-    # (dialog constructor takes name=f"Subset_{count}" as a default, not
-    # part of the "Folder"-only settings dict) + entrywidgets["Folder"].
-    # =========================================================
-    controls.filter_comboBox.selectItem(filter_b_name, select=False)
-    if hasattr(controls.filter_comboBox, "refreshDisplayText"):
-        controls.filter_comboBox.refreshDisplayText()
-    print(
-        f"[DEBUG] Filters selected before CSV export: "
-        f"{controls.filter_comboBox.getSelectedItems()}"
-    )
-
-    export_folder = tmp_path / "csv_export"
-    export_folder.mkdir(exist_ok=True)
-
-    def _find_name_lineedit(dlg):
-        for w in dlg.findChildren(QtWidgets.QLineEdit):
-            if "name" in (w.objectName() or "").lower():
-                return w
-        return None
-
-    # --- Accept path: fill Folder, click OK, expect a real CSV file ---
-    before_files = set(export_folder.glob("*.csv"))
-    _accept_attempts = {"n": 0}
-    _MAX_DIALOG_POLL_ATTEMPTS = 100  # 100 x 50ms = 5s before giving up loudly
-
-    _accept_found_attempts = {"n": 0}
-
-    def auto_complete_export_accept():
-        dlg = _first_modal_dialog()
-        if dlg is None:
-            _accept_attempts["n"] += 1
-            assert _accept_attempts["n"] < _MAX_DIALOG_POLL_ATTEMPTS, (
-                "Export dialog never appeared after clicking "
-                "export_csv_subset_button - likely >1 filter still "
-                "selected (the dialog silently refuses to open in that "
-                "case) or the button was disabled"
-            )
-            QtCore.QTimer.singleShot(50, auto_complete_export_accept)
-            return
-        entrywidgets = getattr(dlg, "entrywidgets", {})
-        print(f"[DEBUG] Export dialog entrywidgets keys: {list(entrywidgets.keys())}")
-        folder_widget = entrywidgets.get("Folder")
-        print(f"[DEBUG] Folder widget type: {type(folder_widget).__name__}")
-        if isinstance(folder_widget, QtWidgets.QPushButton):
-            # Confirmed real: Folder-typed DictDialog fields render as a
-            # picker button, not a text field (AttributeError on
-            # .editingFinished confirmed this). Click it - the
-            # getExistingDirectory patch above supplies export_folder.
-            QTest.mouseClick(folder_widget, Qt.LeftButton)
-            qtbot.wait(50)
-        elif folder_widget is not None and hasattr(folder_widget, "setText"):
-            folder_widget.setText(str(export_folder))
-            folder_widget.editingFinished.emit()
-        name_edit = _find_name_lineedit(dlg)
-        if name_edit is not None and not name_edit.text().strip():
-            name_edit.setText("csv_export_e2e")
-            name_edit.editingFinished.emit()
-        ok = _find_button(dlg, "ok")
-        print(
-            f"[DEBUG] Export dialog OK button found={ok is not None}, enabled={ok.isEnabled() if ok else None}"
-        )
-        if ok and ok.isEnabled():
-            QTest.mouseClick(ok, Qt.LeftButton)
-            print("[DEBUG] Export dialog OK clicked")
-        else:
-            _accept_found_attempts["n"] += 1
-            assert _accept_found_attempts["n"] < _MAX_DIALOG_POLL_ATTEMPTS, (
-                "Export dialog's OK button never became enabled after "
-                "filling Folder + forcing editingFinished - the DictDialog "
-                "may require a different/additional field, or Folder "
-                "needs a real existing directory rather than just any path"
-            )
-            QtCore.QTimer.singleShot(50, auto_complete_export_accept)
-
-    QtCore.QTimer.singleShot(0, auto_complete_export_accept)
-    QTest.mouseClick(controls.export_csv_subset_button, Qt.LeftButton)
-    print("[DEBUG] export_csv_subset_button clicked, entering waitUntil...")
-
-    # Requires non-empty content, not just file existence: export_subset_to_csv
-    # runs via the same async run_generators pattern as the SQLiteDBWriter
-    # commit flow (confirmed from source), which had a real race condition
-    # earlier this session - the file can appear before the generator has
-    # actually written any rows.
-    def _new_nonempty_csv():
-        new_files = set(export_folder.glob("*.csv")) - before_files
-        for f in new_files:
-            try:
-                if f.stat().st_size > 0:
-                    return f
-            except OSError:
-                continue
-        return None
-
-    qtbot.waitUntil(lambda: _new_nonempty_csv() is not None, timeout=QT_WAIT_TIMEOUT_MS)
-    new_csv = _new_nonempty_csv()
-    print(f"[DEBUG] CSV export (accept path) produced: {new_csv}")
-    assert (
-        new_csv is not None
-    ), "Expected a new non-empty CSV file after accepting export"
-    with open(new_csv) as f:
-        header = f.readline().strip()
-    print(f"[DEBUG] CSV header: {header!r}")
-    assert header, "Expected a non-empty header row in the exported CSV"
-
-    # --- Cancel path: no crash, no new file ---
-    before_cancel_files = set(export_folder.glob("*.csv"))
-
-    def auto_complete_export_cancel():
-        dlg = _first_modal_dialog()
-        if dlg is None:
-            QtCore.QTimer.singleShot(50, auto_complete_export_cancel)
-            return
-        cancel_btn = _find_button(dlg, "cancel")
-        if cancel_btn:
-            QTest.mouseClick(cancel_btn, Qt.LeftButton)
-        else:
-            dlg.reject()
-
-    QtCore.QTimer.singleShot(0, auto_complete_export_cancel)
-    QTest.mouseClick(controls.export_csv_subset_button, Qt.LeftButton)
-    qtbot.wait(QT_WAIT_SHORT_MS)
-
-    after_cancel_files = set(export_folder.glob("*.csv"))
-    print(
-        f"[DEBUG] CSV export (cancel path): files before={before_cancel_files}, "
-        f"after={after_cancel_files}"
-    )
-    assert after_cancel_files == before_cancel_files, (
-        "Expected Cancel to produce no new CSV file, got "
-        f"{after_cancel_files - before_cancel_files}"
-    )
-
-    # Reaching this line at all (no exception propagated up through
-    # QTest.mouseClick) already proves Cancel no longer crashes the app -
-    # that's the actual regression check for the fixed None-guard.
-    print("[DEBUG] App remained responsive after Cancel path (no exception raised)")
 
     for w in QtWidgets.QApplication.topLevelWidgets():
         if isinstance(w, QtWidgets.QDialog):

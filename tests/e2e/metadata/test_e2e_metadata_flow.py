@@ -7,8 +7,13 @@ Run with:
 Stages:
 1) Open Metadata tab, add a MetaDatabaseLoader (SQLiteDBLoader) pointed at
    tests/data/DB.db (or E2E_METADATA_DB).
-2) Open Scope dialog (SelectionTree), exercise Deselect All / re-select,
-   confirm experiment/channel structure is real (not empty).
+2) Open Scope dialog (SelectionTree): verification against the real
+   QTreeWidget state (not just the button label) - default-all-checked,
+   Deselect All / Select All both directions, and (if the DB has more
+   than one experiment/channel leaf) individual select-deselect plus
+   PartiallyChecked parent-node behavior. Narrows down to exactly one
+   experiment/channel afterward since downstream plotting stages in this
+   file assume a single dataset per plot.
 3) Add an assisted filter "duration>100" -> expect it to appear suffixed
    "_assisted" (confirmed real behavior from screenshots).
 4) Add the same filter via raw SQL -> expect "_raw" suffix.
@@ -46,6 +51,13 @@ if str(REPO_ROOT) not in sys.path:
 
 # ---- Env knobs --------------------------------------------------------
 METADATA_DB_NAME = os.getenv("E2E_METADATA_DB", "DB.db")
+# DB with 2+ experiments and/or 2+ channels, for genuinely testing
+# Select All / individual select-deselect / partial-selection behavior
+# in the Scope dialog. With a single-experiment/single-channel DB,
+# Select All and individual selection are indistinguishable, so
+# partial-selection assertions below are skipped automatically when
+# there's only one leaf node.
+METADATA_MULTI_DB_NAME = os.getenv("E2E_METADATA_MULTI_DB", "tutorial_DB2.sqlite3")
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 
 E2E_TIMEOUT_S = int(os.getenv("E2E_TIMEOUT", "180"))
@@ -63,6 +75,7 @@ def _first_modal_dialog():
     w = QtWidgets.QApplication.activePopupWidget()
     if isinstance(w, QtWidgets.QDialog):
         return w
+
     # Fallback: SelectionTree.show_dialog() uses Qt.Popup window flags on
     # non-Linux platforms, which don't reliably register via
     # activeModalWidget()/activePopupWidget() under the offscreen platform
@@ -162,12 +175,28 @@ def _get_x_label(fig):
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
 def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
-    metadata_db = (
-        REPO_ROOT / "tests" / "data" / METADATA_DB_NAME
-        if (REPO_ROOT / "tests" / "data" / METADATA_DB_NAME).exists()
-        else REPO_ROOT / "data" / METADATA_DB_NAME
+    _candidate_dirs = [REPO_ROOT / "tests" / "data", REPO_ROOT / "data"]
+    _candidate_names = [METADATA_MULTI_DB_NAME] + [
+        f"{METADATA_MULTI_DB_NAME}{ext}"
+        for ext in (".db", ".sqlite3", ".sqlite")
+        if not METADATA_MULTI_DB_NAME.endswith(ext)
+    ]
+    metadata_db = None
+    _tried = []
+    for _dir in _candidate_dirs:
+        for _name in _candidate_names:
+            candidate = _dir / _name
+            _tried.append(str(candidate))
+            if candidate.exists():
+                metadata_db = candidate
+                break
+        if metadata_db is not None:
+            break
+    assert metadata_db is not None, (
+        f"Could not find multi-experiment test DB. Tried: {_tried}. "
+        f"Set E2E_METADATA_MULTI_DB if it's named differently."
     )
-    assert metadata_db.exists(), f"Missing test file: {metadata_db}"
+    print(f"[DEBUG] Using multi-experiment DB: {metadata_db}")
 
     monkeypatch.setattr(
         "PySide6.QtWidgets.QInputDialog.getItem",
@@ -222,25 +251,156 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     ):
         selection_widget = metadata_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
-
+        tree = selection_widget.tree
         select_all_btn = selection_widget.select_all_button
-        initial_text = select_all_btn.text()
-        QTest.mouseClick(select_all_btn, Qt.LeftButton)
-        toggled_text = select_all_btn.text()
+
+        print(f"[DEBUG] Scope dialog structure: {structure}")
+
+        def _checked_leaves():
+            checked = {}
+            for i in range(tree.topLevelItemCount()):
+                parent = tree.topLevelItem(i)
+                exp_name = parent.text(0)
+                for j in range(parent.childCount()):
+                    child = parent.child(j)
+                    if child.checkState(0) == Qt.Checked:
+                        checked.setdefault(exp_name, []).append(child.text(0))
+            return checked
+
+        total_leaves = sum(
+            tree.topLevelItem(i).childCount() for i in range(tree.topLevelItemCount())
+        )
         print(
-            f"[DEBUG] Scope select_all_button toggled: {initial_text!r} -> "
-            f"{toggled_text!r}"
+            f"[DEBUG] Scope dialog total leaf nodes (experiment x channel "
+            f"pairs): {total_leaves}"
         )
-        assert toggled_text != initial_text, (
-            "Expected Select All/Deselect All button label to change after "
-            f"toggling, stayed {initial_text!r}"
+
+        initial_checked = _checked_leaves()
+        initial_count = sum(len(v) for v in initial_checked.values())
+        print(
+            f"[DEBUG] Initial checked leaves: {initial_count}/{total_leaves} "
+            f"-> {initial_checked}"
         )
-        if toggled_text == "Select All":
-            # we just deselected everything - restore full selection so
-            # later plotting stages have scope to work with
-            QTest.mouseClick(select_all_btn, Qt.LeftButton)
+        assert initial_count == total_leaves, (
+            f"Expected all {total_leaves} leaves checked by default, got "
+            f"{initial_count}: {initial_checked}"
+        )
+        assert select_all_btn.text() == "Deselect All", (
+            f"Expected 'Deselect All' label when everything is checked by "
+            f"default, got {select_all_btn.text()!r}"
+        )
+
+        QTest.mouseClick(select_all_btn, Qt.LeftButton)
+        after_deselect = _checked_leaves()
+        after_deselect_count = sum(len(v) for v in after_deselect.values())
+        print(
+            f"[DEBUG] After Deselect All click: {after_deselect_count}/"
+            f"{total_leaves} checked, label={select_all_btn.text()!r}"
+        )
+        assert after_deselect_count == 0, (
+            f"Expected Deselect All to uncheck every leaf, "
+            f"{after_deselect_count} still checked: {after_deselect}"
+        )
+        assert select_all_btn.text() == "Select All", (
+            f"Expected label to flip to 'Select All' after deselecting "
+            f"everything, got {select_all_btn.text()!r}"
+        )
+
+        QTest.mouseClick(select_all_btn, Qt.LeftButton)
+        after_select = _checked_leaves()
+        after_select_count = sum(len(v) for v in after_select.values())
+        print(
+            f"[DEBUG] After re-clicking Select All: {after_select_count}/"
+            f"{total_leaves} checked, label={select_all_btn.text()!r}"
+        )
+        assert after_select_count == total_leaves, (
+            f"Expected Select All to re-check every leaf, got "
+            f"{after_select_count}/{total_leaves}: {after_select}"
+        )
+        assert select_all_btn.text() == "Deselect All", (
+            f"Expected label to flip back to 'Deselect All', got "
+            f"{select_all_btn.text()!r}"
+        )
+
+        if total_leaves > 1:
+            first_parent = tree.topLevelItem(0)
+            target_child = first_parent.child(0)
+            target_exp = first_parent.text(0)
+            target_chan = target_child.text(0)
+            print(
+                f"[DEBUG] Partial-selection test: unchecking "
+                f"{target_exp}/{target_chan}"
+            )
+            target_child.setCheckState(0, Qt.Unchecked)
+
+            partial_checked = _checked_leaves()
+            partial_count = sum(len(v) for v in partial_checked.values())
+            print(
+                f"[DEBUG] After unchecking one leaf: {partial_count}/"
+                f"{total_leaves} checked -> {partial_checked}"
+            )
+            assert partial_count == total_leaves - 1, (
+                f"Expected exactly {total_leaves - 1} leaves checked after "
+                f"unchecking one, got {partial_count}"
+            )
+            assert target_chan not in partial_checked.get(target_exp, []), (
+                f"Expected {target_exp}/{target_chan} excluded from checked "
+                f"leaves, got {partial_checked}"
+            )
+
+            if first_parent.childCount() > 1:
+                parent_state = first_parent.checkState(0)
+                print(
+                    f"[DEBUG] Parent '{target_exp}' checkstate after partial "
+                    f"uncheck: {parent_state} (PartiallyChecked="
+                    f"{Qt.PartiallyChecked})"
+                )
+                assert parent_state == Qt.PartiallyChecked, (
+                    f"Expected parent '{target_exp}' to show "
+                    f"PartiallyChecked with {first_parent.childCount() - 1}/"
+                    f"{first_parent.childCount()} children checked, got "
+                    f"{parent_state}"
+                )
+
+            assert select_all_btn.text() == "Select All", (
+                f"Expected 'Select All' label with a partial selection, "
+                f"got {select_all_btn.text()!r}"
+            )
+
+            target_child.setCheckState(0, Qt.Checked)
+            restored = _checked_leaves()
+            restored_count = sum(len(v) for v in restored.values())
+            assert restored_count == total_leaves, (
+                f"Expected full selection restored, got "
+                f"{restored_count}/{total_leaves}"
+            )
+        else:
+            print(
+                "[DEBUG] Only one leaf node in Scope dialog - "
+                "partial-selection test skipped (nothing to partially "
+                "select). Set E2E_METADATA_MULTI_DB to a DB with 2+ "
+                "experiments/channels to exercise this properly."
+            )
+
+        first_exp_name = tree.topLevelItem(0).text(0)
+        first_chan_name = tree.topLevelItem(0).child(0).text(0)
+        for i in range(tree.topLevelItemCount()):
+            parent = tree.topLevelItem(i)
+            for j in range(parent.childCount()):
+                child = parent.child(j)
+                keep = (
+                    parent.text(0) == first_exp_name
+                    and child.text(0) == first_chan_name
+                )
+                child.setCheckState(0, Qt.Checked if keep else Qt.Unchecked)
 
         result = selection_widget.get_selected()
+        print(f"[DEBUG] Final narrowed selection for downstream stages: {result}")
+        assert result == {first_exp_name: [first_chan_name]}, (
+            f"Expected narrowed selection to be exactly one "
+            f"experiment/channel, got {result}"
+        )
+
         self.selection_by_loader[loader_name] = result
         return result
 
@@ -264,9 +424,6 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     view.show()
 
     # Open Metadata tab
-    # ASSUMPTION: menu action key is "MetadataController", matching the
-    # RawDataController/EventAnalysisController naming convention. Not
-    # independently confirmed.
     open_menu_hybrid(
         view,
         ["Analysis", "New Analysis Tab", "MetadataController"],
@@ -309,13 +466,14 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     # =========================================================
-    # STAGE 2: Scope dialog (SelectionTree). The real interaction (toggle
-    # select_all_button, confirm label change, restore full selection)
-    # happens synchronously inside the monkeypatched show_dialog() above -
-    # clicking selection_tree_button triggers it directly, no async
-    # dialog-polling needed since we never enter a real Qt.Popup exec().
+    # STAGE 2: Scope dialog (SelectionTree). The real verification (Select
+    # All both directions, individual select/deselect, PartiallyChecked
+    # parent state, then narrowing to one experiment/channel) happens
+    # synchronously inside the monkeypatched show_dialog() above - clicking
+    # selection_tree_button triggers it directly, no async dialog-polling
+    # needed since we never enter a real Qt.Popup exec().
     # =========================================================
-    qtbot.wait(QT_WAIT_SHORT_MS)  # let request_experiment_structure land
+    qtbot.wait(QT_WAIT_SHORT_MS)
     QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
 
@@ -476,12 +634,15 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     )
 
     # =========================================================
-    # STAGE 6: toggle x-axis log scale -> label should show "log10(...)"
+    # STAGE 6: toggle x-axis log scale -> label should show "log10(...)".
+    # No Reset click here (removed) - confirmed via real manual testing
+    # that Undo tracks PLOT TYPE changes specifically, not filter/overlay/
+    # event changes within the same plot type, so a Reset+replot with the
+    # same Histogram type here would never have exercised Undo
+    # meaningfully anyway - that's covered properly in Stage 7 below.
     # =========================================================
     label_before_log = _get_x_label(md_view.figure)
     controls.x_axis_logscale_checkbox.setChecked(True)
-    QTest.mouseClick(controls.reset_button, Qt.LeftButton)
-    qtbot.wait(QT_WAIT_SHORT_MS)
     QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
     qtbot.waitUntil(
         lambda: "log10(" in _get_x_label(md_view.figure), timeout=QT_WAIT_TIMEOUT_MS
@@ -498,34 +659,61 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     controls.x_axis_logscale_checkbox.setChecked(False)
 
     # =========================================================
-    # STAGE 7: Undo -> repeatedly click until the plot's legend labels
-    # match the VERY FIRST plot exactly (not just "a different count").
-    # Bounded retry since the exact undo-stack depth back to that state
-    # isn't confirmed (Reset itself may or may not count as a step).
+    # STAGE 7: Undo, tested against a genuine PLOT TYPE change. Confirmed
+    # via real manual testing: Undo specifically tracks switching between
+    # different plot types (e.g. Histogram <-> Scatterplot) - it does NOT
+    # track navigating events, changing filter selection, or adding
+    # overlays within the same plot type. So the correct way to exercise
+    # it is: change to a genuinely different plot type, then Undo should
+    # reveal the previous plot type again (bars back, no scatter
+    # collections) - not any specific filter/legend-label state.
     # =========================================================
-    MAX_UNDO_ATTEMPTS = 6
-    current_labels = _get_legend_labels(md_view.figure)
-    print(f"[DEBUG] Legend labels before any Undo: {current_labels}")
+    bars_before_type_change = _count_bars(md_view.figure)
+    assert bars_before_type_change > 0, "Expected a Histogram (bars) before switching plot type"
 
-    matched = current_labels == initial_plot_labels
-    attempts = 0
-    while not matched and attempts < MAX_UNDO_ATTEMPTS:
-        QTest.mouseClick(controls.undo_button, Qt.LeftButton)
-        qtbot.wait(QT_WAIT_SHORT_MS)
-        attempts += 1
-        current_labels = _get_legend_labels(md_view.figure)
-        print(
-            f"[DEBUG] After Undo click #{attempts}: legend labels = "
-            f"{current_labels}"
-        )
-        matched = current_labels == initial_plot_labels
+    idx = controls.plot_type_comboBox.findText("Scatterplot")
+    assert idx >= 0, "Scatterplot not found in plot_type_comboBox options"
+    controls.plot_type_comboBox.setCurrentIndex(idx)
 
-    assert matched, (
-        f"Expected Undo to eventually return to the initial plot's legend "
-        f"labels {initial_plot_labels} within {MAX_UNDO_ATTEMPTS} clicks, "
-        f"last seen: {current_labels}"
+    x_idx = controls.x_axis_comboBox.findText("duration")
+    y_idx = controls.y_axis_comboBox.findText("num_sublevels")
+    assert x_idx >= 0 and y_idx >= 0, (
+        f"Expected 'duration' and 'num_sublevels' in axis options, got x="
+        f"{x_idx}, y={y_idx}"
     )
-    print(f"[DEBUG] Undo returned to initial plot state after {attempts} click(s)")
+    controls.x_axis_comboBox.setCurrentIndex(x_idx)
+    controls.y_axis_comboBox.setCurrentIndex(y_idx)
+
+    before_collections = _count_collections(md_view.figure)
+    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    qtbot.waitUntil(
+        lambda: _count_collections(md_view.figure) > before_collections,
+        timeout=QT_WAIT_TIMEOUT_MS,
+    )
+    collections_after_scatter = _count_collections(md_view.figure)
+    print(
+        f"[DEBUG] Scatterplot collections: {collections_after_scatter} "
+        f"(duration vs num_sublevels)"
+    )
+    assert collections_after_scatter > 0, "Expected a real scatter collection after switching to Scatterplot"
+
+    QTest.mouseClick(controls.undo_button, Qt.LeftButton)
+    qtbot.wait(QT_WAIT_SHORT_MS)
+    bars_after_undo = _count_bars(md_view.figure)
+    collections_after_undo = _count_collections(md_view.figure)
+    print(
+        f"[DEBUG] After Undo: bars={bars_after_undo}, "
+        f"collections={collections_after_undo}"
+    )
+    assert bars_after_undo > 0, (
+        f"Expected Undo to reveal the previous Histogram (bars present) "
+        f"after undoing the Scatterplot type change, got {bars_after_undo} bars"
+    )
+    assert collections_after_undo == 0, (
+        f"Expected Undo to remove the Scatterplot's scatter collection, "
+        f"got {collections_after_undo}"
+    )
+    print("[DEBUG] Undo correctly reverted the plot-type change back to Histogram")
 
     # =========================================================
     # STAGE 8: Reset -> expect a fully cleared plot
@@ -542,7 +730,9 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     print("[DEBUG] Reset confirmed: plot and bookkeeping cleared")
 
     # =========================================================
-    # STAGE 9: switch to Scatterplot, duration vs num_sublevels
+    # STAGE 9: fresh Scatterplot from a clean post-Reset state, confirming
+    # scatter rendering still works normally after Reset (independent of
+    # Stage 7's Undo-based scatter test above)
     # =========================================================
     idx = controls.plot_type_comboBox.findText("Scatterplot")
     assert idx >= 0, "Scatterplot not found in plot_type_comboBox options"
