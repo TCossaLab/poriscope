@@ -33,7 +33,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "black==25.1.0",
-    "ruff==0.12.9",
+    "ruff==0.12.11",
     "mypy==1.9.0",
     "pytest==8.4.1",
     "pytest-mock==3.14.1",
@@ -71,6 +71,6 @@ src = ["poriscope", "tests"]
 extend-select = ["I"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["poriscope"]
+known-first-party = ["poriscope", "tests"]
 known-third-party = ["PySide6", "matplotlib", "pytest", "numpy", "pandas"]
 combine-as-imports = true

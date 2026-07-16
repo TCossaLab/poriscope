@@ -34,11 +34,11 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from tests.e2e._helpers import open_menu_hybrid
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
+from tests.e2e._helpers import open_menu_hybrid
 
 # tests/e2e/event_analysis/this_file.py -> parents[3] == repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
