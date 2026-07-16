@@ -1,5 +1,5 @@
 """
-E2E/UX flow for Metadata tab. 
+E2E/UX flow for Metadata tab.
 
 Run with:
     pytest tests/e2e/metadata/test_e2e_metadata_flow.py -v -s
@@ -83,7 +83,7 @@ def _find_button(dlg, label_lower: str):
 
 def _find_button_contains(dlg, snippet: str):
     needle = (snippet or "").lower()
-    for b in (dlg.findChildren(QtWidgets.QPushButton) if dlg else []):
+    for b in dlg.findChildren(QtWidgets.QPushButton) if dlg else []:
         if needle in (b.text() or "").lower():
             return b
     return None
@@ -191,6 +191,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
         ("information", QtWidgets.QMessageBox.Ok),
         ("question", QtWidgets.QMessageBox.Yes),
     ):
+
         def _make_patch(method_name, ret_value):
             def _patched(*args, **kwargs):
                 print(f"[DEBUG] QMessageBox.{method_name} auto-dismissed: {args}")
@@ -216,7 +217,9 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     # whole class.
     import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
 
-    def _patched_show_dialog(self, structure, loader_name, title="Select Channels", selected=None):
+    def _patched_show_dialog(
+        self, structure, loader_name, title="Select Channels", selected=None
+    ):
         selection_widget = metadata_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
 
@@ -303,9 +306,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     qtbot.waitUntil(
         lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
     )
-    print(
-        f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}"
-    )
+    print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     # =========================================================
     # STAGE 2: Scope dialog (SelectionTree). The real interaction (toggle
@@ -318,11 +319,11 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
 
-    assert (
-        md_view.selected_experiment_and_channels_by_loader.get(
-            controls.db_loader_comboBox.currentText()
-        )
-        not in (None, {})
+    assert md_view.selected_experiment_and_channels_by_loader.get(
+        controls.db_loader_comboBox.currentText()
+    ) not in (
+        None,
+        {},
     ), "Expected a non-empty experiment/channel selection after the Scope dialog"
     print(
         f"[DEBUG] Selected scope: "
@@ -353,9 +354,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     QtCore.QTimer.singleShot(0, auto_complete_assisted_filter_dialog)
     QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: any(
-            "_assisted" in name for name in md_view.subset_filters.keys()
-        ),
+        lambda: any("_assisted" in name for name in md_view.subset_filters.keys()),
         timeout=QT_WAIT_TIMEOUT_MS,
     )
     assisted_filter_name = next(
@@ -441,8 +440,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
         f"{controls.update_plot_button.isEnabled()}"
     )
     print(
-        f"[DEBUG] Selected filters before plot: "
-        f"{md_view.get_selected_filters()!r}"
+        f"[DEBUG] Selected filters before plot: " f"{md_view.get_selected_filters()!r}"
     )
 
     # Plot with no filter selected first (Full Dataset)
@@ -456,7 +454,9 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     legend_after_full = _legend_label_count(md_view.figure)
     initial_plot_labels = _get_legend_labels(md_view.figure)
     print(f"[DEBUG] Legend entries after Full Dataset plot: {legend_after_full}")
-    print(f"[DEBUG] Initial plot legend labels (for Undo check later): {initial_plot_labels}")
+    print(
+        f"[DEBUG] Initial plot legend labels (for Undo check later): {initial_plot_labels}"
+    )
 
     # Now select the assisted filter too and re-plot -> overlay
     controls.filter_comboBox.selectItem(assisted_filter_name, select=True)
@@ -532,13 +532,13 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     QTest.mouseClick(controls.reset_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    assert _legend_label_count(md_view.figure) == 0, (
-        "Expected Reset to fully clear the plot (0 legend entries)"
-    )
+    assert (
+        _legend_label_count(md_view.figure) == 0
+    ), "Expected Reset to fully clear the plot (0 legend entries)"
     assert md_view.hist_data == [], "Expected Reset to clear cached hist_data"
-    assert md_view.plotted_datasets == set(), (
-        "Expected Reset to clear plotted_datasets bookkeeping"
-    )
+    assert (
+        md_view.plotted_datasets == set()
+    ), "Expected Reset to clear plotted_datasets bookkeeping"
     print("[DEBUG] Reset confirmed: plot and bookkeeping cleared")
 
     # =========================================================
