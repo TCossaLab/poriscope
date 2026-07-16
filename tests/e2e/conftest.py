@@ -71,3 +71,35 @@ def init_rawdataview_timer_channels(monkeypatch):
             self.timer_channels = []
 
     monkeypatch.setattr(RawDataView, "_init", _patched_init, raising=True)
+
+
+# Opt-in: auto-dismiss any QMessageBox popped during a test instead of
+# letting it block forever - real .exec() on a QMessageBox is modal, and
+# unless something is actively watching for/dismissing it, the test hangs.
+# NOT autouse: request it explicitly (fixture arg `auto_dismiss_message_boxes`)
+# in tests that need it, so tests wanting to exercise real Cancel/No
+# behavior on a QMessageBox aren't silently short-circuited.
+
+@pytest.fixture
+def auto_dismiss_message_boxes(monkeypatch):
+    from PySide6 import QtWidgets
+
+    for _mb_method, _mb_return in (
+        ("warning", QtWidgets.QMessageBox.Ok),
+        ("critical", QtWidgets.QMessageBox.Ok),
+        ("information", QtWidgets.QMessageBox.Ok),
+        ("question", QtWidgets.QMessageBox.Yes),
+    ):
+
+        def _make_patch(method_name, ret_value):
+            def _patched(*args, **kwargs):
+                print(f"[DEBUG] QMessageBox.{method_name} auto-dismissed: {args}")
+                return ret_value
+
+            return _patched
+
+        monkeypatch.setattr(
+            f"PySide6.QtWidgets.QMessageBox.{_mb_method}",
+            staticmethod(_make_patch(_mb_method, _mb_return)),
+            raising=False,
+        )
