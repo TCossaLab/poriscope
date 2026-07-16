@@ -2440,6 +2440,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         )
         dialog.exec()
         result = dialog.get_result()
+        if result is None:  # dialog was cancelled
+            return
         result, name = result
 
         if result:
