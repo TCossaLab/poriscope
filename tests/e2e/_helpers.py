@@ -63,3 +63,66 @@ def open_menu_hybrid(
     qtbot.wait(20)
 
     return final_action
+
+
+# ---------------------------------------------------------------------------
+# Shared dialog/widget-finding utilities.
+# ---------------------------------------------------------------------------
+
+def _first_modal_dialog():
+    """Find the currently active modal dialog, with a fallback for
+    Qt.Popup-flagged dialogs (e.g. SelectionTree.show_dialog()) which don't
+    reliably register via activeModalWidget()/activePopupWidget() under
+    the offscreen platform plugin used in headless test runs."""
+    w = QtWidgets.QApplication.activeModalWidget()
+    if isinstance(w, QtWidgets.QDialog):
+        return w
+    w = QtWidgets.QApplication.activePopupWidget()
+    if isinstance(w, QtWidgets.QDialog):
+        return w
+    for tw in QtWidgets.QApplication.topLevelWidgets():
+        if isinstance(tw, QtWidgets.QDialog) and tw.isVisible():
+            return tw
+    return None
+
+
+def _find_button(dlg, label_lower: str):
+    """Find a QPushButton in dlg whose text matches label_lower exactly
+    (case-insensitive)."""
+    for b in dlg.findChildren(QtWidgets.QPushButton):
+        if (b.text() or "").lower() == (label_lower or "").lower():
+            return b
+    return None
+
+
+def _find_button_contains(dlg, snippet: str):
+    """Find a QPushButton in dlg whose text contains snippet
+    (case-insensitive substring match)."""
+    needle = (snippet or "").lower()
+    for b in (dlg.findChildren(QtWidgets.QPushButton) if dlg else []):
+        if needle in (b.text() or "").lower():
+            return b
+    return None
+
+
+def _fake_get_item_exact_then_substring(*wants):
+    """Build a QInputDialog.getItem replacement that tries an exact match
+    against each of `wants` first, then falls back to a substring match -
+    avoids issues like "CUSUM" matching "ClassicCUSUM" first because it's
+    alphabetically earlier when only substring matching is used."""
+
+    def fake_get_item(_parent, _title, _label, items, *_a, **_k):
+        for want in wants:
+            if not want:
+                continue
+            for it in items:
+                if it == want:
+                    return it, True
+        for want in wants:
+            if want and any(want in it for it in items):
+                for it in items:
+                    if want in it:
+                        return it, True
+        return (items[0] if items else "No Selection"), True
+
+    return fake_get_item
