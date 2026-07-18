@@ -36,7 +36,7 @@ def test_open_clustering_tab_via_clicks(qtbot, tmp_path):
       1) Boot MVC with a sandboxed config (no App(); qtbot owns QApplication).
       2) Use a stable "hybrid" menu opener to navigate: Analysis -> New Analysis Tab -> ClusteringController.
       3) Assert switched to page and that the view has its expected controls attribute.
-    
+
     Run with:
         pytest tests/e2e/clustering/test_e2e_clustering_smoke.py -v
     """

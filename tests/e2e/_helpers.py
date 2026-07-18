@@ -69,6 +69,7 @@ def open_menu_hybrid(
 # Shared dialog/widget-finding utilities.
 # ---------------------------------------------------------------------------
 
+
 def _first_modal_dialog():
     """Find the currently active modal dialog, with a fallback for
     Qt.Popup-flagged dialogs (e.g. SelectionTree.show_dialog()) which don't
@@ -99,7 +100,7 @@ def _find_button_contains(dlg, snippet: str):
     """Find a QPushButton in dlg whose text contains snippet
     (case-insensitive substring match)."""
     needle = (snippet or "").lower()
-    for b in (dlg.findChildren(QtWidgets.QPushButton) if dlg else []):
+    for b in dlg.findChildren(QtWidgets.QPushButton) if dlg else []:
         if needle in (b.text() or "").lower():
             return b
     return None

@@ -72,7 +72,9 @@ def _combobox_items(combo):
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
-def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxes, caplog):
+def test_clustering_flow(
+    qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxes, caplog
+):
     # ---- Locate and copy the DB (writable - Commit mutates it) ----
     _candidate_dirs = [REPO_ROOT / "tests" / "data", REPO_ROOT / "data"]
     _candidate_names = [CLUSTERING_DB_NAME] + [
@@ -232,7 +234,9 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
         set_clusters = _set_line_edit_by_object_name(
             dlg, "Gaussian Mixtures_Number_of_Clusters_input", "3"
         )
-        print(f"[DEBUG] Set Number of Clusters via confirmed objectName: {set_clusters}")
+        print(
+            f"[DEBUG] Set Number of Clusters via confirmed objectName: {set_clusters}"
+        )
         assert set_clusters, (
             "Could not find 'Gaussian Mixtures_Number_of_Clusters_input' - "
             f"available QLineEdits: {all_line_edits}"
@@ -253,7 +257,9 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
         lambda: any("Gaussian Mixtures applied to" in m for m in displayed_messages),
         timeout=QT_WAIT_TIMEOUT_MS,
     )
-    gaussian_msg = next(m for m in displayed_messages if "Gaussian Mixtures applied to" in m)
+    gaussian_msg = next(
+        m for m in displayed_messages if "Gaussian Mixtures applied to" in m
+    )
     print(f"[DEBUG] Display message: {gaussian_msg!r}")
     assert "39 rows" in gaussian_msg, (
         f"Expected 'Gaussian Mixtures applied to 39 rows' (18+6+15 from "
@@ -261,7 +267,9 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
     )
 
     collections_after_gaussian = _count_collections(clustering_view.figure)
-    print(f"[DEBUG] Scatter collections after Gaussian Mixtures: {collections_after_gaussian}")
+    print(
+        f"[DEBUG] Scatter collections after Gaussian Mixtures: {collections_after_gaussian}"
+    )
     assert collections_after_gaussian == 3, (
         f"Expected 3 scatter collections (3 requested clusters), got "
         f"{collections_after_gaussian}"
@@ -269,10 +277,14 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
 
     label_x_items = _combobox_items(controls.label_x_comboBox)
     label_y_items = _combobox_items(controls.label_y_comboBox)
-    print(f"[DEBUG] KEEP LABEL items: {label_x_items}, MERGE WITH items: {label_y_items}")
-    assert set(label_x_items) == {"0", "1", "2"}, (
-        f"Expected KEEP LABEL combobox to contain 0/1/2, got {label_x_items}"
+    print(
+        f"[DEBUG] KEEP LABEL items: {label_x_items}, MERGE WITH items: {label_y_items}"
     )
+    assert set(label_x_items) == {
+        "0",
+        "1",
+        "2",
+    }, f"Expected KEEP LABEL combobox to contain 0/1/2, got {label_x_items}"
 
     # =========================================================
     # STAGE 3: merge label 2 into label 1 -> expect only labels {0, 1}
@@ -319,7 +331,9 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
             return
 
         idx = dlg.method_combo.findText("HDBSCAN")
-        assert idx >= 0, f"'HDBSCAN' not in METHOD options: {_combobox_items(dlg.method_combo)}"
+        assert (
+            idx >= 0
+        ), f"'HDBSCAN' not in METHOD options: {_combobox_items(dlg.method_combo)}"
         dlg.method_combo.setCurrentIndex(idx)
         qtbot.wait(50)  # let update_method_parameters rebuild param fields
 
@@ -431,14 +445,20 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
     QTest.mouseClick(controls.commit_button, Qt.LeftButton)
     try:
         qtbot.waitUntil(
-            lambda: any("Successfully wrote clustering data" in m for m in displayed_messages),
+            lambda: any(
+                "Successfully wrote clustering data" in m for m in displayed_messages
+            ),
             timeout=QT_WAIT_TIMEOUT_MS,
         )
     except Exception:
-        print(f"[DEBUG] Commit timed out. Full displayed_messages so far: {displayed_messages}")
+        print(
+            f"[DEBUG] Commit timed out. Full displayed_messages so far: {displayed_messages}"
+        )
         print(f"[DEBUG] Full captured log output:\n{caplog.text}")
         raise
-    commit_msg = next(m for m in displayed_messages if "Successfully wrote clustering data" in m)
+    commit_msg = next(
+        m for m in displayed_messages if "Successfully wrote clustering data" in m
+    )
     print(f"[DEBUG] Commit message: {commit_msg!r}")
 
     # --- Direct DB verification ---
@@ -448,12 +468,12 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
         cur.execute(f"PRAGMA table_info({table_name})")
         column_names = [c[1] for c in cur.fetchall()]
         print(f"[DEBUG] Table {table_name!r} columns after commit: {column_names}")
-        assert "cluster_label" in column_names, (
-            f"Expected 'cluster_label' column in {table_name!r}, got {column_names}"
-        )
-        assert "cluster_confidence" in column_names, (
-            f"Expected 'cluster_confidence' column in {table_name!r}, got {column_names}"
-        )
+        assert (
+            "cluster_label" in column_names
+        ), f"Expected 'cluster_label' column in {table_name!r}, got {column_names}"
+        assert (
+            "cluster_confidence" in column_names
+        ), f"Expected 'cluster_confidence' column in {table_name!r}, got {column_names}"
 
         cur.execute(f"SELECT id, cluster_label, cluster_confidence FROM {table_name}")
         rows = cur.fetchall()
@@ -461,23 +481,27 @@ def test_clustering_flow(qtbot, tmp_path, monkeypatch, auto_dismiss_message_boxe
 
         db_by_id = {int(r[0]): (r[1], r[2]) for r in rows}
         missing_ids = set(expected_by_id) - set(db_by_id)
-        assert not missing_ids, (
-            f"Expected ids {missing_ids} to exist in {table_name!r} but they don't"
-        )
+        assert (
+            not missing_ids
+        ), f"Expected ids {missing_ids} to exist in {table_name!r} but they don't"
 
         label_mismatches = [
             (row_id, exp_label, db_by_id[row_id][0])
             for row_id, (exp_label, _exp_conf) in expected_by_id.items()
             if db_by_id[row_id][0] is None or int(db_by_id[row_id][0]) != exp_label
         ]
-        print(f"[DEBUG] cluster_label mismatches (id, expected, got in DB): {label_mismatches}")
+        print(
+            f"[DEBUG] cluster_label mismatches (id, expected, got in DB): {label_mismatches}"
+        )
         assert not label_mismatches, (
             f"cluster_label in DB doesn't match in-memory result at commit time: "
             f"{label_mismatches}"
         )
 
         db_labels_present = sorted({r[1] for r in rows if r[1] is not None})
-        print(f"[DEBUG] Distinct cluster_label values actually in DB: {db_labels_present}")
+        print(
+            f"[DEBUG] Distinct cluster_label values actually in DB: {db_labels_present}"
+        )
     finally:
         conn.close()
 

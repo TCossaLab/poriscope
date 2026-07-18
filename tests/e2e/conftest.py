@@ -80,6 +80,7 @@ def init_rawdataview_timer_channels(monkeypatch):
 # in tests that need it, so tests wanting to exercise real Cancel/No
 # behavior on a QMessageBox aren't silently short-circuited.
 
+
 @pytest.fixture
 def auto_dismiss_message_boxes(monkeypatch):
     from PySide6 import QtWidgets
