@@ -1,13 +1,13 @@
 """
 E2E/UX test for Metadata tab's "Export Subset - CSV" dialog: accept and
 cancel paths.
- 
+
 Scope is intentionally minimal - a loader, scope selection, and a single
 filter - since export doesn't depend on navigation, RAW checkbox state,
 or plot-config save/load. Keeping this focused gives fast iteration and
 clean failure isolation: a break in export shows up as exactly that,
 not buried inside a longer combined flow.
- 
+
 Key behaviors this test relies on:
 - _export_csv_subset requires <=1 filter selected or it silently refuses
   to even open the dialog ("Select a single filter to export a subset").
@@ -26,7 +26,7 @@ Key behaviors this test relies on:
 - Requires the None-check in _export_csv_subset (dialog.get_result()
   returns None on Cancel; the unguarded "result, name = result" unpack
   crashes without it).
- 
+
 Run with:
     pytest tests/e2e/metadata/test_e2e_metadata_csv_export.py -v -s
 """
@@ -84,7 +84,7 @@ def _find_button(dlg, label_lower: str):
 
 def _find_button_contains(dlg, snippet: str):
     needle = (snippet or "").lower()
-    for b in (dlg.findChildren(QtWidgets.QPushButton) if dlg else []):
+    for b in dlg.findChildren(QtWidgets.QPushButton) if dlg else []:
         if needle in (b.text() or "").lower():
             return b
     return None
@@ -108,7 +108,9 @@ def _fake_get_item_exact_then_substring(*wants):
     return fake_get_item
 
 
-def _wait_for_stable_export(qtbot, get_files_fn, stable_polls=3, poll_ms=200, timeout_ms=QT_WAIT_TIMEOUT_MS):
+def _wait_for_stable_export(
+    qtbot, get_files_fn, stable_polls=3, poll_ms=200, timeout_ms=QT_WAIT_TIMEOUT_MS
+):
     """Wait for the exported-file COUNT to stabilize (unchanged across
     stable_polls consecutive checks), not just "any file appears" - export
     writes ~29 files asynchronously (one per event + table dumps), and
@@ -193,7 +195,9 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
     # see test_e2e_metadata_flow.py for full rationale)
     import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
 
-    def _patched_show_dialog(self, structure, loader_name, title="Select Channels", selected=None):
+    def _patched_show_dialog(
+        self, structure, loader_name, title="Select Channels", selected=None
+    ):
         selection_widget = metadata_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
@@ -204,7 +208,10 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree, "show_dialog", _patched_show_dialog, raising=True
+        metadata_view_mod.SelectionTree,
+        "show_dialog",
+        _patched_show_dialog,
+        raising=True,
     )
 
     # Boot MVC
@@ -262,7 +269,9 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
     qtbot.wait(QT_WAIT_SHORT_MS)
     QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
-    print(f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}")
+    print(
+        f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}"
+    )
 
     def auto_complete_filter_dialog():
         dlg = _first_modal_dialog()
@@ -286,8 +295,12 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         timeout=QT_WAIT_TIMEOUT_MS,
     )
     filter_name = next(n for n in md_view.subset_filters if "csv_export_filter" in n)
-    print(f"[DEBUG] Filter added: {filter_name!r} = {md_view.subset_filters[filter_name]!r}")
-    print(f"[DEBUG] Filters selected before CSV export: {controls.filter_comboBox.getSelectedItems()}")
+    print(
+        f"[DEBUG] Filter added: {filter_name!r} = {md_view.subset_filters[filter_name]!r}"
+    )
+    print(
+        f"[DEBUG] Filters selected before CSV export: {controls.filter_comboBox.getSelectedItems()}"
+    )
 
     def _find_name_lineedit(dlg):
         for w in dlg.findChildren(QtWidgets.QLineEdit):
@@ -352,8 +365,12 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         return set(export_folder.glob("*.csv")) - before_files
 
     new_csv_files = _wait_for_stable_export(qtbot, _get_new_csvs)
-    print(f"[DEBUG] CSV export (accept path) produced {len(new_csv_files)} file(s): {new_csv_files}")
-    assert len(new_csv_files) > 0, "Expected at least one new CSV file after accepting export"
+    print(
+        f"[DEBUG] CSV export (accept path) produced {len(new_csv_files)} file(s): {new_csv_files}"
+    )
+    assert (
+        len(new_csv_files) > 0
+    ), "Expected at least one new CSV file after accepting export"
     sample_csv = next(iter(new_csv_files))
     assert sample_csv.stat().st_size > 0, f"Expected {sample_csv} to be non-empty"
     with open(sample_csv) as f:
@@ -378,7 +395,9 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
             print(f"[DEBUG] Clicking real Cancel button: {cancel_btn.text()!r}")
             QTest.mouseClick(cancel_btn, Qt.LeftButton)
         else:
-            print("[DEBUG] No 'Cancel'-labeled button found - falling back to dlg.reject()")
+            print(
+                "[DEBUG] No 'Cancel'-labeled button found - falling back to dlg.reject()"
+            )
             dlg.reject()
 
     QtCore.QTimer.singleShot(0, auto_complete_export_cancel)

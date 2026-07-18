@@ -669,7 +669,9 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     # collections) - not any specific filter/legend-label state.
     # =========================================================
     bars_before_type_change = _count_bars(md_view.figure)
-    assert bars_before_type_change > 0, "Expected a Histogram (bars) before switching plot type"
+    assert (
+        bars_before_type_change > 0
+    ), "Expected a Histogram (bars) before switching plot type"
 
     idx = controls.plot_type_comboBox.findText("Scatterplot")
     assert idx >= 0, "Scatterplot not found in plot_type_comboBox options"
@@ -695,7 +697,9 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
         f"[DEBUG] Scatterplot collections: {collections_after_scatter} "
         f"(duration vs num_sublevels)"
     )
-    assert collections_after_scatter > 0, "Expected a real scatter collection after switching to Scatterplot"
+    assert (
+        collections_after_scatter > 0
+    ), "Expected a real scatter collection after switching to Scatterplot"
 
     QTest.mouseClick(controls.undo_button, Qt.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
