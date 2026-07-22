@@ -1238,9 +1238,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                         seen = set()
                         for col in columns:
                             if col in seen:
-                                self.add_text_to_display.emit(
-                                    "All columns should be different for a meaningful plot",
-                                    self.__class__.__name__,
+                                QMessageBox.warning(
+                                    self,
+                                    "Duplicate Axis",
+                                    "All columns should be different for a meaningful plot "
+                                    f"(got '{col}' more than once).",
                                 )
                                 return False
                             seen.add(col)

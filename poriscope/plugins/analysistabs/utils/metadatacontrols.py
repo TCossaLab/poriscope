@@ -811,16 +811,29 @@ class MetadataControls(QWidget):
         self.y_axis_comboBox.addItems(axes)
         self.z_axis_comboBox.addItems(axes)
 
-        # If the previously selected item exists in the new list, set it as the current selection
+        # If the previously selected item exists in the new list, restore it.
+        # Otherwise fall back to a distinct default per axis so X/Y/Z don't
+        # all silently collide on the same column (index 0), which would
+        # make Scatterplot/Heatmap/3D Scatterplot fail their "columns must
+        # differ" check with no obvious explanation.
         if current_x in axes:
-            index = axes.index(current_x)
-            self.x_axis_comboBox.setCurrentIndex(index)
+            self.x_axis_comboBox.setCurrentIndex(axes.index(current_x))
+        elif axes:
+            self.x_axis_comboBox.setCurrentIndex(0)
+
         if current_y in axes:
-            index = axes.index(current_y)
-            self.y_axis_comboBox.setCurrentIndex(index)
+            self.y_axis_comboBox.setCurrentIndex(axes.index(current_y))
+        elif len(axes) > 1:
+            self.y_axis_comboBox.setCurrentIndex(1)
+        elif axes:
+            self.y_axis_comboBox.setCurrentIndex(0)
+
         if current_z in axes:
-            index = axes.index(current_z)
-            self.z_axis_comboBox.setCurrentIndex(index)
+            self.z_axis_comboBox.setCurrentIndex(axes.index(current_z))
+        elif len(axes) > 2:
+            self.z_axis_comboBox.setCurrentIndex(2)
+        elif axes:
+            self.z_axis_comboBox.setCurrentIndex(0)
 
     def update_units(self, comboBox, units_label):
         """Update units based on the selected column in the comboBox and emit an update signal."""
@@ -1032,6 +1045,17 @@ class MetadataControls(QWidget):
         )
 
         db_loader_loaded = True
+        # Plot types below need 2+ distinct axes; catch duplicate axis
+        # selections early instead of letting _overlay_plot silently bail.
+        needs_two_axes = plot_type in ("Scatterplot", "Heatmap")
+        needs_three_axes = plot_type == "3D Scatterplot"
+        duplicate_axes = False
+        if needs_two_axes and x_axis and y_axis and x_axis == y_axis:
+            duplicate_axes = True
+        elif needs_three_axes:
+            chosen = [a for a in (x_axis, y_axis, z_axis) if a]
+            if len(chosen) != len(set(chosen)):
+                duplicate_axes = True
         is_load_valid = True
         is_save_plot_valid = True
         is_export_valid = True
@@ -1075,6 +1099,13 @@ class MetadataControls(QWidget):
             is_plot_events_valid = (
                 False  # Disable Plot Events button if event ID is not valid
             )
+
+        if duplicate_axes:
+            self.logger.debug(
+                f"Duplicate axis selection for plot type {plot_type}: "
+                f"x={x_axis}, y={y_axis}, z={z_axis}"
+            )
+            is_update_plot_valid = False
 
         if not filter_selected:
             is_save_edit_delete_filter_valid = False
