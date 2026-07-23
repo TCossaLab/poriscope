@@ -92,7 +92,7 @@ class ProteinView(MetaView, WalkthroughMixin):
     @override
     def _init(self) -> None:
         """
-        Initialize the MetadataView instance.
+        Initialize the ProteinView instance.
 
         :param args: Positional arguments passed to parent constructors.
         :param kwargs: Keyword arguments passed to parent constructors.
@@ -332,7 +332,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        # self.request_plugin_refresh.emit(loader) #this functionality needs to be moved out of the subclasses clusteringview and proteinview and into the base class, with metaclass arg added for generality
+        self.update_available_columns(loader)
 
     @log(logger=logger)
     def set_alter_database_status(self, status):
@@ -1157,7 +1157,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         _handle_plot_events/_handle_plot_histogram can detect scope changes.
 
         Emits a display-panel message with the total count and first/last
-        event_id (mirrors MetadataView._rebuild_event_id_cache behaviour).
+        event_id (mirrors ProteinView._rebuild_event_id_cache behaviour).
 
         :param loader: Name of the database loader.
         :param where_clause: Full WHERE clause string (may be empty).
@@ -3261,144 +3261,144 @@ class ProteinView(MetaView, WalkthroughMixin):
     def get_walkthrough_steps(self):
         return [
             (
-                "Metadata Tab",
-                "Click the '+' button to load your metadata database.",
-                "MetadataView",
+                "Protein Tab",
+                "Click the '+' button to load your protein data.",
+                "ProteinView",
                 lambda: [self.proteincontrols.db_loader_add_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click the 'Scope' button to select specific experiments and  channels. By default, all options are selected.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.selection_tree_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Choose the type of plot you'd like to generate from this dropdown.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.plot_type_comboBox],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Specify the number of bins for your plot. Use 'x,y' format for heatmaps.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.bins_lineEdit],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Check the sizes box to be able to define the sizes of your bins.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.sizes_checkbox],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Here you can select the data for the x-axis.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.x_axis_comboBox],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Check this box if you want to use a log scale for the x-axis.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.x_axis_logscale_checkbox],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Once you're ready, click 'Update Plot' to generate the visualization.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.update_plot_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Not happy with the changes? Click 'Undo' to revert to the previous state at any point.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.undo_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click here to save the current plot to file.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.save_plot_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Reload previously saved configurations using the 'Load' button.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.load_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click 'Reset' to clear all changes and restore default settings.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.reset_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click the '+' button to apply filters to the full database or selected experiment/channels to create subsets.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_add_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Use this dropdown to view your created subsets.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_comboBox],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click here to see the information and edit the currently selected subset.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_info_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click the delete button to remove all selected subsets. You can also delete individual ones directly from the dropdown.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_delete_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click 'Save Filter' to save the current subsets for future use.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.save_filter_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click 'Load Filter' to import previously saved subsets.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.load_filter_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Use 'Export Subset - CSV' to save only the filtered data you're currently working with.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.export_csv_subset_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Select exactly one experiment to visualize its events.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.selection_tree_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Enter the starting event ID and the number of events you want to visualize.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [
                     self.proteincontrols.event_id_lineEdit,
                     self.proteincontrols.n_events_lineEdit,
                 ],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Then, click 'Plot Events' to visualize the selected entries.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.plot_events_pushButton],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Use the arrows to quickly navigate between filtered/unfiltered events.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [
                     self.proteincontrols.left_arrow_button,
                     self.proteincontrols.right_arrow_button,
@@ -3407,7 +3407,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         ]
 
     def get_current_view(self):
-        return "MetadataView"
+        return "ProteinView"
 
 
 def format_axis_label(label: str, unit: str) -> str:
