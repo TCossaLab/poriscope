@@ -266,7 +266,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             return False
         is_3d = isinstance(ax, Axes3D)
         return is_3d if axis_type == "3d" else not is_3d
-    
+
     @log(logger=logger)
     @register_action()
     @override
@@ -1225,10 +1225,9 @@ class MetadataView(MetaView, WalkthroughMixin):
 
                         # reset the plot if the plot options change or the figure is in an unexpected state
                         axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
-                        axes_is_stale = (
-                            len(self.figure.axes) > 1
-                            or not self._axes_valid(axis_type=axis_type)
-                        )
+                        axes_is_stale = len(
+                            self.figure.axes
+                        ) > 1 or not self._axes_valid(axis_type=axis_type)
 
                         if (
                             axes_is_stale
