@@ -27,7 +27,6 @@
 
 import logging
 
-from PySide6.QtCore import Slot
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
@@ -82,7 +81,10 @@ class ClusteringController(MetaController):
         """
         Connect internal view signals to their corresponding controller slots.
         """
-        self.view.request_plugin_refresh.connect(self.refresh_plugin_list)
+        # Implement any required connections here
+        # This function can remain empty if no additional setup is needed,
+        # but it must exist to satisfy the abstract base class requirement.
+        pass
 
     @log(logger=logger)
     def relay_query(self, query, debug, table_name):
@@ -159,27 +161,6 @@ class ClusteringController(MetaController):
         if column_units:
             self.view.update_column_units(column_units, axis)
             self.logger.info("Units labels updated with new data.")
-
-    @log(logger=logger)
-    def update_plugins(self, plugin_list):
-        """
-        Slot to receive updated plugin list from MetaDatabaseLoader and emit update_available_plugins.
-
-        :param plugin_list: List of available plugin keys for MetaDatabaseLoader.
-        :type plugin_list: list
-        """
-        self.update_available_plugins.emit("MetaDatabaseLoader", plugin_list)
-
-    @Slot()
-    def refresh_plugin_list(self):
-        """
-        Trigger a global signal to refresh the list of available database plugins.
-        """
-        loader = self.view.clusteringcontrols.get_current_loader()
-        if loader:
-            self.global_signal.emit(
-                "MetaDatabaseLoader", loader, "list_plugins", (), "update_plugins", ()
-            )
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:
