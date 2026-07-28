@@ -1287,7 +1287,7 @@ class PeakFinder(MetaEventFitter):
             + sublevel_metadata["sublevel_duration"][-1]
         )
 
-        event_metadata["baseline_stdev"] = (
+        event_metadata["baseline_stdev"] = (min((
             sublevel_metadata["sublevel_stdev"][0]
             * sublevel_metadata["sublevel_duration"][0]
             + sublevel_metadata["sublevel_stdev"][-1]
@@ -1295,7 +1295,7 @@ class PeakFinder(MetaEventFitter):
         ) / (
             sublevel_metadata["sublevel_duration"][0]
             + sublevel_metadata["sublevel_duration"][-1]
-        )
+        ),sublevel_metadata["sublevel_stdev"][0],sublevel_metadata["sublevel_stdev"][-1]))
         
         # Data has already been trimmed to longest segment in _locate_sublevel_transitions
         # sublevel_start_times[1] is after padding_before (which now includes the trim)
