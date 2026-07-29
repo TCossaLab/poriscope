@@ -35,7 +35,7 @@ def mock_qt_dependencies(mocker: MockerFixture) -> None:
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox") 
+    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
         "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
         return_value=None,
@@ -56,7 +56,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.figure.clear = mocker.Mock()
     view_instance.figure.add_subplot = mocker.Mock(return_value=mocker.Mock())
     view_instance.figure.set_constrained_layout = mocker.Mock()
-    view_instance.figure.axes = []  
+    view_instance.figure.axes = []
 
     view_instance.axes = mocker.Mock()
     view_instance.axes.clear = mocker.Mock()
