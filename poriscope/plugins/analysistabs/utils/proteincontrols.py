@@ -332,7 +332,7 @@ class ProteinControls(QWidget):
 
         self.n_values_lineEdit = QLineEdit(self.groupBox)
         self.n_values_lineEdit.setObjectName("nValuesLineEdit")
-        self.n_values_lineEdit.setPlaceholderText("e.g. 1000")
+        self.n_values_lineEdit.setPlaceholderText("e.g. 100")
         self.n_values_lineEdit.setValidator(self.int_validator)
 
         self.bins_lineEdit = QLineEdit(self.groupBox)
@@ -376,18 +376,18 @@ class ProteinControls(QWidget):
         update_undo_reset_layout.addWidget(self.undo_button, 1)
         update_undo_reset_layout.addWidget(self.reset_button, 1)
 
-        # ROW 5: Commit row (Commit Individual / Commit All)
+        # ROW 5: Commit row (Commit Individual / Report All)
         self.commit_individual = self.createButton(
             self.groupBox, "Commit Individual", bold=True
         )
-        self.commit_all = self.createButton(self.groupBox, "Commit All", bold=True)
+        self.report_all = self.createButton(self.groupBox, "Report All", bold=True)
 
         commit_widget = QWidget(self.groupBox)
         commit_layout = QHBoxLayout(commit_widget)
         commit_layout.setContentsMargins(0, 0, 0, 0)
         commit_layout.setSpacing(5)
         commit_layout.addWidget(self.commit_individual, 1)
-        commit_layout.addWidget(self.commit_all, 1)
+        commit_layout.addWidget(self.report_all, 1)
 
         # ---------- RIGHT COLUMN ----------
 
@@ -720,7 +720,7 @@ class ProteinControls(QWidget):
         self.commit_individual.clicked.connect(
             lambda: self.on_button_clicked("commit_individual")
         )
-        self.commit_all.clicked.connect(lambda: self.on_button_clicked("commit_all"))
+        self.report_all.clicked.connect(lambda: self.on_button_clicked("report_all"))
         self.filter_add_button.clicked.connect(
             lambda: self.on_button_clicked("add_filter")
         )
@@ -835,8 +835,7 @@ class ProteinControls(QWidget):
         is_scope_valid = True
         is_individual_analysis_valid = True
         is_ensemble_analysis_valid = True
-        is_commit_individual_valid = True
-        is_commit_all_valid = True
+        is_report_all_valid = True
         is_export_valid = True
         is_undo_valid = True
         is_reset_valid = True
@@ -888,10 +887,10 @@ class ProteinControls(QWidget):
                 and pore_diameter_valid
                 and pore_length_valid
             )
-            is_commit_all_valid = False
+            is_report_all_valid = False
 
         elif ensemble_selected:
-            is_commit_all_valid = (
+            is_report_all_valid = (
                 is_ensemble_analysis_valid
                 and db_loader_loaded
                 and pore_diameter_valid
@@ -902,7 +901,7 @@ class ProteinControls(QWidget):
         else:
             # No mode selected (should not happen if button group is exclusive)
             is_commit_individual_valid = False
-            is_commit_all_valid = False
+            is_report_all_valid = False
 
         # ---------------------------
         # Enable/disable buttons
@@ -929,7 +928,7 @@ class ProteinControls(QWidget):
         self.load_filter_button.setEnabled(db_loader_loaded)
 
         self.commit_individual.setEnabled(is_commit_individual_valid)
-        self.commit_all.setEnabled(is_commit_all_valid)
+        self.report_all.setEnabled(is_report_all_valid)
 
     # Actions
     def on_button_clicked(self, button_type):
@@ -957,7 +956,7 @@ class ProteinControls(QWidget):
             "individual": "set_mode_individual",
             "ensemble": "set_mode_ensemble",
             "commit_individual": "commit_individual",
-            "commit_all": "commit_all",
+            "report_all": "report_all",
         }
 
         if button_type in button_actions:
@@ -982,7 +981,7 @@ class ProteinControls(QWidget):
             "save_filter": self.save_filter_button,
             "load_filter": self.load_filter_button,
             "commit_individual": self.commit_individual,
-            "commit_all": self.commit_all,
+            "report_all": self.report_all,
         }
 
         btn = button_mapping.get(button_type)
