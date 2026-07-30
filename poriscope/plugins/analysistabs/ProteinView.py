@@ -85,7 +85,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @property
     def fig_hist(self):
-        return self.fig_hist_individual if self._analysis_mode == "individual" else self.fig_hist_ensemble
+        return (
+            self.fig_hist_individual
+            if self._analysis_mode == "individual"
+            else self.fig_hist_ensemble
+        )
 
     @fig_hist.setter
     def fig_hist(self, value):
@@ -96,7 +100,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @property
     def ax_hist(self):
-        return self.ax_hist_individual if self._analysis_mode == "individual" else self.ax_hist_ensemble
+        return (
+            self.ax_hist_individual
+            if self._analysis_mode == "individual"
+            else self.ax_hist_ensemble
+        )
 
     @ax_hist.setter
     def ax_hist(self, value):
@@ -107,7 +115,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @property
     def canvas_hist(self):
-        return self.canvas_hist_individual if self._analysis_mode == "individual" else self.canvas_hist_ensemble
+        return (
+            self.canvas_hist_individual
+            if self._analysis_mode == "individual"
+            else self.canvas_hist_ensemble
+        )
 
     @canvas_hist.setter
     def canvas_hist(self, value):
@@ -118,7 +130,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @property
     def fig_vm(self):
-        return self.fig_vm_individual if self._analysis_mode == "individual" else self.fig_vm_ensemble
+        return (
+            self.fig_vm_individual
+            if self._analysis_mode == "individual"
+            else self.fig_vm_ensemble
+        )
 
     @fig_vm.setter
     def fig_vm(self, value):
@@ -129,7 +145,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @property
     def ax_vm(self):
-        return self.ax_vm_individual if self._analysis_mode == "individual" else self.ax_vm_ensemble
+        return (
+            self.ax_vm_individual
+            if self._analysis_mode == "individual"
+            else self.ax_vm_ensemble
+        )
 
     @ax_vm.setter
     def ax_vm(self, value):
@@ -140,7 +160,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @property
     def canvas_vm(self):
-        return self.canvas_vm_individual if self._analysis_mode == "individual" else self.canvas_vm_ensemble
+        return (
+            self.canvas_vm_individual
+            if self._analysis_mode == "individual"
+            else self.canvas_vm_ensemble
+        )
 
     @canvas_vm.setter
     def canvas_vm(self, value):
@@ -166,10 +190,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._clear_cache()
         self.fit_data = None
         self.ensemble_fit_params: Optional[tuple] = None
-        self.ensemble_fit_bins = None                    
-        self.ensemble_fit_sizes = None   
-        self.ensemble_fit_prolate_summary = None           
-        self.ensemble_fit_oblate_summary = None        
+        self.ensemble_fit_bins = None
+        self.ensemble_fit_sizes = None
+        self.ensemble_fit_prolate_summary = None
+        self.ensemble_fit_oblate_summary = None
         self.plot_initialized = False
         self.no_cached_data = False
 
@@ -1287,7 +1311,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self._update_distribution_ensemble(parameters)
 
         elif action_name == "reset_plot":
-            mode_label = "Individual" if self._analysis_mode == "individual" else "Ensemble"
+            mode_label = (
+                "Individual" if self._analysis_mode == "individual" else "Ensemble"
+            )
             self._reset_actions()
             self.add_text_to_display.emit(
                 f"Reset cleared the {mode_label} mode fit.",
@@ -1333,7 +1359,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 self.logger.warning(f"Commit Individual failed: {e}")
 
-        elif action_name == "report_all":         
+        elif action_name == "report_all":
             self._report_ensemble_fit()
 
         else:
@@ -2159,9 +2185,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     )
 
                     if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
-                        self.logger.warning(
-                            f"Invalid plot type: {plot_type}"
-                        )
+                        self.logger.warning(f"Invalid plot type: {plot_type}")
                         return
 
                     if self.event_data_generator is None:
@@ -2660,9 +2684,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             )
                             return
                     else:
-                        self.logger.warning(
-                            f"Invalid plot type: {plot_type}"
-                        )
+                        self.logger.warning(f"Invalid plot type: {plot_type}")
                         return
 
                     self.allowed_plot_type = plot_type
