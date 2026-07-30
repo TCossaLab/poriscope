@@ -228,7 +228,9 @@ class TestRelayQuery:
         controller.view._pending_filter_text = ""
         received = []
         controller.view.add_text_to_display.connect(lambda m, s: received.append(m))
-        controller.relay_query("SELECT dur FROM events", "", "events", "validate_new_filter")
+        controller.relay_query(
+            "SELECT dur FROM events", "", "events", "validate_new_filter"
+        )
         assert any("no WHERE clause" in m for m in received)
 
     def test_new_filter_emits_added_message(self, controller):
@@ -457,9 +459,7 @@ class TestGetExperimentStructureReady:
         assert available is not selected  # must be a copy, not the same dict
 
     def test_multiple_experiments(self, controller):
-        controller.get_experiment_structure_ready(
-            {"exp1": [0, 1], "exp2": [0]}, "ldr1"
-        )
+        controller.get_experiment_structure_ready({"exp1": [0, 1], "exp2": [0]}, "ldr1")
         result = controller.view.available_experiment_and_channels_by_loader["ldr1"]
         assert result == {"exp1": ["0", "1"], "exp2": ["0"]}
 
@@ -472,9 +472,10 @@ class TestGetExperimentStructureReady:
         controller.get_experiment_structure_ready({"exp2": [1]}, "ldrB")
         assert "ldrA" in controller.view.available_experiment_and_channels_by_loader
         assert "ldrB" in controller.view.available_experiment_and_channels_by_loader
-        assert controller.view.available_experiment_and_channels_by_loader[
-            "ldrA"
-        ] != controller.view.available_experiment_and_channels_by_loader["ldrB"]
+        assert (
+            controller.view.available_experiment_and_channels_by_loader["ldrA"]
+            != controller.view.available_experiment_and_channels_by_loader["ldrB"]
+        )
 
 
 # ===========================================================================
