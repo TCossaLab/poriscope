@@ -2215,6 +2215,7 @@ class TestUpdateDistributionEnsemble:
         view.add_text_to_display.connect(lambda m, s: received.append(m))
         view._update_distribution_ensemble(self._params())
         assert any("single subset" in m for m in received)
+
     def test_sets_plot_initialized_true(self, view):
         view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
