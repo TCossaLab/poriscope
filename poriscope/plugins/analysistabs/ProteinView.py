@@ -1126,7 +1126,21 @@ class ProteinView(MetaView, WalkthroughMixin):
                         f"Unable to calculate bins given sizes {bins}: {str(e)}"
                     )
         else:
-            bins = 100
+            # Freedman-Diaconis: bin width scales with the event's own IQR and
+            # sample count, so shorter/longer events (typical for proteins,
+            # where duration varies a lot) get independently sized bins instead
+            # of a fixed 100 for every event regardless of length.
+            iqr = np.percentile(dI_I, 75) - np.percentile(dI_I, 25)
+            bin_width = 2 * iqr / np.cbrt(np.size(dI_I))
+
+            if bin_width <= 0 or not np.isfinite(bin_width):
+                # IQR collapses to 0 (near-constant signal) or the event is too
+                # short/degenerate for FD to produce a sane width; fall back to
+                # the previous fixed default rather than dividing by zero.
+                bins = 100
+            else:
+                bins = int((self.hist_max - self.hist_min) / bin_width)
+                bins = max(bins, 1)
 
         bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
         event_hist, _ = np.histogram(dI_I, bins=bin_edges, density=True)

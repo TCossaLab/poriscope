@@ -34,6 +34,8 @@
     * Fixed: Some validation were passing an extra positional argument to `logger.warning`, crashing before the warning was ever shown.
     * Fixed: Leaving the **N** field blank in Ensemble mode raised a `ValueError` instead of falling back to a default, matching behavior already present in Individual mode.
     * Fixed: Default **N** value was set to 100 in the backend and 1000 in the frontend. Updated frontend to match the backend value.
+    * Added Freedman-Diaconis auto-binning for per-event histograms
+
         
 * **Updated Frontend Plugin: `ClusteringView`**
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
