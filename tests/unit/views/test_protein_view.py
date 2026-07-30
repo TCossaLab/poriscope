@@ -465,8 +465,18 @@ class TestConstructSingleEventHistogram:
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["Normalized Current", "Amplitude"]
 
-    def test_default_100_bins(self, view):
+    def test_default_uses_freedman_diaconis(self, view):
+        """Default binning (no explicit bins arg) now uses Freedman-Diaconis,
+        which is data-dependent — assert it's a sane positive integer, not a
+        fixed count."""
         df = view._construct_single_event_histogram(_make_event(), "Filtered Histogram")
+        assert len(df) > 0
+
+    def test_explicit_100_bins_still_works(self, view):
+        """Explicit bin count still overrides FD and behaves as before."""
+        df = view._construct_single_event_histogram(
+            _make_event(), "Filtered Histogram", bins=[100]
+        )
         assert len(df) == 100
 
     def test_custom_bin_count(self, view):
@@ -685,7 +695,7 @@ class TestStateSetters:
         assert view._pending_old_filter_name is None
 
     def test_get_current_view(self, view):
-        assert view.get_current_view() == "MetadataView"
+        assert view.get_current_view() == "ProteinView"
 
     def test_set_query_stores(self, view):
         view.set_query("SELECT * FROM events", "events")
@@ -1419,7 +1429,7 @@ class TestPipeline:
     def test_single_event_histogram(self, view):
         ev = _make_event(blockage=0.3)
         df = view._construct_single_event_histogram(ev, "Filtered Histogram")
-        assert df is not None and len(df) == 100
+        assert df is not None and len(df) > 0  # FD-derived, not fixed 100
 
     def test_all_points_histogram_three_events(self, view):
         evs = [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(3)]
@@ -2030,6 +2040,11 @@ class TestShowEditFilterDialog:
         dialog.is_raw = is_raw
         return dialog
 
+    @pytest.fixture(autouse=True)
+    def _flush_qt_between_tests(self, qt_app):
+        yield
+        qt_app.processEvents()
+
     def test_sets_show_sql_flag(self, view):
         view.subset_filters = {"f1": "dur>1"}
         with patch(
@@ -2130,23 +2145,21 @@ class TestUpdateDistributionIndividual:
             "sizes": False,
         }
 
-    def test_multiple_experiments_warns_and_returns(self, view):
+    def test_multiple_experiments_logs_warning_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
         }
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_individual(self._params())
-        assert any("single experiment" in m for m in received)
+        with caplog.at_level("WARNING"):
+            view._update_distribution_individual(self._params())
+        assert any("single experiment" in r.message for r in caplog.records)
 
-    def test_multiple_channels_warns_and_returns(self, view):
+    def test_multiple_channels_logs_warning_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_individual(self._params())
-        assert any("single channel" in m for m in received)
+        with caplog.at_level("WARNING"):
+            view._update_distribution_individual(self._params())
+        assert any("single channel" in r.message for r in caplog.records)
 
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
@@ -2179,23 +2192,21 @@ class TestUpdateDistributionEnsemble:
             "n_values": "10",
         }
 
-    def test_multiple_experiments_warns_and_returns(self, view):
+    def test_multiple_experiments_logs_warning_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
         }
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_ensemble(self._params())
-        assert any("single experiment" in m for m in received)
+        with caplog.at_level("WARNING"):
+            view._update_distribution_ensemble(self._params())
+        assert any("single experiment" in r.message for r in caplog.records)
 
-    def test_multiple_channels_warns_and_returns(self, view):
+    def test_multiple_channels_logs_warning_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_ensemble(self._params())
-        assert any("single channel" in m for m in received)
+        with caplog.at_level("WARNING"):
+            view._update_distribution_ensemble(self._params())
+        assert any("single channel" in r.message for r in caplog.records)
 
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
@@ -2204,7 +2215,6 @@ class TestUpdateDistributionEnsemble:
         view.add_text_to_display.connect(lambda m, s: received.append(m))
         view._update_distribution_ensemble(self._params())
         assert any("single subset" in m for m in received)
-
     def test_sets_plot_initialized_true(self, view):
         view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
