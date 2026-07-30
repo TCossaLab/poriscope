@@ -3520,49 +3520,55 @@ class ProteinView(MetaView, WalkthroughMixin):
         return [
             (
                 "Protein Tab",
-                "Click the '+' button to load your protein data.",
+                "Click the '+' button to load your protein database.",
                 "ProteinView",
                 lambda: [self.proteincontrols.db_loader_add_button],
             ),
             (
                 "Protein Tab",
-                "Click the 'Scope' button to select specific experiments and  channels. By default, all options are selected.",
+                "Click the 'Scope' button to select specific experiments and channels. By default, all options are selected.",
                 "ProteinView",
                 lambda: [self.proteincontrols.selection_tree_button],
             ),
             (
                 "Protein Tab",
-                "Choose the type of plot you'd like to generate from this dropdown.",
+                "Enter the pore diameter and length, in nanometers. These are required for volume and shape-factor fitting.",
                 "ProteinView",
-                lambda: [self.proteincontrols.plot_type_comboBox],
+                lambda: [
+                    self.proteincontrols.pore_diameter_lineEdit,
+                    self.proteincontrols.pore_length_lineEdit,
+                ],
             ),
             (
                 "Protein Tab",
-                "Specify the number of bins for your plot. Use 'x,y' format for heatmaps.",
+                "Choose Individual mode to fit each event separately, or Ensemble mode to fit one shared distribution across all events in scope.",
+                "ProteinView",
+                lambda: [
+                    self.proteincontrols.individual_button,
+                    self.proteincontrols.ensemble_button,
+                ],
+            ),
+            (
+                "Protein Tab",
+                "Set N, the number of Monte Carlo samples used to estimate volume and shape factor.",
+                "ProteinView",
+                lambda: [self.proteincontrols.n_values_lineEdit],
+            ),
+            (
+                "Protein Tab",
+                "Specify histogram bins as either a count or, if 'Sizes' is checked, a bin width.",
                 "ProteinView",
                 lambda: [self.proteincontrols.bins_lineEdit],
             ),
             (
                 "Protein Tab",
-                "Check the sizes box to be able to define the sizes of your bins.",
+                "Check this box to enter bin widths instead of bin counts.",
                 "ProteinView",
                 lambda: [self.proteincontrols.sizes_checkbox],
             ),
             (
                 "Protein Tab",
-                "Here you can select the data for the x-axis.",
-                "ProteinView",
-                lambda: [self.proteincontrols.x_axis_comboBox],
-            ),
-            (
-                "Protein Tab",
-                "Check this box if you want to use a log scale for the x-axis.",
-                "ProteinView",
-                lambda: [self.proteincontrols.x_axis_logscale_checkbox],
-            ),
-            (
-                "Protein Tab",
-                "Once you're ready, click 'Update Plot' to generate the visualization.",
+                "Once you're ready, click 'Update Plot' to generate the histogram and volume/shape-factor scatterplots.",
                 "ProteinView",
                 lambda: [self.proteincontrols.update_plot_button],
             ),
@@ -3574,21 +3580,21 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Click here to save the current plot to file.",
-                "ProteinView",
-                lambda: [self.proteincontrols.save_plot_button],
-            ),
-            (
-                "Protein Tab",
-                "Reload previously saved configurations using the 'Load' button.",
-                "ProteinView",
-                lambda: [self.proteincontrols.load_button],
-            ),
-            (
-                "Protein Tab",
-                "Click 'Reset' to clear all changes and restore default settings.",
+                "Click 'Reset' to clear the current mode's plot and fit, and restore default settings.",
                 "ProteinView",
                 lambda: [self.proteincontrols.reset_button],
+            ),
+            (
+                "Protein Tab",
+                "In Individual mode, click 'Commit Individual' to write the per-event fit results to the database.",
+                "ProteinView",
+                lambda: [self.proteincontrols.commit_individual],
+            ),
+            (
+                "Protein Tab",
+                "In Ensemble mode, click 'Report All' to display the double-Gaussian fit parameters and volume/shape-factor summaries for the current binning.",
+                "ProteinView",
+                lambda: [self.proteincontrols.report_all],
             ),
             (
                 "Protein Tab",
@@ -3628,13 +3634,13 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Use 'Export Subset - CSV' to save only the filtered data you're currently working with.",
+                "Use 'Export Plot Data' to save the data currently shown in your plots.",
                 "ProteinView",
-                lambda: [self.proteincontrols.export_csv_subset_button],
+                lambda: [self.proteincontrols.export_plot_data_pushButton],
             ),
             (
                 "Protein Tab",
-                "Select exactly one experiment to visualize its events.",
+                "Select exactly one experiment and channel to visualize its events.",
                 "ProteinView",
                 lambda: [self.proteincontrols.selection_tree_button],
             ),
@@ -3649,13 +3655,16 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Then, click 'Plot Events' to visualize the selected entries.",
+                "Click 'Plot Events' to view raw/filtered/fitted traces, or 'Plot Histogram' to view a ΔI/I histogram, for the selected events.",
                 "ProteinView",
-                lambda: [self.proteincontrols.plot_events_pushButton],
+                lambda: [
+                    self.proteincontrols.plot_events_pushButton,
+                    self.proteincontrols.plot_histogram_pushButton,
+                ],
             ),
             (
                 "Protein Tab",
-                "Use the arrows to quickly navigate between filtered/unfiltered events.",
+                "Use the arrows to navigate to the next or previous events in the filtered set.",
                 "ProteinView",
                 lambda: [
                     self.proteincontrols.left_arrow_button,
