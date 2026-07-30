@@ -1,11 +1,46 @@
 ## Poriscope 1.7: In Progress
 
-* **New Data Plugin: `ThresholdBlockageFinder`**	 
-    * Subclass of ClassicBlockageFinder that imposes much tighter bounds on the start and end time flagged in the output.
+* **New Data Plugin: `ThresholdBlockageFinder`**
+    * Subclass of `ClassicBlockageFinder` that imposes much tighter bounds on the start and end times flagged in the output.
 
 * **Deprecated Data Plugin: `ABF2Reader`**
-    * Renamed to TCossaLabABFReader to reduce ambiguity with file types
-    
+    * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
+
+* **Updated Frontend Plugins: `MetadataView` and `ProteinView`**
+    * Replaced per-click DB queries with a cached event_id list and bisect-based navigation.
+    * Previously, the forward/backward arrows shifted the "Event Index" field by a fixed step across the full database, with no awareness of any active filter. This made systematic inspection of filtered events tedious (there was no way to know how far to step to reach the next populated range, and the number of events plotted per step varied unpredictably depending on that range).
+    * The old range field has been replaced with two new fields:
+        * **Event ID** — snaps to the nearest filtered event at or after the requested ID
+        * **# Events** — controls how many filtered events to display starting from that point
+    * Forward/backward arrows now move through the filtered set directly, with wrap-around at both ends, so the subplot count is predictable and navigation stays filter-aware.
+    * The display panel now shows the first and last event IDs in the filtered set, so users always know where they are.
+    * Example: if only event_ids 2, 5, 8, 9, 12, 15 pass a filter (out of 15 total events), entering event_id=3 with # events=2 snaps to event_id 5, plots events 5 and 8, updates the Event ID field to 5, and displays "Filtered events: 6 total | first event_id: 2 | last event_id: 15". Clicking forward moves to event_id 9 and plots events 9 and 12 — always within the filtered set, never jumping over empty ranges.
+    * Fetching and snapping is now O(1), a major speedup over the previous worst-case behavior.
+    * Filter state (filter name and subset label) is now reflected directly in the display panel message.
+
+* **Updated Frontend Plugin: `MetadataView`**
+    * Fixed: some plot types (Categorical Histogram, Scatterplot, Raw/Filtered Event Overlay) failed to render after "Plot Events" + "Update Plot" due to a stale `self.axes` reference not caught by existing staleness check. Added `_axes_valid()` to detect and reset it properly.
+    * Fixed: Silent crash in `_export_csv_subset` when the "Export Settings" dialog was canceled. Canceling the dialog now backs out cleanly.
+
+* **Updated Frontend Plugin: `ProteinView`**
+    * Fixed: `hist_min`/`hist_max` persisted across "Plot Histogram" calls and only ever expanded, so bin edges (and resulting histogram shape/fit) depended on plotting order and history instead of the event itself. Per-event histogram binning is now deterministic, and thus, so is plotting.
+    * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
+    * Updated Walkthrough instructions. 
+    * New **Report All** button in Ensemble mode: displays the double-Gaussian fit parameters (peak amplitude, mean, std) alongside the binning configuration that produced them, plus median ± std summaries of Prolate and Oblate V, a, b, and m from the Monte Carlo sample. Display-only, since Ensemble mode has no per-event id to write a database row against (replaced Commit All button).
+    * New: Individual and Ensemble modes now use fully independent canvases for the histogram and V/M plots. Switching modes immediately shows that mode's last-drawn plot with no need to click Update Plot again, and no longer overwrites or erases the other mode's plot and data.
+    * Updated: Reset previously cleared fit state for both Individual and Ensemble modes unconditionally, regardless of which mode was active. Reset is now scoped to the currently selected mode only, and the display panel confirms which mode's fit was cleared.
+    * New: Running Update Plot in one mode could silently wipe out a valid fit stored in the other mode, causing "No ensemble fit available to report" even when a fit had been successfully computed earlier in the session.
+    * Fixed: Clicking Commit Individual with no fit computed raised an unhandled `AttributeError` that was silently swallowed by the Qt event loop, giving no feedback in the UI. Now shows a clear message in the display panel.
+    * Fixed: Some validation were passing an extra positional argument to `logger.warning`, crashing before the warning was ever shown.
+    * Fixed: Leaving the **N** field blank in Ensemble mode raised a `ValueError` instead of falling back to a default, matching behavior already present in Individual mode.
+    * Fixed: Default **N** value was set to 100 in the backend and 1000 in the frontend. Updated frontend to match the backend value.
+        
+* **Updated Frontend Plugin: `ClusteringView`**
+    * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
+
+### General Fixes and Improvements:
+
+
 ## Poriscope 1.6.1: 2026-06-04
 
 * **Bug hotfix

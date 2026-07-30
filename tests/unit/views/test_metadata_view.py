@@ -35,6 +35,7 @@ def mock_qt_dependencies(mocker: MockerFixture) -> None:
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
+    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
         "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
         return_value=None,
@@ -55,6 +56,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.figure.clear = mocker.Mock()
     view_instance.figure.add_subplot = mocker.Mock(return_value=mocker.Mock())
     view_instance.figure.set_constrained_layout = mocker.Mock()
+    view_instance.figure.axes = []
 
     view_instance.axes = mocker.Mock()
     view_instance.axes.clear = mocker.Mock()
@@ -2201,6 +2203,9 @@ def test_overlay_plot_rejects_duplicate_columns(
 ) -> None:
     """Verify overlay rejects plots with duplicate columns."""
     view.figure.axes = []
+    mock_warning = mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.QMessageBox.warning"
+    )
 
     parameters = {
         "db_loader": "test_loader",
@@ -2219,7 +2224,7 @@ def test_overlay_plot_rejects_duplicate_columns(
     result = view._overlay_plot(parameters)
 
     assert result is False
-    view.add_text_to_display.emit.assert_called()
+    mock_warning.assert_called_once()
 
 
 def test_overlay_plot_skips_already_plotted_datasets(

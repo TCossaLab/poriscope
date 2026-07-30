@@ -39,7 +39,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from pandas.api.types import is_float_dtype
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QMessageBox
 from sklearn.mixture import GaussianMixture
 from typing_extensions import override
@@ -68,7 +68,6 @@ class ClusteringView(MetaView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-    request_plugin_refresh = Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -314,7 +313,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        self.request_plugin_refresh.emit()
+        self.update_available_columns(loader)
 
     @log(logger=logger)
     def set_query(self, query, table_name):

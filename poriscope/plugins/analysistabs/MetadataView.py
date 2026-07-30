@@ -246,6 +246,28 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._clear_cache()
 
     @log(logger=logger)
+    def _axes_valid(self, axis_type: str = "2d") -> bool:
+        """
+        Check whether self.axes currently refers to a live axes object that
+        is actually attached to self.figure and has the requested
+        projection. After _update_event_plot() rebuilds the figure into a
+        grid of per-event subplots, self.axes is left pointing at an axes
+        that has been removed from the figure (a stale reference); reusing
+        it would silently draw onto an orphaned, invisible axes.
+
+        :param axis_type: Either "2d" or "3d", the projection required by
+                        the plot about to be drawn.
+        :type axis_type: str
+        :return: True if self.axes is safe to reuse, False if a reset is needed.
+        :rtype: bool
+        """
+        ax = getattr(self, "axes", None)
+        if ax is None or ax not in self.figure.axes:
+            return False
+        is_3d = isinstance(ax, Axes3D)
+        return is_3d if axis_type == "3d" else not is_3d
+
+    @log(logger=logger)
     @register_action()
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
@@ -936,9 +958,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param axis_coords: x,y coordinates of the axis to which to add the plot
         :type axis_coords: Tuple[int,int]
         """
-        if not hasattr(self, "axes"):
-            self._reset_actions()
+        axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
+        if not self._axes_valid(axis_type=axis_type):
+            self._reset_actions(axis_type=axis_type)
         ax = self.axes
+
         if plot_type in ["Histogram", "Normalized Histogram"]:
             norm = False if plot_type != "Normalized Histogram" else True
             self._plot_1d_histogram(
@@ -1200,17 +1224,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                         sizes_changed = getattr(self, "allowed_sizes", None) != sizes
 
                         # reset the plot if the plot options change or the figure is in an unexpected state
-                        axes_is_stale = (
-                            len(self.figure.axes) > 1
-                            or (
-                                isinstance(getattr(self, "axes", None), Axes3D)
-                                and plot_type != "3D Scatterplot"
-                            )
-                            or (
-                                not isinstance(getattr(self, "axes", None), Axes3D)
-                                and plot_type == "3D Scatterplot"
-                            )
-                        )
+                        axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
+                        axes_is_stale = len(
+                            self.figure.axes
+                        ) > 1 or not self._axes_valid(axis_type=axis_type)
 
                         if (
                             axes_is_stale
@@ -1238,9 +1255,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                         seen = set()
                         for col in columns:
                             if col in seen:
-                                self.add_text_to_display.emit(
-                                    "All columns should be different for a meaningful plot",
-                                    self.__class__.__name__,
+                                QMessageBox.warning(
+                                    self,
+                                    "Duplicate Axis",
+                                    "All columns should be different for a meaningful plot "
+                                    f"(got '{col}' more than once).",
                                 )
                                 return False
                             seen.add(col)
@@ -1389,6 +1408,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 "Raw Event Overlay",
                                 "Filtered Event Overlay",
                             ]:
+                                if not self._axes_valid(axis_type="2d"):
+                                    self._reset_actions(axis_type="2d")
                                 self._construct_event_overlay(
                                     self.event_data_generator, plot_type, loader
                                 )
