@@ -505,7 +505,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         changed elsewhere in the app (e.g. new columns committed to a loader's
         table). Must be implemented by subclasses, even if the correct
         implementation is a no-op (pass).
-        
+
         Where the implementation is not a no-op, it must make a deliberate
         decision about whether the notification applies to this tab, filter
         accordingly, and determine what the specific reaction should be.
