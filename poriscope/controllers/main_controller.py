@@ -314,6 +314,12 @@ class MainController(QObject):
             self.plugin_history = new_history
         self.main_model.save_session(self.plugin_history)
 
+    @Slot(str, str, str)
+    def handle_plugin_state_changed(self, metaclass, plugin_key, reason):
+        for key, val in self.analysis_tabs.items():
+            if val:
+                val.view.notify_plugin_state_changed(metaclass, plugin_key, reason)
+
     @log(logger=logger)
     @Slot(str, object)
     def update_tab_action_history(self, key, history):
@@ -363,6 +369,9 @@ class MainController(QObject):
             )
             self.analysis_tabs[subclass].data_plugin_controller_signal.connect(
                 self.handle_data_plugin_controller_signal
+            )
+            self.analysis_tabs[subclass].plugin_state_changed.connect(
+                self.handle_plugin_state_changed
             )
             self.analysis_tabs[subclass].add_text_to_display.connect(
                 self.main_view.add_text_to_display

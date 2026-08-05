@@ -48,6 +48,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, object, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval, added args for retval
+    plugin_state_changed = Signal(
+        str, str, str
+    )  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
     update_tab_action_history = Signal(
         str, object
@@ -79,6 +82,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self._init()
         self._connect_global_signal()
         self.view.set_available_subclasses(available_subclasses)
+        self.view.plugin_state_changed.connect(self.plugin_state_changed)
         self.view.run_generators.connect(self.model.run_generators)
         self.model.update_progressbar.connect(self.view.update_progressbar)
         self.view.kill_worker.connect(self.handle_kill_worker)
