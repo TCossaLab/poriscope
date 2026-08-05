@@ -6,6 +6,9 @@
 * **Deprecated Data Plugin: `ABF2Reader`**
     * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
 
+* **Updated Frontend Base Class: `MetaView`**
+    * New `plugin_state_changed` signal and abstract `notify_plugin_state_changed` hook, allowing any tab to notify all other tabs when a plugin instance's state changes (e.g. new columns added to a database). Every `MetaView` subclass must now implement `notify_plugin_state_changed`, even if the correct implementation is to do nothing. Non-trivial implementations must determine whether the notification is relevant to that tab, and filter and react accordingly.
+
 * **Updated Frontend Plugins: `MetadataView` and `ProteinView`**
     * Replaced per-click DB queries with a cached event_id list and bisect-based navigation.
     * Previously, the forward/backward arrows shifted the "Event Index" field by a fixed step across the full database, with no awareness of any active filter. This made systematic inspection of filtered events tedious (there was no way to know how far to step to reach the next populated range, and the number of events plotted per step varied unpredictably depending on that range).
@@ -21,10 +24,12 @@
 * **Updated Frontend Plugin: `MetadataView`**
     * Fixed: some plot types (Categorical Histogram, Scatterplot, Raw/Filtered Event Overlay) failed to render after "Plot Events" + "Update Plot" due to a stale `self.axes` reference not caught by existing staleness check. Added `_axes_valid()` to detect and reset it properly.
     * Fixed: Silent crash in `_export_csv_subset` when the "Export Settings" dialog was canceled. Canceling the dialog now backs out cleanly.
+    * Now refreshes its available column list automatically when another tab commits new columns to the currently selected database.
 
 * **Updated Frontend Plugin: `ProteinView`**
     * Fixed: `hist_min`/`hist_max` persisted across "Plot Histogram" calls and only ever expanded, so bin edges (and resulting histogram shape/fit) depended on plotting order and history instead of the event itself. Per-event histogram binning is now deterministic, and thus, so is plotting.
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
+    * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
     * Updated Walkthrough instructions. 
     * New **Report All** button in Ensemble mode: displays the double-Gaussian fit parameters (peak amplitude, mean, std) alongside the binning configuration that produced them, plus median ± std summaries of Prolate and Oblate V, a, b, and m from the Monte Carlo sample. Display-only, since Ensemble mode has no per-event id to write a database row against (replaced Commit All button).
     * New: Individual and Ensemble modes now use fully independent canvases for the histogram and V/M plots. Switching modes immediately shows that mode's last-drawn plot with no need to click Update Plot again, and no longer overwrites or erases the other mode's plot and data.
@@ -39,6 +44,7 @@
         
 * **Updated Frontend Plugin: `ClusteringView`**
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
+    * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
 
 ### General Fixes and Improvements:
 
