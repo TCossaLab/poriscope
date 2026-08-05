@@ -234,6 +234,27 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.logger.debug(f"Updating ComboBoxes failed: {repr(e)}")
 
     @log(logger=logger)
+    def notify_plugin_state_changed(
+        self, metaclass: str, plugin_key: str, reason: str
+    ) -> None:
+        """
+        This tab does not currently react to any plugin_state_changed
+        notifications.
+
+        :param metaclass: The metaclass of the plugin instance whose state
+                        changed.
+        :type metaclass: str
+        :param plugin_key: The unique key identifying the plugin instance that
+                        changed.
+        :type plugin_key: str
+        :param reason: A short string identifying what kind of change occurred.
+        :type reason: str
+        :return: None
+        :rtype: None
+        """
+        pass
+    
+    @log(logger=logger)
     @Slot(str, str, tuple)
     def handle_parameter_change(self, submodel_name, action_name, args):
         """

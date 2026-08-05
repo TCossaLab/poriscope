@@ -471,7 +471,8 @@ class ProteinView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        self.update_available_columns(loader)
+        self.update_available_columns(loader) # refresh this tab locally
+        self.plugin_state_changed.emit("MetaDatabaseLoader", loader, "columns") # notify everyone else
 
     @log(logger=logger)
     def _summarize_vm(self, df) -> tuple:
@@ -951,6 +952,45 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         except Exception as e:
             self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
+            
+    @override
+    @log(logger=logger)
+    def notify_plugin_state_changed(
+        self, metaclass: str, plugin_key: str, reason: str
+    ) -> None:
+        """
+        Called when some other plugin instance's state changed elsewhere in the
+        app. Refreshes this tab's column list only when the change concerns a
+        MetaDatabaseLoader's columns and the loader that changed is the one
+        currently selected here; any other metaclass, reason, or a loader that
+        isn't currently selected in this tab is ignored.
+
+        :param metaclass: The metaclass of the plugin instance whose state
+                        changed.
+        :type metaclass: str
+        :param plugin_key: The unique key identifying the plugin instance that
+                        changed.
+        :type plugin_key: str
+        :param reason: A short string identifying what kind of change occurred.
+        :type reason: str
+        :return: None
+        :rtype: None
+        """
+        if metaclass != "MetaDatabaseLoader" or reason != "columns":
+            self.logger.debug(
+                f"notify_plugin_state_changed: ignoring (metaclass={metaclass}, reason={reason})"
+            )
+            return
+        current = self.proteincontrols.db_loader_comboBox.currentText()
+        if plugin_key == current:
+            self.logger.debug(
+                f"notify_plugin_state_changed: refreshing columns for {plugin_key}"
+            )
+            self.update_available_columns(plugin_key)
+        else:
+            self.logger.debug(
+                f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
+            )
 
     @log(logger=logger)
     def set_experiment_id(self, experiment_id):
