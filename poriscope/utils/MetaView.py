@@ -68,9 +68,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (cane be None), added args for retval
-    plugin_state_changed = Signal(
-        str, str, str
-    )  # metaclass, plugin_key, reason
+    plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     update_tab_action_history = Signal(
         object, bool
     )  # OrderedDict of actions to take, whether or not to delete the most recent key

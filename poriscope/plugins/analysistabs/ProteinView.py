@@ -471,8 +471,10 @@ class ProteinView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        self.update_available_columns(loader) # refresh this tab locally
-        self.plugin_state_changed.emit("MetaDatabaseLoader", loader, "columns") # notify everyone else
+        self.update_available_columns(loader)  # refresh this tab locally
+        self.plugin_state_changed.emit(
+            "MetaDatabaseLoader", loader, "columns"
+        )  # notify everyone else
 
     @log(logger=logger)
     def _summarize_vm(self, df) -> tuple:
@@ -952,7 +954,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         except Exception as e:
             self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
-            
+
     @override
     @log(logger=logger)
     def notify_plugin_state_changed(
