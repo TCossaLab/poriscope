@@ -379,6 +379,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :rtype: None
         """
         pass
+
     @log(logger=logger)
     @Slot(str, str, tuple)
     def handle_parameter_change(self, submodel_name, action_name, args):

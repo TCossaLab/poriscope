@@ -48,9 +48,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, object, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval, added args for retval
-    plugin_state_changed = Signal(
-        str, str, str
-    )  # metaclass, plugin_key, reason
+    plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
     update_tab_action_history = Signal(
         str, object

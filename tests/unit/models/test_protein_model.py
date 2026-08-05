@@ -11,7 +11,6 @@ Run with:
     pytest test_protein_model.py --cov=poriscope --cov-report=html
 """
 
-
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.utils.MetaModel import MetaModel
 

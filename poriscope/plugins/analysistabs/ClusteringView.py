@@ -313,8 +313,10 @@ class ClusteringView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        self.update_available_columns(loader) # refresh this tab locally
-        self.plugin_state_changed.emit("MetaDatabaseLoader", loader, "columns") # notify everyone else what changed
+        self.update_available_columns(loader)  # refresh this tab locally
+        self.plugin_state_changed.emit(
+            "MetaDatabaseLoader", loader, "columns"
+        )  # notify everyone else what changed
 
     @log(logger=logger)
     def set_query(self, query, table_name):
