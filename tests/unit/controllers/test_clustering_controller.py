@@ -3,7 +3,7 @@ Tests for poriscope.plugins.analysistabs.ClusteringController.
 
 Covers:
 - _init creates view and model
-- _setup_connections wires request_plugin_refresh to refresh_plugin_list
+- _setup_connections is a no-op that does not raise
 - display_write_status (success and failure branches)
 - check_cluster_column_exists delegation
 - alter_database_status delegation
@@ -13,8 +13,6 @@ Covers:
 - relay_units delegation
 - update_column_names (names provided with info log, empty list with warning log)
 - update_column_units (units provided with info log, empty dict skips view)
-- update_plugins emits update_available_plugins signal
-- refresh_plugin_list (loader present, loader absent)
 """
 
 from __future__ import annotations
@@ -32,14 +30,12 @@ from poriscope.plugins.analysistabs.ClusteringController import ClusteringContro
 @pytest.fixture
 def mock_view(mocker: MockerFixture) -> MagicMock:
     """
-    Provide a mocked ClusteringView with Qt-like signals and slots.
+    Provide a mocked ClusteringView.
 
     :param mocker: Pytest-mock fixture.
     :return: Mocked clustering view.
     """
     view: MagicMock = mocker.Mock()
-    view.request_plugin_refresh = mocker.Mock()
-    view.request_plugin_refresh.connect = mocker.Mock()
     return view
 
 
@@ -94,20 +90,15 @@ def test_init_creates_view_and_model(mocker: MockerFixture) -> None:
     assert ctrl.model is mock_model_cls.return_value
 
 
-def test_setup_connections_connects_request_plugin_refresh(
+def test_setup_connections_does_not_raise(
     controller: ClusteringController,
-    mock_view: MagicMock,
 ) -> None:
     """
-    Verify that _setup_connections wires request_plugin_refresh to refresh_plugin_list.
+    Verify that _setup_connections is currently a no-op and does not raise.
 
     :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
     """
     controller._setup_connections()
-    mock_view.request_plugin_refresh.connect.assert_called_once_with(
-        controller.refresh_plugin_list
-    )
 
 
 # -------------------- display_write_status ---------------------------
@@ -373,73 +364,3 @@ def test_update_column_units_skips_view_when_units_empty(
     """
     controller.update_column_units({}, "x")
     mock_view.update_column_units.assert_not_called()
-
-
-# ----------------------- update_plugins ------------------------------
-
-
-def test_update_plugins_emits_update_available_plugins(
-    controller: ClusteringController,
-) -> None:
-    """
-    Emit update_available_plugins with MetaDatabaseLoader and the plugin list.
-
-    :param controller: Controller under test.
-    """
-    controller.update_plugins(["plugin_a", "plugin_b"])
-    controller.update_available_plugins.emit.assert_called_once_with(
-        "MetaDatabaseLoader", ["plugin_a", "plugin_b"]
-    )
-
-
-def test_update_plugins_emits_with_empty_list(
-    controller: ClusteringController,
-) -> None:
-    """
-    Emit update_available_plugins with an empty plugin list.
-
-    :param controller: Controller under test.
-    """
-    controller.update_plugins([])
-    controller.update_available_plugins.emit.assert_called_once_with(
-        "MetaDatabaseLoader", []
-    )
-
-
-# -------------------- refresh_plugin_list ----------------------------
-
-
-def test_refresh_plugin_list_emits_global_signal_when_loader_present(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Emit a global signal to list plugins when a loader is selected in the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    mock_view.clusteringcontrols.get_current_loader.return_value = "MyLoader"
-
-    controller.refresh_plugin_list()
-
-    controller.global_signal.emit.assert_called_once_with(
-        "MetaDatabaseLoader", "MyLoader", "list_plugins", (), "update_plugins", ()
-    )
-
-
-def test_refresh_plugin_list_does_not_emit_when_loader_absent(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Do not emit a global signal when no loader is currently selected.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    mock_view.clusteringcontrols.get_current_loader.return_value = None
-
-    controller.refresh_plugin_list()
-
-    controller.global_signal.emit.assert_not_called()
