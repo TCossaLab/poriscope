@@ -308,6 +308,8 @@ class IconMenuWidget(QWidget):
         }
         if buttonName in signals:
             signals[buttonName].emit(checked)
+        else:
+            self.logger.warning(f"emitSignal: unrecognized buttonName {buttonName!r}")
 
     @log(logger=logger)
     def handleMenu(self):

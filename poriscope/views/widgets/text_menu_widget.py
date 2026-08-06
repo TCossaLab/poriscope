@@ -114,62 +114,55 @@ class IconTextMenuWidget(QWidget):
 
         self.raw_data_text_button = self.createTextButton(
             layout,
-            "raw_data_text_button",
-            "    Raw Data",
+            "data",
+            "    Raw Data", # spaces are intentional for desired alignment 
             os.path.join(self.icon_path, "stats-black.svg"),
             25,
-            "data",
         )
         self.event_analysis_text_button = self.createTextButton(
             layout,
-            "event_analysis_text_button",
+            "event",
             "    Event Analysis",
             os.path.join(self.icon_path, "stats-black.svg"),
             25,
-            "eventAnalysis",
         )
         self.metadata_text_button = self.createTextButton(
             layout,
-            "metadata_text_button",
+            "metadata",
             "    Metadata",
             os.path.join(self.icon_path, "database-black.svg"),
             25,
-            "metadata",
         )
         self.plugins_text_button = self.createTextButton(
             layout,
-            "plugins_text_button",
+            "add",
             "    Add",
             os.path.join(self.icon_path, "add-black.png"),
             25,
-            "add",
         )
 
         layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         self.help_text_button = self.createTextButton(
             layout,
-            "help_text_button",
+            "help",
             "    Help",
             os.path.join(self.icon_path, "help-black.png"),
             25,
-            "help",
         )
         self.settings_text_button = self.createTextButton(
             layout,
-            "settings_text_button",
+            "settings",
             "    Settings",
             os.path.join(self.icon_path, "settings-black.png"),
             25,
-            "settings",
         )
         self.exit_text_button = self.createTextButton(
             layout,
-            "exit_text_button",
+            "exit",
             "     Exit",
             os.path.join(self.icon_path, "exit-black.svg"),
             25,
-            "exit",
         )
 
         layout.addItem(QSpacerItem(20, 5, QSizePolicy.Minimum, QSizePolicy.Expanding))
@@ -243,7 +236,7 @@ class IconTextMenuWidget(QWidget):
 
     @log(logger=logger)
     def createTextButton(
-        self, layout, objectName, text, iconPath, iconSize, buttonName
+        self, layout, objectName, text, iconPath, iconSize
     ):
         button = QPushButton(text, self)
         button.setObjectName(objectName)
@@ -272,7 +265,7 @@ class IconTextMenuWidget(QWidget):
         button.setIconSize(QSize(iconSize, iconSize))
         button.setCheckable(True)
         button.setAutoExclusive(True)
-        button.toggled.connect(lambda checked: self.emitSignal(buttonName, checked))
+        button.toggled.connect(lambda checked: self.emitSignal(objectName, checked))
 
         layout.addWidget(button)
         return button
@@ -280,6 +273,7 @@ class IconTextMenuWidget(QWidget):
     @log(logger=logger)
     def emitSignal(self, buttonName, checked):
         signals = {
+            "menu": self.menuToggled,
             "data": self.rawDataToggled,
             "event": self.eventAnalysisToggled,
             "metadata": self.metadataToggled,
@@ -290,6 +284,8 @@ class IconTextMenuWidget(QWidget):
         }
         if buttonName in signals:
             signals[buttonName].emit(checked)
+        else:
+            self.logger.warning(f"emitSignal: unrecognized buttonName {buttonName!r}")
 
     @log(logger=logger)
     def setRawDataChecked(self, checked):
