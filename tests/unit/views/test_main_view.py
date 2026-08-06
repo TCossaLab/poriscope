@@ -432,11 +432,11 @@ def test_on_raw_data_view_click(main_view, qtbot, mocker):
     main_view.switch_to_page.assert_called_once_with("RawDataView")
 
 
-def test_on_stats_click(main_view, mocker):
+def test_on_event_analysis_click(main_view, mocker):
     mocker.patch.object(main_view, "on_load_analysis_tab_button_click")
     mocker.patch.object(main_view, "switch_to_page")
 
-    main_view.on_stats_click()
+    main_view.on_event_analysis_click()
 
     main_view.on_load_analysis_tab_button_click.assert_called_once_with(
         "EventAnalysisController"
