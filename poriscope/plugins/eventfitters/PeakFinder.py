@@ -659,7 +659,6 @@ class PeakFinder(MetaEventFitter):
         
         
         edges=self.redefine_padding(data, samplerate, baseline_std)
-        print("Edges:", edges)
         padding_before = edges[1]
         padding_after = len(data) - edges[-2]
         
