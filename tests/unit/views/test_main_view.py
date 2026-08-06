@@ -10,7 +10,7 @@ from poriscope.views.main_view import MainView
 
 
 @pytest.fixture
-def main_view():
+def main_view(qapp):
     """Fixture to create a MainView instance with all required plugin categories."""
     plugins = {
         "MetaReader": ["DummyReader"],
