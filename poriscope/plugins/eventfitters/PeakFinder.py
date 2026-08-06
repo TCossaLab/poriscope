@@ -458,6 +458,142 @@ class PeakFinder(MetaEventFitter):
         pass
 
     @log(logger=logger)
+    def redefine_padding(
+        self,
+        data,
+        samplerate,
+        baseline_std,
+    ):
+        step_size = self.settings["Min Carrier Blockage"]["Value"] / (2*baseline_std)
+        rise_time = int(5*1.0e-6 * samplerate)
+        length = len(data)
+
+        retry = True
+        while retry:
+            retry = False
+            logp = 0  # instantaneous log-likelihood for positive jumps
+            logn = 0  # instantaneous log-likelihood for negative jumps
+            cpos = np.zeros(
+                length, dtype=np.float64
+            )  # cumulative log-likelihood function for positive jumps
+            cneg = np.zeros(
+                length, dtype=np.float64
+            )  # cumulative log-likelihood function for negative jumps
+            gpos = np.zeros(
+                length, dtype=np.float64
+            )  # decision function for positive jumps
+            gneg = np.zeros(
+                length, dtype=np.float64
+            )  # decision function for negative jumps
+
+            # set up running mean and variance calculation
+            mean = data[0]
+            variance = baseline_std * baseline_std
+            num_states = 0
+            varM = data[0]
+            varS = 0
+            mean = data[0]
+
+            threshold =step_size
+            edges = [0]  # first sublevel starts at the start of the data block
+
+            k = 0  # current data point index
+            anchor = 0  # the last detected change
+            num_states = 0
+
+            while k < length - 1:
+                k += 1
+                varOldM = varM  # algorithm to calculate running variance, details here: http://www.johndcook.com/blog/standard_deviation/
+                varM = varM + (data[k] - varM) / float(k + 1 - anchor)
+                varS = varS + (data[k] - varOldM) * (data[k] - varM)
+                variance = varS / float(k - anchor)
+                mean = ((k - anchor) * mean + data[k]) / float(k + 1 - anchor)
+                if (
+                    variance == 0
+                ):  # with low-precision data sets it is possible that two adjacent values are equal, in which case there is zero variance for the two-vector of sample if this occurs next to a detected jump. This is very, very rare, but it does happen.
+                    variance = (
+                        baseline_std * baseline_std
+                    )  # in that case, we default to the local baseline variance, which is a good an estimate as any.
+                logp = (
+                    step_size
+                    * baseline_std
+                    / variance
+                    * (data[k] - mean - step_size * baseline_std / 2)
+                )  # instantaneous log-likelihood for current sample assuming local baseline has jumped in the positive direction
+                logn = (
+                    -step_size
+                    * baseline_std
+                    / variance
+                    * (data[k] - mean + step_size * baseline_std / 2)
+                )  # instantaneous log-likelihood for current sample assuming local baseline has jumped in the negative direction
+                cpos[k] = cpos[k - 1] + logp  # accumulate positive log-likelihoods
+                cneg[k] = cneg[k - 1] + logn  # accumulate negative log-likelihoods
+                gpos[k] = max(
+                    gpos[k - 1] + logp, 0
+                )  # accumulate or reset positive decision function
+                gneg[k] = max(
+                    gneg[k - 1] + logn, 0
+                )  # accumulate or reset negative decision function
+                if gpos[k] > threshold or gneg[k] > threshold:
+                    jump_accepted = False
+
+                    if gpos[k] > threshold:  # significant positive jump detected
+                        jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
+                        # Note: C also checks `length - jump > rise_time` here,
+                        # you may want to add that to match C perfectly!
+                        if jump - edges[num_states] > rise_time:
+                            edges = np.append(edges, jump)
+                            num_states += 1
+                            jump_accepted = True
+                        
+
+                    if gneg[k] > threshold:  # significant negative jump detected
+                        jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
+                        if jump - edges[num_states] > rise_time:
+                            edges = np.append(edges, jump)
+                            num_states += 1
+                            jump_accepted = True
+                             
+
+                    if jump_accepted:
+                        anchor = k
+                        cpos[0 : len(cpos)] = 0
+                        cneg[0 : len(cneg)] = 0
+                        gpos[0 : len(gpos)] = 0
+                        gneg[0 : len(gneg)] = 0
+                        mean = data[anchor]
+                        varM = data[anchor]
+            varS = 0
+            edges = np.append(edges, length)  # mark the end of the event as an edge
+            num_states += 1
+
+            # iteratively remove steps that are too small, from left to right
+            minstepflag = False
+            while not minstepflag:
+                minstepflag = True
+                sublevel_means = [
+                    (
+                        np.median(data[int(edges[i] + rise_time) : int(edges[i + 1])])
+                        if edges[i] + rise_time < edges[i + 1]
+                        else data[int(edges[i + 1]) - 1]
+                    )
+                    for i in range(num_states)
+                ]
+
+                toosmall = ( 
+                    np.absolute(np.diff(sublevel_means)) < step_size * baseline_std / 2
+                )
+                for i in range(len(toosmall)):
+                    if toosmall[i]:
+                        edges = np.delete(edges, i + 1)
+                        minstepflag = False
+                        num_states -= 1
+                        break
+
+        return edges
+
+
+    @log(logger=logger)
     @override
     def _locate_sublevel_transitions(
         self,
@@ -510,66 +646,80 @@ class PeakFinder(MetaEventFitter):
 
         if padding_before is not None:
             baseline_std = np.std(data[:padding_before])
-            
             baseline_mean = np.mean(data[:padding_before])
         elif padding_after is not None:
             baseline_std = np.std(data[-padding_after:])
-            
             baseline_mean = np.mean(data[-padding_after:])
         else:
             raise ValueError(
-                "Peankfinder requires that the standard deviation and mean of the local baseline be reported and is unable to calculate it for this event"
+                "PeakFinder requires that the standard deviation and mean of the local baseline be reported and is unable to calculate it for this event"
             )
 
-        # Find longest continuous segment above threshold 
-        # This trims the event to start/end at the longest above-threshold blockage
+
         
-        threshold = min(abs(low_threshold), abs(high_threshold),3) * baseline_std
-        event_data = data[padding_before:-padding_after]
-        above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
         
-        if not np.any(above_threshold):
-            raise ValueError("No data above threshold found")
+        edges=self.redefine_padding(data, samplerate, baseline_std)
+        print("Edges:", edges)
+        padding_before = edges[1]
+        padding_after = len(data) - edges[-2]
+        
+        if len(data)==padding_before or len(data)==padding_after:
+            raise ValueError("No data available for peak detection")
 
-        # Find all continuous segments
-        diff = np.diff(np.concatenate(([False], above_threshold, [False])).astype(int))
-        segment_starts = np.where(diff == 1)[0]
-        segment_ends = np.where(diff == -1)[0]
+        # print("Here")
+        # print(len(data))
+        # print(padding_before, padding_after)
+        
+        # # Find longest continuous segment above threshold 
+        # # This trims the event to start/end at the longest above-threshold blockage
+        
+        # threshold = min(abs(low_threshold), abs(high_threshold),3) * baseline_std
+        # event_data = data[padding_before:-padding_after]
+        # above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
+        
+        # if not np.any(above_threshold):
+        #     raise ValueError("No data above threshold found")
 
-        # Find the longest segment
-        segment_lengths = segment_ends - segment_starts
-        longest_segment_idx = np.argmax(segment_lengths)
-        longest_segment_length = segment_lengths[longest_segment_idx]
+        # # Find all continuous segments
+        # diff = np.diff(np.concatenate(([False], above_threshold, [False])).astype(int))
+        # segment_starts = np.where(diff == 1)[0]
+        # segment_ends = np.where(diff == -1)[0]
 
-        # Check if longest segment meets minimum length requirement
-        # Behavior depends on whether classification is enabled
-        classify_levels = self.settings.get("Classify Levels", {}).get("Value", True)
-        min_segment_length = 10
+        # # Find the longest segment
+        # segment_lengths = segment_ends - segment_starts
+        # longest_segment_idx = np.argmax(segment_lengths)
+        # longest_segment_length = segment_lengths[longest_segment_idx]
 
-        if not classify_levels:
-            # If classification is disabled, accept any segment length above threshold
-            # as long as at least one segment exists above threshold
-            if longest_segment_length < 1:
-                raise ValueError("No Carrier Level Found")
-        else:
-            # If classification is enabled, enforce minimum segment length
-            # (classification requires a stable carrier level)
-            if longest_segment_length < min_segment_length:
-                raise ValueError("No Carrier Level Found")
+        # # Check if longest segment meets minimum length requirement
+        # # Behavior depends on whether classification is enabled
+        # classify_levels = self.settings.get("Classify Levels", {}).get("Value", True)
+        # min_segment_length = 10
 
-        # Get the start and end indices of the longest segment (relative to event_data)
-        longest_start_idx = segment_starts[longest_segment_idx]
-        longest_end_idx = segment_ends[longest_segment_idx]
+        # if not classify_levels:
+        #     # If classification is disabled, accept any segment length above threshold
+        #     # as long as at least one segment exists above threshold
+        #     if longest_segment_length < 1:
+        #         raise ValueError("No Carrier Level Found")
+        # else:
+        #     # If classification is enabled, enforce minimum segment length
+        #     # (classification requires a stable carrier level)
+        #     if longest_segment_length < min_segment_length:
+        #         raise ValueError("No Carrier Level Found")
 
-        # Adjust padding to trim to the longest segment only
-        # New effective padding_before includes original padding plus everything before longest segment
-        new_padding_before = padding_before + longest_start_idx
-        # New effective padding_after includes original padding plus everything after longest segment
-        new_padding_after = padding_after + (len(event_data) - longest_end_idx)
+        # # Get the start and end indices of the longest segment (relative to event_data)
+        # longest_start_idx = segment_starts[longest_segment_idx]
+        # longest_end_idx = segment_ends[longest_segment_idx]
 
-        # Use adjusted paddings for the rest of processing
-        padding_before = new_padding_before
-        padding_after = new_padding_after
+        # # Adjust padding to trim to the longest segment only
+        # # New effective padding_before includes original padding plus everything before longest segment
+        # new_padding_before = padding_before + longest_start_idx
+        # # New effective padding_after includes original padding plus everything after longest segment
+        # new_padding_after = padding_after + (len(event_data) - longest_end_idx)
+
+        # # Use adjusted paddin gs for the rest of processing
+        # padding_before = new_padding_before
+        # padding_after = new_padding_after
+    
 
         # Calculate minimum prominence and height from the user thresholds.
         # Keep the carrier-aware guardrails so peaks still scale with signal depth.
@@ -597,7 +747,7 @@ class PeakFinder(MetaEventFitter):
         # - Range: 0.1% to 33.3% (maximum 1/3 of event)
         # - Automatically scales with event duration
 
-        trimmed_event_length = longest_segment_length  # Length in samples
+        trimmed_event_length = len(trimmed_data)  # Length in samples
 
         # Get user-specified window length percentage and convert to ratio
         window_length_percentage = self.settings.get(
