@@ -370,6 +370,10 @@ class IconMenuWidget(QWidget):
         self.stats_icon_button.setChecked(checked)
 
     @log(logger=logger)
+    def setMetadataChecked(self, checked):
+        self.metadata_icon_button.setChecked(checked)
+
+    @log(logger=logger)
     def setPluginsChecked(self, checked):
         self.add_icon_button.setChecked(checked)
 
