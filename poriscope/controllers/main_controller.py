@@ -107,9 +107,7 @@ class MainController(QObject):
         )
         self.main_view.clear_cache.connect(self.main_model.clear_cache)
         self.main_view.request_analysis_tabs.connect(self.send_analysis_tabs)
-        self.main_view.received_analysis_tabs.connect(
-            self.main_view.populate_plugins_menu
-        )
+
 
     @log(logger=logger)
     @Slot()
