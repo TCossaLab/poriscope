@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QTextCursor
 from PySide6.QtWidgets import (
