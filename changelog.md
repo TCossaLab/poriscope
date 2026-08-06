@@ -48,6 +48,10 @@
 
 ### General Fixes and Improvements:
 
+* **Updated Frontend Component: `MainView` / Sidebar Menus**
+    * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.
+    * Fixed: Selecting Raw Data, Event Analysis, or Metadata from the "Add" dropdown did not highlight their dedicated sidebar button.
+    * Fixed: The "Add" dropdown menu reopened immediately after selecting an item, due to a duplicate signal connection 
 
 ## Poriscope 1.6.1: 2026-06-04
 
