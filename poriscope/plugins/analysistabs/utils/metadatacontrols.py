@@ -641,7 +641,7 @@ class MetadataControls(QWidget):
     def create_info_button(self, parent, comboBox, info_text, metaclass):
         """Creates an info button linked to the corresponding combobox."""
         button = QToolButton(parent)
-        button.setIcon(get_icon("edit.png"))
+        button.setIcon(get_icon("pencil-square.svg"))
         button.setIconSize(QSize(16, 16))
         button.setStyleSheet("border: none; background: transparent;")
         button.setToolTip(info_text)
@@ -666,7 +666,7 @@ class MetadataControls(QWidget):
     def create_add_button(self, parent, comboBox, add_text, metaclass):
         """Creates an add button linked to the corresponding combobox."""
         button = QToolButton(parent)
-        button.setIcon(get_icon("plus-square-dotted.svg"))
+        button.setIcon(get_icon("plus-square.svg"))
         button.setIconSize(QSize(16, 16))
         button.setStyleSheet("border: none; background: transparent;")
         button.setToolTip(add_text)
@@ -862,7 +862,7 @@ class MetadataControls(QWidget):
 
     def is_placeholder_item(self, comboBox):
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in ["No Database"]
+        return comboBox.currentText() in ["No Event Database"]
 
     def show_plugin_edit_manager(self, comboBox, metaclass):
         """Displays the plugin manager with details for the selected item from the combobox."""
