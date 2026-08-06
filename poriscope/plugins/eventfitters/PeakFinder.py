@@ -465,7 +465,7 @@ class PeakFinder(MetaEventFitter):
         baseline_std,
     ):
         step_size = self.settings["Min Carrier Blockage"]["Value"] / (2*baseline_std)
-        rise_time = int(5*1.0e-6 * samplerate)
+        rise_time = int(1.0e-6 * samplerate)
         length = len(data)
 
         retry = True
@@ -665,10 +665,6 @@ class PeakFinder(MetaEventFitter):
         if len(data)==padding_before or len(data)==padding_after:
             raise ValueError("No data available for peak detection")
 
-        # print("Here")
-        # print(len(data))
-        # print(padding_before, padding_after)
-        
         # # Find longest continuous segment above threshold 
         # # This trims the event to start/end at the longest above-threshold blockage
         
@@ -692,18 +688,9 @@ class PeakFinder(MetaEventFitter):
         # # Check if longest segment meets minimum length requirement
         # # Behavior depends on whether classification is enabled
         # classify_levels = self.settings.get("Classify Levels", {}).get("Value", True)
-        # min_segment_length = 10
+        
 
-        # if not classify_levels:
-        #     # If classification is disabled, accept any segment length above threshold
-        #     # as long as at least one segment exists above threshold
-        #     if longest_segment_length < 1:
-        #         raise ValueError("No Carrier Level Found")
-        # else:
-        #     # If classification is enabled, enforce minimum segment length
-        #     # (classification requires a stable carrier level)
-        #     if longest_segment_length < min_segment_length:
-        #         raise ValueError("No Carrier Level Found")
+
 
         # # Get the start and end indices of the longest segment (relative to event_data)
         # longest_start_idx = segment_starts[longest_segment_idx]
@@ -718,16 +705,25 @@ class PeakFinder(MetaEventFitter):
         # # Use adjusted paddin gs for the rest of processing
         # padding_before = new_padding_before
         # padding_after = new_padding_after
-    
+        
 
-        # Calculate minimum prominence and height from the user thresholds.
-        # Keep the carrier-aware guardrails so peaks still scale with signal depth.
-        min_prom_noise = max(abs(low_threshold), abs(high_threshold)) * baseline_std
 
         # Method 2: Signal-based minimum (relative to carrier blockage depth)
         # Calculate the carrier level blockage (median of the trimmed event)
         trimmed_data = data[padding_before:-padding_after]
         carrier_blockage = np.abs(np.median(trimmed_data) - baseline_mean)
+    
+        min_segment_length = 100
+
+        # as long as at least one segment exists above threshold
+        if len(trimmed_data) < 1 or len(trimmed_data) < min_segment_length or carrier_blockage < self.settings["Min Carrier Blockage"]["Value"] or carrier_blockage < 6 * baseline_std:
+                raise ValueError("No Carrier Level Found")
+
+
+        
+        # Calculate minimum prominence and height from the user thresholds.
+        # Keep the carrier-aware guardrails so peaks still scale with signal depth.
+        min_prom_noise = max(abs(low_threshold), abs(high_threshold)) * baseline_std
 
         # Peaks should still be significant relative to the translocation signal
         min_prom_signal = carrier_blockage
