@@ -496,16 +496,19 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_raw_data_view_click(self):
         self.on_load_analysis_tab_button_click("RawDataController")
+        self.sync_sidebar_highlight("RawDataView")
         self.switch_to_page("RawDataView")
 
     @log(logger=logger)
     def on_stats_click(self):
         self.on_load_analysis_tab_button_click("EventAnalysisController")
+        self.sync_sidebar_highlight("EventAnalysisView")
         self.switch_to_page("EventAnalysisView")
 
     @log(logger=logger)
     def on_metadata_click(self):
         self.on_load_analysis_tab_button_click("MetadataController")
+        self.sync_sidebar_highlight("MetadataView")
         self.switch_to_page("MetadataView")
 
     @log(logger=logger)
@@ -568,6 +571,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     def handle_menu_click(self, page_name):
         """Handles clicks on the menu items and switches to the correct view page."""
         self.logger.info(f"Menu item clicked: {page_name}")
+        self.sync_sidebar_highlight(page_name)
         self.switch_to_page(page_name)
 
     @log(logger=logger)
@@ -587,6 +591,13 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_load_analysis_tab_button_click(self, subclass):
         self.instantiate_analysis_tab.emit(subclass)
+        dedicated_view_for_subclass = {
+            "RawDataController": "RawDataView",
+            "EventAnalysisController": "EventAnalysisView",
+            "MetadataController": "MetadataView",
+        }
+        page_name = dedicated_view_for_subclass.get(subclass, "Plugins")
+        self.sync_sidebar_highlight(page_name)
 
     # Page management
     @log(logger=logger)
@@ -723,6 +734,18 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.logger.warning(
                 f"Attempted to switch to non-existent page: {page_name}"
             )
+
+    @log(logger=logger)
+    def sync_sidebar_highlight(self, page_name):
+        """Ensure the correct sidebar/menu button is checked for the given page."""
+        dedicated = {
+            "RawDataView": "setRawDataChecked",
+            "EventAnalysisView": "setStatsChecked",
+            "MetadataView": "setMetadataChecked",
+        }
+        setter_name = dedicated.get(page_name, "setPluginsChecked")
+        getattr(self.icon_menu_widget, setter_name)(True)
+        getattr(self.text_menu_widget, setter_name)(True)
 
     @log(logger=logger)
     def on_abort_analysis_click(self):
