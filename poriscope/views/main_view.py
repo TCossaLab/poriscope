@@ -195,7 +195,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     def connect_signals(self):
         icon_text_signals = [
             ("rawDataToggled", self.text_menu_widget.setRawDataChecked),
-            ("statsToggled", self.text_menu_widget.setStatsChecked),
+            ("eventAnalysisToggled", self.text_menu_widget.setEventAnalysisChecked),
             ("metadataToggled", self.text_menu_widget.setMetadataChecked),
             ("pluginsToggled", self.text_menu_widget.setPluginsChecked),
             ("helpToggled", self.text_menu_widget.setHelpChecked),
@@ -214,7 +214,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
         page_switch_signals = [
             ("switchToRawData", self.on_raw_data_view_click),
-            ("switchToStatistics", self.on_stats_click),
+            ("switchToEventAnalysis", self.on_event_analysis_click),
             ("switchToMetadata", self.on_metadata_click),
             ("switchToSettings", self.on_settings_button_click),
             ("switchToHelp", self.on_help_button_click),
@@ -500,7 +500,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.switch_to_page("RawDataView")
 
     @log(logger=logger)
-    def on_stats_click(self):
+    def on_event_analysis_click(self):
         self.on_load_analysis_tab_button_click("EventAnalysisController")
         self.sync_sidebar_highlight("EventAnalysisView")
         self.switch_to_page("EventAnalysisView")
@@ -740,7 +740,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         """Ensure the correct sidebar/menu button is checked for the given page."""
         dedicated = {
             "RawDataView": "setRawDataChecked",
-            "EventAnalysisView": "setStatsChecked",
+            "EventAnalysisView": "setEventAnalysisChecked",
             "MetadataView": "setMetadataChecked",
         }
         setter_name = dedicated.get(page_name, "setPluginsChecked")

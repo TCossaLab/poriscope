@@ -42,7 +42,7 @@ from poriscope.utils.LogDecorator import log
 
 class IconMenuWidget(QWidget):
     rawDataToggled = Signal(bool)
-    statsToggled = Signal(bool)
+    eventAnalysisToggled = Signal(bool)
     metadataToggled = Signal(bool)
     pluginsToggled = Signal(bool)
     helpToggled = Signal(bool)
@@ -51,7 +51,7 @@ class IconMenuWidget(QWidget):
     menuToggled = Signal(bool)
 
     switchToRawData = Signal()
-    switchToStatistics = Signal()
+    switchToEventAnalysis = Signal()
     switchToMetadata = Signal()
 
     switchToPlugins = Signal()
@@ -109,13 +109,13 @@ class IconMenuWidget(QWidget):
             self.handleRawData,
             "Raw Data",
         )
-        self.stats_icon_button = self.createIconButton(
+        self.event_analysis_icon_button = self.createIconButton(
             layout,
-            "stats",
+            "event",
             os.path.join(self.icon_path, "stats-white.svg"),
             os.path.join(self.icon_path, "stats-black.svg"),
             25,
-            self.handleStats,
+            self.handleEventAnalysis,
             "Event Analysis",
         )
         self.metadata_icon_button = self.createIconButton(
@@ -287,7 +287,7 @@ class IconMenuWidget(QWidget):
     @log(logger=logger)
     def connectSignals(self):
         self.raw_data_icon_button.clicked.connect(self.switchToRawData.emit)
-        self.stats_icon_button.clicked.connect(self.switchToStatistics.emit)
+        self.event_analysis_icon_button.clicked.connect(self.switchToEventAnalysis.emit)
         self.metadata_icon_button.clicked.connect(self.switchToMetadata.emit)
         self.add_icon_button.clicked.connect(self.switchToPlugins.emit)
         self.settings_icon_button.clicked.connect(self.switchToSettings.emit)
@@ -299,7 +299,7 @@ class IconMenuWidget(QWidget):
         signals = {
             "menu": self.menuToggled,
             "data": self.rawDataToggled,
-            "stats": self.statsToggled,
+            "event": self.eventAnalysisToggled,
             "metadata": self.metadataToggled,
             "add": self.pluginsToggled,
             "help": self.helpToggled,
@@ -318,7 +318,7 @@ class IconMenuWidget(QWidget):
         self.logger.info("Raw Data clicked")
 
     @log(logger=logger)
-    def handleStats(self):
+    def handleEventAnalysis(self):
         self.logger.info("Event Analysis clicked")
 
     @log(logger=logger)
@@ -366,8 +366,8 @@ class IconMenuWidget(QWidget):
         self.raw_data_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setStatsChecked(self, checked):
-        self.stats_icon_button.setChecked(checked)
+    def setEventAnalysisChecked(self, checked):
+        self.event_analysis_icon_button.setChecked(checked)
 
     @log(logger=logger)
     def setMetadataChecked(self, checked):
