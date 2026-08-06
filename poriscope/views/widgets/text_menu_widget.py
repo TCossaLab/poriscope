@@ -115,7 +115,7 @@ class IconTextMenuWidget(QWidget):
         self.raw_data_text_button = self.createTextButton(
             layout,
             "data",
-            "    Raw Data", # spaces are intentional for desired alignment 
+            "    Raw Data",  # spaces are intentional for desired alignment
             os.path.join(self.icon_path, "stats-black.svg"),
             25,
         )
@@ -235,9 +235,7 @@ class IconTextMenuWidget(QWidget):
         return button
 
     @log(logger=logger)
-    def createTextButton(
-        self, layout, objectName, text, iconPath, iconSize
-    ):
+    def createTextButton(self, layout, objectName, text, iconPath, iconSize):
         button = QPushButton(text, self)
         button.setObjectName(objectName)
         button.setFont(QFont("MS Shell Dlg 2", 10))
