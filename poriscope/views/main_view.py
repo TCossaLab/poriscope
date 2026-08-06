@@ -25,15 +25,13 @@
 # Alejandra Carolina González González
 
 import logging
-import os
 import sys
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QAction, QIcon, QTextCursor
+from PySide6.QtGui import QAction, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -94,7 +92,6 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.available_plugins = available_plugins
         self.pages = {}
         self.received_analysis_tabs.connect(self.populate_plugins_menu)
-        self.icon_path = Path(Path(__file__).resolve().parent, "configs", "icons")
         self.setup_menubar()
         self._milestone_dialog = None
         self._expected_next_view = None
@@ -393,9 +390,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     def add_menu_action(self, menu, action_name, slot):
-        action = QAction(
-            QIcon(os.path.join(self.icon_path, "fire.png")), action_name, self
-        )
+        action = QAction(action_name, self)
         action.setStatusTip(action_name)
         action.triggered.connect(slot)
         menu.addAction(action)
@@ -403,9 +398,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def add_plugin_actions(self, menu, plugin_type, slot):
         for name in self.available_plugins[plugin_type]:
-            action = QAction(
-                QIcon(os.path.join(self.icon_path, "fire.png")), name, self
-            )
+            action = QAction(name, self)
             action.setStatusTip(f"Load a new {name}")
             action.triggered.connect(
                 lambda checked=False, name=name: slot(subclass=name)
