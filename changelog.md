@@ -46,12 +46,29 @@
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
     * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
 
-### General Fixes and Improvements:
-
 * **Updated Frontend Component: `MainView` / Sidebar Menus**
     * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.
     * Fixed: Selecting Raw Data, Event Analysis, or Metadata from the "Add" dropdown did not highlight their dedicated sidebar button.
     * Fixed: The "Add" dropdown menu reopened immediately after selecting an item, due to a duplicate signal connection 
+
+* **Updated Frontend Component: `Settings`**
+    * Settings window now follows OS light/dark mode automatically, and updates live if the OS theme changes while the app is open, no restart required
+    * Fixed dropdown menus (combobox popups) rendering with a stray focus outline, a disappearing selection highlight on hover, and a double-border artifact
+    * Application version in the About tab is now pulled from `poriscope.constants.__VERSION__` instead of a hardcoded string, so it can no longer drift out of sync
+
+* **Updated Utility: `get_icon` (`poriscope.configs.utils`)**
+    * Icons now automatically recolor for light/dark mode instead of requiring separate hardcoded black/white icon files
+    * New `get_themed_icon_path` helper for cases (like custom stylesheet arrows) that need a real file path rather than an icon object
+
+### General Fixes and Improvements:
+    * Fixed `MainView` menu bar action icons silently failing to render due to an incorrect resource path (bug was invisible until now, since it failed silently)
+    * Fixed `MetadataControls` DB Loader edit/delete buttons staying enabled when no database was loaded (placeholder text mismatch)
+    * Removed unused legacy icon assets and the broken/unused Qt `.qrc` resource system (`resources_rc.py`), which nothing in the app actually depended on
+    * Standardized edit/add icons across control panels to use the same icon set consistently
+    * In `Settings` fixed potential crash (`AttributeError`) if a folder-picker button was clicked before the data server / user plugin location had been set
+    * Now: Icons correctly update color depending on dark/light mode
+
+
 
 ## Poriscope 1.6.1: 2026-06-04
 
