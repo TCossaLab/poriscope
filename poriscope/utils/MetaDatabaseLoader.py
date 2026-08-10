@@ -155,6 +155,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
         pass
 
     @abstractmethod
+    def get_column_type(self, column_name: str) -> Optional[str]:
+        """
+        :param column_name: The name of the column.
+        :type column_name: str
+        :return: The datatype of the column.
+        :rtype: Optional[str]
+
+        **Purpose:** Retrieve the datatype associated with a specific column name or None on failure
+        """
+        pass
+
+    @abstractmethod
     def get_column_names_by_table(
         self, table: Optional[str] = None
     ) -> Optional[List[str]]:

@@ -324,6 +324,56 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
+    def get_column_type(self, column_name: str) -> Optional[str]:
+        """
+        :param column_name: The name of the column.
+        :type column_name: str
+        :return: The datatype of the column.
+        :rtype: Optional[str]
+
+        **Purpose:** Retrieve the datatype associated with a specific column name or None on failure
+        """
+        conn = None
+        cursor = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            query = """
+            SELECT table_name
+            FROM columns
+            WHERE name = ?;
+            """
+            cursor.execute(query, (column_name,))
+            result = cursor.fetchone()
+            if not result or result[0] is None:
+                return None
+
+            table_name = result[0]
+
+            query = f'PRAGMA table_info("{table_name}");'
+            cursor.execute(query)
+            columns_info = cursor.fetchall()
+
+            # PRAGMA table_info returns rows formatted as:
+            # (cid, name, type, notnull, dflt_value, pk)
+            for col in columns_info:
+                if col[1] == column_name:
+                    return col[2]  # Return the 'type' string
+            return None
+
+        except sqlite3.Error as e:
+            self.logger.error(
+                f"Database error getting units for column {column_name}: {e}"
+            )
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    @log(logger=logger)
+    @override
     def get_column_names_by_table(
         self, table: Optional[str] = None
     ) -> Optional[List[str]]:

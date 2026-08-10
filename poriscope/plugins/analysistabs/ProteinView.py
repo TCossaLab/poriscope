@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import bisect
 import itertools
 import json
 import logging
@@ -82,6 +83,96 @@ class ProteinView(MetaView, WalkthroughMixin):
     logger = logging.getLogger(__name__)
     request_plugin_refresh = Signal(str)
 
+    @property
+    def fig_hist(self):
+        return (
+            self.fig_hist_individual
+            if self._analysis_mode == "individual"
+            else self.fig_hist_ensemble
+        )
+
+    @fig_hist.setter
+    def fig_hist(self, value):
+        if self._analysis_mode == "individual":
+            self.fig_hist_individual = value
+        else:
+            self.fig_hist_ensemble = value
+
+    @property
+    def ax_hist(self):
+        return (
+            self.ax_hist_individual
+            if self._analysis_mode == "individual"
+            else self.ax_hist_ensemble
+        )
+
+    @ax_hist.setter
+    def ax_hist(self, value):
+        if self._analysis_mode == "individual":
+            self.ax_hist_individual = value
+        else:
+            self.ax_hist_ensemble = value
+
+    @property
+    def canvas_hist(self):
+        return (
+            self.canvas_hist_individual
+            if self._analysis_mode == "individual"
+            else self.canvas_hist_ensemble
+        )
+
+    @canvas_hist.setter
+    def canvas_hist(self, value):
+        if self._analysis_mode == "individual":
+            self.canvas_hist_individual = value
+        else:
+            self.canvas_hist_ensemble = value
+
+    @property
+    def fig_vm(self):
+        return (
+            self.fig_vm_individual
+            if self._analysis_mode == "individual"
+            else self.fig_vm_ensemble
+        )
+
+    @fig_vm.setter
+    def fig_vm(self, value):
+        if self._analysis_mode == "individual":
+            self.fig_vm_individual = value
+        else:
+            self.fig_vm_ensemble = value
+
+    @property
+    def ax_vm(self):
+        return (
+            self.ax_vm_individual
+            if self._analysis_mode == "individual"
+            else self.ax_vm_ensemble
+        )
+
+    @ax_vm.setter
+    def ax_vm(self, value):
+        if self._analysis_mode == "individual":
+            self.ax_vm_individual = value
+        else:
+            self.ax_vm_ensemble = value
+
+    @property
+    def canvas_vm(self):
+        return (
+            self.canvas_vm_individual
+            if self._analysis_mode == "individual"
+            else self.canvas_vm_ensemble
+        )
+
+    @canvas_vm.setter
+    def canvas_vm(self, value):
+        if self._analysis_mode == "individual":
+            self.canvas_vm_individual = value
+        else:
+            self.canvas_vm_ensemble = value
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._init()
@@ -91,13 +182,18 @@ class ProteinView(MetaView, WalkthroughMixin):
     @override
     def _init(self) -> None:
         """
-        Initialize the MetadataView instance.
+        Initialize the ProteinView instance.
 
         :param args: Positional arguments passed to parent constructors.
         :param kwargs: Keyword arguments passed to parent constructors.
         """
         self._clear_cache()
         self.fit_data = None
+        self.ensemble_fit_params: Optional[tuple] = None
+        self.ensemble_fit_bins = None
+        self.ensemble_fit_sizes = None
+        self.ensemble_fit_prolate_summary = None
+        self.ensemble_fit_oblate_summary = None
         self.plot_initialized = False
         self.no_cached_data = False
 
@@ -114,6 +210,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.current_experiment: Optional[str] = None
         self.current_channel: Optional[int] = None
         self.cached_events: Dict[int, Dict[str, Any]] = {}
+        # Cache of all filtered event_ids for the current scope/filter combination.
+        # Populated by _rebuild_event_id_cache; used by _shift_range_and_update_plot,
+        # _handle_plot_events, and _handle_plot_histogram to resolve event_id + n_events
+        # into a concrete list of event_ids without re-querying the DB on every arrow click.
+        self.filtered_event_ids: List[int] = []
         self.subset_filters: Dict[str, str] = {}
         self.plot_events_generator = None
         self.available_experiment_and_channels_by_loader: Dict[
@@ -148,7 +249,11 @@ class ProteinView(MetaView, WalkthroughMixin):
     @override
     def _set_custom_display_area(self, layout) -> None:
         """
-        Initialize a 2-canvas display area
+        Initialize the display area with two independent sets of canvases — one for
+        Individual mode, one for Ensemble mode — shown via a nested QStackedWidget,
+        plus a separate full-canvas page for event plots. Each mode's histogram/V-M
+        plots persist independently; switching modes shows that mode's last-drawn
+        plot immediately, with no redraw needed.
         """
         display_container = QWidget()
         display_container.setObjectName("displayContainer")
@@ -162,32 +267,34 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.display_stack.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self.display_stack, stretch=1)
 
-        # Page 0: distribution (two canvases)
-        dist_page = QWidget()
-        dist_outer = QVBoxLayout(dist_page)
-        dist_outer.setContentsMargins(0, 0, 0, 0)
-        dist_outer.setSpacing(0)
-        dist_row = QHBoxLayout()
-        dist_row.setContentsMargins(0, 0, 0, 0)
-        dist_row.setSpacing(0)
-        dist_outer.addLayout(dist_row, stretch=1)
-        self.fig_hist = Figure()
-        self.canvas_hist = FigureCanvas(self.fig_hist)
-        self.ax_hist = self.fig_hist.add_subplot(1, 1, 1)
-        self.fig_vm = Figure()
-        self.canvas_vm = FigureCanvas(self.fig_vm)
-        self.ax_vm = self.fig_vm.add_subplot(1, 1, 1)
-        dist_row.addWidget(self.canvas_hist, stretch=1)
-        dist_row.addWidget(self.canvas_vm, stretch=1)
+        # Page 0: distribution — nested stack, one page per analysis mode
+        self.mode_stack = QStackedWidget()
 
-        self.dist_toolbar_hist = NavigationToolbar(self.canvas_hist, self)
-        self.dist_toolbar_vm = NavigationToolbar(self.canvas_vm, self)
-        toolbar_row = QHBoxLayout()
-        toolbar_row.addWidget(self.dist_toolbar_hist)
-        toolbar_row.addWidget(self.dist_toolbar_vm)
-        dist_outer.addLayout(toolbar_row)
+        (
+            self.individual_dist_page,
+            self.fig_hist_individual,
+            self.canvas_hist_individual,
+            self.ax_hist_individual,
+            self.fig_vm_individual,
+            self.canvas_vm_individual,
+            self.ax_vm_individual,
+        ) = self._build_dist_page()
 
-        # Page 1: event (single full canvas)
+        (
+            self.ensemble_dist_page,
+            self.fig_hist_ensemble,
+            self.canvas_hist_ensemble,
+            self.ax_hist_ensemble,
+            self.fig_vm_ensemble,
+            self.canvas_vm_ensemble,
+            self.ax_vm_ensemble,
+        ) = self._build_dist_page()
+
+        self.mode_stack.addWidget(self.individual_dist_page)  # index 0
+        self.mode_stack.addWidget(self.ensemble_dist_page)  # index 1
+        self.mode_stack.setCurrentWidget(self.individual_dist_page)
+
+        # Page 1: event (single full canvas, shared across modes — not mode-scoped)
         event_page = QWidget()
         event_outer = QVBoxLayout(event_page)
         event_outer.setContentsMargins(0, 0, 0, 0)
@@ -199,10 +306,48 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.event_toolbar = NavigationToolbar(self.canvas_event, self)
         event_outer.addWidget(self.event_toolbar)
 
-        self.display_stack.addWidget(dist_page)  # index 0
+        self.display_stack.addWidget(self.mode_stack)  # index 0
         self.display_stack.addWidget(event_page)  # index 1
         layout.addWidget(display_container, stretch=4)
         self._display_mode = "distribution"
+
+    @log(logger=logger)
+    def _build_dist_page(self):
+        """
+        Build one distribution page: a histogram canvas and V/M canvas side by
+        side, each with its own navigation toolbar underneath.
+
+        :return: Tuple of (page_widget, fig_hist, canvas_hist, ax_hist, fig_vm,
+                canvas_vm, ax_vm) for this page.
+        :rtype: tuple
+        """
+        page = QWidget()
+        page_outer = QVBoxLayout(page)
+        page_outer.setContentsMargins(0, 0, 0, 0)
+        page_outer.setSpacing(0)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        page_outer.addLayout(row, stretch=1)
+
+        fig_hist = Figure()
+        canvas_hist = FigureCanvas(fig_hist)
+        ax_hist = fig_hist.add_subplot(1, 1, 1)
+        fig_vm = Figure()
+        canvas_vm = FigureCanvas(fig_vm)
+        ax_vm = fig_vm.add_subplot(1, 1, 1)
+        row.addWidget(canvas_hist, stretch=1)
+        row.addWidget(canvas_vm, stretch=1)
+
+        toolbar_hist = NavigationToolbar(canvas_hist, self)
+        toolbar_vm = NavigationToolbar(canvas_vm, self)
+        toolbar_row = QHBoxLayout()
+        toolbar_row.addWidget(toolbar_hist)
+        toolbar_row.addWidget(toolbar_vm)
+        page_outer.addLayout(toolbar_row)
+
+        return page, fig_hist, canvas_hist, ax_hist, fig_vm, canvas_vm, ax_vm
 
     def _set_display_mode(self, mode: str) -> None:
         """
@@ -326,7 +471,93 @@ class ProteinView(MetaView, WalkthroughMixin):
             "display_write_status",
             (),
         )
-        # self.request_plugin_refresh.emit(loader) #this functionality needs to be moved out of the subclasses clusteringview and proteinview and into the base class, with metaclass arg added for generality
+        self.update_available_columns(loader)  # refresh this tab locally
+        self.plugin_state_changed.emit(
+            "MetaDatabaseLoader", loader, "columns"
+        )  # notify everyone else
+
+    @log(logger=logger)
+    def _summarize_vm(self, df) -> tuple:
+        """
+        Build a one-line median +/- std summary of V, a, b, m for a sampled shape DataFrame.
+        Falls back to a plain-value readout when there is only one sample (std is undefined
+        for N=1), and reports explicitly when there are no samples at all.
+
+        :param df: DataFrame with columns "V", "m", "a", "b" from Monte Carlo shape sampling.
+        :type df: pd.DataFrame
+        :return: Tuple of (list of formatted "label = value" row strings, sample-count label string).
+        :rtype: tuple
+        """
+        n = len(df)
+
+        if n == 0:
+            return ([], "no samples generated")
+
+        if n == 1:
+            rows = [
+                f"V = {df['V'].iloc[0]:.1f} nm\u00b3",
+                f"a = {df['a'].iloc[0]:.1f} nm",
+                f"b = {df['b'].iloc[0]:.1f} nm",
+                f"m = {df['m'].iloc[0]:.2f}",
+            ]
+            return (rows, "N=1 sample, std undefined for a single sample")
+
+        rows = [
+            f"V = {df['V'].median():.1f} \u00b1 {df['V'].std():.1f} nm\u00b3",
+            f"a = {df['a'].median():.1f} \u00b1 {df['a'].std():.1f} nm",
+            f"b = {df['b'].median():.1f} \u00b1 {df['b'].std():.1f} nm",
+            f"m = {df['m'].median():.2f} \u00b1 {df['m'].std():.2f}",
+        ]
+        return (rows, f"N={n} samples")
+
+    @log(logger=logger)
+    def _report_ensemble_fit(self) -> None:
+        """
+        Report the double-Gaussian fit parameters and V/m sample summaries from the
+        most recent ensemble distribution fit, alongside the binning configuration
+        that produced them. Ensemble mode has no per-event id to write these back
+        to the database against, so this is a display-only report rather than a
+        database commit. Takes no arguments; reads entirely from self.ensemble_fit_*
+        state set by _update_distribution_ensemble and cleared by _reset_actions.
+
+        :return: None
+        :rtype: None
+        """
+        if self.ensemble_fit_params is None:
+            self.add_text_to_display.emit(
+                "No ensemble fit available to report. Run Update Plot in Ensemble mode first.",
+                self.__class__.__name__,
+            )
+            self.logger.warning("No ensemble fit available to report")
+            return
+
+        amp1, mean1, std1, amp2, mean2, std2 = self.ensemble_fit_params
+
+        if self.ensemble_fit_sizes:
+            bin_desc = f"bin size(s) = {self.ensemble_fit_bins}"
+        else:
+            bin_desc = f"bin count = {self.ensemble_fit_bins or 100}"
+
+        lines = [
+            "<br>",
+            f"<b>Ensemble double-Gaussian fit</b> ({bin_desc})",
+            f"&nbsp;&nbsp;Peak 1: amplitude={amp1:.4g}, mean={mean1:.4g}, std={std1:.4g}",
+            f"&nbsp;&nbsp;Peak 2: amplitude={amp2:.4g}, mean={mean2:.4g}, std={std2:.4g}",
+            "",
+        ]
+
+        if self.ensemble_fit_prolate_summary:
+            rows, count_label = self.ensemble_fit_prolate_summary
+            lines.append(f"<b>Prolate</b> ({count_label})")
+            lines.extend(f"&nbsp;&nbsp;{row}" for row in rows)
+            lines.append("")
+
+        if self.ensemble_fit_oblate_summary:
+            rows, count_label = self.ensemble_fit_oblate_summary
+            lines.append(f"<b>Oblate</b> ({count_label})")
+            lines.extend(f"&nbsp;&nbsp;{row}" for row in rows)
+
+        self.add_text_to_display.emit("<br>".join(lines), self.__class__.__name__)
 
     @log(logger=logger)
     def set_alter_database_status(self, status):
@@ -434,10 +665,16 @@ class ProteinView(MetaView, WalkthroughMixin):
         if @register_action is being used to keep track of actions. Only actions applied after the most
         recent call to this function will be recreated if the related file is loaded.
 
+        Also clears stored fit state for whichever analysis mode is currently active
+        (self.fit_data for Individual, self.ensemble_fit_* for Ensemble), leaving the
+        other mode's fit untouched. This means switching modes and running Update Plot,
+        or clicking Reset, only affects the fit belonging to the mode you're currently in.
+
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
+        :return: None
+        :rtype: None
         """
-        # clear both
         self.fig_hist.clear()
         self.ax_hist = self.fig_hist.add_subplot(1, 1, 1)
 
@@ -466,6 +703,18 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.plotted_datasets = (
             set()
         )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
+
+        if self._analysis_mode == "individual":
+            # Individual-mode fit data must not survive a Reset — a stale fit committed
+            # after Reset would silently write outdated per-event values to the database.
+            self.fit_data = None
+        else:
+            # Ensemble fit results must not survive a Reset either, for the same reason.
+            self.ensemble_fit_params = None
+            self.ensemble_fit_bins = None
+            self.ensemble_fit_sizes = None
+            self.ensemble_fit_prolate_summary = None
+            self.ensemble_fit_oblate_summary = None
 
     @log(logger=logger)
     def _plot_all_points_histogram(
@@ -706,6 +955,45 @@ class ProteinView(MetaView, WalkthroughMixin):
         except Exception as e:
             self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
 
+    @override
+    @log(logger=logger)
+    def notify_plugin_state_changed(
+        self, metaclass: str, plugin_key: str, reason: str
+    ) -> None:
+        """
+        Called when some other plugin instance's state changed elsewhere in the
+        app. Refreshes this tab's column list only when the change concerns a
+        MetaDatabaseLoader's columns and the loader that changed is the one
+        currently selected here; any other metaclass, reason, or a loader that
+        isn't currently selected in this tab is ignored.
+
+        :param metaclass: The metaclass of the plugin instance whose state
+                        changed.
+        :type metaclass: str
+        :param plugin_key: The unique key identifying the plugin instance that
+                        changed.
+        :type plugin_key: str
+        :param reason: A short string identifying what kind of change occurred.
+        :type reason: str
+        :return: None
+        :rtype: None
+        """
+        if metaclass != "MetaDatabaseLoader" or reason != "columns":
+            self.logger.debug(
+                f"notify_plugin_state_changed: ignoring (metaclass={metaclass}, reason={reason})"
+            )
+            return
+        current = self.proteincontrols.db_loader_comboBox.currentText()
+        if plugin_key == current:
+            self.logger.debug(
+                f"notify_plugin_state_changed: refreshing columns for {plugin_key}"
+            )
+            self.update_available_columns(plugin_key)
+        else:
+            self.logger.debug(
+                f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
+            )
+
     @log(logger=logger)
     def set_experiment_id(self, experiment_id):
         """
@@ -880,7 +1168,21 @@ class ProteinView(MetaView, WalkthroughMixin):
                         f"Unable to calculate bins given sizes {bins}: {str(e)}"
                     )
         else:
-            bins = 100
+            # Freedman-Diaconis: bin width scales with the event's own IQR and
+            # sample count, so shorter/longer events (typical for proteins,
+            # where duration varies a lot) get independently sized bins instead
+            # of a fixed 100 for every event regardless of length.
+            iqr = np.percentile(dI_I, 75) - np.percentile(dI_I, 25)
+            bin_width = 2 * iqr / np.cbrt(np.size(dI_I))
+
+            if bin_width <= 0 or not np.isfinite(bin_width):
+                # IQR collapses to 0 (near-constant signal) or the event is too
+                # short/degenerate for FD to produce a sane width; fall back to
+                # the previous fixed default rather than dividing by zero.
+                bins = 100
+            else:
+                bins = int((self.hist_max - self.hist_min) / bin_width)
+                bins = max(bins, 1)
 
         bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
         event_hist, _ = np.histogram(dI_I, bins=bin_edges, density=True)
@@ -959,7 +1261,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             duplicate_names = existing_names & new_names
 
             if duplicate_names:
-                self.logger.warning(
+                self.logger.error(
                     f"Duplicate filter names found when loading from {path}: {', '.join(duplicate_names)}. "
                     "No filters were loaded."
                 )
@@ -1065,7 +1367,14 @@ class ProteinView(MetaView, WalkthroughMixin):
                 self._update_distribution_ensemble(parameters)
 
         elif action_name == "reset_plot":
+            mode_label = (
+                "Individual" if self._analysis_mode == "individual" else "Ensemble"
+            )
             self._reset_actions()
+            self.add_text_to_display.emit(
+                f"Reset cleared the {mode_label} mode fit.",
+                self.__class__.__name__,
+            )
 
         elif action_name == "undo_plot":
             self._undo_plot()
@@ -1089,68 +1398,199 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         elif action_name == "set_mode_individual":
             self._analysis_mode = "individual"
+            self.mode_stack.setCurrentWidget(self.individual_dist_page)
 
         elif action_name == "set_mode_ensemble":
             self._analysis_mode = "ensemble"
+            self.mode_stack.setCurrentWidget(self.ensemble_dist_page)
 
         elif action_name == "commit_individual":
             loader = parameters.get("db_loader")
-            self._commit_fits(loader)
+            try:
+                self._commit_fits(loader)
+            except AttributeError as e:
+                self.add_text_to_display.emit(
+                    "No individual fit available to commit. Run Update Plot in Individual mode first.",
+                    self.__class__.__name__,
+                )
+                self.logger.warning(f"Commit Individual failed: {e}")
+
+        elif action_name == "report_all":
+            self._report_ensemble_fit()
 
         else:
             self._handle_other_actions(action_name, parameters)
 
+    # -------------------------------------------------------------------------
+    # Filter-aware event_id cache navigation
+    # -------------------------------------------------------------------------
+
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
-        """Shift ranges in the GUI and update plot and input if valid."""
+    def relay_query_result(self, result) -> None:
+        """
+        A global signal callback that stores the result of a direct database query.
+        Used by _rebuild_event_id_cache to receive the list of filtered event_ids.
 
-        original_str = self._get_event_index_text()
-        self.logger.debug(f"Original GUI input string: {original_str}")
-        if not original_str:
-            self.logger.error("Event index input is empty.")
+        :param result: DataFrame returned by query_database_directly.
+        :type result: pd.DataFrame
+        """
+        self.relayed_query_result = result
+
+    @log(logger=logger)
+    def _build_where_clause(self, loader: str, sql_filter: str, exp, channel) -> str:
+        """
+        Build a WHERE clause string suitable for the event_id cache query.
+
+        Experiment/channel scoping is handled downstream by _fetch_event_data
+        via load_event_data; here we only need the SQL filter predicate so that
+        the event_id list reflects the active filter subset.
+
+        :param loader: Name of the database loader (unused here, kept for interface symmetry).
+        :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
+        :param exp: Experiment name (unused here).
+        :param channel: Channel identifier (unused here).
+        :return: "WHERE <sql_filter>" or "" if no filter is active.
+        :rtype: str
+        """
+        return f"WHERE {sql_filter}" if sql_filter else ""
+
+    @log(logger=logger)
+    def _rebuild_event_id_cache(
+        self,
+        loader: str,
+        where_clause: str,
+        sql_filter: str,
+        exp,
+        channel,
+    ) -> bool:
+        """
+        Fetch all event_ids matching the current filter in one DB query and
+        store them sorted in self.filtered_event_ids.
+
+        Also updates current_sql_filter / current_experiment / current_channel
+        so that staleness checks in _shift_range_and_update_plot and
+        _handle_plot_events/_handle_plot_histogram can detect scope changes.
+
+        Emits a display-panel message with the total count and first/last
+        event_id (mirrors ProteinView._rebuild_event_id_cache behaviour).
+
+        :param loader: Name of the database loader.
+        :param where_clause: Full WHERE clause string (may be empty).
+        :param sql_filter: Raw filter expression without WHERE (used for label and staleness tracking).
+        :param exp: Experiment name.
+        :param channel: Channel identifier.
+        :return: True if the cache was populated, False if no events were found.
+        :rtype: bool
+        """
+        query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        self.relayed_query_result = None
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (query,),
+            "relay_query_result",
+            (),
+        )
+        result = getattr(self, "relayed_query_result", None)
+        if result is None or result.empty or "event_id" not in result.columns:
+            self.add_text_to_display.emit(
+                "No filtered events found for the current scope.",
+                self.__class__.__name__,
+            )
+            return False
+
+        self.filtered_event_ids = result["event_id"].tolist()
+        self.current_sql_filter = sql_filter
+        self.current_experiment = exp
+        self.current_channel = channel
+
+        selected_filters = self.get_selected_filters()
+        n = len(self.filtered_event_ids)
+        first = self.filtered_event_ids[0]
+        last = self.filtered_event_ids[-1]
+
+        if not sql_filter:
+            label = "All events"
+        else:
+            filter_name = next(iter(selected_filters.keys()), sql_filter)
+            label = f'"{filter_name}" subset'
+
+        self.add_text_to_display.emit(
+            f"{label}: {n} total | first event_id: {first} | last event_id: {last}",
+            self.__class__.__name__,
+        )
+        return True
+
+    @log(logger=logger)
+    def _shift_range_and_update_plot(self, parameters: dict, direction: str) -> None:
+        """
+        Navigate filtered event_ids by n_events steps in the given direction
+        with wrap-around at both ends, then trigger a plot update.
+
+        :param parameters: Action parameters from ProteinControls (must contain
+                           'db_loader', 'event_id', 'n_events').
+        :param direction: 'left' (backward) or 'right' (forward).
+        """
+        loader = parameters.get("db_loader")
+        if not loader:
             return
 
-        parsed = self._parse_event_indices(original_str, False)
-        self.logger.debug(f"Parsed input into ranges: {parsed}")
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
 
-        shifted = self._shift_ranges(parsed, direction, 1)
-        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
-
-        merged = self._merge_ranges(shifted)
-        self.logger.debug(f"Merged shifted ranges: {merged}")
-
-        new_event_str = self._format_ranges(merged)
-        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
-
-        expanded = self._expand_event_indices(new_event_str)
-        self.logger.debug(f"Expanded list for plotting: {expanded}")
-
-        if not expanded:
-            self.logger.warning("Indices must be positive")
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
+        if not experiments_and_channels:
             return
 
-        # Proceed with valid shift
+        sql_filter = next(iter(selected_filters.values()))
+        exp = next(iter(experiments_and_channels.keys()))
+        channel = next(iter(experiments_and_channels.values()))[0]
+
+        # Rebuild cache if the filter/scope has changed or the cache is empty
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        cache = self.filtered_event_ids
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        # Find current position; bisect_left snaps to the first id >= event_id
+        idx = bisect.bisect_left(cache, event_id)
+        if idx >= len(cache):
+            idx = 0
+
+        if direction == "right":
+            next_idx = idx + n_events
+            if next_idx >= len(cache):
+                next_idx = 0  # wrap to beginning
+        else:
+            next_idx = idx - n_events
+            if next_idx < 0:
+                next_idx = max(0, len(cache) - n_events)  # wrap to end
+
+        new_event_id = cache[next_idx]
+        self.proteincontrols.set_event_id_input(new_event_id)
+
         new_params = parameters.copy()
-        new_params["event_index"] = expanded
-        self.logger.debug(f"Updated parameters for plot: {new_params}")
+        new_params["event_id"] = new_event_id
 
         if self._last_event_action == "plot_histogram":
             self._handle_plot_histogram(new_params)
         else:
             self._handle_plot_events(new_params)
-            self.logger.debug(
-                f"Shifting complete. Updating input field to: {new_event_str}"
-            )
-        self.proteincontrols.set_event_index_input(new_event_str)
-
-    def _get_event_index_text(self) -> str:  # Since params expanded
-        """
-        Get the current text from the event index input field.
-
-        :return: Stripped text content of the event index field.
-        :rtype: str
-        """
-        return self.proteincontrols.event_index_lineEdit.text().strip()
 
     @log(logger=logger)
     def set_event_plot_data_generator(self, generator):
@@ -1359,44 +1799,175 @@ class ProteinView(MetaView, WalkthroughMixin):
             return (sql_filter, exp_and_ch_arg)
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _handle_plot_events(self, parameters: dict) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
-        :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
+        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
+        and bisect, then delegates to _fetch_event_data and
+        uses the generator + cached_events blob cache for actual data fetching.
+
+        :param parameters: Dictionary containing db_loader, filter, channels,
+                           event_id (int), and n_events (int).
         :type parameters: dict
         """
         self._last_event_action = "plot_events"
-        event_index = parameters["event_index"]
-        data_list = self._fetch_event_data(parameters, action_label="events")
+
+        loader = parameters.get("db_loader")
+        if not loader:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot events",
+                self.__class__.__name__,
+            )
+            return
+
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
+
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
+        if not experiments_and_channels or len(experiments_and_channels) == 0:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot events",
+                self.__class__.__name__,
+            )
+            return
+
+        sql_filter = next(iter(selected_filters.values()))
+        exp = next(iter(experiments_and_channels.keys()))
+        channel = next(iter(experiments_and_channels.values()))[0]
+
+        # Rebuild the event_id cache if the filter or scope has changed
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        cache = self.filtered_event_ids
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        # Snap to nearest event_id at or after the requested id; wrap if past end
+        idx = bisect.bisect_left(cache, event_id)
+        if idx >= len(cache):
+            idx = 0
+
+        snapped_event_id = cache[idx]
+        self.proteincontrols.set_event_id_input(snapped_event_id)
+
+        # Resolve n_events consecutive ids from the cache starting at idx
+        event_index = [cache[i] for i in range(idx, min(idx + n_events, len(cache)))]
+
+        # Pass the resolved list into _fetch_event_data via the standard key
+        fetch_params = parameters.copy()
+        fetch_params["event_index"] = event_index
+
+        data_list = self._fetch_event_data(fetch_params, action_label="events")
 
         if data_list:
             self._update_event_plot(data_list)
         else:
             self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_index}",
+                f"No data available for event_id {snapped_event_id}",
                 self.__class__.__name__,
-            )
-            self.logger.info(
-                f"No data available for plotting with indices in the specified range {event_index}"
             )
 
     @log(logger=logger)
-    def _handle_plot_histogram(self, parameters):
+    def _handle_plot_histogram(self, parameters: dict) -> None:
         """
         Handle loading and plotting of the ΔI/I histogram for selected events,
         each in its own subplot on the event canvas.
 
-        :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
+        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
+        and bisect, then delegates to _fetch_event_data which uses
+        the generator + cached_events blob cache for actual data fetching.
+
+
+        :param parameters: Dictionary containing db_loader, filter, channels,
+                           event_id (int), n_events (int), bins, and sizes.
         :type parameters: dict
         """
+
         self._last_event_action = "plot_histogram"
-        event_index = parameters["event_index"]
+
+        # Reset bin range so each Plot Histogram click is self-contained
+        # Without this, hist_min/hist_max accumulate across navigation sessions,
+        # causing bin edges to widen and histogram shape/fit to change on return visits
+        self.hist_min = None
+        self.hist_max = None
+
+        loader = parameters.get("db_loader")
+        if not loader:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot histograms",
+                self.__class__.__name__,
+            )
+            return
+
         bins = parameters.get("bins")
         sizes = parameters.get("sizes", False)
         plot_type = "Filtered Histogram"
 
-        data_list = self._fetch_event_data(parameters, action_label="histograms")
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
+
+        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
+            loader
+        )
+        if not experiments_and_channels or len(experiments_and_channels) == 0:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to plot histograms",
+                self.__class__.__name__,
+            )
+            return
+
+        sql_filter = next(iter(selected_filters.values()))
+        exp = next(iter(experiments_and_channels.keys()))
+        channel = next(iter(experiments_and_channels.values()))[0]
+
+        # Rebuild the event_id cache if the filter or scope has changed
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
+            if not self._rebuild_event_id_cache(
+                loader, where_clause, sql_filter, exp, channel
+            ):
+                return
+
+        cache = self.filtered_event_ids
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        # Snap to nearest event_id at or after the requested id; wrap if past end
+        idx = bisect.bisect_left(cache, event_id)
+        if idx >= len(cache):
+            idx = 0
+
+        snapped_event_id = cache[idx]
+        self.proteincontrols.set_event_id_input(snapped_event_id)
+
+        # Resolve n_events consecutive ids from the cache starting at idx
+        event_index = [cache[i] for i in range(idx, min(idx + n_events, len(cache)))]
+
+        # Pass the resolved list into _fetch_event_data via the standard key
+        fetch_params = parameters.copy()
+        fetch_params["event_index"] = event_index
+
+        data_list = self._fetch_event_data(fetch_params, action_label="histograms")
 
         if data_list:
             self._update_event_histogram(
@@ -1404,11 +1975,8 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
         else:
             self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_index}",
+                f"No data available for event_id {snapped_event_id}",
                 self.__class__.__name__,
-            )
-            self.logger.info(
-                f"No data available for plotting with indices in the specified range {event_index}"
             )
 
     @log(logger=logger)
@@ -1506,6 +2074,11 @@ class ProteinView(MetaView, WalkthroughMixin):
             ax = self.fig_event.add_subplot(num_rows, num_cols, j + 1)
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
+
+            # Reset per-event so bin edges are determined solely by this event's
+            # current range, not influenced by other events in the same plot call.
+            self.hist_min = None
+            self.hist_max = None
 
             try:
                 plot_data = self._construct_single_event_histogram(
@@ -1622,20 +2195,12 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(
-                f"Only a single experiment can be used for {plot_type}",
-                self.__class__.__name__,
-            )
             return
 
         for exp, channels in experiments_and_channels.items():
             if len(channels) > 1:
                 self.logger.warning(
                     "Only a single channel at a time can be used for protein ensemble analysis"
-                )
-                self.add_text_to_display.emit(
-                    "Only a single channel at a time can be used for protein ensemble analysis",
-                    self.__class__.__name__,
                 )
                 return
 
@@ -1676,18 +2241,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                     )
 
                     if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
-                        self.logger.warning(
-                            f"Invalid plot type: {plot_type}", self.__class__.__name__
-                        )
-                        self.add_text_to_display.emit(
-                            f"Invalid plot type: {plot_type}", self.__class__.__name__
-                        )
+                        self.logger.warning(f"Invalid plot type: {plot_type}")
                         return
 
                     if self.event_data_generator is None:
                         self.logger.warning(
                             "No events in dataset or unable to create event generator",
-                            self.__class__.__name__,
                         )
                         self.add_text_to_display.emit(
                             "No events in dataset or unable to create event generator",
@@ -2072,7 +2631,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
         L = float(parameters["pore_length"])
-        N = int(parameters.get("n_values", 100))
+        N = int(parameters.get("n_values") or 100)
 
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
@@ -2088,20 +2647,12 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(
-                f"Only a single experiment can be used for {plot_type}",
-                self.__class__.__name__,
-            )
             return
 
         for exp, channels in experiments_and_channels.items():
             if len(channels) > 1:
                 self.logger.warning(
                     "Only a single channel at a time can be used for protein ensemble analysis"
-                )
-                self.add_text_to_display.emit(
-                    "Only a single channel at a time can be used for protein ensemble analysis",
-                    self.__class__.__name__,
                 )
                 return
 
@@ -2189,12 +2740,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             )
                             return
                     else:
-                        self.logger.warning(
-                            f"Invalid plot type: {plot_type}", self.__class__.__name__
-                        )
-                        self.add_text_to_display.emit(
-                            f"Invalid plot type: {plot_type}", self.__class__.__name__
-                        )
+                        self.logger.warning(f"Invalid plot type: {plot_type}")
                         return
 
                     self.allowed_plot_type = plot_type
@@ -2223,6 +2769,10 @@ class ProteinView(MetaView, WalkthroughMixin):
                     logscales=[False, False],
                     dataset_label="Fit",
                 )
+                # --- record fit + binning for Report All reporting ---
+                self.ensemble_fit_params = popt
+                self.ensemble_fit_bins = self.allowed_bins
+                self.ensemble_fit_sizes = self.allowed_sizes
             else:
                 self.logger.info("Unable to fit a double gaussian to the histogram")
                 self.add_text_to_display.emit(
@@ -2275,6 +2825,14 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             df_oblate = pd.DataFrame(
                 {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
+            )
+
+            # --- record V/m summaries for Report All reporting ---
+            self.ensemble_fit_prolate_summary = (
+                self._summarize_vm(df_prolate) if not df_prolate.empty else None
+            )
+            self.ensemble_fit_oblate_summary = (
+                self._summarize_vm(df_oblate) if not df_oblate.empty else None
             )
 
             if not df_prolate.empty:
@@ -3003,141 +3561,153 @@ class ProteinView(MetaView, WalkthroughMixin):
     def get_walkthrough_steps(self):
         return [
             (
-                "Metadata Tab",
-                "Click the '+' button to load your metadata database.",
-                "MetadataView",
+                "Protein Tab",
+                "Click the '+' button to load your protein database.",
+                "ProteinView",
                 lambda: [self.proteincontrols.db_loader_add_button],
             ),
             (
-                "Metadata Tab",
-                "Click the 'Scope' button to select specific experiments and  channels. By default, all options are selected.",
-                "MetadataView",
+                "Protein Tab",
+                "Click the 'Scope' button to select specific experiments and channels. By default, all options are selected.",
+                "ProteinView",
                 lambda: [self.proteincontrols.selection_tree_button],
             ),
             (
-                "Metadata Tab",
-                "Choose the type of plot you'd like to generate from this dropdown.",
-                "MetadataView",
-                lambda: [self.proteincontrols.plot_type_comboBox],
+                "Protein Tab",
+                "Enter the pore diameter and length, in nanometers. These are required for volume and shape-factor fitting.",
+                "ProteinView",
+                lambda: [
+                    self.proteincontrols.pore_diameter_lineEdit,
+                    self.proteincontrols.pore_length_lineEdit,
+                ],
             ),
             (
-                "Metadata Tab",
-                "Specify the number of bins for your plot. Use 'x,y' format for heatmaps.",
-                "MetadataView",
+                "Protein Tab",
+                "Choose Individual mode to fit each event separately, or Ensemble mode to fit one shared distribution across all events in scope.",
+                "ProteinView",
+                lambda: [
+                    self.proteincontrols.individual_button,
+                    self.proteincontrols.ensemble_button,
+                ],
+            ),
+            (
+                "Protein Tab",
+                "Set N, the number of Monte Carlo samples used to estimate volume and shape factor.",
+                "ProteinView",
+                lambda: [self.proteincontrols.n_values_lineEdit],
+            ),
+            (
+                "Protein Tab",
+                "Specify histogram bins as either a count or, if 'Sizes' is checked, a bin width.",
+                "ProteinView",
                 lambda: [self.proteincontrols.bins_lineEdit],
             ),
             (
-                "Metadata Tab",
-                "Check the sizes box to be able to define the sizes of your bins.",
-                "MetadataView",
+                "Protein Tab",
+                "Check this box to enter bin widths instead of bin counts.",
+                "ProteinView",
                 lambda: [self.proteincontrols.sizes_checkbox],
             ),
             (
-                "Metadata Tab",
-                "Here you can select the data for the x-axis.",
-                "MetadataView",
-                lambda: [self.proteincontrols.x_axis_comboBox],
-            ),
-            (
-                "Metadata Tab",
-                "Check this box if you want to use a log scale for the x-axis.",
-                "MetadataView",
-                lambda: [self.proteincontrols.x_axis_logscale_checkbox],
-            ),
-            (
-                "Metadata Tab",
-                "Once you're ready, click 'Update Plot' to generate the visualization.",
-                "MetadataView",
+                "Protein Tab",
+                "Once you're ready, click 'Update Plot' to generate the histogram and volume/shape-factor scatterplots.",
+                "ProteinView",
                 lambda: [self.proteincontrols.update_plot_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Not happy with the changes? Click 'Undo' to revert to the previous state at any point.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.undo_button],
             ),
             (
-                "Metadata Tab",
-                "Click here to save the current plot to file.",
-                "MetadataView",
-                lambda: [self.proteincontrols.save_plot_button],
-            ),
-            (
-                "Metadata Tab",
-                "Reload previously saved configurations using the 'Load' button.",
-                "MetadataView",
-                lambda: [self.proteincontrols.load_button],
-            ),
-            (
-                "Metadata Tab",
-                "Click 'Reset' to clear all changes and restore default settings.",
-                "MetadataView",
+                "Protein Tab",
+                "Click 'Reset' to clear the current mode's plot and fit, and restore default settings.",
+                "ProteinView",
                 lambda: [self.proteincontrols.reset_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
+                "In Individual mode, click 'Commit Individual' to write the per-event fit results to the database.",
+                "ProteinView",
+                lambda: [self.proteincontrols.commit_individual],
+            ),
+            (
+                "Protein Tab",
+                "In Ensemble mode, click 'Report All' to display the double-Gaussian fit parameters and volume/shape-factor summaries for the current binning.",
+                "ProteinView",
+                lambda: [self.proteincontrols.report_all],
+            ),
+            (
+                "Protein Tab",
                 "Click the '+' button to apply filters to the full database or selected experiment/channels to create subsets.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_add_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Use this dropdown to view your created subsets.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_comboBox],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click here to see the information and edit the currently selected subset.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_info_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click the delete button to remove all selected subsets. You can also delete individual ones directly from the dropdown.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.filter_delete_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click 'Save Filter' to save the current subsets for future use.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.save_filter_button],
             ),
             (
-                "Metadata Tab",
+                "Protein Tab",
                 "Click 'Load Filter' to import previously saved subsets.",
-                "MetadataView",
+                "ProteinView",
                 lambda: [self.proteincontrols.load_filter_button],
             ),
             (
-                "Metadata Tab",
-                "Use 'Export Subset - CSV' to save only the filtered data you're currently working with.",
-                "MetadataView",
-                lambda: [self.proteincontrols.export_csv_subset_button],
+                "Protein Tab",
+                "Use 'Export Plot Data' to save the data currently shown in your plots.",
+                "ProteinView",
+                lambda: [self.proteincontrols.export_plot_data_pushButton],
             ),
             (
-                "Metadata Tab",
-                "Select exactly one experiment to visualize its events.",
-                "MetadataView",
+                "Protein Tab",
+                "Select exactly one experiment and channel to visualize its events.",
+                "ProteinView",
                 lambda: [self.proteincontrols.selection_tree_button],
             ),
             (
-                "Metadata Tab",
-                "Then, enter the index or ranges of events you want to visualize.",
-                "MetadataView",
-                lambda: [self.proteincontrols.event_index_lineEdit],
+                "Protein Tab",
+                "Enter the starting event ID and the number of events you want to visualize.",
+                "ProteinView",
+                lambda: [
+                    self.proteincontrols.event_id_lineEdit,
+                    self.proteincontrols.n_events_lineEdit,
+                ],
             ),
             (
-                "Metadata Tab",
-                "Then, click 'Plot Events' to visualize the selected entries.",
-                "MetadataView",
-                lambda: [self.proteincontrols.plot_events_pushButton],
+                "Protein Tab",
+                "Click 'Plot Events' to view raw/filtered/fitted traces, or 'Plot Histogram' to view a ΔI/I histogram, for the selected events.",
+                "ProteinView",
+                lambda: [
+                    self.proteincontrols.plot_events_pushButton,
+                    self.proteincontrols.plot_histogram_pushButton,
+                ],
             ),
             (
-                "Metadata Tab",
-                "Use the arrows to quickly navigate between filtered/unfiltered events.",
-                "MetadataView",
+                "Protein Tab",
+                "Use the arrows to navigate to the next or previous events in the filtered set.",
+                "ProteinView",
                 lambda: [
                     self.proteincontrols.left_arrow_button,
                     self.proteincontrols.right_arrow_button,
@@ -3146,7 +3716,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         ]
 
     def get_current_view(self):
-        return "MetadataView"
+        return "ProteinView"
 
 
 def format_axis_label(label: str, unit: str) -> str:

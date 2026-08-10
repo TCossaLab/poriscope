@@ -29,8 +29,8 @@ import re
 import numpy as np
 from typing_extensions import override
 
-from poriscope.plugins.datareaders.ABF2Reader import TCossaLabABFReader
 from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
+from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 

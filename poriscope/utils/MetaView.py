@@ -68,6 +68,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (cane be None), added args for retval
+    plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     update_tab_action_history = Signal(
         object, bool
     )  # OrderedDict of actions to take, whether or not to delete the most recent key
@@ -494,6 +495,40 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
         self.logger.info(f"View updated: {available_plugins}")
         self.available_plugins = available_plugins
+
+    @abstractmethod
+    def notify_plugin_state_changed(
+        self, metaclass: str, plugin_key: str, reason: str
+    ) -> None:
+        """
+        Called by MainController whenever any plugin instance's internal state
+        changed elsewhere in the app (e.g. new columns committed to a loader's
+        table). Must be implemented by subclasses, even if the correct
+        implementation is a no-op (pass).
+
+        Where the implementation is not a no-op, it must make a deliberate
+        decision about whether the notification applies to this tab, filter
+        accordingly, and determine what the specific reaction should be.
+
+        Currently known (metaclass, reason) combinations in use:
+        - ("MetaDatabaseLoader", <loader_key>, "columns") — emitted after
+            columns are added to a loader's table (see
+            ClusteringView._commit_clusters, ProteinView._commit_fits).
+
+        :param metaclass: The metaclass of the plugin instance whose state
+                        changed (e.g. "MetaDatabaseLoader").
+        :type metaclass: str
+        :param plugin_key: The unique key identifying the plugin instance that
+                        changed (e.g. "SQLiteDBLoader_0").
+        :type plugin_key: str
+        :param reason: A short string identifying what kind of change occurred
+                    (e.g. "columns"). Free-form; the emitter and every
+                    receiver must agree on the exact string used.
+        :type reason: str
+        :return: None
+        :rtype: None
+        """
+        pass
 
     @log(logger=logger)
     def _parse_event_indices(

@@ -134,7 +134,7 @@ class MultiSelectComboBox(QComboBox):
 
         # Edit button
         edit_button = QToolButton()
-        edit_button.setIcon(get_icon("edit.png"))
+        edit_button.setIcon(get_icon("pencil-square.svg"))
         edit_button.setIconSize(QSize(16, 16))
         edit_button.setStyleSheet("border: none; background: transparent;")
         edit_button.clicked.connect(lambda _, t=name: self._handle_internal_edit(t))
@@ -331,3 +331,4 @@ class MultiSelectComboBox(QComboBox):
         self.lineEdit().clear()
         self.selectAllButton.setChecked(False)
         self.selectAllButton.setText("Select All")
+

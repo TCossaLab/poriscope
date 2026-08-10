@@ -1,4 +1,81 @@
-## Poriscope 1.6: In Progress
+## Poriscope 1.7: In Progress
+
+* **New Data Plugin: `ThresholdBlockageFinder`**
+    * Subclass of `ClassicBlockageFinder` that imposes much tighter bounds on the start and end times flagged in the output.
+
+* **Deprecated Data Plugin: `ABF2Reader`**
+    * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
+
+* **Updated Frontend Base Class: `MetaView`**
+    * New `plugin_state_changed` signal and abstract `notify_plugin_state_changed` hook, allowing any tab to notify all other tabs when a plugin instance's state changes (e.g. new columns added to a database). Every `MetaView` subclass must now implement `notify_plugin_state_changed`, even if the correct implementation is to do nothing. Non-trivial implementations must determine whether the notification is relevant to that tab, and filter and react accordingly.
+
+* **Updated Frontend Plugins: `MetadataView` and `ProteinView`**
+    * Replaced per-click DB queries with a cached event_id list and bisect-based navigation.
+    * Previously, the forward/backward arrows shifted the "Event Index" field by a fixed step across the full database, with no awareness of any active filter. This made systematic inspection of filtered events tedious (there was no way to know how far to step to reach the next populated range, and the number of events plotted per step varied unpredictably depending on that range).
+    * The old range field has been replaced with two new fields:
+        * **Event ID** — snaps to the nearest filtered event at or after the requested ID
+        * **# Events** — controls how many filtered events to display starting from that point
+    * Forward/backward arrows now move through the filtered set directly, with wrap-around at both ends, so the subplot count is predictable and navigation stays filter-aware.
+    * The display panel now shows the first and last event IDs in the filtered set, so users always know where they are.
+    * Example: if only event_ids 2, 5, 8, 9, 12, 15 pass a filter (out of 15 total events), entering event_id=3 with # events=2 snaps to event_id 5, plots events 5 and 8, updates the Event ID field to 5, and displays "Filtered events: 6 total | first event_id: 2 | last event_id: 15". Clicking forward moves to event_id 9 and plots events 9 and 12 — always within the filtered set, never jumping over empty ranges.
+    * Fetching and snapping is now O(1), a major speedup over the previous worst-case behavior.
+    * Filter state (filter name and subset label) is now reflected directly in the display panel message.
+
+* **Updated Frontend Plugin: `MetadataView`**
+    * Fixed: some plot types (Categorical Histogram, Scatterplot, Raw/Filtered Event Overlay) failed to render after "Plot Events" + "Update Plot" due to a stale `self.axes` reference not caught by existing staleness check. Added `_axes_valid()` to detect and reset it properly.
+    * Fixed: Silent crash in `_export_csv_subset` when the "Export Settings" dialog was canceled. Canceling the dialog now backs out cleanly.
+    * Now refreshes its available column list automatically when another tab commits new columns to the currently selected database.
+
+* **Updated Frontend Plugin: `ProteinView`**
+    * Fixed: `hist_min`/`hist_max` persisted across "Plot Histogram" calls and only ever expanded, so bin edges (and resulting histogram shape/fit) depended on plotting order and history instead of the event itself. Per-event histogram binning is now deterministic, and thus, so is plotting.
+    * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
+    * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
+    * Updated Walkthrough instructions. 
+    * New **Report All** button in Ensemble mode: displays the double-Gaussian fit parameters (peak amplitude, mean, std) alongside the binning configuration that produced them, plus median ± std summaries of Prolate and Oblate V, a, b, and m from the Monte Carlo sample. Display-only, since Ensemble mode has no per-event id to write a database row against (replaced Commit All button).
+    * New: Individual and Ensemble modes now use fully independent canvases for the histogram and V/M plots. Switching modes immediately shows that mode's last-drawn plot with no need to click Update Plot again, and no longer overwrites or erases the other mode's plot and data.
+    * Updated: Reset previously cleared fit state for both Individual and Ensemble modes unconditionally, regardless of which mode was active. Reset is now scoped to the currently selected mode only, and the display panel confirms which mode's fit was cleared.
+    * New: Running Update Plot in one mode could silently wipe out a valid fit stored in the other mode, causing "No ensemble fit available to report" even when a fit had been successfully computed earlier in the session.
+    * Fixed: Clicking Commit Individual with no fit computed raised an unhandled `AttributeError` that was silently swallowed by the Qt event loop, giving no feedback in the UI. Now shows a clear message in the display panel.
+    * Fixed: Some validation were passing an extra positional argument to `logger.warning`, crashing before the warning was ever shown.
+    * Fixed: Leaving the **N** field blank in Ensemble mode raised a `ValueError` instead of falling back to a default, matching behavior already present in Individual mode.
+    * Fixed: Default **N** value was set to 100 in the backend and 1000 in the frontend. Updated frontend to match the backend value.
+    * Added Freedman-Diaconis auto-binning for per-event histograms
+
+        
+* **Updated Frontend Plugin: `ClusteringView`**
+    * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
+    * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
+
+* **Updated Frontend Component: `MainView` / Sidebar Menus**
+    * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.
+    * Fixed: Selecting Raw Data, Event Analysis, or Metadata from the "Add" dropdown did not highlight their dedicated sidebar button.
+    * Fixed: The "Add" dropdown menu reopened immediately after selecting an item, due to a duplicate signal connection 
+
+* **Updated Frontend Component: `Settings`**
+    * Settings window now follows OS light/dark mode automatically, and updates live if the OS theme changes while the app is open, no restart required
+    * Fixed dropdown menus (combobox popups) rendering with a stray focus outline, a disappearing selection highlight on hover, and a double-border artifact
+    * Application version in the About tab is now pulled from `poriscope.constants.__VERSION__` instead of a hardcoded string, so it can no longer drift out of sync
+
+* **Updated Utility: `get_icon` (`poriscope.configs.utils`)**
+    * Icons now automatically recolor for light/dark mode instead of requiring separate hardcoded black/white icon files
+    * New `get_themed_icon_path` helper for cases (like custom stylesheet arrows) that need a real file path rather than an icon object
+
+### General Fixes and Improvements:
+    * Fixed `MainView` menu bar action icons silently failing to render due to an incorrect resource path (bug was invisible until now, since it failed silently)
+    * Fixed `MetadataControls` DB Loader edit/delete buttons staying enabled when no database was loaded (placeholder text mismatch)
+    * Removed unused legacy icon assets and the broken/unused Qt `.qrc` resource system (`resources_rc.py`), which nothing in the app actually depended on
+    * Standardized edit/add icons across control panels to use the same icon set consistently
+    * In `Settings` fixed potential crash (`AttributeError`) if a folder-picker button was clicked before the data server / user plugin location had been set
+    * Now: Icons correctly update color depending on dark/light mode
+
+
+
+## Poriscope 1.6.1: 2026-06-04
+
+* **Bug hotfix
+    * Fixed plotting bugs with `Peakfinder` plugin families
+
+## Poriscope 1.6: 2026-06-04
 
 ### What's New since Poriscope 1.5:
     
@@ -29,11 +106,16 @@
     * Full SQL will always be printed after filter creation/editing, regardless of validity
     * Added the loader to both the legend label and the duplicate-check key so plots from different loaders are treated and displayed as separate datasets allowing for different loaders with the same experiment name to be overlayed.
     * Added **RAW** checkbox to the Plot Events section — when checked, raw data traces are included alongside filtered and fitted traces in event plots
-    
-* **Updated Frontend Plugin: `MetadataView`**
+    * New plot type: Categorical Histogram that plots bar charts of data counts for unique values of the specified database column
     * Fixed bug with baseline fitting that caused off centered fit when baseline drift was present
     * Two event filter modes: **Assisted SQL** (WHERE clause only, Poriscope builds the query) and **Raw SQL** (complete SELECT statement, executed directly). Raw mode enables aggregations, computed columns, and subqueries not possible in assisted mode. See *Filtering and Querying* in the documentation. `ProteinView` brought to parity with MetadataView. 
 
+* **Updated Frontend Plugin: `RawDataView`**
+    * Fixed bug causing float drift in trace navigation 
+
+* **Updated Frontend Plugin: `ClusteringView`**
+    * Increased size of color palette cycle when plotting large numbers of clusters
+    * Increased markers size when plotting
 
 * **Documentation**
     * Fixed missing method documentation in all `MetaView` subclasses caused by unresolved PySide6 imports at Sphinx build time

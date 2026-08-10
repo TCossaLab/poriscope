@@ -7,6 +7,7 @@ All settings are injected directly onto the instance.
 """
 
 import unittest
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -19,6 +20,7 @@ from poriscope.plugins.eventfitters.NanoTrees import (
     Sublevels,
     _check_exceptional_sublevel,
     _check_one_sided_percent_parity,
+    exceptional_height_refresh,
     extractContiniousRegions,
     normalHeightRefresh,
 )
@@ -275,6 +277,63 @@ class TestNormalHeightRefresh(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# exceptional_height_refresh
+# ---------------------------------------------------------------------------
+
+
+class TestExceptionalHeightRefresh(unittest.TestCase):
+    def _height_fn(self, settings, data, previousHeight=None):
+        return float(np.mean(data))
+
+    def test_no_exceptional_sublevels_unchanged(self):
+        """When all sublevels are close to baseline height, nothing is refreshed."""
+        raw = np.concatenate([np.ones(10) * 5.0, np.ones(10) * 5.1, np.ones(10) * 5.0])
+        sub = _make_sublevels((0, 10, 5.0), (10, 20, 5.1), (20, 30, 5.0))
+        event = {"raw": raw}
+        original_heights = [sl.height for sl in sub.sublevels]
+        result = exceptional_height_refresh(
+            settings={},
+            event=event,
+            sublevels=sub,
+            exceptionalHeightBaseMaxDiffForHeightRefresh=100.0,
+            heightFunction=self._height_fn,
+        )
+        # threshold is huge (100), so nothing should trigger a refresh
+        result_heights = [sl.height for sl in result.sublevels]
+        self.assertEqual(result_heights, original_heights)
+
+    def test_exceptional_sublevel_gets_refreshed(self):
+        """A sublevel whose raw data deviates far from sublevel[0].height triggers refresh."""
+        raw = np.concatenate([np.zeros(10), np.ones(10) * 50.0, np.zeros(10)])
+        sub = _make_sublevels((0, 10, 0.0), (10, 20, 50.0), (20, 30, 0.0))
+        event = {"raw": raw}
+        result = exceptional_height_refresh(
+            settings={},
+            event=event,
+            sublevels=sub,
+            exceptionalHeightBaseMaxDiffForHeightRefresh=5.0,
+            heightFunction=self._height_fn,
+        )
+        # sublevel[1] deviates by 50 from sublevel[0].height=0, exceeding threshold=5
+        self.assertAlmostEqual(result.sublevels[1].height, 50.0)
+
+    def test_last_sublevel_never_checked(self):
+        """Loop only goes to len(sublevels)-1, so the last sublevel is untouched."""
+        raw = np.concatenate([np.zeros(10), np.zeros(10), np.ones(10) * 999.0])
+        sub = _make_sublevels((0, 10, 0.0), (10, 20, 0.0), (20, 30, 999.0))
+        event = {"raw": raw}
+        result = exceptional_height_refresh(
+            settings={},
+            event=event,
+            sublevels=sub,
+            exceptionalHeightBaseMaxDiffForHeightRefresh=1.0,
+            heightFunction=self._height_fn,
+        )
+        # last sublevel's outrageous height is preserved since it's never inspected
+        self.assertAlmostEqual(result.sublevels[2].height, 999.0)
+
+
+# ---------------------------------------------------------------------------
 # _check_exceptional_sublevel
 # ---------------------------------------------------------------------------
 
@@ -335,6 +394,64 @@ class TestCheckExceptionalSublevel(unittest.TestCase):
         args["exceptionalPeak_BaseDifferenceStdAtleast"] = 0.01
         result = _check_exceptional_sublevel(s.sublevels[1], 1, s, **args)
         self.assertFalse(result)
+
+
+# ---------------------------------------------------------------------------
+# NanoTrees – get_empty_settings
+# ---------------------------------------------------------------------------
+
+
+class TestGetEmptySettings(unittest.TestCase):
+    def _plugins(self):
+        """get_empty_settings requires at least one registered MetaEventLoader
+        instance name, not just the key with an empty list."""
+        return {"MetaEventLoader": ["loader1"]}
+
+    def test_includes_metaeventloader_key(self):
+        nt = _make_nt()
+        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
+        self.assertIn("MetaEventLoader", settings)
+
+    def test_includes_nanotrees_specific_keys(self):
+        nt = _make_nt()
+        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
+        for key in [
+            "Smallest Significant Sublevel",
+            "Time Scaling",
+            "Exceptional Sublevel Sensitivity",
+        ]:
+            self.assertIn(key, settings)
+
+    def test_smallest_significant_sublevel_defaults(self):
+        nt = _make_nt()
+        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
+        entry = settings["Smallest Significant Sublevel"]
+        self.assertEqual(entry["Type"], float)
+        self.assertEqual(entry["Value"], 600.0)
+        self.assertEqual(entry["Min"], 0.0)
+        self.assertEqual(entry["Units"], "pA")
+
+    def test_time_scaling_defaults(self):
+        nt = _make_nt()
+        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
+        entry = settings["Time Scaling"]
+        self.assertEqual(entry["Type"], float)
+        self.assertEqual(entry["Value"], 1.1)
+
+    def test_exceptional_sensitivity_defaults(self):
+        nt = _make_nt()
+        settings = nt.get_empty_settings(globally_available_plugins=self._plugins())
+        entry = settings["Exceptional Sublevel Sensitivity"]
+        self.assertEqual(entry["Type"], float)
+        self.assertEqual(entry["Value"], 0.3)
+        self.assertEqual(entry["Min"], 0.0)
+
+    def test_standalone_flag_passthrough_no_crash(self):
+        nt = _make_nt()
+        settings = nt.get_empty_settings(
+            globally_available_plugins=self._plugins(), standalone=True
+        )
+        self.assertIsInstance(settings, dict)
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +787,262 @@ class TestMlAutomation(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# NanoTrees – _DNA
+# ---------------------------------------------------------------------------
+
+
+class TestDNA(unittest.TestCase):
+    def test_returns_widths_and_heights_lists(self):
+        nt = _make_nt()
+        data = np.concatenate([np.zeros(20), np.ones(20) * 10.0, np.zeros(20)])
+        widths, heights = nt._DNA(
+            data, padding_before=15, padding_after=15, baseline_mean=0.0
+        )
+        self.assertIsInstance(widths, list)
+        self.assertIsInstance(heights, list)
+
+    def test_widths_heights_same_length(self):
+        nt = _make_nt()
+        data = np.concatenate([np.zeros(20), np.ones(20) * 10.0, np.zeros(20)])
+        widths, heights = nt._DNA(
+            data, padding_before=15, padding_after=15, baseline_mean=0.0
+        )
+        self.assertEqual(len(widths), len(heights))
+
+    def test_flat_data_collapses_to_few_regions(self):
+        nt = _make_nt()
+        data = np.ones(60) * 3.0
+        widths, heights = nt._DNA(
+            data, padding_before=20, padding_after=20, baseline_mean=3.0
+        )
+        # flat signal should merge into very few filtered regions
+        self.assertLessEqual(len(widths), 5)
+
+    def test_does_not_crash_on_noisy_data(self):
+        nt = _make_nt()
+        rng = np.random.default_rng(0)
+        data = rng.normal(0, 1, 100)
+        widths, heights = nt._DNA(
+            data, padding_before=20, padding_after=20, baseline_mean=0.0
+        )
+        self.assertGreater(len(widths), 0)
+
+
+# ---------------------------------------------------------------------------
+# NanoTrees – _locate_sublevel_transitions (end-to-end pipeline)
+# ---------------------------------------------------------------------------
+
+
+class TestLocateSublevelTransitions(unittest.TestCase):
+    def _synthetic_event(
+        self,
+        n=400,
+        baseline=1000.0,
+        blockage_level=500.0,
+        padding=100,
+        noise_std=2.0,
+        seed=0,
+    ):
+        """Synthetic event: baseline | blocked | baseline, with light noise."""
+        rng = np.random.default_rng(seed)
+        data = np.full(n, baseline)
+        data[padding : n - padding] = blockage_level
+        data += rng.normal(0, noise_std, n)
+        return data
+
+    def test_returns_hackylist(self):
+        nt = _make_nt()
+        nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
+        data = self._synthetic_event()
+        result = nt._locate_sublevel_transitions(
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
+        )
+        self.assertIsInstance(result, HackyList)
+
+    def test_edges_span_full_data(self):
+        nt = _make_nt()
+        nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
+        data = self._synthetic_event()
+        result = nt._locate_sublevel_transitions(
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
+        )
+        self.assertEqual(result[0], 0)
+        self.assertEqual(result[-1], len(data))
+
+    def test_detects_at_least_one_internal_transition(self):
+        """A clear baseline -> blockage -> baseline event should produce more
+        than just a single baseline-only sublevel."""
+        nt = _make_nt()
+        nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
+        data = self._synthetic_event(blockage_level=500.0, noise_std=1.0)
+        result = nt._locate_sublevel_transitions(
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
+        )
+        # more than 2 edges means more than 1 sublevel was detected
+        self.assertGreater(len(result) - 1, 1)
+
+    def test_heights_denormalized_to_original_scale(self):
+        """After denormalization, sublevel heights should be back in the original
+        current units (hundreds of pA), not normalized z-score units (~0-1)."""
+        nt = _make_nt()
+        nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
+        data = self._synthetic_event(baseline=1000.0, blockage_level=500.0)
+        result = nt._locate_sublevel_transitions(
+            data,
+            samplerate=1_000_000,
+            padding_before=100,
+            padding_after=100,
+            baseline_mean=None,
+            baseline_std=None,
+        )
+        heights = result.self.sublevels.heights
+        # at least one height should be in the hundreds range (denormalized),
+        # not a small z-score-like value
+        self.assertTrue(any(abs(h) > 50 for h in heights))
+
+    def test_flat_event_does_not_crash(self):
+        """A perfectly flat event (no blockage) should still process without error."""
+        nt = _make_nt()
+        nt.settings["Smallest Significant Sublevel"]["Value"] = 50.0
+        rng = np.random.default_rng(1)
+        data = np.full(200, 1000.0) + rng.normal(0, 0.5, 200)
+        result = nt._locate_sublevel_transitions(
+            data,
+            samplerate=1_000_000,
+            padding_before=50,
+            padding_after=50,
+            baseline_mean=None,
+            baseline_std=None,
+        )
+        self.assertIsInstance(result, HackyList)
+
+
+# ---------------------------------------------------------------------------
+# NanoTrees – _populate_sublevel_metadata
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateSublevelMetadata(unittest.TestCase):
+    def _embeded_fixture(self):
+        """Build a 3-sublevel structure: baseline | blockage | baseline."""
+        sub = _make_sublevels((0, 50, 1000.0), (50, 150, 500.0), (150, 200, 1000.0))
+        return sub.embeded
+
+    def test_returns_dict_with_expected_keys(self):
+        nt = _make_nt()
+        data = np.concatenate(
+            [np.full(50, 1000.0), np.full(100, 500.0), np.full(50, 1000.0)]
+        )
+        embeded = self._embeded_fixture()
+        result = nt._populate_sublevel_metadata(
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
+            sublevel_starts=embeded,
+        )
+        for key in [
+            "sublevel_current",
+            "sublevel_stdev",
+            "sublevel_blockage",
+            "sublevel_duration",
+            "sublevel_start_times",
+            "sublevel_end_times",
+            "sublevel_max_deviation",
+            "sublevel_raw_ecd",
+            "sublevel_fitted_ecd",
+        ]:
+            self.assertIn(key, result)
+
+    def test_sublevel_current_matches_heights(self):
+        nt = _make_nt()
+        data = np.concatenate(
+            [np.full(50, 1000.0), np.full(100, 500.0), np.full(50, 1000.0)]
+        )
+        embeded = self._embeded_fixture()
+        result = nt._populate_sublevel_metadata(
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
+            sublevel_starts=embeded,
+        )
+        np.testing.assert_array_almost_equal(
+            result["sublevel_current"], [1000.0, 500.0, 1000.0]
+        )
+
+    def test_all_metadata_arrays_same_length(self):
+        nt = _make_nt()
+        data = np.concatenate(
+            [np.full(50, 1000.0), np.full(100, 500.0), np.full(50, 1000.0)]
+        )
+        embeded = self._embeded_fixture()
+        result = nt._populate_sublevel_metadata(
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
+            sublevel_starts=embeded,
+        )
+        lengths = {len(v) for v in result.values()}
+        self.assertEqual(len(lengths), 1)
+        self.assertEqual(lengths.pop(), 3)
+
+    def test_sublevel_duration_in_microseconds(self):
+        nt = _make_nt()
+        data = np.concatenate(
+            [np.full(50, 1000.0), np.full(100, 500.0), np.full(50, 1000.0)]
+        )
+        embeded = self._embeded_fixture()
+        # samplerate=1e6 -> dt_us = 1.0us per sample
+        result = nt._populate_sublevel_metadata(
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
+            sublevel_starts=embeded,
+        )
+        np.testing.assert_array_almost_equal(
+            result["sublevel_duration"], [50.0, 100.0, 50.0]
+        )
+
+    def test_sublevel_blockage_sign_convention(self):
+        """Blockage sublevel (lower current than baseline) should show positive
+        blockage when event_baseline > sublevel current."""
+        nt = _make_nt()
+        data = np.concatenate(
+            [np.full(50, 1000.0), np.full(100, 500.0), np.full(50, 1000.0)]
+        )
+        embeded = self._embeded_fixture()
+        result = nt._populate_sublevel_metadata(
+            data,
+            samplerate=1_000_000,
+            baseline_mean=1000.0,
+            baseline_std=10.0,
+            sublevel_starts=embeded,
+        )
+        # middle sublevel (500) is below baseline (1000) -> positive blockage
+        self.assertGreater(result["sublevel_blockage"][1], 0)
+        # outer sublevels equal the baseline -> ~zero blockage
+        self.assertAlmostEqual(result["sublevel_blockage"][0], 0.0, places=5)
+
+
+# ---------------------------------------------------------------------------
 # NanoTrees – construct_fitted_event
 # ---------------------------------------------------------------------------
 
@@ -692,14 +1065,65 @@ class TestConstructFittedEvent(unittest.TestCase):
         self.assertIsNone(nt.construct_fitted_event(0, 0))
 
     def test_missing_event_id_returns_none(self):
-        from unittest.mock import MagicMock
-
         nt = _make_nt()
         nt.sublevel_metadata = {0: {99: {}}}  # only index 99, not 0
         nt.eventfitting_status = {0: True}
         nt.event_lengths = {0: {0: 100}}
         nt.eventloader = MagicMock()
         nt.eventloader.get_samplerate.return_value = 1e6
+        self.assertIsNone(nt.construct_fitted_event(0, 0))
+
+
+class TestConstructFittedEventHappyPath(unittest.TestCase):
+    def _setup_nt(self):
+        nt = _make_nt()
+        nt.eventloader = MagicMock()
+        nt.eventloader.get_samplerate.return_value = 1_000_000.0  # 1 MHz -> dt_us=1.0
+        nt.sublevel_metadata = {
+            0: {
+                0: {
+                    "sublevel_start_times": np.array([0.0, 10.0, 20.0]),
+                    "sublevel_end_times": np.array([10.0, 20.0, 30.0]),
+                    "sublevel_current": np.array([100.0, 50.0, 100.0]),
+                }
+            }
+        }
+        nt.eventfitting_status = {0: True}
+        nt.event_lengths = {0: {0: 30}}
+        return nt
+
+    def test_returns_array_of_correct_length(self):
+        nt = self._setup_nt()
+        result = nt.construct_fitted_event(0, 0)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 30)
+
+    def test_fills_correct_current_values(self):
+        nt = self._setup_nt()
+        result = nt.construct_fitted_event(0, 0)
+        # dt_us = 1.0 (1MHz), so start/end times map 1:1 to indices
+        np.testing.assert_array_almost_equal(result[0:10], 100.0)
+        np.testing.assert_array_almost_equal(result[10:20], 50.0)
+        np.testing.assert_array_almost_equal(result[20:30], 100.0)
+
+    def test_last_end_clamped_to_true_length(self):
+        """The final sublevel's end is forcibly clamped to event_lengths, even
+        if computed end times would suggest otherwise."""
+        nt = self._setup_nt()
+        nt.sublevel_metadata[0][0]["sublevel_end_times"] = np.array([10.0, 20.0, 25.0])
+        result = nt.construct_fitted_event(0, 0)
+        # last segment should still extend to the true length (30), not 25
+        self.assertAlmostEqual(result[29], 100.0)
+
+    def test_raises_attributeerror_without_eventloader(self):
+        nt = self._setup_nt()
+        nt.eventloader = None
+        with self.assertRaises(AttributeError):
+            nt.construct_fitted_event(0, 0)
+
+    def test_no_eventfitting_status_returns_none(self):
+        nt = self._setup_nt()
+        nt.eventfitting_status = {0: False}
         self.assertIsNone(nt.construct_fitted_event(0, 0))
 
 

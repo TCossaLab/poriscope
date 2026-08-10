@@ -52,7 +52,6 @@ from PySide6.QtWidgets import (
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
-from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox
 
 
@@ -78,7 +77,6 @@ class MetadataControls(QWidget):
         self.connect_signals()
         self.logger.info("MetadataControls initialized")
         self.validate_inputs()
-        self.max_range_size = 16
         self.active_popups = {}
 
     def setupUi(self):
@@ -138,6 +136,7 @@ class MetadataControls(QWidget):
             "Select Plot Type",
             "Histogram",
             "Normalized Histogram",
+            "Categorical Histogram",
             "Kernel Density Plot",
             "Capture Rate",
             "Heatmap",
@@ -229,16 +228,25 @@ class MetadataControls(QWidget):
         # Defer this until after the window is visible
         QTimer.singleShot(0, match_widths)
 
-        # 2-3 QH EVENT IDEX + BINS + SIZES
+        # 2-3 QH EVENT ID + # EVENTS TO PLOT + BINS + SIZES
 
         # --- ROW 2: Labels Row ---
         labels_row = QHBoxLayout()
         labels_row.setContentsMargins(0, 0, 0, 0)
         labels_row.setSpacing(5)
 
-        # Left column: EVENT INDEX label
-        event_index_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
-        labels_row.addWidget(event_index_label, 1)
+        # Left column: EVENT ID + # EVENTS TO PLOT labels
+        event_labels_layout = QHBoxLayout()
+        event_labels_layout.setContentsMargins(0, 0, 0, 0)
+        event_labels_layout.setSpacing(5)
+
+        event_id_label = self.createLabel(self.groupBox, 12, "EVENT INDEX")
+        n_events_label = self.createLabel(self.groupBox, 12, "# EVENTS TO PLOT")
+
+        event_labels_layout.addWidget(event_id_label)
+        event_labels_layout.addWidget(n_events_label)
+
+        labels_row.addLayout(event_labels_layout, 1)
 
         # Right column: BINS + SIZES labels
         right_labels = QHBoxLayout()
@@ -262,11 +270,32 @@ class MetadataControls(QWidget):
         inputs_row.setContentsMargins(0, 0, 0, 0)
         inputs_row.setSpacing(5)
 
-        # Left column: EVENT INDEX input
-        self.event_index_lineEdit = IntegerRangeLineEdit(self.groupBox)
-        self.event_index_lineEdit.setObjectName("eventIndexLineEdit")
-        self.event_index_lineEdit.setPlaceholderText("e.g. 0-15")
-        inputs_row.addWidget(self.event_index_lineEdit, 1)
+        # Left column: EVENT ID + # EVENTS TO PLOT inputs
+        event_inputs_layout = QHBoxLayout()
+        event_inputs_layout.setContentsMargins(0, 0, 0, 0)
+        event_inputs_layout.setSpacing(5)
+
+        # --- Validators for event_id (allows 0) and n_events (positive only) fields ---
+        event_id_regex = QRegularExpression(r"^(0|[1-9]\d*)$")
+        self.event_id_validator = QRegularExpressionValidator(event_id_regex)
+
+        pos_int_regex = QRegularExpression(r"^[1-9]\d*$")
+        self.pos_int_validator = QRegularExpressionValidator(pos_int_regex)
+
+        self.event_id_lineEdit = QLineEdit(self.groupBox)
+        self.event_id_lineEdit.setObjectName("eventIdLineEdit")
+        self.event_id_lineEdit.setValidator(self.event_id_validator)
+        self.event_id_lineEdit.setPlaceholderText("0")
+
+        self.n_events_lineEdit = QLineEdit(self.groupBox)
+        self.n_events_lineEdit.setObjectName("nEventsLineEdit")
+        self.n_events_lineEdit.setValidator(self.pos_int_validator)
+        self.n_events_lineEdit.setPlaceholderText("1")
+
+        event_inputs_layout.addWidget(self.event_id_lineEdit)
+        event_inputs_layout.addWidget(self.n_events_lineEdit)
+
+        inputs_row.addLayout(event_inputs_layout, 1)
 
         # Right column: BINS + SIZES inputs
         right_inputs = QHBoxLayout()
@@ -304,7 +333,8 @@ class MetadataControls(QWidget):
         self.db_loader_comboBox.setMinimumWidth(160)
         self.selection_tree_button.setFixedWidth(50)
         self.plot_type_comboBox.setMinimumWidth(200)
-        self.event_index_lineEdit.setMinimumWidth(160)
+        self.event_id_lineEdit.setMinimumWidth(100)
+        self.n_events_lineEdit.setMinimumWidth(60)
         self.bins_lineEdit.setMinimumWidth(100)
 
         # COLUMN 1: AXIS
@@ -611,7 +641,7 @@ class MetadataControls(QWidget):
     def create_info_button(self, parent, comboBox, info_text, metaclass):
         """Creates an info button linked to the corresponding combobox."""
         button = QToolButton(parent)
-        button.setIcon(get_icon("edit.png"))
+        button.setIcon(get_icon("pencil-square.svg"))
         button.setIconSize(QSize(16, 16))
         button.setStyleSheet("border: none; background: transparent;")
         button.setToolTip(info_text)
@@ -636,7 +666,7 @@ class MetadataControls(QWidget):
     def create_add_button(self, parent, comboBox, add_text, metaclass):
         """Creates an add button linked to the corresponding combobox."""
         button = QToolButton(parent)
-        button.setIcon(get_icon("plus-square-dotted.svg"))
+        button.setIcon(get_icon("plus-square.svg"))
         button.setIconSize(QSize(16, 16))
         button.setStyleSheet("border: none; background: transparent;")
         button.setToolTip(add_text)
@@ -673,7 +703,7 @@ class MetadataControls(QWidget):
 
     def create_filter_info_button(self, parent, comboBox, tooltip):
         button = QToolButton(parent)
-        button.setIcon(get_icon("edit.png"))
+        button.setIcon(get_icon("pencil-square.svg"))
         button.setIconSize(QSize(16, 16))
         button.setStyleSheet("border: none; background: transparent;")
         button.setToolTip(tooltip)
@@ -681,7 +711,7 @@ class MetadataControls(QWidget):
 
     def create_add_filter_button(self, parent, comboBox, tooltip):
         button = QToolButton(parent)
-        button.setIcon(get_icon("plus-square-dotted.svg"))
+        button.setIcon(get_icon("plus-square.svg"))
         button.setIconSize(QSize(16, 16))
         button.setStyleSheet("border: none; background: transparent;")
         button.setToolTip(tooltip)
@@ -781,16 +811,29 @@ class MetadataControls(QWidget):
         self.y_axis_comboBox.addItems(axes)
         self.z_axis_comboBox.addItems(axes)
 
-        # If the previously selected item exists in the new list, set it as the current selection
+        # If the previously selected item exists in the new list, restore it.
+        # Otherwise fall back to a distinct default per axis so X/Y/Z don't
+        # all silently collide on the same column (index 0), which would
+        # make Scatterplot/Heatmap/3D Scatterplot fail their "columns must
+        # differ" check with no obvious explanation.
         if current_x in axes:
-            index = axes.index(current_x)
-            self.x_axis_comboBox.setCurrentIndex(index)
+            self.x_axis_comboBox.setCurrentIndex(axes.index(current_x))
+        elif axes:
+            self.x_axis_comboBox.setCurrentIndex(0)
+
         if current_y in axes:
-            index = axes.index(current_y)
-            self.y_axis_comboBox.setCurrentIndex(index)
+            self.y_axis_comboBox.setCurrentIndex(axes.index(current_y))
+        elif len(axes) > 1:
+            self.y_axis_comboBox.setCurrentIndex(1)
+        elif axes:
+            self.y_axis_comboBox.setCurrentIndex(0)
+
         if current_z in axes:
-            index = axes.index(current_z)
-            self.z_axis_comboBox.setCurrentIndex(index)
+            self.z_axis_comboBox.setCurrentIndex(axes.index(current_z))
+        elif len(axes) > 2:
+            self.z_axis_comboBox.setCurrentIndex(2)
+        elif axes:
+            self.z_axis_comboBox.setCurrentIndex(0)
 
     def update_units(self, comboBox, units_label):
         """Update units based on the selected column in the comboBox and emit an update signal."""
@@ -819,7 +862,7 @@ class MetadataControls(QWidget):
 
     def is_placeholder_item(self, comboBox):
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in ["No Database"]
+        return comboBox.currentText() in ["No Event Database"]
 
     def show_plugin_edit_manager(self, comboBox, metaclass):
         """Displays the plugin manager with details for the selected item from the combobox."""
@@ -908,7 +951,8 @@ class MetadataControls(QWidget):
         # Ensure that validate_inputs is called when inputs change
         self.db_loader_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.plot_type_comboBox.currentIndexChanged.connect(self.validate_inputs)
-        self.event_index_lineEdit.textChanged.connect(self.validate_inputs)
+        self.event_id_lineEdit.textChanged.connect(self.validate_inputs)
+        self.n_events_lineEdit.textChanged.connect(self.validate_inputs)
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.bins_lineEdit.textChanged.connect(self.validate_inputs)
         self.raw_checkbox.stateChanged.connect(self.validate_inputs)  # add here
@@ -924,12 +968,21 @@ class MetadataControls(QWidget):
         # Initialize with default values to handle possible None values
         parameters = {}
         try:
+            # event_id: use value from field if non-empty, else default to 0
+            event_id_text = self.event_id_lineEdit.text().strip()
+            event_id = int(event_id_text) if event_id_text else None
+
+            # n_events: use value from field if non-empty, else default to 1
+            n_events_text = self.n_events_lineEdit.text().strip()
+            n_events = int(n_events_text) if n_events_text else 1
+
             parameters = {
                 "db_loader": self.db_loader_comboBox.currentText()
                 or "No Event Database",
                 "plot_type": self.plot_type_comboBox.currentText()
                 or "Select Plot Type",
-                "event_index": [],
+                "event_id": event_id,
+                "n_events": n_events,
                 "sizes": self.sizes_checkbox.isChecked(),
                 "raw": self.raw_checkbox.isChecked(),
                 "x_axis": self.x_axis_comboBox.currentText() or None,
@@ -959,10 +1012,6 @@ class MetadataControls(QWidget):
             ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
-            # Collect event index values if valid
-            if self.event_index_lineEdit.isValid():
-                parameters["event_index"] = self.event_index_lineEdit.get_values()
-
         except AttributeError:
             pass
 
@@ -990,9 +1039,23 @@ class MetadataControls(QWidget):
         y_axis = self.y_axis_comboBox.currentText()
         z_axis = self.z_axis_comboBox.currentText()
         filter_selected = self.filter_comboBox.getSelectedItems()
-        event_index_valid = self.event_index_lineEdit.isValid()
+        event_id_text = self.event_id_lineEdit.text().strip()
+        event_id_valid = (not event_id_text) or (
+            event_id_text.isdigit() and int(event_id_text) >= 0
+        )
 
         db_loader_loaded = True
+        # Plot types below need 2+ distinct axes; catch duplicate axis
+        # selections early instead of letting _overlay_plot silently bail.
+        needs_two_axes = plot_type in ("Scatterplot", "Heatmap")
+        needs_three_axes = plot_type == "3D Scatterplot"
+        duplicate_axes = False
+        if needs_two_axes and x_axis and y_axis and x_axis == y_axis:
+            duplicate_axes = True
+        elif needs_three_axes:
+            chosen = [a for a in (x_axis, y_axis, z_axis) if a]
+            if len(chosen) != len(set(chosen)):
+                duplicate_axes = True
         is_load_valid = True
         is_save_plot_valid = True
         is_export_valid = True
@@ -1031,11 +1094,18 @@ class MetadataControls(QWidget):
             is_load_valid = False
             is_update_plot_valid = False
 
-        if not event_index_valid:
-            self.logger.debug("Event index is invalid")
+        if not event_id_valid:
+            self.logger.debug("Event ID is invalid")
             is_plot_events_valid = (
-                False  # Disable Plot Events button if event index is not valid
+                False  # Disable Plot Events button if event ID is not valid
             )
+
+        if duplicate_axes:
+            self.logger.debug(
+                f"Duplicate axis selection for plot type {plot_type}: "
+                f"x={x_axis}, y={y_axis}, z={z_axis}"
+            )
+            is_update_plot_valid = False
 
         if not filter_selected:
             is_save_edit_delete_filter_valid = False
@@ -1129,10 +1199,16 @@ class MetadataControls(QWidget):
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
 
-    def set_event_index_input(self, value: str):
-        self.event_index_lineEdit.blockSignals(True)
-        self.event_index_lineEdit.set_range(value)
-        self.event_index_lineEdit.blockSignals(False)
+    def set_event_id_input(self, value: int) -> None:
+        """
+        Update the event_id field with the snapped event_id after navigation.
+
+        :param value: The event_id to display.
+        :type value: int
+        """
+        self.event_id_lineEdit.blockSignals(True)
+        self.event_id_lineEdit.setText(str(value))
+        self.event_id_lineEdit.blockSignals(False)
         self.validate_inputs()
 
     def update_filters(self, filters):
@@ -1148,3 +1224,5 @@ class MetadataControls(QWidget):
         for selection in current_selections:
             if selection in [str(i) for i in filters]:
                 self.filter_comboBox.selectItem(selection)
+
+

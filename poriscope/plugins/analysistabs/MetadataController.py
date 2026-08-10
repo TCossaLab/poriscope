@@ -80,6 +80,16 @@ class MetadataController(MetaController):
         self.view.set_table_by_column(table)
 
     @log(logger=logger)
+    def relay_column_type(self, column_type):
+        """
+        Relay the data type of a specified column to the view
+
+        :param table: Dictionary representing a table organized by column.
+        :type table: dict
+        """
+        self.view.set_column_type(column_type)
+
+    @log(logger=logger)
     def update_features(
         self,
         vertical=None,
@@ -388,3 +398,23 @@ class MetadataController(MetaController):
         :type error_msg: str
         """
         self.view.on_raw_filter_validated(valid, error_msg)
+
+    @log(logger=logger)
+    def relay_query_result(self, result):
+        """
+        Relay the result of a direct DB query to the view.
+
+        :param result: DataFrame returned by query_database_directly.
+        :type result: Optional[pd.DataFrame]
+        """
+        self.view.relay_query_result(result)
+
+    @log(logger=logger)
+    def relay_experiment_id(self, exp_id):
+        """
+        Relay a resolved experiment id to the view.
+
+        :param exp_id: Integer experiment id.
+        :type exp_id: Optional[int]
+        """
+        self.view.relay_experiment_id(exp_id)

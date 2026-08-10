@@ -164,21 +164,42 @@ class FloatRangeLineEdit(BaseLineEdit):
 
     def get_duration(self):
         """Calculates and returns the duration of the first valid range."""
-        values = self.get_values()
-        if values:
-            return max(values) - min(values)
+        text = self.text().strip()
+        if not text:
+            return None
+        first_segment = text.split(",")[0].strip()
+        if "-" in first_segment:
+            try:
+                start, end = map(float, first_segment.split("-"))
+                return end - start
+            except ValueError:
+                pass
         return None
 
     def set_range(self, start: float, duration: float):
         """
         Sets the displayed text to a formatted range like '1.0-4.0' or '1-4' depending on whether
-        the user originally used floats.
+        the values are whole numbers.
         """
         end = start + duration
-        if self._used_floats:
-            self.setText(f"{start:.1f}-{end:.1f}")
+        if start == int(start) and end == int(end):
+            self.setText(f"{int(start)}-{int(end)}")
         else:
-            self.setText(f"{int(round(start))}-{int(round(end))}")
+            # Use enough decimal places to represent both values cleanly
+            decimal_places = max(
+                (
+                    len(str(round(start, 10)).rstrip("0").split(".")[-1])
+                    if "." in str(round(start, 10))
+                    else 0
+                ),
+                (
+                    len(str(round(end, 10)).rstrip("0").split(".")[-1])
+                    if "." in str(round(end, 10))
+                    else 0
+                ),
+            )
+            decimal_places = max(decimal_places, 1)
+            self.setText(f"{start:.{decimal_places}f}-{end:.{decimal_places}f}")
 
 
 # Main application setup

@@ -25,15 +25,13 @@
 # Alejandra Carolina González González
 
 import logging
-import os
 import sys
-from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QAction, QIcon, QTextCursor
+from PySide6.QtGui import QAction, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -94,7 +92,6 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.available_plugins = available_plugins
         self.pages = {}
         self.received_analysis_tabs.connect(self.populate_plugins_menu)
-        self.icon_path = Path(Path(__file__).resolve().parent, "configs", "icons")
         self.setup_menubar()
         self._milestone_dialog = None
         self._expected_next_view = None
@@ -195,7 +192,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     def connect_signals(self):
         icon_text_signals = [
             ("rawDataToggled", self.text_menu_widget.setRawDataChecked),
-            ("statsToggled", self.text_menu_widget.setStatsChecked),
+            ("eventAnalysisToggled", self.text_menu_widget.setEventAnalysisChecked),
             ("metadataToggled", self.text_menu_widget.setMetadataChecked),
             ("pluginsToggled", self.text_menu_widget.setPluginsChecked),
             ("helpToggled", self.text_menu_widget.setHelpChecked),
@@ -214,7 +211,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
         page_switch_signals = [
             ("switchToRawData", self.on_raw_data_view_click),
-            ("switchToStatistics", self.on_stats_click),
+            ("switchToEventAnalysis", self.on_event_analysis_click),
             ("switchToMetadata", self.on_metadata_click),
             ("switchToSettings", self.on_settings_button_click),
             ("switchToHelp", self.on_help_button_click),
@@ -393,9 +390,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     def add_menu_action(self, menu, action_name, slot):
-        action = QAction(
-            QIcon(os.path.join(self.icon_path, "fire.png")), action_name, self
-        )
+        action = QAction(action_name, self)
         action.setStatusTip(action_name)
         action.triggered.connect(slot)
         menu.addAction(action)
@@ -403,9 +398,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def add_plugin_actions(self, menu, plugin_type, slot):
         for name in self.available_plugins[plugin_type]:
-            action = QAction(
-                QIcon(os.path.join(self.icon_path, "fire.png")), name, self
-            )
+            action = QAction(name, self)
             action.setStatusTip(f"Load a new {name}")
             action.triggered.connect(
                 lambda checked=False, name=name: slot(subclass=name)
@@ -496,16 +489,19 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_raw_data_view_click(self):
         self.on_load_analysis_tab_button_click("RawDataController")
+        self.sync_sidebar_highlight("RawDataView")
         self.switch_to_page("RawDataView")
 
     @log(logger=logger)
-    def on_stats_click(self):
+    def on_event_analysis_click(self):
         self.on_load_analysis_tab_button_click("EventAnalysisController")
+        self.sync_sidebar_highlight("EventAnalysisView")
         self.switch_to_page("EventAnalysisView")
 
     @log(logger=logger)
     def on_metadata_click(self):
         self.on_load_analysis_tab_button_click("MetadataController")
+        self.sync_sidebar_highlight("MetadataView")
         self.switch_to_page("MetadataView")
 
     @log(logger=logger)
@@ -568,6 +564,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     def handle_menu_click(self, page_name):
         """Handles clicks on the menu items and switches to the correct view page."""
         self.logger.info(f"Menu item clicked: {page_name}")
+        self.sync_sidebar_highlight(page_name)
         self.switch_to_page(page_name)
 
     @log(logger=logger)
@@ -587,6 +584,13 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_load_analysis_tab_button_click(self, subclass):
         self.instantiate_analysis_tab.emit(subclass)
+        dedicated_view_for_subclass = {
+            "RawDataController": "RawDataView",
+            "EventAnalysisController": "EventAnalysisView",
+            "MetadataController": "MetadataView",
+        }
+        page_name = dedicated_view_for_subclass.get(subclass, "Plugins")
+        self.sync_sidebar_highlight(page_name)
 
     # Page management
     @log(logger=logger)
@@ -723,6 +727,18 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.logger.warning(
                 f"Attempted to switch to non-existent page: {page_name}"
             )
+
+    @log(logger=logger)
+    def sync_sidebar_highlight(self, page_name):
+        """Ensure the correct sidebar/menu button is checked for the given page."""
+        dedicated = {
+            "RawDataView": "setRawDataChecked",
+            "EventAnalysisView": "setEventAnalysisChecked",
+            "MetadataView": "setMetadataChecked",
+        }
+        setter_name = dedicated.get(page_name, "setPluginsChecked")
+        getattr(self.icon_menu_widget, setter_name)(True)
+        getattr(self.text_menu_widget, setter_name)(True)
 
     @log(logger=logger)
     def on_abort_analysis_click(self):
