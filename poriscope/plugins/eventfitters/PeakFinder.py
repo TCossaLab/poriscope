@@ -2202,8 +2202,8 @@ class PeakFinder(MetaEventFitter):
                 classification_report += f"\n  Total classified: {total_td} events"
                 classification_report += f"\n  Forward: {fwd} ({fwd/total_td:.1%})"
                 classification_report += f"\n  Backward: {bwd} ({bwd/total_td:.1%})"
-                classification_report += f"\n  Lower center (log10 ECD): {td['lower_center']:.3f}"
-                classification_report += f"\n  Higher center (log10 ECD): {td['higher_center']:.3f}"
+                classification_report += f"\n  Lower center : {td['lower_center']:.3f}"
+                classification_report += f"\n  Higher center : {td['higher_center']:.3f}"
                 classification_report += f"\n  Threshold: {td['threshold']:.3f}"
         else:
             classification_report += "\n  Not run"
@@ -2690,8 +2690,7 @@ class PeakFinder(MetaEventFitter):
 
             for event_index, sublevel_data in self.sublevel_metadata[ch].items():
                 filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
-                blockages = np.asarray(sublevel_data.get("max_blockage", []), dtype=float)
-                unfolded_level = self.event_metadata[ch][event_index]["unfolded_level"]
+                prominences = np.asarray(sublevel_data.get("prominence", []), dtype=float)
                 peak_ids = sublevel_data.get("peak_id", [])
 
                 if "classified" not in sublevel_data or len(sublevel_data["classified"]) != len(peak_ids):
@@ -2702,18 +2701,18 @@ class PeakFinder(MetaEventFitter):
                 for peak_index, peak_id in enumerate(peak_ids):
                     if peak_id is None or (isinstance(peak_id, float) and np.isnan(peak_id)):
                         continue
-                    if peak_index >= len(filtered_values) or peak_index >= len(blockages):
+                    if peak_index >= len(filtered_values) or peak_index >= len(prominences):
                         continue
 
                     peak_type = filtered_values[peak_index]
-                    if np.isnan(peak_type) or int(peak_type) not in {1,3}:
+                    if np.isnan(peak_type) or int(peak_type) not in {1, 2, 3}:
                         continue
 
-                    blockage = blockages[peak_index]
-                    if np.isnan(blockage):
+                    prominence = prominences[peak_index]
+                    if np.isnan(prominence):
                         continue
 
-                    prominence_values.append(float(blockage)-float(unfolded_level))
+                    prominence_values.append(float(prominence))
                     prominence_refs.append((ch, event_index, peak_index))
 
         if not prominence_values:
@@ -2724,18 +2723,15 @@ class PeakFinder(MetaEventFitter):
 
         prominence_array = np.asarray(prominence_values, dtype=np.float64)
         prominence_reshaped = prominence_array.reshape(-1, 1)
-        
+
         candidate_models: List[Tuple[float, GaussianMixture]] = []
         for n_components in (1, 2):
             if len(prominence_array) < n_components:
                 continue
-            labels, centers, gmm = self.classify_1d_distribution(
-            prominence_reshaped,
-            n_components=n_components,
-            return_centers=True,
-            )
+            gmm = GaussianMixture(n_components=n_components, random_state=42)
+            gmm.fit(prominence_reshaped)
             candidate_models.append((gmm.bic(prominence_reshaped), gmm))
-            
+
         if not candidate_models:
             self.logger.warning("Unable to fit a prominence classification model")
             return
@@ -2991,23 +2987,27 @@ class PeakFinder(MetaEventFitter):
                 cumulative_ecds = np.asarray(sublevel_data.get("sublevel_cumulative_ecd", []), dtype=float)
 
                 if len(cumulative_ecds) == 0:
+                    self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - missing cumulative_ecds")
                     continue
 
                 type3_mask = ~np.isnan(filtered_values) & (filtered_values.astype(int) == 3)
                 type3_indices = np.where(type3_mask)[0]
                 if len(type3_indices) == 0:
+                    self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - no type-3 peaks")
                     continue
 
                 first_type3_idx = type3_indices[0]
                 last_type3_idx = type3_indices[-1]
 
                 if first_type3_idx >= len(cumulative_ecds) or last_type3_idx >= len(cumulative_ecds):
+                    self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - type-3 index out of bounds (first={first_type3_idx}, last={last_type3_idx}, len={len(cumulative_ecds)})")
                     continue
 
                 ecd_before = float(cumulative_ecds[first_type3_idx])
                 ecd_after = float(cumulative_ecds[-1] - cumulative_ecds[last_type3_idx])
 
                 if ecd_before <= 0 or ecd_after <= 0:
+                    self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - invalid ECD values (before={ecd_before}, after={ecd_after})")
                     continue
 
                 pre_peak3_ecds.append(np.log10(ecd_before / ecd_after))
