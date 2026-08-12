@@ -113,7 +113,6 @@ class PeakFinder(MetaEventFitter):
             "Value": 1,
             "Min": 1,
         }
-        settings["Filter Peaks"] = {"Type": bool, "Value": True}
         settings["Lower Filter Threshold"] = {
             "Type": int,
             "Value": -3,
@@ -128,7 +127,6 @@ class PeakFinder(MetaEventFitter):
             "Max": 10,
             "Units": "σ",
         }
-
         settings["Peak to Peak Distance Ratio"] = {
             "Type": float,
             "Value": 10.0,  # Default to 10% of event length
@@ -143,12 +141,6 @@ class PeakFinder(MetaEventFitter):
             "Max": 99,  # Maximum 99% of event
             "Units": "%",
         }
-
-        settings["Classify Levels"] = {
-            "Type": bool,
-            "Value": True,
-        }
-
         settings["Min Carrier Blockage"] = {
             "Type": float,
             "Value": 300.0,  # Default minimum blockage for classification
@@ -160,12 +152,6 @@ class PeakFinder(MetaEventFitter):
             "Type": bool,
             "Value": False,
         }
-
-        # settings["Plateau Size"] = {
-        #     "Type": str,
-        #     "Value": "None",  # Default to no plateau size filtering. Can be "None", a single value (e.g. "5.0"), or a range (e.g. "2.0,10.0")
-        #     "Units": "us",
-        # }
         return settings
 
     @log(logger=logger)
@@ -325,10 +311,6 @@ class PeakFinder(MetaEventFitter):
             )
             return None, None, None, None, None, None
         try:
-            value = self.settings.get("Plot Features", {}).get("Value")
-            if self.settings is None or value == "None":
-                return None, None, None, None, None, None
-
             baseline = self.event_metadata[channel][index]["baseline_current"]
             baseline_stdev = self.event_metadata[channel][index]["baseline_stdev"]
             t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
@@ -419,10 +401,6 @@ class PeakFinder(MetaEventFitter):
                     )
 
                     j += 1
-
-            if value == "Some":
-                bases = bases[:2]
-                hlabel = hlabel[:2]
 
         except KeyError:
             self.logger.info(
@@ -655,72 +633,68 @@ class PeakFinder(MetaEventFitter):
                 "PeakFinder requires that the standard deviation and mean of the local baseline be reported and is unable to calculate it for this event"
             )
 
-
         
+        # edges=self.redefine_padding(data, samplerate, baseline_std)
+        # padding_before = edges[1]
+        # padding_after = len(data) - edges[-2]
         
-        edges=self.redefine_padding(data, samplerate, baseline_std)
-        padding_before = edges[1]
-        padding_after = len(data) - edges[-2]
-        
-        if len(data)==padding_before or len(data)==padding_after:
+        if padding_before is None or padding_after is None or len(data)==padding_before or len(data)==padding_after:
             raise ValueError("No data available for peak detection")
 
-        # # Find longest continuous segment above threshold 
-        # # This trims the event to start/end at the longest above-threshold blockage
+        # Find longest continuous segment above threshold 
+        # This trims the event to start/end at the longest above-threshold blockage
         
-        # threshold = min(abs(low_threshold), abs(high_threshold),3) * baseline_std
-        # event_data = data[padding_before:-padding_after]
-        # above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
+        threshold = min(abs(low_threshold), abs(high_threshold),3) * baseline_std
+        event_data = data[padding_before:-padding_after]
+        above_threshold = np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)) > threshold
         
-        # if not np.any(above_threshold):
-        #     raise ValueError("No data above threshold found")
+        if not np.any(above_threshold):
+            raise ValueError("No data above threshold found")
 
-        # # Find all continuous segments
-        # diff = np.diff(np.concatenate(([False], above_threshold, [False])).astype(int))
-        # segment_starts = np.where(diff == 1)[0]
-        # segment_ends = np.where(diff == -1)[0]
+        # Find all continuous segments
+        diff = np.diff(np.concatenate(([False], above_threshold, [False])).astype(int))
+        segment_starts = np.where(diff == 1)[0]
+        segment_ends = np.where(diff == -1)[0]
 
-        # # Find the longest segment
-        # segment_lengths = segment_ends - segment_starts
-        # longest_segment_idx = np.argmax(segment_lengths)
-        # longest_segment_length = segment_lengths[longest_segment_idx]
+        # Find the longest segment
+        segment_lengths = segment_ends - segment_starts
+        longest_segment_idx = np.argmax(segment_lengths)
+        longest_segment_length = segment_lengths[longest_segment_idx]
 
-        # # Check if longest segment meets minimum length requirement
-        # # Behavior depends on whether classification is enabled
-        # classify_levels = self.settings.get("Classify Levels", {}).get("Value", True)
-        
+        # Check if longest segment meets minimum length requirement
+        min_segment_length = 100
+        if longest_segment_length < min_segment_length:
+           raise ValueError("No segment above threshold meets minimum length requirement")       
 
 
+        # Get the start and end indices of the longest segment (relative to event_data)
+        longest_start_idx = segment_starts[longest_segment_idx]
+        longest_end_idx = segment_ends[longest_segment_idx]
 
-        # # Get the start and end indices of the longest segment (relative to event_data)
-        # longest_start_idx = segment_starts[longest_segment_idx]
-        # longest_end_idx = segment_ends[longest_segment_idx]
+        # Adjust padding to trim to the longest segment only
+        # New effective padding_before includes original padding plus everything before longest segment
+        new_padding_before = padding_before + longest_start_idx
+        # New effective padding_after includes original padding plus everything after longest segment
+        new_padding_after = padding_after + (len(event_data) - longest_end_idx)
 
-        # # Adjust padding to trim to the longest segment only
-        # # New effective padding_before includes original padding plus everything before longest segment
-        # new_padding_before = padding_before + longest_start_idx
-        # # New effective padding_after includes original padding plus everything after longest segment
-        # new_padding_after = padding_after + (len(event_data) - longest_end_idx)
-
-        # # Use adjusted paddin gs for the rest of processing
-        # padding_before = new_padding_before
-        # padding_after = new_padding_after
+        # Use adjusted paddin gs for the rest of processing
+        padding_before = new_padding_before
+        padding_after = new_padding_after
         
 
 
         # Method 2: Signal-based minimum (relative to carrier blockage depth)
         # Calculate the carrier level blockage (median of the trimmed event)
         trimmed_data = data[padding_before:-padding_after]
-        carrier_blockage = np.abs(np.median(trimmed_data) - baseline_mean)
-    
+        carrier_blockage,_  = self.find_mode_blockage_level(trimmed_data, baseline_mean, baseline_std)
         min_segment_length = 100
 
         # as long as at least one segment exists above threshold
-        if len(trimmed_data) < 1 or len(trimmed_data) < min_segment_length or carrier_blockage < self.settings["Min Carrier Blockage"]["Value"] or carrier_blockage < 6 * baseline_std:
-                raise ValueError("No Carrier Level Found")
+        if len(trimmed_data) < min_segment_length:
+            raise ValueError("Too short of a segment above threshold to analyze") 
+        if carrier_blockage < self.settings["Min Carrier Blockage"]["Value"]:
+            raise ValueError("No Carrier Level Found")
 
-
-        
         # Calculate minimum prominence and height from the user thresholds.
         # Keep the carrier-aware guardrails so peaks still scale with signal depth.
         min_prom_noise = max(abs(low_threshold), abs(high_threshold)) * baseline_std
@@ -745,9 +719,7 @@ class PeakFinder(MetaEventFitter):
         trimmed_event_length = len(trimmed_data)  # Length in samples
 
         # Get user-specified window length percentage and convert to ratio
-        window_length_percentage = self.settings.get(
-            "Window Length Percentage", {}
-        ).get("Value", 2.2)
+        window_length_percentage = self.settings.get("Window Length Percentage", {}).get("Value", 2.2)
         window_length_ratio = window_length_percentage / 100.0  # Convert % to fraction
 
         # Calculate wlen directly from user setting
@@ -764,13 +736,6 @@ class PeakFinder(MetaEventFitter):
         signal_step = max(min_prom, min_height)
         snr = signal_step / baseline_std if baseline_std > 0 else 10.0
 
-        # Get plateau size setting and convert from microseconds to samples
-        #plateau_size_str = self.settings.get("Plateau Size", {}).get("Value", "None")
-
-        # Parse the plateau size string
-        # Can be "None", a single value "5.0", or a range "2.0,10.0"
-        #plateau_size = None
-
         self.logger.debug(
             f"Peak detection parameters: dt_us={dt_us:.3f}, baseline_std={baseline_std:.2f}, "
             f"carrier_blockage={carrier_blockage:.2f} pA, "
@@ -783,7 +748,7 @@ class PeakFinder(MetaEventFitter):
             f"window_percentage={window_length_percentage:.1f}%, "
             f"SNR={snr:.2f}, wlen={wlen} samples ({wlen*dt_us:.2f} us), "
             f"min_dist={min_dist} samples ({min_dist*dt_us:.2f} us), "
-            #f"plateau_size={plateau_size}"
+        
         )
 
         """
@@ -863,7 +828,6 @@ class PeakFinder(MetaEventFitter):
             width=width,
             distance=min_dist,
             rel_height=rel_height,
-            # **({"plateau_size": plateau_size} if plateau_size > 0 else {}),
         )
 
         if len(peaks) == 0:
@@ -1345,35 +1309,6 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
-
-        
-        # # get plateau size (flat top of peak in samples)
-        # sublevel_metadata["plateau_size"] = np.array(
-        #     [
-        #         (
-        #             sublevel_starts[i]["plateau_size"]
-        #             if "peak" in sublevel_starts[i]["type"]
-        #             and sublevel_starts[i]["plateau_size"] is not None
-        #             else np.nan
-        #         )
-        #         for i in range(num_states)
-        #     ],
-        #     dtype=np.float64,
-        # )
-
-        ## get plateau size in microseconds (converted from samples)
-        # sublevel_metadata["plateau_size_us"] = np.array(
-        #     [
-        #         (
-        #             sublevel_starts[i]["plateau_size"] * dt_us
-        #             if "peak" in sublevel_starts[i]["type"]
-        #             and sublevel_starts[i]["plateau_size"] is not None
-        #             else np.nan
-        #         )
-        #         for i in range(num_states)
-        #     ],
-        #     dtype=np.float64,
-        # )
 
         return sublevel_metadata
 
