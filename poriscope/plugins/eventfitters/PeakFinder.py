@@ -115,21 +115,21 @@ class PeakFinder(MetaEventFitter):
         }
         settings["Lower Filter Threshold"] = {
             "Type": int,
-            "Value": -3,
+            "Value": -4,
             "Min": -10,
             "Max": 10,
             "Units": "σ",
         }
         settings["Higher Filter Threshold"] = {
             "Type": int,
-            "Value": 3,
+            "Value": 2,
             "Min": -10,
             "Max": 10,
             "Units": "σ",
         }
         settings["Peak to Peak Distance Ratio"] = {
             "Type": float,
-            "Value": 10.0,  # Default to 10% of event length
+            "Value": 5.0,  # Default to 10% of event length
             "Min": 0.01,
             "Max": 99,  # Maximum 99% of event
             "Units": "%",
@@ -635,8 +635,10 @@ class PeakFinder(MetaEventFitter):
 
         
         # edges=self.redefine_padding(data, samplerate, baseline_std)
-        # padding_before = edges[1]
-        # padding_after = len(data) - edges[-2]
+        # cusum_padding_before = edges[1]
+        # cusum_padding_after = len(data) - edges[-2]
+        # print("Finding padding")
+        # print(cusum_padding_before, cusum_padding_after)
         
         if padding_before is None or padding_after is None or len(data)==padding_before or len(data)==padding_after:
             raise ValueError("No data available for peak detection")
@@ -666,7 +668,6 @@ class PeakFinder(MetaEventFitter):
         if longest_segment_length < min_segment_length:
            raise ValueError("No segment above threshold meets minimum length requirement")       
 
-
         # Get the start and end indices of the longest segment (relative to event_data)
         longest_start_idx = segment_starts[longest_segment_idx]
         longest_end_idx = segment_ends[longest_segment_idx]
@@ -680,7 +681,7 @@ class PeakFinder(MetaEventFitter):
         # Use adjusted paddin gs for the rest of processing
         padding_before = new_padding_before
         padding_after = new_padding_after
-        
+        # print(padding_before, padding_after)
 
 
         # Method 2: Signal-based minimum (relative to carrier blockage depth)
@@ -2658,6 +2659,11 @@ class PeakFinder(MetaEventFitter):
 
         prominence_array = np.asarray(prominence_values, dtype=np.float64)
         prominence_reshaped = prominence_array.reshape(-1, 1)
+        
+        #print peak data for debugging
+        # with open("prominence_data.txt", 'w', encoding='utf-8') as f:
+        #     for i in range(len(prominence_reshaped)):
+        #        f.write(str(prominence_reshaped[i][0]) + '\n')
 
         candidate_models: List[Tuple[float, GaussianMixture]] = []
         for n_components in (1, 2):
