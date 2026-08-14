@@ -197,7 +197,7 @@ class TestWidgetFactories:
 class TestPlaceholderAndToggle:
     def test_is_placeholder_no_database(self, mc):
         mc.db_loader_comboBox.clear()
-        mc.db_loader_comboBox.addItem("No Database")
+        mc.db_loader_comboBox.addItem("No Event Database")
         assert mc.is_placeholder_item(mc.db_loader_comboBox)
 
     def test_is_placeholder_real_item(self, mc):
@@ -214,7 +214,7 @@ class TestPlaceholderAndToggle:
 
     def test_toggle_info_button_disables_with_placeholder(self, mc):
         mc.db_loader_comboBox.clear()
-        mc.db_loader_comboBox.addItem("No Database")
+        mc.db_loader_comboBox.addItem("No Event Database")
         btn = mc.createButton(mc, "test")
         mc.toggle_info_button(btn, mc.db_loader_comboBox)
         assert not btn.isEnabled()
