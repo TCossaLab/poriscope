@@ -2369,7 +2369,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Scatterplot",
                     df_prolate,
                     ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
+                    ["nm$^{3}$", None],
                     logscales=[False, False],
                     dataset_label="Prolate Solutions",
                 )
@@ -2378,7 +2378,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Scatterplot",
                     df_oblate,
                     ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
+                    ["nm$^{3}$", None],
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
                 )
@@ -2840,7 +2840,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Scatterplot",
                     df_prolate,
                     ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
+                    ["nm$^{3}$", None],
                     logscales=[False, False],
                     dataset_label="Prolate Solutions",
                 )
@@ -2849,7 +2849,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Scatterplot",
                     df_oblate,
                     ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
+                    ["nm$^{3}$", None],
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
                 )
