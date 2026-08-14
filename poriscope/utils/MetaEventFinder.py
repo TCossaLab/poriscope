@@ -54,6 +54,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         Initialize the MetaEventFinder instance.
         """
+        self.reader: Optional[MetaReader] = None
         super().__init__(settings)
         self.num_events_found: Dict[int, int] = {}
         self.event_starts: Dict[int, List[int]] = {}
@@ -66,7 +67,6 @@ class MetaEventFinder(BaseDataPlugin):
         self.accepted_data: Dict[int, float] = {}
         self.rejected_events: Dict[int, Dict[str, int]] = {}
         self.eventfinding_finished: Dict[int, bool] = {}
-        self.reader: Optional[MetaReader] = None
 
     # public API, must be overridden by subclasses
     @abstractmethod
