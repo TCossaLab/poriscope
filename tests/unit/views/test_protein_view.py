@@ -1,14 +1,52 @@
 """
 Full unit-test suite for ProteinView.
 
+Covers the ProteinView analysis tab end-to-end, including:
+  - format_axis_label (module-level helper)
+  - Gaussian fitting: _double_gaussian, _fit_double_gaussian,
+    _fit_and_sanity_check_double_gaussian
+  - Physical model: _compute_theoretical_blockages, _generate_vm_ensemble
+  - Histogram construction: _construct_single_event_histogram,
+    _construct_all_points_histogram
+  - Plotting: _plot_all_points_histogram, _plot_scatterplot,
+    _plot_xyerr_scatterplot, update_plot
+  - Event/histogram navigation and caching: _fetch_event_data,
+    _handle_plot_events, _handle_plot_histogram, _shift_range_and_update_plot
+  - Filter management: add/edit/delete/save/load, and raw-SQL validation
+    callbacks (on_raw_filter_validated)
+  - Fit commit/reset lifecycle: _commit_fits, _reset_actions
+  - Qt wiring: _set_custom_display_area, _set_control_area,
+    handle_parameter_change dispatch
+  - A small integration/pipeline test class exercising histogram -> fit ->
+    V/M scatter as a whole
+
 Uses:
-  - A session-scoped QApplication fixture
-  - A per-test ProteinView() fixture
-  - Real imports from the poriscope package
+  - A session-scoped QApplication fixture (qt_app) so Qt widgets can be
+    constructed once per test session.
+  - A per-test ProteinView fixture (view) built via the same
+    _set_custom_display_area / _set_control_area sequence MetaView uses in
+    the running application, so canvases, axes, and ProteinControls are
+    fully wired.
+  - Real imports from the poriscope package rather than a mocked ProteinView,
+    so tests exercise actual widget and signal behaviour.
+  - unittest.mock (MagicMock, patch) to stub out global_signal emissions,
+    file dialogs, and modal dialogs (AddSubsetFilterDialog,
+    EditSubsetFilterDialog, SelectionTree) so tests remain non-blocking and
+    independent of a live plugin bus or database backend.
+
+Notes:
+  - Several tests are annotated "documented" or "_bug" in their names; these
+    intentionally pin down current behaviour (including known quirks, e.g.
+    format_axis_label's regex on nested parentheses, or the double-Gaussian
+    fallback fit's degenerate single-peak behaviour) rather than asserting
+    an ideal/fixed outcome. Treat failures in these tests as a prompt to
+    re-evaluate intent, not just to "fix" them blindly.
+  - Tests involving global_signal generally leave it unconnected (no live
+    plugin bus), so any code path depending on a slot's return value should
+    be set up manually on the view fixture before calling into it.
 
 Run with:
-    pytest test_protein_view_final.py -v
-    pytest test_protein_view_final.py --cov=poriscope --cov-report=html
+    pytest tests/unit/views/test_protein_view.py -v
 """
 
 import json
