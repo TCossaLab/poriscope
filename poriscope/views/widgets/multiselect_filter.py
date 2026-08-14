@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 from poriscope.configs.utils import get_icon
 
 
-class MultiSelectComboBox(QComboBox):
+class MultiSelectFilterComboBox(QComboBox):
     selectionChanged = Signal(list)  # Signal to emit when the selection changes
     logger = logging.getLogger(__name__)
 
