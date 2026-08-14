@@ -512,5 +512,3 @@ class ClusteringControls(QWidget):
         self.label_x_comboBox.addItems(clusters)
         self.label_y_comboBox.clear()
         self.label_y_comboBox.addItems(clusters)
-
-

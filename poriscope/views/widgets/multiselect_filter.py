@@ -331,4 +331,3 @@ class MultiSelectComboBox(QComboBox):
         self.lineEdit().clear()
         self.selectAllButton.setChecked(False)
         self.selectAllButton.setText("Select All")
-
