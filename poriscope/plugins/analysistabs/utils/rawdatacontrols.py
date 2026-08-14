@@ -817,5 +817,3 @@ if __name__ == "__main__":
     widget = RawDataControls()
     widget.show()
     sys.exit(app.exec())
-
-

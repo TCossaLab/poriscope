@@ -1224,5 +1224,3 @@ class MetadataControls(QWidget):
         for selection in current_selections:
             if selection in [str(i) for i in filters]:
                 self.filter_comboBox.selectItem(selection)
-
-
