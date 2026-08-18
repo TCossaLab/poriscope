@@ -258,11 +258,13 @@ class MainController(QObject):
         if instance is not None:
             func = getattr(instance, call_function, None)
             if func is None:
-                raise ValueError(
+                self.logger.error(
                     f"No value {call_function} found in data plugin controller"
                 )
+                return
             elif not callable(func):
-                raise ValueError(f"{call_function} is not callable")
+                self.logger.error(f"{call_function} is not callable")
+                return
             else:
                 try:
                     call_args = self._ensure_tuple(call_args)
@@ -278,9 +280,10 @@ class MainController(QObject):
                             return_function(*retval)
                         except Exception as ex:
                             self.logger.error(f"Error executing return function: {ex}")
-                            raise
-                except:
-                    raise
+                except Exception as e:
+                    self.logger.exception(
+                        f"Unable to resolve function {metaclass}/{subclass_key}.{call_function} with arguments {call_args}: {repr(e)}"
+                    )
 
     @log(logger=logger)
     @Slot(str, list)
