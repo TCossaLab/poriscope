@@ -502,7 +502,7 @@ class PeakFinder(MetaEventFitter):
         # This trims the event to start/end at the longest above-threshold blockage
 
         threshold = 3 * baseline_std
-        event_data = data[padding_before:-padding_after]
+        event_data = data[padding_before : -padding_after if padding_after else None]
         above_threshold = (
             np.abs((np.abs(event_data) - np.sign(baseline_mean) * baseline_mean))
             > threshold

@@ -457,13 +457,13 @@ class NoFitter(MetaEventFitter):
         )
         event_metadata["max_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["min_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["max_deviation_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
         event_metadata["baseline_current"] = (
             sublevel_metadata["sublevel_current"][0]
             * sublevel_metadata["sublevel_duration"][0]

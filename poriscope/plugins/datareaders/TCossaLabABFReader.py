@@ -224,7 +224,7 @@ class TCossaLabABFReader(MetaReader):
         """
         # replace date and time in a file name with wildcard, keep id, extension and headstage
         match = re.split(r"_\d{12}_CH\d{3}_\d{3}\.abf", file_name)
-        if len(match) > 0:
+        if len(match) > 1:
             return match[0] + "*" + self.file_extension
         else:
             raise ValueError(

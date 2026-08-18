@@ -204,10 +204,9 @@ class ChimeraReaderVC100(MetaReader):
         """
         # replace date and time in a file name with wildcard, keep id, extension and headstage
         pattern = r"^(.*)_(\d{8}_\d{6})\.log$"
-        match = re.split(pattern, file_name)
+        match = re.match(pattern, file_name)
         if match:
-            match[2]
-            file_pattern = match[1] + "*" + self.file_extension
+            file_pattern = match.group(1) + "*" + self.file_extension
             return file_pattern
         else:
             raise ValueError(
