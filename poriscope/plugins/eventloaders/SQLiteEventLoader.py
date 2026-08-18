@@ -237,7 +237,7 @@ class SQLiteEventLoader(MetaEventLoader):
                 raise ValueError(f"No samplerate found for channel {channel}")
             samplerate = samplerate_row[0]
 
-        except (sqlite3.Error, ValueError, Exception) as e:
+        except sqlite3.Error as e:
             self.logger.error(f"SQLite error in get_samplerate: {e}")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:

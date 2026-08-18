@@ -304,11 +304,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         """
         conn = None
         cursor = None
+        experiment_name = self.settings["Experiment Name"]["Value"]
         try:
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             conn.execute("PRAGMA foreign_keys = ON;")
             cursor = conn.cursor()
-            experiment_name = self.settings["Experiment Name"]["Value"]
             conn.execute("BEGIN TRANSACTION")
             cursor.execute(
                 "SELECT id FROM experiments WHERE name = ?;", (experiment_name,)
@@ -351,6 +351,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         """
         conn = None
         cursor = None
+        experiment_id = None
         experiment_name = self.settings["Experiment Name"]["Value"]
         samplerate = self.eventfitter.get_samplerate(channel)
         try:

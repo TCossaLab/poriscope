@@ -23,7 +23,6 @@
 # Contributors:
 # Kyle Briggs
 
-import contextlib
 import logging
 import sqlite3
 from pathlib import Path
@@ -491,19 +490,21 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype:  Tuple[bool, str]
         """
         explain_query = f"EXPLAIN QUERY PLAN {query}"
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    cursor.execute(explain_query)
-                    result = (
-                        cursor.fetchall()
-                    )  # This will not run the query but provide the query plan
-                    if not result:
-                        return (
-                            False,
-                            "Invalid query\n\n{query}\n\n no useful debugging information provided",
-                        )
-                    return True, ""
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(explain_query)
+            result = (
+                cursor.fetchall()
+            )  # This will not run the query but provide the query plan
+            if not result:
+                return (
+                    False,
+                    "Invalid query\n\n{query}\n\n no useful debugging information provided",
+                )
+            return True, ""
         except sqlite3.Error as e:
             return False, f"Invalid query\n\n{query}\n\n{str(e)}"
         finally:

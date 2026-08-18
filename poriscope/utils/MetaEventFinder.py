@@ -462,7 +462,7 @@ class MetaEventFinder(BaseDataPlugin):
                     last_call = True
 
             if (
-                prev_start
+                prev_start is not None
             ):  # if we saved a start from last iteration, insert it at the beginning of this chunk
                 event_starts.insert(0, prev_start)
 

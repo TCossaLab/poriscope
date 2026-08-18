@@ -1634,11 +1634,19 @@ class MetadataView(MetaView, WalkthroughMixin):
             time /= len(data) - padding_after - padding_before
 
             duration = len(data)
-            alpha = (
-                15
-                / num_events
-                * (1 - 0.99 * (duration - min_duration) / (max_duration - min_duration))
-            )
+            if max_duration > min_duration:
+                alpha = (
+                    15
+                    / num_events
+                    * (
+                        1
+                        - 0.99
+                        * (duration - min_duration)
+                        / (max_duration - min_duration)
+                    )
+                )
+            else:
+                alpha = 15 / num_events
             alpha = np.min((alpha, 0.5))
             ax.plot(time, data, alpha=alpha, color="b")
 
@@ -3304,4 +3312,4 @@ class MetadataView(MetaView, WalkthroughMixin):
         Removes any existing trailing unit in parentheses.
         """
         label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-        return f"{label} ({unit})" if unit.strip() else label
+        return f"{label} ({unit})" if unit and unit.strip() else label
