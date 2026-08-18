@@ -325,7 +325,9 @@ class ClassicBlockageFinder(MetaEventFinder):
         except StopIteration:
             bottom_index = 0
 
-        np.minimum(top_index - max_index, max_index - bottom_index)
+        half_width = np.minimum(top_index - max_index, max_index - bottom_index)
+        top_index = max_index + half_width
+        bottom_index = max_index - half_width
 
         top = centers[top_index]
         bottom = centers[bottom_index]
