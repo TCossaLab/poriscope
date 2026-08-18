@@ -10,6 +10,9 @@ where they should be) rather than settling for "something was found".
 Generation happens per test, so nothing is checked into the repository
 and there is no shared state between tests.
 
+The generators themselves live in tests/synthetic_data/, shared infrastructure rather than duplicated per suite -- see tests/synthetic_data/synthetic_chimera.py for the schema
+these write and what's been confirmed against the real ChimeraReader20240501.
+
 Default signal parameters
 --------------------------
 The defaults describe a plausible open-pore recording with clean, obvious
@@ -28,12 +31,21 @@ blockage events:
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict
 
 import pytest
-from base_synthetic_recording import MultichannelSyntheticDataset, SyntheticDataset
-from multichannel_chimera import generate_multichannel_chimera_dataset
-from synthetic_chimera import ChimeraRecordingConfig, generate_chimera_dataset
+
+from tests.synthetic_data.base_synthetic_recording import (
+    MultichannelSyntheticDataset,
+    SyntheticDataset,
+)
+from tests.synthetic_data.multichannel_chimera import (
+    generate_multichannel_chimera_dataset,
+)
+from tests.synthetic_data.synthetic_chimera import (
+    ChimeraRecordingConfig,
+    generate_chimera_dataset,
+)
 
 DEFAULT_BASELINE_PA = 2000.0
 DEFAULT_NOISE_STD_PA = 15.0
@@ -42,7 +54,7 @@ DEFAULT_EVENT_DURATION_S = 0.0005
 DEFAULT_SAMPLERATE_HZ = 4_000_000.0
 
 
-def _default_config(**overrides) -> ChimeraRecordingConfig:
+def _default_config(**overrides: Any) -> ChimeraRecordingConfig:
     """
     Build a ChimeraRecordingConfig with this module's default signal
     parameters, letting individual fixtures/tests override any field.
@@ -54,7 +66,7 @@ def _default_config(**overrides) -> ChimeraRecordingConfig:
         generate_multichannel_chimera_dataset().
     :rtype: ChimeraRecordingConfig
     """
-    params = dict(
+    params: Dict[str, Any] = dict(
         base_name="synthetic",
         samplerate=DEFAULT_SAMPLERATE_HZ,
         duration_s=2.0,
@@ -117,7 +129,7 @@ def make_synthetic_chimera_dataset(tmp_path):
     """
     config_fields = set(ChimeraRecordingConfig.__dataclass_fields__)
 
-    def _make(**overrides) -> SyntheticDataset:
+    def _make(**overrides: Any) -> SyntheticDataset:
         config_overrides = {k: v for k, v in overrides.items() if k in config_fields}
         gen_overrides = {k: v for k, v in overrides.items() if k not in config_fields}
 
@@ -186,7 +198,7 @@ def make_synthetic_multichannel_dataset(tmp_path):
     """
     config_fields = set(ChimeraRecordingConfig.__dataclass_fields__)
 
-    def _make(**overrides) -> MultichannelSyntheticDataset:
+    def _make(**overrides: Any) -> MultichannelSyntheticDataset:
         config_overrides = {k: v for k, v in overrides.items() if k in config_fields}
         gen_overrides = {k: v for k, v in overrides.items() if k not in config_fields}
 
