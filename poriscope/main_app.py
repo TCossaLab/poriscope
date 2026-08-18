@@ -72,12 +72,11 @@ class App(QApplication):
         config_file_path = Path(self.config_path, "config.json")
 
         self.app_config = {
-            "Parent Folder": Path(
-                r"\\storage.rdc.uottawa.ca\1707_vtabardc"
-            ),  # replace with one-time setup
+            "Parent Folder": Path.home(),
             "User Plugin Folder": self.user_plugin_path,
             "Log Level": logging.WARNING,
         }
+        default_app_config = self.app_config
 
         if not self.config_path.exists():
             self.config_path.mkdir(parents=True, exist_ok=True)
@@ -85,23 +84,28 @@ class App(QApplication):
             with open(config_file_path, "w") as f:
                 json.dump(self.app_config, f, default=serialize_object, indent=4)
 
-        try:
-            if Path(self.config_path, "config.json").is_file():
-                with open(Path(self.config_path, "config.json"), "r") as f:
+        if config_file_path.is_file():
+            try:
+                with open(config_file_path, "r") as f:
                     self.app_config = json.load(f)
-                    if "User Plugin Folder" not in self.app_config.keys():
-                        self.app_config["User Plugin Folder"] = self.user_plugin_path
-                        with open(config_file_path, "w") as f:
-                            json.dump(
-                                self.app_config, f, default=serialize_object, indent=4
-                            )
-            plugin_path = Path(self.user_plugin_path).resolve()
-            parent_path = plugin_path.parent
-            if str(parent_path) not in sys.path:
-                sys.path.append(str(parent_path))
+                if "User Plugin Folder" not in self.app_config.keys():
+                    self.app_config["User Plugin Folder"] = self.user_plugin_path
+                    with open(config_file_path, "w") as f:
+                        json.dump(
+                            self.app_config, f, default=serialize_object, indent=4
+                        )
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    f"Unable to load config file {config_file_path}, regenerating defaults: {e}"
+                )
+                self.app_config = default_app_config
+                with open(config_file_path, "w") as f:
+                    json.dump(self.app_config, f, default=serialize_object, indent=4)
 
-        except:
-            raise
+        plugin_path = Path(self.user_plugin_path).resolve()
+        parent_path = plugin_path.parent
+        if str(parent_path) not in sys.path:
+            sys.path.append(str(parent_path))
 
     def initialize_components(self):
         self.main_model = MainModel(self.app_config)
