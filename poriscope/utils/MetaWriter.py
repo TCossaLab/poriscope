@@ -179,11 +179,7 @@ class MetaWriter(BaseDataPlugin):
         :return: the progress of the interator, normalized to [0,1]
         :rtype: float
         """
-        if self.force_serial_channel_operations() is True:
-            with self.lock:
-                yield from self._commit_events(channel)
-        else:
-            yield from self._commit_events(channel)
+        yield from self._commit_events(channel)
 
     @log(logger=logger)
     def force_serial_channel_operations(self):
