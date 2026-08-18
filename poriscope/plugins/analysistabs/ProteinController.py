@@ -88,12 +88,12 @@ class ProteinController(MetaController):
     @log(logger=logger)
     def update_plugins(self, plugin_list):
         """
-        Slot to receive updated plugin list from MetaDatabaseLoader and emit update_available_plugins.
+        Slot to receive updated plugin list from MetaDatabaseLoader and update the view/model accordingly.
 
         :param plugin_list: List of available plugin keys for MetaDatabaseLoader.
         :type plugin_list: list
         """
-        self.update_available_plugins.emit("MetaDatabaseLoader", plugin_list)
+        self.update_available_plugins({"MetaDatabaseLoader": plugin_list})
 
     @log(logger=logger)
     def relay_table_by_column(self, table):
