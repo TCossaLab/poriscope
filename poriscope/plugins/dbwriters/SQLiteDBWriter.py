@@ -54,8 +54,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param channel: channel ID
         :type channel: int
         """
-        # conn = None
+        conn = None
         cursor = None
+        experiment_id = None
         try:
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             conn.execute("PRAGMA foreign_keys = ON;")

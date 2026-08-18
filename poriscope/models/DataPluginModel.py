@@ -148,7 +148,12 @@ class DataPluginModel(QObject):
         :raises KeyError: If the plugin key does not exist.
         """
         if key in self.plugins[metaclass]:
-            self.plugins[metaclass][key].close_resources()
+            try:
+                self.plugins[metaclass][key].close_resources()
+            except Exception as e:
+                self.logger.error(
+                    f"Error closing resources for plugin {key} in {metaclass}: {e}"
+                )
             del self.plugins[metaclass][key]
             self.logger.info(
                 f"Plugin {key} successfully unregistered from {metaclass}."

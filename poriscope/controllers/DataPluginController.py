@@ -144,21 +144,32 @@ class DataPluginController(QObject):
                         return
 
                 for dmetaclass, dkey in dependents:
-                    dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
-                    dinstance.unregister_parent(metaclass, old_key)
-                    dinstance.register_parent(metaclass, key)
-                    dhistory = {}
-                    dhistory["key"] = dinstance.get_key()
-                    dhistory["metaclass"] = dmetaclass
-                    dhistory["subclass"] = dinstance.__class__.__name__
-                    dsettings = dinstance.get_raw_settings()
-                    dhistory["settings"] = dsettings
-                    dsettings[metaclass]["Value"] = key
-                    dinstance.update_raw_settings(metaclass, key)
-                    if dsettings[metaclass]["Options"] is not None:
-                        dsettings[metaclass]["Options"].append(key)
-                        dsettings[metaclass]["Options"].remove(old_key)
-                    self.update_plugin_history.emit(dhistory, "")
+                    try:
+                        dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
+                        dinstance.unregister_parent(metaclass, old_key)
+                        dinstance.register_parent(metaclass, key)
+                        dhistory = {}
+                        dhistory["key"] = dinstance.get_key()
+                        dhistory["metaclass"] = dmetaclass
+                        dhistory["subclass"] = dinstance.__class__.__name__
+                        dsettings = dinstance.get_raw_settings()
+                        dhistory["settings"] = dsettings
+                        dsettings[metaclass]["Value"] = key
+                        dinstance.update_raw_settings(metaclass, key)
+                        if dsettings[metaclass]["Options"] is not None:
+                            if old_key in dsettings[metaclass]["Options"]:
+                                dsettings[metaclass]["Options"].remove(old_key)
+                            if key not in dsettings[metaclass]["Options"]:
+                                dsettings[metaclass]["Options"].append(key)
+                        self.update_plugin_history.emit(dhistory, "")
+                    except Exception as e:
+                        self.logger.error(
+                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}"
+                        )
+                        self.add_text_to_display.emit(
+                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}",
+                            self.__class__.__name__,
+                        )
                 try:
                     instance.set_key(key)
                 except Exception as e:
