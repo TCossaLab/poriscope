@@ -27,6 +27,7 @@ import logging
 from typing import Dict, List, Mapping, Optional, Tuple, Type, Union, cast
 
 import numpy as np
+from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 from sklearn.mixture import GaussianMixture
 from typing_extensions import override
@@ -1705,6 +1706,7 @@ class PeakFinder(MetaEventFitter):
 
         all_longest_levels_array = np.array(all_longest_levels)
         all_raw_ecds_array = np.array(all_raw_ecds)
+        
 
         self.logger.info(
             f"Collected {len(all_longest_levels)} events for classification analysis"
@@ -2228,6 +2230,16 @@ class PeakFinder(MetaEventFitter):
         ecd_5th = np.percentile(log_ecd, 5)
         ecd_95th = np.percentile(log_ecd, 95)
         ecd_filter_mask = (log_ecd >= ecd_5th) & (log_ecd <= ecd_95th)
+        # self.logger.info("ECD-based filtering:")
+        # self.logger.info(
+        #     f"  log10(ECD) range: 5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}"
+        # )
+        # for event_index in all_event_info:
+        #     if not ecd_filter_mask[event_index]:
+        #         raise ValueError(
+        #             f"Event {event_index} failed ECD filtering: log10(ECD) = {log_ecd[event_index]:.3f}, "
+        #             f"5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}"
+        #         )
 
         combined_filter_mask = blockage_threshold_mask & ecd_filter_mask
         n_filtered_out = len(all_event_info) - np.sum(combined_filter_mask)
@@ -2497,16 +2509,34 @@ class PeakFinder(MetaEventFitter):
 
         fig, ax = plt.subplots(figsize=(12, 6))
 
-        # Plot histogram of all data
-        n_bins = 50
-        counts, bins, patches = ax.hist(
-            data, bins=n_bins, density=True, alpha=0.5, color="gray", label="All Data"
-        )
+        # Plot histogram of all data with robust bin calculation
+        arr = np.asarray(data)
+        if arr.size == 0:
+            self.logger.warning("No data available for folding classification visualization")
+            return
+        try:
+            iqr_val = float(np.percentile(arr, 75) - np.percentile(arr, 25))
+            n = arr.size
+            if iqr_val > 0 and n > 1:
+                bin_width = 2.0 * iqr_val / (n ** (1.0 / 3.0))
+                data_range = float(np.max(arr) - np.min(arr))
+                if bin_width > 0 and data_range > 0:
+                    bins = int(np.ceil(data_range / bin_width))
+                else:
+                    bins = 50
+            else:
+                bins = 50
+        except Exception:
+            bins = 50
+        bins = int(bins) if bins is not None else 50
+        if bins < 1:
+            bins = 1
+        counts, bins, patches = ax.hist(arr, bins=bins, density=True, alpha=0.5, color="gray", label="All Data")
 
         if ecd_outliers is not None and len(ecd_outliers) > 0:
             ax.hist(
                 ecd_outliers,
-                bins=n_bins,
+                bins=bins,
                 density=True,
                 alpha=0.35,
                 color="orange",
@@ -2527,10 +2557,10 @@ class PeakFinder(MetaEventFitter):
         for i, (cluster_idx, center) in enumerate(
             zip(sorted_indices, [lower_center, higher_center])
         ):
-            cluster_data = data[labels == cluster_idx]
+            cluster_data = arr[labels == cluster_idx]
             ax.hist(
                 cluster_data,
-                bins=n_bins,
+                bins=bins,
                 density=True,
                 alpha=0.6,
                 color=colors[i],
@@ -2689,14 +2719,8 @@ class PeakFinder(MetaEventFitter):
             lower_idx = int(sorted_indices[0])
             higher_idx = int(sorted_indices[1])
             midpoint = float((centers[lower_idx] + centers[higher_idx]) / 2.0)
-            lower_std = float(np.sqrt(selected_model.covariances_.flatten()[lower_idx]))
-            min_threshold = float(centers[lower_idx]) + 3.0 * lower_std
-            if midpoint >= min_threshold:
-                threshold = midpoint
-                threshold_type = "midpoint"
-            else:
-                threshold = min_threshold
-                threshold_type = "3σ floor"
+            #lower_std = float(np.sqrt(selected_model.covariances_.flatten()[lower_idx]))
+            threshold = midpoint
             class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(np.float64)
 
         for class_label, (ch, event_index, peak_index) in zip(class_labels, prominence_refs):
@@ -2706,7 +2730,6 @@ class PeakFinder(MetaEventFitter):
             "total_peaks": int(len(prominence_array)),
             "n_components": int(selected_model.n_components),
             "threshold": threshold,
-            "threshold_type": threshold_type,
             "centers": centers.tolist(),
             "lower_count": int(np.sum(class_labels == 0)),
             "higher_count": int(np.sum(class_labels == 1)),
@@ -2731,7 +2754,6 @@ class PeakFinder(MetaEventFitter):
                 centers=centers,
                 gmm_model=selected_model,
                 threshold=threshold,
-                threshold_type=threshold_type,
                 save_path=str(plot_path) if plot_path is not None else None,
             )
 
@@ -2755,25 +2777,39 @@ class PeakFinder(MetaEventFitter):
         from scipy.stats import norm
 
         fig, ax = plt.subplots(figsize=(12, 6))
-        n_bins = 50
-        ax.hist(
-            data,
-            bins=n_bins,
-            density=True,
-            alpha=0.5,
-            color="gray",
-            label="All Peaks",
-        )
+
+        arr = np.asarray(data)
+        if arr.size == 0:
+            self.logger.warning("No peak prominence data available for visualization")
+            return
+        try:
+            iqr_val = float(np.percentile(arr, 75) - np.percentile(arr, 25))
+            n = arr.size
+            if iqr_val > 0 and n > 1:
+                bin_width = 2.0 * iqr_val / (n ** (1.0 / 3.0))
+                data_range = float(np.max(arr) - np.min(arr))
+                if bin_width > 0 and data_range > 0:
+                    bins = int(np.ceil(data_range / bin_width))
+                else:
+                    bins = 50
+            else:
+                bins = 50
+        except Exception:
+            bins = 50
+        bins = int(bins) if bins is not None else 50
+        if bins < 1:
+            bins = 1
+        ax.hist(arr, bins=bins, density=True, alpha=0.5, color="gray", label="All Peaks")
 
         sorted_indices = np.argsort(centers)
         colors = ["blue", "red"]
         class_labels = ["Lower prominence (0)", "Higher prominence (1)"]
 
         for class_idx, gmm_idx in enumerate(sorted_indices):
-            cluster_data = data[labels == class_idx]
+            cluster_data = arr[labels == class_idx]
             ax.hist(
                 cluster_data,
-                bins=n_bins,
+                bins=bins,
                 density=True,
                 alpha=0.6,
                 color=colors[class_idx % len(colors)],
@@ -2931,7 +2967,18 @@ class PeakFinder(MetaEventFitter):
                     self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - missing cumulative_ecds")
                     continue
 
-                type3_mask = ~np.isnan(filtered_values) & (filtered_values.astype(int) == 3)
+                # Avoid casting NaN to int (causes runtime warnings). Build mask safely.
+                valid_mask = ~np.isnan(filtered_values)
+                type3_mask = np.zeros_like(valid_mask, dtype=bool)
+                if np.any(valid_mask):
+                    try:
+                        vals_int = filtered_values[valid_mask].astype(int)
+                        tmp = vals_int == 3
+                        type3_mask[valid_mask] = tmp
+                    except Exception:
+                        # Fallback: compare after replacing NaN with a sentinel
+                        safe_vals = np.nan_to_num(filtered_values, nan=-9999)
+                        type3_mask = safe_vals.astype(int) == 3
                 type3_indices = np.where(type3_mask)[0]
                 if len(type3_indices) == 0:
                     self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - no type-3 peaks")
@@ -3048,18 +3095,45 @@ class PeakFinder(MetaEventFitter):
         from scipy.stats import norm
 
         fig, ax = plt.subplots(figsize=(12, 6))
-        n_bins = 50
-        ax.hist(data, bins=n_bins, density=True, alpha=0.5, color="gray", label="All Events")
+
+        # Handle empty or too-small data gracefully
+        arr = np.asarray(data)
+        if arr.size == 0:
+            self.logger.warning("No data available for translocation direction visualization")
+            return
+
+        # Compute bin count using Freedman-Diaconis rule with safe fallbacks
+        try:
+            iqr_val = float(np.percentile(arr, 75) - np.percentile(arr, 25))
+            n = arr.size
+            if iqr_val > 0 and n > 1:
+                bin_width = 2.0 * iqr_val / (n ** (1.0 / 3.0))
+                data_range = float(np.max(arr) - np.min(arr))
+                if bin_width > 0 and data_range > 0:
+                    bins = int(np.ceil(data_range / bin_width))
+                else:
+                    bins = 50
+            else:
+                bins = 50
+        except Exception:
+            bins = 50
+
+        # Ensure bins is a positive integer
+        bins = int(bins) if bins is not None else 50
+        if bins < 1:
+            bins = 1
+
+        ax.hist(arr, bins=bins, density=True, alpha=0.5, color="gray", label="All Events")
 
         sorted_indices = np.argsort(centers)
         colors = ["blue", "red"]
         class_names = ["Backward (0)", "Forward (1)"]
 
         for class_idx, gmm_idx in enumerate(sorted_indices):
-            cluster_data = data[labels == class_idx]
+            cluster_data = arr[labels == class_idx]
             ax.hist(
                 cluster_data,
-                bins=n_bins,
+                bins=bins,
                 density=True,
                 alpha=0.6,
                 color=colors[class_idx],
@@ -3168,8 +3242,36 @@ class PeakFinder(MetaEventFitter):
         except Exception as e:
             self.logger.error(f"Error saving classification report: {str(e)}", exc_info=True)
 
- 
 
+    @log(logger=logger)
+    def fit_2_gauss(
+        self,
+        data: np.ndarray,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]:
+        """
+        Fit two Gaussian functions to the data.
+
+        :param data: 1D array of data to fit
+        :type data: np.ndarray
+        :param n_components: Number of Gaussian components to fit
+        :type n_components: int
+        :param return_centers: Whether to return cluster centers and GMM model along with labels
+        :type return_centers: bool
+        :return: Cluster labels, optionally with centers and fitted GMM model
+        :rtype: Union[np.ndarray, Tuple[np.ndarray, np.ndarray, GaussianMixture]]
+        """
+        def Gauss(x, Amplitude, mean, stdev):
+            return Amplitude * np.exp(-(x - mean)**2 / (2 * stdev**2))
+        def Gauss_2(x, A1, x1, m1, s1, A2, x2, m2, s2):
+            return Gauss(x, A1, x1, m1, s1) + Gauss(x, A2, x2, m2, s2)
+
+        data_reshaped = np.array(data).reshape(-1, 1)
+        
+        x=np.linspace(np.min(data_reshaped), np.max(data_reshaped), 1000)
+        popt,_ = curve_fit(Gauss_2, x, data_reshaped)
+
+        return (popt[0], popt[1], popt[2], popt[3]), (popt[4], popt[5], popt[6], popt[7]) 
+    
     @log(logger=logger)
     def classify_1d_distribution(
         self,
@@ -3228,7 +3330,7 @@ class PeakFinder(MetaEventFitter):
             return labels, centers, gmm
         return labels
 
-
+    
     @log(logger=logger)
     def filter_peaks(
         self,
@@ -3531,15 +3633,36 @@ class PeakFinder(MetaEventFitter):
         # Data is already trimmed to longest segment in _locate_sublevel_transitions
         # Find the 2 most populated levels using histogram
 
+        arr = np.asarray(data)
+        if arr.size == 0:
+            return None, None
+
         # Fast histogram-based level detection using numpy
-        # Create bins with baseline_std/8 spacing for precise level detection
-        bin_width = baseline_std / 8
-        min_val = np.min(data)
-        max_val = np.max(data)
-        bins = np.arange(min_val - bin_width / 2, max_val + bin_width, bin_width)
+        # Prefer bins based on baseline noise when possible, but fall back to 'auto'
+        try:
+            bin_width = float(baseline_std) / 8.0
+        except Exception:
+            bin_width = 0.0
+
+        min_val = float(np.min(arr))
+        max_val = float(np.max(arr))
+
+        if bin_width > 0 and max_val > min_val:
+            # Safe arange only when bin_width is positive
+            try:
+                bins = np.arange(min_val - bin_width / 2.0, max_val + bin_width, bin_width)
+                if bins.size < 2:
+                    # Fallback
+                    bins = 'auto'
+            except Exception:
+                bins = 'auto'
+        else:
+            bins = 'auto'
 
         # Get histogram counts and bin centers
-        counts, bin_edges = np.histogram(data, bins=bins)
+        counts, bin_edges = np.histogram(arr, bins=bins)
+        if len(bin_edges) < 2:
+            return None, None
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         # Find the 2 bins with maximum counts
