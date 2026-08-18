@@ -49,7 +49,8 @@ from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
-from base_synthetic_recording import (
+
+from tests.synthetic_data.base_synthetic_recording import (
     BaseRecordingConfig,
     BaseSyntheticRecordingWriter,
     SyntheticDataset,
@@ -130,7 +131,7 @@ def _scale_offset(tia_gain: float, i_offset: float, filter_gain: float) -> Tuple
     return scale, offset
 
 
-class ChimeraRecordingWriter(BaseSyntheticRecordingWriter):
+class ChimeraRecordingWriter(BaseSyntheticRecordingWriter[ChimeraRecordingConfig]):
     """
     Subclass of BaseSyntheticRecordingWriter for writing Chimera VC400
     .log/.json file pairs.

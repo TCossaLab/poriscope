@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
 
@@ -131,6 +131,21 @@ class BaseRecordingConfig:
     edge_margin_s: float = 0.05
 
 
+ConfigT = TypeVar("ConfigT", bound=BaseRecordingConfig)
+"""
+Type variable for a specific format's config subclass (e.g.
+ChimeraRecordingConfig). Parameterizing BaseSyntheticRecordingWriter and
+generate_multichannel_dataset over this, rather than typing everything as
+plain BaseRecordingConfig, is what lets each writer's _write() legitimately
+narrow its config parameter to its own subclass (e.g. ChimeraRecordingWriter
+requiring ChimeraRecordingConfig specifically) without that being a Liskov
+substitution violation: mypy checks each writer against
+BaseSyntheticRecordingWriter[ItsOwnConfigType] rather than against a single
+shared BaseRecordingConfig that every subclass's _write() would otherwise
+have to accept, gain-stack fields and all.
+"""
+
+
 @dataclass
 class SyntheticDataset:
     """
@@ -233,7 +248,37 @@ class MultichannelSyntheticDataset:
         return self.channels[channel]
 
 
-class BaseSyntheticRecordingWriter(ABC):
+def build_noisy_segment(
+    rng: np.random.Generator, n_samples: int, baseline: float, noise_std: float
+) -> np.ndarray:
+    """
+    Build a flat baseline segment with Gaussian noise.
+
+    This is the one piece of signal construction shared between continuous
+    recordings (many events embedded in one long trace, via
+    BaseSyntheticRecordingWriter._build_trace) and per-event databases (one
+    short padded snippet per event, via synthetic_events_db). Both need
+    "baseline plus noise" as their starting point before an event's
+    amplitude gets added over some span of it; pulling it out here means
+    that starting point can't drift out of sync between the two.
+
+    :param rng: Random generator to draw noise from.
+    :type rng: numpy.random.Generator
+    :param n_samples: Length of the segment, in samples.
+    :type n_samples: int
+    :param baseline: Mean signal level, in physical units.
+    :type baseline: float
+    :param noise_std: Standard deviation of the Gaussian noise, in the
+        same units as baseline.
+    :type noise_std: float
+
+    :return: The noisy baseline segment.
+    :rtype: numpy.ndarray
+    """
+    return baseline + rng.normal(0.0, noise_std, n_samples)
+
+
+class BaseSyntheticRecordingWriter(ABC, Generic[ConfigT]):
     """
     Builds a ground-truth trace and hands it off to a format-specific writer.
 
@@ -241,12 +286,17 @@ class BaseSyntheticRecordingWriter(ABC):
     into bytes on disk, and a metadata file if the format needs one) and
     get event planting, noise generation, and edge-margin handling for
     free from generate() and _build_trace().
+
+    Generic over ConfigT, the specific BaseRecordingConfig subclass this
+    writer's format needs (e.g. BaseSyntheticRecordingWriter[ChimeraRecordingConfig]
+    for Chimera). A format needing no extra fields beyond the base ones
+    can parameterize over BaseRecordingConfig itself.
     """
 
     def generate(
         self,
         out_dir: Path,
-        config: BaseRecordingConfig,
+        config: ConfigT,
         *,
         channel: int = 0,
         num_events: int = 5,
@@ -262,9 +312,9 @@ class BaseSyntheticRecordingWriter(ABC):
         :param out_dir: Directory to write the channel's file(s) into.
             Created if it does not already exist.
         :type out_dir: Path
-        :param config: Recording parameters. Pass a format-specific
-            subclass of BaseRecordingConfig matching this writer.
-        :type config: BaseRecordingConfig
+        :param config: Recording parameters, of this writer's specific
+            ConfigT type.
+        :type config: ConfigT
         :param channel: Channel/headstage number for this file.
         :type channel: int
         :param num_events: How many events to plant on this channel.
@@ -286,14 +336,14 @@ class BaseSyntheticRecordingWriter(ABC):
         return self._write(out_dir, config, channel, trace, events)
 
     def _build_trace(
-        self, config: BaseRecordingConfig, num_events: int, seed: int
+        self, config: ConfigT, num_events: int, seed: int
     ) -> Tuple[np.ndarray, List[SyntheticEvent]]:
         """
         Build the ground-truth signal: baseline, Gaussian noise, and
         planted events, all in physical units. Shared by every format.
 
         :param config: Recording parameters.
-        :type config: BaseRecordingConfig
+        :type config: ConfigT
         :param num_events: How many events to plant.
         :type num_events: int
         :param seed: Random seed for the noise and, indirectly, event
@@ -313,7 +363,7 @@ class BaseSyntheticRecordingWriter(ABC):
         if n_samples <= 0:
             raise ValueError("duration_s * samplerate must be a positive number of samples")
 
-        trace = config.baseline + rng.normal(0.0, config.noise_std, n_samples)
+        trace = build_noisy_segment(rng, n_samples, config.baseline, config.noise_std)
 
         event_len = max(1, int(round(config.event_duration_s * config.samplerate)))
         margin = max(event_len, int(round(config.edge_margin_s * config.samplerate)))
@@ -346,7 +396,7 @@ class BaseSyntheticRecordingWriter(ABC):
     def _write(
         self,
         out_dir: Path,
-        config: BaseRecordingConfig,
+        config: ConfigT,
         channel: int,
         trace: np.ndarray,
         events: List[SyntheticEvent],
@@ -354,13 +404,19 @@ class BaseSyntheticRecordingWriter(ABC):
         """
         Encode trace to this format's on-disk representation and write it.
 
-        Must be implemented by subclasses, one per file format.
+        Must be implemented by subclasses, one per file format. A subclass
+        writing e.g. Chimera's format can (and should) narrow config's
+        type here to ChimeraRecordingConfig specifically, by declaring
+        itself as BaseSyntheticRecordingWriter[ChimeraRecordingConfig] --
+        that's what ConfigT is for, rather than every writer needing to
+        accept a bare BaseRecordingConfig it can't actually use.
 
         :param out_dir: Directory to write into. Already created by the
             time this is called.
         :type out_dir: Path
-        :param config: The config passed to generate().
-        :type config: BaseRecordingConfig
+        :param config: The config passed to generate(), of this writer's
+            specific ConfigT type.
+        :type config: ConfigT
         :param channel: Channel/headstage number for this file.
         :type channel: int
         :param trace: The ground-truth signal, in physical units.
@@ -376,9 +432,9 @@ class BaseSyntheticRecordingWriter(ABC):
 
 
 def generate_multichannel_dataset(
-    writer: BaseSyntheticRecordingWriter,
+    writer: BaseSyntheticRecordingWriter[ConfigT],
     out_dir: Path,
-    config: BaseRecordingConfig,
+    config: ConfigT,
     *,
     channels: List[int],
     num_events_per_channel: Dict[int, int] | int = 5,
@@ -391,16 +447,20 @@ def generate_multichannel_dataset(
     same sample rate and event shape), but with a distinct random seed, so
     the noise and event placement differ between channels while remaining
     reproducible run to run. Works with any BaseSyntheticRecordingWriter
-    subclass.
+    subclass; ConfigT ties writer and config to the same format so mypy
+    catches a mismatched pair (e.g. a ChimeraRecordingWriter given a
+    plain BaseRecordingConfig) rather than it surfacing as an
+    AttributeError deep inside _write() at runtime.
 
     :param writer: The format-specific writer to use for every channel.
-    :type writer: BaseSyntheticRecordingWriter
+    :type writer: BaseSyntheticRecordingWriter[ConfigT]
     :param out_dir: Directory to write all channels into. Readers that
         glob a directory for sibling channel files require this to not be
         split across subdirectories.
     :type out_dir: Path
-    :param config: Recording parameters shared by every channel.
-    :type config: BaseRecordingConfig
+    :param config: Recording parameters shared by every channel, of the
+        same ConfigT type writer expects.
+    :type config: ConfigT
     :param channels: Channel numbers to generate, e.g. [1, 2, 3].
     :type channels: List[int]
     :param num_events_per_channel: Either one count used for all channels,

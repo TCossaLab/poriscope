@@ -20,11 +20,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List
 
-from base_synthetic_recording import (
+from tests.synthetic_data.base_synthetic_recording import (
     MultichannelSyntheticDataset,
     generate_multichannel_dataset,
 )
-from synthetic_chimera import ChimeraRecordingConfig, ChimeraRecordingWriter
+from tests.synthetic_data.synthetic_chimera import (
+    ChimeraRecordingConfig,
+    ChimeraRecordingWriter,
+)
 
 
 def generate_multichannel_chimera_dataset(
