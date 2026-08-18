@@ -2272,6 +2272,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             self.logger.info(
                                 f'Unable to construct histogram for event {event["event_id"]}: {e}'
                             )
+                            continue
                         if plot_data is None:
                             continue
 

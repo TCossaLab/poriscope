@@ -482,7 +482,8 @@ class MetaEventFitter(BaseDataPlugin):
 
         abort = False
         for index in indices:
-            self.logger.info(index / total_events)
+            if total_events:
+                self.logger.info(index / total_events)
             self.event_metadata[channel][index] = {}
             self.sublevel_metadata[channel][index] = {}
 
