@@ -397,7 +397,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if experiment_name:
             try:
                 escaped_name = experiment_name.replace("'", "''")
-                query = f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
+                query = (
+                    f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
+                )
                 result = self.query_database_directly(query)
                 if result is not None:
                     return result.at[0, "id"]
