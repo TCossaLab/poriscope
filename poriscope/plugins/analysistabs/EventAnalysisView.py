@@ -361,6 +361,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             # self._load_and_plot_events(loader, data_filter, channels, events)
         except ValueError as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
+            return
         try:
             get_num_events_args = (channel,)
             self.global_signal.emit(

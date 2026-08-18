@@ -212,7 +212,7 @@ class ClassicBlockageFinder(MetaEventFinder):
                 event_starts.append(event_start + offset)
             else:
                 pos = np.argmax(data[index:] > hysteresis)
-                if pos <= 0:
+                if pos == 0 and not (data[index] > hysteresis):
                     break
                 index += pos  # no backtracking needed here
                 event_ends.append(index + offset)
@@ -299,6 +299,10 @@ class ClassicBlockageFinder(MetaEventFinder):
 
         median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
+        if width <= 0:
+            raise ValueError(
+                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
+            )
         bins = int((top - bottom) / width)
         hist = histogram1d(data, range=[bottom, top], bins=bins)
         centers = np.linspace(bottom, top, len(hist))
