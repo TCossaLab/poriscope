@@ -4,18 +4,28 @@ E2E/UX flow for Metadata tab.
 Run with:
     pytest tests/e2e/metadata/test_metadata_flow.py -v -s
 
+Test data comes from the synthetic_metadata_database fixture (see
+tests/synthetic_data/synthetic_metadata_db.py and
+tests/e2e/conftest.py) rather than a checked-in real database. Its
+default shape (two experiments, three channels total) is what makes
+Stage 2's Scope-dialog partial-selection/PartiallyChecked assertions
+meaningful -- a single-leaf database would make Select All and
+individual selection indistinguishable. The "duration>THRESHOLD" filters
+in Stages 3-4 use this database's own median_duration_us() rather than a
+literal value, since the old real-fixture DB's ">100" threshold doesn't
+carry over to this fixture's different duration range (200-1000us).
+
 Stages:
 1) Open Metadata tab, add a MetaDatabaseLoader (SQLiteDBLoader) pointed at
-   tests/data/DB.db (or E2E_METADATA_DB).
+   the synthetic database.
 2) Open Scope dialog (SelectionTree): verification against the real
    QTreeWidget state (not just the button label) - default-all-checked,
-   Deselect All / Select All both directions, and (if the DB has more
-   than one experiment/channel leaf) individual select-deselect plus
-   PartiallyChecked parent-node behavior. Narrows down to exactly one
-   experiment/channel afterward since downstream plotting stages in this
-   file assume a single dataset per plot.
-3) Add an assisted filter "duration>100" -> expect it to appear suffixed
-   "_assisted" (confirmed real behavior from screenshots).
+   Deselect All / Select All both directions, and individual
+   select-deselect plus PartiallyChecked parent-node behavior. Narrows
+   down to exactly one experiment/channel afterward since downstream
+   plotting stages in this file assume a single dataset per plot.
+3) Add an assisted filter "duration>THRESHOLD" -> expect it to appear
+   suffixed "_assisted" (confirmed real behavior from screenshots).
 4) Add the same filter via raw SQL -> expect "_raw" suffix.
 5) Plot a Histogram of "duration" for Full Dataset, then also select the
    assisted filter and re-plot -> expect an OVERLAY (2 legend entries),
@@ -50,14 +60,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs --------------------------------------------------------
-METADATA_DB_NAME = os.getenv("E2E_METADATA_DB", "DB.db")
-# DB with 2+ experiments and/or 2+ channels, for genuinely testing
-# Select All / individual select-deselect / partial-selection behavior
-# in the Scope dialog. With a single-experiment/single-channel DB,
-# Select All and individual selection are indistinguishable, so
-# partial-selection assertions below are skipped automatically when
-# there's only one leaf node.
-METADATA_MULTI_DB_NAME = os.getenv("E2E_METADATA_MULTI_DB", "tutorial_DB2.sqlite3")
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 
 E2E_TIMEOUT_S = int(os.getenv("E2E_TIMEOUT", "180"))
@@ -174,29 +176,18 @@ def _get_x_label(fig):
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
-def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
-    _candidate_dirs = [REPO_ROOT / "tests" / "data", REPO_ROOT / "data"]
-    _candidate_names = [METADATA_MULTI_DB_NAME] + [
-        f"{METADATA_MULTI_DB_NAME}{ext}"
-        for ext in (".db", ".sqlite3", ".sqlite")
-        if not METADATA_MULTI_DB_NAME.endswith(ext)
-    ]
-    metadata_db = None
-    _tried = []
-    for _dir in _candidate_dirs:
-        for _name in _candidate_names:
-            candidate = _dir / _name
-            _tried.append(str(candidate))
-            if candidate.exists():
-                metadata_db = candidate
-                break
-        if metadata_db is not None:
-            break
-    assert metadata_db is not None, (
-        f"Could not find multi-experiment test DB. Tried: {_tried}. "
-        f"Set E2E_METADATA_MULTI_DB if it's named differently."
-    )
-    print(f"[DEBUG] Using multi-experiment DB: {metadata_db}")
+def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog, auto_dismiss_message_boxes, synthetic_metadata_database):
+    db = synthetic_metadata_database
+    # "duration>100" in the old real-fixture version of this test was
+    # tuned to that specific DB's data range. This fixture's default event
+    # durations are 200-1000us (100-500 samples at 500kHz), so a literal
+    # ">100" would match every event -- not the genuine, non-trivial
+    # subset Stage 5's overlay assertion needs. Use a threshold computed
+    # from this database's own ground truth instead (same approach
+    # verified in tests/e2e/clustering/test_clustering_flow.py).
+    duration_threshold_us = db.median_duration_us()
+    print(f"[DEBUG] Using synthetic metadata DB: {db.db_path}")
+    print(f"[DEBUG] Using duration_threshold_us={duration_threshold_us:.1f} for the assisted/raw filters")
 
     monkeypatch.setattr(
         "PySide6.QtWidgets.QInputDialog.getItem",
@@ -205,34 +196,12 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     )
     monkeypatch.setattr(
         "PySide6.QtWidgets.QFileDialog.getOpenFileName",
-        staticmethod(lambda *_a, **_k: (str(metadata_db), "All Files (*)")),
+        staticmethod(lambda *_a, **_k: (str(db.db_path), "All Files (*)")),
         raising=False,
     )
 
-    # Safety net: if anything pops an uncaught QMessageBox (e.g. a SQL
-    # error from the raw filter's full SELECT statement being spliced
-    # into a WHERE clause elsewhere), auto-dismiss it instead of letting
-    # it block the test forever - real .exec() on a QMessageBox is modal
-    # and nothing else in this test watches for/dismisses it.
-    for _mb_method, _mb_return in (
-        ("warning", QtWidgets.QMessageBox.Ok),
-        ("critical", QtWidgets.QMessageBox.Ok),
-        ("information", QtWidgets.QMessageBox.Ok),
-        ("question", QtWidgets.QMessageBox.Yes),
-    ):
-
-        def _make_patch(method_name, ret_value):
-            def _patched(*args, **kwargs):
-                print(f"[DEBUG] QMessageBox.{method_name} auto-dismissed: {args}")
-                return ret_value
-
-            return _patched
-
-        monkeypatch.setattr(
-            f"PySide6.QtWidgets.QMessageBox.{_mb_method}",
-            staticmethod(_make_patch(_mb_method, _mb_return)),
-            raising=False,
-        )
+    # QMessageBox auto-dismissal is handled by the auto_dismiss_message_boxes
+    # fixture (tests/e2e/conftest.py) requested above.
 
     # SelectionTree.show_dialog() wraps its widget in a QDialog with
     # Qt.Popup window flags on non-Linux. Qt.Popup relies on keyboard/mouse
@@ -378,8 +347,10 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             print(
                 "[DEBUG] Only one leaf node in Scope dialog - "
                 "partial-selection test skipped (nothing to partially "
-                "select). Set E2E_METADATA_MULTI_DB to a DB with 2+ "
-                "experiments/channels to exercise this properly."
+                "select). The default synthetic_metadata_database fixture "
+                "has 3 leaves (2 experiments, 3 channels total), so this "
+                "branch is not expected to trigger; seeing it print means "
+                "the fixture's shape changed."
             )
 
         first_exp_name = tree.topLevelItem(0).text(0)
@@ -489,11 +460,16 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     )
 
     # =========================================================
-    # STAGE 3: assisted filter "duration>100" - CONFIRMED real widget
-    # attrs from BaseSubsetFilterDialog source: name_input (QLineEdit),
-    # filter_input (QTextEdit, NOT QLineEdit), assisted_radio/raw_radio,
-    # button_box (QDialogButtonBox). assisted_radio is checked by default.
+    # STAGE 3: assisted filter "duration>THRESHOLD" (computed from this
+    # database's own ground truth, not the old real-fixture's hardcoded
+    # ">100" -- see this test's top-of-function comment) - CONFIRMED real
+    # widget attrs from BaseSubsetFilterDialog source: name_input
+    # (QLineEdit), filter_input (QTextEdit, NOT QLineEdit),
+    # assisted_radio/raw_radio, button_box (QDialogButtonBox).
+    # assisted_radio is checked by default.
     # =========================================================
+    assisted_filter_text = f"duration>{duration_threshold_us}"
+
     def auto_complete_assisted_filter_dialog():
         dlg = _first_modal_dialog()
         if dlg is None:
@@ -502,7 +478,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
         if not dlg.name_input.text().strip():
             dlg.name_input.setText("duration_filter")
         if not dlg.filter_input.toPlainText().strip():
-            dlg.filter_input.setPlainText("duration>100")
+            dlg.filter_input.setPlainText(assisted_filter_text)
         ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
         if ok_btn.isEnabled():
             QTest.mouseClick(ok_btn, Qt.MouseButton.LeftButton)
@@ -519,8 +495,8 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
         name for name in md_view.subset_filters if "_assisted" in name
     )
     print(f"[DEBUG] Assisted filter added: {assisted_filter_name!r}")
-    assert md_view.subset_filters[assisted_filter_name] == "duration>100", (
-        f"Expected filter text 'duration>100', got "
+    assert md_view.subset_filters[assisted_filter_name] == assisted_filter_text, (
+        f"Expected filter text {assisted_filter_text!r}, got "
         f"{md_view.subset_filters[assisted_filter_name]!r}"
     )
 
@@ -539,7 +515,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             dlg.name_input.setText("duration_filter_raw")
         if not dlg.filter_input.toPlainText().strip():
             dlg.filter_input.setPlainText(
-                "SELECT duration FROM events WHERE duration > 100"
+                f"SELECT duration FROM events WHERE duration > {duration_threshold_us}"
             )
         ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
         if ok_btn.isEnabled():
