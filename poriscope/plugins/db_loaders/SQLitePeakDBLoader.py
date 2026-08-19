@@ -82,6 +82,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             self.logger.debug(
                 f"Error constructing query in get_plot_features: {str(e)}"
             )
+            return None, None, None, None, None, None
 
         valid, debug = self.validate_filter_query(query)
         if valid:

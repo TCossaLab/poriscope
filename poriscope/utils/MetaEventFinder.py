@@ -683,7 +683,7 @@ class MetaEventFinder(BaseDataPlugin):
             or self.event_ends.get(channel) is None
         ):
             raise KeyError(f"Channel {channel} is not present in the eventfinder")
-        elif self.event_starts[channel] == {} or self.event_ends[channel] == {}:
+        elif self.event_starts[channel] == [] and self.event_ends[channel] == []:
             raise ValueError("Eventfinder may not have run yet")
         elif self.event_starts.get(channel) == []:
             raise ValueError(f"No event starts found for channel {channel}")
