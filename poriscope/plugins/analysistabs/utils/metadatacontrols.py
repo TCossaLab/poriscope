@@ -995,7 +995,11 @@ class MetadataControls(QWidget):
                 "y_axis_units": self.y_axis_units_label.text() or None,
                 "z_axis_units": self.z_axis_units_label.text() or None,
                 "bins": (
-                    [x.strip() for x in self.bins_lineEdit.text().split(",")]
+                    [
+                        x.strip()
+                        for x in self.bins_lineEdit.text().split(",")
+                        if x.strip()
+                    ]
                     if self.bins_lineEdit.text()
                     else None
                 ),
@@ -1012,7 +1016,7 @@ class MetadataControls(QWidget):
             ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
-        except AttributeError:
+        except (AttributeError, ValueError):
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -1070,7 +1074,7 @@ class MetadataControls(QWidget):
                 if part.strip()
             )
             if bins_text
-            else False
+            else True  # an empty bins field is valid - falls back to default binning
         )
 
         self.logger.debug(
@@ -1078,7 +1082,7 @@ class MetadataControls(QWidget):
         )
 
         if not is_bins_valid:
-            pass
+            is_update_plot_valid = False
 
         if not db_loader or db_loader == "No Event Database":
             db_loader_loaded = False

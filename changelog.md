@@ -135,6 +135,8 @@
 ### General Fixes and Improvements:
     * Fixed `MainView` menu bar action icons silently failing to render due to an incorrect resource path (bug was invisible until now, since it failed silently)
     * Fixed `MetadataControls` DB Loader edit/delete buttons staying enabled when no database was loaded (placeholder text mismatch)
+    * Fixed `MetadataControls`/`ProteinControls` crashing when the bins field ended in a trailing comma
+    * Fixed `MetadataControls` computing bins-field validity but never actually using it to enable/disable **Update Plot**
     * Removed unused legacy icon assets and the broken/unused Qt `.qrc` resource system (`resources_rc.py`), which nothing in the app actually depended on
     * Standardized edit/add icons across control panels to use the same icon set consistently
     * In `Settings` fixed potential crash (`AttributeError`) if a folder-picker button was clicked before the data server / user plugin location had been set
