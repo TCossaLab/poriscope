@@ -305,6 +305,8 @@ class ClusteringView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
+            else:
+                return
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -619,6 +621,8 @@ class ClusteringView(MetaView, WalkthroughMixin):
             labels = clusterer.fit_predict(clustering_data)
             probs = clusterer.predict_proba(clustering_data)
             probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
+        else:
+            raise ValueError(f"Unknown clustering method: {config['method']!r}")
         return clustering_data, labels, probs, logs, norm, units, plot
 
     @log(logger=logger)
