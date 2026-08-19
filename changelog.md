@@ -27,8 +27,6 @@
 
 * **Updated Data Plugins: `Basic_PeakFinder`, `PeakFinder`**
     * Fixed an empty-slice bug that wrongly rejected legitimate events ending at the trace boundary
-    * Fixed the same empty-slice bug in two more call sites (peak finding and mode-blockage-level detection) that the initial fix missed
-    * Fixed `normalized_height`/`normalized_prominence` dividing by a zero unfolded-level and silently writing inf/NaN to the metadata database
 
 * **Updated Data Plugin: `BesselFilter`**
     * Fixed a boundary check that allowed `Poles = 0` despite requiring a positive integer

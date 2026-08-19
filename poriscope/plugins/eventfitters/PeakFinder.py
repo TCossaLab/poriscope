@@ -537,9 +537,6 @@ class PeakFinder(MetaEventFitter):
         # Use adjusted paddings for the rest of processing
         padding_before = new_padding_before
         padding_after = new_padding_after
-        trimmed_event_data = data[
-            padding_before : -padding_after if padding_after else None
-        ]
 
         """
             scipy find_peaks
@@ -611,7 +608,7 @@ class PeakFinder(MetaEventFitter):
             """
 
         peaks, properties = find_peaks(
-            -np.sign(baseline_mean) * trimmed_event_data,
+            -np.sign(baseline_mean) * data[padding_before:-padding_after],
             height=-np.sign(baseline_mean) * baseline_mean + min_height,
             prominence=min_prom,
             wlen=wlen,
@@ -640,7 +637,7 @@ class PeakFinder(MetaEventFitter):
         if len(peaks) > 0:
 
             unfolded_level = self.find_mode_blockage_level(
-                trimmed_event_data,
+                data[padding_before:-padding_after],
                 max_unfolded,
                 baseline_mean,
                 baseline_std,
@@ -660,7 +657,7 @@ class PeakFinder(MetaEventFitter):
                         baseline_std,
                         baseline_mean,
                         samplerate,
-                        len(trimmed_event_data),
+                        len(data[padding_before:-padding_after]),
                     )
                 except TypeError as exc:
                     self.logger.error(
@@ -988,7 +985,7 @@ class PeakFinder(MetaEventFitter):
             [
                 (
                     sublevel_starts[i]["peak_height"] / unfolded_level
-                    if "peak" in sublevel_starts[i]["type"] and unfolded_level != 0
+                    if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
                 for i in range(num_states)
@@ -1012,7 +1009,7 @@ class PeakFinder(MetaEventFitter):
             [
                 (
                     sublevel_starts[i]["prominence"] / unfolded_level
-                    if "peak" in sublevel_starts[i]["type"] and unfolded_level != 0
+                    if "peak" in sublevel_starts[i]["type"]
                     else None
                 )
                 for i in range(num_states)
