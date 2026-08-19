@@ -143,6 +143,8 @@
     * Now: Icons correctly update color depending on dark/light mode
     * Replaced a hardcoded institution-specific network path default with the user's home directory
     * A corrupted config file now regenerates defaults on startup instead of crashing the app
+    * `JsonDefaultSerializer` now also handles `Enum`, `datetime`/`date`, and `set`/`frozenset` values instead of only `PurePath`
+    * All config file writes in `App`/`MainModel` are now wrapped in error handling instead of letting a write failure crash the app
 
 
 

@@ -36,6 +36,7 @@ from pathlib import Path
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -363,8 +364,11 @@ class MainModel(QObject):
     def update_app_config(self, key, val):
         self.app_config[key] = val
         config_file_path = Path(self.config_path, "config.json")
-        with open(config_file_path, "w") as f:
-            json.dump(self.app_config, f, indent=4)
+        try:
+            with open(config_file_path, "w") as f:
+                json.dump(self.app_config, f, default=serialize_object, indent=4)
+        except Exception as e:
+            self.logger.warning(f"Unable to persist updated config file {config_file_path}: {e}")
 
     @log(logger=logger)
     def get_data_server_location(self):

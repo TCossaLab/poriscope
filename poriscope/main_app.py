@@ -41,6 +41,8 @@ from poriscope.views.main_view import MainView
 
 
 class App(QApplication):
+    logger = logging.getLogger(__name__)
+
     def __init__(self, sys_argv):
         super(App, self).__init__(sys_argv)
         self.create_appdata_folders()
@@ -81,8 +83,13 @@ class App(QApplication):
         if not self.config_path.exists():
             self.config_path.mkdir(parents=True, exist_ok=True)
         if not config_file_path.is_file():
-            with open(config_file_path, "w") as f:
-                json.dump(self.app_config, f, default=serialize_object, indent=4)
+            try:
+                with open(config_file_path, "w") as f:
+                    json.dump(self.app_config, f, default=serialize_object, indent=4)
+            except Exception as e:
+                self.logger.warning(
+                    f"Unable to write initial config file {config_file_path}: {e}"
+                )
 
         if config_file_path.is_file():
             try:
@@ -90,17 +97,27 @@ class App(QApplication):
                     self.app_config = json.load(f)
                 if "User Plugin Folder" not in self.app_config.keys():
                     self.app_config["User Plugin Folder"] = self.user_plugin_path
-                    with open(config_file_path, "w") as f:
-                        json.dump(
-                            self.app_config, f, default=serialize_object, indent=4
+                    try:
+                        with open(config_file_path, "w") as f:
+                            json.dump(
+                                self.app_config, f, default=serialize_object, indent=4
+                            )
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Unable to persist updated config file {config_file_path}: {e}"
                         )
             except Exception as e:
-                logging.getLogger(__name__).warning(
+                self.logger.warning(
                     f"Unable to load config file {config_file_path}, regenerating defaults: {e}"
                 )
                 self.app_config = default_app_config
-                with open(config_file_path, "w") as f:
-                    json.dump(self.app_config, f, default=serialize_object, indent=4)
+                try:
+                    with open(config_file_path, "w") as f:
+                        json.dump(self.app_config, f, default=serialize_object, indent=4)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Unable to persist regenerated default config file {config_file_path}: {e}"
+                    )
 
         plugin_path = Path(self.user_plugin_path).resolve()
         parent_path = plugin_path.parent
