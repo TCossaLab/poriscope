@@ -368,7 +368,9 @@ class MainModel(QObject):
             with open(config_file_path, "w") as f:
                 json.dump(self.app_config, f, default=serialize_object, indent=4)
         except Exception as e:
-            self.logger.warning(f"Unable to persist updated config file {config_file_path}: {e}")
+            self.logger.warning(
+                f"Unable to persist updated config file {config_file_path}: {e}"
+            )
 
     @log(logger=logger)
     def get_data_server_location(self):

@@ -113,7 +113,9 @@ class App(QApplication):
                 self.app_config = default_app_config
                 try:
                     with open(config_file_path, "w") as f:
-                        json.dump(self.app_config, f, default=serialize_object, indent=4)
+                        json.dump(
+                            self.app_config, f, default=serialize_object, indent=4
+                        )
                 except Exception as e:
                     self.logger.warning(
                         f"Unable to persist regenerated default config file {config_file_path}: {e}"
