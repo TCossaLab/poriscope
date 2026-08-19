@@ -619,6 +619,7 @@ class MetaEventFitter(BaseDataPlugin):
                 self.sublevel_metadata[channel].pop(index)
                 continue
 
+            invalid_sublevel_metadata = False
             for key, val in sublevel_metadata.items():
                 if len(val) != len(sublevel_starts) - 1:
                     self.rejected[channel]["Level Count Mismatch"] = (
@@ -629,9 +630,13 @@ class MetaEventFitter(BaseDataPlugin):
                     )
                     self.event_metadata[channel].pop(index)
                     self.sublevel_metadata[channel].pop(index)
-                    continue
+                    invalid_sublevel_metadata = True
+                    break
                 else:
                     self.sublevel_metadata[channel][index][key] = val
+
+            if invalid_sublevel_metadata:
+                continue
 
             self.sublevel_metadata[channel][index]["event_id"] = np.array(
                 [event_id] * (len(sublevel_starts) - 1), dtype=np.int64
