@@ -16,13 +16,10 @@ two behaviors worth flagging):
   superclass produced, completely unchanged.
 - _populate_event_metadata's max_blockage_duration/min_blockage_duration/
   max_deviation_duration fields compute argmax/argmin on the trimmed
-  [1:-1] slice of sublevel_blockage / sublevel_max_deviation, but then use
-  that *relative* index to look up sublevel_duration on the FULL (untrimmed)
-  array. This means, for any event with more than 3 sublevels, the reported
-  duration generally does NOT correspond to the sublevel that actually holds
-  the max/min value. This is tested explicitly below as documented, observed
-  behavior -- not as a "should" -- so a future fix to this indexing will be
-  caught by an obviously-named failing test rather than silently passing.
+  [1:-1] slice of sublevel_blockage / sublevel_max_deviation, and look up
+  sublevel_duration through that same trimmed slice, so the reported
+  duration correctly corresponds to the sublevel that actually holds the
+  max/min value.
 
 Coverage targets:
 - get_empty_settings (pure passthrough)
@@ -359,25 +356,20 @@ class TestPopulateEventMetadata(unittest.TestCase):
         self.assertEqual(result["min_blockage"], 10.0)
         self.assertEqual(result["max_deviation"], 60.0)
 
-    def test_documented_duration_index_alignment_quirk(self):
-        # See module docstring: argmax/argmin are computed on the trimmed
-        # [1:-1] slice, but used as a RAW index into the untrimmed
-        # sublevel_duration array. With sublevel_blockage inner slice
-        # [10, 50, 20], argmax (relative) = 1 and argmin (relative) = 0.
-        # The code then looks up sublevel_duration[1] and sublevel_duration[0]
-        # directly -- NOT the durations of the sublevels that actually hold
-        # the max (full-index 2) / min (full-index 1) blockage values.
-        # This test documents that observed behavior; if the indexing is
-        # fixed upstream, this test's name makes it obvious why it now fails.
+    def test_duration_alignment_matches_sublevel_holding_extreme_value(self):
+        # sublevel_blockage inner [1:-1] slice is [10, 50, 20]: the max (50)
+        # is at full-index 2, the min (10) is at full-index 1. argmax/argmin
+        # are computed on that trimmed slice, and sublevel_duration is looked
+        # up through the SAME trimmed slice, so the reported duration must
+        # correspond to the sublevel that actually holds the extreme value.
         pf = object.__new__(NoFitter)
         meta = self._make_sublevel_meta()
         result = pf._populate_event_metadata(np.zeros(10), 1e6, 200.0, 5.0, meta)
 
-        self.assertEqual(result["max_blockage_duration"], meta["sublevel_duration"][1])
-        self.assertEqual(result["min_blockage_duration"], meta["sublevel_duration"][0])
-        # sublevel_max_deviation inner slice [5, 60, 7] -> relative argmax = 1
-        # -> looked up as sublevel_duration[1], same quirk as above.
-        self.assertEqual(result["max_deviation_duration"], meta["sublevel_duration"][1])
+        self.assertEqual(result["max_blockage_duration"], meta["sublevel_duration"][2])
+        self.assertEqual(result["min_blockage_duration"], meta["sublevel_duration"][1])
+        # sublevel_max_deviation inner slice [5, 60, 7] -> max at full-index 2
+        self.assertEqual(result["max_deviation_duration"], meta["sublevel_duration"][2])
 
     def test_baseline_current_is_duration_weighted_average_of_endpoints(self):
         pf = object.__new__(NoFitter)

@@ -885,8 +885,11 @@ class TestGetEventDataGenerator:
             list(finder.get_event_data_generator(99))
 
     def test_no_event_starts_raises_valueerror(self, finder):
+        # event_ends must be non-empty here so this exercises the "no event
+        # starts" branch specifically, rather than the "both empty" branch
+        # (which now correctly fires "Eventfinder may not have run yet").
         finder.event_starts[0] = []
-        finder.event_ends[0] = []
+        finder.event_ends[0] = [20]
         with pytest.raises(ValueError, match="No event starts found"):
             list(finder.get_event_data_generator(0))
 
