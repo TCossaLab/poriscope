@@ -2,7 +2,7 @@
 E2E/UX flow for Metadata tab.
 
 Run with:
-    pytest tests/e2e/metadata/test_e2e_metadata_flow.py -v -s
+    pytest tests/e2e/metadata/test_metadata_flow.py -v -s
 
 Stages:
 1) Open Metadata tab, add a MetaDatabaseLoader (SQLiteDBLoader) pointed at
@@ -290,7 +290,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             f"default, got {select_all_btn.text()!r}"
         )
 
-        QTest.mouseClick(select_all_btn, Qt.LeftButton)
+        QTest.mouseClick(select_all_btn, Qt.MouseButton.LeftButton)
         after_deselect = _checked_leaves()
         after_deselect_count = sum(len(v) for v in after_deselect.values())
         print(
@@ -306,7 +306,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             f"everything, got {select_all_btn.text()!r}"
         )
 
-        QTest.mouseClick(select_all_btn, Qt.LeftButton)
+        QTest.mouseClick(select_all_btn, Qt.MouseButton.LeftButton)
         after_select = _checked_leaves()
         after_select_count = sum(len(v) for v in after_select.values())
         print(
@@ -445,20 +445,20 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             return
         pick_btn = _find_button_contains(dlg, "select input file")
         if pick_btn:
-            QTest.mouseClick(pick_btn, Qt.LeftButton)
+            QTest.mouseClick(pick_btn, Qt.MouseButton.LeftButton)
             qtbot.wait(QT_WAIT_SHORT_MS)
         for w in dlg.findChildren(QtWidgets.QLineEdit):
             if "name" in (w.objectName() or "").lower() and not w.text().strip():
                 w.setText("db_loader_e2e")
         ok = _find_button(dlg, "ok")
         if ok and ok.isEnabled():
-            QTest.mouseClick(ok, Qt.LeftButton)
+            QTest.mouseClick(ok, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_loader_settings)
 
     QtCore.QTimer.singleShot(0, auto_complete_loader_settings)
 
-    QTest.mouseClick(controls.db_loader_add_button, Qt.LeftButton)
+    QTest.mouseClick(controls.db_loader_add_button, Qt.MouseButton.LeftButton)
     # Confirmed real (MetadataControls.py source): db_loader_comboBox.
     qtbot.waitUntil(
         lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
@@ -474,7 +474,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     # needed since we never enter a real Qt.Popup exec().
     # =========================================================
     qtbot.wait(QT_WAIT_SHORT_MS)
-    QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
+    QTest.mouseClick(controls.selection_tree_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
 
     assert md_view.selected_experiment_and_channels_by_loader.get(
@@ -505,12 +505,12 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             dlg.filter_input.setPlainText("duration>100")
         ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
         if ok_btn.isEnabled():
-            QTest.mouseClick(ok_btn, Qt.LeftButton)
+            QTest.mouseClick(ok_btn, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_assisted_filter_dialog)
 
     QtCore.QTimer.singleShot(0, auto_complete_assisted_filter_dialog)
-    QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
+    QTest.mouseClick(controls.filter_add_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: any("_assisted" in name for name in md_view.subset_filters.keys()),
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -543,12 +543,12 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
             )
         ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
         if ok_btn.isEnabled():
-            QTest.mouseClick(ok_btn, Qt.LeftButton)
+            QTest.mouseClick(ok_btn, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_raw_filter_dialog)
 
     QtCore.QTimer.singleShot(0, auto_complete_raw_filter_dialog)
-    QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
+    QTest.mouseClick(controls.filter_add_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: any("_raw" in name for name in md_view.subset_filters.keys()),
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -602,7 +602,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     )
 
     # Plot with no filter selected first (Full Dataset)
-    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     print("[DEBUG] update_plot_button clicked, entering waitUntil...")
     qtbot.waitUntil(
         lambda: _count_bars(md_view.figure) > 0 or _count_lines(md_view.figure) > 0,
@@ -621,7 +621,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     if hasattr(controls.filter_comboBox, "refreshDisplayText"):
         controls.filter_comboBox.refreshDisplayText()
 
-    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _legend_label_count(md_view.figure) > legend_after_full,
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -643,7 +643,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     label_before_log = _get_x_label(md_view.figure)
     controls.x_axis_logscale_checkbox.setChecked(True)
-    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: "log10(" in _get_x_label(md_view.figure), timeout=QT_WAIT_TIMEOUT_MS
     )
@@ -687,7 +687,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     controls.y_axis_comboBox.setCurrentIndex(y_idx)
 
     before_collections = _count_collections(md_view.figure)
-    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _count_collections(md_view.figure) > before_collections,
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -701,7 +701,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
         collections_after_scatter > 0
     ), "Expected a real scatter collection after switching to Scatterplot"
 
-    QTest.mouseClick(controls.undo_button, Qt.LeftButton)
+    QTest.mouseClick(controls.undo_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     bars_after_undo = _count_bars(md_view.figure)
     collections_after_undo = _count_collections(md_view.figure)
@@ -722,7 +722,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     # STAGE 8: Reset -> expect a fully cleared plot
     # =========================================================
-    QTest.mouseClick(controls.reset_button, Qt.LeftButton)
+    QTest.mouseClick(controls.reset_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     assert (
         _legend_label_count(md_view.figure) == 0
@@ -752,7 +752,7 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog):
     controls.y_axis_comboBox.setCurrentIndex(y_idx)
 
     before_collections = _count_collections(md_view.figure)
-    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _count_collections(md_view.figure) > before_collections,
         timeout=QT_WAIT_TIMEOUT_MS,

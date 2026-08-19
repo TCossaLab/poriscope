@@ -1,10 +1,10 @@
 """
 E2E/UX flow for Metadata tab: Plot Events + navigation + RAW checkbox + SQL
 filter save/load/edit/delete persistence round-trip. CSV export (accept
-and cancel paths) is covered separately in test_e2e_metadata_csv_export.py.
+and cancel paths) is covered separately in test_metadata_csv_export.py.
 
 Run with:
-    pytest tests/e2e/metadata/test_e2e_metadata_events_nav_persistence.py -v -s
+    pytest tests/e2e/metadata/test_metadata_events_nav_persistence.py -v -s
 
 Stages (no SQL filter active for stages 1-4; SQL filters only enter at stage 5):
 1) Open tab, add loader, scope select-all.
@@ -196,7 +196,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         raising=False,
     )
 
-    # QMessageBox safety net (see test_e2e_metadata_flow.py for rationale)
+    # QMessageBox safety net (see test_metadata_flow.py for rationale)
     for _mb_method, _mb_return in (
         ("warning", QtWidgets.QMessageBox.Ok),
         ("critical", QtWidgets.QMessageBox.Ok),
@@ -218,7 +218,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         )
 
     # SelectionTree.show_dialog() bypass (Qt.Popup hangs under offscreen -
-    # see test_e2e_metadata_flow.py for full rationale)
+    # see test_metadata_flow.py for full rationale)
     import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
 
     def _patched_show_dialog(
@@ -228,7 +228,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
         if select_all_btn.text() == "Select All":
-            QTest.mouseClick(select_all_btn, Qt.LeftButton)
+            QTest.mouseClick(select_all_btn, Qt.MouseButton.LeftButton)
         result = selection_widget.get_selected()
         self.selection_by_loader[loader_name] = result
         return result
@@ -273,26 +273,26 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
             return
         pick_btn = _find_button_contains(dlg, "select input file")
         if pick_btn:
-            QTest.mouseClick(pick_btn, Qt.LeftButton)
+            QTest.mouseClick(pick_btn, Qt.MouseButton.LeftButton)
             qtbot.wait(QT_WAIT_SHORT_MS)
         for w in dlg.findChildren(QtWidgets.QLineEdit):
             if "name" in (w.objectName() or "").lower() and not w.text().strip():
                 w.setText("db_loader_e2e")
         ok = _find_button(dlg, "ok")
         if ok and ok.isEnabled():
-            QTest.mouseClick(ok, Qt.LeftButton)
+            QTest.mouseClick(ok, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_loader_settings)
 
     QtCore.QTimer.singleShot(0, auto_complete_loader_settings)
-    QTest.mouseClick(controls.db_loader_add_button, Qt.LeftButton)
+    QTest.mouseClick(controls.db_loader_add_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
     )
     print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     qtbot.wait(QT_WAIT_SHORT_MS)
-    QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
+    QTest.mouseClick(controls.selection_tree_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     print(
         f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}"
@@ -309,7 +309,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         lambda: controls.plot_events_pushButton.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS
     )
     before = _count_lines(md_view.figure)
-    QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
+    QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _count_lines(md_view.figure) > before, timeout=QT_WAIT_TIMEOUT_MS
     )
@@ -321,7 +321,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
 
     controls.event_id_lineEdit.setText("3")
     controls.n_events_lineEdit.setText("2")
-    QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
+    QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _count_lines(md_view.figure) != lines_4events,
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -373,11 +373,11 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     print(f"[DEBUG] Final simulated expected event_id: {expected_event_id}")
 
     if controls.right_arrow_button.isEnabled():
-        QTest.mouseClick(controls.right_arrow_button, Qt.LeftButton)
+        QTest.mouseClick(controls.right_arrow_button, Qt.MouseButton.LeftButton)
         qtbot.wait(QT_WAIT_SHORT_MS)
     for i in range(3):
         if controls.left_arrow_button.isEnabled():
-            QTest.mouseClick(controls.left_arrow_button, Qt.LeftButton)
+            QTest.mouseClick(controls.left_arrow_button, Qt.MouseButton.LeftButton)
             qtbot.wait(QT_WAIT_SHORT_MS)
             print(
                 f"[DEBUG] After LEFT click #{i + 1}: event_id_lineEdit="
@@ -407,7 +407,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # =========================================================
     lines_before_raw = _count_lines(md_view.figure)
     controls.raw_checkbox.setChecked(True)
-    QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
+    QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _count_lines(md_view.figure) > lines_before_raw,
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -420,7 +420,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     )
 
     controls.raw_checkbox.setChecked(False)
-    QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
+    QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: _count_lines(md_view.figure) < lines_with_raw,
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -448,12 +448,12 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
                 dlg.filter_input.setPlainText(filter_text)
             ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
             if ok_btn.isEnabled():
-                QTest.mouseClick(ok_btn, Qt.LeftButton)
+                QTest.mouseClick(ok_btn, Qt.MouseButton.LeftButton)
             else:
                 QtCore.QTimer.singleShot(50, auto_complete)
 
         QtCore.QTimer.singleShot(0, auto_complete)
-        QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
+        QTest.mouseClick(controls.filter_add_button, Qt.MouseButton.LeftButton)
         qtbot.waitUntil(
             lambda: any(name in n for n in md_view.subset_filters),
             timeout=QT_WAIT_TIMEOUT_MS,
@@ -475,7 +475,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
 
     # --- Save Filter ---
     _dialog_purpose["value"] = "filters"
-    QTest.mouseClick(controls.save_filter_button, Qt.LeftButton)
+    QTest.mouseClick(controls.save_filter_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: filters_json_path.exists(), timeout=QT_WAIT_TIMEOUT_MS)
     with open(filters_json_path) as f:
         saved_json = json.load(f)
@@ -487,7 +487,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # --- Load Filter while both still exist in memory -> expect a
     # "Duplicate filter names" warning and NO change to subset_filters ---
     caplog.clear()
-    QTest.mouseClick(controls.load_filter_button, Qt.LeftButton)
+    QTest.mouseClick(controls.load_filter_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     print(
         f"[DEBUG] subset_filters after duplicate-load attempt: {md_view.subset_filters}"
@@ -515,12 +515,12 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
         dlg.filter_input.setPlainText("duration>150")
         ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
         if ok_btn.isEnabled():
-            QTest.mouseClick(ok_btn, Qt.LeftButton)
+            QTest.mouseClick(ok_btn, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_edit)
 
     QtCore.QTimer.singleShot(0, auto_complete_edit)
-    QTest.mouseClick(controls.filter_info_button, Qt.LeftButton)
+    QTest.mouseClick(controls.filter_info_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: md_view.subset_filters.get(filter_a_name) == "duration>150",
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -532,13 +532,13 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     controls.filter_comboBox.selectItem(filter_b_name, select=True)
     if hasattr(controls.filter_comboBox, "refreshDisplayText"):
         controls.filter_comboBox.refreshDisplayText()
-    QTest.mouseClick(controls.filter_delete_button, Qt.LeftButton)
+    QTest.mouseClick(controls.filter_delete_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: md_view.subset_filters == {}, timeout=QT_WAIT_TIMEOUT_MS)
     print(f"[DEBUG] subset_filters after delete: {md_view.subset_filters}")
 
     # --- Load Filter again from the same saved file -> should restore
     # the ORIGINAL pre-edit values, not the edited "duration>150" ---
-    QTest.mouseClick(controls.load_filter_button, Qt.LeftButton)
+    QTest.mouseClick(controls.load_filter_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: len(md_view.subset_filters) == 2, timeout=QT_WAIT_TIMEOUT_MS
     )
@@ -560,7 +560,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # DictDialog), the generic auto-dismiss below clicks OK/Save on
     # whatever appears rather than doing nothing and hanging.
     # =========================================================
-    QTest.mouseClick(controls.reset_button, Qt.LeftButton)
+    QTest.mouseClick(controls.reset_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     assert (
         _count_bars(md_view.figure) == 0 and _get_legend_labels(md_view.figure) == []
@@ -577,7 +577,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     qtbot.waitUntil(
         lambda: controls.update_plot_button.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS
     )
-    QTest.mouseClick(controls.update_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS)
     saved_bar_count = _count_bars(md_view.figure)
     saved_legend_labels = _get_legend_labels(md_view.figure)
@@ -595,17 +595,17 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
             return
         ok = _find_button(dlg, "ok") or _find_button(dlg, "save")
         if ok and ok.isEnabled():
-            QTest.mouseClick(ok, Qt.LeftButton)
+            QTest.mouseClick(ok, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, _generic_dialog_dismiss)
 
     _dialog_purpose["value"] = "plot_config"
     QtCore.QTimer.singleShot(0, _generic_dialog_dismiss)
-    QTest.mouseClick(controls.save_plot_button, Qt.LeftButton)
+    QTest.mouseClick(controls.save_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: plot_config_json_path.exists(), timeout=QT_WAIT_TIMEOUT_MS)
     print(f"[DEBUG] Plot config saved to {plot_config_json_path}")
 
-    QTest.mouseClick(controls.reset_button, Qt.LeftButton)
+    QTest.mouseClick(controls.reset_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     assert (
         _count_bars(md_view.figure) == 0
@@ -613,7 +613,7 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     print("[DEBUG] Plot reset before reload")
 
     _dialog_purpose["value"] = "plot_config"
-    QTest.mouseClick(controls.load_button, Qt.LeftButton)
+    QTest.mouseClick(controls.load_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: _count_bars(md_view.figure) > 0, timeout=QT_WAIT_TIMEOUT_MS)
     reloaded_bar_count = _count_bars(md_view.figure)
     reloaded_legend_labels = _get_legend_labels(md_view.figure)

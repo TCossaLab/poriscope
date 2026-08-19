@@ -28,7 +28,7 @@ Key behaviors this test relies on:
   crashes without it).
 
 Run with:
-    pytest tests/e2e/metadata/test_e2e_metadata_csv_export.py -v -s
+    pytest tests/e2e/metadata/test_metadata_csv_export.py -v -s
 """
 
 import os
@@ -192,7 +192,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         )
 
     # SelectionTree.show_dialog() bypass (Qt.Popup hangs under offscreen -
-    # see test_e2e_metadata_flow.py for full rationale)
+    # see test_metadata_flow.py for full rationale)
     import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
 
     def _patched_show_dialog(
@@ -202,7 +202,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
         if select_all_btn.text() == "Select All":
-            QTest.mouseClick(select_all_btn, Qt.LeftButton)
+            QTest.mouseClick(select_all_btn, Qt.MouseButton.LeftButton)
         result = selection_widget.get_selected()
         self.selection_by_loader[loader_name] = result
         return result
@@ -248,26 +248,26 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
             return
         pick_btn = _find_button_contains(dlg, "select input file")
         if pick_btn:
-            QTest.mouseClick(pick_btn, Qt.LeftButton)
+            QTest.mouseClick(pick_btn, Qt.MouseButton.LeftButton)
             qtbot.wait(QT_WAIT_SHORT_MS)
         for w in dlg.findChildren(QtWidgets.QLineEdit):
             if "name" in (w.objectName() or "").lower() and not w.text().strip():
                 w.setText("db_loader_e2e")
         ok = _find_button(dlg, "ok")
         if ok and ok.isEnabled():
-            QTest.mouseClick(ok, Qt.LeftButton)
+            QTest.mouseClick(ok, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_loader_settings)
 
     QtCore.QTimer.singleShot(0, auto_complete_loader_settings)
-    QTest.mouseClick(controls.db_loader_add_button, Qt.LeftButton)
+    QTest.mouseClick(controls.db_loader_add_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
     )
     print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     qtbot.wait(QT_WAIT_SHORT_MS)
-    QTest.mouseClick(controls.selection_tree_button, Qt.LeftButton)
+    QTest.mouseClick(controls.selection_tree_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
     print(
         f"[DEBUG] Selected scope: {md_view.selected_experiment_and_channels_by_loader}"
@@ -284,12 +284,12 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
             dlg.filter_input.setPlainText("duration>100")
         ok_btn = dlg.button_box.button(QtWidgets.QDialogButtonBox.Ok)
         if ok_btn.isEnabled():
-            QTest.mouseClick(ok_btn, Qt.LeftButton)
+            QTest.mouseClick(ok_btn, Qt.MouseButton.LeftButton)
         else:
             QtCore.QTimer.singleShot(50, auto_complete_filter_dialog)
 
     QtCore.QTimer.singleShot(0, auto_complete_filter_dialog)
-    QTest.mouseClick(controls.filter_add_button, Qt.LeftButton)
+    QTest.mouseClick(controls.filter_add_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: any("csv_export_filter" in n for n in md_view.subset_filters),
         timeout=QT_WAIT_TIMEOUT_MS,
@@ -332,7 +332,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         folder_widget = entrywidgets.get("Folder")
         print(f"[DEBUG] Folder widget type: {type(folder_widget).__name__}")
         if isinstance(folder_widget, QtWidgets.QPushButton):
-            QTest.mouseClick(folder_widget, Qt.LeftButton)
+            QTest.mouseClick(folder_widget, Qt.MouseButton.LeftButton)
             qtbot.wait(50)
         elif folder_widget is not None and hasattr(folder_widget, "setText"):
             folder_widget.setText(str(export_folder))
@@ -347,7 +347,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
             f"enabled={ok.isEnabled() if ok else None}"
         )
         if ok and ok.isEnabled():
-            QTest.mouseClick(ok, Qt.LeftButton)
+            QTest.mouseClick(ok, Qt.MouseButton.LeftButton)
             print("[DEBUG] Export dialog OK clicked")
         else:
             _accept_found_attempts["n"] += 1
@@ -358,7 +358,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
             QtCore.QTimer.singleShot(50, auto_complete_export_accept)
 
     QtCore.QTimer.singleShot(0, auto_complete_export_accept)
-    QTest.mouseClick(controls.export_csv_subset_button, Qt.LeftButton)
+    QTest.mouseClick(controls.export_csv_subset_button, Qt.MouseButton.LeftButton)
     print("[DEBUG] export_csv_subset_button clicked, entering waitUntil...")
 
     def _get_new_csvs():
@@ -393,7 +393,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
         cancel_btn = _find_button(dlg, "cancel")
         if cancel_btn:
             print(f"[DEBUG] Clicking real Cancel button: {cancel_btn.text()!r}")
-            QTest.mouseClick(cancel_btn, Qt.LeftButton)
+            QTest.mouseClick(cancel_btn, Qt.MouseButton.LeftButton)
         else:
             print(
                 "[DEBUG] No 'Cancel'-labeled button found - falling back to dlg.reject()"
@@ -401,7 +401,7 @@ def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
             dlg.reject()
 
     QtCore.QTimer.singleShot(0, auto_complete_export_cancel)
-    QTest.mouseClick(controls.export_csv_subset_button, Qt.LeftButton)
+    QTest.mouseClick(controls.export_csv_subset_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_WAIT_SHORT_MS)
 
     after_cancel_files = set(export_folder.glob("*.csv"))
