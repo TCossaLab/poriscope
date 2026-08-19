@@ -174,7 +174,9 @@ class IntegerRangeLineEdit(BaseLineEdit):
             if not segment:
                 continue
             if segment.startswith("-"):
-                self.logger.debug(f"Skipping invalid (leading '-') segment: '{segment}'")
+                self.logger.debug(
+                    f"Skipping invalid (leading '-') segment: '{segment}'"
+                )
                 continue
             if "-" in segment:
                 numbers = segment.split("-")

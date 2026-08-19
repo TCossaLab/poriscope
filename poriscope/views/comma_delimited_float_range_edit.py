@@ -127,7 +127,9 @@ class CommaFloatRangeLineEdit(BaseLineEdit):
         for segment in segments:
             segment = segment.strip()
             if segment.startswith("-"):
-                self.logger.debug(f"Skipping invalid (leading '-') segment: '{segment}'")
+                self.logger.debug(
+                    f"Skipping invalid (leading '-') segment: '{segment}'"
+                )
                 continue
             if "-" in segment:
                 number_strs = segment.split("-")
