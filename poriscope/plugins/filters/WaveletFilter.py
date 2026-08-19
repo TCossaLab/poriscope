@@ -182,7 +182,7 @@ class WaveletFilter(MetaFilter):
         self.fun.restype = None
         self.fun.argtypes = [
             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-            ctypes.c_int,
+            ctypes.c_int64,
             ctypes.c_char_p,
         ]
 
