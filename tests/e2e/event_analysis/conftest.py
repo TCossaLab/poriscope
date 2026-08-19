@@ -37,6 +37,7 @@ import pytest
 from tests.synthetic_data.synthetic_events_db import (
     SyntheticEventsDatabase,
     generate_events_database,
+    generate_multichannel_events_database,
 )
 
 DEFAULT_BASELINE_PA = 2000.0
@@ -117,3 +118,37 @@ def make_synthetic_events_database(tmp_path):
         return generate_events_database(out_path, **params)
 
     return _make
+
+
+@pytest.fixture
+def synthetic_multichannel_events_database(tmp_path) -> SyntheticEventsDatabase:
+    """
+    A three-channel events database (channels 0, 1, 2; 5 events each).
+
+    Built for testing the channel selector's own behavior -- does the
+    combo box populate with the right channels, does selecting more than
+    one disable Plot/Fit (EventAnalysisControls-specific; RawDataControls
+    has no such restriction) -- rather than for fitting or plotting
+    content, so event counts here are deliberately small (5, not 25) to
+    keep the fixture fast to build. Written as one file with three
+    channel_id rows, not three files: see
+    tests/synthetic_data/synthetic_events_db.py's module docstring for
+    why events-database multichannel is structurally different from
+    raw-data multichannel.
+
+    :param tmp_path: Pytest-provided temporary directory, unique per test.
+    :type tmp_path: pathlib.Path
+
+    :return: Database describing the file written and every channel's
+        planted events.
+    :rtype: SyntheticEventsDatabase
+    """
+    return generate_multichannel_events_database(
+        tmp_path / "synthetic_events_multichannel.sqlite3",
+        channels=[0, 1, 2],
+        num_events_per_channel=5,
+        samplerate=500_000.0,
+        baseline_mean_pA=DEFAULT_BASELINE_PA,
+        baseline_std_pA=DEFAULT_NOISE_STD_PA,
+        event_amplitude_pA=DEFAULT_EVENT_AMPLITUDE_PA,
+    )
