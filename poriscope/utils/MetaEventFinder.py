@@ -327,6 +327,12 @@ class MetaEventFinder(BaseDataPlugin):
             self.logger.info(f"Range {i+1}: Found {events_in_range} events")
             completed += weight
 
+            if abort is True:
+                self.logger.info(
+                    f"Eventfinding aborted after range {i+1}/{len(ranges)} in channel {channel}"
+                )
+                break
+
         # Final consistency check
         if abort is False:
             if (

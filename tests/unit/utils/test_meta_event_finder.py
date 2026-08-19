@@ -529,6 +529,29 @@ class TestFindEventsErrorBranches:
         assert finder.eventfinding_finished[0] is False
         assert finder.event_starts[0] == []
 
+    def test_abort_stops_processing_remaining_ranges(self, finder):
+        # Aborting mid-way through the first of two ranges must not fall
+        # through to processing the second range afterward.
+        real_single_range = finder._find_events_single_range
+        call_count = {"n": 0}
+
+        def fake_single_range(channel, start, end, chunk_length, data_filter):
+            call_count["n"] += 1
+            yield from real_single_range(channel, start, end, chunk_length, data_filter)
+
+        with patch.object(
+            finder, "_find_events_single_range", side_effect=fake_single_range
+        ):
+            gen = finder.find_events(0, [(0, 3.0), (5.0, 0)], chunk_length=1.0)
+            next(gen)
+            try:
+                gen.send(True)
+            except StopIteration:
+                pass
+        assert call_count["n"] == 1
+        assert finder.eventfinding_finished[0] is False
+        assert finder.event_starts[0] == []
+
     def test_runtime_error_in_one_range_is_skipped(self, finder):
         # First range raises RuntimeError when iterated; the second range
         # should still be processed normally afterwards.

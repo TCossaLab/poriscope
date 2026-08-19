@@ -144,6 +144,7 @@
     * `JsonDefaultSerializer` now also handles `Enum`, `datetime`/`date`, and `set`/`frozenset` values instead of only `PurePath`
     * All config file writes in `App`/`MainModel` are now wrapped in error handling instead of letting a write failure crash the app
     * Fixed `IntegerRangeLineEdit`/`CommaFloatRangeLineEdit` silently mis-parsing or truncating ranges containing an extra `-` (e.g. a leading minus sign or a stray third number); these fields only ever represent times or event indices, both non-negative, so a leading `-` is now rejected outright instead of ambiguously parsed
+    * Fixed `MetaEventFinder.find_events` not stopping promptly when aborted mid-run: it previously kept processing every remaining range before discarding all results, instead of stopping as soon as the abort was received
 
 
 
