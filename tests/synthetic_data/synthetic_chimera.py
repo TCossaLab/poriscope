@@ -109,7 +109,9 @@ class ChimeraRecordingConfig(BaseRecordingConfig):
         return self.samplerate if self.adc_samplerate is None else self.adc_samplerate
 
 
-def _scale_offset(tia_gain: float, i_offset: float, filter_gain: float) -> Tuple[float, float]:
+def _scale_offset(
+    tia_gain: float, i_offset: float, filter_gain: float
+) -> Tuple[float, float]:
     """
     Compute the ADC-code-to-picoamp conversion for a given gain configuration.
 
@@ -165,7 +167,9 @@ class ChimeraRecordingWriter(BaseSyntheticRecordingWriter[ChimeraRecordingConfig
         :return: Dataset describing the .log/.json pair that was written.
         :rtype: SyntheticDataset
         """
-        scale, offset = _scale_offset(config.tia_gain, config.i_offset, config.filter_gain)
+        scale, offset = _scale_offset(
+            config.tia_gain, config.i_offset, config.filter_gain
+        )
 
         # Convert picoamps back to the ADC codes stored on disk, clipping
         # to the representable int16 range.
@@ -252,7 +256,9 @@ if __name__ == "__main__":
         ds = generate_chimera_dataset(Path(tmp), cfg, num_events=5)
         print("log:", ds.data_path, ds.data_path.stat().st_size, "bytes")
         print("json:", ds.metadata_path)
-        print("events:", [(e.start_time_s, e.duration_s, e.amplitude) for e in ds.events])
+        print(
+            "events:", [(e.start_time_s, e.duration_s, e.amplitude) for e in ds.events]
+        )
 
         scale, offset = _scale_offset(cfg.tia_gain, cfg.i_offset, cfg.filter_gain)
         codes = np.fromfile(ds.data_path, dtype=np.int16)
@@ -260,10 +266,15 @@ if __name__ == "__main__":
         print("quantisation step (pA/code):", scale)
 
         first = ds.events[0]
-        window = recovered_pA[first.start_index : first.start_index + first.length_samples]
+        window = recovered_pA[
+            first.start_index : first.start_index + first.length_samples
+        ]
         outside = recovered_pA[: first.start_index]
         print(
-            "event window mean:", round(window.mean(), 2),
-            "pA / baseline mean:", round(outside.mean(), 2), "pA",
+            "event window mean:",
+            round(window.mean(), 2),
+            "pA / baseline mean:",
+            round(outside.mean(), 2),
+            "pA",
         )
         print("expected difference:", first.amplitude, "pA")

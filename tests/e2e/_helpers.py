@@ -127,7 +127,9 @@ def open_menu_hybrid(
         )
     except StopIteration:
         available = [_normalize_label(a.text()) for a in menu_bar.actions()]
-        raise AssertionError(f"No top-level menu {top_level_label!r} found; available: {available}")
+        raise AssertionError(
+            f"No top-level menu {top_level_label!r} found; available: {available}"
+        )
 
     action_rect = menu_bar.actionGeometry(top_level_action)
     QTest.mouseClick(
@@ -147,11 +149,14 @@ def open_menu_hybrid(
             intermediate_action = next(
                 action
                 for action in current_menu.actions()
-                if _normalize_label(action.text()) == _normalize_label(intermediate_label)
+                if _normalize_label(action.text())
+                == _normalize_label(intermediate_label)
             )
         except StopIteration:
             available = [_normalize_label(a.text()) for a in current_menu.actions()]
-            raise AssertionError(f"No submenu {intermediate_label!r} found; available: {available}")
+            raise AssertionError(
+                f"No submenu {intermediate_label!r} found; available: {available}"
+            )
         next_menu = intermediate_action.menu()
         if next_menu is None:
             # Some submenus are populated on demand rather than up front;
@@ -174,7 +179,9 @@ def open_menu_hybrid(
         )
     except StopIteration:
         available = [_normalize_label(a.text()) for a in current_menu.actions()]
-        raise AssertionError(f"No menu action {final_label!r} found; available: {available}")
+        raise AssertionError(
+            f"No menu action {final_label!r} found; available: {available}"
+        )
     final_action.trigger()
     qtbot.wait(20)
 
@@ -213,7 +220,9 @@ def find_button(
     return None
 
 
-def ensure_name_filled(dlg: QtWidgets.QDialog, default_name: str = "e2e_instance") -> None:
+def ensure_name_filled(
+    dlg: QtWidgets.QDialog, default_name: str = "e2e_instance"
+) -> None:
     """
     Make sure a plugin settings dialog has a non-empty instance name.
 
