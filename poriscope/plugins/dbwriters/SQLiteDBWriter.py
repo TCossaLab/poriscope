@@ -290,7 +290,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if self.conn and last_call is True:
                 self.conn.close()
                 self.conn = None
-            return success
+        return success
 
     @log(logger=logger)
     @override
