@@ -165,34 +165,40 @@ class RawDataView(MetaView, WalkthroughMixin):
             ax.plot(time, channel_data / 1000, zorder=1)
 
             if baseline is True:
-                amp, mean, std = self._get_baseline_stats(channel_data / 1000)
-                # Add green rectangle for mean ± 3*std
-                ax.axhspan(
-                    mean - 3 * std,
-                    mean + 3 * std,
-                    xmin=0,
-                    xmax=1,
-                    color="green",
-                    alpha=0.2,
-                    zorder=2,
-                )
+                try:
+                    amp, mean, std = self._get_baseline_stats(channel_data / 1000)
+                except ValueError as e:
+                    self.logger.warning(
+                        f"Unable to compute baseline stats for channel {channel}: {e}"
+                    )
+                else:
+                    # Add green rectangle for mean ± 3*std
+                    ax.axhspan(
+                        mean - 3 * std,
+                        mean + 3 * std,
+                        xmin=0,
+                        xmax=1,
+                        color="green",
+                        alpha=0.2,
+                        zorder=2,
+                    )
 
-                # Add red horizontal line at the mean
-                ax.axhline(mean, color="red", linestyle="--", linewidth=1, zorder=3)
+                    # Add red horizontal line at the mean
+                    ax.axhline(mean, color="red", linestyle="--", linewidth=1, zorder=3)
 
-                # Add label with mean and std
-                label = f"Mean = {mean:.2f} nA\nStd = {std:.2f} nA"
-                ax.text(
-                    0.98,
-                    0.95,
-                    label,
-                    transform=ax.transAxes,
-                    verticalalignment="top",
-                    horizontalalignment="right",
-                    fontsize=8,
-                    bbox=dict(facecolor="white", alpha=0.6, edgecolor="gray"),
-                    zorder=4,
-                )
+                    # Add label with mean and std
+                    label = f"Mean = {mean:.2f} nA\nStd = {std:.2f} nA"
+                    ax.text(
+                        0.98,
+                        0.95,
+                        label,
+                        transform=ax.transAxes,
+                        verticalalignment="top",
+                        horizontalalignment="right",
+                        fontsize=8,
+                        bbox=dict(facecolor="white", alpha=0.6, edgecolor="gray"),
+                        zorder=4,
+                    )
 
             y_label = r"Current (nA)"
             x_label = r"Time (s)"
@@ -438,6 +444,10 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
+        if width <= 0:
+            raise ValueError(
+                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
+            )
         bins = int((top - bottom) / width)
         hist = histogram1d(data, range=[bottom, top], bins=bins)
         centers = np.linspace(bottom, top, len(hist))
@@ -461,7 +471,9 @@ class RawDataView(MetaView, WalkthroughMixin):
         except StopIteration:
             bottom_index = 0
 
-        np.minimum(top_index - max_index, max_index - bottom_index)
+        half_width = np.minimum(top_index - max_index, max_index - bottom_index)
+        top_index = max_index + half_width
+        bottom_index = max_index - half_width
 
         top = centers[top_index]
         bottom = centers[bottom_index]
