@@ -1818,7 +1818,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         data_list = self._fetch_event_data(fetch_params, action_label="events")
 
         if data_list:
-            self._update_event_plot(data_list)
+            use_raw = parameters.get("raw", False)
+            self._update_event_plot(data_list, use_raw=use_raw)
         else:
             self.add_text_to_display.emit(
                 f"No data available for event_id {snapped_event_id}",
@@ -1924,7 +1925,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data):
+    def _update_event_plot(self, event_data, use_raw=False):
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -1957,17 +1958,19 @@ class ProteinView(MetaView, WalkthroughMixin):
             samplerate = event["samplerate"]
 
             time = np.arange(len(raw_data)) / samplerate * 1e6
-            ax.plot(time, raw_data / 1000, zorder=1)
+            if use_raw:
+                ax.plot(time, raw_data / 1000, zorder=1)
             ax.plot(time, filtered_data / 1000, zorder=2)
             ax.plot(time, fit_data / 1000, zorder=3)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
 
-            self._update_cache(
-                (time, label + " " + x_label),
-                (raw_data / 1000, label + " Raw " + y_label),
-            )
+            if use_raw:
+                self._update_cache(
+                    (time, label + " " + x_label),
+                    (raw_data / 1000, label + " Raw " + y_label),
+                )
             self._update_cache(
                 (time, label + " " + x_label),
                 (filtered_data / 1000, label + " Filtered " + y_label),
@@ -3635,18 +3638,18 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Then, click 'Plot Events' to visualize the selected entries.",
-                "ProteinView",
-                lambda: [self.proteincontrols.plot_events_pushButton],
-            ),
-            (
-                "Protein Tab",
                 "Use the arrows to quickly navigate between filtered/unfiltered events.",
                 "ProteinView",
                 lambda: [
                     self.proteincontrols.left_arrow_button,
                     self.proteincontrols.right_arrow_button,
                 ],
+            ),
+            (
+                "Protein Tab",
+                "Check the RAW box to overlay the unfiltered raw signal alongside the filtered and fitted traces.",
+                "ProteinView",
+                lambda: [self.proteincontrols.raw_checkbox],
             ),
         ]
 

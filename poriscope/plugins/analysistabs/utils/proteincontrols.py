@@ -241,10 +241,25 @@ class ProteinControls(QWidget):
         self.right_arrow_button.setIconSize(QSize(16, 16))
         self.right_arrow_button.setFixedWidth(30)
 
+        self.raw_checkbox = QCheckBox(self.plot_events_widget)
+        self.raw_checkbox.setObjectName("rawCheckBox")
+
+        self.raw_label = self.createLabel(self.groupBox, 12, "RAW")
+        self.raw_label.setAlignment(Qt.AlignCenter)
+        self.raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        raw_layout = QVBoxLayout()
+        raw_layout.setContentsMargins(0, 0, 0, 0)
+        raw_layout.setSpacing(2)
+        raw_layout.addWidget(self.raw_label, alignment=Qt.AlignCenter)
+        raw_layout.addWidget(self.raw_checkbox, alignment=Qt.AlignCenter)
+
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.plot_histogram_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
+        plot_events_layout.addLayout(raw_layout)
+        
         # ---------- MIDDLE COLUMN ----------
 
         # ROW 0: "Distribution event fitting" header
@@ -708,6 +723,7 @@ class ProteinControls(QWidget):
         self.right_arrow_button.clicked.connect(
             lambda: self.on_button_clicked("right_arrow")
         )
+        
         self.individual_button.clicked.connect(
             lambda: self.on_button_clicked("individual")
         )
@@ -752,6 +768,7 @@ class ProteinControls(QWidget):
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.individual_button.toggled.connect(self.validate_inputs)
         self.ensemble_button.toggled.connect(self.validate_inputs)
+        self.raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     # Data Validation
 
@@ -774,6 +791,7 @@ class ProteinControls(QWidget):
                 "n_events": n_events,
                 "n_values": self.n_values_lineEdit.text(),
                 "sizes": self.sizes_checkbox.isChecked(),
+                "raw": self.raw_checkbox.isChecked(),
                 "bins": (
                     [x.strip() for x in self.bins_lineEdit.text().split(",")]
                     if self.bins_lineEdit.text()
