@@ -136,8 +136,12 @@ def make_synthetic_chimera_dataset(tmp_path):
         gen_params = dict(channel=3, num_events=5, seed=42)
         gen_params.update(gen_overrides)
 
-        out_dir = tmp_path / f"synthetic_data_{len(list(tmp_path.glob('synthetic_data_*')))}"
-        return generate_chimera_dataset(out_dir, _default_config(**config_overrides), **gen_params)
+        out_dir = (
+            tmp_path / f"synthetic_data_{len(list(tmp_path.glob('synthetic_data_*')))}"
+        )
+        return generate_chimera_dataset(
+            out_dir, _default_config(**config_overrides), **gen_params
+        )
 
     return _make
 

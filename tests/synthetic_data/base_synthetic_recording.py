@@ -121,7 +121,9 @@ class BaseRecordingConfig:
     """
 
     base_name: str = "synthetic"
-    timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y%m%d_%H%M%S"))
+    timestamp: str = field(
+        default_factory=lambda: datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
     samplerate: float = 4_000_000.0
     duration_s: float = 2.0
     baseline: float = 0.0
@@ -361,7 +363,9 @@ class BaseSyntheticRecordingWriter(ABC, Generic[ConfigT]):
         rng = np.random.default_rng(seed)
         n_samples = int(round(config.duration_s * config.samplerate))
         if n_samples <= 0:
-            raise ValueError("duration_s * samplerate must be a positive number of samples")
+            raise ValueError(
+                "duration_s * samplerate must be a positive number of samples"
+            )
 
         trace = build_noisy_segment(rng, n_samples, config.baseline, config.noise_std)
 
@@ -375,10 +379,14 @@ class BaseSyntheticRecordingWriter(ABC, Generic[ConfigT]):
 
         # Space events evenly across the usable span, then dedupe in case
         # rounding collapsed two positions onto the same sample index.
-        positions = np.linspace(margin, n_samples - margin - event_len, num_events, dtype=int)
+        positions = np.linspace(
+            margin, n_samples - margin - event_len, num_events, dtype=int
+        )
         positions = np.unique(positions)
         if len(positions) != num_events:
-            raise ValueError("Requested events do not fit without overlap; reduce num_events")
+            raise ValueError(
+                "Requested events do not fit without overlap; reduce num_events"
+            )
 
         events: List[SyntheticEvent] = []
         for pos in positions:
@@ -386,7 +394,9 @@ class BaseSyntheticRecordingWriter(ABC, Generic[ConfigT]):
             trace[pos : pos + event_len] += config.event_amplitude
             events.append(
                 SyntheticEvent(
-                    start_index=pos, length_samples=event_len, amplitude=config.event_amplitude
+                    start_index=pos,
+                    length_samples=event_len,
+                    amplitude=config.event_amplitude,
                 ).with_samplerate(config.samplerate)
             )
 

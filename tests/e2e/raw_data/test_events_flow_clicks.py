@@ -80,7 +80,11 @@ def app_with_rawdata_tab(qtbot, tmp_path):
         ``RawDataControls`` panel.
     """
     model = MainModel(
-        {"Parent Folder": str(tmp_path), "User Plugin Folder": str(tmp_path), "Log Level": 20}
+        {
+            "Parent Folder": str(tmp_path),
+            "User Plugin Folder": str(tmp_path),
+            "Log Level": 20,
+        }
     )
     view = MainView(model.get_available_plugins())
     controller = MainController(model, view)
@@ -103,7 +107,9 @@ def app_with_rawdata_tab(qtbot, tmp_path):
         "readers_add_button not visible after switching to RawDataView -- "
         "page may not be fully shown/laid out yet"
     )
-    assert controls.readers_add_button.isEnabled(), "readers_add_button unexpectedly disabled"
+    assert (
+        controls.readers_add_button.isEnabled()
+    ), "readers_add_button unexpectedly disabled"
 
     return raw_view, controls
 
@@ -143,10 +149,14 @@ def reader_added(qtbot, monkeypatch, app_with_rawdata_tab, synthetic_chimera_dat
         return (items[0] if items else "No Selection"), True
 
     monkeypatch.setattr(
-        "PySide6.QtWidgets.QInputDialog.getItem", staticmethod(fake_get_item), raising=False
+        "PySide6.QtWidgets.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=False,
     )
     monkeypatch.setattr(
-        "poriscope.utils.MetaView.QInputDialog.getItem", staticmethod(fake_get_item), raising=False
+        "poriscope.utils.MetaView.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=False,
     )
     monkeypatch.setattr(
         "PySide6.QtWidgets.QFileDialog.getOpenFileName",
@@ -212,10 +222,14 @@ def trace_drawn(qtbot, reader_added):
     """
     raw_view, controls, ds, reader_key = reader_added
     controls.set_range_inputs(0, 2.0)
-    qtbot.waitUntil(lambda: controls.update_trace_pushButton.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.update_trace_pushButton.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS
+    )
     before = count_plot_lines(raw_view.figure)
     QTest.mouseClick(controls.update_trace_pushButton, Qt.LeftButton)
-    qtbot.waitUntil(lambda: count_plot_lines(raw_view.figure) > before, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: count_plot_lines(raw_view.figure) > before, timeout=QT_WAIT_TIMEOUT_MS
+    )
     return raw_view, controls, ds, reader_key
 
 
@@ -267,10 +281,14 @@ def eventfinder_added(qtbot, monkeypatch, trace_drawn):
         return (items[0] if items else "No Selection"), True
 
     monkeypatch.setattr(
-        "PySide6.QtWidgets.QInputDialog.getItem", staticmethod(fake_get_item), raising=False
+        "PySide6.QtWidgets.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=False,
     )
     monkeypatch.setattr(
-        "poriscope.utils.MetaView.QInputDialog.getItem", staticmethod(fake_get_item), raising=False
+        "poriscope.utils.MetaView.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=False,
     )
 
     def fill_finder_dialog(dlg) -> bool:
@@ -286,8 +304,8 @@ def eventfinder_added(qtbot, monkeypatch, trace_drawn):
                 cb.setCurrentIndex(idx if idx >= 0 else 0)
 
         field_values = {
-            "Threshold": "200.0",        # pA; planted events are 400 pA deep
-            "Min Duration": "100.0",     # us; planted events are 500 us long
+            "Threshold": "200.0",  # pA; planted events are 400 pA deep
+            "Min Duration": "100.0",  # us; planted events are 500 us long
             "Max Duration": "1000000.0",
             "Min Separation": "10.0",
         }
@@ -303,7 +321,9 @@ def eventfinder_added(qtbot, monkeypatch, trace_drawn):
 
     schedule_dialog_autofill(fill_finder_dialog)
     QTest.mouseClick(controls.eventfinders_add_button, Qt.LeftButton)
-    qtbot.waitUntil(lambda: controls.eventfinders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.eventfinders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     finder_key = controls.eventfinders_comboBox.currentText()
 
     return raw_view, controls, ds, reader_key, finder_key
@@ -325,8 +345,12 @@ def events_found(qtbot, eventfinder_added):
 
     def num_events_found() -> int:
         raw_view.global_signal.emit(
-            "MetaEventFinder", finder_key, "get_num_events_found", (ds.channel,),
-            "set_num_events_allowed", (),
+            "MetaEventFinder",
+            finder_key,
+            "get_num_events_found",
+            (ds.channel,),
+            "set_num_events_allowed",
+            (),
         )
         return getattr(raw_view, "num_events_allowed", 0)
 
@@ -374,15 +398,21 @@ def test_eventfinder_finds_exact_planted_count(qtbot, events_found):
 
     def num_events_found() -> int:
         raw_view.global_signal.emit(
-            "MetaEventFinder", finder_key, "get_num_events_found", (ds.channel,),
-            "set_num_events_allowed", (),
+            "MetaEventFinder",
+            finder_key,
+            "get_num_events_found",
+            (ds.channel,),
+            "set_num_events_allowed",
+            (),
         )
         return raw_view.num_events_allowed
 
-    qtbot.waitUntil(lambda: num_events_found() == ds.num_events, timeout=QT_WAIT_TIMEOUT_MS)
-    assert num_events_found() == ds.num_events, (
-        f"Expected exactly {ds.num_events} planted events, found {num_events_found()}"
+    qtbot.waitUntil(
+        lambda: num_events_found() == ds.num_events, timeout=QT_WAIT_TIMEOUT_MS
     )
+    assert (
+        num_events_found() == ds.num_events
+    ), f"Expected exactly {ds.num_events} planted events, found {num_events_found()}"
 
 
 @pytest.mark.e2e_ux
@@ -400,7 +430,9 @@ def test_plot_and_navigate_events(qtbot, events_found):
     controls.event_index_lineEdit.setText(f"0-{ds.num_events - 1}")
     before = count_plot_lines(raw_view.figure)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.LeftButton)
-    qtbot.waitUntil(lambda: count_plot_lines(raw_view.figure) > before, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: count_plot_lines(raw_view.figure) > before, timeout=QT_WAIT_TIMEOUT_MS
+    )
 
     if hasattr(controls, "right_plot_arrow_button"):
         QTest.mouseClick(controls.right_plot_arrow_button, Qt.LeftButton)
@@ -441,7 +473,9 @@ def test_commit_events_writes_exact_schema(qtbot, monkeypatch, tmp_path, events_
         """
         widgets = getattr(dlg, "entrywidgets", {})
 
-        if "MetaEventFinder" in widgets and isinstance(widgets["MetaEventFinder"], QtWidgets.QComboBox):
+        if "MetaEventFinder" in widgets and isinstance(
+            widgets["MetaEventFinder"], QtWidgets.QComboBox
+        ):
             idx = widgets["MetaEventFinder"].findText(finder_key)
             widgets["MetaEventFinder"].setCurrentIndex(idx if idx >= 0 else 0)
 
@@ -471,7 +505,9 @@ def test_commit_events_writes_exact_schema(qtbot, monkeypatch, tmp_path, events_
 
     schedule_dialog_autofill(fill_writer_dialog)
     QTest.mouseClick(controls.writers_add_button, Qt.LeftButton)
-    qtbot.waitUntil(lambda: controls.writers_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.writers_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
 
     QTest.mouseClick(controls.commit_btn, Qt.LeftButton)
     qtbot.waitUntil(lambda: out_db.exists(), timeout=QT_WAIT_TIMEOUT_MS)
@@ -482,14 +518,20 @@ def test_commit_events_writes_exact_schema(qtbot, monkeypatch, tmp_path, events_
         cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = sorted(r[0] for r in cur.fetchall())
         expected_tables = {"channels", "events", "columns"}
-        assert expected_tables.issubset(set(tables)), f"Missing expected tables: {expected_tables - set(tables)}"
+        assert expected_tables.issubset(
+            set(tables)
+        ), f"Missing expected tables: {expected_tables - set(tables)}"
 
         cur.execute("SELECT COUNT(*) FROM events")
         n_rows = cur.fetchone()[0]
-        assert n_rows == ds.num_events, f"Expected {ds.num_events} event rows, got {n_rows}"
+        assert (
+            n_rows == ds.num_events
+        ), f"Expected {ds.num_events} event rows, got {n_rows}"
 
         cur.execute("SELECT name, channel_id, voltage FROM channels")
         channel_row = cur.fetchone()
-        assert channel_row == ("e2e_events_test", ds.channel, 200.0), (
-            f"Unexpected channel metadata row: {channel_row}"
-        )
+        assert channel_row == (
+            "e2e_events_test",
+            ds.channel,
+            200.0,
+        ), f"Unexpected channel metadata row: {channel_row}"

@@ -422,7 +422,9 @@ if __name__ == "__main__":
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
-        db = generate_events_database(Path(tmp) / "synthetic_events.sqlite3", num_events=25)
+        db = generate_events_database(
+            Path(tmp) / "synthetic_events.sqlite3", num_events=25
+        )
         ch = db[0]
         print("db:", db.db_path, db.db_path.stat().st_size, "bytes")
         print("channel 0 events:", ch.num_events, "at", ch.samplerate, "Hz")

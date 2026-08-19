@@ -6,7 +6,7 @@ adding a reader, plotting a window of the recording, stepping that window
 forward and back, and requesting baseline statistics and a power spectral
 density plot.
 
-add reader → select channel → plot 0–2 s → step right (expect 2–4 s) → step left (back to 0–2 s) → baseline + PSD buttons. 
+add reader → select channel → plot 0–2 s → step right (expect 2–4 s) → step left (back to 0–2 s) → baseline + PSD buttons.
 Asserts exact sample count against 2.0 × ds.samplerate.
 
 Test data comes from the ``synthetic_chimera_dataset`` fixture, so the
@@ -49,7 +49,9 @@ def _round(val: float, ndigits=6) -> float:
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(120)
-def test_trace_load_navigate_psd(qtbot, tmp_path, monkeypatch, synthetic_chimera_dataset):
+def test_trace_load_navigate_psd(
+    qtbot, tmp_path, monkeypatch, synthetic_chimera_dataset
+):
     """
     Load a trace, step the view window, and request baseline and PSD plots.
 
@@ -78,10 +80,14 @@ def test_trace_load_navigate_psd(qtbot, tmp_path, monkeypatch, synthetic_chimera
         return (items[0] if items else READER_NAME), True
 
     monkeypatch.setattr(
-        "PySide6.QtWidgets.QInputDialog.getItem", staticmethod(fake_get_item), raising=False
+        "PySide6.QtWidgets.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=False,
     )
     monkeypatch.setattr(
-        "poriscope.utils.MetaView.QInputDialog.getItem", staticmethod(fake_get_item), raising=True
+        "poriscope.utils.MetaView.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=True,
     )
     monkeypatch.setattr(
         "PySide6.QtWidgets.QFileDialog.getOpenFileName",
@@ -96,10 +102,16 @@ def test_trace_load_navigate_psd(qtbot, tmp_path, monkeypatch, synthetic_chimera
 
     # Launch the application against a throwaway config in tmp_path.
     model = MainModel(
-        {"Parent Folder": str(tmp_path), "User Plugin Folder": str(tmp_path), "Log Level": 20}
+        {
+            "Parent Folder": str(tmp_path),
+            "User Plugin Folder": str(tmp_path),
+            "Log Level": 20,
+        }
     )
     view = MainView(model.get_available_plugins())
-    controller = MainController(model, view)  # noqa: F841  (kept alive for the test's duration)
+    controller = MainController(
+        model, view
+    )  # noqa: F841  (kept alive for the test's duration)
     qtbot.addWidget(view)
     view.show()
 
@@ -125,18 +137,24 @@ def test_trace_load_navigate_psd(qtbot, tmp_path, monkeypatch, synthetic_chimera
     schedule_dialog_autofill(fill_reader_dialog)
     QTest.mouseClick(controls.readers_add_button, Qt.LeftButton)
 
-    qtbot.waitUntil(lambda: controls.readers_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.readers_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     idx = controls.readers_comboBox.findText(READER_NAME)
     controls.readers_comboBox.setCurrentIndex(idx if idx >= 0 else 0)
 
     # Selecting a reader kicks off an asynchronous fetch of its channels.
     qtbot.waitUntil(lambda: channels_have_loaded(controls), timeout=QT_WAIT_TIMEOUT_MS)
     chan_cb = find_channel_combo(controls)
-    assert select_any_channel(chan_cb, prefer=str(ds.channel)), "No channel options available"
+    assert select_any_channel(
+        chan_cb, prefer=str(ds.channel)
+    ), "No channel options available"
 
     # Plot the first two seconds.
     controls.set_range_inputs(0, 2.0)
-    qtbot.waitUntil(lambda: controls.update_trace_pushButton.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.update_trace_pushButton.isEnabled(), timeout=QT_WAIT_TIMEOUT_MS
+    )
     QTest.mouseClick(controls.update_trace_pushButton, Qt.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
 
@@ -157,7 +175,9 @@ def test_trace_load_navigate_psd(qtbot, tmp_path, monkeypatch, synthetic_chimera
     # buttons can be checked by the request they raise rather than by
     # inspecting their eventual output.
     emitted_actions: list[str] = []
-    controls.actionTriggered.connect(lambda sub, action, args: emitted_actions.append(action))
+    controls.actionTriggered.connect(
+        lambda sub, action, args: emitted_actions.append(action)
+    )
 
     assert _round(controls.start_time_lineEdit.get_start()) == 0.0
     assert _round(controls.start_time_lineEdit.get_duration()) == 2.0
@@ -181,8 +201,13 @@ def test_trace_load_navigate_psd(qtbot, tmp_path, monkeypatch, synthetic_chimera
 
     if hasattr(controls, "calculate_baseline_button"):
         QTest.mouseClick(controls.calculate_baseline_button, Qt.LeftButton)
-        qtbot.waitUntil(lambda: "get_baseline_stats" in emitted_actions, timeout=QT_WAIT_TIMEOUT_MS)
+        qtbot.waitUntil(
+            lambda: "get_baseline_stats" in emitted_actions, timeout=QT_WAIT_TIMEOUT_MS
+        )
 
     if hasattr(controls, "update_psd_pushButton"):
         QTest.mouseClick(controls.update_psd_pushButton, Qt.LeftButton)
-        qtbot.waitUntil(lambda: "load_data_and_update_psd" in emitted_actions, timeout=QT_WAIT_TIMEOUT_MS)
+        qtbot.waitUntil(
+            lambda: "load_data_and_update_psd" in emitted_actions,
+            timeout=QT_WAIT_TIMEOUT_MS,
+        )

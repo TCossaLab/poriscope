@@ -29,6 +29,7 @@ if str(REPO_ROOT) not in sys.path:
 
 E2E_TIMEOUT = int(os.getenv("E2E_TIMEOUT", "60"))
 
+
 @pytest.mark.smoke
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT)
@@ -48,7 +49,9 @@ def test_open_rawdata_tab_via_clicks(qtbot, tmp_path):
     }
     model = MainModel(app_config)
     view = MainView(model.get_available_plugins())
-    controller = MainController(model, view)  # noqa: F841  (kept alive for the test's duration)
+    controller = MainController(
+        model, view
+    )  # noqa: F841  (kept alive for the test's duration)
 
     qtbot.addWidget(view)
     view.show()
@@ -60,6 +63,8 @@ def test_open_rawdata_tab_via_clicks(qtbot, tmp_path):
         timeout_ms=QT_WAIT_TIMEOUT_MS,
     )
 
-    assert "RawDataView" in view.pages, "RawDataView page was not registered after menu navigation"
+    assert (
+        "RawDataView" in view.pages
+    ), "RawDataView page was not registered after menu navigation"
     raw_view = view.pages["RawDataView"]["widget"]
     assert hasattr(raw_view, "rawdatacontrols"), "RawDataView controls missing"
