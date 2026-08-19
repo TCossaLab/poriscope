@@ -30,9 +30,6 @@ dependencies = [
     "hdbscan==0.8.40",
 ]
 
-[tool.setuptools.packages.find]
-include = ["poriscope*"]  # Force it to look inside the poriscope folder
-
 [project.optional-dependencies]
 dev = [
     "black==25.1.0",
