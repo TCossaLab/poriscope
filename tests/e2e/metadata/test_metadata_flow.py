@@ -176,7 +176,14 @@ def _get_x_label(fig):
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
-def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog, auto_dismiss_message_boxes, synthetic_metadata_database):
+def test_metadata_flow(
+    qtbot,
+    tmp_path,
+    monkeypatch,
+    caplog,
+    auto_dismiss_message_boxes,
+    synthetic_metadata_database,
+):
     db = synthetic_metadata_database
     # "duration>100" in the old real-fixture version of this test was
     # tuned to that specific DB's data range. This fixture's default event
@@ -187,7 +194,9 @@ def test_metadata_flow(qtbot, tmp_path, monkeypatch, caplog, auto_dismiss_messag
     # verified in tests/e2e/clustering/test_clustering_flow.py).
     duration_threshold_us = db.median_duration_us()
     print(f"[DEBUG] Using synthetic metadata DB: {db.db_path}")
-    print(f"[DEBUG] Using duration_threshold_us={duration_threshold_us:.1f} for the assisted/raw filters")
+    print(
+        f"[DEBUG] Using duration_threshold_us={duration_threshold_us:.1f} for the assisted/raw filters"
+    )
 
     monkeypatch.setattr(
         "PySide6.QtWidgets.QInputDialog.getItem",
