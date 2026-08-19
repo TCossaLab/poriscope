@@ -44,6 +44,19 @@ class RangeValidator(BaseValidator):
         """Intermediate validation logic for integer ranges."""
         self.logger.debug(f"Intermediate validation for input: {input}")
 
+        # Split the input by commas to handle each part
+        parts = input.split(",")
+
+        # Negative numbers are never valid here (times/indices are non-negative),
+        # so a leading '-' can be rejected immediately rather than waiting for
+        # a second number to disambiguate it from a range separator.
+        for part in parts:
+            if part.strip().startswith("-"):
+                self.logger.debug(
+                    f"Intermediate validation: leading '-' is invalid in part '{part}'."
+                )
+                return QValidator.Invalid, input, pos
+
         # Allow trailing commas or hyphens during typing
         if input.endswith(",") or input.endswith("-"):
             self.logger.debug(
@@ -51,15 +64,19 @@ class RangeValidator(BaseValidator):
             )
             return QValidator.Intermediate, input, pos
 
-        # Split the input by commas to handle each part
-        parts = input.split(",")
         for part in parts:
             part = part.strip()
             if "-" in part:
                 numbers = part.split("-")
 
+                # A range must split into exactly two numbers; anything else
+                # (extra dashes) is malformed
+                if len(numbers) != 2:
+                    self.logger.debug(f"Invalid range structure in part: '{part}'.")
+                    return QValidator.Invalid, input, pos
+
                 # Allow incomplete ranges during intermediate typing
-                if len(numbers) == 2 and len(numbers[1]) == 0:
+                if len(numbers[1]) == 0:
                     self.logger.debug(
                         "Intermediate validation: incomplete range, still typing."
                     )
@@ -104,15 +121,18 @@ class RangeValidator(BaseValidator):
         parts = input.split(",")
         for part in parts:
             part = part.strip()
+            if part.startswith("-"):
+                self.logger.debug(f"Invalid input: leading '-' in part '{part}'.")
+                return QValidator.Invalid, input, 0
             if "-" in part:
                 numbers = part.split("-")
-                if len(numbers[0]) == 0 or len(numbers[1]) == 0:
-                    self.logger.debug(f"Invalid range: incomplete range in '{part}'.")
+                if len(numbers) != 2 or len(numbers[0]) == 0 or len(numbers[1]) == 0:
+                    self.logger.debug(f"Invalid range: malformed range in '{part}'.")
                     return (
                         QValidator.Invalid,
                         input,
                         0,
-                    )  # Invalid if the range is incomplete
+                    )  # Invalid if the range is incomplete or malformed
 
                 try:
                     start = int(numbers[0])
@@ -153,9 +173,16 @@ class IntegerRangeLineEdit(BaseLineEdit):
             segment = segment.strip()
             if not segment:
                 continue
+            if segment.startswith("-"):
+                self.logger.debug(f"Skipping invalid (leading '-') segment: '{segment}'")
+                continue
             if "-" in segment:
+                numbers = segment.split("-")
+                if len(numbers) != 2:
+                    self.logger.debug(f"Invalid range in segment: '{segment}'")
+                    continue
                 try:
-                    start, end = map(int, segment.split("-"))
+                    start, end = int(numbers[0]), int(numbers[1])
                     result.update(range(start, end + 1))
                 except ValueError:
                     self.logger.debug(f"Invalid range in segment: '{segment}'")
