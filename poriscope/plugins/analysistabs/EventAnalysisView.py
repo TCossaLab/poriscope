@@ -294,7 +294,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             )
             self.validate_single_channel(channels)
             channels[0]
-        except ValueError as e:
+        except (IndexError, ValueError) as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
 
@@ -359,7 +359,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.validate_single_channel(channels)
             channel = channels[0]
             # self._load_and_plot_events(loader, data_filter, channels, events)
-        except ValueError as e:
+        except (IndexError, ValueError) as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
         try:
@@ -444,6 +444,8 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         self.logger.error(
                             f"Unable to retrieve requested data for event {event}: {repr(e)}"
                         )
+                        self.plot_data = None
+                        continue
                     if self.plot_data is not None:
                         data_list.append(self.plot_data)
                         vertical_lines.append(None)
@@ -547,7 +549,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                     if self.vertical is not None:
                                         vertical_lines[-1] = self.vertical
                                         vertical_labels[-1] = self.vlabels
-                                        self.vertical_lines = None
+                                        self.vertical = None
                                         self.vlabels = None
                                     if self.horizontal is not None:
                                         horizontal_lines[-1] = self.horizontal
