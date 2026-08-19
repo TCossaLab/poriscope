@@ -109,9 +109,7 @@ def test_trace_load_navigate_psd(
         }
     )
     view = MainView(model.get_available_plugins())
-    controller = MainController(
-        model, view
-    )  # noqa: F841  (kept alive for the test's duration)
+    controller = MainController(model, view)  # noqa: F841  (kept alive for the test's duration)
     qtbot.addWidget(view)
     view.show()
 
