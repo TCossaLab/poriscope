@@ -2221,7 +2221,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 if self.vertical is not None:
                     vertical_lines[-1] = self.vertical
                     vertical_labels[-1] = self.vlabels
-                    self.vertical_lines = None
+                    self.vertical = None
                     self.vlabels = None
                 if self.horizontal is not None:
                     horizontal_lines[-1] = self.horizontal

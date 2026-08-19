@@ -98,7 +98,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None) -> None:
+    def close_resources(self, channel=None):
         """
         Perform any actions necessary to gracefully close resources before app exit.
         If `channel` is not None, handle only that channel; otherwise, close all channels.
@@ -106,10 +106,14 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param channel: channel ID
         :type channel: int
         """
+        if self.cursor:
+            self.cursor.close()
+            self.cursor = None
         if self.conn:
             self.logger.debug("Closing database connection.")
             self.conn.commit()  # Ensure all writes are committed
             self.conn.close()  # Close the connection to release the lock
+            self.conn = None
         else:
             self.logger.debug("Database connection not open to close.")
 
@@ -329,7 +333,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if conn:
                 conn.rollback()
             self.logger.warning(
-                f"Failed to delete (experiment_id={experiment_name}, channel_id={channel}): {e}, channel not reset"
+                f"Failed to write experiment metadata (experiment_name={experiment_name}): {e}"
             )
             raise
         else:
@@ -383,7 +387,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if conn:
                 conn.rollback()
             self.logger.warning(
-                f"Failed to delete (experiment_id={experiment_id}, channel_id={channel}): {e}, channel not reset"
+                f"Failed to write channel metadata (experiment_id={experiment_id}, channel_id={channel}): {e}"
             )
             raise
         else:

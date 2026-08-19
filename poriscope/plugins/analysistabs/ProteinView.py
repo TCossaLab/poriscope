@@ -2674,6 +2674,18 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             return
 
+        # NOTE: the three guards above guarantee that experiments_and_channels,
+        # every channels list, and selected_filters each contain exactly one
+        # entry, so the triple-nested loop below runs exactly once. The
+        # "--- Fit Double Gaussian ---" block and everything after it is
+        # deliberately placed after that loop rather than inside it, and reads
+        # whatever plot_data/exp/channel the loop last set. That is only safe
+        # because of the single-iteration guarantee above: if any of these
+        # guards are ever relaxed to allow more than one experiment/channel/
+        # filter, that block must be re-indented to run once per iteration
+        # inside the loop instead of once after it, or it will silently use
+        # stale values from the wrong iteration.
+
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
@@ -2763,6 +2775,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                     )
 
             # --- Fit Double Gaussian ---
+            # NOTE: intentionally indented outside the loop above - see the
+            # single-iteration guarantee comment near the top of this method
+            # before relaxing any of the experiment/channel/filter guards.
             popt = self._fit_and_sanity_check_double_gaussian(
                 plot_data["Normalized Current"].values, plot_data["Amplitude"].values
             )
