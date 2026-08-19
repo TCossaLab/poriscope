@@ -390,7 +390,11 @@ def _write_channel(
     absolute_start = padding_samples
     for event_id in range(num_events):
         this_event_length = (
-            int(rng.integers(event_length_range_samples[0], event_length_range_samples[1] + 1))
+            int(
+                rng.integers(
+                    event_length_range_samples[0], event_length_range_samples[1] + 1
+                )
+            )
             if event_length_range_samples is not None
             else event_length_samples
         )
@@ -436,7 +440,9 @@ def _write_channel(
                 amplitude=event_amplitude_pA,
             )
         )
-        absolute_start += padding_samples + this_event_length + padding_samples + event_gap_samples
+        absolute_start += (
+            padding_samples + this_event_length + padding_samples + event_gap_samples
+        )
 
     return channel
 

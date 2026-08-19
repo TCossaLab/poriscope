@@ -139,7 +139,9 @@ DEFAULT_STEP_SIZE_PA = 100.0  # confirmed below DEFAULT_EVENT_AMPLITUDE_PA's
 # tests/synthetic_data/synthetic_metadata_db.py's module docstring.
 
 
-def _default_channel_spec(channel_id: int, num_events: int, seed: int) -> Dict[str, Any]:
+def _default_channel_spec(
+    channel_id: int, num_events: int, seed: int
+) -> Dict[str, Any]:
     """
     Build one channel spec using this module's default signal shape.
 
@@ -252,13 +254,17 @@ def make_synthetic_metadata_database(tmp_path):
     :rtype: Callable[..., SyntheticMetadataDatabase]
     """
 
-    def _make(*, experiments: List[Dict[str, Any]], **overrides: Any) -> SyntheticMetadataDatabase:
+    def _make(
+        *, experiments: List[Dict[str, Any]], **overrides: Any
+    ) -> SyntheticMetadataDatabase:
         filled_experiments = []
         for exp_spec in experiments:
             filled_channels = []
             for chan_spec in exp_spec.get("channels", []):
                 if "channel_id" not in chan_spec:
-                    raise ValueError(f"Channel spec missing required 'channel_id': {chan_spec}")
+                    raise ValueError(
+                        f"Channel spec missing required 'channel_id': {chan_spec}"
+                    )
                 defaults = _default_channel_spec(
                     channel_id=chan_spec["channel_id"],
                     num_events=chan_spec.get("num_events", 25),
@@ -275,6 +281,8 @@ def make_synthetic_metadata_database(tmp_path):
 
         params: Dict[str, Any] = dict(step_size_pA=DEFAULT_STEP_SIZE_PA)
         params.update(overrides)
-        return generate_metadata_database(out_path, experiments=filled_experiments, **params)
+        return generate_metadata_database(
+            out_path, experiments=filled_experiments, **params
+        )
 
     return _make

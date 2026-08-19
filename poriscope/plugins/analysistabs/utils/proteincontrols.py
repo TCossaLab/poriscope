@@ -259,7 +259,7 @@ class ProteinControls(QWidget):
         plot_events_layout.addWidget(self.plot_histogram_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
         plot_events_layout.addLayout(raw_layout)
-        
+
         # ---------- MIDDLE COLUMN ----------
 
         # ROW 0: "Distribution event fitting" header
@@ -723,7 +723,7 @@ class ProteinControls(QWidget):
         self.right_arrow_button.clicked.connect(
             lambda: self.on_button_clicked("right_arrow")
         )
-        
+
         self.individual_button.clicked.connect(
             lambda: self.on_button_clicked("individual")
         )

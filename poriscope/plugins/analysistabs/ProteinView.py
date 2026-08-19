@@ -1631,7 +1631,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         if result is None or result.empty or "id" not in result.columns:
             return None
         return result
-    
+
     @log(logger=logger)
     def _fetch_event_data(self, parameters, action_label="events") -> list:
         """

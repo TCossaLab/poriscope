@@ -169,7 +169,9 @@ def test_event_fitting_flow_clicks(
     monkeypatch.setattr(
         "PySide6.QtWidgets.QInputDialog.getItem",
         staticmethod(
-            _fake_get_item_exact_then_substring(FITTER_NAME, LOADER_NAME, DB_WRITER_NAME)
+            _fake_get_item_exact_then_substring(
+                FITTER_NAME, LOADER_NAME, DB_WRITER_NAME
+            )
         ),
         raising=False,
     )
@@ -180,15 +182,23 @@ def test_event_fitting_flow_clicks(
     )
 
     model = MainModel(
-        {"Parent Folder": str(tmp_path), "User Plugin Folder": str(tmp_path), "Log Level": 20}
+        {
+            "Parent Folder": str(tmp_path),
+            "User Plugin Folder": str(tmp_path),
+            "Log Level": 20,
+        }
     )
     view = MainView(model.get_available_plugins())
     controller = MainController(model, view)  # noqa: F841
     qtbot.addWidget(view)
     view.show()
 
-    open_menu_hybrid(view, ["Analysis", "New Analysis Tab", "EventAnalysisController"], qtbot)
-    qtbot.waitUntil(lambda: "EventAnalysisView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS)
+    open_menu_hybrid(
+        view, ["Analysis", "New Analysis Tab", "EventAnalysisController"], qtbot
+    )
+    qtbot.waitUntil(
+        lambda: "EventAnalysisView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS
+    )
     view.switch_to_page("EventAnalysisView")
     ea_view = view.pages["EventAnalysisView"]["widget"]
     controls = ea_view.eventAnalysisControls
@@ -208,26 +218,41 @@ def test_event_fitting_flow_clicks(
 
     schedule_dialog_autofill(fill_loader_dialog)
     QTest.mouseClick(controls.loaders_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.loaders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.loaders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
 
     loader_key = controls.loaders_comboBox.currentText()
     ea_view.global_signal.emit(
-        "MetaEventLoader", loader_key, "get_num_events", (FIT_CHANNEL,),
-        "set_num_events_allowed", (),
+        "MetaEventLoader",
+        loader_key,
+        "get_num_events",
+        (FIT_CHANNEL,),
+        "set_num_events_allowed",
+        (),
     )
     assert getattr(ea_view, "num_events_allowed", None) == db[FIT_CHANNEL].num_events
 
     ea_view.global_signal.emit(
-        "MetaEventLoader", loader_key, "get_samplerate", (FIT_CHANNEL,),
-        "update_plot_samplerate", (),
+        "MetaEventLoader",
+        loader_key,
+        "get_samplerate",
+        (FIT_CHANNEL,),
+        "update_plot_samplerate",
+        (),
     )
-    assert getattr(ea_view, "plot_samplerate", None) == pytest.approx(db[FIT_CHANNEL].samplerate)
+    assert getattr(ea_view, "plot_samplerate", None) == pytest.approx(
+        db[FIT_CHANNEL].samplerate
+    )
 
     # --- Channel ---
     qtbot.waitUntil(
-        lambda: _find_live_channel_combo(controls) is not None, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _find_live_channel_combo(controls) is not None,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
-    assert _select_single_channel(_find_live_channel_combo(controls), prefer=str(FIT_CHANNEL))
+    assert _select_single_channel(
+        _find_live_channel_combo(controls), prefer=str(FIT_CHANNEL)
+    )
 
     # --- Plot before fitting ---
     controls.event_index_lineEdit.setText("0-3")
@@ -255,7 +280,9 @@ def test_event_fitting_flow_clicks(
             _set_and_commit(fitterset["Step Size"], f"{step_size:.1f}")
         if "Rise Time" in fitterset and hasattr(fitterset["Rise Time"], "setText"):
             _set_and_commit(fitterset["Rise Time"], "10.0")
-        if "Max Sublevels" in fitterset and hasattr(fitterset["Max Sublevels"], "setText"):
+        if "Max Sublevels" in fitterset and hasattr(
+            fitterset["Max Sublevels"], "setText"
+        ):
             _set_and_commit(fitterset["Max Sublevels"], "1000")
         if "Sensitivity" in fitterset and hasattr(fitterset["Sensitivity"], "setText"):
             _set_and_commit(fitterset["Sensitivity"], "1.0")
@@ -275,8 +302,12 @@ def test_event_fitting_flow_clicks(
         try:
             fitter_key = controls.eventfitters_comboBox.currentText()
             ea_view.global_signal.emit(
-                "MetaEventFitter", fitter_key, "get_eventfitting_status", (FIT_CHANNEL,),
-                "set_eventfitting_status", (),
+                "MetaEventFitter",
+                fitter_key,
+                "get_eventfitting_status",
+                (FIT_CHANNEL,),
+                "set_eventfitting_status",
+                (),
             )
             return getattr(ea_view, "eventfitting_status", False) is True
         except Exception:
@@ -287,8 +318,12 @@ def test_event_fitting_flow_clicks(
 
     fitter_key = controls.eventfitters_comboBox.currentText()
     ea_view.global_signal.emit(
-        "MetaEventFitter", fitter_key, "get_num_events", (FIT_CHANNEL,),
-        "set_num_events_allowed", (),
+        "MetaEventFitter",
+        fitter_key,
+        "get_num_events",
+        (FIT_CHANNEL,),
+        "set_num_events_allowed",
+        (),
     )
     assert getattr(ea_view, "num_events_allowed", None) == expected_good_fits, (
         f"Expected {expected_good_fits}/{db[FIT_CHANNEL].num_events} good fits at "
@@ -307,7 +342,8 @@ def test_event_fitting_flow_clicks(
     before_fit_lines = _count_lines(ea_view.figure)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(ea_view.figure) >= before_fit_lines, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _count_lines(ea_view.figure) >= before_fit_lines,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
 
     # --- Writer (only exercised for the fully-successful case) ---
@@ -321,7 +357,9 @@ def test_event_fitting_flow_clicks(
                 writer_widgets["MetaEventFitter"], QtWidgets.QComboBox
             ):
                 idx = writer_widgets["MetaEventFitter"].findText(fitter_key)
-                writer_widgets["MetaEventFitter"].setCurrentIndex(idx if idx >= 0 else 0)
+                writer_widgets["MetaEventFitter"].setCurrentIndex(
+                    idx if idx >= 0 else 0
+                )
 
             text_fields = {
                 "Experiment Name": "e2e_synthetic_fit_test",
@@ -367,13 +405,16 @@ def test_event_fitting_flow_clicks(
                 with sqlite3.connect(out_db) as conn:
                     cur = conn.cursor()
                     cur.execute(
-                        'SELECT COUNT(*) FROM "events" WHERE channel_id = ?', (FIT_CHANNEL,)
+                        'SELECT COUNT(*) FROM "events" WHERE channel_id = ?',
+                        (FIT_CHANNEL,),
                     )
                     return cur.fetchone()[0]
             except sqlite3.OperationalError:
                 return None
 
-        qtbot.waitUntil(lambda: _row_count() == expected_good_fits, timeout=QT_WAIT_TIMEOUT_MS)
+        qtbot.waitUntil(
+            lambda: _row_count() == expected_good_fits, timeout=QT_WAIT_TIMEOUT_MS
+        )
 
         with sqlite3.connect(out_db) as conn:
             cur = conn.cursor()

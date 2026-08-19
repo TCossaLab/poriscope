@@ -106,7 +106,12 @@ def _fake_get_item_exact_then_substring(*wants):
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
 def test_clustering_flow(
-    qtbot, tmp_path, monkeypatch, caplog, auto_dismiss_message_boxes, synthetic_metadata_database
+    qtbot,
+    tmp_path,
+    monkeypatch,
+    caplog,
+    auto_dismiss_message_boxes,
+    synthetic_metadata_database,
 ):
     db = synthetic_metadata_database
 
@@ -119,7 +124,9 @@ def test_clustering_flow(
         for ch in exp.channels.values()
         for d in ch.event_durations_us
     ]
-    expected_filtered_count = sum(1 for d in all_durations_us if d > duration_threshold_us)
+    expected_filtered_count = sum(
+        1 for d in all_durations_us if d > duration_threshold_us
+    )
     expected_total_count = db.total_num_events
     print(
         f"[DEBUG] Ground truth: {expected_total_count} total events, "
@@ -202,7 +209,9 @@ def test_clustering_flow(
 
     schedule_dialog_autofill(fill_loader_dialog)
     QTest.mouseClick(controls.db_loader_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     # =========================================================
@@ -246,7 +255,9 @@ def test_clustering_flow(
         set_clusters = _set_line_edit_by_object_name(
             dlg, "Gaussian Mixtures_Number_of_Clusters_input", "3"
         )
-        assert set_clusters, "Could not find 'Gaussian Mixtures_Number_of_Clusters_input'"
+        assert (
+            set_clusters
+        ), "Could not find 'Gaussian Mixtures_Number_of_Clusters_input'"
 
         _set_default_columns(dlg, "duration", "num_sublevels")
 
@@ -262,7 +273,9 @@ def test_clustering_flow(
         lambda: any("Gaussian Mixtures applied to" in m for m in displayed_messages),
         timeout=QT_WAIT_TIMEOUT_MS,
     )
-    gaussian_msg = next(m for m in displayed_messages if "Gaussian Mixtures applied to" in m)
+    gaussian_msg = next(
+        m for m in displayed_messages if "Gaussian Mixtures applied to" in m
+    )
     print(f"[DEBUG] Display message: {gaussian_msg!r}")
     assert f"{expected_total_count} rows" in gaussian_msg, (
         f"Expected 'Gaussian Mixtures applied to {expected_total_count} rows' "
@@ -270,7 +283,9 @@ def test_clustering_flow(
     )
 
     collections_after_gaussian = _count_collections(clustering_view.figure)
-    print(f"[DEBUG] Scatter collections after Gaussian Mixtures: {collections_after_gaussian}")
+    print(
+        f"[DEBUG] Scatter collections after Gaussian Mixtures: {collections_after_gaussian}"
+    )
     assert collections_after_gaussian == 3, (
         f"Expected 3 scatter collections (3 requested clusters), got "
         f"{collections_after_gaussian}"
@@ -278,10 +293,14 @@ def test_clustering_flow(
 
     label_x_items = _combobox_items(controls.label_x_comboBox)
     label_y_items = _combobox_items(controls.label_y_comboBox)
-    assert set(label_x_items) == {"0", "1", "2"}, (
-        f"Expected KEEP LABEL combobox to contain 0/1/2, got {label_x_items}"
+    assert set(label_x_items) == {
+        "0",
+        "1",
+        "2",
+    }, f"Expected KEEP LABEL combobox to contain 0/1/2, got {label_x_items}"
+    print(
+        f"[DEBUG] KEEP LABEL items: {label_x_items}, MERGE WITH items: {label_y_items}"
     )
-    print(f"[DEBUG] KEEP LABEL items: {label_x_items}, MERGE WITH items: {label_y_items}")
 
     # =========================================================
     # STAGE 3: merge label 2 into label 1 -> expect only labels {0, 1}
@@ -297,7 +316,8 @@ def test_clustering_flow(
 
     QTest.mouseClick(controls.merge_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(clustering_view.figure) == 2, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _count_collections(clustering_view.figure) == 2,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
     label_x_items_after = _combobox_items(controls.label_x_comboBox)
     assert set(label_x_items_after) == {"0", "1"}, (
@@ -316,7 +336,9 @@ def test_clustering_flow(
             return
 
         idx = dlg.method_combo.findText("HDBSCAN")
-        assert idx >= 0, f"'HDBSCAN' not in METHOD options: {_combobox_items(dlg.method_combo)}"
+        assert (
+            idx >= 0
+        ), f"'HDBSCAN' not in METHOD options: {_combobox_items(dlg.method_combo)}"
         dlg.method_combo.setCurrentIndex(idx)
         qtbot.wait(50)
 
@@ -411,7 +433,9 @@ def test_clustering_flow(
 
     QTest.mouseClick(controls.commit_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: any("Successfully wrote clustering data" in m for m in displayed_messages),
+        lambda: any(
+            "Successfully wrote clustering data" in m for m in displayed_messages
+        ),
         timeout=QT_WAIT_TIMEOUT_MS,
     )
 
@@ -420,12 +444,12 @@ def test_clustering_flow(
         cur = conn.cursor()
         cur.execute(f"PRAGMA table_info({table_name})")
         column_names = [c[1] for c in cur.fetchall()]
-        assert "cluster_label" in column_names, (
-            f"Expected 'cluster_label' column in {table_name!r}, got {column_names}"
-        )
-        assert "cluster_confidence" in column_names, (
-            f"Expected 'cluster_confidence' column in {table_name!r}, got {column_names}"
-        )
+        assert (
+            "cluster_label" in column_names
+        ), f"Expected 'cluster_label' column in {table_name!r}, got {column_names}"
+        assert (
+            "cluster_confidence" in column_names
+        ), f"Expected 'cluster_confidence' column in {table_name!r}, got {column_names}"
 
         cur.execute(f"SELECT id, cluster_label, cluster_confidence FROM {table_name}")
         rows = cur.fetchall()
@@ -442,7 +466,9 @@ def test_clustering_flow(
             f"cluster_label in DB doesn't match in-memory result at commit time: "
             f"{label_mismatches}"
         )
-        print(f"[DEBUG] Verified {len(expected_by_id)} committed rows match in-memory state")
+        print(
+            f"[DEBUG] Verified {len(expected_by_id)} committed rows match in-memory state"
+        )
     finally:
         conn.close()
 
