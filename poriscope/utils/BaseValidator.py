@@ -29,8 +29,10 @@ from abc import abstractmethod
 
 from PySide6.QtGui import QValidator
 
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 
-class BaseValidator(QValidator):
+
+class BaseValidator(QValidator, metaclass=QObjectABCMeta):
     logger = logging.getLogger(__name__)
 
     def __init__(self, line_edit):

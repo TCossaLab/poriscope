@@ -2989,8 +2989,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         # --- Bailout Logic Variables ---
         max_consecutive_zeros = 5
         consecutive_zeros = 0
+        max_batches = 200
+        batches = 0
 
-        while len(accepted_V) < N_target and consecutive_zeros < max_consecutive_zeros:
+        while (
+            len(accepted_V) < N_target
+            and consecutive_zeros < max_consecutive_zeros
+            and batches < max_batches
+        ):
+            batches += 1
             # 1. Propose physically valid uniform samples
             V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
             ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
@@ -3090,6 +3097,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
                 accepted_V.extend(new_V)
                 accepted_m.extend(new_m)
+
+        if len(accepted_V) < N_target:
+            self.logger.warning(
+                f"_generate_vm_ensemble stopped with only {len(accepted_V)}/{N_target} "
+                f"accepted samples after {batches} batches (consecutive_zeros={consecutive_zeros})"
+            )
 
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 

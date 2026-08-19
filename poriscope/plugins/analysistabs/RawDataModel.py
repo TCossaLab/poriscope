@@ -76,9 +76,19 @@ class RawDataModel(MetaModel):
         """
         Pxx_list = []
         rms_list = []
+        f = None
         for data in psd_data:
-            length = len(data) / 10
-            f, Pxx = welch(data, samplerate, nperseg=length)
+            length = int(len(data) / 10)
+            if length < 1:
+                self.logger.warning(
+                    f"Skipping PSD calculation for a channel with insufficient data ({len(data)} samples)"
+                )
+                continue
+            try:
+                f, Pxx = welch(data, samplerate, nperseg=length)
+            except Exception as e:
+                self.logger.warning(f"Unable to calculate PSD for a channel: {e}")
+                continue
             rms = self.integrate_noise(f, Pxx)
             Pxx_list.append(Pxx)
             rms_list.append(rms)
