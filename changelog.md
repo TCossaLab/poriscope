@@ -6,6 +6,56 @@
 * **Deprecated Data Plugin: `ABF2Reader`**
     * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
 
+* **Updated Data Plugin: `WaveletFilter`**
+    * Fixed a ctypes ABI mismatch (`c_int` vs `int64_t`) on the signal-length argument that risked memory corruption on large arrays
+    * Calls into the shared native library are now serialized with a lock, since filters are invoked directly by other plugins rather than through the channel-management system
+
+* **Updated Data Plugin: `NoFitter`**
+    * Fixed an unbounded backtrack loop that could silently corrupt sublevel edges via negative array indexing instead of cleanly rejecting the event
+    * Added missing validation for `None` baseline/padding inputs
+
+* **Updated Data Plugin: `ClassicCUSUM`**
+    * Removed an undocumented `/5` threshold divisor and a leftover debug `print()` that made this fitter far more sensitive than `CUSUM`/`IntraCUSUM`
+
+* **Updated Data Plugins: `ClassicBlockageFinder`, `BoundedBlockageFinder`, `ThresholdBlockageFinder`**
+    * Fixed a `ZeroDivisionError` on constant-signal chunks in baseline histogram calculation
+    * Fixed dead code that silently skipped baseline-histogram window symmetrization
+    * Fixed an ambiguous end-of-chunk check that could silently drop the remaining events in a chunk
+
+* **Updated Data Plugins: `CUSUM`, `NoFitter`**
+    * Fixed an off-by-one indexing bug that shifted every reported extreme-sublevel duration by one level
+
+* **Updated Data Plugins: `Basic_PeakFinder`, `PeakFinder`**
+    * Fixed an empty-slice bug that wrongly rejected legitimate events ending at the trace boundary
+
+* **Updated Data Plugin: `BesselFilter`**
+    * Fixed a boundary check that allowed `Poles = 0` despite requiring a positive integer
+
+* **Updated Data Plugins: `ChimeraReader20240101`, `ChimeraReader20240501`, `ChimeraReaderVC100`, `TCossaLabABFReader`, `LegacyElementsReader`**
+    * Fixed dead filename-pattern validation code that never actually rejected malformed filenames
+
+* **Updated Data Plugin: `SingleBinaryDecoder`**
+    * Fixed exception handling wrapped around the wrong line, leaving real file-open errors unprotected
+
+* **Updated Database Plugins: `SQLiteDBWriter`, `SQLiteEventWriter`, `SQLiteDBLoader`, `SQLitePeakDBLoader`, `SQLiteEventLoader`, `MetaDatabaseLoader`**
+    * Fixed several `UnboundLocalError`-masking exception handlers that hid the real database error
+    * Fixed a `finally`-block bug that silently swallowed real write errors and reported success instead
+    * Unused `SAVEPOINT`s are now properly released/rolled back instead of being a no-op
+    * Hardened interpolated experiment/channel/index values and escaped quotes in experiment names so legitimate names no longer break queries
+    * Fixed a crash on an empty query result and on a missing unfolded-level value
+    * Fixed stray logging arguments that would crash the moment the log line was actually emitted
+    * Fixed an overly broad exception clause that made two more specific error handlers unreachable
+
+* **Updated Backend Infrastructure: `MetaEventFinder`, `MetaEventFitter`, `MetaWriter`, `EventWorker`, `MetaModel`, `LogDecorator`, `BaseValidator`, `QtHandler`**
+    * Fixed a bug where an unexpected exception during event processing left a channel permanently unable to run again
+    * Fixed a falsy-zero bug that silently dropped a legitimate chunk-boundary event start
+    * Fixed a `ZeroDivisionError` in fit-progress logging that could permanently wedge a channel
+    * Removed a redundant global lock now that the channel dispatcher already serializes correctly
+    * App shutdown now correctly waits for worker threads to finish instead of potentially destroying a still-running thread
+    * Fixed the `@log` decorator silently breaking exception handling and result logging for every generator-based method in the app
+    * `BaseValidator` now properly enforces its abstract validation methods
+    * Added a reentrancy guard so concurrent error/warning logs no longer stack multiple modal dialogs
+
 * **Updated Frontend Base Class: `MetaView`**
     * New `plugin_state_changed` signal and abstract `notify_plugin_state_changed` hook, allowing any tab to notify all other tabs when a plugin instance's state changes (e.g. new columns added to a database). Every `MetaView` subclass must now implement `notify_plugin_state_changed`, even if the correct implementation is to do nothing. Non-trivial implementations must determine whether the notification is relevant to that tab, and filter and react accordingly.
 
@@ -25,6 +75,11 @@
     * Fixed: some plot types (Categorical Histogram, Scatterplot, Raw/Filtered Event Overlay) failed to render after "Plot Events" + "Update Plot" due to a stale `self.axes` reference not caught by existing staleness check. Added `_axes_valid()` to detect and reset it properly.
     * Fixed: Silent crash in `_export_csv_subset` when the "Export Settings" dialog was canceled. Canceling the dialog now backs out cleanly.
     * Now refreshes its available column list automatically when another tab commits new columns to the currently selected database.
+    * Fixed: `ZeroDivisionError` when constructing an event overlay from events that all have the same length
+    * Fixed: crash when formatting an axis label for a column with no defined unit
+    * Fixed: an unhandled plot type could leave plotting data unbound instead of raising a clear error
+    * Fixed: a typo left stale event markers on the plot after a failed feature lookup
+    * Removed a dead, exact-duplicate code block in all-points-histogram construction
 
 * **Updated Frontend Plugin: `ProteinView`**
     * Fixed: `hist_min`/`hist_max` persisted across "Plot Histogram" calls and only ever expanded, so bin edges (and resulting histogram shape/fit) depended on plotting order and history instead of the event itself. Per-event histogram binning is now deterministic, and thus, so is plotting.
@@ -40,11 +95,26 @@
     * Fixed: Leaving the **N** field blank in Ensemble mode raised a `ValueError` instead of falling back to a default, matching behavior already present in Individual mode.
     * Fixed: Default **N** value was set to 100 in the backend and 1000 in the frontend. Updated frontend to match the backend value.
     * Added Freedman-Diaconis auto-binning for per-event histograms
+    * Fixed: zero-baseline divisions silently propagating NaN/Inf into histograms and fits
+    * Added a hard cap to a previously-unbounded Monte Carlo sampling loop that could block the UI indefinitely
+    * Fixed: plugin-list refresh crashing due to calling `.emit()` on a non-`Signal` method
 
         
 * **Updated Frontend Plugin: `ClusteringView`**
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
     * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
+    * Fixed: clicking Cancel on the cluster-overwrite confirmation dialog did not actually cancel the commit
+    * Fixed: an unrecognized clustering method crashed with an unbound-variable error instead of a clear message
+    * Fixed: `ZeroDivisionError` in baseline stats on a flat/constant data chunk
+
+* **Updated Frontend Plugin: `RawDataView`**
+    * Fixed: `ZeroDivisionError` in baseline stats on a flat/constant data chunk; now logs a warning and skips just that channel's overlay instead of crashing the whole plot
+    * Fixed: power spectral density calculation crashing or silently producing NaNs on very short channels
+
+* **Updated Frontend Plugin: `EventAnalysisView`**
+    * Fixed: crash when zero channels were selected while shifting or plotting events
+    * Fixed: a failed event load could silently reuse stale data from a previous event
+    * Fixed: a typo left stale event markers on the plot after a failed feature lookup
 
 * **Updated Frontend Component: `MainView` / Sidebar Menus**
     * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.
@@ -67,6 +137,8 @@
     * Standardized edit/add icons across control panels to use the same icon set consistently
     * In `Settings` fixed potential crash (`AttributeError`) if a folder-picker button was clicked before the data server / user plugin location had been set
     * Now: Icons correctly update color depending on dark/light mode
+    * Replaced a hardcoded institution-specific network path default with the user's home directory
+    * A corrupted config file now regenerates defaults on startup instead of crashing the app
 
 
 
