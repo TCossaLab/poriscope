@@ -223,6 +223,10 @@ class NoFitter(MetaEventFitter):
         """
 
         length = len(data)
+        if baseline_mean is None or padding_before is None:
+            raise ValueError(
+                "NoFitter requires that baseline_mean and padding_before be reported and is unable to locate sublevel transitions without them"
+            )
         sign = np.sign(baseline_mean)
         rise_time = 0
 
@@ -230,6 +234,10 @@ class NoFitter(MetaEventFitter):
 
         k = padding_before
         while data[k] * sign < baseline_mean * sign:  # find starting point
+            if k == 0:
+                raise ValueError(
+                    "Unable to locate a baseline crossing before the estimated event start"
+                )
             k -= 1
             rise_time += 1
         edges = np.append(edges, k)  # add start point as an edge
