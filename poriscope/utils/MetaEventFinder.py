@@ -790,9 +790,9 @@ class MetaEventFinder(BaseDataPlugin):
                     "offset": offset,
                 }
                 return event
-            except IndexError:
+            except (IndexError, ValueError) as e:
                 self.logger.error(
-                    f"Event index {index} out of bounds for channel {channel}"
+                    f"Event index {index} out of bounds for channel {channel}: {e}"
                 )
                 return None
 
