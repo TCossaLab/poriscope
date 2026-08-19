@@ -55,7 +55,9 @@ def set_checked(combo: MultiSelectComboBox, row: int, checked: bool) -> None:
 
 def check_all_items(combo: MultiSelectComboBox, checked: bool) -> None:
     for i in range(combo.listWidget.count()):
-        combo.listWidget.item(i).setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+        combo.listWidget.item(i).setCheckState(
+            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        )
     app.processEvents()
 
 
@@ -103,7 +105,9 @@ class TestAddItems(unittest.TestCase):
         docstring."""
         self.c.addItems(["0", "1"])
         for i in range(self.c.listWidget.count()):
-            self.assertEqual(self.c.listWidget.item(i).checkState(), Qt.CheckState.Checked)
+            self.assertEqual(
+                self.c.listWidget.item(i).checkState(), Qt.CheckState.Checked
+            )
 
 
 # ===========================================================================
@@ -162,7 +166,9 @@ class TestSelectItem(unittest.TestCase):
         check_all_items(self.c, True)
         self.c.selectItem("0", select=False)
         app.processEvents()
-        self.assertEqual(self.c.listWidget.item(0).checkState(), Qt.CheckState.Unchecked)
+        self.assertEqual(
+            self.c.listWidget.item(0).checkState(), Qt.CheckState.Unchecked
+        )
 
     def test_nonexistent_name_no_crash(self):
         self.c.selectItem("does_not_exist")  # should not raise
@@ -170,8 +176,12 @@ class TestSelectItem(unittest.TestCase):
     def test_only_target_is_affected(self):
         self.c.selectItem("2")
         app.processEvents()
-        self.assertEqual(self.c.listWidget.item(0).checkState(), Qt.CheckState.Unchecked)
-        self.assertEqual(self.c.listWidget.item(1).checkState(), Qt.CheckState.Unchecked)
+        self.assertEqual(
+            self.c.listWidget.item(0).checkState(), Qt.CheckState.Unchecked
+        )
+        self.assertEqual(
+            self.c.listWidget.item(1).checkState(), Qt.CheckState.Unchecked
+        )
         self.assertEqual(self.c.listWidget.item(2).checkState(), Qt.CheckState.Checked)
 
     def test_select_item_does_not_emit_selection_changed(self):
@@ -266,7 +276,9 @@ class TestSelectAllButton(unittest.TestCase):
         self.c.selectAllButton.setChecked(False)
         app.processEvents()
         for i in range(self.c.listWidget.count()):
-            self.assertEqual(self.c.listWidget.item(i).checkState(), Qt.CheckState.Unchecked)
+            self.assertEqual(
+                self.c.listWidget.item(i).checkState(), Qt.CheckState.Unchecked
+            )
 
     def test_select_all_checks_everything_after_manual_deselect(self):
         self.c.addItems(["0", "1", "2"])
@@ -274,7 +286,9 @@ class TestSelectAllButton(unittest.TestCase):
         self.c.selectAllButton.setChecked(True)
         app.processEvents()
         for i in range(self.c.listWidget.count()):
-            self.assertEqual(self.c.listWidget.item(i).checkState(), Qt.CheckState.Checked)
+            self.assertEqual(
+                self.c.listWidget.item(i).checkState(), Qt.CheckState.Checked
+            )
 
     def test_button_shows_select_when_none_checked(self):
         self.c.addItems(["0", "1", "2"])

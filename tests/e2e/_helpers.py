@@ -133,16 +133,19 @@ def open_menu_hybrid(
 
     action_rect = menu_bar.actionGeometry(top_level_action)
     QTest.mouseClick(
-        menu_bar, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, action_rect.center()
+        menu_bar,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        action_rect.center(),
     )
     qtbot.wait(10)
 
     # Step 2: descend through intermediate submenus via the action tree.
     current_menu = top_level_action.menu()
     qtbot.waitUntil(lambda: current_menu is not None, timeout=timeout_ms)
-    assert isinstance(current_menu, QtWidgets.QMenu), (
-        f"Expected {top_level_label!r} to open a submenu, got {type(current_menu).__name__}"
-    )
+    assert isinstance(
+        current_menu, QtWidgets.QMenu
+    ), f"Expected {top_level_label!r} to open a submenu, got {type(current_menu).__name__}"
 
     for intermediate_label in menu_path_labels[1:-1]:
         try:
@@ -163,9 +166,9 @@ def open_menu_hybrid(
             # triggering the parent action forces them to be built.
             intermediate_action.trigger()
             next_menu = intermediate_action.menu()
-        assert isinstance(next_menu, QtWidgets.QMenu), (
-            f"Expected {intermediate_label!r} to open a submenu, got {type(next_menu).__name__}"
-        )
+        assert isinstance(
+            next_menu, QtWidgets.QMenu
+        ), f"Expected {intermediate_label!r} to open a submenu, got {type(next_menu).__name__}"
         current_menu = next_menu
         qtbot.wait(10)
 

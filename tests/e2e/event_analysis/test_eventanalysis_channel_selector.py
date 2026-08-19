@@ -121,7 +121,9 @@ def test_channel_selector_population_and_plot_gating(
         return (items[0] if items else "No Selection"), True
 
     monkeypatch.setattr(
-        "PySide6.QtWidgets.QInputDialog.getItem", staticmethod(fake_get_item), raising=False
+        "PySide6.QtWidgets.QInputDialog.getItem",
+        staticmethod(fake_get_item),
+        raising=False,
     )
     monkeypatch.setattr(
         "PySide6.QtWidgets.QFileDialog.getOpenFileName",
@@ -130,15 +132,23 @@ def test_channel_selector_population_and_plot_gating(
     )
 
     model = MainModel(
-        {"Parent Folder": str(tmp_path), "User Plugin Folder": str(tmp_path), "Log Level": 20}
+        {
+            "Parent Folder": str(tmp_path),
+            "User Plugin Folder": str(tmp_path),
+            "Log Level": 20,
+        }
     )
     view = MainView(model.get_available_plugins())
     controller = MainController(model, view)  # noqa: F841
     qtbot.addWidget(view)
     view.show()
 
-    open_menu_hybrid(view, ["Analysis", "New Analysis Tab", "EventAnalysisController"], qtbot)
-    qtbot.waitUntil(lambda: "EventAnalysisView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS)
+    open_menu_hybrid(
+        view, ["Analysis", "New Analysis Tab", "EventAnalysisController"], qtbot
+    )
+    qtbot.waitUntil(
+        lambda: "EventAnalysisView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS
+    )
     view.switch_to_page("EventAnalysisView")
     ea_view = view.pages["EventAnalysisView"]["widget"]
     controls = ea_view.eventAnalysisControls
@@ -157,11 +167,14 @@ def test_channel_selector_population_and_plot_gating(
 
     schedule_dialog_autofill(fill_loader_dialog)
     QTest.mouseClick(controls.loaders_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.loaders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.loaders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
 
     # --- 1. Channel selector populates with exactly the database's channels ---
     qtbot.waitUntil(
-        lambda: _find_live_channel_combo(controls) is not None, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _find_live_channel_combo(controls) is not None,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
 
     def channels_loaded() -> bool:
@@ -191,9 +204,9 @@ def test_channel_selector_population_and_plot_gating(
     # --- 2. Zero channels selected -> Plot Events disabled ---
     _set_checked_channels(controls, set())
     qtbot.wait(QT_SHORT_PAUSE_MS)
-    assert not controls.plot_events_pushButton.isEnabled(), (
-        "Expected Plot Events disabled with no channels selected"
-    )
+    assert (
+        not controls.plot_events_pushButton.isEnabled()
+    ), "Expected Plot Events disabled with no channels selected"
 
     # --- 3. Exactly one channel selected -> Plot Events enabled ---
     _set_checked_channels(controls, {"0"})
@@ -204,16 +217,16 @@ def test_channel_selector_population_and_plot_gating(
     # --- 4. Two channels selected -> Plot Events disabled again ---
     _set_checked_channels(controls, {"0", "1"})
     qtbot.wait(QT_SHORT_PAUSE_MS)
-    assert not controls.plot_events_pushButton.isEnabled(), (
-        "Expected Plot Events disabled with two channels selected"
-    )
+    assert (
+        not controls.plot_events_pushButton.isEnabled()
+    ), "Expected Plot Events disabled with two channels selected"
 
     # --- 5. All three channels selected -> still disabled ---
     _set_checked_channels(controls, {"0", "1", "2"})
     qtbot.wait(QT_SHORT_PAUSE_MS)
-    assert not controls.plot_events_pushButton.isEnabled(), (
-        "Expected Plot Events disabled with every channel selected"
-    )
+    assert (
+        not controls.plot_events_pushButton.isEnabled()
+    ), "Expected Plot Events disabled with every channel selected"
 
     # --- 6. Back down to exactly one -> enabled again, confirming this is
     # reactive rather than a one-time check evaluated only at load time ---

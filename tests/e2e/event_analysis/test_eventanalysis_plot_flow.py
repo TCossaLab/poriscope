@@ -148,7 +148,9 @@ def test_event_analysis_nav_and_plotting_matrix(
 
     monkeypatch.setattr(
         "PySide6.QtWidgets.QInputDialog.getItem",
-        staticmethod(_fake_get_item_exact_then_substring(LOADER_NAME, FILTER_NAME, FITTER_NAME)),
+        staticmethod(
+            _fake_get_item_exact_then_substring(LOADER_NAME, FILTER_NAME, FITTER_NAME)
+        ),
         raising=False,
     )
     monkeypatch.setattr(
@@ -158,15 +160,23 @@ def test_event_analysis_nav_and_plotting_matrix(
     )
 
     model = MainModel(
-        {"Parent Folder": str(tmp_path), "User Plugin Folder": str(tmp_path), "Log Level": 20}
+        {
+            "Parent Folder": str(tmp_path),
+            "User Plugin Folder": str(tmp_path),
+            "Log Level": 20,
+        }
     )
     view = MainView(model.get_available_plugins())
     controller = MainController(model, view)  # noqa: F841
     qtbot.addWidget(view)
     view.show()
 
-    open_menu_hybrid(view, ["Analysis", "New Analysis Tab", "EventAnalysisController"], qtbot)
-    qtbot.waitUntil(lambda: "EventAnalysisView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS)
+    open_menu_hybrid(
+        view, ["Analysis", "New Analysis Tab", "EventAnalysisController"], qtbot
+    )
+    qtbot.waitUntil(
+        lambda: "EventAnalysisView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS
+    )
     view.switch_to_page("EventAnalysisView")
     ea_view = view.pages["EventAnalysisView"]["widget"]
     controls = ea_view.eventAnalysisControls
@@ -185,10 +195,13 @@ def test_event_analysis_nav_and_plotting_matrix(
 
     schedule_dialog_autofill(fill_loader_dialog)
     QTest.mouseClick(controls.loaders_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.loaders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.loaders_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
 
     qtbot.waitUntil(
-        lambda: _find_live_channel_combo(controls) is not None, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _find_live_channel_combo(controls) is not None,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
     assert _select_single_channel(_find_live_channel_combo(controls))
 
@@ -270,7 +283,9 @@ def test_event_analysis_nav_and_plotting_matrix(
 
     schedule_dialog_autofill(fill_filter_dialog)
     QTest.mouseClick(controls.filters_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.filters_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.filters_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     assert controls.filters_comboBox.currentText() != "No Filter"
 
     lines_with_filter_raw_off = _replot_and_count(qtbot, controls, ea_view)
@@ -305,7 +320,9 @@ def test_event_analysis_nav_and_plotting_matrix(
             _set_and_commit(fitterset["Step Size"], "100.0")
         if "Rise Time" in fitterset and hasattr(fitterset["Rise Time"], "setText"):
             _set_and_commit(fitterset["Rise Time"], "10.0")
-        if "Max Sublevels" in fitterset and hasattr(fitterset["Max Sublevels"], "setText"):
+        if "Max Sublevels" in fitterset and hasattr(
+            fitterset["Max Sublevels"], "setText"
+        ):
             _set_and_commit(fitterset["Max Sublevels"], "1000")
         if "Sensitivity" in fitterset and hasattr(fitterset["Sensitivity"], "setText"):
             _set_and_commit(fitterset["Sensitivity"], "1.0")
@@ -325,8 +342,12 @@ def test_event_analysis_nav_and_plotting_matrix(
         try:
             fitter_key = controls.eventfitters_comboBox.currentText()
             ea_view.global_signal.emit(
-                "MetaEventFitter", fitter_key, "get_eventfitting_status", (0,),
-                "set_eventfitting_status", (),
+                "MetaEventFitter",
+                fitter_key,
+                "get_eventfitting_status",
+                (0,),
+                "set_eventfitting_status",
+                (),
             )
             return getattr(ea_view, "eventfitting_status", False) is True
         except Exception:
