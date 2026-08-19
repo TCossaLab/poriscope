@@ -77,7 +77,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -310,6 +310,7 @@ def _write_channel(
     voltage: float,
     thickness: float,
     conductivity: float,
+    event_length_range_samples: Optional[Tuple[int, int]] = None,
 ) -> SyntheticEventsChannel:
     """
     Insert one channel's row and all of its planted events into an
@@ -342,6 +343,7 @@ def _write_channel(
         blockage, in picoamps. Negative for a blockage.
     :type event_amplitude_pA: float
     :param event_length_samples: Length of each blockage, in samples.
+        Ignored if event_length_range_samples is given.
     :type event_length_samples: int
     :param padding_samples: Baseline samples stored before and after each
         blockage.
@@ -357,6 +359,12 @@ def _write_channel(
     :type thickness: float
     :param conductivity: Conductivity recorded in the channels table.
     :type conductivity: float
+    :param event_length_range_samples: If given, (min, max) inclusive
+        range each event's length is drawn uniformly from, instead of
+        every event sharing event_length_samples. Use this when a test
+        needs genuinely varied event durations -- e.g. so a "duration >
+        X" filter selects a real subset rather than being all-or-nothing.
+    :type event_length_range_samples: Optional[Tuple[int, int]]
 
     :return: Ground truth for the channel just written.
     :rtype: SyntheticEventsChannel
@@ -381,10 +389,15 @@ def _write_channel(
 
     absolute_start = padding_samples
     for event_id in range(num_events):
+        this_event_length = (
+            int(rng.integers(event_length_range_samples[0], event_length_range_samples[1] + 1))
+            if event_length_range_samples is not None
+            else event_length_samples
+        )
         trace = _build_event_trace(
             rng,
             padding_before=padding_samples,
-            event_length=event_length_samples,
+            event_length=this_event_length,
             padding_after=padding_samples,
             baseline_mean=baseline_mean_pA,
             baseline_std=baseline_std_pA,
@@ -417,13 +430,13 @@ def _write_channel(
                 absolute_start=absolute_start,
                 padding_before=padding_samples,
                 padding_after=padding_samples,
-                event_length=event_length_samples,
+                event_length=this_event_length,
                 baseline_mean=baseline_mean_pA,
                 baseline_std=baseline_std_pA,
                 amplitude=event_amplitude_pA,
             )
         )
-        absolute_start += event_gap_samples
+        absolute_start += padding_samples + this_event_length + padding_samples + event_gap_samples
 
     return channel
 
@@ -445,6 +458,7 @@ def generate_events_database(
     thickness: float = 10.0,
     conductivity: float = 1.0,
     seed: int = 42,
+    event_length_range_samples: Optional[Tuple[int, int]] = None,
 ) -> SyntheticEventsDatabase:
     """
     Write a single-channel synthetic events database with known events.
@@ -475,6 +489,7 @@ def generate_events_database(
         blockage, in picoamps. Negative for a blockage.
     :type event_amplitude_pA: float
     :param event_length_samples: Length of each blockage, in samples.
+        Ignored if event_length_range_samples is given.
     :type event_length_samples: int
     :param padding_samples: Baseline samples stored before and after each
         blockage.
@@ -492,6 +507,10 @@ def generate_events_database(
     :type conductivity: float
     :param seed: Random seed, making the noise reproducible.
     :type seed: int
+    :param event_length_range_samples: If given, (min, max) inclusive
+        range each event's length is drawn uniformly from, instead of
+        every event sharing event_length_samples.
+    :type event_length_range_samples: Optional[Tuple[int, int]]
 
     :return: A SyntheticEventsDatabase describing the file and its
         planted events.
@@ -515,6 +534,7 @@ def generate_events_database(
             baseline_mean_pA=baseline_mean_pA,
             baseline_std_pA=baseline_std_pA,
             event_amplitude_pA=event_amplitude_pA,
+            event_length_range_samples=event_length_range_samples,
             event_length_samples=event_length_samples,
             padding_samples=padding_samples,
             event_gap_samples=event_gap_samples,
