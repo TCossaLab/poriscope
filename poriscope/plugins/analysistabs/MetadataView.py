@@ -2097,9 +2097,36 @@ class MetadataView(MetaView, WalkthroughMixin):
         # Update the event_id field to reflect the snapped position
         self.metadatacontrols.set_event_id_input(snapped_start_id)
 
-        # Resolve snapped event_ids to event_db_ids for load_event_data
+        # Resolve snapped event_ids to event_db_ids for load_event_data, scoped
+        # to the current experiment/channel — event_id is only unique within a
+        # channel, not across the whole events table, so without this scoping
+        # the query can silently match rows from other channels that happen to
+        # share the same event_id.
+
+        # NOTE: id-resolution + fetch logic is kept inline here rather than
+        # factored into a shared helper (unlike ProteinView, which extracts
+        # this into _resolve_event_db_ids/_fetch_event_data) because this is
+        # currently the only caller in this view. If a second consumer shows
+        # up, port ProteinView's extracted pattern instead of duplicating
+        # this block.
         id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
-        db_id_query = f"SELECT id FROM events WHERE event_id IN {id_tuple}"
+        where_parts = [f"event_id IN {id_tuple}"]
+
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "get_experiment_id_by_name",
+            (exp,),
+            "relay_experiment_id",
+            (),
+        )
+        exp_id = getattr(self, "relayed_experiment_id", None)
+        if exp_id is not None:
+            where_parts.append(f"experiment_id = {exp_id}")
+            if channel is not None:
+                where_parts.append(f"channel_id = {channel}")
+
+        db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
