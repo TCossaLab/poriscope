@@ -50,7 +50,7 @@ def test_open_metadata_tab_via_clicks(qtbot, tmp_path):
     }
     model = MainModel(app_config)
     view = MainView(model.get_available_plugins())
-    controller = MainController(model, view)  # noqa: F841  (kept alive for the test's duration)
+    _controller = MainController(model, view)  # kept alive for the test's duration
 
     qtbot.addWidget(view)
     view.show()
