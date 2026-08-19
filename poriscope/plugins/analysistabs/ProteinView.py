@@ -1049,6 +1049,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 np.median(timeseries[:padding_before])
                 + np.median(timeseries[-padding_after:])
             )
+            if baseline == 0:
+                self.logger.warning(
+                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
+                )
+                continue
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
             min_curr = np.min(dI_I)
@@ -1093,6 +1098,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 np.median(timeseries[:padding_before])
                 + np.median(timeseries[-padding_after:])
             )
+            if baseline == 0:
+                self.logger.warning(
+                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
+                )
+                continue
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
             event_hist, _ = np.histogram(
                 dI_I,

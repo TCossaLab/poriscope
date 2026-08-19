@@ -1506,6 +1506,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "Normalized Filtered All Points Histogram",
             ]:
                 timeseries = event["filtered_data"]
+            else:
+                raise ValueError(f"Unknown plot_type {plot_type!r}")
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
@@ -1555,18 +1557,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "Normalized Filtered All Points Histogram",
             ]:
                 timeseries = event["filtered_data"]
+            else:
+                raise ValueError(f"Unknown plot_type {plot_type!r}")
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
-            if plot_type in [
-                "Raw All Points Histogram",
-                "Normalized Raw All Points Histogram",
-            ]:
-                timeseries = event["raw_data"]
-            elif plot_type in [
-                "Filtered All Points Histogram",
-                "Normalized Filtered All Points Histogram",
-            ]:
-                timeseries = event["filtered_data"]
             event_hist, _ = np.histogram(
                 np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
                 bins=bin_edges,
