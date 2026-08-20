@@ -153,6 +153,7 @@
     * Fixed `BaseDataPlugin._validate_param_types` never actually validating primitive setting types (a broken `isinstance` check made it dead code for every data plugin); `DataPluginController.validate_and_instantiate_plugin` now also resets a resolved plugin-dependency setting's `Type` to `None` (matching `edit_plugin`), so the fixed check correctly skips resolved plugin references instead of rejecting them
     * Fixed `ProteinControls.is_placeholder_item` checking for `"No Database"` instead of the actual `"No Event Database"` placeholder, which left the DB Loader edit/delete buttons wrongly enabled with no database selected
     * Fixed `eventAnalysisControls.py` inserting `"No EventFitter"` into the fitter combo box while everything else checked for `"No Event Fitter"`, so the "no fitter selected" guard never fired and Fit Events could silently target a nonexistent plugin key; `validate_inputs` now also disables **Fit Events** when no real event fitter is selected, matching the loader/writer checks
+    * Fixed `BaseDataPlugin.apply_settings` registering plugin parent/dependent relationships under the wrong metaclass name for any plugin that subclasses another concrete plugin instead of its `Meta*` base directly (e.g. `BoundedBlockageFinder`/`ThresholdBlockageFinder` via `ClassicBlockageFinder`, `IntraCUSUM` via `CUSUM`): it used the plugin's immediate Python base class instead of its true metaclass, which could crash deletion of an unrelated plugin with a `KeyError` naming a class that was never even instantiated in the session
 
 
 

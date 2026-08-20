@@ -262,6 +262,30 @@ class BaseDataPlugin(ABC):
         if self.raw_settings and key in self.raw_settings:
             self.raw_settings[key]["Value"] = val
 
+    def _resolve_metaclass_name(self, cls: type) -> str:
+        """
+        Walk the MRO of a plugin class to find its direct Meta* base (e.g.
+        MetaEventFinder, MetaReader), regardless of how many concrete-subclass
+        layers sit between it and that base.
+
+        Using ``cls.__bases__[0]`` instead only works if ``cls`` subclasses
+        its Meta* base directly. For a plugin that subclasses another concrete
+        plugin (e.g. ``BoundedBlockageFinder(ClassicBlockageFinder)``, itself
+        a subclass of ``MetaEventFinder``), that would return the intermediate
+        concrete class's name instead, which does not match any key in
+        DataPluginModel's per-metaclass plugin registry.
+
+        :param cls: the plugin class to resolve
+        :type cls: type
+        :raises TypeError: if cls does not inherit from a Meta* base class
+        :return: the name of the Meta* base class cls ultimately derives from
+        :rtype: str
+        """
+        for klass in cls.__mro__:
+            if BaseDataPlugin in klass.__bases__:
+                return klass.__name__
+        raise TypeError(f"{cls.__name__} does not inherit from a Meta* base class")
+
     @log(logger=logger)
     def apply_settings(self, settings: dict) -> None:
         """
@@ -290,10 +314,12 @@ class BaseDataPlugin(ABC):
                 else:
                     # register parents and dependents to ensure sane deletion later
                     self.settings[key]["Value"].register_dependent(
-                        self.__class__.__bases__[0].__name__, self.get_key()
+                        self._resolve_metaclass_name(self.__class__), self.get_key()
                     )
                     self.register_parent(
-                        self.settings[key]["Value"].__class__.__bases__[0].__name__,
+                        self._resolve_metaclass_name(
+                            self.settings[key]["Value"].__class__
+                        ),
                         self.settings[key]["Value"].get_key(),
                     )
 
