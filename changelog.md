@@ -174,6 +174,7 @@
     * Fixed `FloatRangeLineEdit` crashing with an `AttributeError` on any invalid or empty input (e.g. the Raw Data tab's start-time field): unlike its sibling widgets, it never defined a `logger`, so every validation error path crashed instead of just logging
     * Fixed `MetaEventFinder._find_events_single_range`'s "drop leading orphan event-end" check being permanently dead code (a `finally` block reset the flag it depended on before the check ever ran), which silently discarded every event found in a chunk whenever the requested range started mid-event
     * Fixed `ClusteringView`'s Gaussian Mixture clustering fitting on data that still included the `id` column, unlike HDBSCAN which already excluded it; `id`'s arbitrary, unnormalized magnitude could dominate the fit and produce meaningless clusters
+    * Fixed `MetadataControls.validate_inputs`'s bins-field validation always requiring whole numbers even when "Sizes" was checked (which expects decimal bin edges), disabling **Update Plot** for exactly the kind of value the field's own placeholder asked for
 
 
 

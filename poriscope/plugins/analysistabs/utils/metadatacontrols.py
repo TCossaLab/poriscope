@@ -1051,15 +1051,24 @@ class MetadataControls(QWidget):
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
         is_export_subset_valid = True
-        is_bins_valid = (
-            all(
-                part.strip().isdigit() and int(part.strip()) > 0
-                for part in bins_text.split(",")
-                if part.strip()
-            )
-            if bins_text
-            else True  # an empty bins field is valid - falls back to default binning
-        )
+        # When "Sizes" is checked, bins are explicit decimal bin edges (parsed
+        # with float() in collect_parameters); otherwise they are whole bin
+        # counts (parsed with int()). Validate against whichever format is
+        # actually expected instead of always requiring digits.
+        use_decimal_bins = self.sizes_checkbox.isChecked()
+        is_bins_valid = True
+        for part in bins_text.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                bin_value = float(part) if use_decimal_bins else int(part)
+            except ValueError:
+                is_bins_valid = False
+                break
+            if bin_value <= 0:
+                is_bins_valid = False
+                break
 
         self.logger.debug(
             f"Validating inputs: DB Loader: {db_loader}, Plot Type: {plot_type}, Axes: {x_axis}, {y_axis}, {z_axis}, Filter: {filter_selected}"
