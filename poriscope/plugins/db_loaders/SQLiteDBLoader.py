@@ -162,28 +162,33 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: List of experiment names, or None on failure
         :rtype: Optional[List[str]]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                if experiment_id is None:
-                    query = "SELECT name FROM experiments;"
-                    cursor.execute(query)
-                    experiment_names = [row[0] for row in cursor.fetchall()]
-                    self.logger.debug(
-                        f"All experiment names fetched: {experiment_names}"
-                    )
-                    return list(set(experiment_names)) if experiment_names else None
-                else:
-                    query = "SELECT name FROM experiments WHERE id=?;"
-                    cursor.execute(query, (experiment_id,))
-                    experiment_name = cursor.fetchone()
-                    self.logger.debug(
-                        f"Experiment name for id {experiment_id}: {experiment_name}"
-                    )
-                    return [experiment_name[0]] if experiment_name else None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            if experiment_id is None:
+                query = "SELECT name FROM experiments;"
+                cursor.execute(query)
+                experiment_names = [row[0] for row in cursor.fetchall()]
+                self.logger.debug(f"All experiment names fetched: {experiment_names}")
+                return list(set(experiment_names)) if experiment_names else None
+            else:
+                query = "SELECT name FROM experiments WHERE id=?;"
+                cursor.execute(query, (experiment_id,))
+                experiment_name = cursor.fetchone()
+                self.logger.debug(
+                    f"Experiment name for id {experiment_id}: {experiment_name}"
+                )
+                return [experiment_name[0]] if experiment_name else None
         except sqlite3.Error as e:
             self.logger.error(f"Database error fetching experiment names: {e}")
             return None
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
     @log(logger=logger)
     @override
@@ -1070,8 +1075,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype: None
         :raises sqlite3.Error: If a database error occurs during table creation or population.
         """
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            conn = sqlite3.connect(self.db_path)
+            with conn:
                 cursor = conn.cursor()
 
                 cursor.execute(
@@ -1131,3 +1138,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"Failed to ensure event_counts table: {e}")
             raise
+        finally:
+            if conn:
+                conn.close()
