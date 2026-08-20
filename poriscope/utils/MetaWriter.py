@@ -483,6 +483,7 @@ class MetaWriter(BaseDataPlugin):
         :type settings: dict
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
+        super()._validate_param_types(settings)
         if settings:
             for param, val in settings.items():
                 if param == "MetaEventFinder":

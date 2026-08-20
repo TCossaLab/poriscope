@@ -156,6 +156,7 @@
     * Fixed `BaseDataPlugin.apply_settings` registering plugin parent/dependent relationships under the wrong metaclass name for any plugin that subclasses another concrete plugin instead of its `Meta*` base directly (e.g. `BoundedBlockageFinder`/`ThresholdBlockageFinder` via `ClassicBlockageFinder`, `IntraCUSUM` via `CUSUM`): it used the plugin's immediate Python base class instead of its true metaclass, which could crash deletion of an unrelated plugin with a `KeyError` naming a class that was never even instantiated in the session
     * Fixed `SQLiteDBLoader.get_experiment_names`/`_ensure_event_counts` never explicitly closing their `sqlite3` connections, unlike every other method in the file
     * Fixed `DataPluginController.delete_plugin` never removing the deleted plugin's entry from `plugin_history.json`, unlike every other plugin-mutating operation, which left stale/deleted plugins persisted across app restarts
+    * Fixed `MetaWriter._validate_param_types` never calling `super()`, unlike every sibling override, which would have silently skipped primitive-type validation for all `MetaWriter` subclasses now that the base check actually works
 
 
 
