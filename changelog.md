@@ -166,6 +166,10 @@
     * Removed a stray, uncallable leftover `add(a, b)` method from `MetaView`
     * Fixed a missing comma in `MainController`'s `config_path` construction that silently concatenated `".."` and `"configs"` into a single path segment (currently harmless, since nothing reads `config_path`)
     * `MainController.previous_plugin_history` is now always initialized to a dict instead of only being set when a prior session exists, removing a fresh-install code path that relied on a caught `AttributeError` in `get_settings_from_history`
+    * Fixed the walkthrough's transparent "Analysis" menu highlight overlay leaking whenever a milestone dialog was dismissed manually (X/Done) instead of by navigating to the expected next view; cleanup now runs on both paths
+    * Fixed the walkthrough's auto-advance polling loop continuing to reschedule itself after the walkthrough dialog was manually dismissed, risking a duplicate/late call into the completion handler if the tracked view was later revisited
+    * Removed the duplicated, uncallable `get_nested_value`/`get_plugin_data` helper methods (missing `self`, never called in production) from all five `*controls.py` files, along with their two dedicated unit test classes
+    * Fixed two log messages in `RawDataView`/`EventAnalysisView` missing an `f` prefix, so the intended values were never actually interpolated
 
 
 

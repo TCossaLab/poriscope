@@ -442,42 +442,6 @@ class TestClearPopupReference:
 
 
 # ===========================================================================
-# get_nested_value (static)
-# ===========================================================================
-
-
-class TestGetNestedValue:
-    def test_simple_key(self):
-        d = {"a": 1}
-        assert MetadataControls.get_nested_value(d, ["a"]) == 1
-
-    def test_nested_keys(self):
-        d = {"a": {"b": {"c": 42}}}
-        assert MetadataControls.get_nested_value(d, ["a", "b", "c"]) == 42
-
-    def test_missing_key_returns_default(self):
-        d = {"a": 1}
-        assert MetadataControls.get_nested_value(d, ["x"], default=99) == 99
-
-    def test_missing_nested_key_returns_default(self):
-        d = {"a": {"b": 1}}
-        assert (
-            MetadataControls.get_nested_value(d, ["a", "z"], default="nope") == "nope"
-        )
-
-    def test_non_dict_intermediate_returns_default(self):
-        d = {"a": "not_a_dict"}
-        assert MetadataControls.get_nested_value(d, ["a", "b"], default=0) == 0
-
-    def test_empty_dict(self):
-        assert MetadataControls.get_nested_value({}, ["a"], default="x") == "x"
-
-    def test_invalid_keys_type_raises(self):
-        with pytest.raises(AssertionError):
-            MetadataControls.get_nested_value({}, "not_a_list")
-
-
-# ===========================================================================
 # collect_parameters
 # ===========================================================================
 

@@ -277,31 +277,6 @@ class TestPluginManagers:
 
 
 # ===========================================================================
-# get_nested_value (static)
-# ===========================================================================
-
-
-class TestGetNestedValue:
-    def test_simple_key(self):
-        assert EventAnalysisControls.get_nested_value({"a": 1}, ["a"]) == 1
-
-    def test_nested_keys(self):
-        d = {"a": {"b": 99}}
-        assert EventAnalysisControls.get_nested_value(d, ["a", "b"]) == 99
-
-    def test_missing_returns_default(self):
-        assert EventAnalysisControls.get_nested_value({}, ["x"], default=42) == 42
-
-    def test_non_dict_intermediate(self):
-        d = {"a": "string"}
-        assert EventAnalysisControls.get_nested_value(d, ["a", "b"], default=0) == 0
-
-    def test_invalid_keys_type_raises(self):
-        with pytest.raises(AssertionError):
-            EventAnalysisControls.get_nested_value({}, "not_a_list")
-
-
-# ===========================================================================
 # collect_parameters
 # ===========================================================================
 

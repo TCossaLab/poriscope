@@ -24,10 +24,7 @@
 # Alejandra Carolina González González
 
 
-import json
 import logging
-import os
-from pathlib import Path
 
 from PySide6.QtCore import (
     QCoreApplication,
@@ -401,37 +398,6 @@ class EventAnalysisControls(QWidget):
 
         key = comboBox.currentText()
         self.delete_processed.emit(metaclass, key)
-
-    def get_plugin_data(self):
-        """Fetch plugin data from a JSON file located in the application's local data directory."""
-        localappdata = os.getenv("LOCALAPPDATA")
-        if localappdata is None:
-            raise IOError("Unable to resolve LOCALAPPDATA")
-        file_path = Path(localappdata, "nanolyzer", "session", "plugin_history.json")
-        try:
-            with open(file_path, "r") as file:
-                return json.load(file)
-        except FileNotFoundError:
-            self.logger.error(f"Plugin data file not found at {file_path}")
-        except json.JSONDecodeError:
-            self.logger.error("Error decoding JSON from plugin data file")
-        return {}
-
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
 
     def validate_inputs(self):
         is_commit_valid = True

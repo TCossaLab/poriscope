@@ -376,7 +376,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
         if events and max(events) >= self.num_events_allowed:
             self.logger.info(
-                "Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
+                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
             )
             events = [x for x in events if x < self.num_events_allowed]
 

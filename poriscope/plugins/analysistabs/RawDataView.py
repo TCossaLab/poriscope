@@ -793,7 +793,7 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         if events and max(events) >= self.num_events_allowed:
             self.logger.info(
-                "Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
+                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
             )
 
         if events:

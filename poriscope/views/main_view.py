@@ -720,14 +720,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
                 self._milestone_dialog = None
 
-                # Clean up any analysis highlight
-                if (
-                    hasattr(self, "_analysis_proxy")
-                    and self._analysis_proxy is not None
-                ):
-                    self._analysis_proxy.hide()
-                    self._analysis_proxy.deleteLater()
-                    self._analysis_proxy = None
+                self._clear_analysis_proxy()
 
                 self._expected_next_view = None
 
@@ -953,8 +946,16 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.logger.info("Milestone manually closed by user (X or Done clicked).")
 
         self.clear_milestone_dialog()
+        self._clear_analysis_proxy()
         self._expected_next_view = None
         self._walkthrough_active = False
+
+    def _clear_analysis_proxy(self):
+        """Clean up the transparent 'Analysis' menu highlight overlay, if any."""
+        if hasattr(self, "_analysis_proxy") and self._analysis_proxy is not None:
+            self._analysis_proxy.hide()
+            self._analysis_proxy.deleteLater()
+            self._analysis_proxy = None
 
     def get_expected_next_view(self, previous_view):
         expected_transitions = {
