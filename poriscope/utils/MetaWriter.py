@@ -539,7 +539,7 @@ class MetaWriter(BaseDataPlugin):
                 scale = data_range / adc_range
                 if scale is None:
                     raise ValueError("Scale could not be computed.")
-                offset = adc_max - scale * adc_max
+                offset = data_max - scale * adc_max
                 data = (data - offset) / scale
         else:
             if scale is None or offset is None:
