@@ -2674,17 +2674,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             return
 
-        # NOTE: the three guards above guarantee that experiments_and_channels,
-        # every channels list, and selected_filters each contain exactly one
-        # entry, so the triple-nested loop below runs exactly once. The
-        # "--- Fit Double Gaussian ---" block and everything after it is
-        # deliberately placed after that loop rather than inside it, and reads
-        # whatever plot_data/exp/channel the loop last set. That is only safe
-        # because of the single-iteration guarantee above: if any of these
-        # guards are ever relaxed to allow more than one experiment/channel/
-        # filter, that block must be re-indented to run once per iteration
-        # inside the loop instead of once after it, or it will silently use
-        # stale values from the wrong iteration.
+        # The three guards above guarantee that experiments_and_channels, every
+        # channels list, and selected_filters each contain exactly one entry,
+        # so the triple-nested loop below runs exactly once.
 
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
@@ -2774,111 +2766,134 @@ class ProteinView(MetaView, WalkthroughMixin):
                         (loader, exp, channel, sql_filter, subset_name)
                     )
 
-            # --- Fit Double Gaussian ---
-            # NOTE: intentionally indented outside the loop above - see the
-            # single-iteration guarantee comment near the top of this method
-            # before relaxing any of the experiment/channel/filter guards.
-            popt = self._fit_and_sanity_check_double_gaussian(
-                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):
+            return
+
+    @log(logger=logger)
+    def _fit_and_plot_ensemble_geometry(self, plot_data, plot_type, d, L, N):
+        """
+        Fit a double Gaussian to the aggregated ensemble histogram, then Monte
+        Carlo sample prolate/oblate V/m ensembles from that fit and plot them.
+
+        Called once by _update_distribution_ensemble after its single
+        (experiment, channel, filter) combination has been plotted, using
+        whatever plot_data that produced.
+
+        :param plot_data: the aggregated histogram DataFrame to fit against.
+        :type plot_data: pd.DataFrame
+        :param plot_type: the plot type label to reuse when plotting the fit.
+        :type plot_type: str
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each of the prolate/oblate ensembles
+        :type N: int
+
+        :return: True if fitting and plotting succeeded, False if any failure occurred (already logged/displayed to the user).
+        :rtype: bool
+        """
+        popt = self._fit_and_sanity_check_double_gaussian(
+            plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        )
+
+        if popt is None:
+            self.logger.info("Unable to fit a double gaussian to the histogram")
+            self.add_text_to_display.emit(
+                "Unable to fit a double gaussian to the histogram",
+                self.__class__.__name__,
+            )
+            return False
+
+        fit_data = self._double_gaussian(plot_data["Normalized Current"].values, *popt)
+        plot_data["Amplitude"] = fit_data
+        self.update_plot(
+            plot_type,
+            plot_data,
+            plot_data.columns,
+            ["pA", ""],
+            logscales=[False, False],
+            dataset_label="Fit",
+        )
+        # --- record fit + binning for Report All reporting ---
+        self.ensemble_fit_params = popt
+        self.ensemble_fit_bins = self.allowed_bins
+        self.ensemble_fit_sizes = self.allowed_sizes
+
+        amp1, mean1, std1, amp2, mean2, std2 = popt
+
+        if mean1 > mean2:
+            mean_max, std_max = mean1, np.abs(std1)
+            mean_min, std_min = mean2, np.abs(std2)
+        else:
+            mean_max, std_max = mean2, np.abs(std2)
+            mean_min, std_min = mean1, np.abs(std1)
+
+        # --- OPTIMIZED GENERATIVE SAMPLING ---
+        # Call the Monte Carlo generators directly
+        prolate_V, prolate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        )
+        oblate_V, oblate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        )
+
+        if len(prolate_V) == 0 and len(oblate_V) == 0:
+            self.logger.warning(
+                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
+            )
+            self.add_text_to_display.emit(
+                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
+                self.__class__.__name__,
+            )
+            return False
+        elif len(prolate_V) < N or len(oblate_V) < N:
+            self.logger.info(
+                "Sampling hit bailout limit; returning partial ensemble arrays."
             )
 
-            if popt is not None:
-                fit_data = self._double_gaussian(
-                    plot_data["Normalized Current"].values, *popt
-                )
-                plot_data["Amplitude"] = fit_data
-                self.update_plot(
-                    plot_type,
-                    plot_data,
-                    plot_data.columns,
-                    ["pA", ""],
-                    logscales=[False, False],
-                    dataset_label="Fit",
-                )
-                # --- record fit + binning for Report All reporting ---
-                self.ensemble_fit_params = popt
-                self.ensemble_fit_bins = self.allowed_bins
-                self.ensemble_fit_sizes = self.allowed_sizes
-            else:
-                self.logger.info("Unable to fit a double gaussian to the histogram")
-                self.add_text_to_display.emit(
-                    "Unable to fit a double gaussian to the histogram",
-                    self.__class__.__name__,
-                )
-                return
+        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+        prolate_a = prolate_b * prolate_m
 
-            amp1, mean1, std1, amp2, mean2, std2 = popt
+        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+        oblate_a = oblate_b * oblate_m
 
-            if mean1 > mean2:
-                mean_max, std_max = mean1, np.abs(std1)
-                mean_min, std_min = mean2, np.abs(std2)
-            else:
-                mean_max, std_max = mean2, np.abs(std2)
-                mean_min, std_min = mean1, np.abs(std1)
+        # --- Create the Pandas DataFrames ---
+        df_prolate = pd.DataFrame(
+            {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
+        )
+        df_oblate = pd.DataFrame(
+            {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
+        )
 
-            # --- OPTIMIZED GENERATIVE SAMPLING ---
-            # Call the Monte Carlo generators directly
-            prolate_V, prolate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        # --- record V/m summaries for Report All reporting ---
+        self.ensemble_fit_prolate_summary = (
+            self._summarize_vm(df_prolate) if not df_prolate.empty else None
+        )
+        self.ensemble_fit_oblate_summary = (
+            self._summarize_vm(df_oblate) if not df_oblate.empty else None
+        )
+
+        if not df_prolate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_prolate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Prolate Solutions",
             )
-            oblate_V, oblate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        if not df_oblate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_oblate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Oblate Solutions",
             )
 
-            if len(prolate_V) == 0 and len(oblate_V) == 0:
-                self.logger.warning(
-                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
-                )
-                self.add_text_to_display.emit(
-                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
-                    self.__class__.__name__,
-                )
-                return
-            elif len(prolate_V) < N or len(oblate_V) < N:
-                self.logger.info(
-                    "Sampling hit bailout limit; returning partial ensemble arrays."
-                )
-
-            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-            prolate_a = prolate_b * prolate_m
-
-            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-            oblate_a = oblate_b * oblate_m
-
-            # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(
-                {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
-            )
-            df_oblate = pd.DataFrame(
-                {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
-            )
-
-            # --- record V/m summaries for Report All reporting ---
-            self.ensemble_fit_prolate_summary = (
-                self._summarize_vm(df_prolate) if not df_prolate.empty else None
-            )
-            self.ensemble_fit_oblate_summary = (
-                self._summarize_vm(df_oblate) if not df_oblate.empty else None
-            )
-
-            if not df_prolate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_prolate,
-                    ["V", "m"],
-                    ["nm$^{3}$", None],
-                    logscales=[False, False],
-                    dataset_label="Prolate Solutions",
-                )
-            if not df_oblate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_oblate,
-                    ["V", "m"],
-                    ["nm$^{3}$", None],
-                    logscales=[False, False],
-                    dataset_label="Oblate Solutions",
-                )
+        return True
 
     @log(logger=logger)
     def _compute_theoretical_blockages(self, V, m, d, L):

@@ -170,6 +170,7 @@
     * Fixed the walkthrough's auto-advance polling loop continuing to reschedule itself after the walkthrough dialog was manually dismissed, risking a duplicate/late call into the completion handler if the tracked view was later revisited
     * Removed the duplicated, uncallable `get_nested_value`/`get_plugin_data` helper methods (missing `self`, never called in production) from all five `*controls.py` files, along with their two dedicated unit test classes
     * Fixed two log messages in `RawDataView`/`EventAnalysisView` missing an `f` prefix, so the intended values were never actually interpolated
+    * Refactored `ProteinView._update_distribution_ensemble`'s ~105-line double-Gaussian fit and Monte Carlo sampling block into its own method, `_fit_and_plot_ensemble_geometry`, called once after the loop finishes instead of relying on a comment plus careful indentation to stay safe if the surrounding experiment/channel/filter guards are ever relaxed
 
 
 
