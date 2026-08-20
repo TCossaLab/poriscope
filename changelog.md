@@ -160,6 +160,7 @@
     * Fixed `EventAnalysisView._start_eventfitter` re-raising a filter-loading failure instead of falling back gracefully like `_handle_plot_events` already does, so a broken/misconfigured filter crashed Fit Events instead of proceeding without one
     * Fixed the "All Analysis Tabs" dropdown menu always opening anchored at the main window's top-left corner instead of near the clicked button, since `populate_plugins_menu` read `self.sender()` after an async round-trip where it always resolved to `MainView` itself
     * Fixed `MainView.add_page` leaking an orphaned wrapper `QWidget` into the stacked widget every time a page name was reused (e.g. every time Settings was opened), instead of reusing/removing the previous wrapper
+    * Fixed `ABF2Header` never closing its file handle after parsing an ABF header, since the underlying file is only ever read during construction
 
 
 

@@ -29,7 +29,10 @@ import struct
 class ABF2Header:
     def __init__(self, filename):
         self.f = open(filename, "rb")
-        self._read_sections()
+        try:
+            self._read_sections()
+        finally:
+            self.f.close()
 
     def get_abf_version(self):
         return self.abf_version
