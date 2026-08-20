@@ -617,9 +617,12 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 )
             except ValueError:
                 raise ValueError("Did you forget to fill in clustering parameters?")
+            columns_except_id = clustering_data.columns[
+                clustering_data.columns != "id"
+            ]
             clusterer = GaussianMixture(n_components=n_components, n_init=100)
-            labels = clusterer.fit_predict(clustering_data)
-            probs = clusterer.predict_proba(clustering_data)
+            labels = clusterer.fit_predict(clustering_data[columns_except_id])
+            probs = clusterer.predict_proba(clustering_data[columns_except_id])
             probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
         else:
             raise ValueError(f"Unknown clustering method: {config['method']!r}")
