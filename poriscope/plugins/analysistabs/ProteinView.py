@@ -41,7 +41,7 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -81,7 +81,6 @@ class ProteinView(MetaView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-    request_plugin_refresh = Signal(str)
 
     @property
     def fig_hist(self):
