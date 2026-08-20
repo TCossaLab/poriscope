@@ -744,17 +744,15 @@ class TestFindEventsSingleRange:
         assert f.event_ends[0] == [260]
         assert f.num_events_found[0] == 1
 
-    def test_leading_orphan_end_check_is_dead_code(self, finder):
-        # NOTE: the "drop leading orphan end in the first chunk" branch
-        # (``if ... and first_chunk and event_ends[0] < event_starts[0]:
-        # event_ends.pop(0)``) can never actually fire: the preceding
-        # ``finally:`` block of the baseline-stats try/except always sets
-        # ``first_chunk = False`` before this check is reached, even on the
-        # very first chunk. This test documents that a chunk producing a
-        # leading orphan end is NOT corrected (confirming the branch is
-        # unreachable rather than silently broken in some other way), and
-        # instead surfaces as a padding/start-end mismatch that gets caught
-        # and skipped.
+    def test_leading_orphan_end_dropped_in_first_chunk(self, finder):
+        # The "drop leading orphan end in the first chunk" branch
+        # (``if ... and is_first_chunk and event_ends[0] < event_starts[0]:
+        # event_ends.pop(0)``) captures whether this is the first chunk into
+        # ``is_first_chunk`` before the baseline-stats try/except's
+        # ``finally:`` block resets ``first_chunk`` to False, so the check
+        # correctly fires on the very first chunk. A leading orphan end
+        # (event_ends[0] < event_starts[0]) is dropped, leaving a valid
+        # start/end pair that gets recorded as a real event.
         self._reset(finder)
         with patch.object(
             finder,
@@ -762,10 +760,8 @@ class TestFindEventsSingleRange:
             return_value=([50], [10, 90], False),
         ):
             list(finder._find_events_single_range(0, 0, 10.0, 10.0))
-        # The orphan end was never dropped, so the (start=50, end=10) pair
-        # fails validation downstream and nothing gets recorded this chunk.
-        assert finder.event_starts[0] == []
-        assert finder.event_ends[0] == []
+        assert finder.event_starts[0] == [50]
+        assert finder.event_ends[0] == [90]
 
     def test_trailing_correction_pops_both_sides(self, finder):
         # Pre-seed mismatched-looking starts/ends that, after the trailing

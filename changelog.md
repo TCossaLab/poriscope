@@ -172,6 +172,7 @@
     * Fixed two log messages in `RawDataView`/`EventAnalysisView` missing an `f` prefix, so the intended values were never actually interpolated
     * Refactored `ProteinView._update_distribution_ensemble`'s ~105-line double-Gaussian fit and Monte Carlo sampling block into its own method, `_fit_and_plot_ensemble_geometry`, called once after the loop finishes instead of relying on a comment plus careful indentation to stay safe if the surrounding experiment/channel/filter guards are ever relaxed
     * Fixed `FloatRangeLineEdit` crashing with an `AttributeError` on any invalid or empty input (e.g. the Raw Data tab's start-time field): unlike its sibling widgets, it never defined a `logger`, so every validation error path crashed instead of just logging
+    * Fixed `MetaEventFinder._find_events_single_range`'s "drop leading orphan event-end" check being permanently dead code (a `finally` block reset the flag it depended on before the check ever ran), which silently discarded every event found in a chunk whenever the requested range started mid-event
 
 
 

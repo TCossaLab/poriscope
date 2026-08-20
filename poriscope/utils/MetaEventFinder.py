@@ -430,6 +430,7 @@ class MetaEventFinder(BaseDataPlugin):
             if data_filter:
                 data = data_filter(data)
 
+            is_first_chunk = first_chunk
             try:
                 mean, std = self._get_baseline_stats(data)
                 if (
@@ -482,7 +483,7 @@ class MetaEventFinder(BaseDataPlugin):
                 len(event_ends) > len(event_starts)
                 and len(event_starts) > 0
                 and len(event_ends) > 0
-                and first_chunk
+                and is_first_chunk
                 and event_ends[0] < event_starts[0]
             ):
                 # if we have a leading event end in the first chunk, drop it
