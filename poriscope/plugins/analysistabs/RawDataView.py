@@ -1319,8 +1319,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                 data_list = filtered_data_list
             if data_list:
                 self.calculate_psd.emit(data_list, self.plot_samplerate)
+                psd_channels = [channels[i] for i in self.psd_kept_indices]
                 self.update_psd(
-                    self.Pxx_list, self.rms_list, self.psd_frequency, channels
+                    self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels
                 )
             else:
                 self.logger.error("No data available for psd calculation")
@@ -1328,7 +1329,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.logger.error("Invalid parameters for plotting data")
 
     @log(logger=logger)
-    def set_psd(self, Pxx_list, rms_list, frequency):
+    def set_psd(self, Pxx_list, rms_list, frequency, kept_indices):
         """
         Set the PSD and RMS lists for visualization.
 
@@ -1336,10 +1337,14 @@ class RawDataView(MetaView, WalkthroughMixin):
             Pxx_list (list): Power spectral density data.
             rms_list (list): RMS noise data.
             frequency (ndarray): Frequency axis data.
+            kept_indices (list[int]): Indices into the channel list passed to
+                calculate_psd that were successfully processed, since some
+                channels may have been skipped.
         """
         self.Pxx_list = Pxx_list
         self.rms_list = rms_list
         self.psd_frequency = frequency
+        self.psd_kept_indices = kept_indices
 
     @log(logger=logger)
     def _apply_filter(self, data_filter, channel_data):

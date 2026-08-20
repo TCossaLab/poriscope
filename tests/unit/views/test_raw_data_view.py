@@ -218,10 +218,12 @@ def test_set_psd(view):
     Pxx = [[1.0, 2.0]]
     rms = [[0.1, 0.2]]
     freq = np.array([10.0, 100.0])
-    view.set_psd(Pxx, rms, freq)
+    kept_indices = [0]
+    view.set_psd(Pxx, rms, freq, kept_indices)
     assert view.Pxx_list is Pxx
     assert view.rms_list is rms
     np.testing.assert_array_equal(view.psd_frequency, freq)
+    assert view.psd_kept_indices is kept_indices
 
 
 # ---------------------------------------------------------------------------

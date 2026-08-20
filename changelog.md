@@ -147,6 +147,8 @@
     * Fixed `MetaEventFinder.find_events` not stopping promptly when aborted mid-run: it previously kept processing every remaining range before discarding all results, instead of stopping as soon as the abort was received
     * Fixed `MetaEventFitter.fit_events` crashing with a `KeyError` when a fitter subclass returned mismatched-length sublevel-metadata arrays; the event is now cleanly rejected instead of aborting the whole channel
     * Updated tests in `test_main_controller.py`, `test_classic_cusum.py`, `test_no_fitter.py`, and `test_meta_event_finder.py` to match already-landed fixes (RPC dispatcher log-and-return behavior, corrected `ClassicCUSUM` threshold sensitivity, corrected `NoFitter` duration/extreme-value index alignment, and a dead-code precondition fix in `get_event_data_generator`) that had left their expectations stale
+    * Fixed `RawDataModel.integrate_noise` crashing "Update PSD" with an uncaught `IndexError` when a short time window made `welch()` return a single-frequency-bin PSD
+    * Fixed `RawDataModel`/`RawDataController`/`RawDataView` PSD calculation silently mislabeling a surviving channel's PSD under the wrong channel name whenever an earlier channel was skipped
 
 
 
