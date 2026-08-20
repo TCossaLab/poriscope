@@ -463,6 +463,8 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
+            else:
+                return
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
