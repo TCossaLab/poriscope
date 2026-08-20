@@ -12,6 +12,7 @@ Run with:
 """
 
 import json
+import logging
 import os
 import tempfile
 import warnings
@@ -685,7 +686,7 @@ class TestStateSetters:
         assert view._pending_old_filter_name is None
 
     def test_get_current_view(self, view):
-        assert view.get_current_view() == "MetadataView"
+        assert view.get_current_view() == "ProteinView"
 
     def test_set_query_stores(self, view):
         view.set_query("SELECT * FROM events", "events")
@@ -1407,7 +1408,6 @@ class TestMiscMethods:
     def test_no_cached_data_default(self, view):
         assert view.no_cached_data is False
 
-
 # ===========================================================================
 # Integration: histogram → fit → VM scatter pipeline
 # ===========================================================================
@@ -1740,16 +1740,17 @@ class TestFetchEventData:
         result = view._fetch_event_data(params)
         assert result == []
 
-    def test_uses_cached_events_when_available(self, view):
+    def test_fetches_fresh_via_resolve_and_generator(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
         view.current_channel = "0"
-        # current_* matches the requested exp/channel/filter exactly, so the
-        # generator-refresh branch is skipped entirely and only the cache is read.
-        view.plot_events_generator = MagicMock()
-        view.cached_events = {1: _make_event(1)}
+        view._resolve_event_db_ids = MagicMock(
+            return_value=pd.DataFrame({"id": [10], "event_id": [1]})
+        )
+        view.global_signal = MagicMock()
+        view.plot_events_generator = iter([_make_event(1)])
         result = view._fetch_event_data(self._params())
         assert len(result) == 1
         assert result[0]["event_id"] == 1
@@ -1778,7 +1779,7 @@ class TestHandlePlotEvents:
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_plot") as mock_plot:
             view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
-        mock_plot.assert_called_once_with(events)
+        mock_plot.assert_called_once_with(events, use_raw=False)
 
     def test_no_data_emits_warning(self, view):
         self._setup(view)
@@ -2130,23 +2131,21 @@ class TestUpdateDistributionIndividual:
             "sizes": False,
         }
 
-    def test_multiple_experiments_warns_and_returns(self, view):
+    def test_multiple_experiments_warns_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
         }
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_individual(self._params())
-        assert any("single experiment" in m for m in received)
+        with caplog.at_level(logging.WARNING):
+            view._update_distribution_individual(self._params())
+        assert any("single experiment" in r.message for r in caplog.records)
 
-    def test_multiple_channels_warns_and_returns(self, view):
+    def test_multiple_channels_warns_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_individual(self._params())
-        assert any("single channel" in m for m in received)
+        with caplog.at_level(logging.WARNING):
+            view._update_distribution_individual(self._params())
+        assert any("single channel" in r.message for r in caplog.records)
 
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
@@ -2179,24 +2178,22 @@ class TestUpdateDistributionEnsemble:
             "n_values": "10",
         }
 
-    def test_multiple_experiments_warns_and_returns(self, view):
+    def test_multiple_experiments_warns_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
         }
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_ensemble(self._params())
-        assert any("single experiment" in m for m in received)
+        with caplog.at_level(logging.WARNING):
+            view._update_distribution_ensemble(self._params())
+        assert any("single experiment" in r.message for r in caplog.records)
 
-    def test_multiple_channels_warns_and_returns(self, view):
+    def test_multiple_channels_warns_and_returns(self, view, caplog):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
         view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        view.add_text_to_display.connect(lambda m, s: received.append(m))
-        view._update_distribution_ensemble(self._params())
-        assert any("single channel" in m for m in received)
-
+        with caplog.at_level(logging.WARNING):
+            view._update_distribution_ensemble(self._params())
+        assert any("single channel" in r.message for r in caplog.records)
+        
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
