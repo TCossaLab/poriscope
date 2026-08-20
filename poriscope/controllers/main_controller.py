@@ -42,7 +42,7 @@ class MainController(QObject):
         super().__init__()
         self.main_model = main_model
         self.main_view = main_view
-        self.config_path = Path(Path(__file__).resolve().parent, ".." "configs")
+        self.config_path = Path(Path(__file__).resolve().parent, "..", "configs")
 
         # analysis tab managers
         self.analysis_tabs = (
@@ -63,8 +63,9 @@ class MainController(QObject):
         self.tab_action_history: Dict[str, Any] = {}
 
         previous_plugin_history = self.main_model.load_session(None)
-        if previous_plugin_history is not None:
-            self.previous_plugin_history = previous_plugin_history
+        self.previous_plugin_history: Dict[str, Any] = (
+            previous_plugin_history if previous_plugin_history is not None else {}
+        )
 
         self.setup_connections()
 
@@ -151,23 +152,14 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str, str)
     def get_settings_from_history(self, metaclass, subclass):
-        try:
-            for key, val in self.plugin_history.items():
-                if (
-                    val.get("subclass") == subclass
-                    and val.get("metaclass") == metaclass
-                ):
-                    self.data_plugin_controller.set_settings(val.get("settings"))
-                    return
-            for key, val in self.previous_plugin_history.items():
-                if (
-                    val.get("subclass") == subclass
-                    and val.get("metaclass") == metaclass
-                ):
-                    self.data_plugin_controller.set_settings(val.get("settings"))
-                    return
-        except AttributeError:
-            self.data_plugin_controller.set_settings(None)
+        for key, val in self.plugin_history.items():
+            if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
+                self.data_plugin_controller.set_settings(val.get("settings"))
+                return
+        for key, val in self.previous_plugin_history.items():
+            if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
+                self.data_plugin_controller.set_settings(val.get("settings"))
+                return
         self.data_plugin_controller.set_settings(None)
 
     @log(logger=logger)

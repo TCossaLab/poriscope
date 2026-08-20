@@ -162,6 +162,10 @@
     * Fixed `MainView.add_page` leaking an orphaned wrapper `QWidget` into the stacked widget every time a page name was reused (e.g. every time Settings was opened), instead of reusing/removing the previous wrapper
     * Fixed `ABF2Header` never closing its file handle after parsing an ABF header, since the underlying file is only ever read during construction
     * Fixed `MetaDatabaseLoader.load_event_data`/`query_database_directly_and_get_generator` never explicitly closing the inner generator they wrap, relying on implicit garbage collection instead of the explicit cleanup used elsewhere in this codebase
+    * Fixed `MetaReader.report_channel_status` always formatting the samplerate with 2 decimal places regardless of whether it was a whole number, due to a dead ternary inside the f-string's format spec
+    * Removed a stray, uncallable leftover `add(a, b)` method from `MetaView`
+    * Fixed a missing comma in `MainController`'s `config_path` construction that silently concatenated `".."` and `"configs"` into a single path segment (currently harmless, since nothing reads `config_path`)
+    * `MainController.previous_plugin_history` is now always initialized to a dict instead of only being set when a prior session exists, removing a fresh-install code path that relied on a caught `AttributeError` in `get_settings_from_history`
 
 
 
