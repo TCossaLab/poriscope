@@ -412,6 +412,7 @@ class DataPluginController(QObject):
                     app_settings[settings_key]["Value"] = (
                         self.model.get_plugin_instance(settings_key, val["Value"])
                     )
+                    app_settings[settings_key]["Type"] = None
                     app_settings[settings_key]["Options"] = None
         except Exception as e:
             self.logger.exception(

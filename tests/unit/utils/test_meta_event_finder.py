@@ -153,9 +153,15 @@ class ConcreteEventFinder(MetaEventFinder):
         return bad_indices, reasons
 
 
-def make_settings(reader, threshold=20.0, min_duration=0):
+def make_settings(reader, threshold=20.0, min_duration=0.0):
+    # "Type" is None here, not str: get_empty_settings() declares "MetaReader"
+    # as Type=str because the user initially picks a plugin key from a
+    # dropdown, but DataPluginController resolves that string into the real
+    # instance (and resets Type to None) before ever calling apply_settings.
+    # This fixture constructs the post-resolution state that the real
+    # constructor actually sees.
     return {
-        "MetaReader": {"Type": str, "Value": reader, "Options": None},
+        "MetaReader": {"Type": None, "Value": reader, "Options": None},
         "Threshold": {"Type": float, "Value": threshold},
         "Min Duration": {"Type": float, "Value": min_duration},
     }
@@ -716,7 +722,7 @@ class TestFindEventsSingleRange:
         reader2 = FakeReader(
             make_signal(1000, events=[(200, 250), (600, 650)]), samplerate=100.0
         )
-        f = build_finder(make_settings(reader2, min_duration=1000))
+        f = build_finder(make_settings(reader2, min_duration=1000.0))
         self._reset(f)
         list(f._find_events_single_range(0, 0, 10.0, 10.0))
         assert f.rejected_events[0].get("too short") == 2

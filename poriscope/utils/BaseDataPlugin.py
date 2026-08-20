@@ -365,10 +365,8 @@ class BaseDataPlugin(ABC):
             for param, val in settings.items():
                 setting_type = cast(Type[Any], val["Type"])
                 setting_value = val["Value"]
-                if isinstance(setting_type, (int, float, bool, str)):
-                    if not isinstance(setting_value, setting_type) and not issubclass(
-                        type(setting_value), setting_type
-                    ):
+                if setting_type in (int, float, bool, str):
+                    if not isinstance(setting_value, setting_type):
                         raise TypeError(f"{param} must have type {val['Type']}")
 
     @log(logger=logger)
