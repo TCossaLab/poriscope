@@ -95,6 +95,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.setup_menubar()
         self._milestone_dialog = None
         self._expected_next_view = None
+        self._plugins_menu_anchor = None
         self.setup_ui()
         self.figure = plt.Figure()
         self.canvas = FigureCanvas(self.figure)
@@ -508,6 +509,11 @@ class MainView(QMainWindow, WalkthroughMixin):
     def on_plugins_button_click(self):
         """Emit signal to request analysis tabs from MainController."""
         self.logger.info("Plugins button clicked - requesting analysis tabs.")
+        # Capture the widget that triggered this click now, since by the time
+        # populate_plugins_menu runs (after an async round-trip through
+        # MainController via received_analysis_tabs), self.sender() there
+        # would resolve to this MainView instance instead of the button.
+        self._plugins_menu_anchor = self.sender()
         self.request_analysis_tabs.emit()  # Ask MainController for the list of instantiated tabs
         self.logger.info("request_analysis_tabs signal emitted.")
 
@@ -540,7 +546,7 @@ class MainView(QMainWindow, WalkthroughMixin):
                 )
                 menu.addAction(action)
 
-        button = self.sender()
+        button = self._plugins_menu_anchor
         if button:
             menu_pos = button.mapToGlobal(
                 button.rect().topLeft()
@@ -644,6 +650,17 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     def add_page(self, page_name, widget_instance):
+        existing_page_info = self.pages.get(page_name)
+        if existing_page_info is not None:
+            # Reusing page_name would otherwise leak the previous wrapper
+            # QWidget: addWidget() below always creates a new one, and
+            # reparenting widget_instance into it empties the old wrapper
+            # without ever removing it from the stack.
+            old_page = self.stackedWidget.widget(existing_page_info["index"])
+            if old_page is not None:
+                self.stackedWidget.removeWidget(old_page)
+                old_page.deleteLater()
+
         page = QWidget()
         page.setObjectName(page_name)
         page_layout = QVBoxLayout(page)

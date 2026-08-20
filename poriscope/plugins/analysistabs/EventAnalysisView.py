@@ -895,46 +895,49 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                     "set_event_filter",
                     (),
                 )
-        except:
-            raise
+        except Exception:
+            self.data_filter = None
+            self.logger.warning(
+                f"Unable to load filter {data_filter}, proceeding without a filter"
+            )
+
+        try:
+            for channel in channels:
+                self.global_signal.emit(
+                    "MetaEventFitter",
+                    eventfitter,
+                    "get_eventfitting_status",
+                    (channel,),
+                    "relay_eventfitting_status",
+                    (),
+                )  # update here to unify generators
+                if self.eventfitting_status is True:
+                    reply = QMessageBox.question(
+                        self,
+                        "Confirmation",
+                        f"Fitting was already completed in channel {channel}. Start over anyway?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No,
+                    )
+                    if reply == QMessageBox.No:
+                        return
+                fit_events_args = (channel, False, self.data_filter, None)
+                # Emit the signal with the correct handler name for when the data is ready
+                ret_args = (channel, eventfitter, "MetaEventFitter")
+                self.global_signal.emit(
+                    "MetaEventFitter",
+                    eventfitter,
+                    "fit_events",
+                    fit_events_args,
+                    "set_generator",
+                    ret_args,
+                )  # update here to unify generators
+        except (IndexError, ValueError) as e:
+            self.logger.error(
+                f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
+            )
         else:
-            try:
-                for channel in channels:
-                    self.global_signal.emit(
-                        "MetaEventFitter",
-                        eventfitter,
-                        "get_eventfitting_status",
-                        (channel,),
-                        "relay_eventfitting_status",
-                        (),
-                    )  # update here to unify generators
-                    if self.eventfitting_status is True:
-                        reply = QMessageBox.question(
-                            self,
-                            "Confirmation",
-                            f"Fitting was already completed in channel {channel}. Start over anyway?",
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.No,
-                        )
-                        if reply == QMessageBox.No:
-                            return
-                    fit_events_args = (channel, False, self.data_filter, None)
-                    # Emit the signal with the correct handler name for when the data is ready
-                    ret_args = (channel, eventfitter, "MetaEventFitter")
-                    self.global_signal.emit(
-                        "MetaEventFitter",
-                        eventfitter,
-                        "fit_events",
-                        fit_events_args,
-                        "set_generator",
-                        ret_args,
-                    )  # update here to unify generators
-            except (IndexError, ValueError) as e:
-                self.logger.error(
-                    f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
-                )
-            else:
-                self.run_generators.emit(eventfitter)
+            self.run_generators.emit(eventfitter)
 
     @log(logger=logger)
     def _extract_plot_event_parameters(self, parameters):
