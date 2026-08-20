@@ -651,7 +651,7 @@ class ProteinControls(QWidget):
 
     def is_placeholder_item(self, comboBox):
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in ["No Database"]
+        return comboBox.currentText() in ["No Event Database"]
 
     def show_plugin_edit_manager(self, comboBox, metaclass):
         """Displays the plugin manager with details for the selected item from the combobox."""

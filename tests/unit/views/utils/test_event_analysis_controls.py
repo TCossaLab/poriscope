@@ -201,7 +201,7 @@ class TestPlaceholderAndToggle:
 
     def test_no_eventfitter_is_placeholder(self, ec):
         ec.eventfitters_comboBox.clear()
-        ec.eventfitters_comboBox.addItem("No EventFitter")
+        ec.eventfitters_comboBox.addItem("No Event Fitter")
         assert ec.is_placeholder_item(ec.eventfitters_comboBox)
 
     def test_real_item_not_placeholder(self, ec):
@@ -448,6 +448,8 @@ class TestValidateInputs:
     def test_single_channel_with_loader_enables_fit_events(self, ec):
         ec.loaders_comboBox.clear()
         ec.loaders_comboBox.addItem("ldr")
+        ec.eventfitters_comboBox.clear()
+        ec.eventfitters_comboBox.addItem("ef1")
         ec.update_channels(["0"])
         ec.validate_inputs()
         assert ec.fit_events_pushButton.isEnabled()
@@ -693,7 +695,7 @@ class TestUpdateEventFitters:
 
     def test_empty_inserts_placeholder(self, ec):
         ec.update_eventfitters([])
-        assert ec.eventfitters_comboBox.itemText(0) == "No EventFitter"
+        assert ec.eventfitters_comboBox.itemText(0) == "No Event Fitter"
 
     def test_restores_previous_selection(self, ec):
         ec.update_eventfitters(["ef1", "ef2"])

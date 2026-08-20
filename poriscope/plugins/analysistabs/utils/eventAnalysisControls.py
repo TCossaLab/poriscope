@@ -378,7 +378,7 @@ class EventAnalysisControls(QWidget):
             "No Loader",
             "No Database Writer",
             "No Filter",
-            "No EventFitter",
+            "No Event Fitter",
         ]
 
     def clear_popup_reference(self, comboBox):
@@ -440,7 +440,7 @@ class EventAnalysisControls(QWidget):
 
         # Gather relevant inputs
         loader = self.loaders_comboBox.currentText()
-        self.eventfitters_comboBox.currentText()
+        eventfitter = self.eventfitters_comboBox.currentText()
         channels = self.channel_comboBox.getSelectedItems()
         event_index_valid = self.event_index_lineEdit.isValid()
         writer = self.writers_comboBox.currentText()
@@ -476,6 +476,10 @@ class EventAnalysisControls(QWidget):
         if not writer or writer == "No Database Writer":
             self.logger.debug("No writer selected")
             is_commit_valid = False
+
+        if not eventfitter or eventfitter == "No Event Fitter":
+            self.logger.debug("No event fitter selected")
+            is_fit_events_valid = False
 
         # Enable or disable buttons based on validation
         self.commit_btn.setEnabled(is_commit_valid)
@@ -723,7 +727,7 @@ class EventAnalysisControls(QWidget):
 
         self.eventfitters_comboBox.clear()
         if eventfitters == []:
-            eventfitters.insert(0, "No EventFitter")
+            eventfitters.insert(0, "No Event Fitter")
         self.eventfitters_comboBox.addItems(eventfitters)
 
         # Restore selection if it still exists
