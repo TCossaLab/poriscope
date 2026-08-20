@@ -1136,34 +1136,37 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if query:
             event_generator = self._load_event_data(query)
             abort = False
-            for event in event_generator:
-                (
-                    db_id,
-                    experiment_id,
-                    channel_id,
-                    event_id,
-                    samplerate,
-                    padding_before,
-                    padding_after,
-                    raw_data,
-                    filtered_data,
-                    fit_data,
-                ) = event
-                abort = yield {
-                    "id": db_id,
-                    "event_id": event_id,
-                    "channel_id": channel_id,
-                    "experiment_id": experiment_id,
-                    "samplerate": samplerate,
-                    "padding_before": padding_before,
-                    "padding_after": padding_after,
-                    "raw_data": raw_data,
-                    "filtered_data": filtered_data,
-                    "fit_data": fit_data,
-                }
-                abort = bool(abort)
-                if abort is True:
-                    break
+            try:
+                for event in event_generator:
+                    (
+                        db_id,
+                        experiment_id,
+                        channel_id,
+                        event_id,
+                        samplerate,
+                        padding_before,
+                        padding_after,
+                        raw_data,
+                        filtered_data,
+                        fit_data,
+                    ) = event
+                    abort = yield {
+                        "id": db_id,
+                        "event_id": event_id,
+                        "channel_id": channel_id,
+                        "experiment_id": experiment_id,
+                        "samplerate": samplerate,
+                        "padding_before": padding_before,
+                        "padding_after": padding_after,
+                        "raw_data": raw_data,
+                        "filtered_data": filtered_data,
+                        "fit_data": fit_data,
+                    }
+                    abort = bool(abort)
+                    if abort is True:
+                        break
+            finally:
+                event_generator.close()
             if abort is True:
                 self.logger.info("Generator aborted")
                 return
@@ -1210,12 +1213,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
             metadata_generator = self._load_metadata_generator(query)
             if metadata_generator is not None:
                 abort = False
-                for event in metadata_generator:
-                    event = event.loc[:, ~event.columns.duplicated()]
-                    abort = yield event
-                    abort = bool(abort)
-                    if abort is True:
-                        break
+                try:
+                    for event in metadata_generator:
+                        event = event.loc[:, ~event.columns.duplicated()]
+                        abort = yield event
+                        abort = bool(abort)
+                        if abort is True:
+                            break
+                finally:
+                    metadata_generator.close()
                 if abort is True:
                     self.logger.info("Generator aborted")
                     return
