@@ -1408,6 +1408,7 @@ class TestMiscMethods:
     def test_no_cached_data_default(self, view):
         assert view.no_cached_data is False
 
+
 # ===========================================================================
 # Integration: histogram → fit → VM scatter pipeline
 # ===========================================================================
@@ -2193,7 +2194,7 @@ class TestUpdateDistributionEnsemble:
         with caplog.at_level(logging.WARNING):
             view._update_distribution_ensemble(self._params())
         assert any("single channel" in r.message for r in caplog.records)
-        
+
     def test_multiple_filters_warns_and_returns(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})

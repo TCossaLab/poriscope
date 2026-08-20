@@ -357,4 +357,3 @@ def test_update_column_units_skips_view_when_units_empty(
     """
     controller.update_column_units({}, "x")
     mock_view.update_column_units.assert_not_called()
-

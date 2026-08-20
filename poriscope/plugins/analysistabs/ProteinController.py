@@ -45,6 +45,7 @@ class ProteinController(MetaController):
     Relays queries, event data, and filter/column metadata between the
     database backend and ProteinView.
     """
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)

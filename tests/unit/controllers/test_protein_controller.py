@@ -682,9 +682,10 @@ class TestGetExperimentStructureReady:
         """
         controller.get_experiment_structure_ready({"exp1": [0]}, "ldr")
         mock_view.selected_experiment_and_channels_by_loader["ldr"]["exp1"].append("1")
-        assert mock_view.available_experiment_and_channels_by_loader["ldr"][
-            "exp1"
-        ] == ["0", "1"]
+        assert mock_view.available_experiment_and_channels_by_loader["ldr"]["exp1"] == [
+            "0",
+            "1",
+        ]
 
     def test_selected_and_available_are_separate_dict_objects(
         self, controller: ProteinController, mock_view: MagicMock
@@ -701,7 +702,7 @@ class TestGetExperimentStructureReady:
             mock_view.selected_experiment_and_channels_by_loader["ldr"]
             is not mock_view.available_experiment_and_channels_by_loader["ldr"]
         )
-        
+
     def test_empty_structure(
         self, controller: ProteinController, mock_view: MagicMock
     ) -> None:
@@ -808,6 +809,4 @@ def test_relay_query_result_delegates_to_view(
     df = pd.DataFrame({"event_id": [1, 2, 3]})
     controller.relay_query_result(df)
     mock_view.relay_query_result.assert_called_once()
-    pd.testing.assert_frame_equal(
-        mock_view.relay_query_result.call_args[0][0], df
-    )
+    pd.testing.assert_frame_equal(mock_view.relay_query_result.call_args[0][0], df)
