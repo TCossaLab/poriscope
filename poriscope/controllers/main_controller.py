@@ -303,7 +303,7 @@ class MainController(QObject):
             if history:
                 self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
-            self.plugin_history.pop(delete_key)
+            self.plugin_history.pop(delete_key, None)
         elif history and delete_key:
             new_history = {}
             for key, val in self.plugin_history.items():

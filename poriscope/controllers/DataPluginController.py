@@ -267,6 +267,9 @@ class DataPluginController(QObject):
             # Delete from model
             self.model.unregister_plugin(metaclass, key)
 
+            # Remove from persisted plugin history
+            self.update_plugin_history.emit({}, key)
+
             # Notify UI
             self.update_available_plugins.emit(
                 metaclass, self.model.get_instantiated_plugins_list()[metaclass]
