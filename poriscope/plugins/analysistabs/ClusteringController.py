@@ -164,6 +164,12 @@ class ClusteringController(MetaController):
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:
+        """
+        Notify the display panel whether clustering data was successfully written to the database.
+
+        :param status: True if the write succeeded, False otherwise.
+        :type status: bool
+        """
         if status:
             self.add_text_to_display.emit(
                 "Successfully wrote clustering data",

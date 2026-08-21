@@ -34,7 +34,7 @@ from poriscope.utils.LogDecorator import log
 
 class DataPluginModel(QObject):
     """
-    Base controller class that manages data plugins
+    Base model class that manages data plugins
     """
 
     logger = logging.getLogger(__name__)

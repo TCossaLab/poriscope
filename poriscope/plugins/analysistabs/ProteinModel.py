@@ -36,7 +36,7 @@ from poriscope.utils.MetaModel import MetaModel
 @inherit_docstrings
 class ProteinModel(MetaModel):
     """
-    Subclass of MetaModel for handling metadata-related processing and storage.
+    Subclass of MetaModel for handling protein volume/shape-factor fitting data and storage.
     """
 
     logger = logging.getLogger(__name__)

@@ -108,8 +108,10 @@
     * Fixed `DataPluginController.edit_plugin` unregistering a plugin as a dependent from all of its parents up front, before knowing whether the edit would succeed, and never restoring that link on any abort path (rename collision, a `set_key`/settings-resolution/`apply_settings` failure, or a delete blocked by dependents), even though the plugin instance and its actual parent usage were unchanged
     * Fixed `DataPluginController.edit_plugin`'s docstring documenting a nonexistent `subclass` parameter, leaving the real `key`/`settings` parameters undocumented, and claiming it raises on "unable to instantiate the plugin" - a description that doesn't match either its purpose (editing, not instantiating) or its actual design (failures are caught internally and reported via `add_text_to_display`/`logger`, not raised)
     * Fixed `DataPluginModel.update_plugin_key` silently overwriting (and orphaning) any plugin already registered under the destination key, with no existence check beforehand; it now refuses the rename and logs an error instead. Also corrected this method's and `register_plugin`'s/`get_temp_instance`'s docstrings, which variously claimed a `ValueError` or `NotImplementedError` that never happens, were stale copy-pastes of an unrelated method's params, or omitted the real `KeyError` these methods actually raise
+    * Fixed `DataPluginController.set_settings`/`update_data_server_location` each having the other's docstring (a getter description on what are both actually setters)
+    * Fixed `DataPluginModel`'s class docstring calling it a "controller"
 
-* **Updated App Shell: `MainController`, `MainModel`**
+* **Updated App Shell: `MainController`, `MainModel`, `MainView`**
     * Replaced a hardcoded institution-specific network path default with the user's home directory
     * A corrupted config file now regenerates defaults on startup instead of crashing the app
     * `JsonDefaultSerializer` now also handles `Enum`, `datetime`/`date`, and `set`/`frozenset` values instead of only `PurePath`
@@ -120,6 +122,7 @@
     * Fixed `MainController.send_curent_data_server`/`send_curent_user_plugin_location` being decorated `@Slot(str, str, object)` despite taking no parameters and being connected to parameterless `Signal()`s, a stale signature apparently copied from `get_plugin_instance`
     * Fixed `MainModel.populate_available_plugins`'s `try/except` around `os.walk(base_path)` being dead code (`os.walk` is a lazy generator that never raises, even for a missing directory), which meant an invalid plugin directory (e.g. a `User Plugin Folder` that hasn't been created on disk yet) silently contributed zero plugins with no diagnostic instead of logging the intended warning; replaced with an explicit directory-existence check. Also fixed `clear_cache`'s docstring documenting nonexistent `filepath`/`timeout` parameters and describing deletion/waiting behavior it doesn't have (it synchronously truncates the fixed `app.log` file)
     * Removed a dead `except ValueError` branch in `MainController.load_session` that special-cased a `"...already exists globally"` message `validate_and_instantiate_plugin` never actually raises (that method swallows all of its own failures internally and just logs/emits/returns); collapsed to a single `except Exception`, which already covers the same restore-and-continue behavior
+    * Added class-level docstrings to `MainController`, `MainModel`, and `MainView`, and method docstrings to `MainController.handle_global_signal`/`handle_data_plugin_controller_signal`, none of which had any despite being the app's central signal-dispatch entry points
 
 * **Updated Frontend Base Class: `MetaView`**
     * New `plugin_state_changed` signal and abstract `notify_plugin_state_changed` hook, allowing any tab to notify all other tabs when a plugin instance's state changes (e.g. new columns added to a database). Every `MetaView` subclass must now implement `notify_plugin_state_changed`, even if the correct implementation is to do nothing. Non-trivial implementations must determine whether the notification is relevant to that tab, and filter and react accordingly.
@@ -188,6 +191,9 @@
     * Fixed `ProteinControls.is_placeholder_item` checking for `"No Database"` instead of the actual `"No Event Database"` placeholder, which left the DB Loader edit/delete buttons wrongly enabled with no database selected
     * Fixed `_commit_fits` not aborting when the user clicked Cancel on the "Confirm Overwrite" dialog, falling through to commit the new fit columns anyway; also added the missing `ProteinController.check_column_exists`, without which the dialog could never appear in production at all (the return-callback name it relied on didn't match any real method, so the existing-column check silently never ran)
     * Removed two leftover walkthrough steps referencing `proteincontrols.undo_button`/`reset_button`, deleted when Undo/Reset was removed from this tab; the resulting `AttributeError` was silently caught and logged, but it aborted the walkthrough for every remaining step on this tab (Commit Individual, Report All, filters, etc.)
+    * Removed dead `"reset": "reset_plot"`/`"undo": "undo_plot"` entries from `ProteinControls.button_actions` and a stale duplicate `# ROW 4: Update / Undo / Reset row` comment, both leftover from the same Undo/Reset removal; `ProteinView` never had a handler for those action names, and no button in this file can emit them anymore
+    * Fixed the `ProteinView` class docstring, still the literal unfilled placeholder `"Subclass of MetaView for TBD / Attributes: TBD"`
+    * Fixed `ProteinModel`'s class docstring being a copy-paste of `MetadataModel`'s (described metadata processing, not protein volume/shape-factor fitting)
 
 * **Updated Frontend Plugin: `ClusteringView`**
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
@@ -197,6 +203,7 @@
     * Fixed: `ZeroDivisionError` in baseline stats on a flat/constant data chunk
     * Fixed Gaussian Mixture clustering fitting on data that still included the `id` column, unlike HDBSCAN which already excluded it; `id`'s arbitrary, unnormalized magnitude could dominate the fit and produce meaningless clusters
     * Fixed `ClusteringSettingsDialog.remove_column_item` never refreshing the Apply-button/warning state after deleting a dynamic column row, unlike every other mutation path in the widget; deleting the row causing a validation warning left Apply stuck disabled until some unrelated widget happened to trigger a refresh
+    * Added a missing docstring to `ClusteringController.display_write_status`
 
 * **Updated Frontend Plugin: `RawDataView`**
     * Fixed: `ZeroDivisionError` in baseline stats on a flat/constant data chunk; now logs a warning and skips just that channel's overlay instead of crashing the whole plot
@@ -206,6 +213,7 @@
     * Fixed a log message missing an `f` prefix (another instance of the same bug was fixed in `EventAnalysisView`), so the intended values were never actually interpolated
     * Fixed `_get_baseline_stats`'s docstring documenting a `tuple[float, float]` return, missing the local amplitude that's actually the first of three returned values
     * Fixed `RawDataController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
+    * Added missing docstrings to `RawDataController.update_available_plugins`/`update_plot_data`
 
 * **Updated Frontend Plugin: `EventAnalysisView`**
     * Fixed: crash when zero channels were selected while shifting or plotting events
@@ -216,6 +224,7 @@
     * Fixed `_start_eventfitter` returning out of its whole channel loop when the user clicked "No" on one channel's "already fitted" confirmation dialog during a multi-channel fit batch, silently cancelling fitting (and dropping any already-queued generators) for every remaining channel instead of just skipping that one
     * Fixed `_extract_plot_event_parameters`'s docstring documenting a 4-tuple return, omitting `loader` from the real 5-tuple
     * Fixed `EventAnalysisController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
+    * Added a missing docstring to `EventAnalysisController.update_available_plugins`
 
 * **Updated Frontend Component: `MainView`**
     * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.

@@ -507,14 +507,14 @@ class DataPluginController(QObject):
     @log(logger=logger)
     def set_settings(self, settings):
         """
-        get previously used settings for this plugin tpye, if available
+        Receive previously used settings for a plugin type, relayed here in response to get_settings_from_history, and cache them for use by validate_and_instantiate_plugin.
         """
         self.historical_settings = settings
 
     @log(logger=logger)
     def update_data_server_location(self, data_server):
         """
-        get previously used settings for this plugin tpye, if available
+        Update the cached data server location used to pre-populate a new plugin's Folder setting.
         """
         self.data_server = data_server
 

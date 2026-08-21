@@ -52,6 +52,10 @@ from poriscope.utils.MetaWriter import MetaWriter
 
 
 class MainModel(QObject):
+    """
+    App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
+    """
+
     configUpdated = Signal()
     errorOccurred = Signal(str)
     dataReadInstancesUpdated = Signal(dict)
