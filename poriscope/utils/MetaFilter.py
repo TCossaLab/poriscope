@@ -52,12 +52,10 @@ class MetaFilter(BaseDataPlugin):
 
     def __init__(self, settings: Optional[dict] = None):
         """
-        :param filter_params: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type filter_params: dict
-        :param kwargs: Additional parameters to set as attributes on the instance.
-        :type kwargs: dict
-
         Initialize the MetaFilter instance.
+
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :type settings: Optional[dict]
         """
         super().__init__(settings)
 
@@ -255,7 +253,7 @@ class MetaFilter(BaseDataPlugin):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
-        :param settings: Parameters for event detection.
+        :param settings: Parameters required to configure this filter.
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """

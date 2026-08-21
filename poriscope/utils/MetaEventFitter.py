@@ -56,7 +56,10 @@ class MetaEventFitter(BaseDataPlugin):
 
     def __init__(self, settings: Optional[dict] = None) -> None:
         """
-        Initialize the MetaEventFinder instance.
+        Initialize the MetaEventFitter instance.
+
+        :param settings: A dict specifying the parameters of the fitter to be created. Required keys depend on subclass.
+        :type settings: Optional[dict]
         """
 
         super().__init__(settings)
@@ -1034,7 +1037,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
-        :param settings: Parameters for event detection.
+        :param settings: Parameters required to configure this fitter.
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """

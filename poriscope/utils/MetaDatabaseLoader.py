@@ -386,13 +386,13 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @log(logger=logger)
     def get_experiment_id_by_name(self, experiment_name: str) -> Optional[int]:
         """
-        Retrieve a list of all unique experiment names registered in the database or a singleton list if a name is given.
+        Look up the database primary key of the experiment with the given name.
 
-        :param experiment_id: the id of the experiment for which to fetch the name
-        :type experiment_id: Optional[int]
+        :param experiment_name: the name of the experiment for which to fetch the id
+        :type experiment_name: str
 
-        :return: List of experiment names, or None on failure
-        :rtype: Optional[List[str]]
+        :return: The experiment's database id, or None if no name was given or no matching experiment was found
+        :rtype: Optional[int]
         """
         if experiment_name:
             try:
@@ -1338,7 +1338,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
-        :param settings: Parameters for event detection.
+        :param settings: Parameters required to configure this database loader.
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """
