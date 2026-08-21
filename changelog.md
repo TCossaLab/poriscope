@@ -3,6 +3,10 @@
 * **New Data Plugin: `ThresholdBlockageFinder`**
     * Subclass of `ClassicBlockageFinder` that imposes much tighter bounds on the start and end times flagged in the output.
 
+* **New: End-to-end (E2E) test suite**
+    * Added comprehensive E2E/UX coverage for RawData, EventAnalysis, Metadata, Clustering , and Protein tabs
+    * Added a shared `tests/synthetic_data` package for reproducible fixtures: synthetic Chimera recordings, synthetic events/metadata SQLite databases (with configurable event lengths and deliberately-rejected events for testing fitter rejection paths), removing reliance on checked-in binary test databases
+
 * **Deprecated Data Plugin: `ABF2Reader`**
     * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
     * Fixed `ABF2Header` never closing its file handle after parsing an ABF header, since the underlying file is only ever read during construction
@@ -88,6 +92,7 @@
     * Fixed the `@log` decorator silently breaking exception handling and result logging for every generator-based method in the app
     * `BaseValidator` now properly enforces its abstract validation methods
     * Added a reentrancy guard so concurrent error/warning logs no longer stack multiple modal dialogs
+    * Fixed `MetaEventFinder.__init__` resetting `self.reader` after `apply_settings`, discarding an already-configured reader
     * Fixed `MetaEventFinder.find_events` not stopping promptly when aborted mid-run: it previously kept processing every remaining range before discarding all results, instead of stopping as soon as the abort was received
     * Fixed `MetaEventFitter.fit_events` crashing with a `KeyError` when a fitter subclass returned mismatched-length sublevel-metadata arrays; the event is now cleanly rejected instead of aborting the whole channel
     * Fixed `MetaWriter._rescale_data_to_adc`'s auto-scaling fallback computing its offset from `adc_max` instead of `data_max`, which silently corrupted ADC-encoded values (mapping them far outside the valid ADC range) whenever a writer relied on this fallback instead of an explicit gain setting
@@ -171,6 +176,8 @@
     * Fixed `MetadataControls.validate_inputs`'s bins-field validation always requiring whole numbers even when "Sizes" was checked (which expects decimal bin edges), disabling **Update Plot** for exactly the kind of value the field's own placeholder asked for
 
 * **Updated Frontend Plugin: `ProteinView`**
+    * Added a **RAW** checkbox to event plots, matching `MetadataView`: raw traces are shown before fitting, and included alongside fitted results once fitting is complete
+    * Removed the Undo and Reset buttons from the Protein Tab
     * Fixed: `hist_min`/`hist_max` persisted across "Plot Histogram" calls and only ever expanded, so bin edges (and resulting histogram shape/fit) depended on plotting order and history instead of the event itself. Per-event histogram binning is now deterministic, and thus, so is plotting.
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
     * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
@@ -190,8 +197,6 @@
     * Refactored `_update_distribution_ensemble`'s ~105-line double-Gaussian fit and Monte Carlo sampling block into its own method, `_fit_and_plot_ensemble_geometry`, called once after the loop finishes instead of relying on a comment plus careful indentation to stay safe if the surrounding experiment/channel/filter guards are ever relaxed
     * Fixed `ProteinControls.is_placeholder_item` checking for `"No Database"` instead of the actual `"No Event Database"` placeholder, which left the DB Loader edit/delete buttons wrongly enabled with no database selected
     * Fixed `_commit_fits` not aborting when the user clicked Cancel on the "Confirm Overwrite" dialog, falling through to commit the new fit columns anyway; also added the missing `ProteinController.check_column_exists`, without which the dialog could never appear in production at all (the return-callback name it relied on didn't match any real method, so the existing-column check silently never ran)
-    * Removed two leftover walkthrough steps referencing `proteincontrols.undo_button`/`reset_button`, deleted when Undo/Reset was removed from this tab; the resulting `AttributeError` was silently caught and logged, but it aborted the walkthrough for every remaining step on this tab (Commit Individual, Report All, filters, etc.)
-    * Removed dead `"reset": "reset_plot"`/`"undo": "undo_plot"` entries from `ProteinControls.button_actions` and a stale duplicate `# ROW 4: Update / Undo / Reset row` comment, both leftover from the same Undo/Reset removal; `ProteinView` never had a handler for those action names, and no button in this file can emit them anymore
     * Fixed the `ProteinView` class docstring, still the literal unfilled placeholder `"Subclass of MetaView for TBD / Attributes: TBD"`
     * Fixed `ProteinModel`'s class docstring being a copy-paste of `MetadataModel`'s (described metadata processing, not protein volume/shape-factor fitting)
 
