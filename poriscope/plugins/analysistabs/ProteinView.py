@@ -3719,18 +3719,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Not happy with the changes? Click 'Undo' to revert to the previous state at any point.",
-                "ProteinView",
-                lambda: [self.proteincontrols.undo_button],
-            ),
-            (
-                "Protein Tab",
-                "Click 'Reset' to clear the current mode's plot and fit, and restore default settings.",
-                "ProteinView",
-                lambda: [self.proteincontrols.reset_button],
-            ),
-            (
-                "Protein Tab",
                 "In Individual mode, click 'Commit Individual' to write the per-event fit results to the database.",
                 "ProteinView",
                 lambda: [self.proteincontrols.commit_individual],
