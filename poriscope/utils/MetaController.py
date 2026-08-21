@@ -368,9 +368,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 return_function,
                 ret_args,
             )
-        except Exception:
+        except Exception as e:
             self.logger.warning(
-                f"Unable to relay global signal: {return_function_name} is not a callable attribute of {type(self).__name__}: str(e)"
+                f"Unable to relay global signal: {return_function_name} is not a callable attribute of {type(self).__name__}: {e}"
             )
 
     @Slot(str, str, str, tuple, str, tuple)
@@ -430,9 +430,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 return_function,
                 ret_args,
             )
-        except Exception:
+        except Exception as e:
             self.logger.warning(
-                f"Unable to relay Data Plugin Controller signal: {return_function_name} is not a callable attribute of {type(self).__name__}: str(e)"
+                f"Unable to relay Data Plugin Controller signal: {return_function_name} is not a callable attribute of {type(self).__name__}: {e}"
             )
 
     # public API, should generally be left alone by subclasses
