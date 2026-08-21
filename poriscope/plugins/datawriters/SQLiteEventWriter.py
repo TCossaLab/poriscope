@@ -221,10 +221,13 @@ class SQLiteEventWriter(MetaWriter):
     @override
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
+        Permanently delete the given channel's row (and, via cascading foreign keys,
+        its associated event rows) from the database, so a subsequent write starts
+        from a clean slate. This is destructive, not a resource-cleanup step.
 
-        :param channel: channel ID
-        :type channel: int
+        :param channel: channel ID. Note that `channel=None` does not reset all
+            channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
+        :type channel: Optional[int]
         """
         conn: Optional[sqlite3.Connection] = None
         cursor: Optional[sqlite3.Cursor] = None
@@ -255,12 +258,14 @@ class SQLiteEventWriter(MetaWriter):
             self.logger.info(f"Deleted channel_id={channel} from channels.")
         except sqlite3.Error as e:
             if conn is not None:
+                conn.execute("ROLLBACK TO SAVEPOINT reset_channel")
                 conn.rollback()
             self.logger.error(
                 f"Failed to delete channel_id={channel}: {e}, channel not reset"
             )
         else:
             if conn is not None:
+                conn.execute("RELEASE SAVEPOINT reset_channel")
                 conn.commit()
         finally:
             if cursor is not None:
@@ -443,9 +448,7 @@ class SQLiteEventWriter(MetaWriter):
         :type baseline_std: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
-        :param batch_size: Number of events to batch before insert, default 100.
-        :type batch_size: int
-        :param last_call: If True, flush the remaining batch, default False.
+        :param last_call: If True, close the shared connection after this write, default False.
         :type last_call: bool
 
         :return: success of the write operation.
@@ -475,7 +478,6 @@ class SQLiteEventWriter(MetaWriter):
 
             data_blob = data.astype(self.output_dtype).tobytes()
 
-            # Use executemany to insert the batch
             self.cursor.execute(
                 """INSERT OR IGNORE INTO events (
                     channel_id, channel_db_id, event_id,
