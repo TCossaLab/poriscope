@@ -311,6 +311,7 @@ def _write_channel(
     thickness: float,
     conductivity: float,
     event_length_range_samples: Optional[Tuple[int, int]] = None,
+    event_amplitudes_pA: Optional[List[float]] = None,
 ) -> SyntheticEventsChannel:
     """
     Insert one channel's row and all of its planted events into an
@@ -365,10 +366,30 @@ def _write_channel(
         needs genuinely varied event durations -- e.g. so a "duration >
         X" filter selects a real subset rather than being all-or-nothing.
     :type event_length_range_samples: Optional[Tuple[int, int]]
+    :param event_amplitudes_pA: If given, the exact amplitude used for
+        each planted event, in order (length must equal num_events),
+        overriding the single shared event_amplitude_pA. Setting a
+        specific event's magnitude below the fitter's Step Size makes
+        that one event deliberately unfittable -- confirmed via a real
+        CUSUM run that an event whose depth doesn't clear Step Size gets
+        rejected with "Too Few Levels" while shallower ones around it
+        still fit. This is how a metadata database ends up with
+        non-contiguous event ids realistically: raw event_id stays
+        strictly contiguous (real acquisition numbers events
+        sequentially), and gaps in the FITTED set emerge because some
+        raw events genuinely fail to fit -- not because raw ids were
+        artificially skipped.
+    :type event_amplitudes_pA: Optional[List[float]]
 
     :return: Ground truth for the channel just written.
     :rtype: SyntheticEventsChannel
     """
+    if event_amplitudes_pA is not None and len(event_amplitudes_pA) != num_events:
+        raise ValueError(
+            f"event_amplitudes_pA has {len(event_amplitudes_pA)} entries but "
+            f"num_events={num_events}; they must match"
+        )
+
     cursor.execute(
         """INSERT INTO channels
            (name, channel_id, voltage, thickness, conductivity, samplerate, data_format)
@@ -389,12 +410,11 @@ def _write_channel(
 
     absolute_start = padding_samples
     for event_id in range(num_events):
+        this_amplitude = (
+            event_amplitudes_pA[event_id] if event_amplitudes_pA is not None else event_amplitude_pA
+        )
         this_event_length = (
-            int(
-                rng.integers(
-                    event_length_range_samples[0], event_length_range_samples[1] + 1
-                )
-            )
+            int(rng.integers(event_length_range_samples[0], event_length_range_samples[1] + 1))
             if event_length_range_samples is not None
             else event_length_samples
         )
@@ -405,7 +425,7 @@ def _write_channel(
             padding_after=padding_samples,
             baseline_mean=baseline_mean_pA,
             baseline_std=baseline_std_pA,
-            amplitude=event_amplitude_pA,
+            amplitude=this_amplitude,
         )
         raw_data = trace.astype(RAW_DATA_DTYPE).tobytes()
 
@@ -437,12 +457,10 @@ def _write_channel(
                 event_length=this_event_length,
                 baseline_mean=baseline_mean_pA,
                 baseline_std=baseline_std_pA,
-                amplitude=event_amplitude_pA,
+                amplitude=this_amplitude,
             )
         )
-        absolute_start += (
-            padding_samples + this_event_length + padding_samples + event_gap_samples
-        )
+        absolute_start += padding_samples + this_event_length + padding_samples + event_gap_samples
 
     return channel
 
@@ -465,6 +483,7 @@ def generate_events_database(
     conductivity: float = 1.0,
     seed: int = 42,
     event_length_range_samples: Optional[Tuple[int, int]] = None,
+    event_amplitudes_pA: Optional[List[float]] = None,
 ) -> SyntheticEventsDatabase:
     """
     Write a single-channel synthetic events database with known events.
@@ -517,6 +536,14 @@ def generate_events_database(
         range each event's length is drawn uniformly from, instead of
         every event sharing event_length_samples.
     :type event_length_range_samples: Optional[Tuple[int, int]]
+    :param event_amplitudes_pA: If given, the exact amplitude used for
+        each planted event, in order (length must equal num_events),
+        overriding the single shared event_amplitude_pA. Use this to
+        make specific events deliberately unfittable (magnitude below a
+        fitter's Step Size) while event_id stays strictly contiguous --
+        see _write_channel()'s docstring for why that's the realistic
+        way to end up with gaps in a fitted-event set.
+    :type event_amplitudes_pA: Optional[List[float]]
 
     :return: A SyntheticEventsDatabase describing the file and its
         planted events.
@@ -541,6 +568,7 @@ def generate_events_database(
             baseline_std_pA=baseline_std_pA,
             event_amplitude_pA=event_amplitude_pA,
             event_length_range_samples=event_length_range_samples,
+            event_amplitudes_pA=event_amplitudes_pA,
             event_length_samples=event_length_samples,
             padding_samples=padding_samples,
             event_gap_samples=event_gap_samples,
@@ -686,9 +714,7 @@ if __name__ == "__main__":
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
-        db = generate_events_database(
-            Path(tmp) / "synthetic_events.sqlite3", num_events=25
-        )
+        db = generate_events_database(Path(tmp) / "synthetic_events.sqlite3", num_events=25)
         ch = db[0]
         print("db:", db.db_path, db.db_path.stat().st_size, "bytes")
         print("channel 0 events:", ch.num_events, "at", ch.samplerate, "Hz")
