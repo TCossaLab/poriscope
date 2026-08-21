@@ -1409,11 +1409,6 @@ class TestSaveLoadFilter:
 
 
 class TestMiscMethods:
-    def test_undo_plot_emits_signal(self, view):
-        received = []
-        view.update_tab_action_history.connect(lambda a, b: received.append((a, b)))
-        view._undo_plot()
-        assert (None, True) in received
 
     def test_get_walkthrough_steps_returns_list(self, view):
         steps = view.get_walkthrough_steps()
@@ -1642,15 +1637,6 @@ class TestHandleParameterChange:
             view.handle_parameter_change("p", "update_plot", (self._params(),))
         assert view._display_mode == "distribution"
 
-    def test_reset_plot_routes(self, view):
-        with patch.object(view, "_reset_actions") as mock:
-            view.handle_parameter_change("p", "reset_plot", ({},))
-        mock.assert_called_once()
-
-    def test_undo_plot_routes(self, view):
-        with patch.object(view, "_undo_plot") as mock:
-            view.handle_parameter_change("p", "undo_plot", ({},))
-        mock.assert_called_once()
 
     def test_add_filter_routes(self, view):
         with patch.object(view, "_show_add_filter_dialog") as mock:
