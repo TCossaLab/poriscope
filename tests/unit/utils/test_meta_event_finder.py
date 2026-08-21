@@ -318,7 +318,8 @@ class TestReportChannelStatus:
         finder.accepted_data[0] = 5.0
         finder.rejected_data[0] = 0
         report = finder.report_channel_status(0)
-        assert "Accepted" not in report
+        assert "Accepted 5.0s of data" in report
+        assert "Rejected" not in report
 
     def test_all_channels_none(self, finder):
         finder.eventfinding_finished[0] = True
@@ -558,9 +559,12 @@ class TestFindEventsErrorBranches:
         assert finder.eventfinding_finished[0] is False
         assert finder.event_starts[0] == []
 
-    def test_runtime_error_in_one_range_is_skipped(self, finder):
-        # First range raises RuntimeError when iterated; the second range
-        # should still be processed normally afterwards.
+    def test_runtime_error_in_one_range_propagates(self, finder):
+        # _find_events_single_range already resets all accumulated channel
+        # state before raising a RuntimeError (e.g. on a start/end count
+        # mismatch), so find_events must not silently swallow it and move on
+        # to the next range - that would hide the fact that prior progress
+        # for the channel was just wiped out.
         real_single_range = finder._find_events_single_range
         call_count = {"n": 0}
 
@@ -574,18 +578,21 @@ class TestFindEventsErrorBranches:
             finder, "_find_events_single_range", side_effect=fake_single_range
         ):
             gen = finder.find_events(0, [(0, 3.0), (5.0, 0)], chunk_length=10.0)
-            list(gen)
-        assert call_count["n"] == 2
+            with pytest.raises(RuntimeError, match="boom"):
+                list(gen)
+        assert call_count["n"] == 1
 
-    def test_stop_iteration_raised_at_call_site_is_caught(self, finder):
+    def test_stop_iteration_at_call_site_propagates_as_runtime_error(self, finder):
         # If calling _find_events_single_range itself raises StopIteration
-        # (rather than the generator stopping normally), find_events should
-        # catch it and continue to the next range.
+        # (rather than the generator stopping normally), find_events no
+        # longer catches it. Since find_events is itself a generator, PEP 479
+        # converts the escaping StopIteration into a RuntimeError.
         with patch.object(
             finder, "_find_events_single_range", side_effect=StopIteration("x")
         ):
             gen = finder.find_events(0, [(0, 0)], chunk_length=10.0)
-            list(gen)
+            with pytest.raises(RuntimeError):
+                list(gen)
         # No events recorded since the (mocked) single-range call never ran
         assert finder.event_starts[0] == []
 
@@ -971,14 +978,13 @@ class TestGetSingleEventData:
 # get_event_indices
 # ---------------------------------------------------------------------------
 class TestGetEventIndices:
-    def test_returns_dicts_on_fresh_instance(self, finder):
-        starts, ends = finder.get_event_indices(0)
-        assert starts == {}
-        assert ends == {}
+    def test_raises_on_fresh_instance(self, finder):
+        with pytest.raises(ValueError, match="not been located"):
+            finder.get_event_indices()
 
     def test_returns_populated_dicts_after_find_events(self, finder):
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
-        starts, ends = finder.get_event_indices(0)
+        starts, ends = finder.get_event_indices()
         assert 0 in starts
         assert 0 in ends
 
