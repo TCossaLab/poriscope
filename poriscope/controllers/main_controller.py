@@ -97,9 +97,7 @@ class MainController(QObject):
         self.main_view.get_user_plugin_location.connect(
             self.send_curent_user_plugin_location
         )
-        self.main_view.get_shared_logging_level.connect(
-            self.send_curent_logging_level
-        )
+        self.main_view.get_shared_logging_level.connect(self.send_curent_logging_level)
         self.main_view.update_data_server_location.connect(
             self.update_data_server_location
         )
