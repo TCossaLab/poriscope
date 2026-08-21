@@ -205,7 +205,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param last_call: True if this is the last time the function will be called, commit to file and clean up as needed
         :type last_call: Optional[bool]
 
-        :return: True on successful write, False on failure or ignore
+        :return: True on successful write, False if the row already existed
+            (rejected by ``INSERT OR IGNORE``). Any other failure (a genuine
+            database error) is raised rather than returned, so the caller can
+            report the real reason instead of assuming a duplicate row.
         :rtype: bool
         """
         if abort is True:
@@ -280,11 +283,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                 self.conn.rollback()  # Rollback all changes if any operation fails
             self.logger.error(f"Failed to write event: {e}")
+            raise
         except Exception as e:  # Fallback for truly unexpected errors
             if self.conn:
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                 self.conn.rollback()
             self.logger.critical(f"Unexpected error writing event: {e}", exc_info=True)
+            raise
         else:
             if self.conn and last_call is True:
                 self.conn.commit()
@@ -295,7 +300,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if self.conn and last_call is True:
                 self.conn.close()
                 self.conn = None
-            return success
+        return success
 
     @log(logger=logger)
     @override

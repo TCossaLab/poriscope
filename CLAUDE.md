@@ -132,3 +132,7 @@ the `post-merge` git hook. Published at https://tcossalab.github.io/poriscope/.
 
 Any time you make changes to the code, update `changelog.md` with a terse explanation under 
 the appropriate header/subheader, respecting formatting ceonventions already present in that file.
+
+## General Instructions
+
+- Do not nest functions inside other functions
