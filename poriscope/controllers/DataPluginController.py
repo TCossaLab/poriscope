@@ -75,9 +75,10 @@ class DataPluginController(QObject):
 
         :param metaclass: The metaclass of the plugin.
         :type metaclass: str
-        :param subclass: The subclass of the plugin, defaults to None.
-        :type subclass: Optional[str]
-        :raises Exception: If unable to instantiate the plugin.
+        :param key: The current key of the plugin instance being edited.
+        :type key: str
+        :param settings: The plugin's current settings dict, used to populate the edit dialog.
+        :type settings: dict
         """
 
         app_settings = copy.deepcopy(settings)
