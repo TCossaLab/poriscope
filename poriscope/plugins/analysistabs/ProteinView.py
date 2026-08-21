@@ -75,9 +75,9 @@ warnings.filterwarnings(
 @inherit_docstrings
 class ProteinView(MetaView, WalkthroughMixin):
     """
-    Subclass of MetaView for TBD
-    Attributes:
-        TBD
+    Subclass of MetaView for estimating translocating protein size and shape from nanopore blockage events.
+
+    Given pore diameter/length, fits a two-population (prolate/oblate) volume-and-shape-factor model via Monte Carlo rejection sampling, either per event (Individual mode) or across the aggregate distribution (Ensemble mode). Also supports subset filtering, per-event trace/histogram inspection, and committing or reporting fit results.
     """
 
     logger = logging.getLogger(__name__)

@@ -376,7 +376,6 @@ class ProteinControls(QWidget):
         self.sizes_checkbox.toggled.connect(self._on_sizes_checkbox_toggled)
         self._on_sizes_checkbox_toggled(self.sizes_checkbox.isChecked())
 
-        # ROW 4: Update / Undo / Reset row
         # ROW 4: Update Plot row
         self.update_plot_button = self.createButton(
             self.groupBox, "Update Plot", bold=True
@@ -943,8 +942,6 @@ class ProteinControls(QWidget):
             "plot_histogram": "plot_histogram",
             "right_arrow": "shift_range_forward",
             "update_plot": "update_plot",
-            "reset": "reset_plot",
-            "undo": "undo_plot",
             "add_filter": "add_filter",
             "edit_filter": "edit_filter",
             "delete_filter": "delete_filter",

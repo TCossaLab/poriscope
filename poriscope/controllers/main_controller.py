@@ -36,6 +36,10 @@ from poriscope.utils.LogDecorator import log
 
 
 class MainController(QObject):
+    """
+    App-shell controller: owns the DataPluginController and every instantiated analysis-tab controller, wires up their signals, and acts as the central relay for the app's signal-bus dispatch pattern (see handle_global_signal/handle_data_plugin_controller_signal), by which one tab or plugin can invoke a method on another plugin instance, or on the DataPluginController itself, without holding a direct reference to it. Also drives session/plugin-history persistence and restore.
+    """
+
     logger = logging.getLogger(__name__)
 
     def __init__(self, main_model, main_view):
@@ -190,6 +194,22 @@ class MainController(QObject):
         return_function: Optional[Callable],
         ret_args: tuple,
     ) -> None:
+        """
+        Resolve (metaclass, subclass_key) to a live data plugin instance and call call_function(*call_args) on it, so a tab or plugin can invoke a method on another plugin without holding a direct reference to it. If call_function raises TypeError, retries with a single None argument, on the assumption call_args didn't apply. If return_function is given, it is called with the result plus ret_args once call_function succeeds (again falling back to a single None argument on TypeError). Errors resolving the instance, function, or either call are logged and swallowed rather than raised.
+
+        :param metaclass: The metaclass of the target plugin instance.
+        :type metaclass: str
+        :param subclass_key: The unique key of the target plugin instance.
+        :type subclass_key: str
+        :param call_function: Name of the method to call on the resolved instance.
+        :type call_function: str
+        :param call_args: Positional arguments to call_function.
+        :type call_args: tuple
+        :param return_function: Optional callable to invoke with the result of call_function.
+        :type return_function: Optional[Callable]
+        :param ret_args: Additional positional arguments appended after the result when calling return_function.
+        :type ret_args: tuple
+        """
         self.logger.debug(
             f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
         )
@@ -253,6 +273,22 @@ class MainController(QObject):
         return_function: Optional[Callable],
         ret_args: tuple,
     ) -> None:
+        """
+        Same dispatch mechanism as handle_global_signal, except call_function is looked up and called on the DataPluginController itself rather than on a resolved plugin instance (metaclass/subclass_key are accepted for signal-signature parity with handle_global_signal but are not used to resolve a target here). Used when a tab needs to invoke a DataPluginController method (e.g. to instantiate or edit a plugin) rather than a method on an existing plugin instance.
+
+        :param metaclass: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
+        :type metaclass: str
+        :param subclass_key: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
+        :type subclass_key: str
+        :param call_function: Name of the method to call on the DataPluginController.
+        :type call_function: str
+        :param call_args: Positional arguments to call_function.
+        :type call_args: tuple
+        :param return_function: Optional callable to invoke with the result of call_function.
+        :type return_function: Optional[Callable]
+        :param ret_args: Additional positional arguments appended after the result when calling return_function.
+        :type ret_args: tuple
+        """
         self.logger.debug(
             f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
         )

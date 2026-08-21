@@ -76,6 +76,12 @@ class RawDataController(MetaController):
     @log(logger=logger)
     @Slot(dict)
     def update_available_plugins(self, available_plugins: dict) -> None:
+        """
+        Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
+
+        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
+        :type available_plugins: dict
+        """
         self.logger.debug(
             f"Controller received available plugins update: {available_plugins}"
         )
@@ -94,6 +100,12 @@ class RawDataController(MetaController):
 
     @log(logger=logger)
     def update_plot_data(self, data):
+        """
+        Relay processed data to the view for plotting.
+
+        :param data: Structured plot data.
+        :type data: Any
+        """
         self.view.update_plot_data(data)
 
     @log(logger=logger)

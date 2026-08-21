@@ -38,7 +38,7 @@ from poriscope.utils.MetaReader import MetaReader
 @inherit_docstrings
 class SingleBinaryDecoder(MetaReader):
     """
-    Subclass of MetaReader for reading chimera VC1100 .log files
+    Subclass of MetaReader for reading a single, user-configured raw binary file, with sampling rate, header size, array count, byte order, and data type all specified via settings rather than inferred from a vendor-specific header.
     """
 
     logger = logging.getLogger(__name__)

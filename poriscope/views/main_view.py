@@ -62,6 +62,10 @@ from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
 
 
 class MainView(QMainWindow, WalkthroughMixin):
+    """
+    App-shell main window: hosts the menu bar, sidebar navigation, and the stacked pages for each instantiated analysis tab, and exposes the signals MainController relays to instantiate tabs/plugins, open Settings, and run the app-wide walkthrough.
+    """
+
     # Signals
     rawdata_toggled = Signal()
     instantiate_plugin = Signal(str, str)

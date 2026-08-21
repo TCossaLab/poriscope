@@ -192,9 +192,7 @@ class NoFitter(MetaEventFitter):
         baseline_std,
     ):
         """
-        Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
-        Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
-        Raising an an acceptable handler.
+        Performs no changepoint search: locates a single baseline crossing by walking backward from padding_before until the signal crosses baseline_mean, and returns that point as the event's only sublevel edge. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]

@@ -61,6 +61,12 @@ class EventAnalysisController(MetaController):
     @log(logger=logger)
     @Slot(dict)
     def update_available_plugins(self, available_plugins: dict) -> None:
+        """
+        Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
+
+        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
+        :type available_plugins: dict
+        """
         self.logger.debug(
             f"Controller received available plugins update: {available_plugins}"
         )
