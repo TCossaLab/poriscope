@@ -381,6 +381,10 @@ class MainModel(QObject):
         return self.get_app_config("User Plugin Folder")
 
     @log(logger=logger)
+    def get_logging_level(self):
+        return self.get_app_config("Log Level")
+
+    @log(logger=logger)
     @Slot(int)
     def update_logging_level(self, level):
         logger = logging.getLogger()

@@ -72,6 +72,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     update_logging_level = Signal(int)
     get_shared_data_server = Signal()
     get_user_plugin_location = Signal()
+    get_shared_logging_level = Signal()
     update_data_server_location = Signal(str)
     update_user_plugin_location = Signal(str)
     clear_cache = Signal()
@@ -247,6 +248,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.settings_window.update_user_plugin_location.connect(
             self.update_user_plugin_folder
         )
+        self.settings_window.get_shared_logging_level.connect(self.get_logging_level)
         self.settings_window.update_log_level.connect(self.update_log_level)
         self.settings_window.clear_cache.connect(self.handle_clear_cache)
 
@@ -273,6 +275,11 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.get_user_plugin_location.emit()
 
     @log(logger=logger)
+    @Slot()
+    def get_logging_level(self):
+        self.get_shared_logging_level.emit()
+
+    @log(logger=logger)
     def set_data_server(self, data_server):
         if self.settings_window is not None:
             self.settings_window.set_data_server(data_server)
@@ -287,6 +294,13 @@ class MainView(QMainWindow, WalkthroughMixin):
             raise AttributeError(
                 "Cannot set user plugin folder without a settings winddow!"
             )
+
+    @log(logger=logger)
+    def set_logging_level(self, level):
+        if self.settings_window is not None:
+            self.settings_window.set_logging_level(level)
+        else:
+            raise AttributeError("Cannot set logging level without a settings winddow!")
 
     @log(logger=logger)
     @Slot(str)
@@ -577,6 +591,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     def on_settings_button_click(self):
         self.add_page("Settings", self.settings_window)
         self.switch_to_page("Settings")
+        self.get_logging_level()
         self.logger.info("Settings button pressed")
 
     @log(logger=logger)

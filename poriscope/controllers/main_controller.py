@@ -97,6 +97,9 @@ class MainController(QObject):
         self.main_view.get_user_plugin_location.connect(
             self.send_curent_user_plugin_location
         )
+        self.main_view.get_shared_logging_level.connect(
+            self.send_curent_logging_level
+        )
         self.main_view.update_data_server_location.connect(
             self.update_data_server_location
         )
@@ -128,6 +131,12 @@ class MainController(QObject):
     def send_curent_user_plugin_location(self):
         data_server = self.main_model.get_app_config("User Plugin Folder")
         self.main_view.set_user_plugin_location(data_server)
+
+    @log(logger=logger)
+    @Slot()
+    def send_curent_logging_level(self):
+        level = self.main_model.get_logging_level()
+        self.main_view.set_logging_level(level)
 
     @log(logger=logger)
     @Slot(str)
