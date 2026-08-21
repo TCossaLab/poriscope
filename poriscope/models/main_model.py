@@ -78,10 +78,7 @@ class MainModel(QObject):
     @log(logger=logger)
     def clear_cache(self):
         """
-        Deletes log file and wait until it's confirmed deleted.
-
-        :param filepath: Path to the file to be deleted.
-        :param timeout: Maximum time (in seconds) to wait for file deletion.
+        Truncate the app's log file (flushing any buffered log data first).
         """
         log_file_path = Path(self.log_path, "app.log")
 
@@ -191,13 +188,13 @@ class MainModel(QObject):
         ]
 
         for base_path in plugin_dirs_to_search:
-            try:
-                walker = os.walk(base_path)
-            except Exception as e:
-                self.logger.warning(f"Skipping plugin directory {base_path}: {e}")
+            if not Path(base_path).is_dir():
+                self.logger.warning(
+                    f"Skipping plugin directory {base_path}: not a valid directory"
+                )
                 continue
 
-            for root_dir, _, files in walker:
+            for root_dir, _, files in os.walk(base_path):
                 try:
                     files = [
                         f

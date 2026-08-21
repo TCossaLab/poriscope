@@ -306,15 +306,15 @@ def test_get_user_plugin_location(main_model):
     assert main_model.get_user_plugin_location() == "/mock/path/to/plugins"
 
 
-def test_populate_available_plugins_os_walk_fails(main_model):
+def test_populate_available_plugins_no_valid_directories(main_model, monkeypatch):
     """
-    Test the behavior when os.walk() raises an exception.
-    Should handle the exception and continue gracefully.
+    Test the behavior when none of the plugin directories exist on disk.
+    Should skip them (logging a warning for each) and return empty results.
     """
-    with patch("os.walk", side_effect=Exception("Walk error")):
-        available_plugin_classes, available_plugins_list = (
-            main_model.populate_available_plugins()
-        )
+    monkeypatch.setattr(Path, "is_dir", lambda self: False)
+    available_plugin_classes, available_plugins_list = (
+        main_model.populate_available_plugins()
+    )
 
     # All values should be empty lists or dicts
     assert isinstance(available_plugin_classes, dict)
@@ -323,16 +323,14 @@ def test_populate_available_plugins_os_walk_fails(main_model):
     assert all(isinstance(v, list) and not v for v in available_plugins_list.values())
 
 
-def test_populate_available_plugins_os_walk_raises(monkeypatch):
+def test_populate_available_plugins_invalid_user_plugin_folder(caplog):
     model = MainModel(app_config={"User Plugin Folder": "fake/path"})
 
-    def mock_os_walk_raise(path):
-        raise OSError("Walk failed")
+    # "fake/path" does not exist -> should hit the 'Skipping plugin directory' log line
+    with caplog.at_level(logging.WARNING):
+        model.populate_available_plugins()
 
-    monkeypatch.setattr(os, "walk", mock_os_walk_raise)
-
-    # This should now hit the 'Skipping plugin directory' log line
-    model.populate_available_plugins()
+    assert "Skipping plugin directory" in caplog.text
 
 
 def test_populate_available_plugins_file_list_fails(monkeypatch):
