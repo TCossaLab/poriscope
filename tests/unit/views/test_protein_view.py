@@ -1637,7 +1637,6 @@ class TestHandleParameterChange:
             view.handle_parameter_change("p", "update_plot", (self._params(),))
         assert view._display_mode == "distribution"
 
-
     def test_add_filter_routes(self, view):
         with patch.object(view, "_show_add_filter_dialog") as mock:
             view.handle_parameter_change("p", "add_filter", (self._params(),))
