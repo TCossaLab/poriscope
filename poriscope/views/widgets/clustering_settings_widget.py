@@ -472,6 +472,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
                     item.widget().deleteLater()
             del self.column_item_widgets[key]
             self._refresh_add_button_position()
+            self._check_apply_enabled()
 
     def get_result(self):
         column_data = []
