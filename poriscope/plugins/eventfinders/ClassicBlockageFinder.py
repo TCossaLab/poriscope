@@ -30,7 +30,6 @@ from typing import List, Optional, Tuple
 import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
-from scipy.stats import median_abs_deviation
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -232,7 +231,7 @@ class ClassicBlockageFinder(MetaEventFinder):
         :type event_starts: List[int]
         :param event_ends: a list of ending data indices for events. You may assume that event_starts[0] < event_ends[0]
         :type event_ends: List[int]
-        :param channel: Bool indicating whether this is the first chunk of data in the series to be analyzed
+        :param channel: The channel index being processed. Unused by this implementation.
         :type channel: int
         :param last_end: the index of the end of the last accepted event
         :type last_end: int
@@ -286,7 +285,7 @@ class ClassicBlockageFinder(MetaEventFinder):
     @override
     def _get_baseline_stats(self, data: npt.NDArray[np.float64]) -> tuple[float, float]:
         """
-        Get the local amplitude, mean, and standard deviation for a chunk of data. Assumes data is rectified.
+        Get the local mean and standard deviation for a chunk of data. Assumes data is rectified.
 
 
         :param data: Chunk of timeseries data to compute statistics on.
@@ -297,7 +296,6 @@ class ClassicBlockageFinder(MetaEventFinder):
         top = np.max(data)
         bottom = np.min(data)
 
-        median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
         if width <= 0:
             raise ValueError(

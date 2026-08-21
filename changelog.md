@@ -22,6 +22,9 @@
     * Fixed a `ZeroDivisionError` on constant-signal chunks in baseline histogram calculation
     * Fixed dead code that silently skipped baseline-histogram window symmetrization
     * Fixed an ambiguous end-of-chunk check that could silently drop the remaining events in a chunk
+    * Removed a dead `median_abs_deviation(data)` call (`ClassicBlockageFinder`/`BoundedBlockageFinder`) whose result was discarded, along with the now-unused import
+    * Fixed `_filter_events`'s `channel` parameter docstring describing it as "Bool indicating whether this is the first chunk of data," despite being typed `int` and unused in the method body
+    * Fixed `_get_baseline_stats`'s docstring (`ClassicBlockageFinder`/`BoundedBlockageFinder`) promising "the local amplitude, mean, and standard deviation," when the method only ever returns `(mean, std)`
 
 * **Updated Data Plugins: `CUSUM`, `NoFitter`**
     * Fixed an off-by-one indexing bug that shifted every reported extreme-sublevel duration by one level
