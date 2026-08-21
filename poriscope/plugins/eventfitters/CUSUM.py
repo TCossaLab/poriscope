@@ -130,10 +130,8 @@ class CUSUM(MetaEventFitter):
         :param index: the index of the target event
         :type index: int
 
-        :return: numpy array of fitted data for the event, or None
+        :return: numpy array of fitted data for the event, or None if fitting is not complete or the event was rejected
         :rtype: Optional[npt.NDArray[np.float64]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
         if self.sublevel_metadata == {} or not self.eventfitting_status.get(channel):
             self.logger.info(
@@ -141,9 +139,7 @@ class CUSUM(MetaEventFitter):
             )
             return None
         try:
-            if self.eventloader is not None:
-                self.eventloader.get_samplerate(channel)
-            else:
+            if self.eventloader is None:
                 raise AttributeError(
                     "CUSUM cannot operate without a linked MetaEventLoader"
                 )

@@ -26,8 +26,13 @@
     * Fixed `_filter_events`'s `channel` parameter docstring describing it as "Bool indicating whether this is the first chunk of data," despite being typed `int` and unused in the method body
     * Fixed `_get_baseline_stats`'s docstring (`ClassicBlockageFinder`/`BoundedBlockageFinder`) promising "the local amplitude, mean, and standard deviation," when the method only ever returns `(mean, std)`
 
-* **Updated Data Plugins: `CUSUM`, `NoFitter`**
+* **Updated Data Plugins: `CUSUM`, `IntraCUSUM`, `NoFitter`**
     * Fixed an off-by-one indexing bug that shifted every reported extreme-sublevel duration by one level
+    * Fixed `NoFitter._locate_sublevel_transitions` not validating `padding_after`/`baseline_std` for `None` despite the method's own docstring promising graceful handling for every argument but `data`; both now raise a clean `ValueError` instead of crashing later with a raw `TypeError`
+    * Fixed `IntraCUSUM._populate_event_metadata` computing `np.sign(baseline_mean)` with no `None` guard despite `baseline_mean` being documented `Optional[float]`; `CUSUM`'s own base-class methods never use `baseline_mean`, so there was no upstream validation this could rely on. Now raises a clean `ValueError` instead of crashing
+    * Fixed `CUSUM`/`NoFitter`'s `construct_fitted_event` docstrings claiming `:raises RuntimeError:` when fitting isn't complete; both actually return `None`
+    * Removed a dead `get_samplerate(channel)` call in `CUSUM`/`NoFitter`'s `construct_fitted_event` whose result was discarded, and fixed a stale copy-pasted "CUSUM cannot operate..." error message inside `NoFitter`'s own error path
+    * **Flagged for later:** `NoFitter`'s `rise_time` and `CUSUM`'s recovered `baseline_std` are each computed inside `_locate_sublevel_transitions` but needed again in `_populate_sublevel_metadata`, whose signature doesn't receive `padding_before`/`padding_after`; neither value can be safely recomputed independently there. `NoFitter` currently stashes `rise_time` on `self`, a call-ordering hazard, and `CUSUM`'s `baseline_std` recovery for a loader that omits it never propagates to `_populate_sublevel_metadata`, causing a silent `TypeError`-driven rejection instead of a clean one. The base class's own docs point at the fix (encode the extra value into the returned `sublevel_starts`/`edges` structure instead of instance state), but that requires rewriting every `sublevel_starts[i]` reference in both classes' `_populate_sublevel_metadata` - deferred as a real refactor rather than a mechanical fix
 
 * **Updated Data Plugins: `Basic_PeakFinder`, `PeakFinder`**
     * Fixed an empty-slice bug that wrongly rejected legitimate events ending at the trace boundary
