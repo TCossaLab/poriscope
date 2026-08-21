@@ -33,7 +33,6 @@ import numpy as np
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox
-from scipy.stats import median_abs_deviation
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
@@ -442,7 +441,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         top = np.max(data)
         bottom = np.min(data)
 
-        median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
         if width <= 0:
             raise ValueError(
