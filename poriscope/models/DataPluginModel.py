@@ -25,7 +25,7 @@
 # Alejandra Carolina González González
 
 import logging
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 
 from PySide6.QtCore import QObject
 
@@ -43,10 +43,8 @@ class DataPluginModel(QObject):
         """
         Initialize the plugin model.
 
-        :param available_plugins: Dictionary of available plugins.
-        :type available_plugins: Mapping[str, List[str]]
-        :param config_path: Path to the configuration file.
-        :type config_path: str
+        :param available_plugin_classes: Dict of available plugin classes, keyed by metaclass then subclass name.
+        :type available_plugin_classes: Mapping[str, Mapping[str, type]]
         """
         super().__init__()
         self.available_plugins = available_plugin_classes
@@ -82,7 +80,7 @@ class DataPluginModel(QObject):
             )
 
     @log(logger=logger)
-    def update_plugin_key(self, metaclass: str, new_key: str, old_key: str):
+    def update_plugin_key(self, metaclass: str, new_key: str, old_key: str) -> None:
         """
         Re-key an already-registered plugin instance from old_key to new_key.
 
@@ -117,9 +115,9 @@ class DataPluginModel(QObject):
         :param subclass: The subclass of the plugin, defaults to None.
         :type subclass: str
         :return: The temporary plugin instance.
-        :rtype: object of the type of plugin managed by the instance
+        :rtype: object
         :raises KeyError: If metaclass or subclass is not a recognized/available plugin type.
-        """
+        """  # noqa: DOC502 (KeyError is raised implicitly by the dict lookups below, not via an explicit `raise`)
         return self.available_plugins[metaclass][subclass]()
 
     @log(logger=logger)
@@ -206,12 +204,12 @@ class DataPluginModel(QObject):
         :param key: The key of the plugin instance.
         :type key: str
         :return: The plugin instance or None if the key is not found.
-        :rtype: Optional[object]
+        :rtype: object
         """
         return self.plugins[metaclass].get(key)
 
     @log(logger=logger)
-    def get_plugin_details(self, metaclass, key):
+    def get_plugin_details(self, metaclass, key) -> Optional[dict]:
         """
         Retrieve the raw settings associated to an already-instantiated plugin by metaclass and key.
 
@@ -220,7 +218,7 @@ class DataPluginModel(QObject):
         :param key: The key of the plugin instance to remove.
         :type key: str
 
-        :return: the dict that must be filled in to initialize the plguin, or None on failure
+        :return: the dict that must be filled in to initialize the plugin, or None on failure
         :rtype: Optional[dict]
         """
         plugin_instance = self.get_plugin_instance(metaclass, key)

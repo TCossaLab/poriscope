@@ -69,7 +69,7 @@ class DataPluginController(QObject):
             else:
                 self.edit_plugin(metaclass, key, settings)
 
-    def edit_plugin(self, metaclass, key, settings):
+    def edit_plugin(self, metaclass, key, settings) -> None:
         """
         Edit and apply settings for an existing plugin
 
@@ -278,7 +278,7 @@ class DataPluginController(QObject):
 
     @log(logger=logger)
     @Slot(str, str)
-    def delete_plugin(self, metaclass: str, key: str):
+    def delete_plugin(self, metaclass: str, key: str) -> None:
         """
         Delete a plugin instance if it has no dependents.
 
@@ -334,7 +334,7 @@ class DataPluginController(QObject):
         self.model.handle_exit()
 
     @log(logger=logger)
-    def get_plugin_instance(self, metaclass, key):
+    def get_plugin_instance(self, metaclass, key) -> object:
         """
         Get the plugin instance corresponding to the given key.
 
@@ -342,8 +342,8 @@ class DataPluginController(QObject):
         :type metaclass: str
         :param key: The key of the plugin instance.
         :type key: str
-        :return: The plugin instance.
-        :rtype: object of the type of the data plugin being controlled
+        :return: The plugin instance, or None if the key is not found.
+        :rtype: object
         """
         return self.model.get_plugin_instance(metaclass, key)
 
@@ -360,9 +360,13 @@ class DataPluginController(QObject):
         Validate and instantiate a plugin based on the given metaclass and subclass.
 
         :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
         :param subclass: The subclass of the plugin.
+        :type subclass: Optional[str]
         :param settings: The settings dictionary for the plugin.
+        :type settings: Optional[Dict[str, Any]]
         :param key: Optional key to set for the new plugin instance.
+        :type key: Optional[str]
         """
         history: Dict[str, Any] = {}
         temp_instance = None

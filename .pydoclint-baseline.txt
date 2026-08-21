@@ -5,32 +5,19 @@ poriscope/configs/utils.py
     DOC108: Function `get_themed_icon_path`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/controllers/DataPluginController.py
-    DOC201: Method `DataPluginController.edit_plugin` does not have a return section in docstring
     DOC108: Method `DataPluginController.delete_plugin`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC201: Method `DataPluginController.delete_plugin` does not have a return section in docstring
-    DOC203: Method `DataPluginController.get_plugin_instance` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
     DOC108: Method `DataPluginController.validate_and_instantiate_plugin`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC109: Method `DataPluginController.validate_and_instantiate_plugin`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `DataPluginController.validate_and_instantiate_plugin`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
 --------------------
 poriscope/controllers/main_controller.py
     DOC108: Method `MainController.handle_global_signal`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MainController.handle_data_plugin_controller_signal`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC201: Method `MainController.instantiate_analysis_tab` does not have a return section in docstring
 --------------------
 poriscope/models/DataPluginModel.py
-    DOC102: Method `DataPluginModel.__init__`: Docstring contains more arguments than in function signature.
-    DOC103: Method `DataPluginModel.__init__`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [available_plugin_classes: ]. Arguments in the docstring but not in the function signature: [available_plugins: Mapping[str, List[str]], config_path: str].
     DOC108: Method `DataPluginModel.register_plugin`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `DataPluginModel.update_plugin_key`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC201: Method `DataPluginModel.update_plugin_key` does not have a return section in docstring
     DOC108: Method `DataPluginModel.get_temp_instance`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC203: Method `DataPluginModel.get_temp_instance` return type(s) in docstring not consistent with the return annotation. Return annotation types: ['object']; docstring return section types: ['object of the type of plugin managed by the instance']
-    DOC502: Method `DataPluginModel.get_temp_instance` has a "Raises" section in the docstring, but there are not "raise" statements in the body
     DOC108: Method `DataPluginModel.unregister_plugin`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `DataPluginModel.get_plugin_instance`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC203: Method `DataPluginModel.get_plugin_instance` return type(s) in docstring not consistent with the return annotation. Return annotation types: ['object']; docstring return section types: ['Optional[object]']
-    DOC203: Method `DataPluginModel.get_plugin_details` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
 --------------------
 poriscope/plugins/analysistabs/ClusteringController.py
     DOC108: Method `ClusteringController.display_write_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature

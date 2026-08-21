@@ -369,7 +369,7 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot(str)
-    def instantiate_analysis_tab(self, subclass):
+    def instantiate_analysis_tab(self, subclass) -> None:
         """
         Instantiate a new analysis-tab controller of the given subclass and wire it into the app
         (add its page, connect its signals, register it in plugin history), or reuse the existing
