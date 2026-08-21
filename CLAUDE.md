@@ -136,3 +136,5 @@ the appropriate header/subheader, respecting formatting ceonventions already pre
 ## General Instructions
 
 - Do not nest functions inside other functions
+- When the user reports a bug to you and asks you to fix it, double check the assumptions 
+  before implementing the fix. 
