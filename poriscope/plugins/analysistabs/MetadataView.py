@@ -242,7 +242,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             else:
                 self.axes = fig.add_subplot(1, 1, 1, projection="3d")
 
-        fig.set_layout_engine('constrained')
+        fig.set_layout_engine("constrained")
         self._clear_cache()
 
     @log(logger=logger)
@@ -2493,7 +2493,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 fontsize=font_size,
             )
 
-        self.figure.set_layout_engine('constrained')
+        self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
 

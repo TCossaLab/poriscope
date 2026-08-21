@@ -829,7 +829,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 fontsize=font_size,
             )
 
-        self.figure.set_layout_engine('constrained')
+        self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
 
