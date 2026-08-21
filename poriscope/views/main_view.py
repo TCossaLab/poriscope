@@ -775,14 +775,6 @@ class MainView(QMainWindow, WalkthroughMixin):
         )
         return file_name
 
-    @log(logger=logger)
-    def display_data(self, data):
-        self.rawDataWidget.display_data(data)
-
-    @log(logger=logger)
-    def on_file_loaded(self):
-        pass
-
     def get_analysis_highlight(self) -> QWidget:
         if not hasattr(self, "analysis_action_ref"):
             self.analysis_action_ref = next(
