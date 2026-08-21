@@ -377,19 +377,16 @@ class ProteinControls(QWidget):
         self._on_sizes_checkbox_toggled(self.sizes_checkbox.isChecked())
 
         # ROW 4: Update / Undo / Reset row
+        # ROW 4: Update Plot row
         self.update_plot_button = self.createButton(
             self.groupBox, "Update Plot", bold=True
         )
-        self.undo_button = self.createButton(self.groupBox, "Undo", bold=True)
-        self.reset_button = self.createButton(self.groupBox, "Reset", bold=True)
 
-        update_undo_reset_widget = QWidget(self.groupBox)
-        update_undo_reset_layout = QHBoxLayout(update_undo_reset_widget)
-        update_undo_reset_layout.setContentsMargins(0, 0, 0, 0)
-        update_undo_reset_layout.setSpacing(5)
-        update_undo_reset_layout.addWidget(self.update_plot_button, 2)
-        update_undo_reset_layout.addWidget(self.undo_button, 1)
-        update_undo_reset_layout.addWidget(self.reset_button, 1)
+        update_plot_widget = QWidget(self.groupBox)
+        update_plot_layout = QHBoxLayout(update_plot_widget)
+        update_plot_layout.setContentsMargins(0, 0, 0, 0)
+        update_plot_layout.setSpacing(5)
+        update_plot_layout.addWidget(self.update_plot_button, 1)
 
         # ROW 5: Commit row (Commit Individual / Report All)
         self.commit_individual = self.createButton(
@@ -494,7 +491,7 @@ class ProteinControls(QWidget):
 
         # Row 5
         group_layout.addWidget(event_nav_inputs_widget, 5, 0)
-        group_layout.addWidget(update_undo_reset_widget, 5, 1)
+        group_layout.addWidget(update_plot_widget, 5, 1)
         group_layout.addWidget(self.load_filter_button, 5, 2)
 
         # Row 6
@@ -731,8 +728,6 @@ class ProteinControls(QWidget):
         self.update_plot_button.clicked.connect(
             lambda: self.on_button_clicked("update_plot")
         )
-        self.undo_button.clicked.connect(lambda: self.on_button_clicked("undo"))
-        self.reset_button.clicked.connect(lambda: self.on_button_clicked("reset"))
         self.commit_individual.clicked.connect(
             lambda: self.on_button_clicked("commit_individual")
         )
@@ -855,8 +850,6 @@ class ProteinControls(QWidget):
         is_ensemble_analysis_valid = True
         is_report_all_valid = True
         is_export_valid = True
-        is_undo_valid = True
-        is_reset_valid = True
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
 
@@ -936,8 +929,6 @@ class ProteinControls(QWidget):
         self.update_plot_button.setEnabled(
             db_loader_loaded and pore_diameter_valid and pore_length_valid
         )
-        self.undo_button.setEnabled(is_undo_valid)
-        self.reset_button.setEnabled(is_reset_valid)
 
         self.filter_add_button.setEnabled(db_loader_loaded)
         self.save_filter_button.setEnabled(is_save_edit_delete_filter_valid)
@@ -991,8 +982,6 @@ class ProteinControls(QWidget):
             "plot_histogram": self.plot_histogram_pushButton,
             "right_arrow": self.right_arrow_button,
             "update_plot": self.update_plot_button,
-            "reset": self.reset_button,
-            "undo": self.undo_button,
             "add_filter": self.filter_add_button,
             "edit_filter": self.filter_info_button,
             "delete_filter": self.filter_delete_button,

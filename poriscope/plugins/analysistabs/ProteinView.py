@@ -1145,13 +1145,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.event_data_generator = generator
 
     @log(logger=logger)
-    def _undo_plot(self):
-        """
-        Undo the last plotted action and update the action history.
-        """
-        self.update_tab_action_history.emit(None, True)
-
-    @log(logger=logger)
     def _save_filter(self):
         """
         Save the current filters to a JSON file.
@@ -1303,19 +1296,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             else:
                 parameters["plot_type"] = "Filtered Histogram"
                 self._update_distribution_ensemble(parameters)
-
-        elif action_name == "reset_plot":
-            mode_label = (
-                "Individual" if self._analysis_mode == "individual" else "Ensemble"
-            )
-            self._reset_actions()
-            self.add_text_to_display.emit(
-                f"Reset cleared the {mode_label} mode fit.",
-                self.__class__.__name__,
-            )
-
-        elif action_name == "undo_plot":
-            self._undo_plot()
 
         elif action_name == "add_filter":
             self._show_add_filter_dialog(parameters)
@@ -3616,12 +3596,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Not happy with the changes? Click 'Undo' to revert to the previous state at any point.",
-                "ProteinView",
-                lambda: [self.proteincontrols.undo_button],
-            ),
-            (
-                "Protein Tab",
                 "Click here to save the current plot to file.",
                 "ProteinView",
                 lambda: [self.proteincontrols.save_plot_button],
@@ -3631,12 +3605,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "Reload previously saved configurations using the 'Load' button.",
                 "ProteinView",
                 lambda: [self.proteincontrols.load_button],
-            ),
-            (
-                "Protein Tab",
-                "Click 'Reset' to clear all changes and restore default settings.",
-                "ProteinView",
-                lambda: [self.proteincontrols.reset_button],
             ),
             (
                 "Protein Tab",
