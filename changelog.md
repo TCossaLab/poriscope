@@ -11,13 +11,16 @@
 * **Updated Data Plugin: `WaveletFilter`**
     * Fixed a ctypes ABI mismatch (`c_int` vs `int64_t`) on the signal-length argument that risked memory corruption on large arrays
     * Calls into the shared native library are now serialized with a lock, since filters are invoked directly by other plugins rather than through the channel-management system
+    * Fixed `reset_channel`'s docstring being a copy-paste of `close_resources`'s
 
 * **Updated Data Plugin: `NoFitter`**
     * Fixed an unbounded backtrack loop that could silently corrupt sublevel edges via negative array indexing instead of cleanly rejecting the event
     * Added missing validation for `None` baseline/padding inputs
+    * Fixed `_locate_sublevel_transitions`'s docstring being generic abstract-method boilerplate instead of describing what this class actually does (locate a single baseline crossing; no changepoint search)
 
 * **Updated Data Plugin: `ClassicCUSUM`**
     * Removed an undocumented `/5` threshold divisor and a leftover debug `print()` that made this fitter far more sensitive than `CUSUM`/`IntraCUSUM`
+    * Fixed `_locate_sublevel_transitions`'s docstring being generic abstract-method boilerplate that didn't mention this class's actual difference from `CUSUM`: Step Size is used directly in units of σ instead of being normalized against the local baseline standard deviation
 
 * **Updated Data Plugins: `ClassicBlockageFinder`, `BoundedBlockageFinder`, `ThresholdBlockageFinder`**
     * Fixed a `ZeroDivisionError` on constant-signal chunks in baseline histogram calculation
@@ -33,6 +36,7 @@
     * Fixed `IntraCUSUM._populate_event_metadata` computing `np.sign(baseline_mean)` with no `None` guard despite `baseline_mean` being documented `Optional[float]`; `CUSUM`'s own base-class methods never use `baseline_mean`, so there was no upstream validation this could rely on. Now raises a clean `ValueError` instead of crashing
     * Fixed `CUSUM`/`NoFitter`'s `construct_fitted_event` docstrings claiming `:raises RuntimeError:` when fitting isn't complete; both actually return `None`
     * Removed a dead `get_samplerate(channel)` call in `CUSUM`/`NoFitter`'s `construct_fitted_event` whose result was discarded, and fixed a stale copy-pasted "CUSUM cannot operate..." error message inside `NoFitter`'s own error path
+    * Fixed `CUSUM._locate_sublevel_transitions`'s docstring being generic abstract-method boilerplate instead of describing the adaptive-threshold CUSUM log-likelihood-ratio changepoint detection it actually runs
     * **Flagged for later:** `NoFitter`'s `rise_time` and `CUSUM`'s recovered `baseline_std` are each computed inside `_locate_sublevel_transitions` but needed again in `_populate_sublevel_metadata`, whose signature doesn't receive `padding_before`/`padding_after`; neither value can be safely recomputed independently there. `NoFitter` currently stashes `rise_time` on `self`, a call-ordering hazard, and `CUSUM`'s `baseline_std` recovery for a loader that omits it never propagates to `_populate_sublevel_metadata`, causing a silent `TypeError`-driven rejection instead of a clean one. The base class's own docs point at the fix (encode the extra value into the returned `sublevel_starts`/`edges` structure instead of instance state), but that requires rewriting every `sublevel_starts[i]` reference in both classes' `_populate_sublevel_metadata` - deferred as a real refactor rather than a mechanical fix
 
 * **Updated Data Plugins: `Basic_PeakFinder`, `PeakFinder`**
@@ -40,13 +44,17 @@
 
 * **Updated Data Plugin: `BesselFilter`**
     * Fixed a boundary check that allowed `Poles = 0` despite requiring a positive integer
+    * Fixed `reset_channel`'s docstring being a copy-paste of `close_resources`'s
 
 * **Updated Data Plugins: `ChimeraReader20240101`, `ChimeraReader20240501`, `ChimeraReaderVC100`, `TCossaLabABFReader`, `LegacyElementsReader`**
     * Fixed dead filename-pattern validation code that never actually rejected malformed filenames
     * Removed a dead `config["v_offset"]` lookup in `ChimeraReaderVC100._convert_data` whose result was discarded
+    * Fixed `ChimeraReaderVC100`'s class docstring saying "VC1100" instead of "VC100"
+    * Fixed `_convert_data`/`_get_configs` docstrings (`ChimeraReader20240101`, `ChimeraReader20240501`, `ChimeraReaderVC100`) claiming "data is already scaled"/"no config files needed" when each actually applies a gain/offset conversion and parses a header (embedded, companion `.json`, or companion `.mat`, respectively); also fixed the same stale `_convert_data` claim in `TCossaLabABFReader`, which applies a per-channel telegraph-derived scale from the ABF2 header
 
 * **Updated Data Plugin: `SingleBinaryDecoder`**
     * Fixed exception handling wrapped around the wrong line, leaving real file-open errors unprotected
+    * Fixed the class docstring being a leftover "Chimera VC1100" description; this reader is a generic, fully user-configured binary decoder
 
 * **Updated Database Plugins: `SQLiteDBWriter`, `SQLiteEventWriter`, `SQLiteDBLoader`, `SQLitePeakDBLoader`, `SQLiteEventLoader`, `MetaDatabaseLoader`, `MetaDatabaseWriter`**
     * Fixed several `UnboundLocalError`-masking exception handlers that hid the real database error

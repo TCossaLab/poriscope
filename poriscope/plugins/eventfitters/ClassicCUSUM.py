@@ -87,9 +87,7 @@ class ClassicCUSUM(CUSUM):
         baseline_std,
     ):
         """
-        Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
-        Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
-        Raising an an acceptable handler.
+        Runs the same CUSUM log-likelihood-ratio changepoint detection as CUSUM, but Step Size is already expressed in units of the local baseline standard deviation (σ) and is used directly rather than normalized against it, unlike CUSUM. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]

@@ -236,7 +236,7 @@ class TCossaLabABFReader(MetaReader):
     def _convert_data(self, data, config, raw_data=False):
         """
         Scale or otherwise transform and return requested data.
-        Default behavior assumes data is already scaled when read.
+        Applies the per-channel telegraph-derived scale recovered from the ABF2 header to convert raw ADC codes to pA.
         if raw_data is true, return also scale and offset
 
         :param data: Data to convert.
