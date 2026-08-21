@@ -27,14 +27,26 @@ pytest path/to/test_file.py::test_name        # single test
 pytest -m fast                                # quick tests only (<5s)
 
 pre-commit run --all-files --hook-stage manual   # auto-fix: black, ruff --fix
-pre-commit run --all-files                       # strict check: ruff + mypy (what pre-commit/CI enforce on real commits)
+pre-commit run --all-files                       # strict check: ruff + mypy + pydoclint (what pre-commit/CI enforce on real commits)
 mypy poriscope                                    # type check directly (excludes tests/)
+pydoclint --baseline=.pydoclint-baseline.txt poriscope   # docstring/signature consistency check directly
 ```
 
 Note: `black` and the ruff auto-fix hook only run at `stages: [manual]` — they do not
 run automatically on `git commit`. Run `pre-commit run --all-files --hook-stage manual`
 yourself before committing if you want formatting applied; the pre-commit hook itself
-runs ruff (strict, no fix) and mypy.
+runs ruff (strict, no fix), mypy, and pydoclint.
+
+`pydoclint` checks that a docstring's documented parameters, return type, and raised
+exceptions actually match the real function signature/body — it does NOT require every
+function to have a docstring, or every signature to carry type hints (see
+`[tool.pydoclint]` in `pyproject.toml`; this repo deliberately runs with
+`arg-type-hints-in-signature = false` since `mypy.ini` already tolerates unannotated
+plugin methods). Pre-existing violations at the time it was introduced are grandfathered
+into `.pydoclint-baseline.txt`; only *new* mismatches introduced going forward fail the
+hook. If you fix an existing baselined violation, regenerate the baseline so it doesn't
+silently keep passing for a docstring that no longer exists in that exact form:
+`pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope`.
 
 Qt-based tests need `qt_api = pyside6` (already set in `pytest.ini`) and, on Linux/CI,
 `QT_QPA_PLATFORM=offscreen` plus `xvfb-run`.

@@ -32,9 +32,22 @@ repos:
         # args: ["--strict"]
         exclude: ^tests/slow/
 
+  # Docstring/signature consistency (runs during default commit stage).
+  # Only fails on NEW violations - pre-existing ones are grandfathered into
+  # .pydoclint-baseline.txt. See pyproject.toml's [tool.pydoclint] for config.
+  - repo: local
+    hooks:
+      - id: pydoclint
+        name: pydoclint (docstring/signature consistency)
+        entry: pydoclint --baseline=.pydoclint-baseline.txt
+        language: system
+        types: [python]
+        files: ^poriscope/
+
   # File Size Guard (runs during default commit stage)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=123"]
+        exclude: ^\.pydoclint-baseline\.txt$

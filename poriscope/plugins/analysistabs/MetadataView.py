@@ -724,10 +724,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type bins: Union[int, float]
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
-        :param norm: normalize output to [0,1]?
-        :type norm: bool
 
-        Calculate a 2d heatmap with optional logscaling and normalization
+        Calculate a 2d heatmap with optional logscaling
         """
         x_label, y_label = cols
         x_units, y_units = units

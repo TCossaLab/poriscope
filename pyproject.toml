@@ -35,6 +35,7 @@ dev = [
     "black==25.1.0",
     "ruff==0.12.11",
     "mypy==1.9.0",
+    "pydoclint==0.9.1",
     "pytest==8.4.1",
     "pytest-mock==3.14.1",
     "pytest-qt==4.5.0",
@@ -74,3 +75,16 @@ extend-select = ["I"]
 known-first-party = ["poriscope", "tests"]
 known-third-party = ["PySide6", "matplotlib", "pytest", "numpy", "pandas"]
 combine-as-imports = true
+
+[tool.pydoclint]
+style = "sphinx"
+# Most plugin methods intentionally omit signature type hints and rely on
+# ":type:"/":rtype:" in the docstring instead (see mypy.ini's
+# disallow_untyped_defs=False) - only check that documented param/return
+# names, order, and presence match the real signature, not that hints exist
+# in the signature itself.
+arg-type-hints-in-signature = false
+# Every __init__ in this codebase has its own docstring separate from the
+# class docstring; that's an established convention here, not a violation.
+allow-init-docstring = true
+exclude = "^tests/"

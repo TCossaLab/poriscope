@@ -1,5 +1,10 @@
 ## Poriscope 1.7: In Progress
 
+* **New Dev Tooling: `pydoclint`**
+    * Added as a blocking pre-commit/CI check that a docstring's documented parameters, return type, and raised exceptions actually match the real function signature/body. Configured with `arg-type-hints-in-signature = false` (see `[tool.pydoclint]` in `pyproject.toml`) so it doesn't require every plugin method to carry type hints, matching `mypy.ini`'s existing tolerance for unannotated plugin code.
+    * Pre-existing violations (1,090 across 58 files, mostly return-type/raises-section/parameter-name mismatches accumulated before this was introduced) are grandfathered into `.pydoclint-baseline.txt`; only new mismatches introduced from here on fail the hook.
+    * Fixed one real violation it surfaced immediately: `MetadataView._plot_heatmap`'s docstring documented a `norm` parameter that doesn't exist in the signature and was never implemented anywhere in the method.
+
 * **New Data Plugin: `ThresholdBlockageFinder`**
     * Subclass of `ClassicBlockageFinder` that imposes much tighter bounds on the start and end times flagged in the output.
 
