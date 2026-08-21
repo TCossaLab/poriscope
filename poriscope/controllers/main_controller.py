@@ -328,7 +328,16 @@ class MainController(QObject):
     @Slot(str)
     def instantiate_analysis_tab(self, subclass):
         """
-        Instantiate a reader plugin to read a given dataset. Exceptions are handled in the caller.
+        Instantiate a new analysis-tab controller of the given subclass and wire it into the app
+        (add its page, connect its signals, register it in plugin history), or reuse the existing
+        instance if a tab of that type has already been instantiated.
+
+        Exceptions raised while instantiating the controller itself are caught and logged here.
+        Exceptions raised afterward, while wiring up or registering the new tab, are not caught
+        by this method and will propagate to the caller.
+
+        :param subclass: The class name of the MetaController subclass to instantiate (e.g. "RawDataController").
+        :type subclass: str
         """
         new_analysis_tab = None
         history = {}
