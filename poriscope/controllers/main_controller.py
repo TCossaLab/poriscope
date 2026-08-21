@@ -118,13 +118,13 @@ class MainController(QObject):
         self.data_plugin_controller.handle_exit()
 
     @log(logger=logger)
-    @Slot(str, str, object)
+    @Slot()
     def send_curent_data_server(self):
         data_server = self.main_model.get_app_config("Parent Folder")
         self.main_view.set_data_server(data_server)
 
     @log(logger=logger)
-    @Slot(str, str, object)
+    @Slot()
     def send_curent_user_plugin_location(self):
         data_server = self.main_model.get_app_config("User Plugin Folder")
         self.main_view.set_user_plugin_location(data_server)
@@ -190,7 +190,11 @@ class MainController(QObject):
             metaclass, subclass_key
         )
 
-        if instance is not None:
+        if instance is None:
+            self.logger.error(
+                f"No plugin instance found for {metaclass}/{subclass_key}, unable to call {call_function}"
+            )
+        else:
             func = getattr(instance, call_function, None)
             if func is None:
                 self.logger.error(
@@ -226,8 +230,10 @@ class MainController(QObject):
                                 f"Error executing return function with args {ret_args}: {repr(e)}"
                             )
                             return
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.exception(
+                        f"Unexpected error handling global signal for {metaclass}/{subclass_key}.{call_function}: {repr(e)}"
+                    )
 
     @log(logger=logger)
     @Slot(str, str, str, tuple, object, tuple)

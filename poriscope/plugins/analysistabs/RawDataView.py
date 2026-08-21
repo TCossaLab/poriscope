@@ -1482,7 +1482,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             parameters (dict): Parameters needed for the action.
         """
         reader = parameters.get("reader")
-        if reader:
+        if reader and reader != "No Reader":
             self.global_signal.emit(
                 "MetaReader", reader, "get_channels", (), "update_channels", ()
             )

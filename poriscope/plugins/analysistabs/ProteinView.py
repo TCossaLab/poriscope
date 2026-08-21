@@ -3206,6 +3206,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param loader: Name of the active database loader.
         :type loader: str
         """
+        if not loader or loader == "No Event Database":
+            return
         try:
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -3226,6 +3228,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
         """
+        if not loader_name or loader_name == "No Event Database":
+            return
+
         self.logger.debug(
             f"Requesting experiment-channel structure from loader: {loader_name}"
         )

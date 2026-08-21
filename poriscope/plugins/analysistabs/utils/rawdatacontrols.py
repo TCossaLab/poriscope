@@ -698,12 +698,11 @@ class RawDataControls(QWidget):
 
         self.readers_comboBox.clear()
 
-        if readers == []:
-            readers.insert(0, "No Reader")
-        self.readers_comboBox.addItems(readers)
+        display_readers = readers if readers != [] else ["No Reader"]
+        self.readers_comboBox.addItems(display_readers)
 
         # Restore selection if it still exists
-        if current_selection in readers:
+        if current_selection in display_readers:
             self.readers_comboBox.setCurrentText(current_selection)
         else:
             self.readers_comboBox.setCurrentIndex(0)
@@ -715,12 +714,11 @@ class RawDataControls(QWidget):
         current_selection = self.filters_comboBox.currentText()
 
         self.filters_comboBox.clear()
-        if filters == []:
-            filters.insert(0, "No Filter")
-        self.filters_comboBox.addItems(filters)
+        display_filters = filters if filters != [] else ["No Filter"]
+        self.filters_comboBox.addItems(display_filters)
 
         # Restore selection if it still exists
-        if current_selection in filters:
+        if current_selection in display_filters:
             self.filters_comboBox.setCurrentText(current_selection)
         else:
             self.filters_comboBox.setCurrentIndex(0)
@@ -733,12 +731,11 @@ class RawDataControls(QWidget):
 
         self.writers_comboBox.clear()
 
-        if writers == []:
-            writers.insert(0, "No Writer")
-        self.writers_comboBox.addItems(writers)
+        display_writers = writers if writers != [] else ["No Writer"]
+        self.writers_comboBox.addItems(display_writers)
 
         # Restore selection if it still exists
-        if current_selection in writers:
+        if current_selection in display_writers:
             self.writers_comboBox.setCurrentText(current_selection)
         else:
             self.writers_comboBox.setCurrentIndex(0)
@@ -750,12 +747,13 @@ class RawDataControls(QWidget):
         current_selection = self.eventfinders_comboBox.currentText()
 
         self.eventfinders_comboBox.clear()
-        if eventfinders == []:
-            eventfinders.insert(0, "No Eventfinder")
-        self.eventfinders_comboBox.addItems(eventfinders)
+        display_eventfinders = (
+            eventfinders if eventfinders != [] else ["No Eventfinder"]
+        )
+        self.eventfinders_comboBox.addItems(display_eventfinders)
 
         # Restore selection if it still exists
-        if current_selection in eventfinders:
+        if current_selection in display_eventfinders:
             self.eventfinders_comboBox.setCurrentText(current_selection)
         else:
             self.eventfinders_comboBox.setCurrentIndex(0)

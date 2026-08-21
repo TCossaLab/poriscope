@@ -351,6 +351,8 @@ class ClusteringView(MetaView, WalkthroughMixin):
         :param loader: Identifier for the loader plugin.
         :type loader: str
         """
+        if not loader or loader == "No Event Database":
+            return
         try:
             self.global_signal.emit(
                 "MetaDatabaseLoader",

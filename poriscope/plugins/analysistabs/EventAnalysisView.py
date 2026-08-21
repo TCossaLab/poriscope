@@ -1020,7 +1020,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type parameters: dict
         """
         loader = parameters.get("loader")
-        if loader:
+        if loader and loader != "No Loader":
             self.global_signal.emit(
                 "MetaEventLoader", loader, "get_channels", (), "update_channels", ()
             )

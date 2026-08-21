@@ -463,13 +463,11 @@ class ClusteringControls(QWidget):
         current_selection = self.db_loader_comboBox.currentText()
         self.db_loader_comboBox.clear()
 
-        if not loaders:  # If list is empty, insert placeholder
-            loaders.insert(0, "No Event Database")
-
-        self.db_loader_comboBox.addItems(loaders)
+        display_loaders = loaders if loaders else ["No Event Database"]
+        self.db_loader_comboBox.addItems(display_loaders)
 
         # Restore selection if it still exists
-        if current_selection in loaders:
+        if current_selection in display_loaders:
             self.db_loader_comboBox.setCurrentText(current_selection)
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
