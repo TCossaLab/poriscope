@@ -118,6 +118,9 @@ class DataPluginController(QObject):
                 )
                 self.update_plugin_history.emit(history, key)
             else:
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 dependents = [dependent[1] for dependent in dependents]
                 self.logger.info(
                     f"Unable to delete {key} since it has dependents {dependents}"
@@ -140,6 +143,9 @@ class DataPluginController(QObject):
                         self.add_text_to_display.emit(
                             f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
                             "DataPluginController",
+                        )
+                        self._restore_parent_dependent_links(
+                            metaclass, instance.get_key(), parents
                         )
                         return
 
@@ -180,6 +186,9 @@ class DataPluginController(QObject):
                         f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
                         self.__class__.__name__,
                     )
+                    self._restore_parent_dependent_links(
+                        metaclass, instance.get_key(), parents
+                    )
                     return
 
                 self.model.update_plugin_key(metaclass, key, old_key)
@@ -213,6 +222,9 @@ class DataPluginController(QObject):
                     f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
                     self.__class__.__name__,
                 )
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 return
 
             # apply the settings to the new plugin object
@@ -226,6 +238,9 @@ class DataPluginController(QObject):
                     f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
                     self.__class__.__name__,
                 )
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 return
             else:
                 history["key"] = key
@@ -237,6 +252,28 @@ class DataPluginController(QObject):
                     f"Settings updated successfully for {key}",
                     self.__class__.__name__,
                 )
+
+    @log(logger=logger)
+    def _restore_parent_dependent_links(self, metaclass, key, parents):
+        """
+        Re-register this plugin as a dependent on each of its parents.
+
+        Used to undo the upfront `unregister_dependent` calls in `edit_plugin`
+        when the edit is aborted before `apply_settings` re-establishes the
+        link, since the plugin instance and its actual parent usage are
+        otherwise unchanged.
+
+        :param metaclass: The metaclass of the plugin being restored.
+        :type metaclass: str
+        :param key: The key of the plugin being restored.
+        :type key: str
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: list[tuple[str, str]]
+        """
+        for pmetaclass, pkey in parents:
+            pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
+            if pinstance:
+                pinstance.register_dependent(metaclass, key)
 
     @log(logger=logger)
     @Slot(str, str)
