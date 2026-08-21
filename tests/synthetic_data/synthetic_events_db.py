@@ -411,10 +411,16 @@ def _write_channel(
     absolute_start = padding_samples
     for event_id in range(num_events):
         this_amplitude = (
-            event_amplitudes_pA[event_id] if event_amplitudes_pA is not None else event_amplitude_pA
+            event_amplitudes_pA[event_id]
+            if event_amplitudes_pA is not None
+            else event_amplitude_pA
         )
         this_event_length = (
-            int(rng.integers(event_length_range_samples[0], event_length_range_samples[1] + 1))
+            int(
+                rng.integers(
+                    event_length_range_samples[0], event_length_range_samples[1] + 1
+                )
+            )
             if event_length_range_samples is not None
             else event_length_samples
         )
@@ -460,7 +466,9 @@ def _write_channel(
                 amplitude=this_amplitude,
             )
         )
-        absolute_start += padding_samples + this_event_length + padding_samples + event_gap_samples
+        absolute_start += (
+            padding_samples + this_event_length + padding_samples + event_gap_samples
+        )
 
     return channel
 
@@ -714,7 +722,9 @@ if __name__ == "__main__":
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
-        db = generate_events_database(Path(tmp) / "synthetic_events.sqlite3", num_events=25)
+        db = generate_events_database(
+            Path(tmp) / "synthetic_events.sqlite3", num_events=25
+        )
         ch = db[0]
         print("db:", db.db_path, db.db_path.stat().st_size, "bytes")
         print("channel 0 events:", ch.num_events, "at", ch.samplerate, "Hz")

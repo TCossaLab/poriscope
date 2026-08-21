@@ -199,7 +199,9 @@ def test_protein_events_nav_and_filters(
     # rationale as metadata's own test files.
     import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
 
-    def _patched_show_dialog(self, structure, loader_name, title="Select Channels", selected=None):
+    def _patched_show_dialog(
+        self, structure, loader_name, title="Select Channels", selected=None
+    ):
         selection_widget = protein_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
@@ -210,7 +212,10 @@ def test_protein_events_nav_and_filters(
         return result
 
     monkeypatch.setattr(
-        protein_view_mod.SelectionTree, "show_dialog", _patched_show_dialog, raising=True
+        protein_view_mod.SelectionTree,
+        "show_dialog",
+        _patched_show_dialog,
+        raising=True,
     )
 
     app_config = {
@@ -225,7 +230,10 @@ def test_protein_events_nav_and_filters(
     view.show()
 
     open_menu_hybrid(
-        view, ["Analysis", "New Analysis Tab", "ProteinController"], qtbot, timeout_ms=QT_WAIT_TIMEOUT_MS
+        view,
+        ["Analysis", "New Analysis Tab", "ProteinController"],
+        qtbot,
+        timeout_ms=QT_WAIT_TIMEOUT_MS,
     )
     qtbot.waitUntil(lambda: "ProteinView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS)
     view.switch_to_page("ProteinView")
@@ -249,13 +257,17 @@ def test_protein_events_nav_and_filters(
 
     schedule_dialog_autofill(fill_loader_dialog)
     QTest.mouseClick(controls.db_loader_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     qtbot.wait(QT_SHORT_PAUSE_MS)
     QTest.mouseClick(controls.selection_tree_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
-    print(f"[DEBUG] Selected scope: {protein_view.selected_experiment_and_channels_by_loader}")
+    print(
+        f"[DEBUG] Selected scope: {protein_view.selected_experiment_and_channels_by_loader}"
+    )
 
     # =========================================================
     # STAGE 2: Plot Events, event_id=0, n_events=3. Confirmed real
@@ -271,14 +283,17 @@ def test_protein_events_nav_and_filters(
     before = _count_lines(protein_view.canvas_event.figure)
     QTest.mouseClick(controls.plot_events_pushButton, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_lines(protein_view.canvas_event.figure) > before, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: _count_lines(protein_view.canvas_event.figure) > before,
+        timeout=QT_WAIT_TIMEOUT_MS,
     )
     lines_after_plot = _count_lines(protein_view.canvas_event.figure)
-    print(f"[DEBUG] After Plot Events (event_id=0, n_events=3): {lines_after_plot} lines")
-    assert lines_after_plot > before, "Expected Plot Events to add lines to the figure"
-    assert protein_view._display_mode == "event", (
-        f"Expected display mode 'event' after Plot Events, got {protein_view._display_mode!r}"
+    print(
+        f"[DEBUG] After Plot Events (event_id=0, n_events=3): {lines_after_plot} lines"
     )
+    assert lines_after_plot > before, "Expected Plot Events to add lines to the figure"
+    assert (
+        protein_view._display_mode == "event"
+    ), f"Expected display mode 'event' after Plot Events, got {protein_view._display_mode!r}"
 
     # =========================================================
     # STAGE 3: navigation over the GAPPED id set. Compute the expected
@@ -339,7 +354,9 @@ def test_protein_events_nav_and_filters(
         QTest.mouseClick(controls.left_arrow_button, Qt.MouseButton.LeftButton)
         qtbot.wait(QT_SHORT_PAUSE_MS)
     actual_back = int(controls.event_id_lineEdit.text().strip())
-    print(f"[DEBUG] After LEFT click: event_id_lineEdit={actual_back} (expected {expected_back})")
+    print(
+        f"[DEBUG] After LEFT click: event_id_lineEdit={actual_back} (expected {expected_back})"
+    )
     assert actual_back == expected_back
 
     # =========================================================
@@ -428,17 +445,23 @@ def test_protein_events_nav_and_filters(
     print(f"[DEBUG] Saved filter JSON: {saved_json}")
 
     QTest.mouseClick(controls.filter_delete_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: protein_view.subset_filters == {}, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: protein_view.subset_filters == {}, timeout=QT_WAIT_TIMEOUT_MS
+    )
     print("[DEBUG] Filter deleted from memory")
 
     _dialog_purpose["value"] = "filters"
     QTest.mouseClick(controls.load_filter_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: len(protein_view.subset_filters) == 1, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: len(protein_view.subset_filters) == 1, timeout=QT_WAIT_TIMEOUT_MS
+    )
     assert protein_view.subset_filters == {filter_name: original_text}, (
         f"Expected reloaded filter to match what was saved "
         f"({{{filter_name!r}: {original_text!r}}}), got {protein_view.subset_filters}"
     )
-    print(f"[DEBUG] Filter reloaded, matches saved state: {protein_view.subset_filters}")
+    print(
+        f"[DEBUG] Filter reloaded, matches saved state: {protein_view.subset_filters}"
+    )
 
     for w in QtWidgets.QApplication.topLevelWidgets():
         if isinstance(w, QtWidgets.QDialog):
