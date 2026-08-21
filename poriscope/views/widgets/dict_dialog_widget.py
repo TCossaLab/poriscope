@@ -200,7 +200,10 @@ class DictDialog(QDialog):
                 self.unitwidgets[key] = QLabel(val.get("Units"))
             else:
                 self.unitwidgets[key] = QCheckBox()
-                self.unitwidgets[key].setChecked(False)
+                # Already has a valid value from a prior configuration (e.g. when
+                # editing an existing plugin) - no need to re-run the file picker
+                # just to enable OK, unless the user actually wants to change it.
+                self.unitwidgets[key].setChecked(bool(val.get("Value")))
                 self.unitwidgets[key].setEnabled(False)
 
             layout.addWidget(labels[key], i, 0)

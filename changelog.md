@@ -179,6 +179,7 @@
     * Fixed `SQLiteDBWriter._write_event` swallowing genuine database errors (disk full, missing row, schema mismatch, etc.) and always reporting them to the user as the misleading, hardcoded "Cannot Overwrite Existing Event"; real errors now propagate with their actual message, while a legitimate duplicate-row rejection from `INSERT OR IGNORE` still returns `False` without raising
     * Fixed `MetaDatabaseWriter.write_events` breaking out of its loop on abort before ever calling `_write_event(..., abort=True)`, unlike the parallel `MetaWriter._commit_events`; subclasses like `SQLiteDBWriter` that rely on that documented final call to roll back and close their connection on abort were never getting it
     * Fixed `DataPluginController.edit_plugin` unregistering a plugin as a dependent from all of its parents up front, before knowing whether the edit would succeed, and never restoring that link on any abort path (rename collision, a `set_key`/settings-resolution/`apply_settings` failure, or a delete blocked by dependents), even though the plugin instance and its actual parent usage were unchanged
+    * Fixed `DictDialog`'s hidden Input File/Output File/Folder "has a value" checkbox always starting unchecked regardless of whether the plugin being edited already had a valid path, permanently disabling OK on an already-configured plugin until the user re-ran the file picker just to change some unrelated field
 
 
 
