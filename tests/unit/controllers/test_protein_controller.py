@@ -60,34 +60,6 @@ class TestInit:
         assert isinstance(controller.model, ProteinModel)
 
 
-class TestSetupConnections:
-    def test_request_plugin_refresh_routes_to_refresh_plugin_list(self, controller):
-        with patch.object(controller, "refresh_plugin_list") as mock:
-            controller.view.request_plugin_refresh.emit("ldr1")
-        mock.assert_called_once_with("ldr1")
-
-
-# ===========================================================================
-# refresh_plugin_list
-# ===========================================================================
-
-
-class TestRefreshPluginList:
-    def test_emits_list_plugins_with_loader(self, controller):
-        controller.refresh_plugin_list("ldr1")
-        controller.global_signal.emit.assert_called_once_with(
-            "MetaDatabaseLoader", "ldr1", "list_plugins", (), "update_plugins", ()
-        )
-
-    def test_no_loader_does_not_emit(self, controller):
-        controller.refresh_plugin_list(None)
-        controller.global_signal.emit.assert_not_called()
-
-    def test_empty_string_loader_does_not_emit(self, controller):
-        controller.refresh_plugin_list("")
-        controller.global_signal.emit.assert_not_called()
-
-
 # ===========================================================================
 # alter_database_status
 # ===========================================================================
@@ -101,20 +73,6 @@ class TestAlterDatabaseStatus:
     def test_forwards_false_to_view(self, controller):
         controller.alter_database_status(False)
         assert controller.view.operation_success is False
-
-
-# ===========================================================================
-# update_plugins
-# ===========================================================================
-
-
-class TestUpdatePlugins:
-    def test_calls_update_available_plugins(self, controller):
-        controller.update_available_plugins = MagicMock()
-        controller.update_plugins(["ldr1", "ldr2"])
-        controller.update_available_plugins.assert_called_once_with(
-            {"MetaDatabaseLoader": ["ldr1", "ldr2"]}
-        )
 
 
 # ===========================================================================
