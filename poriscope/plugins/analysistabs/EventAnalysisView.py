@@ -920,7 +920,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         QMessageBox.No,
                     )
                     if reply == QMessageBox.No:
-                        return
+                        continue
                 fit_events_args = (channel, False, self.data_filter, None)
                 # Emit the signal with the correct handler name for when the data is ready
                 ret_args = (channel, eventfitter, "MetaEventFitter")
