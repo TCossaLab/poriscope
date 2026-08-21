@@ -116,7 +116,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def _factors(self, n):
+    def _factors(self, n) -> tuple:
         """
         Compute a pair of factors of n that are closest to each other.
         Useful for determining subplot grid dimensions.
@@ -138,7 +138,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         return min_diff_pair
 
     @log(logger=logger)
-    def get_save_filename(self):
+    def get_save_filename(self) -> str:
         """
         Open a file dialog to let the user select a filename for saving a CSV file.
 
@@ -182,11 +182,17 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
 
         :param vertical: List of vertical line positions.
+        :type vertical: Optional[List[float]]
         :param horizontal: List of horizontal line positions.
+        :type horizontal: Optional[List[float]]
         :param points: List of (x, y) point coordinates.
+        :type points: Optional[List[Tuple[float, float]]]
         :param vlabels: Labels for vertical lines.
+        :type vlabels: Optional[List[str]]
         :param hlabels: Labels for horizontal lines.
+        :type hlabels: Optional[List[str]]
         :param plabels: Labels for points.
+        :type plabels: Optional[List[str]]
         """
         self.vertical = vertical
         self.horizontal = horizontal
@@ -345,7 +351,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     # Trigger the updated plot
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _handle_plot_events(self, parameters) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
@@ -384,7 +390,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             # get the data filter to use
             try:
                 data_filter_args = ()
-                self.data_filter = None
+                self.data_filter: Optional[Callable] = None
                 if data_filter != "No Filter":
                     self.global_signal.emit(
                         "MetaFilter",
@@ -666,7 +672,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         hlabels,
         plabels,
         use_raw=False,
-    ):
+    ) -> None:
         """
         Update the event plot with raw data, annotations, and formatting.
 
@@ -691,6 +697,8 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type hlabels: list[list[str or None]]
         :param plabels: List of lists of labels for points.
         :type plabels: list[list[str or None]]
+        :param use_raw: Whether the traces in event_data are raw (unfiltered) rather than filtered.
+        :type use_raw: bool
         :return: None
         :rtype: None
         """
@@ -834,7 +842,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _handle_fit_events(self, parameters):
+    def _handle_fit_events(self, parameters) -> None:
         """
         Handle the fitting of events using the selected event fitter and data filter.
 
@@ -852,7 +860,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self._start_eventfitter(eventfitter, data_filter, channels)
 
     @log(logger=logger)
-    def _handle_commit_events(self, parameters):
+    def _handle_commit_events(self, parameters) -> None:
         """
         Handle commit actions by triggering the selected writer to store events.
 

@@ -110,7 +110,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def get_save_filename(self):
+    def get_save_filename(self) -> str:
         """
         Opens a file dialog to select a location for saving a CSV file.
 
@@ -193,7 +193,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _merge_clusters(self, keep, merge):
+    def _merge_clusters(self, keep, merge) -> None:
         """
         Merges two clusters by reassigning the label.
 
@@ -253,12 +253,13 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self.operation_success = status
 
     @log(logger=logger)
-    def _commit_clusters(self, loader):
+    def _commit_clusters(self, loader) -> None:
         """
         Commits clustered data to the database, optionally overwriting existing clustering columns.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
+        :raises AttributeError: If cluster data has not been set yet.
         """
         if self.cluster_data is None:
             raise AttributeError("cluster data has not been set, unable to commit")
@@ -344,7 +345,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self.units = units
 
     @log(logger=logger)
-    def update_available_columns(self, loader):
+    def update_available_columns(self, loader) -> None:
         """
         Requests updated column names from the specified database loader.
 
@@ -427,7 +428,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
-    def _handle_clustering_settings(self, parameters):
+    def _handle_clustering_settings(self, parameters) -> None:
         """
         Opens the clustering settings dialog, handles clustering logic, and updates the view.
 
@@ -537,7 +538,9 @@ class ClusteringView(MetaView, WalkthroughMixin):
         :param loader: Identifier of the loader plugin.
         :type loader: str
         :return: Tuple containing clustered data, labels, confidence, logs, normalized flags, units, and plot flags.
-        :rtype: tuple
+        :rtype: Tuple[Any, Any, Any, List[Any], List[Any], List[Any], List[Any]]
+        :raises KeyError: If a duplicate column is selected, or if a selected column is missing from the loaded dataframe.
+        :raises ValueError: If the metadata query cannot be generated, no data matches the query, or the clustering method/parameters are invalid or missing.
         """
         columns = [val["column"] for val in config["columns"]]
         units = [val["unit"] for val in config["columns"]]
@@ -629,7 +632,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         return clustering_data, labels, probs, logs, norm, units, plot
 
     @log(logger=logger)
-    def update_plot(self, data, labels, confidence, logs, normalized, units, plot):
+    def update_plot(self, data, labels, confidence, logs, normalized, units, plot) -> None:
         """
         Updates the plot with clustered data and redraws it.
 
@@ -807,7 +810,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _normalize_column_data(self, df, exclude_cols=[]):
+    def _normalize_column_data(self, df, exclude_cols=[]) -> pd.DataFrame:
         """
         Applies MAD-based normalization to float columns in the dataframe.
 
@@ -835,7 +838,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         min_cluster_size: int = 30,
         min_samples: int = 1,
         cluster_selection_epsilon: float = 1,
-    ):
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Performs HDBSCAN clustering on the provided data.
 

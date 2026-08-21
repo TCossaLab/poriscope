@@ -90,9 +90,6 @@ class MetadataView(MetaView, WalkthroughMixin):
     def _init(self) -> None:
         """
         Initialize the MetadataView instance.
-
-        :param args: Positional arguments passed to parent constructors.
-        :param kwargs: Keyword arguments passed to parent constructors.
         """
         self._clear_cache()
         self.plot_initialized = False
@@ -130,8 +127,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
-        self.allowed_bins = None
-        self.allowed_sizes = None
+        self.allowed_bins: Optional[Union[int, float]] = None
+        self.allowed_sizes: Optional[bool] = None
 
         self._show_sql_in_display: bool = False
         self._show_event_sql_in_display: bool = False
@@ -190,7 +187,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def get_save_filename(self):
+    def get_save_filename(self) -> str:
         """
         Open a file dialog for the user to choose a save location.
 
@@ -319,6 +316,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type bins: Union[int, float]
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
+        :raises ValueError: If bins is an empty list.
 
         Calculate a plot a 1d kernel density with optional logscaling before binning
         """
@@ -413,6 +411,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type bins: Union[int, float]
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
+        :raises ValueError: If bins is an empty list, or too little data survives the log filter to estimate a capture rate.
 
         Calculate the capture rate for the given subset
         """
@@ -529,6 +528,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type sizes: bool
         :param norm: normalize output to [0,1]?
         :type norm: bool
+        :raises ValueError: If bins is an empty list.
 
         Calculate a plot a 1d histogram with optional logscaling and normalization
         """
@@ -900,6 +900,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type units: List[str]
         :param dataset_label: Label for the plotted dataset.
         :type dataset_label: str
+        :param norm: normalize output to [0,1]?
+        :type norm: bool
         """
         x_label, y_label = cols
         x_units, y_units = units
@@ -941,10 +943,12 @@ class MetadataView(MetaView, WalkthroughMixin):
         dataset_label="",
         bins=None,
         sizes=False,
-    ):
+    ) -> None:
         """
         Update the plot area with the provided data across multiple channels in a grid layout.
 
+        :param plot_type: The kind of plot to draw (e.g. "Histogram", "Scatterplot", "Heatmap"); selects which internal plotting method is dispatched to.
+        :type plot_type: str
         :param data: a pandas dataframe with column headers matching x_col, y_col, z_col
         :type data: pd.Dataframe
         :param cols: a list of strings corresponding to column headers in the dataframe
@@ -953,8 +957,13 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type units: List[str]
         :param logscales: a list of bools indicating whether the given axis should be logscaled
         :type logscales: List[bool]
-        :param axis_coords: x,y coordinates of the axis to which to add the plot
-        :type axis_coords: Tuple[int,int]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
+        :type bins: Union[int, float]
+        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
+        :type sizes: bool
+        :raises NotImplementedError: If plot_type is not one of the supported plot types.
         """
         axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
         if not self._axes_valid(axis_type=axis_type):
@@ -1135,7 +1144,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @register_action()
-    def _overlay_plot(self, parameters):
+    def _overlay_plot(self, parameters) -> bool:
         """
         Handle the creation of a new overlay plot based on the selected parameters.
 
@@ -1466,7 +1475,13 @@ class MetadataView(MetaView, WalkthroughMixin):
                         self.allowed_logs = []
 
                     self.plotted_datasets.add(
-                        (loader, exp, channel, sql_filter, subset_name)
+                        (
+                            loader,
+                            exp,
+                            int(channel) if channel is not None else None,
+                            sql_filter,
+                            subset_name,
+                        )
                     )
 
         return True
@@ -1474,7 +1489,7 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _construct_all_points_histogram(
         self, event_generator, plot_type, bins=None, sizes=False
-    ):
+    ) -> pd.DataFrame:
         """
         Build a combined histogram across all event current values.
 
@@ -1484,8 +1499,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type plot_type: str
         :param bins: Number of histogram bins.
         :type bins: int | None
+        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
+        :type sizes: bool
         :return: DataFrame with histogram values and corresponding current levels.
         :rtype: pd.DataFrame
+        :raises ValueError: If plot_type is not a recognized all-points-histogram variant.
         """
         # get global stats from the first event, don't forget to use this one later
         egen1, egen2 = itertools.tee(event_generator)
@@ -1590,6 +1608,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type event_generator: Iterator[dict]
         :param plot_type: Either 'Raw Event Overlay' or 'Filtered Event Overlay'.
         :type plot_type: str
+        :param loader: Identifier of the database loader plugin providing the events.
+        :type loader: str
         """
         ax = self.axes
 
@@ -1759,7 +1779,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @Slot(str, str, tuple)
-    def handle_parameter_change(self, submodel_name, action_name, args):
+    def handle_parameter_change(self, submodel_name, action_name, args) -> None:
         """
         Handle changes triggered by UI controls such as updates to axis selection or filters.
 
@@ -1769,6 +1789,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type action_name: str
         :param args: Tuple containing action-specific arguments.
         :type args: tuple
+        :raises NotImplementedError: If action_name is "new_axis" (not currently supported).
         """
         parameters = args[0]
 
@@ -1865,7 +1886,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _build_where_clause(self, loader, sql_filter, exp, channel):
+    def _build_where_clause(self, loader, sql_filter, exp, channel) -> str:
         """
         Build a WHERE clause for direct DB queries on the events table, scoped to
         the current filter, experiment, and channel.
@@ -1901,16 +1922,23 @@ class MetadataView(MetaView, WalkthroughMixin):
         return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
 
     @log(logger=logger)
-    def _rebuild_event_id_cache(self, loader, where_clause, sql_filter, exp, channel):
+    def _rebuild_event_id_cache(
+        self, loader, where_clause, sql_filter, exp, channel
+    ) -> bool:
         """
         Rebuild the filtered event_id cache when filter or scope changes.
         Also emits the display panel message (first plot or filter change only).
 
         :param loader: Name of the active database loader.
+        :type loader: str
         :param where_clause: Pre-built WHERE clause for the events table.
+        :type where_clause: str
         :param sql_filter: Current SQL filter string.
+        :type sql_filter: str
         :param exp: Current experiment name.
+        :type exp: Optional[str]
         :param channel: Current channel identifier.
+        :type channel: Optional[str]
         :return: True if cache was rebuilt successfully, False otherwise.
         :rtype: bool
         """
@@ -2039,7 +2067,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         return int(text) if text else 1
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _handle_plot_events(self, parameters) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
@@ -2323,11 +2351,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
 
         :param vertical: List of vertical line positions.
+        :type vertical: Optional[List[float]]
         :param horizontal: List of horizontal line positions.
+        :type horizontal: Optional[List[float]]
         :param points: List of (x, y) point coordinates.
+        :type points: Optional[List[Tuple[float, float]]]
         :param vlabels: Labels for vertical lines.
+        :type vlabels: Optional[List[str]]
         :param hlabels: Labels for horizontal lines.
+        :type hlabels: Optional[List[str]]
         :param plabels: Labels for points.
+        :type plabels: Optional[List[str]]
         """
         self.vertical = vertical
         self.horizontal = horizontal
@@ -2347,7 +2381,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         vertical_labels,
         point_labels,
         use_raw=False,
-    ):
+    ) -> None:
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -2359,6 +2393,20 @@ class MetadataView(MetaView, WalkthroughMixin):
                         'experiment_id', 'channel_id', 'event_id',
                         'raw_data', 'filtered_data', 'fit_data', and 'samplerate'.
         :type event_data: list[dict]
+        :param horizontal_lines: List of lists of y-values for horizontal line annotations per subplot.
+        :type horizontal_lines: list[list[float] or None]
+        :param vertical_lines: List of lists of x-values for vertical line annotations per subplot.
+        :type vertical_lines: list[list[float] or None]
+        :param points: List of lists of (x, y) coordinate tuples for marker points per subplot.
+        :type points: list[list[tuple[float, float]] or None]
+        :param horizontal_labels: List of lists of labels for horizontal lines.
+        :type horizontal_labels: list[list[str or None]]
+        :param vertical_labels: List of lists of labels for vertical lines.
+        :type vertical_labels: list[list[str or None]]
+        :param point_labels: List of lists of labels for points.
+        :type point_labels: list[list[str or None]]
+        :param use_raw: Whether to also plot/cache the raw (unfiltered) trace alongside the filtered and fitted ones.
+        :type use_raw: bool
         :return: None
         :rtype: None
         """
@@ -2496,14 +2544,16 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _export_csv_subset(self, loader, filters, selection):
+    def _export_csv_subset(self, loader, filters, selection) -> None:
         """
         Open a dialog to export a filtered subset of the dataset.
 
         :param loader: Name of the active database loader.
         :type loader: str
-        :param sql_filter: SQL WHERE clause used to filter the dataset.
-        :type sql_filter: str
+        :param filters: Dict of named subset filters; only a single filter may be selected for export.
+        :type filters: Optional[dict]
+        :param selection: Selected experiments and channels to scope the export to.
+        :type selection: Dict[str, List[str]]
         """
         self.available_plugins.get("MetaDatabaseLoader", [])
         if filters is not None and len(filters) > 1:
@@ -2562,7 +2612,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.exported_event_count = written
 
     @log(logger=logger)
-    def set_query(self, query, table_name):
+    def set_query(self, query, table_name) -> None:
         """
         Set the SQL query and table name used in plotting.
 
@@ -2612,7 +2662,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.units = units
 
     @log(logger=logger)
-    def update_available_columns(self, loader):
+    def update_available_columns(self, loader) -> None:
         """
         Request available columns from the database loader.
 
@@ -2634,7 +2684,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.error(f"Failed to request column data: {repr(e)}")
 
     @log(logger=logger)
-    def request_experiment_structure(self, loader_name: str):
+    def request_experiment_structure(self, loader_name: str) -> None:
         """
         :param loader_name: the key of the loader
         :type loader_name: str
@@ -2739,13 +2789,14 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type action_name: str
         :param parameters: Parameters associated with the action.
         :type parameters: dict
+        :raises NotImplementedError: Always
         """
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
     def _calculate_heatmap(
         self, xdata, ydata, logx=False, logy=False, bins=None, sizes=False
-    ):
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         :param xdata: the data on the x axis
         :type xdata: npt.NDArray[np.float64]
@@ -2759,6 +2810,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type bins: Union[int, float]
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
+        :return: Bin-center x values, bin-center y values, and the log2-scaled 2D histogram counts.
+        :rtype: tuple[np.ndarray, np.ndarray, np.ndarray]
+        :raises ValueError: If bins is an invalid entry when sizes is False.
 
         Build a heatmap of the provided data
         """
@@ -2829,12 +2883,13 @@ class MetadataView(MetaView, WalkthroughMixin):
         return x, y, logged_z.T
 
     @log(logger=logger)
-    def _show_add_filter_dialog(self, parameters: dict):
+    def _show_add_filter_dialog(self, parameters: dict) -> None:
         """
         Displays the dialog for adding a new subset filter. Validates filter syntax
         before actually saving the filter.
 
         :param parameters: Dictionary with 'db_loader'.
+        :type parameters: dict
         """
         self._show_sql_in_display = True
 
@@ -2903,13 +2958,15 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str):
+    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
         """
         Displays the dialog to edit an existing filter, and validates the updated
         SQL filter syntax via construct_metadata_query before saving it.
 
         :param name: The name of the filter to edit.
+        :type name: str
         :param loader: Name of the active database loader.
+        :type loader: str
         """
         self._show_sql_in_display = True
 
@@ -2985,6 +3042,8 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         :param comboBox: The combo box containing the list of selectable filters.
         :type comboBox: MultiSelectComboBox
+        :param parameters: Dictionary with 'db_loader'.
+        :type parameters: dict
         """
         loader = parameters["db_loader"]
         selected = comboBox.getSelectedItems()
@@ -3102,7 +3161,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.channel_db_id = channel_db_id
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid, error_msg):
+    def on_raw_filter_validated(self, valid, error_msg) -> None:
         """
         Relay callback from validate_filter_query for raw SQL filter validation.
 

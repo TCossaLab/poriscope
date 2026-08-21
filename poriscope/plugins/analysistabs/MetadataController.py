@@ -84,8 +84,8 @@ class MetadataController(MetaController):
         """
         Relay the data type of a specified column to the view
 
-        :param table: Dictionary representing a table organized by column.
-        :type table: dict
+        :param column_type: The data type of the column.
+        :type column_type: str
         """
         self.view.set_column_type(column_type)
 
@@ -163,7 +163,7 @@ class MetadataController(MetaController):
         self.view.set_exported_event_count(written)
 
     @log(logger=logger)
-    def relay_query(self, query, debug, table_name, *args):
+    def relay_query(self, query, debug, table_name, *args) -> None:
         """
         Relay a query and optional debug message to the view, handling optional filter intents.
 
@@ -173,8 +173,8 @@ class MetadataController(MetaController):
         :type debug: str
         :param table_name: Name of the table associated with the query.
         :type table_name: str
-        :param args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type args: tuple
+        :param *args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
+        :type *args: tuple
         """
         intent = args[0] if args else None
 

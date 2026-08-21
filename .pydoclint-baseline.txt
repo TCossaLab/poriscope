@@ -23,118 +23,32 @@ poriscope/plugins/analysistabs/ClusteringController.py
     DOC108: Method `ClusteringController.display_write_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/ClusteringView.py
-    DOC203: Method `ClusteringView.get_save_filename` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC201: Method `ClusteringView._merge_clusters` does not have a return section in docstring
-    DOC201: Method `ClusteringView._commit_clusters` does not have a return section in docstring
-    DOC501: Method `ClusteringView._commit_clusters` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `ClusteringView._commit_clusters` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['AttributeError'].
-    DOC201: Method `ClusteringView.update_available_columns` does not have a return section in docstring
-    DOC201: Method `ClusteringView._handle_clustering_settings` does not have a return section in docstring
-    DOC203: Method `ClusteringView._load_metadata_and_cluster` return type(s) in docstring not consistent with the return annotation. Return annotation types: ['Tuple[Any, Any, Any, List[Any], List[Any], List[Any], List[Any]]']; docstring return section types: ['tuple']
-    DOC501: Method `ClusteringView._load_metadata_and_cluster` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `ClusteringView._load_metadata_and_cluster` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['KeyError', 'ValueError'].
-    DOC201: Method `ClusteringView.update_plot` does not have a return section in docstring
     DOC108: Method `ClusteringView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC203: Method `ClusteringView._normalize_column_data` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
     DOC108: Method `ClusteringView._update_clusters_hdbscan`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC203: Method `ClusteringView._update_clusters_hdbscan` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
 --------------------
 poriscope/plugins/analysistabs/EventAnalysisController.py
     DOC108: Method `EventAnalysisController.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/EventAnalysisView.py
-    DOC203: Method `EventAnalysisView._factors` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `EventAnalysisView.get_save_filename` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC109: Method `EventAnalysisView.update_plot_features`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `EventAnalysisView.update_plot_features`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
     DOC108: Method `EventAnalysisView.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `EventAnalysisView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC201: Method `EventAnalysisView._handle_plot_events` does not have a return section in docstring
-    DOC101: Method `EventAnalysisView._update_event_plot`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `EventAnalysisView._update_event_plot`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [use_raw: ].
-    DOC202: Method `EventAnalysisView._update_event_plot` has a return section in docstring, but there are no return statements or annotations
-    DOC203: Method `EventAnalysisView._update_event_plot` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC201: Method `EventAnalysisView._handle_fit_events` does not have a return section in docstring
-    DOC201: Method `EventAnalysisView._handle_commit_events` does not have a return section in docstring
     DOC108: Method `EventAnalysisView.set_data_filter_function`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/MetadataController.py
-    DOC103: Method `MetadataController.relay_column_type`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [column_type: ]. Arguments in the docstring but not in the function signature: [table: dict].
-    DOC103: Method `MetadataController.relay_query`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [*args: ]. Arguments in the docstring but not in the function signature: [args: tuple].
-    DOC201: Method `MetadataController.relay_query` does not have a return section in docstring
     DOC108: Method `MetadataController.get_experiment_names_for_tree`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetadataController.get_experiment_structure_ready`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/MetadataView.py
-    DOC102: Method `MetadataView._init`: Docstring contains more arguments than in function signature.
-    DOC109: Method `MetadataView._init`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `MetadataView._init`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
-    DOC103: Method `MetadataView._init`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the docstring but not in the function signature: [args: , kwargs: ].
-    DOC203: Method `MetadataView.get_save_filename` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
     DOC108: Method `MetadataView._clear_figure_state`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetadataView._axes_valid`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetadataView._reset_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC501: Method `MetadataView._plot_1d_density` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView._plot_1d_density` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
-    DOC501: Method `MetadataView._plot_capture_rate` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView._plot_capture_rate` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
-    DOC501: Method `MetadataView._plot_1d_histogram` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView._plot_1d_histogram` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
-    DOC101: Method `MetadataView._plot_all_points_histogram`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView._plot_all_points_histogram`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [norm: ].
-    DOC101: Method `MetadataView.update_plot`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView.update_plot`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [bins: , dataset_label: , plot_type: , sizes: ]. Arguments in the docstring but not in the function signature: [axis_coords: Tuple[int,int]].
-    DOC501: Method `MetadataView.update_plot` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView.update_plot` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['NotImplementedError'].
     DOC108: Method `MetadataView.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetadataView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC203: Method `MetadataView._overlay_plot` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC101: Method `MetadataView._construct_all_points_histogram`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView._construct_all_points_histogram`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [sizes: ].
-    DOC203: Method `MetadataView._construct_all_points_histogram` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC501: Method `MetadataView._construct_all_points_histogram` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView._construct_all_points_histogram` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
-    DOC101: Method `MetadataView._construct_event_overlay`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView._construct_event_overlay`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [loader: ].
-    DOC201: Method `MetadataView.handle_parameter_change` does not have a return section in docstring
-    DOC501: Method `MetadataView.handle_parameter_change` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView.handle_parameter_change` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['NotImplementedError'].
-    DOC203: Method `MetadataView._build_where_clause` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC109: Method `MetadataView._rebuild_event_id_cache`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `MetadataView._rebuild_event_id_cache`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
-    DOC203: Method `MetadataView._rebuild_event_id_cache` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC201: Method `MetadataView._handle_plot_events` does not have a return section in docstring
-    DOC109: Method `MetadataView.update_plot_features`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `MetadataView.update_plot_features`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
-    DOC101: Method `MetadataView._update_event_plot`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView._update_event_plot`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [horizontal_labels: , horizontal_lines: , point_labels: , points: , use_raw: , vertical_labels: , vertical_lines: ].
-    DOC202: Method `MetadataView._update_event_plot` has a return section in docstring, but there are no return statements or annotations
-    DOC203: Method `MetadataView._update_event_plot` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC101: Method `MetadataView._export_csv_subset`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView._export_csv_subset`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [filters: , selection: ]. Arguments in the docstring but not in the function signature: [sql_filter: str].
-    DOC201: Method `MetadataView._export_csv_subset` does not have a return section in docstring
-    DOC201: Method `MetadataView.set_query` does not have a return section in docstring
-    DOC201: Method `MetadataView.update_available_columns` does not have a return section in docstring
     DOC108: Method `MetadataView.request_experiment_structure`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC201: Method `MetadataView.request_experiment_structure` does not have a return section in docstring
-    DOC501: Method `MetadataView._handle_other_actions` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView._handle_other_actions` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['NotImplementedError'].
-    DOC201: Method `MetadataView._calculate_heatmap` does not have a return section in docstring
-    DOC501: Method `MetadataView._calculate_heatmap` has raise statements, but the docstring does not have a "Raises" section
-    DOC503: Method `MetadataView._calculate_heatmap` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
     DOC108: Method `MetadataView._show_add_filter_dialog`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC109: Method `MetadataView._show_add_filter_dialog`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `MetadataView._show_add_filter_dialog`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
-    DOC201: Method `MetadataView._show_add_filter_dialog` does not have a return section in docstring
     DOC108: Method `MetadataView.show_edit_filter_dialog`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC109: Method `MetadataView.show_edit_filter_dialog`: The option `--arg-type-hints-in-docstring` is `True` but there are no type hints in the docstring arg list
-    DOC110: Method `MetadataView.show_edit_filter_dialog`: The option `--arg-type-hints-in-docstring` is `True` but not all args in the docstring arg list have type hints
-    DOC201: Method `MetadataView.show_edit_filter_dialog` does not have a return section in docstring
-    DOC101: Method `MetadataView._show_filter_info_dialog`: Docstring contains fewer arguments than in function signature.
-    DOC103: Method `MetadataView._show_filter_info_dialog`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [parameters: ].
     DOC201: Method `MetadataView._show_filter_info_dialog` does not have a return section in docstring
     DOC108: Method `MetadataView._delete_filter_by_name`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC201: Method `MetadataView.on_raw_filter_validated` does not have a return section in docstring
 --------------------
 poriscope/plugins/analysistabs/ProteinController.py
     DOC103: Method `ProteinController.relay_query`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [*args: ]. Arguments in the docstring but not in the function signature: [args: tuple].
