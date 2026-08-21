@@ -649,7 +649,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.fig_event.clear()
 
         self.event_outer_ax = None
-        self.fig_event.set_constrained_layout(True)
+        self.fig_event.set_layout_engine('constrained')
         self._clear_cache()
 
     @log(logger=logger)
@@ -2095,7 +2095,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             if i >= labelnum:
                 ax.set_xlabel(r"Time ($\mu s$)")
 
-        self.fig_event.set_constrained_layout(True)
+        self.fig_event.set_layout_engine('constrained')
         self.canvas_event.draw()
         self._commit_cache()
 
@@ -2209,7 +2209,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 (plot_data["Amplitude"].values, label + " " + y_label),
             )
 
-        self.fig_event.set_constrained_layout(True)
+        self.fig_event.set_layout_engine('constrained')
         self.canvas_event.draw()
         self._commit_cache()
 

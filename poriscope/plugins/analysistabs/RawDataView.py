@@ -217,7 +217,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 ax.set_xlabel(x_label)
             ax.set_title(dataset_label)
             ax.grid(True)
-        self.figure.set_constrained_layout(True)
+        self.figure.set_layout_engine('constrained')
         self.canvas.draw()
         self._commit_cache()
 
@@ -281,7 +281,7 @@ class RawDataView(MetaView, WalkthroughMixin):
 
             ax.set_title(dataset_label)
             ax.grid(True)
-        self.figure.set_constrained_layout(True)
+        self.figure.set_layout_engine('constrained')
         self.canvas.draw()
         self._commit_cache()
 
@@ -947,7 +947,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 ax.set_xlabel(r"Time ($\mu s$)")
             ax.set_title(dataset_label)
             ax.grid(True)
-        self.figure.set_constrained_layout(True)
+        self.figure.set_layout_engine('constrained')
         self.canvas.draw()
         self._commit_cache()
 
