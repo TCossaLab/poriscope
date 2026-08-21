@@ -102,14 +102,23 @@ class SyntheticMetadataChannel:
         onto this channel.
     :type num_events: int
     :param event_lengths_samples: The planted length, in samples, of
-        every event on this channel, in event_id order.
+        every SURVIVING (successfully fit) event on this channel,
+        aligned by position with event_ids (event_lengths_samples[i]
+        is the length of the event whose id is event_ids[i]).
     :type event_lengths_samples: List[int]
+    :param event_ids: The real event_id of every SURVIVING event on this
+        channel, in increasing order. May have gaps relative to the raw
+        planted range (0..num_planted-1) if any events were rejected
+        during fitting (see reject_event_indices in
+        generate_metadata_database()'s channel spec).
+    :type event_ids: List[int]
     """
 
     channel_id: int
     samplerate: float
     num_events: int
     event_lengths_samples: List[int] = field(default_factory=list)
+    event_ids: List[int] = field(default_factory=list)
 
     @property
     def event_durations_us(self) -> List[float]:
@@ -141,9 +150,7 @@ class SyntheticMetadataChannel:
         """
         durations = sorted(self.event_durations_us)
         if not durations:
-            raise ValueError(
-                f"Channel {self.channel_id} has no events to compute a median from"
-            )
+            raise ValueError(f"Channel {self.channel_id} has no events to compute a median from")
         mid = len(durations) // 2
         if len(durations) % 2 == 1:
             return durations[mid]
@@ -199,9 +206,7 @@ class SyntheticMetadataExperiment:
             d for ch in self.channels.values() for d in ch.event_durations_us
         )
         if not all_durations:
-            raise ValueError(
-                f"Experiment '{self.name}' has no events to compute a median from"
-            )
+            raise ValueError(f"Experiment '{self.name}' has no events to compute a median from")
         mid = len(all_durations) // 2
         if len(all_durations) % 2 == 1:
             return all_durations[mid]
@@ -263,9 +268,7 @@ class SyntheticMetadataDatabase:
         return (all_durations[mid - 1] + all_durations[mid]) / 2.0
 
 
-def _build_settings(
-    cls: Type[Any], overrides: Dict[str, Any], standalone: bool = True
-) -> Dict[str, Any]:
+def _build_settings(cls: Type[Any], overrides: Dict[str, Any], standalone: bool = True) -> Dict[str, Any]:
     """
     Build a settings dict via a plugin's own get_empty_settings(), filling
     in Value fields -- required because apply_settings()'s validation
@@ -423,9 +426,7 @@ def generate_metadata_database(
 
             for chan_spec in exp_spec["channels"]:
                 if "channel_id" not in chan_spec:
-                    raise ValueError(
-                        f"Channel spec missing required 'channel_id': {chan_spec}"
-                    )
+                    raise ValueError(f"Channel spec missing required 'channel_id': {chan_spec}")
 
                 channel_id = chan_spec["channel_id"]
                 num_events = chan_spec.get("num_events", 25)
@@ -438,10 +439,41 @@ def generate_metadata_database(
                 )
                 seed = chan_spec.get("seed", 42)
 
+                # reject_event_indices: 0-indexed positions (matching the
+                # RAW, contiguous event_id at that position) to make
+                # deliberately unfittable, by giving just those events an
+                # amplitude below step_size_pA's magnitude. Everything
+                # else keeps this channel's normal event_amplitude_pA.
+                # This is how a metadata database ends up with
+                # non-contiguous fitted event ids realistically: the raw
+                # event_id sequence stays strictly contiguous (real
+                # acquisition numbers events sequentially); gaps appear
+                # in the FITTED set because those specific raw events
+                # genuinely fail to fit -- not because raw ids were
+                # artificially skipped. See _write_channel()'s docstring
+                # in synthetic_events_db.py for the confirmed mechanism.
+                reject_event_indices = set(chan_spec.get("reject_event_indices", []))
+                event_amplitudes_pA: Optional[List[float]] = None
+                if reject_event_indices:
+                    # 10% of step_size_pA, not 50%: confirmed empirically
+                    # that a 50% margin isn't always robust to noise --
+                    # a marginal event occasionally survived fitting
+                    # anyway on some random draws. 10% is comfortably
+                    # below the noise floor too, for reliable, repeatable
+                    # rejection independent of seed.
+                    reject_amplitude_pA = chan_spec.get(
+                        "reject_amplitude_pA", -(step_size_pA * 0.1)
+                    )
+                    event_amplitudes_pA = [
+                        reject_amplitude_pA if i in reject_event_indices else event_amplitude_pA
+                        for i in range(num_events)
+                    ]
+
                 # Step 1: raw events, via this package's own generator.
-                raw_events_path = (
-                    out_path.parent / f"_tmp_raw_{exp_name}_{channel_id}.sqlite3"
-                )
+                # event_id is always strictly contiguous (range(num_events))
+                # here -- only the amplitude varies per-event when
+                # reject_event_indices is given.
+                raw_events_path = out_path.parent / f"_tmp_raw_{exp_name}_{channel_id}.sqlite3"
                 raw_db = generate_events_database(
                     raw_events_path,
                     channel_id=channel_id,
@@ -451,14 +483,13 @@ def generate_metadata_database(
                     baseline_std_pA=baseline_std_pA,
                     event_amplitude_pA=event_amplitude_pA,
                     event_length_range_samples=event_length_range_samples,
+                    event_amplitudes_pA=event_amplitudes_pA,
                     seed=seed,
                 )
 
                 # Step 2: real loader.
                 loader = SQLiteEventLoader(
-                    _build_settings(
-                        SQLiteEventLoader, {"Input File": str(raw_db.db_path)}
-                    )
+                    _build_settings(SQLiteEventLoader, {"Input File": str(raw_db.db_path)})
                 )
 
                 # Step 3: real CUSUM fit.
@@ -472,7 +503,17 @@ def generate_metadata_database(
                         "Sensitivity": sensitivity,
                     },
                 )
-                for _ in fitter.fit_events(channel=channel_id):
+                # MetaEventFitter.fit_events() defaults indices to
+                # list(range(total_events)) when not given explicitly --
+                # positional 0..N-1, NOT the real event_id values. For a
+                # database with non-contiguous ids (event_ids=[2,7,8,...]),
+                # that default silently fits only whichever events happen
+                # to coincide with their own position, with no error.
+                # Confirmed via a direct repro against the real CUSUM
+                # class before writing this fix. Passing the loader's own
+                # get_valid_indices() explicitly avoids that entirely.
+                valid_indices = loader.get_valid_indices(channel_id)
+                for _ in fitter.fit_events(channel=channel_id, indices=valid_indices):
                     pass
 
                 n_good = fitter.get_num_events(channel_id)
@@ -507,12 +548,40 @@ def generate_metadata_database(
                 for _ in writer.write_events(channel_id):
                     pass
 
-                event_lengths = [ev.event_length for ev in raw_db[channel_id].events]
+                # Ground truth must reflect only what's actually IN the
+                # committed database. Before reject_event_indices existed,
+                # every raw event always survived fitting (n_good ==
+                # num_events always), so taking event_length from every
+                # raw_db[channel_id].events entry happened to be correct
+                # by coincidence. With some events now deliberately
+                # rejected, n_good < num_events is possible, and blindly
+                # keeping every raw event's length here would silently
+                # include rejected events' data in ground truth queries
+                # like median_duration_us() -- confirmed via a direct
+                # check against fitter.event_metadata[channel][index]
+                # (each entry's real "event_id" value, not the dict's
+                # own index keys) that this is the correct, and only
+                # reliable, way to know exactly which raw events actually
+                # survived.
+                surviving_ids = {
+                    v["event_id"] for v in fitter.event_metadata[channel_id].values()
+                }
+                surviving_events = [
+                    ev for ev in raw_db[channel_id].events if ev.event_id in surviving_ids
+                ]
+                event_lengths = [ev.event_length for ev in surviving_events]
+                event_ids_list = [ev.event_id for ev in surviving_events]
+                assert len(event_lengths) == n_good, (
+                    f"Internal consistency check failed: {len(event_lengths)} "
+                    f"surviving event lengths but fitter reports {n_good} good "
+                    f"events for experiment '{exp_name}' channel {channel_id}"
+                )
                 exp_result.channels[channel_id] = SyntheticMetadataChannel(
                     channel_id=channel_id,
                     samplerate=samplerate,
                     num_events=n_good,
                     event_lengths_samples=event_lengths,
+                    event_ids=event_ids_list,
                 )
 
                 raw_events_path.unlink(missing_ok=True)
@@ -535,29 +604,14 @@ if __name__ == "__main__":
                 {
                     "name": "exp_a",
                     "channels": [
-                        {
-                            "channel_id": 0,
-                            "num_events": 25,
-                            "event_length_range_samples": (100, 500),
-                            "seed": 1,
-                        },
-                        {
-                            "channel_id": 1,
-                            "num_events": 15,
-                            "event_length_range_samples": (100, 500),
-                            "seed": 2,
-                        },
+                        {"channel_id": 0, "num_events": 25, "event_length_range_samples": (100, 500), "seed": 1},
+                        {"channel_id": 1, "num_events": 15, "event_length_range_samples": (100, 500), "seed": 2},
                     ],
                 },
                 {
                     "name": "exp_b",
                     "channels": [
-                        {
-                            "channel_id": 0,
-                            "num_events": 10,
-                            "event_length_range_samples": (100, 500),
-                            "seed": 3,
-                        },
+                        {"channel_id": 0, "num_events": 10, "event_length_range_samples": (100, 500), "seed": 3},
                     ],
                 },
             ],
