@@ -180,6 +180,7 @@
     * Fixed `MetaDatabaseWriter.write_events` breaking out of its loop on abort before ever calling `_write_event(..., abort=True)`, unlike the parallel `MetaWriter._commit_events`; subclasses like `SQLiteDBWriter` that rely on that documented final call to roll back and close their connection on abort were never getting it
     * Fixed `DataPluginController.edit_plugin` unregistering a plugin as a dependent from all of its parents up front, before knowing whether the edit would succeed, and never restoring that link on any abort path (rename collision, a `set_key`/settings-resolution/`apply_settings` failure, or a delete blocked by dependents), even though the plugin instance and its actual parent usage were unchanged
     * Fixed `DictDialog`'s hidden Input File/Output File/Folder "has a value" checkbox always starting unchecked regardless of whether the plugin being edited already had a valid path, permanently disabling OK on an already-configured plugin until the user re-ran the file picker just to change some unrelated field
+    * Fixed `FloatRangeValidator` inflating a bare-integer end value (e.g. `"2"` → `"20"`) to guess whether more digits were coming, then using that inflated value for the start/end ordering check; an inverted integer range like `"10-2"` slipped past the check and was silently accepted and stored backwards, while the equivalent decimal range was correctly rejected
 
 
 
