@@ -193,13 +193,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         :param channel: identifier for the channel to write events from
         :type channel: int
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
         :param event_metadata: a dict of metadata associated to the event
         :type event_metadata: Mapping[str, Union[int, float, str, bool]]
-        :param event_metadata: a dict of lists of metadata associated to sublevels within the event. You can assume they all have the same length.
-        :type event_metadata: Mapping[str, List[Union[int, float, str, bool]]]
-        :param event_data: the raw data for the event (not filtered)
+        :param sublevel_metadata: a dict of lists of metadata associated to sublevels within the event. You can assume they all have the same length.
+        :type sublevel_metadata: Mapping[str, List[Union[int, float, str, bool]]]
+        :param event_data: the filtered data for the event
         :type event_data: npt.NDArray[np.float64]
         :param raw_data: A numpy array of raw event data to be stored as binary in the database.
         :type raw_data: npt.NDArray[np.float64]
