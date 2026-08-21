@@ -188,6 +188,7 @@
     * Fixed `MetaEventFinder.find_events` silently swallowing a `RuntimeError` from `_find_events_single_range` and continuing to the next range as if nothing happened, even though that error is only raised after `_find_events_single_range` already reset all previously-accumulated events for the channel; the error now propagates, matching how `EventWorker`'s generator-driving loop already handles and reports it. Also removed a dead, unreachable `except StopIteration` alongside it
     * Fixed `MetaEventFinder.get_event_indices` comparing its per-channel dicts to an empty list literal (always `False`, so it never raised on a fresh instance despite documenting that it should) and dropped its unused `index` parameter; docstring/rtype now describe what the method actually returns
     * Fixed `MetaEventFinder.get_single_event_data`'s docstring documenting `:raises IndexError:`, even though the method already catches that internally and returns `None`
+    * Fixed `MetaEventFitter.get_metadata_columns`/`get_sublevel_columns` hardcoding `[channel][0]` to sample an event's metadata keys; since `fit_events` pops any rejected event's entry out of that dict (a routine outcome for a noisy/malformed event) and marks fitting complete regardless, a rejected event 0 specifically crashed both methods with `KeyError: 0` even though other valid fitted events remained available. Both now sample from any available entry instead
 
 
 

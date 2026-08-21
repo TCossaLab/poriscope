@@ -371,7 +371,12 @@ class MetaEventFitter(BaseDataPlugin):
         Get a list of event metadata column variables
         """
         if self.eventfitting_status.get(channel) is True:
-            return list(self.event_metadata[channel][0].keys())
+            metadata = self.event_metadata.get(channel, {})
+            if not metadata:
+                raise RuntimeError(
+                    "Unable to get metadata column names. No events were successfully fit in this channel"
+                )
+            return list(next(iter(metadata.values())).keys())
         raise RuntimeError(
             "Unable to get metatata column names. Fitting has not finished on any channel, please try again after fitting is complete"
         )
@@ -388,7 +393,12 @@ class MetaEventFitter(BaseDataPlugin):
         :rtype: List[str]
         """
         if self.eventfitting_status.get(channel) is True:
-            return list(self.sublevel_metadata[channel][0].keys())
+            metadata = self.sublevel_metadata.get(channel, {})
+            if not metadata:
+                raise RuntimeError(
+                    "Unable to get metadata column names. No events were successfully fit in this channel"
+                )
+            return list(next(iter(metadata.values())).keys())
         raise RuntimeError(
             "Unable to get metatata column names. Fitting has not finished on any channel, please try again after fitting is complete"
         )
