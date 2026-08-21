@@ -120,7 +120,16 @@ def _count_collections(fig):
 
 
 def _fake_generate_vm_ensemble(
-    self, N_target, mean_max, std_max, mean_min, std_min, d, L, prolate=True, cutoff_std=4
+    self,
+    N_target,
+    mean_max,
+    std_max,
+    mean_min,
+    std_min,
+    d,
+    L,
+    prolate=True,
+    cutoff_std=4,
 ):
     """
     Drop-in replacement for ProteinView._generate_vm_ensemble that skips the
@@ -153,13 +162,20 @@ def _fake_fit_and_sanity_check_double_gaussian(self, bins, amplitude):
     bins = np.asarray(bins)
     lo, hi = float(np.min(bins)), float(np.max(bins))
     span = hi - lo if hi > lo else 1.0
-    return np.array([1.0, lo + 0.25 * span, 0.01 * span, 1.0, lo + 0.75 * span, 0.01 * span])
+    return np.array(
+        [1.0, lo + 0.25 * span, 0.01 * span, 1.0, lo + 0.75 * span, 0.01 * span]
+    )
 
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
 def test_protein_individual_ensemble_flow(
-    qtbot, tmp_path, monkeypatch, caplog, auto_dismiss_message_boxes, synthetic_metadata_database
+    qtbot,
+    tmp_path,
+    monkeypatch,
+    caplog,
+    auto_dismiss_message_boxes,
+    synthetic_metadata_database,
 ):
     db = synthetic_metadata_database
     print(f"[DEBUG] Using synthetic metadata DB: {db.db_path}")
@@ -186,7 +202,9 @@ def test_protein_individual_ensemble_flow(
     # test_metadata_flow.py's own Stage 2 does.
     import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
 
-    def _patched_show_dialog(self, structure, loader_name, title="Select Channels", selected=None):
+    def _patched_show_dialog(
+        self, structure, loader_name, title="Select Channels", selected=None
+    ):
         selection_widget = protein_view_mod.SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         tree = selection_widget.tree
@@ -196,14 +214,20 @@ def test_protein_individual_ensemble_flow(
             parent = tree.topLevelItem(i)
             for j in range(parent.childCount()):
                 child = parent.child(j)
-                keep = parent.text(0) == first_exp_name and child.text(0) == first_chan_name
+                keep = (
+                    parent.text(0) == first_exp_name
+                    and child.text(0) == first_chan_name
+                )
                 child.setCheckState(0, Qt.Checked if keep else Qt.Unchecked)
         result = selection_widget.get_selected()
         self.selection_by_loader[loader_name] = result
         return result
 
     monkeypatch.setattr(
-        protein_view_mod.SelectionTree, "show_dialog", _patched_show_dialog, raising=True
+        protein_view_mod.SelectionTree,
+        "show_dialog",
+        _patched_show_dialog,
+        raising=True,
     )
 
     # See module docstring's SPEED note.
@@ -234,7 +258,10 @@ def test_protein_individual_ensemble_flow(
     view.show()
 
     open_menu_hybrid(
-        view, ["Analysis", "New Analysis Tab", "ProteinController"], qtbot, timeout_ms=QT_WAIT_TIMEOUT_MS
+        view,
+        ["Analysis", "New Analysis Tab", "ProteinController"],
+        qtbot,
+        timeout_ms=QT_WAIT_TIMEOUT_MS,
     )
     qtbot.waitUntil(lambda: "ProteinView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS)
     view.switch_to_page("ProteinView")
@@ -258,7 +285,9 @@ def test_protein_individual_ensemble_flow(
 
     schedule_dialog_autofill(fill_loader_dialog)
     QTest.mouseClick(controls.db_loader_add_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: controls.db_loader_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+    )
     print(f"[DEBUG] Loader added: {controls.db_loader_comboBox.currentText()!r}")
 
     qtbot.wait(QT_SHORT_PAUSE_MS)
@@ -266,7 +295,10 @@ def test_protein_individual_ensemble_flow(
     qtbot.wait(QT_SHORT_PAUSE_MS)
     scope = protein_view.selected_experiment_and_channels_by_loader
     print(f"[DEBUG] Narrowed scope: {scope}")
-    total_leaves_selected = sum(len(v) for v in scope.get(controls.db_loader_comboBox.currentText(), {}).values())
+    total_leaves_selected = sum(
+        len(v)
+        for v in scope.get(controls.db_loader_comboBox.currentText(), {}).values()
+    )
     assert total_leaves_selected == 1, (
         f"Expected exactly one experiment/channel selected after narrowing, "
         f"got scope={scope}"
@@ -292,7 +324,8 @@ def test_protein_individual_ensemble_flow(
     bars_before_individual = _count_collections(protein_view.ax_hist.figure)
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(protein_view.ax_hist.figure) > bars_before_individual,
+        lambda: _count_collections(protein_view.ax_hist.figure)
+        > bars_before_individual,
         timeout=QT_WAIT_TIMEOUT_MS,
     )
     bars_individual_default_n = _count_collections(protein_view.ax_hist.figure)
@@ -317,7 +350,9 @@ def test_protein_individual_ensemble_flow(
     controls.n_values_lineEdit.setText("15")
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
-    print(f"[DEBUG] Individual, custom N=15: {_count_collections(protein_view.ax_hist.figure)} collections")
+    print(
+        f"[DEBUG] Individual, custom N=15: {_count_collections(protein_view.ax_hist.figure)} collections"
+    )
     assert controls.n_values_lineEdit.text().strip() == "15"
 
     fit_data_after_individual = protein_view.fit_data.copy()
@@ -354,7 +389,8 @@ def test_protein_individual_ensemble_flow(
     collections_before_ensemble = _count_collections(protein_view.ax_vm.figure)
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(protein_view.ax_vm.figure) > collections_before_ensemble,
+        lambda: _count_collections(protein_view.ax_vm.figure)
+        > collections_before_ensemble,
         timeout=QT_WAIT_TIMEOUT_MS,
     )
     collections_ensemble = _count_collections(protein_view.ax_vm.figure)
@@ -395,8 +431,12 @@ def test_protein_individual_ensemble_flow(
     QTest.mouseClick(controls.report_all, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
 
-    report_texts = [text for source, text in reported_messages if source == "ProteinView"]
-    assert report_texts, "Expected Report All to emit at least one add_text_to_display message"
+    report_texts = [
+        text for source, text in reported_messages if source == "ProteinView"
+    ]
+    assert (
+        report_texts
+    ), "Expected Report All to emit at least one add_text_to_display message"
     report_text = report_texts[-1]
     print(f"[DEBUG] Report All output:\n{report_text}")
 
@@ -404,10 +444,12 @@ def test_protein_individual_ensemble_flow(
         f"Expected the Report All output to include the double-Gaussian fit "
         f"summary, got: {report_text!r}"
     )
-    assert "Peak 1" in report_text and "Peak 2" in report_text, (
-        f"Expected both fitted peaks in the Report All output, got: {report_text!r}"
+    assert (
+        "Peak 1" in report_text and "Peak 2" in report_text
+    ), f"Expected both fitted peaks in the Report All output, got: {report_text!r}"
+    print(
+        "[DEBUG] Report All confirmed: emitted double-Gaussian fit summary with both peaks"
     )
-    print("[DEBUG] Report All confirmed: emitted double-Gaussian fit summary with both peaks")
 
     # =========================================================
     # STAGE 7: switch back to Individual -> the earlier Individual

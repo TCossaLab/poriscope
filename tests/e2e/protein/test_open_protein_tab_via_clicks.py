@@ -70,6 +70,8 @@ def test_open_protein_tab_via_clicks(qtbot, tmp_path):
         timeout_ms=QT_WAIT_TIMEOUT_MS,
     )
 
-    assert "ProteinView" in view.pages, "ProteinView page was not registered after menu navigation"
+    assert (
+        "ProteinView" in view.pages
+    ), "ProteinView page was not registered after menu navigation"
     protein_view = view.pages["ProteinView"]["widget"]
     assert hasattr(protein_view, "proteincontrols"), "ProteinView controls missing"

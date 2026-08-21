@@ -150,7 +150,9 @@ class SyntheticMetadataChannel:
         """
         durations = sorted(self.event_durations_us)
         if not durations:
-            raise ValueError(f"Channel {self.channel_id} has no events to compute a median from")
+            raise ValueError(
+                f"Channel {self.channel_id} has no events to compute a median from"
+            )
         mid = len(durations) // 2
         if len(durations) % 2 == 1:
             return durations[mid]
@@ -206,7 +208,9 @@ class SyntheticMetadataExperiment:
             d for ch in self.channels.values() for d in ch.event_durations_us
         )
         if not all_durations:
-            raise ValueError(f"Experiment '{self.name}' has no events to compute a median from")
+            raise ValueError(
+                f"Experiment '{self.name}' has no events to compute a median from"
+            )
         mid = len(all_durations) // 2
         if len(all_durations) % 2 == 1:
             return all_durations[mid]
@@ -268,7 +272,9 @@ class SyntheticMetadataDatabase:
         return (all_durations[mid - 1] + all_durations[mid]) / 2.0
 
 
-def _build_settings(cls: Type[Any], overrides: Dict[str, Any], standalone: bool = True) -> Dict[str, Any]:
+def _build_settings(
+    cls: Type[Any], overrides: Dict[str, Any], standalone: bool = True
+) -> Dict[str, Any]:
     """
     Build a settings dict via a plugin's own get_empty_settings(), filling
     in Value fields -- required because apply_settings()'s validation
@@ -426,7 +432,9 @@ def generate_metadata_database(
 
             for chan_spec in exp_spec["channels"]:
                 if "channel_id" not in chan_spec:
-                    raise ValueError(f"Channel spec missing required 'channel_id': {chan_spec}")
+                    raise ValueError(
+                        f"Channel spec missing required 'channel_id': {chan_spec}"
+                    )
 
                 channel_id = chan_spec["channel_id"]
                 num_events = chan_spec.get("num_events", 25)
@@ -465,7 +473,11 @@ def generate_metadata_database(
                         "reject_amplitude_pA", -(step_size_pA * 0.1)
                     )
                     event_amplitudes_pA = [
-                        reject_amplitude_pA if i in reject_event_indices else event_amplitude_pA
+                        (
+                            reject_amplitude_pA
+                            if i in reject_event_indices
+                            else event_amplitude_pA
+                        )
                         for i in range(num_events)
                     ]
 
@@ -473,7 +485,9 @@ def generate_metadata_database(
                 # event_id is always strictly contiguous (range(num_events))
                 # here -- only the amplitude varies per-event when
                 # reject_event_indices is given.
-                raw_events_path = out_path.parent / f"_tmp_raw_{exp_name}_{channel_id}.sqlite3"
+                raw_events_path = (
+                    out_path.parent / f"_tmp_raw_{exp_name}_{channel_id}.sqlite3"
+                )
                 raw_db = generate_events_database(
                     raw_events_path,
                     channel_id=channel_id,
@@ -489,7 +503,9 @@ def generate_metadata_database(
 
                 # Step 2: real loader.
                 loader = SQLiteEventLoader(
-                    _build_settings(SQLiteEventLoader, {"Input File": str(raw_db.db_path)})
+                    _build_settings(
+                        SQLiteEventLoader, {"Input File": str(raw_db.db_path)}
+                    )
                 )
 
                 # Step 3: real CUSUM fit.
@@ -567,7 +583,9 @@ def generate_metadata_database(
                     v["event_id"] for v in fitter.event_metadata[channel_id].values()
                 }
                 surviving_events = [
-                    ev for ev in raw_db[channel_id].events if ev.event_id in surviving_ids
+                    ev
+                    for ev in raw_db[channel_id].events
+                    if ev.event_id in surviving_ids
                 ]
                 event_lengths = [ev.event_length for ev in surviving_events]
                 event_ids_list = [ev.event_id for ev in surviving_events]
@@ -604,14 +622,29 @@ if __name__ == "__main__":
                 {
                     "name": "exp_a",
                     "channels": [
-                        {"channel_id": 0, "num_events": 25, "event_length_range_samples": (100, 500), "seed": 1},
-                        {"channel_id": 1, "num_events": 15, "event_length_range_samples": (100, 500), "seed": 2},
+                        {
+                            "channel_id": 0,
+                            "num_events": 25,
+                            "event_length_range_samples": (100, 500),
+                            "seed": 1,
+                        },
+                        {
+                            "channel_id": 1,
+                            "num_events": 15,
+                            "event_length_range_samples": (100, 500),
+                            "seed": 2,
+                        },
                     ],
                 },
                 {
                     "name": "exp_b",
                     "channels": [
-                        {"channel_id": 0, "num_events": 10, "event_length_range_samples": (100, 500), "seed": 3},
+                        {
+                            "channel_id": 0,
+                            "num_events": 10,
+                            "event_length_range_samples": (100, 500),
+                            "seed": 3,
+                        },
                     ],
                 },
             ],
