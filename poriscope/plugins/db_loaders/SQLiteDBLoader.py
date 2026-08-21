@@ -740,7 +740,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 conn.close()
 
     @log(logger=logger)
-    @log(logger=logger)
     @override
     def get_empty_settings(self, globally_available_plugins=None, standalone=False):
         """
@@ -941,7 +940,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                         )
                     except Exception:
                         self.logger.info(
-                            "Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
+                            f"Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
                         )
                         continue
                     abort = bool(abort)
@@ -1076,6 +1075,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :raises sqlite3.Error: If a database error occurs during table creation or population.
         """
         conn = None
+        cursor = None
         try:
             conn = sqlite3.connect(self.db_path)
             with conn:
@@ -1139,5 +1139,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             self.logger.error(f"Failed to ensure event_counts table: {e}")
             raise
         finally:
+            if cursor:
+                cursor.close()
             if conn:
                 conn.close()

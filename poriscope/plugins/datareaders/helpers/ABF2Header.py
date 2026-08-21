@@ -194,7 +194,7 @@ class ABF2Header:
             self.scaleFactors[i] /= fInstrumentScaleFactor[i]
             self.scaleFactors[i] /= fSignalGain[i]
             self.scaleFactors[i] /= fADCProgrammableGain[i]
-            if nTelegraphEnable[0]:
+            if nTelegraphEnable[i]:
                 self.scaleFactors[i] /= fTelegraphAdditGain[i]
             self.scaleFactors[i] *= fADCRange
             self.scaleFactors[i] /= lADCResolution

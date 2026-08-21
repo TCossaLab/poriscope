@@ -234,7 +234,6 @@ class ChimeraReaderVC100(MetaReader):
         tia_gain = config["tia_gain"]
         preADCgain = config["preadc_gain"]
         currentoffset = config["i_offset"]
-        config["v_offset"]
         ADCvref = config["v_ref"]
         ADCbits = int(config["adc_bits"])
         closedloop_gain = tia_gain * preADCgain

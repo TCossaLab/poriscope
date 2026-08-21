@@ -6,6 +6,7 @@
 * **Deprecated Data Plugin: `ABF2Reader`**
     * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
     * Fixed `ABF2Header` never closing its file handle after parsing an ABF header, since the underlying file is only ever read during construction
+    * Fixed `ABF2Header`'s per-channel scale-factor calculation checking `nTelegraphEnable[0]` for every channel instead of `nTelegraphEnable[i]`, silently corrupting current scaling on multi-channel files where telegraph-enable status differs between channels
 
 * **Updated Data Plugin: `WaveletFilter`**
     * Fixed a ctypes ABI mismatch (`c_int` vs `int64_t`) on the signal-length argument that risked memory corruption on large arrays
@@ -42,6 +43,7 @@
 
 * **Updated Data Plugins: `ChimeraReader20240101`, `ChimeraReader20240501`, `ChimeraReaderVC100`, `TCossaLabABFReader`, `LegacyElementsReader`**
     * Fixed dead filename-pattern validation code that never actually rejected malformed filenames
+    * Removed a dead `config["v_offset"]` lookup in `ChimeraReaderVC100._convert_data` whose result was discarded
 
 * **Updated Data Plugin: `SingleBinaryDecoder`**
     * Fixed exception handling wrapped around the wrong line, leaving real file-open errors unprotected
@@ -55,6 +57,9 @@
     * Fixed stray logging arguments that would crash the moment the log line was actually emitted
     * Fixed an overly broad exception clause that made two more specific error handlers unreachable
     * Fixed `SQLiteDBLoader.get_experiment_names`/`_ensure_event_counts` never explicitly closing their `sqlite3` connections, unlike every other method in the file
+    * Fixed `SQLiteDBLoader._ensure_event_counts` never explicitly closing its cursor
+    * Fixed `SQLiteDBLoader.get_empty_settings` being decorated twice with `@log`, double-logging every call
+    * Fixed a warning log in `SQLiteDBLoader._load_event_data` missing an `f` prefix, logging the literal `{event_id}`/`{channel_id}`/`{experiment_id}` placeholders instead of their values
     * Fixed `MetaDatabaseLoader.load_event_data`/`query_database_directly_and_get_generator` never explicitly closing the inner generator they wrap, relying on implicit garbage collection instead of the explicit cleanup used elsewhere in this codebase
     * Fixed `SQLiteDBWriter._write_event` swallowing genuine database errors (disk full, missing row, schema mismatch, etc.) and always reporting them to the user as the misleading, hardcoded "Cannot Overwrite Existing Event"; real errors now propagate with their actual message, while a legitimate duplicate-row rejection from `INSERT OR IGNORE` still returns `False` without raising
     * Fixed `MetaDatabaseWriter.write_events` breaking out of its loop on abort before ever calling `_write_event(..., abort=True)`, unlike the parallel `MetaWriter._commit_events`; subclasses like `SQLiteDBWriter` that rely on that documented final call to roll back and close their connection on abort were never getting it
