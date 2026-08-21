@@ -512,3 +512,8 @@ class ClusteringControls(QWidget):
         self.label_x_comboBox.addItems(clusters)
         self.label_y_comboBox.clear()
         self.label_y_comboBox.addItems(clusters)
+
+    def get_current_loader(self):
+        """Return the currently selected DB loader key, or None if unset."""
+        text = self.db_loader_comboBox.currentText()
+        return text if text and text != "No Event Database" else None

@@ -734,6 +734,7 @@ class TestStateSetters:
 
     def test_get_current_view(self, view):
         assert view.get_current_view() == "ProteinView"
+        assert view.get_current_view() == "ProteinView"
 
     def test_set_query_stores(self, view):
         view.set_query("SELECT * FROM events", "events")
@@ -1788,16 +1789,17 @@ class TestFetchEventData:
         result = view._fetch_event_data(params)
         assert result == []
 
-    def test_uses_cached_events_when_available(self, view):
+    def test_fetches_fresh_via_resolve_and_generator(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
         view.current_channel = "0"
-        # current_* matches the requested exp/channel/filter exactly, so the
-        # generator-refresh branch is skipped entirely and only the cache is read.
-        view.plot_events_generator = MagicMock()
-        view.cached_events = {1: _make_event(1)}
+        view._resolve_event_db_ids = MagicMock(
+            return_value=pd.DataFrame({"id": [10], "event_id": [1]})
+        )
+        view.global_signal = MagicMock()
+        view.plot_events_generator = iter([_make_event(1)])
         result = view._fetch_event_data(self._params())
         assert len(result) == 1
         assert result[0]["event_id"] == 1
@@ -1826,7 +1828,7 @@ class TestHandlePlotEvents:
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_plot") as mock_plot:
             view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
-        mock_plot.assert_called_once_with(events)
+        mock_plot.assert_called_once_with(events, use_raw=False)
 
     def test_no_data_emits_warning(self, view):
         self._setup(view)

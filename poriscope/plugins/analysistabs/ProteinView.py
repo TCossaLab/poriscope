@@ -41,7 +41,7 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -81,7 +81,6 @@ class ProteinView(MetaView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-    request_plugin_refresh = Signal(str)
 
     @property
     def fig_hist(self):
@@ -209,11 +208,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
         self.current_channel: Optional[int] = None
-        self.cached_events: Dict[int, Dict[str, Any]] = {}
-        # Cache of all filtered event_ids for the current scope/filter combination.
-        # Populated by _rebuild_event_id_cache; used by _shift_range_and_update_plot,
-        # _handle_plot_events, and _handle_plot_histogram to resolve event_id + n_events
-        # into a concrete list of event_ids without re-querying the DB on every arrow click.
         self.filtered_event_ids: List[int] = []
         self.subset_filters: Dict[str, str] = {}
         self.plot_events_generator = None
@@ -1207,13 +1201,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.event_data_generator = generator
 
     @log(logger=logger)
-    def _undo_plot(self):
-        """
-        Undo the last plotted action and update the action history.
-        """
-        self.update_tab_action_history.emit(None, True)
-
-    @log(logger=logger)
     def _save_filter(self):
         """
         Save the current filters to a JSON file.
@@ -1366,19 +1353,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 parameters["plot_type"] = "Filtered Histogram"
                 self._update_distribution_ensemble(parameters)
 
-        elif action_name == "reset_plot":
-            mode_label = (
-                "Individual" if self._analysis_mode == "individual" else "Ensemble"
-            )
-            self._reset_actions()
-            self.add_text_to_display.emit(
-                f"Reset cleared the {mode_label} mode fit.",
-                self.__class__.__name__,
-            )
-
-        elif action_name == "undo_plot":
-            self._undo_plot()
-
         elif action_name == "add_filter":
             self._show_add_filter_dialog(parameters)
 
@@ -1439,20 +1413,40 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _build_where_clause(self, loader: str, sql_filter: str, exp, channel) -> str:
         """
-        Build a WHERE clause string suitable for the event_id cache query.
+        Build a WHERE clause string suitable for the event_id cache query,
+        scoped to the current experiment and channel. event_id is only unique
+        within an experiment/channel scope, not across the whole events table,
+        so without this scoping filtered_event_ids mixes duplicate event_ids
+        from every channel, causing navigation to jump to ids that don't exist
+        in the active channel and inflating the reported total count.
 
-        Experiment/channel scoping is handled downstream by _fetch_event_data
-        via load_event_data; here we only need the SQL filter predicate so that
-        the event_id list reflects the active filter subset.
-
-        :param loader: Name of the database loader (unused here, kept for interface symmetry).
+        :param loader: Name of the database loader.
         :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
-        :param exp: Experiment name (unused here).
-        :param channel: Channel identifier (unused here).
-        :return: "WHERE <sql_filter>" or "" if no filter is active.
+        :param exp: Experiment name, or None.
+        :param channel: Channel identifier, or None.
+        :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
         :rtype: str
         """
-        return f"WHERE {sql_filter}" if sql_filter else ""
+        filter_parts = []
+        if sql_filter:
+            filter_parts.append(sql_filter)
+
+        if exp is not None:
+            self.experiment_id = None
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_experiment_id_by_name",
+                (exp,),
+                "set_experiment_id",
+                (),
+            )
+            if self.experiment_id is not None:
+                filter_parts.append(f"experiment_id = {self.experiment_id}")
+                if channel is not None:
+                    filter_parts.append(f"channel_id = {channel}")
+
+        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
 
     @log(logger=logger)
     def _rebuild_event_id_cache(
@@ -1603,16 +1597,94 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.plot_events_generator = generator
         self.plot_events_generator_updated = True
 
+    # -------------------------------------------------------------------------
+    # NOTE: This targeted-fetch-by-id pattern (_resolve_event_db_ids +
+    # _fetch_event_data) is factored out here because ProteinView has two
+    # callers that need it — _handle_plot_events and _handle_plot_histogram.
+    # MetadataView's equivalent id-resolution/fetch logic is only used by
+    # _handle_plot_events, so it's kept inline there rather than duplicating
+    # this abstraction for a single call site. If another tab ever grows a
+    # second consumer of "fetch these event_ids' full data" (e.g. a
+    # histogram feature mirroring this one), port this pattern over rather
+    # than reinventing it — see ProteinView._resolve_event_db_ids/
+    # _fetch_event_data for the scoped-query approach both should use.
+    # -------------------------------------------------------------------------
+
+    @log(logger=logger)
+    def _resolve_event_db_ids(self, loader, event_ids, exp, channel):
+        """
+        Resolve a list of event_id values, scoped to a specific experiment and
+        channel, to their corresponding database primary keys (id) via a single
+        direct query. event_id is only unique within an experiment/channel
+        scope, not across the whole events table, so this scoping is required
+        to avoid resolving to the wrong row when two channels share an event_id.
+
+        :param loader: Name of the database loader.
+        :type loader: str
+        :param event_ids: List of event_id values to resolve.
+        :type event_ids: List[int]
+        :param exp: Experiment name, or None.
+        :type exp: Optional[str]
+        :param channel: Channel identifier, or None.
+        :type channel: Optional[str]
+        :return: DataFrame with columns id, event_id for the matching rows, or None on failure.
+        :rtype: Optional[pd.DataFrame]
+        """
+        if not event_ids:
+            return None
+
+        id_tuple = f"({','.join(str(eid) for eid in event_ids)})"
+        where_parts = [f"event_id IN {id_tuple}"]
+
+        if exp is not None:
+            self.experiment_id = None
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_experiment_id_by_name",
+                (exp,),
+                "set_experiment_id",
+                (),
+            )
+            if self.experiment_id is not None:
+                where_parts.append(f"experiment_id = {self.experiment_id}")
+
+        if channel is not None:
+            where_parts.append(f"channel_id = {channel}")
+
+        query = f"SELECT id, event_id FROM events WHERE {' AND '.join(where_parts)}"
+        self.relayed_query_result = None
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (query,),
+            "relay_query_result",
+            (),
+        )
+        result = getattr(self, "relayed_query_result", None)
+        if result is None or result.empty or "id" not in result.columns:
+            return None
+        return result
+
     @log(logger=logger)
     def _fetch_event_data(self, parameters, action_label="events") -> list:
         """
-        Shared validation, generator management, and data fetching for event-based plots.
+        Shared validation and targeted data fetching for event-based plots.
+        Resolves the requested event_index list to database ids via a single
+        query scoped to the current experiment/channel, then fetches exactly
+        those rows. Always fetches fresh rather than caching event blobs in
+        memory — event_id is only unique within an experiment/channel scope,
+        and a per-event_id blob cache is an easy invariant to accidentally
+        violate later; the targeted DB query is already O(events requested)
+        rather than O(distance into the dataset), so the extra memoization
+        isn't worth the correctness risk.
 
         :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
         :type parameters: dict
         :param action_label: Label used in error messages to identify the plot type.
         :type action_label: str
-        :return: List of fetched event dictionaries, or empty list on failure.
+        :return: List of fetched event dictionaries, in the order requested, or empty list on failure.
         :rtype: list[dict]
         """
         selected_filters = self.get_selected_filters()
@@ -1664,79 +1736,45 @@ class ProteinView(MetaView, WalkthroughMixin):
             selected_filters = {"Full Dataset": ""}
 
         event_index = parameters["event_index"]
-        sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
         exp = next(iter(exp_and_ch.keys()))
         channel = next(iter(exp_and_ch.values()))[0]
 
-        if not (
-            sql_filter == self.current_sql_filter
-            and self.current_experiment == exp
-            and self.current_channel == channel
-            and self.plot_events_generator is not None
-        ):
-            if self.plot_events_generator is not None:
-                try:
-                    try:
-                        self.plot_events_generator.send(True)
-                    except StopIteration:
-                        pass
-                except TypeError:
-                    try:
-                        next(self.plot_events_generator)
-                        self.plot_events_generator.send(True)
-                    except StopIteration:
-                        pass
-                self.cached_events = {}
-                self.plot_events_generator = None
-
-            subset_name = next(iter(selected_filters.keys()))
-            load_event_data_args = self._build_load_event_data_args(
-                sql_filter, subset_name, exp, channel, exp_and_ch, loader_name
+        id_result = self._resolve_event_db_ids(loader_name, event_index, exp, channel)
+        if id_result is None or id_result.empty:
+            self.add_text_to_display.emit(
+                f"No data available for the requested {action_label}",
+                self.__class__.__name__,
             )
+            return []
 
-            self.plot_events_generator_updated = False
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader_name,
-                "load_event_data",
-                load_event_data_args,
-                "relay_event_plot_data_generator",
-                (),
+        db_ids = id_result["id"].tolist()
+        id_tuple = f"({','.join(str(i) for i in db_ids)})"
+        event_db_id_filter = f"e.id IN {id_tuple}"
+
+        self.plot_events_generator_updated = False
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader_name,
+            "load_event_data",
+            (event_db_id_filter, exp_and_ch),
+            "relay_event_plot_data_generator",
+            (),
+        )
+
+        generator = getattr(self, "plot_events_generator", None)
+        if generator is None:
+            self.add_text_to_display.emit(
+                f"No data available for the requested {action_label}",
+                self.__class__.__name__,
             )
-            if self.plot_events_generator_updated is True:
-                self.current_sql_filter = sql_filter
-                self.current_experiment = exp
-                self.current_channel = int(channel) if channel is not None else None
+            return []
 
-        data_list = []
-        for index in event_index:
-            cached_event = self.cached_events.get(index)
-            if cached_event is not None:
-                data_list.append(cached_event)
-                continue
-            else:
-                while True:
-                    new_event = None
-                    try:
-                        if self.plot_events_generator is not None:
-                            try:
-                                new_event = self.plot_events_generator.send(False)
-                            except TypeError:
-                                new_event = next(self.plot_events_generator)
-                        else:
-                            raise AttributeError(
-                                "Establish a plot events generator before trying to use it"
-                            )
-                    except StopIteration:
-                        break
-                    if new_event is not None:
-                        self.cached_events[new_event["event_id"]] = new_event
-                        if new_event["event_id"] == index:
-                            data_list.append(new_event)
-                            break
-                        elif new_event["event_id"] > index:
-                            break
+        data_list = list(generator)
+
+        # restore the caller's requested order
+        order = {eid: i for i, eid in enumerate(event_index)}
+        data_list.sort(key=lambda e: order.get(e["event_id"], len(order)))
 
         return data_list
 
@@ -1803,9 +1841,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         Handle loading and plotting of selected events based on provided parameters.
 
-        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
-        and bisect, then delegates to _fetch_event_data and
-        uses the generator + cached_events blob cache for actual data fetching.
+        Resolves event_id + n_events into a concrete list of event_ids via the
+        filtered_event_ids cache and bisect, then delegates to _fetch_event_data,
+        which resolves those event_ids to database ids and fetches them directly.
 
         :param parameters: Dictionary containing db_loader, filter, channels,
                            event_id (int), and n_events (int).
@@ -1874,7 +1912,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         data_list = self._fetch_event_data(fetch_params, action_label="events")
 
         if data_list:
-            self._update_event_plot(data_list)
+            use_raw = parameters.get("raw", False)
+            self._update_event_plot(data_list, use_raw=use_raw)
         else:
             self.add_text_to_display.emit(
                 f"No data available for event_id {snapped_event_id}",
@@ -1887,10 +1926,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         Handle loading and plotting of the ΔI/I histogram for selected events,
         each in its own subplot on the event canvas.
 
-        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
-        and bisect, then delegates to _fetch_event_data which uses
-        the generator + cached_events blob cache for actual data fetching.
-
+        Resolves event_id + n_events into a concrete list of event_ids via the
+        filtered_event_ids cache and bisect, then delegates to _fetch_event_data,
+        which resolves those event_ids to database ids and fetches them directly.
 
         :param parameters: Dictionary containing db_loader, filter, channels,
                            event_id (int), n_events (int), bins, and sizes.
@@ -1980,7 +2018,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data):
+    def _update_event_plot(self, event_data, use_raw=False):
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -1992,6 +2030,8 @@ class ProteinView(MetaView, WalkthroughMixin):
                         'experiment_id', 'channel_id', 'event_id',
                         'raw_data', 'filtered_data', 'fit_data', and 'samplerate'.
         :type event_data: list[dict]
+        :param use_raw: Whether to overlay the unfiltered raw signal alongside filtered/fit traces.
+        :type use_raw: bool
         :return: None
         :rtype: None
         """
@@ -2013,17 +2053,19 @@ class ProteinView(MetaView, WalkthroughMixin):
             samplerate = event["samplerate"]
 
             time = np.arange(len(raw_data)) / samplerate * 1e6
-            ax.plot(time, raw_data / 1000, zorder=1)
+            if use_raw:
+                ax.plot(time, raw_data / 1000, zorder=1)
             ax.plot(time, filtered_data / 1000, zorder=2)
             ax.plot(time, fit_data / 1000, zorder=3)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
 
-            self._update_cache(
-                (time, label + " " + x_label),
-                (raw_data / 1000, label + " Raw " + y_label),
-            )
+            if use_raw:
+                self._update_cache(
+                    (time, label + " " + x_label),
+                    (raw_data / 1000, label + " Raw " + y_label),
+                )
             self._update_cache(
                 (time, label + " " + x_label),
                 (filtered_data / 1000, label + " Filtered " + y_label),
@@ -3712,6 +3754,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                     self.proteincontrols.left_arrow_button,
                     self.proteincontrols.right_arrow_button,
                 ],
+            ),
+            (
+                "Protein Tab",
+                "Check the RAW box to overlay the unfiltered raw signal alongside the filtered and fitted traces.",
+                "ProteinView",
+                lambda: [self.proteincontrols.raw_checkbox],
             ),
         ]
 

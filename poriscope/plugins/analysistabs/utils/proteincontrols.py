@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
-from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox
+from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
 class ProteinControls(QWidget):
@@ -241,10 +241,25 @@ class ProteinControls(QWidget):
         self.right_arrow_button.setIconSize(QSize(16, 16))
         self.right_arrow_button.setFixedWidth(30)
 
+        self.raw_checkbox = QCheckBox(self.plot_events_widget)
+        self.raw_checkbox.setObjectName("rawCheckBox")
+
+        self.raw_label = self.createLabel(self.groupBox, 12, "RAW")
+        self.raw_label.setAlignment(Qt.AlignCenter)
+        self.raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        raw_layout = QVBoxLayout()
+        raw_layout.setContentsMargins(0, 0, 0, 0)
+        raw_layout.setSpacing(2)
+        raw_layout.addWidget(self.raw_label, alignment=Qt.AlignCenter)
+        raw_layout.addWidget(self.raw_checkbox, alignment=Qt.AlignCenter)
+
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.plot_histogram_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
+        plot_events_layout.addLayout(raw_layout)
+
         # ---------- MIDDLE COLUMN ----------
 
         # ROW 0: "Distribution event fitting" header
@@ -362,19 +377,16 @@ class ProteinControls(QWidget):
         self._on_sizes_checkbox_toggled(self.sizes_checkbox.isChecked())
 
         # ROW 4: Update / Undo / Reset row
+        # ROW 4: Update Plot row
         self.update_plot_button = self.createButton(
             self.groupBox, "Update Plot", bold=True
         )
-        self.undo_button = self.createButton(self.groupBox, "Undo", bold=True)
-        self.reset_button = self.createButton(self.groupBox, "Reset", bold=True)
 
-        update_undo_reset_widget = QWidget(self.groupBox)
-        update_undo_reset_layout = QHBoxLayout(update_undo_reset_widget)
-        update_undo_reset_layout.setContentsMargins(0, 0, 0, 0)
-        update_undo_reset_layout.setSpacing(5)
-        update_undo_reset_layout.addWidget(self.update_plot_button, 2)
-        update_undo_reset_layout.addWidget(self.undo_button, 1)
-        update_undo_reset_layout.addWidget(self.reset_button, 1)
+        update_plot_widget = QWidget(self.groupBox)
+        update_plot_layout = QHBoxLayout(update_plot_widget)
+        update_plot_layout.setContentsMargins(0, 0, 0, 0)
+        update_plot_layout.setSpacing(5)
+        update_plot_layout.addWidget(self.update_plot_button, 1)
 
         # ROW 5: Commit row (Commit Individual / Report All)
         self.commit_individual = self.createButton(
@@ -395,7 +407,7 @@ class ProteinControls(QWidget):
         self.filter_label = self.createLabel(self.groupBox, 12, "FILTER")
         self.filter_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.filter_comboBox = MultiSelectComboBox(self.groupBox)
+        self.filter_comboBox = MultiSelectFilterComboBox(self.groupBox)
         self.filter_comboBox.setObjectName("filterComboBox")
 
         self.filter_add_button = self.create_add_filter_button(
@@ -479,7 +491,7 @@ class ProteinControls(QWidget):
 
         # Row 5
         group_layout.addWidget(event_nav_inputs_widget, 5, 0)
-        group_layout.addWidget(update_undo_reset_widget, 5, 1)
+        group_layout.addWidget(update_plot_widget, 5, 1)
         group_layout.addWidget(self.load_filter_button, 5, 2)
 
         # Row 6
@@ -708,6 +720,7 @@ class ProteinControls(QWidget):
         self.right_arrow_button.clicked.connect(
             lambda: self.on_button_clicked("right_arrow")
         )
+
         self.individual_button.clicked.connect(
             lambda: self.on_button_clicked("individual")
         )
@@ -715,8 +728,6 @@ class ProteinControls(QWidget):
         self.update_plot_button.clicked.connect(
             lambda: self.on_button_clicked("update_plot")
         )
-        self.undo_button.clicked.connect(lambda: self.on_button_clicked("undo"))
-        self.reset_button.clicked.connect(lambda: self.on_button_clicked("reset"))
         self.commit_individual.clicked.connect(
             lambda: self.on_button_clicked("commit_individual")
         )
@@ -752,6 +763,7 @@ class ProteinControls(QWidget):
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.individual_button.toggled.connect(self.validate_inputs)
         self.ensemble_button.toggled.connect(self.validate_inputs)
+        self.raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     # Data Validation
 
@@ -774,6 +786,7 @@ class ProteinControls(QWidget):
                 "n_events": n_events,
                 "n_values": self.n_values_lineEdit.text(),
                 "sizes": self.sizes_checkbox.isChecked(),
+                "raw": self.raw_checkbox.isChecked(),
                 "bins": (
                     [x.strip() for x in self.bins_lineEdit.text().split(",")]
                     if self.bins_lineEdit.text()
@@ -837,8 +850,6 @@ class ProteinControls(QWidget):
         is_ensemble_analysis_valid = True
         is_report_all_valid = True
         is_export_valid = True
-        is_undo_valid = True
-        is_reset_valid = True
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
 
@@ -918,8 +929,6 @@ class ProteinControls(QWidget):
         self.update_plot_button.setEnabled(
             db_loader_loaded and pore_diameter_valid and pore_length_valid
         )
-        self.undo_button.setEnabled(is_undo_valid)
-        self.reset_button.setEnabled(is_reset_valid)
 
         self.filter_add_button.setEnabled(db_loader_loaded)
         self.save_filter_button.setEnabled(is_save_edit_delete_filter_valid)
@@ -973,8 +982,6 @@ class ProteinControls(QWidget):
             "plot_histogram": self.plot_histogram_pushButton,
             "right_arrow": self.right_arrow_button,
             "update_plot": self.update_plot_button,
-            "reset": self.reset_button,
-            "undo": self.undo_button,
             "add_filter": self.filter_add_button,
             "edit_filter": self.filter_info_button,
             "delete_filter": self.filter_delete_button,

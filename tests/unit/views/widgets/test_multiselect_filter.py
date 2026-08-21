@@ -1,8 +1,8 @@
 """
-Unit tests for MultiSelectComboBox.
+Unit tests for MultiSelectFilterComboBox.
 Runs headlessly — no display required.
 
-NOTE: MultiSelectComboBox imports from poriscope.configs.utils (get_icon).
+NOTE: MultiSelectFilterComboBox imports from poriscope.configs.utils (get_icon).
 If that module is not available in test environment, stub it out via
 the patch in the module-level setup below.
 """
@@ -23,25 +23,27 @@ app = QApplication.instance() or QApplication(sys.argv)
 _icon_patch = patch("poriscope.configs.utils.get_icon", return_value=QIcon())
 _icon_patch.start()
 
-from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox  # noqa: E402
+from poriscope.views.widgets.multiselect_filter import (  # noqa: E402
+    MultiSelectFilterComboBox,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def make_combo() -> MultiSelectComboBox:
-    cb = MultiSelectComboBox()
+def make_combo() -> MultiSelectFilterComboBox:
+    cb = MultiSelectFilterComboBox()
     return cb
 
 
-def get_checkbox(combo: MultiSelectComboBox, row: int) -> QCheckBox:
+def get_checkbox(combo: MultiSelectFilterComboBox, row: int) -> QCheckBox:
     item = combo.listWidget.item(row)
     widget = combo.listWidget.itemWidget(item)
     return widget.findChild(QCheckBox)
 
 
-def check_all_boxes(combo: MultiSelectComboBox, checked: bool):
+def check_all_boxes(combo: MultiSelectFilterComboBox, checked: bool):
     for i in range(combo.listWidget.count()):
         get_checkbox(combo, i).setChecked(checked)
     app.processEvents()
