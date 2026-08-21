@@ -82,6 +82,12 @@ class Worker(QObject):
                     f"Worker [{self.key}/{self.channel}] encountered IOError: {e}"
                 )
                 break
+            except Exception as e:
+                self.logger.exception(
+                    f"Worker [{self.key}/{self.channel}] encountered unexpected error: {e}"
+                )
+                self.update_progressbar.emit(100, f"{self.key}/{self.channel}")
+                break
             else:
                 progress = 100 * p
                 self.update_progressbar.emit(progress, f"{self.key}/{self.channel}")
@@ -129,6 +135,12 @@ class WorkerThread(QThread):
     def run(self):
         """Run the worker inside the thread."""
         self.logger.info("WorkerThread started.")
-        self.worker.run()
-        self.workerthread_finished.emit(self.channel, self.key)
-        self.logger.info("WorkerThread finished.")
+        try:
+            self.worker.run()
+        except Exception:
+            self.logger.exception(
+                f"WorkerThread [{self.key}/{self.channel}] worker raised an unexpected exception."
+            )
+        finally:
+            self.workerthread_finished.emit(self.channel, self.key)
+            self.logger.info("WorkerThread finished.")

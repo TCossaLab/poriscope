@@ -537,6 +537,11 @@ class TestReadStructHelper(unittest.TestCase):
         self.path = "test_readstruct.abf"
         write_abf2_file(self.path)
         self.header = ABF2Header(self.path)
+        # ABF2Header now closes its file handle once construction completes
+        # (it's only ever used during header parsing); reopen it here since
+        # these tests exercise the low-level _readStruct helper directly,
+        # independent of the constructor's own read/close lifecycle.
+        self.header.f = open(self.path, "rb")
 
     def tearDown(self):
         self.header.f.close()

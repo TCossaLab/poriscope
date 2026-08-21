@@ -49,13 +49,17 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     @override
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
+        Permanently delete the given channel's row (and, via cascading foreign keys,
+        its events/sublevels/data rows) from the database, so a subsequent write starts
+        from a clean slate. This is destructive, not a resource-cleanup step.
 
-        :param channel: channel ID
-        :type channel: int
+        :param channel: channel ID. Note that `channel=None` does not reset all
+            channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
+        :type channel: Optional[int]
         """
-        # conn = None
+        conn = None
         cursor = None
+        experiment_id = None
         try:
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             conn.execute("PRAGMA foreign_keys = ON;")
@@ -83,11 +87,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         except sqlite3.Error as e:
             if conn:
+                conn.execute("ROLLBACK TO SAVEPOINT reset_channel")
                 conn.rollback()
             self.logger.warning(
                 f"Failed to delete (experiment_id={experiment_id}, channel_id={channel}): {e}, channel not reset"
             )
         else:
+            conn.execute("RELEASE SAVEPOINT reset_channel")
             conn.commit()
         finally:
             if cursor:
@@ -97,18 +103,22 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None) -> None:
+    def close_resources(self, channel=None):
         """
-        Perform any actions necessary to gracefully close resources before app exit.
-        If `channel` is not None, handle only that channel; otherwise, close all channels.
+        Commit and close the shared database connection/cursor, if open.
 
-        :param channel: channel ID
-        :type channel: int
+        :param channel: unused; this writer shares a single connection across all
+            channels, so there is no per-channel resource to close independently.
+        :type channel: Optional[int]
         """
+        if self.cursor:
+            self.cursor.close()
+            self.cursor = None
         if self.conn:
             self.logger.debug("Closing database connection.")
             self.conn.commit()  # Ensure all writes are committed
             self.conn.close()  # Close the connection to release the lock
+            self.conn = None
         else:
             self.logger.debug("Database connection not open to close.")
 
@@ -200,7 +210,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param last_call: True if this is the last time the function will be called, commit to file and clean up as needed
         :type last_call: Optional[bool]
 
-        :return: True on successful write, False on failure or ignore
+        :return: True on successful write, False if the row already existed
+            (rejected by ``INSERT OR IGNORE``). Any other failure (a genuine
+            database error) is raised rather than returned, so the caller can
+            report the real reason instead of assuming a duplicate row.
         :rtype: bool
         """
         if abort is True:
@@ -275,11 +288,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                 self.conn.rollback()  # Rollback all changes if any operation fails
             self.logger.error(f"Failed to write event: {e}")
+            raise
         except Exception as e:  # Fallback for truly unexpected errors
             if self.conn:
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                 self.conn.rollback()
             self.logger.critical(f"Unexpected error writing event: {e}", exc_info=True)
+            raise
         else:
             if self.conn and last_call is True:
                 self.conn.commit()
@@ -303,11 +318,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         """
         conn = None
         cursor = None
+        experiment_name = self.settings["Experiment Name"]["Value"]
         try:
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             conn.execute("PRAGMA foreign_keys = ON;")
             cursor = conn.cursor()
-            experiment_name = self.settings["Experiment Name"]["Value"]
             conn.execute("BEGIN TRANSACTION")
             cursor.execute(
                 "SELECT id FROM experiments WHERE name = ?;", (experiment_name,)
@@ -328,7 +343,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if conn:
                 conn.rollback()
             self.logger.warning(
-                f"Failed to delete (experiment_id={experiment_name}, channel_id={channel}): {e}, channel not reset"
+                f"Failed to write experiment metadata (experiment_name={experiment_name}): {e}"
             )
             raise
         else:
@@ -350,6 +365,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         """
         conn = None
         cursor = None
+        experiment_id = None
         experiment_name = self.settings["Experiment Name"]["Value"]
         samplerate = self.eventfitter.get_samplerate(channel)
         try:
@@ -381,7 +397,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if conn:
                 conn.rollback()
             self.logger.warning(
-                f"Failed to delete (experiment_id={experiment_id}, channel_id={channel}): {e}, channel not reset"
+                f"Failed to write channel metadata (experiment_id={experiment_id}, channel_id={channel}): {e}"
             )
             raise
         else:
@@ -731,8 +747,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :type fit_data: np.ndarray
         :param experiment_id: The ID of the experiment to which the data belongs.
         :type experiment_id: int
-        :param channel: The channel ID to associate with the event data.
-        :type channel: int
+        :param channel_db_id: The database ID of the channel to associate with the event data.
+        :type channel_db_id: int
+        :param event_db_id: The database ID of the event this data belongs to.
+        :type event_db_id: int
 
         :return: True on success, False on failure
         :rtype: bool

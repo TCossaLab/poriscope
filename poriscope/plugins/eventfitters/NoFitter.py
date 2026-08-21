@@ -126,10 +126,8 @@ class NoFitter(MetaEventFitter):
         :param index: the index of the target event
         :type index: int
 
-        :return: numpy array of fitted data for the event, or None
+        :return: numpy array of fitted data for the event, or None if fitting is not complete or the event was rejected
         :rtype: Optional[npt.NDArray[np.float64]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
         if self.sublevel_metadata == {} or not self.eventfitting_status.get(channel):
             self.logger.info(
@@ -137,11 +135,9 @@ class NoFitter(MetaEventFitter):
             )
             return None
         try:
-            if self.eventloader is not None:
-                self.eventloader.get_samplerate(channel)
-            else:
+            if self.eventloader is None:
                 raise AttributeError(
-                    "CUSUM cannot operate without a linked MetaEventLoader"
+                    "NoFitter cannot operate without a linked MetaEventLoader"
                 )
             sublevel_start_indices = self.sublevel_starts[channel][index]
             sublevel_end_indices = self.sublevel_starts[channel][index][1:]
@@ -223,6 +219,15 @@ class NoFitter(MetaEventFitter):
         """
 
         length = len(data)
+        if (
+            baseline_mean is None
+            or padding_before is None
+            or padding_after is None
+            or baseline_std is None
+        ):
+            raise ValueError(
+                "NoFitter requires that baseline_mean, baseline_std, padding_before, and padding_after be reported and is unable to locate sublevel transitions without them"
+            )
         sign = np.sign(baseline_mean)
         rise_time = 0
 
@@ -230,6 +235,10 @@ class NoFitter(MetaEventFitter):
 
         k = padding_before
         while data[k] * sign < baseline_mean * sign:  # find starting point
+            if k == 0:
+                raise ValueError(
+                    "Unable to locate a baseline crossing before the estimated event start"
+                )
             k -= 1
             rise_time += 1
         edges = np.append(edges, k)  # add start point as an edge
@@ -457,13 +466,13 @@ class NoFitter(MetaEventFitter):
         )
         event_metadata["max_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["min_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["max_deviation_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
         event_metadata["baseline_current"] = (
             sublevel_metadata["sublevel_current"][0]
             * sublevel_metadata["sublevel_duration"][0]

@@ -457,6 +457,8 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
+            else:
+                return
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -1043,6 +1045,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 np.median(timeseries[:padding_before])
                 + np.median(timeseries[-padding_after:])
             )
+            if baseline == 0:
+                self.logger.warning(
+                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
+                )
+                continue
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
             min_curr = np.min(dI_I)
@@ -1087,6 +1094,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 np.median(timeseries[:padding_before])
                 + np.median(timeseries[-padding_after:])
             )
+            if baseline == 0:
+                self.logger.warning(
+                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
+                )
+                continue
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
             event_hist, _ = np.histogram(
                 dI_I,
@@ -2314,6 +2326,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             self.logger.info(
                                 f'Unable to construct histogram for event {event["event_id"]}: {e}'
                             )
+                            continue
                         if plot_data is None:
                             continue
 
@@ -2705,6 +2718,10 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             return
 
+        # The three guards above guarantee that experiments_and_channels, every
+        # channels list, and selected_filters each contain exactly one entry,
+        # so the triple-nested loop below runs exactly once.
+
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
@@ -2793,108 +2810,134 @@ class ProteinView(MetaView, WalkthroughMixin):
                         (loader, exp, channel, sql_filter, subset_name)
                     )
 
-            # --- Fit Double Gaussian ---
-            popt = self._fit_and_sanity_check_double_gaussian(
-                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):
+            return
+
+    @log(logger=logger)
+    def _fit_and_plot_ensemble_geometry(self, plot_data, plot_type, d, L, N):
+        """
+        Fit a double Gaussian to the aggregated ensemble histogram, then Monte
+        Carlo sample prolate/oblate V/m ensembles from that fit and plot them.
+
+        Called once by _update_distribution_ensemble after its single
+        (experiment, channel, filter) combination has been plotted, using
+        whatever plot_data that produced.
+
+        :param plot_data: the aggregated histogram DataFrame to fit against.
+        :type plot_data: pd.DataFrame
+        :param plot_type: the plot type label to reuse when plotting the fit.
+        :type plot_type: str
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each of the prolate/oblate ensembles
+        :type N: int
+
+        :return: True if fitting and plotting succeeded, False if any failure occurred (already logged/displayed to the user).
+        :rtype: bool
+        """
+        popt = self._fit_and_sanity_check_double_gaussian(
+            plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        )
+
+        if popt is None:
+            self.logger.info("Unable to fit a double gaussian to the histogram")
+            self.add_text_to_display.emit(
+                "Unable to fit a double gaussian to the histogram",
+                self.__class__.__name__,
+            )
+            return False
+
+        fit_data = self._double_gaussian(plot_data["Normalized Current"].values, *popt)
+        plot_data["Amplitude"] = fit_data
+        self.update_plot(
+            plot_type,
+            plot_data,
+            plot_data.columns,
+            ["pA", ""],
+            logscales=[False, False],
+            dataset_label="Fit",
+        )
+        # --- record fit + binning for Report All reporting ---
+        self.ensemble_fit_params = popt
+        self.ensemble_fit_bins = self.allowed_bins
+        self.ensemble_fit_sizes = self.allowed_sizes
+
+        amp1, mean1, std1, amp2, mean2, std2 = popt
+
+        if mean1 > mean2:
+            mean_max, std_max = mean1, np.abs(std1)
+            mean_min, std_min = mean2, np.abs(std2)
+        else:
+            mean_max, std_max = mean2, np.abs(std2)
+            mean_min, std_min = mean1, np.abs(std1)
+
+        # --- OPTIMIZED GENERATIVE SAMPLING ---
+        # Call the Monte Carlo generators directly
+        prolate_V, prolate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        )
+        oblate_V, oblate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        )
+
+        if len(prolate_V) == 0 and len(oblate_V) == 0:
+            self.logger.warning(
+                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
+            )
+            self.add_text_to_display.emit(
+                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
+                self.__class__.__name__,
+            )
+            return False
+        elif len(prolate_V) < N or len(oblate_V) < N:
+            self.logger.info(
+                "Sampling hit bailout limit; returning partial ensemble arrays."
             )
 
-            if popt is not None:
-                fit_data = self._double_gaussian(
-                    plot_data["Normalized Current"].values, *popt
-                )
-                plot_data["Amplitude"] = fit_data
-                self.update_plot(
-                    plot_type,
-                    plot_data,
-                    plot_data.columns,
-                    ["pA", ""],
-                    logscales=[False, False],
-                    dataset_label="Fit",
-                )
-                # --- record fit + binning for Report All reporting ---
-                self.ensemble_fit_params = popt
-                self.ensemble_fit_bins = self.allowed_bins
-                self.ensemble_fit_sizes = self.allowed_sizes
-            else:
-                self.logger.info("Unable to fit a double gaussian to the histogram")
-                self.add_text_to_display.emit(
-                    "Unable to fit a double gaussian to the histogram",
-                    self.__class__.__name__,
-                )
-                return
+        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+        prolate_a = prolate_b * prolate_m
 
-            amp1, mean1, std1, amp2, mean2, std2 = popt
+        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+        oblate_a = oblate_b * oblate_m
 
-            if mean1 > mean2:
-                mean_max, std_max = mean1, np.abs(std1)
-                mean_min, std_min = mean2, np.abs(std2)
-            else:
-                mean_max, std_max = mean2, np.abs(std2)
-                mean_min, std_min = mean1, np.abs(std1)
+        # --- Create the Pandas DataFrames ---
+        df_prolate = pd.DataFrame(
+            {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
+        )
+        df_oblate = pd.DataFrame(
+            {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
+        )
 
-            # --- OPTIMIZED GENERATIVE SAMPLING ---
-            # Call the Monte Carlo generators directly
-            prolate_V, prolate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        # --- record V/m summaries for Report All reporting ---
+        self.ensemble_fit_prolate_summary = (
+            self._summarize_vm(df_prolate) if not df_prolate.empty else None
+        )
+        self.ensemble_fit_oblate_summary = (
+            self._summarize_vm(df_oblate) if not df_oblate.empty else None
+        )
+
+        if not df_prolate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_prolate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Prolate Solutions",
             )
-            oblate_V, oblate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        if not df_oblate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_oblate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Oblate Solutions",
             )
 
-            if len(prolate_V) == 0 and len(oblate_V) == 0:
-                self.logger.warning(
-                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
-                )
-                self.add_text_to_display.emit(
-                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
-                    self.__class__.__name__,
-                )
-                return
-            elif len(prolate_V) < N or len(oblate_V) < N:
-                self.logger.info(
-                    "Sampling hit bailout limit; returning partial ensemble arrays."
-                )
-
-            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-            prolate_a = prolate_b * prolate_m
-
-            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-            oblate_a = oblate_b * oblate_m
-
-            # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(
-                {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
-            )
-            df_oblate = pd.DataFrame(
-                {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
-            )
-
-            # --- record V/m summaries for Report All reporting ---
-            self.ensemble_fit_prolate_summary = (
-                self._summarize_vm(df_prolate) if not df_prolate.empty else None
-            )
-            self.ensemble_fit_oblate_summary = (
-                self._summarize_vm(df_oblate) if not df_oblate.empty else None
-            )
-
-            if not df_prolate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_prolate,
-                    ["V", "m"],
-                    ["nm$^{3}$", None],
-                    logscales=[False, False],
-                    dataset_label="Prolate Solutions",
-                )
-            if not df_oblate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_oblate,
-                    ["V", "m"],
-                    ["nm$^{3}$", None],
-                    logscales=[False, False],
-                    dataset_label="Oblate Solutions",
-                )
+        return True
 
     @log(logger=logger)
     def _compute_theoretical_blockages(self, V, m, d, L):
@@ -3030,8 +3073,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         # --- Bailout Logic Variables ---
         max_consecutive_zeros = 5
         consecutive_zeros = 0
+        max_batches = 200
+        batches = 0
 
-        while len(accepted_V) < N_target and consecutive_zeros < max_consecutive_zeros:
+        while (
+            len(accepted_V) < N_target
+            and consecutive_zeros < max_consecutive_zeros
+            and batches < max_batches
+        ):
+            batches += 1
             # 1. Propose physically valid uniform samples
             V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
             ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
@@ -3132,6 +3182,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                 accepted_V.extend(new_V)
                 accepted_m.extend(new_m)
 
+        if len(accepted_V) < N_target:
+            self.logger.warning(
+                f"_generate_vm_ensemble stopped with only {len(accepted_V)}/{N_target} "
+                f"accepted samples after {batches} batches (consecutive_zeros={consecutive_zeros})"
+            )
+
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
@@ -3192,6 +3248,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param loader: Name of the active database loader.
         :type loader: str
         """
+        if not loader or loader == "No Event Database":
+            return
         try:
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -3212,6 +3270,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
         """
+        if not loader_name or loader_name == "No Event Database":
+            return
+
         self.logger.debug(
             f"Requesting experiment-channel structure from loader: {loader_name}"
         )

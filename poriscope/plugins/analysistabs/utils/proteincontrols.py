@@ -663,7 +663,7 @@ class ProteinControls(QWidget):
 
     def is_placeholder_item(self, comboBox):
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in ["No Database"]
+        return comboBox.currentText() in ["No Event Database"]
 
     def show_plugin_edit_manager(self, comboBox, metaclass):
         """Displays the plugin manager with details for the selected item from the combobox."""
@@ -685,22 +685,6 @@ class ProteinControls(QWidget):
         """Clears the reference to the popup when it is closed."""
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
-
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
 
     # Signals Connection
     def connect_signals(self):
@@ -788,7 +772,11 @@ class ProteinControls(QWidget):
                 "sizes": self.sizes_checkbox.isChecked(),
                 "raw": self.raw_checkbox.isChecked(),
                 "bins": (
-                    [x.strip() for x in self.bins_lineEdit.text().split(",")]
+                    [
+                        x.strip()
+                        for x in self.bins_lineEdit.text().split(",")
+                        if x.strip()
+                    ]
                     if self.bins_lineEdit.text()
                     else None
                 ),
@@ -805,7 +793,7 @@ class ProteinControls(QWidget):
             ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
-        except AttributeError:
+        except (AttributeError, ValueError):
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -1004,13 +992,11 @@ class ProteinControls(QWidget):
         current_selection = self.db_loader_comboBox.currentText()
         self.db_loader_comboBox.clear()
 
-        if not loaders:  # If list is empty, insert placeholder
-            loaders.insert(0, "No Event Database")
-
-        self.db_loader_comboBox.addItems(loaders)
+        display_loaders = loaders if loaders else ["No Event Database"]
+        self.db_loader_comboBox.addItems(display_loaders)
 
         # Restore selection if it still exists
-        if current_selection in loaders:
+        if current_selection in display_loaders:
             self.db_loader_comboBox.setCurrentText(current_selection)
         else:
             self.db_loader_comboBox.setCurrentIndex(0)

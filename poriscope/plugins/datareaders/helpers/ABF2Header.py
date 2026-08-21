@@ -29,7 +29,10 @@ import struct
 class ABF2Header:
     def __init__(self, filename):
         self.f = open(filename, "rb")
-        self._read_sections()
+        try:
+            self._read_sections()
+        finally:
+            self.f.close()
 
     def get_abf_version(self):
         return self.abf_version
@@ -191,7 +194,7 @@ class ABF2Header:
             self.scaleFactors[i] /= fInstrumentScaleFactor[i]
             self.scaleFactors[i] /= fSignalGain[i]
             self.scaleFactors[i] /= fADCProgrammableGain[i]
-            if nTelegraphEnable[0]:
+            if nTelegraphEnable[i]:
                 self.scaleFactors[i] /= fTelegraphAdditGain[i]
             self.scaleFactors[i] *= fADCRange
             self.scaleFactors[i] /= lADCResolution

@@ -75,9 +75,10 @@ class DataPluginController(QObject):
 
         :param metaclass: The metaclass of the plugin.
         :type metaclass: str
-        :param subclass: The subclass of the plugin, defaults to None.
-        :type subclass: Optional[str]
-        :raises Exception: If unable to instantiate the plugin.
+        :param key: The current key of the plugin instance being edited.
+        :type key: str
+        :param settings: The plugin's current settings dict, used to populate the edit dialog.
+        :type settings: dict
         """
 
         app_settings = copy.deepcopy(settings)
@@ -118,6 +119,9 @@ class DataPluginController(QObject):
                 )
                 self.update_plugin_history.emit(history, key)
             else:
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 dependents = [dependent[1] for dependent in dependents]
                 self.logger.info(
                     f"Unable to delete {key} since it has dependents {dependents}"
@@ -141,24 +145,38 @@ class DataPluginController(QObject):
                             f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
                             "DataPluginController",
                         )
+                        self._restore_parent_dependent_links(
+                            metaclass, instance.get_key(), parents
+                        )
                         return
 
                 for dmetaclass, dkey in dependents:
-                    dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
-                    dinstance.unregister_parent(metaclass, old_key)
-                    dinstance.register_parent(metaclass, key)
-                    dhistory = {}
-                    dhistory["key"] = dinstance.get_key()
-                    dhistory["metaclass"] = dmetaclass
-                    dhistory["subclass"] = dinstance.__class__.__name__
-                    dsettings = dinstance.get_raw_settings()
-                    dhistory["settings"] = dsettings
-                    dsettings[metaclass]["Value"] = key
-                    dinstance.update_raw_settings(metaclass, key)
-                    if dsettings[metaclass]["Options"] is not None:
-                        dsettings[metaclass]["Options"].append(key)
-                        dsettings[metaclass]["Options"].remove(old_key)
-                    self.update_plugin_history.emit(dhistory, "")
+                    try:
+                        dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
+                        dinstance.unregister_parent(metaclass, old_key)
+                        dinstance.register_parent(metaclass, key)
+                        dhistory = {}
+                        dhistory["key"] = dinstance.get_key()
+                        dhistory["metaclass"] = dmetaclass
+                        dhistory["subclass"] = dinstance.__class__.__name__
+                        dsettings = dinstance.get_raw_settings()
+                        dhistory["settings"] = dsettings
+                        dsettings[metaclass]["Value"] = key
+                        dinstance.update_raw_settings(metaclass, key)
+                        if dsettings[metaclass]["Options"] is not None:
+                            if old_key in dsettings[metaclass]["Options"]:
+                                dsettings[metaclass]["Options"].remove(old_key)
+                            if key not in dsettings[metaclass]["Options"]:
+                                dsettings[metaclass]["Options"].append(key)
+                        self.update_plugin_history.emit(dhistory, "")
+                    except Exception as e:
+                        self.logger.error(
+                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}"
+                        )
+                        self.add_text_to_display.emit(
+                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}",
+                            self.__class__.__name__,
+                        )
                 try:
                     instance.set_key(key)
                 except Exception as e:
@@ -168,6 +186,9 @@ class DataPluginController(QObject):
                     self.add_text_to_display.emit(
                         f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
                         self.__class__.__name__,
+                    )
+                    self._restore_parent_dependent_links(
+                        metaclass, instance.get_key(), parents
                     )
                     return
 
@@ -202,6 +223,9 @@ class DataPluginController(QObject):
                     f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
                     self.__class__.__name__,
                 )
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 return
 
             # apply the settings to the new plugin object
@@ -215,6 +239,9 @@ class DataPluginController(QObject):
                     f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
                     self.__class__.__name__,
                 )
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 return
             else:
                 history["key"] = key
@@ -226,6 +253,28 @@ class DataPluginController(QObject):
                     f"Settings updated successfully for {key}",
                     self.__class__.__name__,
                 )
+
+    @log(logger=logger)
+    def _restore_parent_dependent_links(self, metaclass, key, parents):
+        """
+        Re-register this plugin as a dependent on each of its parents.
+
+        Used to undo the upfront `unregister_dependent` calls in `edit_plugin`
+        when the edit is aborted before `apply_settings` re-establishes the
+        link, since the plugin instance and its actual parent usage are
+        otherwise unchanged.
+
+        :param metaclass: The metaclass of the plugin being restored.
+        :type metaclass: str
+        :param key: The key of the plugin being restored.
+        :type key: str
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: list[tuple[str, str]]
+        """
+        for pmetaclass, pkey in parents:
+            pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
+            if pinstance:
+                pinstance.register_dependent(metaclass, key)
 
     @log(logger=logger)
     @Slot(str, str)
@@ -255,6 +304,9 @@ class DataPluginController(QObject):
 
             # Delete from model
             self.model.unregister_plugin(metaclass, key)
+
+            # Remove from persisted plugin history
+            self.update_plugin_history.emit({}, key)
 
             # Notify UI
             self.update_available_plugins.emit(
@@ -401,6 +453,7 @@ class DataPluginController(QObject):
                     app_settings[settings_key]["Value"] = (
                         self.model.get_plugin_instance(settings_key, val["Value"])
                     )
+                    app_settings[settings_key]["Type"] = None
                     app_settings[settings_key]["Options"] = None
         except Exception as e:
             self.logger.exception(

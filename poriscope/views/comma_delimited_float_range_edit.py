@@ -43,6 +43,16 @@ class CommaFloatRangeValidator(BaseValidator):
 
     def _validate_intermediate(self, input, pos):
         """Allow intermediate inputs while editing."""
+        # Negative numbers are never valid here (times/indices are non-negative),
+        # so a leading '-' can be rejected immediately rather than waiting for
+        # a second number to disambiguate it from a range separator.
+        for part in input.split(","):
+            if part.strip().startswith("-"):
+                self.logger.debug(
+                    f"Intermediate validation: leading '-' is invalid in part '{part}'."
+                )
+                return QValidator.Invalid, input, pos
+
         if input == "" or input.endswith(("-", ",", ".")):
             return QValidator.Intermediate, input, pos
         return QValidator.Acceptable, input, pos
@@ -62,12 +72,21 @@ class CommaFloatRangeValidator(BaseValidator):
             if not part:
                 return QValidator.Invalid, input, len(input)
 
+            if part.startswith("-"):
+                self.logger.debug(f"Invalid input: leading '-' in part '{part}'.")
+                return QValidator.Invalid, input, len(input)
+
             if "-" not in part:
                 self.logger.debug(f"Invalid input: '{part}' is not a range.")
                 return QValidator.Invalid, input, len(input)
 
+            number_strs = part.split("-")
+            if len(number_strs) != 2 or not number_strs[0] or not number_strs[1]:
+                self.logger.debug(f"Invalid range structure in part: '{part}'.")
+                return QValidator.Invalid, input, len(input)
+
             try:
-                start_str, end_str = part.split("-")
+                start_str, end_str = number_strs
                 start = float(start_str)
                 end = float(end_str)
 
@@ -107,9 +126,18 @@ class CommaFloatRangeLineEdit(BaseLineEdit):
         segments = text.split(",")
         for segment in segments:
             segment = segment.strip()
+            if segment.startswith("-"):
+                self.logger.debug(
+                    f"Skipping invalid (leading '-') segment: '{segment}'"
+                )
+                continue
             if "-" in segment:
+                number_strs = segment.split("-")
+                if len(number_strs) != 2 or not number_strs[0] or not number_strs[1]:
+                    self.logger.debug(f"Invalid range in segment: '{segment}'")
+                    continue
                 try:
-                    start_str, end_str = segment.split("-")
+                    start_str, end_str = number_strs
                     start = float(start_str)
                     end = float(end_str)
 

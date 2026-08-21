@@ -68,8 +68,10 @@ class RawDataController(MetaController):
         :param samplerate: Sampling rate of the signal in Hz.
         :type samplerate: float
         """
-        Pxx_list, rms_list, frequency = self.model.calculate_psd(psd_data, samplerate)
-        self.view.set_psd(Pxx_list, rms_list, frequency)
+        Pxx_list, rms_list, frequency, kept_indices = self.model.calculate_psd(
+            psd_data, samplerate
+        )
+        self.view.set_psd(Pxx_list, rms_list, frequency, kept_indices)
 
     @log(logger=logger)
     @Slot(dict)
@@ -105,13 +107,13 @@ class RawDataController(MetaController):
         self.view.update_plot_samplerate(samplerate)
 
     @log(logger=logger)
-    @Slot(dict)
+    @Slot(list)
     def update_channels(self, num_channels):
         """
         Update the view with the current number of channels available or selected.
 
-        :param num_channels: Dictionary containing channel information.
-        :type num_channels: dict
+        :param num_channels: List of channel identifiers.
+        :type num_channels: List[int]
         """
         self.view.update_channels(num_channels)
 

@@ -103,6 +103,7 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     fitter_settings = _get_settings(fitter)
     if "MetaEventLoader" in fitter_settings:
         fitter_settings["MetaEventLoader"]["Value"] = events_loader
+        fitter_settings["MetaEventLoader"]["Type"] = None
     if "Max Sublevels" in fitter_settings:
         fitter_settings["Max Sublevels"]["Value"] = 10
     if "Rise Time" in fitter_settings:
@@ -149,6 +150,7 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     writer_settings = _get_settings(writer)
     if "MetaEventFitter" in writer_settings:
         writer_settings["MetaEventFitter"]["Value"] = fitter
+        writer_settings["MetaEventFitter"]["Type"] = None
     if "Experiment Name" in writer_settings:
         writer_settings["Experiment Name"]["Value"] = "cusum_integration_test"
     for k, v in (

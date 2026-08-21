@@ -264,9 +264,18 @@ class TestMetaEventFitter:
 
     @pytest.fixture
     def settings(self, mock_loader: MockEventLoader) -> Dict[str, Any]:
-        """Create valid settings."""
+        """
+        Create valid settings.
+
+        "Type" is None here, not str: get_empty_settings() declares
+        "MetaEventLoader" as Type=str because the user initially picks a
+        plugin key from a dropdown, but DataPluginController resolves that
+        string into the real instance (and resets Type to None) before ever
+        calling apply_settings. This fixture constructs the post-resolution
+        state that the real constructor actually sees.
+        """
         return {
-            "MetaEventLoader": {"Type": str, "Value": mock_loader},
+            "MetaEventLoader": {"Type": None, "Value": mock_loader},
         }
 
     @pytest.fixture

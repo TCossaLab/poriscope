@@ -23,7 +23,6 @@
 # Contributors:
 # Kyle Briggs
 
-import contextlib
 import logging
 import sqlite3
 from pathlib import Path
@@ -163,28 +162,33 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: List of experiment names, or None on failure
         :rtype: Optional[List[str]]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                if experiment_id is None:
-                    query = "SELECT name FROM experiments;"
-                    cursor.execute(query)
-                    experiment_names = [row[0] for row in cursor.fetchall()]
-                    self.logger.debug(
-                        f"All experiment names fetched: {experiment_names}"
-                    )
-                    return list(set(experiment_names)) if experiment_names else None
-                else:
-                    query = "SELECT name FROM experiments WHERE id=?;"
-                    cursor.execute(query, (experiment_id,))
-                    experiment_name = cursor.fetchone()
-                    self.logger.debug(
-                        f"Experiment name for id {experiment_id}: {experiment_name}"
-                    )
-                    return [experiment_name[0]] if experiment_name else None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            if experiment_id is None:
+                query = "SELECT name FROM experiments;"
+                cursor.execute(query)
+                experiment_names = [row[0] for row in cursor.fetchall()]
+                self.logger.debug(f"All experiment names fetched: {experiment_names}")
+                return list(set(experiment_names)) if experiment_names else None
+            else:
+                query = "SELECT name FROM experiments WHERE id=?;"
+                cursor.execute(query, (experiment_id,))
+                experiment_name = cursor.fetchone()
+                self.logger.debug(
+                    f"Experiment name for id {experiment_id}: {experiment_name}"
+                )
+                return [experiment_name[0]] if experiment_name else None
         except sqlite3.Error as e:
             self.logger.error(f"Database error fetching experiment names: {e}")
             return None
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
     @log(logger=logger)
     @override
@@ -491,19 +495,21 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype:  Tuple[bool, str]
         """
         explain_query = f"EXPLAIN QUERY PLAN {query}"
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    cursor.execute(explain_query)
-                    result = (
-                        cursor.fetchall()
-                    )  # This will not run the query but provide the query plan
-                    if not result:
-                        return (
-                            False,
-                            "Invalid query\n\n{query}\n\n no useful debugging information provided",
-                        )
-                    return True, ""
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(explain_query)
+            result = (
+                cursor.fetchall()
+            )  # This will not run the query but provide the query plan
+            if not result:
+                return (
+                    False,
+                    f"Invalid query\n\n{query}\n\n no useful debugging information provided",
+                )
+            return True, ""
         except sqlite3.Error as e:
             return False, f"Invalid query\n\n{query}\n\n{str(e)}"
         finally:
@@ -539,21 +545,25 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error in alter_database: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT alter_database")
+                conn.execute("RELEASE SAVEPOINT alter_database")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:
             self.logger.error(f"Value error in alter_database: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT alter_database")
+                conn.execute("RELEASE SAVEPOINT alter_database")
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error in alter_database: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT alter_database")
+                conn.execute("RELEASE SAVEPOINT alter_database")
             raise
         else:
             success = True
             if conn:
+                conn.execute("RELEASE SAVEPOINT alter_database")
                 conn.commit()
         finally:
             if cursor:
@@ -655,23 +665,27 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error in add_columns_to_table: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT write_new_columns")
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:
             self.logger.error(f"Value error in add_columns_to_table: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT write_new_columns")
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
             raise
         except Exception as e:
             self.logger.error(
                 f"Unexpected error in add_columns_to_table: {e}", exc_info=True
             )
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT write_new_columns")
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
             raise
         else:
             success = True
             if conn:
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
                 conn.commit()
         finally:
             if cursor:
@@ -725,7 +739,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             if conn:
                 conn.close()
 
-    @log(logger=logger)
     @log(logger=logger)
     @override
     def get_empty_settings(self, globally_available_plugins=None, standalone=False):
@@ -868,9 +881,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         """
         Load data and return a generator that gives a one-row dataframe corresponding one row returned by query
         Make sure you exhaust or explicitly abort the generator, or else connections will remain open
-        You can assume that the query was generated by self.construct_event_data_query() and will have 10 colums:
-        event_id, channel_id, experiment_id, data_format, baseline, stdev, padding_before, padding_after, samplerate, data
-        where data is a bytes object to be interpreted using data_format
+        You can assume that the query was generated by self.construct_event_data_query() and will have 11 columns, in this order:
+        db_id, event_id, channel_id, experiment_id, data_format, samplerate, padding_before, padding_after, raw_data, filtered_data, fit_data
+        where raw_data, filtered_data, and fit_data are bytes objects to be interpreted using data_format
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
@@ -927,7 +940,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                         )
                     except Exception:
                         self.logger.info(
-                            "Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
+                            f"Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
                         )
                         continue
                     abort = bool(abort)
@@ -1061,8 +1074,11 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype: None
         :raises sqlite3.Error: If a database error occurs during table creation or population.
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            conn = sqlite3.connect(self.db_path)
+            with conn:
                 cursor = conn.cursor()
 
                 cursor.execute(
@@ -1122,3 +1138,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"Failed to ensure event_counts table: {e}")
             raise
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()

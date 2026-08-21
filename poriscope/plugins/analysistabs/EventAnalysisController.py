@@ -161,13 +161,13 @@ class EventAnalysisController(MetaController):
         self.view.update_plot_samplerate(samplerate)
 
     @log(logger=logger)
-    @Slot(dict)
+    @Slot(list)
     def update_channels(self, channels):
         """
         Update the view with the current number of channels available or selected.
 
-        :param num_channels: Dictionary containing channel information.
-        :type num_channels: dict
+        :param channels: List of channel identifiers.
+        :type channels: List[int]
         """
         self.view.update_channels(channels)
 

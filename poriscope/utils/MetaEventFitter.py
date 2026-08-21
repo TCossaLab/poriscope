@@ -371,7 +371,12 @@ class MetaEventFitter(BaseDataPlugin):
         Get a list of event metadata column variables
         """
         if self.eventfitting_status.get(channel) is True:
-            return list(self.event_metadata[channel][0].keys())
+            metadata = self.event_metadata.get(channel, {})
+            if not metadata:
+                raise RuntimeError(
+                    "Unable to get metadata column names. No events were successfully fit in this channel"
+                )
+            return list(next(iter(metadata.values())).keys())
         raise RuntimeError(
             "Unable to get metatata column names. Fitting has not finished on any channel, please try again after fitting is complete"
         )
@@ -388,7 +393,12 @@ class MetaEventFitter(BaseDataPlugin):
         :rtype: List[str]
         """
         if self.eventfitting_status.get(channel) is True:
-            return list(self.sublevel_metadata[channel][0].keys())
+            metadata = self.sublevel_metadata.get(channel, {})
+            if not metadata:
+                raise RuntimeError(
+                    "Unable to get metadata column names. No events were successfully fit in this channel"
+                )
+            return list(next(iter(metadata.values())).keys())
         raise RuntimeError(
             "Unable to get metatata column names. Fitting has not finished on any channel, please try again after fitting is complete"
         )
@@ -482,7 +492,8 @@ class MetaEventFitter(BaseDataPlugin):
 
         abort = False
         for index in indices:
-            self.logger.info(index / total_events)
+            if total_events:
+                self.logger.info(index / total_events)
             self.event_metadata[channel][index] = {}
             self.sublevel_metadata[channel][index] = {}
 
@@ -618,6 +629,7 @@ class MetaEventFitter(BaseDataPlugin):
                 self.sublevel_metadata[channel].pop(index)
                 continue
 
+            invalid_sublevel_metadata = False
             for key, val in sublevel_metadata.items():
                 if len(val) != len(sublevel_starts) - 1:
                     self.rejected[channel]["Level Count Mismatch"] = (
@@ -628,9 +640,13 @@ class MetaEventFitter(BaseDataPlugin):
                     )
                     self.event_metadata[channel].pop(index)
                     self.sublevel_metadata[channel].pop(index)
-                    continue
+                    invalid_sublevel_metadata = True
+                    break
                 else:
                     self.sublevel_metadata[channel][index][key] = val
+
+            if invalid_sublevel_metadata:
+                continue
 
             self.sublevel_metadata[channel][index]["event_id"] = np.array(
                 [event_id] * (len(sublevel_starts) - 1), dtype=np.int64

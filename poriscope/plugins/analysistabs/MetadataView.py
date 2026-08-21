@@ -1506,6 +1506,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "Normalized Filtered All Points Histogram",
             ]:
                 timeseries = event["filtered_data"]
+            else:
+                raise ValueError(f"Unknown plot_type {plot_type!r}")
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
@@ -1555,18 +1557,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "Normalized Filtered All Points Histogram",
             ]:
                 timeseries = event["filtered_data"]
+            else:
+                raise ValueError(f"Unknown plot_type {plot_type!r}")
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             baseline = np.median(timeseries[:padding_before])
-            if plot_type in [
-                "Raw All Points Histogram",
-                "Normalized Raw All Points Histogram",
-            ]:
-                timeseries = event["raw_data"]
-            elif plot_type in [
-                "Filtered All Points Histogram",
-                "Normalized Filtered All Points Histogram",
-            ]:
-                timeseries = event["filtered_data"]
             event_hist, _ = np.histogram(
                 np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
                 bins=bin_edges,
@@ -1634,11 +1628,19 @@ class MetadataView(MetaView, WalkthroughMixin):
             time /= len(data) - padding_after - padding_before
 
             duration = len(data)
-            alpha = (
-                15
-                / num_events
-                * (1 - 0.99 * (duration - min_duration) / (max_duration - min_duration))
-            )
+            if max_duration > min_duration:
+                alpha = (
+                    15
+                    / num_events
+                    * (
+                        1
+                        - 0.99
+                        * (duration - min_duration)
+                        / (max_duration - min_duration)
+                    )
+                )
+            else:
+                alpha = 15 / num_events
             alpha = np.min((alpha, 0.5))
             ax.plot(time, data, alpha=alpha, color="b")
 
@@ -2246,7 +2248,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 if self.vertical is not None:
                     vertical_lines[-1] = self.vertical
                     vertical_labels[-1] = self.vlabels
-                    self.vertical_lines = None
+                    self.vertical = None
                     self.vlabels = None
                 if self.horizontal is not None:
                     horizontal_lines[-1] = self.horizontal
@@ -2619,6 +2621,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param loader: Name of the active database loader.
         :type loader: str
         """
+        if not loader or loader == "No Event Database":
+            return
         try:
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -2639,6 +2643,9 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
         """
+        if not loader_name or loader_name == "No Event Database":
+            return
+
         self.logger.debug(
             f"Requesting experiment-channel structure from loader: {loader_name}"
         )
@@ -3333,4 +3340,4 @@ class MetadataView(MetaView, WalkthroughMixin):
         Removes any existing trailing unit in parentheses.
         """
         label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-        return f"{label} ({unit})" if unit.strip() else label
+        return f"{label} ({unit})" if unit and unit.strip() else label

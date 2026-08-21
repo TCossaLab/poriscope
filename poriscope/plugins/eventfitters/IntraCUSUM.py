@@ -112,6 +112,11 @@ class IntraCUSUM(CUSUM):
             data, samplerate, baseline_mean, baseline_std, sublevel_metadata
         )
 
+        if baseline_mean is None:
+            raise ValueError(
+                "IntraCUSUM requires that baseline_mean be reported and is unable to compute intra-event thresholds without it"
+            )
+
         sign = np.sign(baseline_mean)
         down_threshold = (
             sign * sublevel_metadata["sublevel_current"][0]

@@ -122,13 +122,21 @@ def test_calculate_psd_calls_model_and_updates_view(
     Pxx_list: list[list[float]] = [[0.1, 0.2]]
     rms_list: list[float] = [0.05]
     frequency: list[float] = [0.0, 100.0]
+    kept_indices: list[int] = [0]
 
-    controller.model.calculate_psd.return_value = (Pxx_list, rms_list, frequency)
+    controller.model.calculate_psd.return_value = (
+        Pxx_list,
+        rms_list,
+        frequency,
+        kept_indices,
+    )
 
     controller.calculate_psd(psd_data, samplerate)
 
     controller.model.calculate_psd.assert_called_once_with(psd_data, samplerate)
-    mock_view.set_psd.assert_called_once_with(Pxx_list, rms_list, frequency)
+    mock_view.set_psd.assert_called_once_with(
+        Pxx_list, rms_list, frequency, kept_indices
+    )
 
 
 # ------------------- update_available_plugins ------------------------

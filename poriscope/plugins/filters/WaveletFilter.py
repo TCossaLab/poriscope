@@ -85,7 +85,12 @@ class WaveletFilter(MetaFilter):
         padlen = 100
         data = np.pad(data, padlen, mode="edge")
         wavelet = self.settings["Wavelet"]["Value"].encode("utf-8")
-        self.fun(data, len(data), wavelet)
+        # filters are invoked as plain callables from within other plugins' own
+        # channel loops rather than being dispatched through the channel-management
+        # system, so force_serial_channel_operations() is never consulted for them;
+        # guard the shared DLL handle directly instead.
+        with self.lock:
+            self.fun(data, len(data), wavelet)
         return data[padlen:-padlen]
 
     @log(logger=logger)
@@ -177,7 +182,7 @@ class WaveletFilter(MetaFilter):
         self.fun.restype = None
         self.fun.argtypes = [
             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-            ctypes.c_int,
+            ctypes.c_int64,
             ctypes.c_char_p,
         ]
 

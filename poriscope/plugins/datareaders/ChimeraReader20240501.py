@@ -218,7 +218,7 @@ class ChimeraReader20240501(MetaReader):
         """
         # replace date and time in a file name with wildcard, keep id, extension and headstage
         match = re.split(r"_HS\d+_", file_name)
-        if len(match) > 0:
+        if len(match) > 1:
             return match[0] + "*" + self.file_extension
         else:
             raise ValueError(

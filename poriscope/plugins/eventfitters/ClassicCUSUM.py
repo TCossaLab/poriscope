@@ -155,10 +155,9 @@ class ClassicCUSUM(CUSUM):
             varS = 0
             mean = data[0]
 
-            threshold = (
-                self._calculate_threshold(length, step_size) / 5
+            threshold = self._calculate_threshold(
+                length, step_size
             )  # determine optimal sensitivity
-            print(threshold, length, step_size)
             edges = [0]  # first sublevel starts at the start of the data block
 
             k = 0  # current data point index

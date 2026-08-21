@@ -109,11 +109,11 @@ class TestAlterDatabaseStatus:
 
 
 class TestUpdatePlugins:
-    def test_emits_update_available_plugins(self, controller):
+    def test_calls_update_available_plugins(self, controller):
         controller.update_available_plugins = MagicMock()
         controller.update_plugins(["ldr1", "ldr2"])
-        controller.update_available_plugins.emit.assert_called_once_with(
-            "MetaDatabaseLoader", ["ldr1", "ldr2"]
+        controller.update_available_plugins.assert_called_once_with(
+            {"MetaDatabaseLoader": ["ldr1", "ldr2"]}
         )
 
 

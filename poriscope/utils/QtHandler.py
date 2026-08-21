@@ -41,6 +41,7 @@ class QtHandler(logging.Handler):
         self.emitter = MessageBoxEmitter()
         # Connect the internal signal to the message box displaying slot - queued connection to ensure thread safety
         self.emitter.emit_message.connect(self.show_message_box, Qt.QueuedConnection)
+        self._dialog_open = False
 
     def emit(self, record):
         # Emit the signal with the log record
@@ -48,8 +49,17 @@ class QtHandler(logging.Handler):
 
     @Slot(object)
     def show_message_box(self, record):
-        # Create the message box based on the log level
-        if record.levelno >= logging.ERROR:
-            QMessageBox.critical(None, "Error", self.format(record))
-        elif record.levelno >= logging.WARNING:
-            QMessageBox.warning(None, "Warning", self.format(record))
+        # A modal QMessageBox runs its own nested event loop, during which
+        # further queued log records can still be delivered here; skip them
+        # instead of stacking additional modal dialogs on top of each other.
+        if self._dialog_open:
+            return
+        self._dialog_open = True
+        try:
+            # Create the message box based on the log level
+            if record.levelno >= logging.ERROR:
+                QMessageBox.critical(None, "Error", self.format(record))
+            elif record.levelno >= logging.WARNING:
+                QMessageBox.warning(None, "Warning", self.format(record))
+        finally:
+            self._dialog_open = False

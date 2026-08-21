@@ -76,27 +76,23 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_stdev, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.sublevel_start_times                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
-                        WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
+                        WHERE s.experiment_id={int(experiment)} AND s.channel_id={int(channel)} AND s.event_id={int(index)}"""
 
         except Exception as e:
             self.logger.debug(
-                f"Error constructing query in get_plot_features: {str(e)}",
-                self.__class__.__name__,
+                f"Error constructing query in get_plot_features: {str(e)}"
             )
+            return None, None, None, None, None, None
 
         valid, debug = self.validate_filter_query(query)
         if valid:
             result = self.query_database_directly(query)
-            if len(result) == 0:
-                self.logger.info(
-                    "Empty dataframe, no features to plot for event",
-                    self.__class__.__name__,
-                )
+            if result is None or len(result) == 0:
+                self.logger.info("Empty dataframe, no features to plot for event")
                 return None, None, None, None, None, None
         else:
             self.logger.debug(
-                f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}",
-                self.__class__.__name__,
+                f"Invalid query syntax in get_plot_features: {self._format_debug_msg(debug)}"
             )
             return None, None, None, None, None, None
 
@@ -143,8 +139,9 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         bases.append(baseline)
         hlabel.append("Baseline")
 
-        bases.append(baseline - sign * unfolded)
-        hlabel.append("unfolded level")
+        if unfolded is not None:
+            bases.append(baseline - sign * unfolded)
+            hlabel.append("unfolded level")
 
         # bases.append(-sign * unfolded + baseline - sign * std)
         # hlabel.append("unfolded level + std")

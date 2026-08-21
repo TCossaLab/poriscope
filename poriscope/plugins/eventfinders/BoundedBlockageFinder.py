@@ -28,7 +28,6 @@ import logging
 
 import numpy as np
 from fast_histogram import histogram1d
-from scipy.stats import median_abs_deviation
 from typing_extensions import override
 
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
@@ -102,7 +101,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
     @override
     def _get_baseline_stats(self, data):
         """
-        Get the local amplitude, mean, and standard deviation for a chunk of data.
+        Get the local mean and standard deviation for a chunk of data.
 
 
         :param data: Chunk of timeseries data to compute statistics on.
@@ -117,8 +116,11 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         if len(data) == 0:
             raise ValueError("No data found in range")
 
-        median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
+        if width <= 0:
+            raise ValueError(
+                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
+            )
         bins = int((top - bottom) / width)
         hist = histogram1d(data, range=[bottom, top], bins=bins)
         centers = np.linspace(bottom, top, len(hist))

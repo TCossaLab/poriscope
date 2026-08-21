@@ -86,7 +86,7 @@ class BesselFilter(MetaFilter):
             raise ValueError(
                 "Cutoff must be a positive number less than half the sampling rate"
             )
-        if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] < 0:
+        if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] <= 0:
             raise ValueError("Poles must be a positive integer between 1 and 10")
         z, p, k = bessel(
             settings["Poles"]["Value"],

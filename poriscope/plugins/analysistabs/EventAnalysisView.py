@@ -294,7 +294,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             )
             self.validate_single_channel(channels)
             channels[0]
-        except ValueError as e:
+        except (IndexError, ValueError) as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
 
@@ -359,8 +359,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.validate_single_channel(channels)
             channel = channels[0]
             # self._load_and_plot_events(loader, data_filter, channels, events)
-        except ValueError as e:
+        except (IndexError, ValueError) as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
+            return
         try:
             get_num_events_args = (channel,)
             self.global_signal.emit(
@@ -375,7 +376,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
         if events and max(events) >= self.num_events_allowed:
             self.logger.info(
-                "Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
+                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
             )
             events = [x for x in events if x < self.num_events_allowed]
 
@@ -443,6 +444,8 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         self.logger.error(
                             f"Unable to retrieve requested data for event {event}: {repr(e)}"
                         )
+                        self.plot_data = None
+                        continue
                     if self.plot_data is not None:
                         data_list.append(self.plot_data)
                         vertical_lines.append(None)
@@ -546,7 +549,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                     if self.vertical is not None:
                                         vertical_lines[-1] = self.vertical
                                         vertical_labels[-1] = self.vlabels
-                                        self.vertical_lines = None
+                                        self.vertical = None
                                         self.vlabels = None
                                     if self.horizontal is not None:
                                         horizontal_lines[-1] = self.horizontal
@@ -892,46 +895,49 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                     "set_event_filter",
                     (),
                 )
-        except:
-            raise
+        except Exception:
+            self.data_filter = None
+            self.logger.warning(
+                f"Unable to load filter {data_filter}, proceeding without a filter"
+            )
+
+        try:
+            for channel in channels:
+                self.global_signal.emit(
+                    "MetaEventFitter",
+                    eventfitter,
+                    "get_eventfitting_status",
+                    (channel,),
+                    "relay_eventfitting_status",
+                    (),
+                )  # update here to unify generators
+                if self.eventfitting_status is True:
+                    reply = QMessageBox.question(
+                        self,
+                        "Confirmation",
+                        f"Fitting was already completed in channel {channel}. Start over anyway?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No,
+                    )
+                    if reply == QMessageBox.No:
+                        continue
+                fit_events_args = (channel, False, self.data_filter, None)
+                # Emit the signal with the correct handler name for when the data is ready
+                ret_args = (channel, eventfitter, "MetaEventFitter")
+                self.global_signal.emit(
+                    "MetaEventFitter",
+                    eventfitter,
+                    "fit_events",
+                    fit_events_args,
+                    "set_generator",
+                    ret_args,
+                )  # update here to unify generators
+        except (IndexError, ValueError) as e:
+            self.logger.error(
+                f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
+            )
         else:
-            try:
-                for channel in channels:
-                    self.global_signal.emit(
-                        "MetaEventFitter",
-                        eventfitter,
-                        "get_eventfitting_status",
-                        (channel,),
-                        "relay_eventfitting_status",
-                        (),
-                    )  # update here to unify generators
-                    if self.eventfitting_status is True:
-                        reply = QMessageBox.question(
-                            self,
-                            "Confirmation",
-                            f"Fitting was already completed in channel {channel}. Start over anyway?",
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.No,
-                        )
-                        if reply == QMessageBox.No:
-                            return
-                    fit_events_args = (channel, False, self.data_filter, None)
-                    # Emit the signal with the correct handler name for when the data is ready
-                    ret_args = (channel, eventfitter, "MetaEventFitter")
-                    self.global_signal.emit(
-                        "MetaEventFitter",
-                        eventfitter,
-                        "fit_events",
-                        fit_events_args,
-                        "set_generator",
-                        ret_args,
-                    )  # update here to unify generators
-            except (IndexError, ValueError) as e:
-                self.logger.error(
-                    f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
-                )
-            else:
-                self.run_generators.emit(eventfitter)
+            self.run_generators.emit(eventfitter)
 
     @log(logger=logger)
     def _extract_plot_event_parameters(self, parameters):
@@ -942,7 +948,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             parameters (dict): Input parameter dictionary.
 
         Returns:
-            tuple: (eventfitter, data_filter, channels, events)
+            tuple: (loader, eventfitter, data_filter, channels, events)
         """
         loader = parameters.get("loader")
         eventfitter = parameters.get("eventfitter")
@@ -1014,7 +1020,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type parameters: dict
         """
         loader = parameters.get("loader")
-        if loader:
+        if loader and loader != "No Loader":
             self.global_signal.emit(
                 "MetaEventLoader", loader, "get_channels", (), "update_channels", ()
             )

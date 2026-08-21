@@ -112,6 +112,7 @@ class SettingsWindow(QWidget):
     update_user_plugin_location = Signal(str)
     get_shared_server_location = Signal()
     get_user_plugin_folder_location = Signal()
+    get_shared_logging_level = Signal()
     update_log_level = Signal(int)
     clear_cache = Signal()
 
@@ -777,6 +778,20 @@ class SettingsWindow(QWidget):
     @log(logger=logger)
     def set_user_plugin_location(self, user_plugin_loc):
         self.user_plugin_location = user_plugin_loc
+
+    @log(logger=logger)
+    def set_logging_level(self, level):
+        index = {
+            logging.NOTSET: 0,
+            logging.DEBUG: 1,
+            logging.INFO: 2,
+            logging.WARNING: 3,
+            logging.ERROR: 4,
+            logging.CRITICAL: 5,
+        }.get(level, 0)
+        self.logging_level_combobox.blockSignals(True)
+        self.logging_level_combobox.setCurrentIndex(index)
+        self.logging_level_combobox.blockSignals(False)
 
     @Slot(int)
     def update_logging_level(self, index):

@@ -146,7 +146,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
                 event_starts.append(event_start + offset)
             else:
                 pos = np.argmax(data[index:] > hysteresis)
-                if pos <= 0:
+                if pos == 0 and not (data[index] > hysteresis):
                     break
                 index += pos
                 event_end = index

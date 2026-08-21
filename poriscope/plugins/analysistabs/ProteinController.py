@@ -67,6 +67,16 @@ class ProteinController(MetaController):
         pass
 
     @log(logger=logger)
+    def check_column_exists(self, table_name):
+        """
+        Notify the view to check if a fit-data column exists in the given table.
+
+        :param table_name: Name of the table to check.
+        :type table_name: str
+        """
+        self.view.set_column_exists(table_name)
+
+    @log(logger=logger)
     def alter_database_status(self, status):
         """
         Inform the view whether database alteration was successful.

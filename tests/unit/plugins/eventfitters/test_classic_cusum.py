@@ -277,23 +277,27 @@ class TestLocateSublevelTransitionsRiseTime(unittest.TestCase):
 
 class TestLocateSublevelTransitionsMaxSublevels(unittest.TestCase):
     def test_retry_successfully_merges_down_to_max_sublevels(self):
-        # 5 plateaus at 0, 15, 30, 45, 60 (step=15 each). With
-        # max_sublevels=3, the outer retry loop grows step_size on each
-        # attempt; once it's grown enough, the small-step merge pass
-        # collapses adjacent plateaus until exactly 3 segments remain.
+        # 5 plateaus at 0, 30, 60, 90, 120 (step=30 each). With max_sublevels=0
+        # (no cap), this same data yields all 5 plateaus as distinct segments
+        # on the first pass -- confirmed by calling with the cap disabled.
+        # With max_sublevels=3, the outer retry loop grows step_size across
+        # several attempts (verified via _calculate_threshold's call count)
+        # until the small-step merge pass collapses adjacent plateaus down to
+        # exactly 3 segments.
         pf = _make_pf(step_size=5.0, max_sublevels=3)
         data = np.concatenate(
             [
                 np.full(60, 0.0),
-                np.full(60, 15.0),
                 np.full(60, 30.0),
-                np.full(60, 45.0),
                 np.full(60, 60.0),
+                np.full(60, 90.0),
+                np.full(60, 120.0),
             ]
         )
-        with _mock_threshold(10.0):
+        with _mock_threshold(10.0) as mock_threshold:
             edges = pf._locate_sublevel_transitions(data, 1e6, None, None, 0.0, 5.0)
         np.testing.assert_array_equal(edges, [0, 120, 240, 300])
+        self.assertGreater(mock_threshold.call_count, 1)
 
     def test_too_many_levels_raised_after_retries_exhausted(self):
         # 5 plateaus with very large, well-separated jumps (0, 100, 200,
