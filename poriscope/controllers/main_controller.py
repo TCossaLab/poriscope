@@ -440,26 +440,10 @@ class MainController(QObject):
                         settings=settings,
                         key=key,
                     )
-                except ValueError as e:
-                    if "already exists globally" in str(e):
-                        self.logger.warning(
-                            f"Skipped loading plugin {key} from session: {str(e)}. Plugin with key '{key}' already exists."
-                        )
-                    else:
-                        self.logger.error(
-                            f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
-                        )
                 except Exception as e:
-                    # unexpected failure: keep restore running
                     self.logger.error(
-                        "Unexpected restore error (%s/%s, key=%s): %s",
-                        metaclass,
-                        subclass,
-                        key,
-                        e,
+                        f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
-                # optionally: logger.debug("traceback", exc_info=True)
-                # continue
 
     @log(logger=logger)
     @Slot()

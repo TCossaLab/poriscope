@@ -1082,31 +1082,6 @@ def test_load_session_logs_error_on_analysis_tab_failure(
     controller.instantiate_analysis_tab.assert_called_once_with("SomeTab")
 
 
-def test_load_session_logs_warning_on_already_exists_value_error(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log a warning when validate_and_instantiate_plugin raises ValueError with 'already exists globally'.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.plugin_history = {
-        "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
-    }
-    controller.main_model.load_session = mocker.Mock(
-        return_value=controller.plugin_history
-    )
-    controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
-        side_effect=ValueError("plugin already exists globally")
-    )
-
-    controller.load_session("session.json")
-
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
-
-
 def test_load_session_logs_error_on_other_value_error(
     controller: MainController,
     mocker: MockerFixture,
