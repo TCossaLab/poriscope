@@ -460,7 +460,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
-        :param settings: Parameters for event detection.
+        :param settings: Parameters required to configure this database writer.
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """

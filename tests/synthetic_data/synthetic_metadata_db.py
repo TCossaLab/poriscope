@@ -72,6 +72,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.MetaEventFitter import MetaEventFitter
 from tests.synthetic_data.synthetic_events_db import generate_events_database
 
@@ -282,6 +283,16 @@ def _build_settings(
     just "Value". Bypasses __init__ via object.__new__ to call
     get_empty_settings() without needing a constructed instance first.
 
+    When an override's value is itself an already-constructed plugin
+    instance (e.g. "MetaEventLoader": loader), "Type" is reset to None
+    instead of left as whatever get_empty_settings() declared (typically
+    str, since a real user picks that plugin by its string key from a
+    dropdown). This mirrors what DataPluginController.
+    validate_and_instantiate_plugin does once it resolves that string key
+    into the real instance, before ever calling apply_settings() --
+    the post-resolution state its stricter type validation actually
+    expects to see (see BaseDataPlugin._validate_param_types).
+
     :param cls: The plugin class to build settings for.
     :type cls: Type[Any]
     :param overrides: Field values to set on top of the empty settings.
@@ -298,6 +309,8 @@ def _build_settings(
         if key not in settings:
             settings[key] = {"Type": type(value)}
         settings[key]["Value"] = value
+        if isinstance(value, BaseDataPlugin):
+            settings[key]["Type"] = None
     return settings
 
 

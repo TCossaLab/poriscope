@@ -32,7 +32,7 @@ from PySide6.QtCore import Signal
 
 def log(_func=None, *, logger, debug_only=False):
     """
-    @log(logger): A decorator that logs the entry, exit, and exceptions of a function.
+    @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
 
     :param _func: The function to be decorated. If None, the decorator is returned.
     :type _func: callable, optional

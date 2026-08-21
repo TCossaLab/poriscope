@@ -667,15 +667,22 @@ class MetaEventFinder(BaseDataPlugin):
         raw_data: bool = False,
     ) -> Generator[npt.NDArray[np.float64], None, None]:
         """
-        Set up a generator that will return the start and end indices of event i within the data chunk analyzed. If offset was provided during analysis, it will be included here.
+        Set up a generator that yields the data and metadata dict for each event found in the given channel, in order, via repeated calls to :meth:`get_single_event_data`.
 
-        :param channel: label for the channel from which to retrieve event indices
+        :param channel: label for the channel from which to retrieve event data
         :type channel: int
+        :param data_filter: a function that is called to preprocess the data before it is returned
+        :type data_filter: Optional[Callable]
+        :param rectify: should the data be returned rectified?
+        :type rectify: bool
+        :param raw_data: return raw adc codes on True, pA values on False
+        :type raw_data: bool
 
-        :raises ValueError: If events have not been found or if index is out of bounds.
+        :raises KeyError: If the channel does not exist.
+        :raises ValueError: If events have not been found, or event finding has not finished, for this channel.
 
-        :return: A Generator that gives data in an event and the index of the start of that event relative to the start of the file. If offset was provided during analysis, it will be included here.
-        :rtype: Generator[Tuple[int,int], None, None]
+        :return: A Generator that yields, for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`.
+        :rtype: Generator[Dict[str, Union[npt.NDArray[np.float64], float]], None, None]
         """
         if (
             self.event_starts.get(channel) is None

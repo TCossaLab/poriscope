@@ -60,9 +60,9 @@ class MainModel(QObject):
 
     def __init__(self, app_config):
         """
-        Initializes the MainModel with the given configuration file path.
+        Initializes the MainModel with the given app configuration.
         Args:
-            config_path (str): The path to the configuration file.
+            app_config (dict): The application's configuration settings.
         """
         super().__init__()
         self.app_config = app_config
