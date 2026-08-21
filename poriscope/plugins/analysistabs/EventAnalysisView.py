@@ -948,7 +948,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             parameters (dict): Input parameter dictionary.
 
         Returns:
-            tuple: (eventfitter, data_filter, channels, events)
+            tuple: (loader, eventfitter, data_filter, channels, events)
         """
         loader = parameters.get("loader")
         eventfitter = parameters.get("eventfitter")

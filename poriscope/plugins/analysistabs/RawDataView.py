@@ -435,8 +435,8 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
-        :return: Tuple of mean and standard deviation.
-        :rtype: tuple[float, float]
+        :return: Tuple of local amplitude, mean, and standard deviation.
+        :rtype: tuple[float, float, float]
         """
         top = np.max(data)
         bottom = np.min(data)

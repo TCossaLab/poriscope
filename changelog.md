@@ -194,6 +194,8 @@
     * Fixed `RawDataModel.integrate_noise` crashing "Update PSD" with an uncaught `IndexError` when a short time window made `welch()` return a single-frequency-bin PSD
     * Fixed `RawDataModel`/`RawDataController`/`RawDataView` PSD calculation silently mislabeling a surviving channel's PSD under the wrong channel name whenever an earlier channel was skipped
     * Fixed a log message missing an `f` prefix (another instance of the same bug was fixed in `EventAnalysisView`), so the intended values were never actually interpolated
+    * Fixed `_get_baseline_stats`'s docstring documenting a `tuple[float, float]` return, missing the local amplitude that's actually the first of three returned values
+    * Fixed `RawDataController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
 
 * **Updated Frontend Plugin: `EventAnalysisView`**
     * Fixed: crash when zero channels were selected while shifting or plotting events
@@ -202,6 +204,8 @@
     * Fixed `eventAnalysisControls.py` inserting `"No EventFitter"` into the fitter combo box while everything else checked for `"No Event Fitter"`, so the "no fitter selected" guard never fired and Fit Events could silently target a nonexistent plugin key; `validate_inputs` now also disables **Fit Events** when no real event fitter is selected, matching the loader/writer checks
     * Fixed `_start_eventfitter` re-raising a filter-loading failure instead of falling back gracefully like `_handle_plot_events` already does, so a broken/misconfigured filter crashed Fit Events instead of proceeding without one
     * Fixed `_start_eventfitter` returning out of its whole channel loop when the user clicked "No" on one channel's "already fitted" confirmation dialog during a multi-channel fit batch, silently cancelling fitting (and dropping any already-queued generators) for every remaining channel instead of just skipping that one
+    * Fixed `_extract_plot_event_parameters`'s docstring documenting a 4-tuple return, omitting `loader` from the real 5-tuple
+    * Fixed `EventAnalysisController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
 
 * **Updated Frontend Component: `MainView`**
     * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.

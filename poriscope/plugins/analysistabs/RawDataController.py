@@ -107,13 +107,13 @@ class RawDataController(MetaController):
         self.view.update_plot_samplerate(samplerate)
 
     @log(logger=logger)
-    @Slot(dict)
+    @Slot(list)
     def update_channels(self, num_channels):
         """
         Update the view with the current number of channels available or selected.
 
-        :param num_channels: Dictionary containing channel information.
-        :type num_channels: dict
+        :param num_channels: List of channel identifiers.
+        :type num_channels: List[int]
         """
         self.view.update_channels(num_channels)
 
