@@ -198,8 +198,6 @@ class MetaDatabaseWriter(BaseDataPlugin):
                     abort_opt: Optional[bool] = yield index / num_events
                     abort = bool(abort_opt)
                     try:
-                        if abort is True:
-                            break
                         success = self._write_event(
                             channel,
                             event_metadata,
@@ -210,6 +208,8 @@ class MetaDatabaseWriter(BaseDataPlugin):
                             abort=abort,
                             last_call=last_call,
                         )
+                        if abort is True:
+                            break
                         if success:
                             self.written[channel] += 1
                         else:
