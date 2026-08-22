@@ -632,7 +632,9 @@ class ClusteringView(MetaView, WalkthroughMixin):
         return clustering_data, labels, probs, logs, norm, units, plot
 
     @log(logger=logger)
-    def update_plot(self, data, labels, confidence, logs, normalized, units, plot) -> None:
+    def update_plot(
+        self, data, labels, confidence, logs, normalized, units, plot
+    ) -> None:
         """
         Updates the plot with clustered data and redraws it.
 
