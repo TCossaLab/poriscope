@@ -469,7 +469,7 @@ class SQLiteEventWriter(MetaWriter):
 
         :return: success of the write operation.
         :rtype: bool
-        :raises ValueError: if a database connection cannot be opened
+        :raises ValueError: if a database connection cannot be opened, or if start_sample, padding_before, or padding_after is None
         :raises sqlite3.Error: if a database operation fails
         :raises Exception: if an unexpected error occurs during the write
         """
@@ -484,6 +484,11 @@ class SQLiteEventWriter(MetaWriter):
                 self.conn.close()
                 self.conn = None
             return False
+
+        if start_sample is None or padding_before is None or padding_after is None:
+            raise ValueError(
+                f"start_sample, padding_before, and padding_after must all be provided to write an event (got start_sample={start_sample}, padding_before={padding_before}, padding_after={padding_after})"
+            )
 
         try:
             success = False
@@ -507,9 +512,9 @@ class SQLiteEventWriter(MetaWriter):
                     channel,
                     self.channel_db_id[channel],
                     index,
-                    int(start_sample),  # type: ignore[arg-type] # flagged: base contract types this Optional[int]; see future_fixes.md
-                    int(padding_before),  # type: ignore[arg-type]
-                    int(padding_after),  # type: ignore[arg-type]
+                    int(start_sample),
+                    int(padding_before),
+                    int(padding_after),
                     baseline_mean,
                     baseline_std,
                     data_blob,
@@ -562,7 +567,7 @@ class SQLiteEventWriter(MetaWriter):
         scale: Optional[float] = None,
         offset: Optional[float] = None,
         raw_data: bool = False,
-        dtype: type = "u2",  # type: ignore[assignment]
+        dtype: type = np.uint16,
         adc_min: int = np.iinfo(np.int16).min,
         adc_max: int = np.iinfo(np.int16).max,
     ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:

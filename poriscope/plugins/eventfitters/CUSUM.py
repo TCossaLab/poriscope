@@ -415,8 +415,13 @@ class CUSUM(MetaEventFitter):
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
         :rtype: Dict[str, npt.NDArray[Numeric]]
-        :raises ValueError: if the sublevel current at the start and end of the event differ by more than twice the local baseline standard deviation (baseline mismatch)
+        :raises ValueError: if baseline_std is None, or if the sublevel current at the start and end of the event differ by more than twice the local baseline standard deviation (baseline mismatch)
         """
+        if baseline_std is None:
+            raise ValueError(
+                "baseline_std must be provided to populate sublevel metadata; it cannot be recovered here if the event was reported without it"
+            )
+
         sublevel_metadata = {}
 
         num_states = len(sublevel_starts) - 1
@@ -450,7 +455,7 @@ class CUSUM(MetaEventFitter):
                     sublevel_metadata["sublevel_current"][0]
                     - sublevel_metadata["sublevel_current"][-1]
                 )
-                > 2 * baseline_std  # type: ignore[operator] # flagged: baseline_std is Optional[float] per contract; see future_fixes.md
+                > 2 * baseline_std
             ):
                 raise ValueError("Baseline Mismatch")
 
@@ -520,13 +525,13 @@ class CUSUM(MetaEventFitter):
 
             # get sublevel start times
             sublevel_metadata["sublevel_start_times"] = np.array(
-                sublevel_starts[:-1] * dt_us,  # type: ignore[operator] # flagged: sublevel_starts is declared List[int] but is actually an ndarray at runtime; see future_fixes.md
+                np.asarray(sublevel_starts[:-1]) * dt_us,
                 dtype=np.float64,
             )
 
             # get sublevel end times
             sublevel_metadata["sublevel_end_times"] = np.array(
-                sublevel_starts[1:] * dt_us, dtype=np.float64  # type: ignore[operator]
+                np.asarray(sublevel_starts[1:]) * dt_us, dtype=np.float64
             )
 
             # get the maximal deviation from the event baseline for each sublevel
