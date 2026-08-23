@@ -692,7 +692,9 @@ class MetaEventFinder(BaseDataPlugin):
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
         raw_data: bool = False,
-    ) -> Generator[Optional[Dict[str, Union[npt.NDArray[np.float64], float]]], None, None]:
+    ) -> Generator[
+        Optional[Dict[str, Union[npt.NDArray[np.float64], float]]], None, None
+    ]:
         """
         Set up a generator that yields the data and metadata dict for each event found in the given channel, in order, via repeated calls to :meth:`get_single_event_data`.
 

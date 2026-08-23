@@ -662,7 +662,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     @log(logger=logger)
-    def _insert_event(self, cursor, event_metadata, experiment_id, channel_db_id) -> bool:
+    def _insert_event(
+        self, cursor, event_metadata, experiment_id, channel_db_id
+    ) -> bool:
         """
         Insert event metadata into the 'events' table. Return True on success, False on failure.
 

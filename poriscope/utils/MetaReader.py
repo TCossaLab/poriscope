@@ -677,7 +677,9 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _get_file_time_stamps(self, file_names: List[os.PathLike], configs: List[dict]) -> Any:
+    def _get_file_time_stamps(
+        self, file_names: List[os.PathLike], configs: List[dict]
+    ) -> Any:
         """
         **Purpose:** Extract time stamps for sorting files chronologically within a channel.
 
