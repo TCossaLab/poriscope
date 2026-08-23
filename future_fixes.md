@@ -57,6 +57,25 @@ session continues this pass:**
   updated entries for the final resolutions and the no-longer-relevant
   `# type: ignore` lines have been removed - none remain from this batch.
 
+## Measured remaining scope (2026-08-23)
+
+Rather than guess, both policy flags were flipped temporarily (`arg-type-hints-in-signature = true` in `pyproject.toml`, `disallow_untyped_defs`/`check_untyped_defs = True` in `mypy.ini`), the real gates run against the whole tree, then both reverted. Findings:
+
+**pydoclint** (`arg-type-hints-in-signature = true`): 995 new violation lines across 48 files - `plugins/` (31 files), `utils/` (13), `controllers/` (2), `models/` (1), `views/` (1). Two distinct kinds of work, not one:
+1. Genuinely unannotated methods (`DOC106`/`DOC107`), concentrated entirely in files this pass hasn't touched: all 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files in `utils/`, the whole `analysistabs/` GUI family (5 Controller/Model/View triads + `utils/*controls.py` mixins + `walkthrough*`), `DataPluginController.py`/`DataPluginModel.py`/`main_controller.py`, and `dict_dialog_widget.py`. Plus the excluded `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py`, which need an explicit decision (permanent exclusion vs. eventually annotating) before any global flip, since they can't just stay silently broken once the policy is on.
+2. Stale docstring `:type:` text in files this pass *already* typed (`DOC105` - hint exists, docstring wording doesn't match it exactly), a smaller mechanical cleanup in those 13 already-completed data-plugin files: e.g. `MetaReader._validate_file_type`'s docstring says `os.Pathlike` (lowercase typo) instead of `os.PathLike`; `_get_file_pattern`'s docstring still says `os.PathLike` for a parameter that's actually `str`; `_convert_data`'s docstring says generic `numpy.ndarray` instead of the real `npt.NDArray[np.int16]`; and every `get_empty_settings`/`standalone`/`globally_available_plugins` docstring line needs its optional-argument phrasing tightened to match exactly. These propagated into every subclass that copied the same base docstring.
+
+**mypy** (`disallow_untyped_defs`/`check_untyped_defs = True`): 3248 errors, but 2167 of those are in `tests/` - a gotcha not previously documented here: pre-commit's `mypy` hook passes explicit file paths (including test files), which bypasses `mypy.ini`'s `exclude = ^tests/` entirely (`exclude` only applies to directory-discovery, not explicitly-listed files - a known mypy quirk). **The pre-commit hook config needs its own `exclude`/`files` scoping added before this flip**, independent of `mypy.ini`, or the flip will look clean via `mypy poriscope` but break every real commit. The remaining 1021 real errors in `poriscope/` are heavily concentrated in the same not-yet-annotated areas: `analysistabs/ProteinView.py` (78), `main_view.py` (67), `MetadataView.py` (62), `NanoTrees.py` (45), `RawDataView.py` (41), the `*controls.py` mixins, tapering down through the rest of `utils/`, `views/widgets/`, and the controllers/models.
+
+**Ordered remaining work:**
+1. `poriscope/utils/` - the 13 `Meta*`/base files (biggest leverage: everything else depends on them). *(in progress as of this note)*
+2. `analysistabs/` GUI family - 5 tab triads + `*controls.py` mixins + `walkthrough*` (the largest single chunk of remaining volume).
+3. `main_controller.py`/`main_model.py`/`main_view.py`, `DataPluginController.py`/`DataPluginModel.py`, `settings_window.py`, `help.py`, `views/widgets/*`.
+4. A docstring-text-only cleanup pass over the 13 files already typed by the first installment (the `DOC105` stale-wording list above).
+5. A decision on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` - permanent carve-out or eventual inclusion - before flipping anything globally.
+6. Add `exclude`/scoping to the pre-commit `mypy` hook itself so it stops checking `tests/` as explicit paths, independent of `mypy.ini`.
+7. Only then: flip both flags, regenerate the pydoclint baseline fresh, confirm both gates are clean, update `CLAUDE.md`.
+
 ## Goal
 
 Add type hints to every parameter (and return type) of every function/method across
