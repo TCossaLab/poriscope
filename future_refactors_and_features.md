@@ -4,18 +4,24 @@ Context block for a dedicated future session. This file is separate from
 `future_fixes.md` on purpose: `future_fixes.md` tracks QA/tooling work (type
 annotations, compliance-gate infrastructure for community contributions);
 this file tracks *changes to the frontend plugin architecture itself* —
-both refactoring of existing code (Part 1) and a new feature that depends on
-that refactoring having landed first (Part 2). Keep that QA-vs-architecture
-distinction when deciding whether something belongs here or in
-`future_fixes.md`.
+refactoring of existing code (Part 1), a new feature that depends on that
+refactoring having landed first (Part 2), and a standalone improvement to an
+existing mechanism that either part may reference (Part 3). Keep that
+QA-vs-architecture distinction when deciding whether something belongs here
+or in `future_fixes.md`.
 
-Both parts are kept in **this one file, in this order, deliberately**: Part 2
-(widget-state session persistence) should not be implemented before Part 1's
-`BasePluginControls` extraction lands, because Part 2's design leans directly
-on that shared base existing. Splitting them into separate files risked
-losing that ordering constraint. If Part 1 is ever done incrementally, do the
-`BasePluginControls` extraction (Part 1, Tier 1 headline finding) before
-starting Part 2, even if the rest of Part 1 is left for later.
+Parts 1 and 2 are kept in **this one file, in this order, deliberately**:
+Part 2 (widget-state session persistence) should not be implemented before
+Part 1's `BasePluginControls` extraction lands, because Part 2's design
+leans directly on that shared base existing. Splitting them into separate
+files risked losing that ordering constraint. If Part 1 is ever done
+incrementally, do the `BasePluginControls` extraction (Part 1, Tier 1
+headline finding) before starting Part 2, even if the rest of Part 1 is left
+for later. Part 3 (`register_action` overwrite-mode recording) has no such
+ordering dependency — it can be picked up independently of both, whenever
+convenient — but it's recorded in this same file because it modifies the
+exact decorator Part 2 relies on and Part 1 already flags for a
+documentation pass.
 
 ---
 
@@ -619,3 +625,87 @@ this as a decorator mirroring `@register_action` — the event-sourcing
 mechanism solves a scale problem this feature doesn't have, and copying it
 would import the replay-ordering fragility this section documents without
 any corresponding benefit.
+
+---
+
+# Part 3: `register_action` — Optional Overwrite-Mode Recording
+
+A standalone, independently-shippable improvement to `@register_action`
+itself, unrelated to whether Parts 1 or 2 above ever get built. Recorded
+here rather than in a separate file because it modifies the exact same
+decorator Part 2 depends on and Part 1's new documentation bullet already
+references.
+
+## Current behavior
+
+`register_action()` (`poriscope/utils/LogDecorator.py:151-170`) takes no
+arguments today. Every call to a decorated method unconditionally appends a
+new entry: `MetaController.update_tab_actions`
+(`MetaController.py:461-500`) does
+`self.tab_action_history[len(self.tab_action_history)] = history` — a plain
+append keyed by the next integer index, with no check for whether the same
+function was already recorded earlier. On replay, every one of those
+entries gets re-run in order.
+
+## Proposed change
+
+Add a decorator-factory argument controlling how a call is recorded, e.g.
+`@register_action(mode="serial")` (the current, and default, behavior) vs.
+`@register_action(mode="overwrite")`. In overwrite mode, a new call to the
+decorated function replaces whatever entry the *same function* already has
+in the log, instead of appending a new one alongside it. This should be a
+decoration-time choice (set once per decorated method, like
+`register_action()`'s current no-argument form), not a per-call runtime
+argument — a given action should consistently behave one way or the other.
+
+**Rationale (the actual problem this solves):** some registered actions are
+idempotent in the sense that only their *final* state matters — calling them
+repeatedly just resets the same relevant memory state each time. Recording
+every intermediate call in serial mode means the saved log is larger than it
+needs to be, and replaying it re-runs work that gets immediately superseded
+by the next recorded call anyway. Overwrite mode records only what actually
+still matters at save time. Defaulting to `mode="serial"` keeps all 5
+existing `@register_action` call sites unchanged and behaviorally identical.
+
+## Open design questions to resolve before implementing (not decided here)
+
+- **What identifies "the same function" for overwrite purposes?** The
+  natural first answer is `func.__name__` alone, matching how replay already
+  dispatches via `getattr(self, history["function"])`. But several of this
+  codebase's decorated-method candidates take a channel (or other
+  discriminating) argument — if a hypothetical future `@register_action`
+  -decorated method were called once per channel, collapsing purely by
+  function name would incorrectly discard an earlier channel's recorded call
+  when a different channel's call comes in later. Whether overwrite mode
+  needs a narrower dedup key (function name *plus* a caller-specified subset
+  of args/kwargs that identifies "the same logical target") should be
+  settled before this ships, not discovered after the fact on the first
+  per-channel action that opts into it.
+- **Does an overwrite replace the entry in its original sequence position,
+  or move it to the end (the position of the most recent call)?** These
+  differ whenever other, unrelated actions were recorded in between the two
+  calls to the same function, and the difference is observable on replay if
+  anything about those in-between actions is order-sensitive. Pick one
+  deliberately; don't let it fall out of whichever is easiest to implement
+  against the current `OrderedDict`-by-integer-index storage.
+- **Storage/lookup shape.** The current structure is append-only, keyed by
+  an ever-incrementing integer with no index from function name to position.
+  Supporting "find and replace the existing entry for this function" needs
+  either a scan over the existing entries (fine at this scale) or a small
+  secondary index — a minor implementation detail, but one that touches the
+  same data structure the undo path in `update_tab_actions` already
+  manipulates, so it should be designed alongside that logic, not bolted on
+  independently.
+
+## Cross-references
+
+- Complements Part 2's synchronous-replay-blocking observation: fewer
+  redundant recorded calls directly means less work to redo when a tab's
+  action log is eventually replayed, whether or not that replay is ever
+  moved onto async infrastructure.
+- Should be covered by the same `MetaController`/`MetaView`/`LogDecorator`
+  docstring pass flagged in Part 1's Tier 3 (the `@register_action` contract
+  bullet) — this argument's semantics (especially the dedup-key question
+  above) need to be as clearly documented as the two standing invariants
+  already flagged there, for the same reason: nothing about this is
+  currently discoverable except by reading the decorator's source.
