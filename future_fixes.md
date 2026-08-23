@@ -42,13 +42,20 @@ session continues this pass:**
   Verify this empirically with `git stash` before assuming any mypy output is
   attributable to your own change.
 - Three concrete "genuine logic-shaped mismatch, flag don't fix" discrepancies were
-  suppressed with narrow, commented `# type: ignore[<code>]` lines (not fixed, not
-  hidden silently) so the batch could land: `CUSUM`/`NoFitter`'s `baseline_std`
-  (`Optional[float]` used in unguarded arithmetic) and `sublevel_starts`
-  (`List[int]`-declared but ndarray at runtime), and `SQLiteEventWriter._write_data`'s
-  `Optional[int]` params passed straight into `int()`. These need an actual human
-  decision, not just a suppression - see `changelog.md` and the suggested-resolutions
-  discussion from the session that added them for options.
+  initially suppressed with narrow, commented `# type: ignore[<code>]` lines (not
+  fixed, not hidden silently) so the batch could land, then resolved for real in the
+  same session once reviewed: `CUSUM`/`NoFitter`'s `baseline_std` (`Optional[float]`
+  used in unguarded arithmetic) now raises a clear `ValueError` if `None`;
+  `sublevel_starts` (`List[int]`-declared but ndarray at runtime) is now wrapped in
+  `np.asarray(...)` at the two arithmetic call sites rather than widening
+  `MetaEventFitter`'s declared type (which turned out to be intentionally generic -
+  worth double-checking a `Meta*` base's docstring for "this can be more than it
+  looks like" language before assuming a narrower type is the right fix, as the
+  first-pass suggestion here was wrong until that was checked); and
+  `SQLiteEventWriter._write_data`'s `Optional[int]` params passed straight into
+  `int()` now get an explicit `ValueError` guard instead. See `changelog.md`'s
+  updated entries for the final resolutions and the no-longer-relevant
+  `# type: ignore` lines have been removed - none remain from this batch.
 
 ## Goal
 
