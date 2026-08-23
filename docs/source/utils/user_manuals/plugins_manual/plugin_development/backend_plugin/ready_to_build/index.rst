@@ -20,6 +20,14 @@ As long as the API is respected (order and type of arguments, return type, and a
 
 To assist with quality control, any contributions to the poriscope repository will need to pass our tests and type checks. To assist with this, functions should be decorated with the ``@override`` tag to tell our type checker what to expect, and should have detailed docstrings that explain the you are doing in your function. Plugins will only be added to the repository when fully compliant, but we are happy to help if you get stuck in the process.
 
+.. tip::
+
+   "Our tests and type checks" means something specific and checkable, not a vague
+   standard a reviewer applies by eye. See :ref:`quality_control` for exactly what
+   runs (formatting, typing, docstring consistency, and plugin interface compliance
+   testing), and work through :ref:`pre_pr_checklist` before you open your pull
+   request — it will save you a review round-trip.
+
 .. toctree::
    :maxdepth: 1
 
