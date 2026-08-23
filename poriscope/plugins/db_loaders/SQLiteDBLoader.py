@@ -889,9 +889,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _load_event_data(
-        self, query
-    ) -> Generator[
+    def _load_event_data(self, query) -> Generator[
         Tuple[
             int,
             int,

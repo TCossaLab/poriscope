@@ -1639,7 +1639,9 @@ class ProteinView(MetaView, WalkthroughMixin):
     # -------------------------------------------------------------------------
 
     @log(logger=logger)
-    def _resolve_event_db_ids(self, loader, event_ids, exp, channel) -> Optional[pd.DataFrame]:
+    def _resolve_event_db_ids(
+        self, loader, event_ids, exp, channel
+    ) -> Optional[pd.DataFrame]:
         """
         Resolve a list of event_id values, scoped to a specific experiment and
         channel, to their corresponding database primary keys (id) via a single
