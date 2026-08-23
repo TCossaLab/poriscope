@@ -85,39 +85,112 @@ poriscope/plugins/analysistabs/utils/metadatacontrols.py
     DOC108: Method `MetadataControls.set_event_id_input`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/BinaryReader1X.py
+    DOC108: Method `BinaryReader1X.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BinaryReader1X._validate_file_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BinaryReader1X._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._map_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._convert_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X._set_raw_dtype`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BinaryReader1X.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/ChimeraReader20240101.py
+    DOC108: Method `ChimeraReader20240101.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ChimeraReader20240101._validate_file_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ChimeraReader20240101._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._map_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._convert_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101._set_raw_dtype`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240101.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/ChimeraReader20240501.py
+    DOC108: Method `ChimeraReader20240501.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ChimeraReader20240501._validate_file_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ChimeraReader20240501._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._map_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._convert_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501._set_raw_dtype`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReader20240501.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/ChimeraReaderVC100.py
+    DOC108: Method `ChimeraReaderVC100.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ChimeraReaderVC100._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ChimeraReaderVC100._validate_file_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._map_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._convert_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100._set_raw_dtype`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ChimeraReaderVC100.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
+poriscope/plugins/datareaders/LegacyElementsReader.py
+    DOC108: Method `LegacyElementsReader._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `LegacyElementsReader._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `LegacyElementsReader._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `LegacyElementsReader._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/SingleBinaryDecoder.py
+    DOC108: Method `SingleBinaryDecoder.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SingleBinaryDecoder._validate_file_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SingleBinaryDecoder._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._map_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._get_file_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._convert_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder._set_raw_dtype`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SingleBinaryDecoder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/TCossaLabABFReader.py
+    DOC108: Method `TCossaLabABFReader.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `TCossaLabABFReader._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `TCossaLabABFReader._validate_file_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._map_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._convert_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._get_configs`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader._set_raw_dtype`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `TCossaLabABFReader.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datawriters/SQLiteEventWriter.py
     DOC108: Method `SQLiteEventWriter._initialize_database`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventWriter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteEventWriter.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventWriter.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteEventWriter._write_channel_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventWriter._write_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteEventWriter._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventWriter._rescale_data_to_adc`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/db_loaders/SQLiteDBLoader.py
     DOC108: Method `SQLiteDBLoader.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBLoader.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.get_experiment_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.get_channels_by_experiment`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBLoader.get_event_counts_by_experiment_and_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.get_column_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.get_column_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.get_column_names_by_table`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -126,9 +199,11 @@ poriscope/plugins/db_loaders/SQLiteDBLoader.py
     DOC108: Method `SQLiteDBLoader.alter_database`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.add_columns_to_table`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader.get_samplerate_by_experiment_and_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBLoader.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader._load_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader._load_metadata_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBLoader._load_event_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBLoader._get_sqlite_type`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/db_loaders/SQLitePeakDBLoader.py
@@ -136,11 +211,26 @@ poriscope/plugins/db_loaders/SQLitePeakDBLoader.py
 --------------------
 poriscope/plugins/dbwriters/SQLiteDBWriter.py
     DOC108: Method `SQLiteDBWriter.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._write_event`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._write_experiment_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBWriter._write_channel_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteDBWriter._initialize_database`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._insert_event`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._insert_sublevels`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._insert_event_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteDBWriter._column_exists`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
+poriscope/plugins/eventfinders/BoundedBlockageFinder.py
+    DOC108: Method `BoundedBlockageFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BoundedBlockageFinder._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BoundedBlockageFinder._get_baseline_stats`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/eventfinders/ClassicBlockageFinder.py
     DOC108: Method `ClassicBlockageFinder.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClassicBlockageFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClassicBlockageFinder._find_events_in_chunk`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClassicBlockageFinder._filter_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClassicBlockageFinder._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -149,6 +239,7 @@ poriscope/plugins/eventfinders/ClassicBlockageFinder.py
     DOC108: Method `ClassicBlockageFinder._gaussian_fit`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/eventfinders/ThresholdBlockageFinder.py
+    DOC108: Method `ThresholdBlockageFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ThresholdBlockageFinder._find_events_in_chunk`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/eventfitters/Basic_PeakFinder.py
@@ -173,12 +264,25 @@ poriscope/plugins/eventfitters/Basic_PeakFinder.py
     DOC203: Method `Basic_PeakFinder.find_mode_blockage_level` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
     DOC203: Method `Basic_PeakFinder.enumerate_peaks` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
 --------------------
+poriscope/plugins/eventfitters/ClassicCUSUM.py
+    DOC108: Method `ClassicCUSUM.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClassicCUSUM._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
 poriscope/plugins/eventfitters/CUSUM.py
     DOC108: Method `CUSUM.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `CUSUM.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `CUSUM.construct_fitted_event`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `CUSUM._pre_process_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `CUSUM._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `CUSUM._populate_sublevel_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `CUSUM._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `CUSUM._post_process_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `CUSUM._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `CUSUM._calculate_threshold`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
+poriscope/plugins/eventfitters/IntraCUSUM.py
+    DOC108: Method `IntraCUSUM.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `IntraCUSUM._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/eventfitters/NanoTrees.py
     DOC203: Method `NanoTrees.get_empty_settings` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
@@ -200,8 +304,12 @@ poriscope/plugins/eventfitters/NanoTrees.py
 --------------------
 poriscope/plugins/eventfitters/NoFitter.py
     DOC108: Method `NoFitter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `NoFitter.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `NoFitter.construct_fitted_event`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `NoFitter._pre_process_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `NoFitter._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `NoFitter._populate_sublevel_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `NoFitter._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `NoFitter._post_process_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `NoFitter._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
@@ -226,16 +334,26 @@ poriscope/plugins/eventfitters/PeakFinder.py
     DOC203: Method `PeakFinder.enumerate_peaks` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
 --------------------
 poriscope/plugins/eventloaders/SQLiteEventLoader.py
+    DOC108: Method `SQLiteEventLoader.load_event`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventLoader.get_num_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventLoader.get_samplerate`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteEventLoader.get_valid_indices`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `SQLiteEventLoader.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `SQLiteEventLoader._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/filters/BesselFilter.py
     DOC108: Method `BesselFilter._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BesselFilter._apply_filter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BesselFilter.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BesselFilter.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BesselFilter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/filters/WaveletFilter.py
     DOC108: Method `WaveletFilter._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `WaveletFilter._apply_filter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `WaveletFilter.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `WaveletFilter.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `WaveletFilter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/BaseDataPlugin.py
     DOC108: Method `BaseDataPlugin.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
