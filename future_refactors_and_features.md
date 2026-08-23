@@ -206,6 +206,23 @@ Present in exactly **RawData + EventAnalysis**:
   families. This is a materially bigger and riskier redesign than everything
   else in this file; recorded as an observation for whoever eventually owns
   `MetaController`, not as a concrete near-term recommendation.
+- **`@register_action`'s contract should be documented directly on the base
+  classes, not left implicit.** Part 2 of this file (widget-state session
+  persistence) establishes two standing invariants that `@register_action`
+  usage across all 5 families needs to keep holding: a
+  `@register_action`-decorated method must never read live control-panel
+  widget state (it must be a pure function of its own arguments), and a
+  tab's action replay must stay self-contained to that tab (never assume
+  another tab's log has been, or will be, replayed). Neither is currently
+  written down anywhere near the mechanism itself — `register_action`'s own
+  docstring in `poriscope/utils/LogDecorator.py` says nothing about either
+  constraint, and `MetaController.tab_action_history`/`MetaView`'s
+  replay path don't reference them either. Whenever Part 1 work next touches
+  `MetaController.py`, `MetaView.py`, or `LogDecorator.py` for any of the
+  reasons above, it's worth adding these two rules to the relevant
+  docstrings in the same pass, rather than treating it as a separate future
+  documentation task — see Part 2's "Settled design decision: two-step,
+  per-tab session load" section for the full reasoning behind both rules.
 
 ## Correctness issues found incidentally (not promotion candidates — worth a look independent of any refactor decision)
 
@@ -502,9 +519,93 @@ state. This needs to be paired with a well-defined position in the existing
 load sequence (`MainController.load_session` restores plugins, then
 instantiates tabs, per `main_controller.py:451-482`) — widget-state restore
 should happen after a tab's plugins are available (in case a combobox
-references a plugin key) and its ordering relative to `@register_action`
-replay needs to be decided deliberately, not left implicit — see the
-`_overlay_plot` risk above for exactly why.
+references a plugin key). Its ordering relative to `@register_action` replay
+is resolved below, not left implicit.
+
+## Settled design decision: two-step, per-tab session load
+
+Session load is two deliberately separate steps, and both operate per-tab
+rather than globally:
+
+1. **Automatic, on load:** plugin restoration (already existing,
+   `MainController.load_session`) plus, once built, widget-state restore for
+   that tab's control panel.
+2. **Explicit, user-triggered, per tab:** `@register_action` replay — i.e.
+   re-running whatever expensive memory-state reconstruction that tab's
+   action log represents. Never fired automatically as a consequence of step 1.
+
+**This was a deliberate choice, made for two independent reasons that both
+hold up:**
+
+- **Avoiding a long-running, blocking operation on file→open.** Action
+  replay executes arbitrary registered calls (potentially expensive memory-
+  state reconstruction, per the pattern's original motivating case); nothing
+  about opening a session file should force the user to wait through that
+  before seeing anything.
+- **Granularity.** Frontend plugins are standalone by design (each analysis
+  tab is an independently instantiated Controller/Model/View triad, per
+  `CLAUDE.md`'s architecture description) — a user may want to restore only
+  `MetadataView`'s widget state and glance at its settings without paying
+  the cost of re-running `RawDataView`'s or `EventAnalysisView`'s action logs
+  from scratch. A single global "replay everything" convenience would work
+  directly against that and should not be built, even as a later addition,
+  unless a future need for it is explicitly identified — per-tab is the
+  correct default, not just an inherited accident of the current file-picker
+  UI.
+
+**This is confirmed to already be how the codebase behaves, not a new
+departure:** `MainController.load_session` never calls
+`load_actions_from_json` anywhere (checked directly — it only wires up
+*saving* the action log, via `update_tab_action_history`/
+`save_tab_action_history`). Loading it has always been a separate, explicit,
+per-tab flow through `MetaView._load_actions_from_json()`'s file dialog. The
+two-step, per-tab design isn't introducing a new principle — it's
+recognizing and preserving one that's already there, and extending step 1 to
+also cover widget-state restore rather than trying to fold step 2 into the
+automatic path.
+
+**This also resolves the `_overlay_plot`/`get_selected_filters()` ordering
+hazard documented above by construction**, not just by convention: as long
+as step 1 always fully completes before step 2 is even offered to the user,
+there is no window in which action-replay can run against not-yet-restored
+widget state. The prerequisite fix to `_overlay_plot` (routing the filter
+selection through its own `parameters` argument instead of reading it live)
+is still worth doing regardless — a `@register_action`-decorated method
+should never depend on being called at a particular moment relative to
+some other restore step — but this design removes the one concrete way that
+dependency could currently produce a silently wrong result.
+
+**Two standing invariants this design depends on** (both true today, worth
+writing down so they don't get accidentally broken by a future contribution):
+
+1. A control-panel widget's *available options* must never depend on
+   `@register_action`-replayed state, only on persisted/plugin-queryable
+   state. Checked directly: filters, cluster columns, and DB columns are all
+   sourced from SQLite tables via loader plugins (already on disk, restored
+   in step 1), never from in-memory action-replay artifacts. If a future tab
+   populated a combobox's options from something only step 2 creates, the
+   per-tab granularity this design is built around would break — a user
+   skipping that tab's action replay would be left with a widget offering
+   options that don't actually exist yet.
+2. A given tab's `@register_action` replay must be self-contained to that
+   tab — it must never assume another tab's action log has already been (or
+   will be) replayed. This is what makes "restore Metadata but skip RawData
+   and EventAnalysis" a coherent thing for a user to do at all, and it's
+   consistent with `tab_action_history` already being keyed per tab-subclass
+   name rather than as one global sequence.
+
+**Not resolved by this decision alone — a complementary, separate concern:**
+making the trigger explicit and per-tab prevents a surprise freeze on file
+→open, but doesn't prevent a slow tab's replay from blocking the UI thread
+for however long it takes once the user does trigger it, since replay
+currently executes synchronously (`getattr(self, function)(*args, **kwargs)`
+in a plain loop, per `MetaView.update_actions_from_json`) rather than through
+the existing async worker/progress-bar machinery
+(`MetaModel.set_generator`/`run_generators`). Worth deciding, whenever a
+tab's action log is likely to contain something non-trivial, whether that
+tab's "replay actions" trigger should route through that existing
+infrastructure instead of assuming a plain synchronous loop stays
+acceptable.
 
 ## Value and wisdom
 
