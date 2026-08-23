@@ -29,9 +29,10 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -60,7 +61,7 @@ class ChimeraReader20240501(MetaReader):
     # private API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         called at the start of base class initialization
         """
@@ -68,23 +69,23 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
@@ -112,7 +113,7 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _set_file_extension(self):
+    def _set_file_extension(self) -> str:
         """
         Set the expected file extension for files read using this reader subclass
         """
@@ -120,13 +121,13 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _map_data(self, datafiles, configs) -> List[np.ndarray]:
+    def _map_data(self, datafiles: List[str], configs: List[dict]) -> List[np.ndarray]:
         """
         Map data files into a set of memmaps or similarly define a way to access the raw data on disk.
         Returns a list of memmaps corresponding to each datafile/configfile pair.
 
         :param datafiles: List of data file paths.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
@@ -168,12 +169,14 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_time_stamps(self, file_names, configs) -> List[datetime]:
+    def _get_file_time_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[datetime]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
@@ -187,12 +190,14 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_channel_stamps(self, file_names, configs) -> List[int]:
+    def _get_file_channel_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
@@ -203,7 +208,7 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_pattern(self, file_name) -> str:
+    def _get_file_pattern(self, file_name: str) -> str:
         """
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
@@ -227,7 +232,7 @@ class ChimeraReader20240501(MetaReader):
     @log(logger=logger)
     @override
     def _convert_data(
-        self, data, config, raw_data=False
+        self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
     ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
         """
         Scale or otherwise transform and return requested data.
@@ -268,13 +273,13 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_configs(self, datafiles) -> List[dict]:
+    def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
         Parses each file's companion .json settings file (same stem, .json extension) to build a per-file configuration dict; unlike ChimeraReader20240101, this format has no embedded header.
 
         :param datafiles: List of data file paths.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
 
         :return: List of configuration dictionaries.
         :rtype: List[dict]
@@ -327,7 +332,7 @@ class ChimeraReader20240501(MetaReader):
 
     @log(logger=logger)
     @override
-    def _set_raw_dtype(self, configs) -> np.dtype:
+    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
         """
         Set the data type for the raw data in files of this type
 
@@ -343,7 +348,9 @@ class ChimeraReader20240501(MetaReader):
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.

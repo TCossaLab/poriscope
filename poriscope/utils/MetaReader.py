@@ -485,9 +485,7 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _map_data(
-        self, datafiles: List[os.PathLike], configs: List[dict]
-    ) -> List[np.ndarray]:
+    def _map_data(self, datafiles: List[str], configs: List[dict]) -> List[np.ndarray]:
         """
         **Purpose:** Map the provided data files into an accessible format, preferably memory-mapped views.
 
@@ -498,7 +496,7 @@ class MetaReader(BaseDataPlugin):
             This function expects that the elements of the returned list can be indexed and sliced into like NumPy arrays, hence the suggestion to use memmaps, which avoid the need to actually load raw data into RAM before it is needed. In cases where memmap is not an option, you must still return NumPy array for each file, which may involve significant memory consumption. If this is impractical, it is possible to override this function to return, for example, a list of file handles instead, with the caveat that this will in turn require that you completely override :py:meth:`~poriscope.utils.MetaReader.MetaReader.load_data` as well to properly handle your file access method manually.
 
         :param datafiles: List of data files to map.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :param configs: List of configuration dictionaries corresponding to data files.
         :type configs: List[dict]
         :return: List of memmaps or numpy arrays mapped from data files.
@@ -663,30 +661,28 @@ class MetaReader(BaseDataPlugin):
         self.samplerate = self._set_sample_rate()
 
     @abstractmethod
-    def _get_configs(self, datafiles: List[os.PathLike]) -> List[dict]:
+    def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         **Purpose:** Extract configuration metadata from dataset files.
 
         Given a list of filenames corresponding to the data files, construct a list of dictionaries containing any required configurations for use downstream. Your config dictionaries must have at a minimum the key `'samplerate'` in them, and the list of configs must correspond one-to-one to the provided list of data files. All files in a dataset must have the same samplerate. Your reader will use these configs to map the data on disk, so you could include information like endianness, raw data type, details of any columns within the data, etc. Aside from the required samplerate key, this can be anything.
 
         :param datafiles: List of data files for which to load configurations.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :return: List of configuration dictionaries.
         :rtype: List[dict]
         """
         pass
 
     @abstractmethod
-    def _get_file_time_stamps(
-        self, file_names: List[os.PathLike], configs: List[dict]
-    ) -> Any:
+    def _get_file_time_stamps(self, file_names: List[str], configs: List[dict]) -> Any:
         """
         **Purpose:** Extract time stamps for sorting files chronologically within a channel.
 
         Given a list of all the files in the experiment and the list of config dictionaries you defined above, extract a corresponding list of timestamps. These timestamps will be used to time-order the mapped data within each channel. The list must have the same length as both input lists and must be of a type that can be sorted into the desired time-ordering using the builtin :py:meth:`~list.sort()` method.
 
         :param file_names: List of file names to get time stamps for.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries corresponding to data files.
         :type configs: List[dict]
         :return: List of serialization keys for timestamps in almost any format
@@ -698,7 +694,7 @@ class MetaReader(BaseDataPlugin):
 
     @abstractmethod
     def _get_file_channel_stamps(
-        self, file_names: List[os.PathLike], configs: List[dict]
+        self, file_names: List[str], configs: List[dict]
     ) -> List[int]:
         """
         **Purpose:** Extract channel identifiers for grouping files by channel.
@@ -706,7 +702,7 @@ class MetaReader(BaseDataPlugin):
         Given a list of all the files in the experiment and the list of config dictionaries you defined above, extract a corresponding list of channel identifiers as integers. These channel indices will be used to group the mapped data by channel. The list must have the same length as both input lists and must be a list of integers.
 
         :param file_names: List of file names to get channel stamps for.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries corresponding to data files.
         :type configs: List[dict]
         :return: List of serialization keys for channels

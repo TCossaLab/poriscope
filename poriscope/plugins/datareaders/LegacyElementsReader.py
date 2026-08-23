@@ -48,12 +48,14 @@ class LegacyElementsReader(TCossaLabABFReader):
     # private API, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
     @override
-    def _get_file_time_stamps(self, file_names, configs) -> List[int]:
+    def _get_file_time_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
@@ -78,12 +80,14 @@ class LegacyElementsReader(TCossaLabABFReader):
 
     @log(logger=logger)
     @override
-    def _get_file_channel_stamps(self, file_names, configs) -> List[int]:
+    def _get_file_channel_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
@@ -94,7 +98,7 @@ class LegacyElementsReader(TCossaLabABFReader):
 
     @log(logger=logger)
     @override
-    def _get_file_pattern(self, file_name) -> str:
+    def _get_file_pattern(self, file_name: str) -> str:
         """
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
@@ -117,13 +121,13 @@ class LegacyElementsReader(TCossaLabABFReader):
 
     @log(logger=logger)
     @override
-    def _get_configs(self, datafiles) -> List[dict]:
+    def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
         Default behavior assumes there are no config files needed.
 
         :param datafiles: List of data file paths.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :return: List of configuration dictionaries.
         :rtype: List[dict]
 
