@@ -697,7 +697,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type hlabels: list[list[str or None]]
         :param plabels: List of lists of labels for points.
         :type plabels: list[list[str or None]]
-        :param use_raw: Whether the traces in event_data are raw (unfiltered) rather than filtered.
+        :param use_raw: Whether to plot/cache the raw (unfiltered) trace entries in event_data
+            (labeled "Raw") alongside the filtered/fit ones. Entries so labeled are skipped
+            entirely when this is False, regardless of whether the caller included them.
         :type use_raw: bool
         :return: None
         :rtype: None
@@ -719,6 +721,10 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
         j = 0
         for i, (data, label) in enumerate(zip(event_data, labels)):
+            if "Raw" in label and not use_raw:
+                # Bypass the raw (unfiltered) trace entirely when not requested,
+                # instead of relying on the caller to have omitted it.
+                continue
             if "Data" in label:
                 features_plotted = False
                 ax = self.figure.add_subplot(

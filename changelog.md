@@ -256,6 +256,7 @@
     * Fixed `_extract_plot_event_parameters`'s docstring documenting a 4-tuple return, omitting `loader` from the real 5-tuple
     * Fixed `EventAnalysisController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
     * Added a missing docstring to `EventAnalysisController.update_available_plugins`
+    * Fixed `_update_event_plot` accepting a `use_raw` parameter but never referencing it; the raw-trace overlay toggle worked only by accident, because the caller happened to already omit "Raw"-labeled entries from `event_data`/`labels` when raw wasn't requested. The method now explicitly skips any "Raw"-labeled entry when `use_raw` is False, matching how `MetadataView`'s equivalent method actually gates its raw-trace overlay
 
 * **Updated Frontend Component: `MainView`**
     * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.
