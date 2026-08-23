@@ -27,6 +27,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
@@ -47,7 +48,9 @@ class ClassicCUSUM(CUSUM):
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -82,12 +85,12 @@ class ClassicCUSUM(CUSUM):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
         Runs the same CUSUM log-likelihood-ratio changepoint detection as CUSUM, but Step Size is already expressed in units of the local baseline standard deviation (σ) and is used directly rather than normalized against it, unlike CUSUM. Returned indices are pre-pended with 0 if 0 is not already the first entry.
@@ -115,9 +118,9 @@ class ClassicCUSUM(CUSUM):
 
         if baseline_std is None:  # the rest of the args can be None without issue
             if padding_before is not None:
-                baseline_std = np.std(data[:padding_before])
+                baseline_std = float(np.std(data[:padding_before]))
             elif padding_after is not None:
-                baseline_std = np.std(data[-padding_after:])
+                baseline_std = float(np.std(data[-padding_after:]))
             else:
                 raise ValueError(
                     "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"

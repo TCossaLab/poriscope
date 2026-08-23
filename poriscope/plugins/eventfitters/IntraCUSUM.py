@@ -24,12 +24,13 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
-from poriscope.plugins.eventfitters.CUSUM import CUSUM
+from poriscope.plugins.eventfitters.CUSUM import CUSUM, Numeric
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 
@@ -47,7 +48,9 @@ class IntraCUSUM(CUSUM):
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -92,7 +95,12 @@ class IntraCUSUM(CUSUM):
     @log(logger=logger)
     @override
     def _populate_event_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_metadata: Dict[str, List[Numeric]],
     ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.

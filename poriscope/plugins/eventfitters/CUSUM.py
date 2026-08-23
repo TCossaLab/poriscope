@@ -53,7 +53,7 @@ class CUSUM(MetaEventFitter):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
@@ -111,9 +111,12 @@ class CUSUM(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         pass
 
@@ -189,12 +192,12 @@ class CUSUM(MetaEventFitter):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
         Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size normalized by the local baseline standard deviation, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
@@ -222,9 +225,9 @@ class CUSUM(MetaEventFitter):
 
         if baseline_std is None:  # the rest of the args can be None without issue
             if padding_before is not None:
-                baseline_std = np.std(data[:padding_before])
+                baseline_std = float(np.std(data[:padding_before]))
             elif padding_after is not None:
-                baseline_std = np.std(data[-padding_after:])
+                baseline_std = float(np.std(data[-padding_after:]))
             else:
                 raise ValueError(
                     "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
@@ -389,7 +392,12 @@ class CUSUM(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_sublevel_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_starts
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_starts: List[int],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
         Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
@@ -442,7 +450,7 @@ class CUSUM(MetaEventFitter):
                     sublevel_metadata["sublevel_current"][0]
                     - sublevel_metadata["sublevel_current"][-1]
                 )
-                > 2 * baseline_std
+                > 2 * baseline_std  # type: ignore[operator] # flagged: baseline_std is Optional[float] per contract; see future_fixes.md
             ):
                 raise ValueError("Baseline Mismatch")
 
@@ -512,12 +520,13 @@ class CUSUM(MetaEventFitter):
 
             # get sublevel start times
             sublevel_metadata["sublevel_start_times"] = np.array(
-                sublevel_starts[:-1] * dt_us, dtype=np.float64
+                sublevel_starts[:-1] * dt_us,  # type: ignore[operator] # flagged: sublevel_starts is declared List[int] but is actually an ndarray at runtime; see future_fixes.md
+                dtype=np.float64,
             )
 
             # get sublevel end times
             sublevel_metadata["sublevel_end_times"] = np.array(
-                sublevel_starts[1:] * dt_us, dtype=np.float64
+                sublevel_starts[1:] * dt_us, dtype=np.float64  # type: ignore[operator]
             )
 
             # get the maximal deviation from the event baseline for each sublevel
@@ -565,7 +574,12 @@ class CUSUM(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_event_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_metadata: Dict[str, List[Numeric]],
     ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
@@ -584,7 +598,7 @@ class CUSUM(MetaEventFitter):
         :return: a dict of event metadata values
         :rtype: Dict[str, Union[int, float, str, bool]]
         """
-        event_metadata = {}
+        event_metadata: Dict[str, Union[int, float, str, bool]] = {}
 
         event_metadata["duration"] = np.sum(
             sublevel_metadata["sublevel_duration"][1:-1]
@@ -754,11 +768,28 @@ class CUSUM(MetaEventFitter):
 
     # utility functions
     @log(logger=logger)
-    def _calculate_threshold(self, length, step, min_threshold=0.4, max_threshold=10.0):
+    def _calculate_threshold(
+        self,
+        length: int,
+        step: float,
+        min_threshold: float = 0.4,
+        max_threshold: float = 10.0,
+    ) -> float:
         """
         Calculate an optimal threshold value based on signal length and step size.
 
         Exact Python port of the C functions get_cusum_threshold and ARL.
+
+        :param length: the length of the event data, in samples
+        :type length: int
+        :param step: the CUSUM step size, in units of the local baseline standard deviation
+        :type step: float
+        :param min_threshold: the smallest threshold value to consider, default 0.4
+        :type min_threshold: float
+        :param max_threshold: the largest threshold value to consider, default 10.0
+        :type max_threshold: float
+        :return: the calculated optimal threshold
+        :rtype: float
         """
         # Map the original Python interface variables to match C parameters
         sigma = step
@@ -766,7 +797,7 @@ class CUSUM(MetaEventFitter):
         length *= 2
 
         # Inner helper to replicate the C ARL() function
-        def ARL(length, s, m, h):
+        def ARL(length: float, s: float, m: float, h: float) -> float:
             term = h / s + 1.166
             return (np.exp(-2.0 * m * term) - 1.0 + 2.0 * m * term) / (
                 2.0 * m * m

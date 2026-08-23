@@ -53,7 +53,7 @@ class NoFitter(MetaEventFitter):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
@@ -107,9 +107,12 @@ class NoFitter(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         pass
 
@@ -185,12 +188,12 @@ class NoFitter(MetaEventFitter):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
         Performs no changepoint search: locates a single baseline crossing by walking backward from padding_before until the signal crosses baseline_mean, and returns that point as the event's only sublevel edge. Returned indices are pre-pended with 0 if 0 is not already the first entry.
@@ -248,7 +251,12 @@ class NoFitter(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_sublevel_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_starts
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_starts: List[int],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
         Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
@@ -303,7 +311,7 @@ class NoFitter(MetaEventFitter):
                     sublevel_metadata["sublevel_current"][0]
                     - sublevel_metadata["sublevel_current"][-1]
                 )
-                > 2 * baseline_std
+                > 2 * baseline_std  # type: ignore[operator] # flagged: baseline_std is Optional[float] per contract; see future_fixes.md
             ):
                 raise ValueError("Baseline Mismatch")
 
@@ -373,12 +381,13 @@ class NoFitter(MetaEventFitter):
 
             # get sublevel start times
             sublevel_metadata["sublevel_start_times"] = np.array(
-                sublevel_starts[:-1] * dt_us, dtype=np.float64
+                sublevel_starts[:-1] * dt_us,  # type: ignore[operator] # flagged: sublevel_starts is declared List[int] but is actually an ndarray at runtime; see future_fixes.md
+                dtype=np.float64,
             )
 
             # get sublevel end times
             sublevel_metadata["sublevel_end_times"] = np.array(
-                sublevel_starts[1:] * dt_us, dtype=np.float64
+                sublevel_starts[1:] * dt_us, dtype=np.float64  # type: ignore[operator]
             )
 
             # get the maximal deviation from the event baseline for each sublevel
@@ -426,7 +435,12 @@ class NoFitter(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_event_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_metadata: Dict[str, List[Numeric]],
     ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
@@ -445,7 +459,7 @@ class NoFitter(MetaEventFitter):
         :return: a dict of event metadata values
         :rtype: Dict[str, Union[int, float, str, bool]]
         """
-        event_metadata = {}
+        event_metadata: Dict[str, Union[int, float, str, bool]] = {}
 
         event_metadata["duration"] = np.sum(
             sublevel_metadata["sublevel_duration"][1:-1]
