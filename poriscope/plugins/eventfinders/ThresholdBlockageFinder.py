@@ -25,7 +25,7 @@
 
 
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -52,8 +52,8 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
     @override
     def get_empty_settings(
         self,
-        globally_available_plugins=None,
-        standalone=False,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -73,7 +73,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -137,7 +137,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
 
         while index < len_data:
             if not entry_state:  # we are not in an event
-                pos = np.argmax(data[index:] < threshold)
+                pos = int(np.argmax(data[index:] < threshold))
                 if pos == 0 and not (data[index] < threshold):
                     break
                 index += pos
@@ -145,7 +145,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
                 entry_state = True
                 event_starts.append(event_start + offset)
             else:
-                pos = np.argmax(data[index:] > hysteresis)
+                pos = int(np.argmax(data[index:] > hysteresis))
                 if pos == 0 and not (data[index] > hysteresis):
                     break
                 index += pos

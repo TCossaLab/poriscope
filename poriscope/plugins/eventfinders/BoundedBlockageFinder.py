@@ -25,9 +25,10 @@
 
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 from fast_histogram import histogram1d
 from typing_extensions import override
 
@@ -53,7 +54,9 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -73,7 +76,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -86,7 +89,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
 
     @log(logger=logger)
     @override
-    def _validate_settings(self, settings):
+    def _validate_settings(self, settings: dict) -> None:
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
@@ -102,7 +105,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
 
     @log(logger=logger)
     @override
-    def _get_baseline_stats(self, data) -> tuple[float, float]:
+    def _get_baseline_stats(self, data: npt.NDArray[np.float64]) -> tuple[float, float]:
         """
         Get the local mean and standard deviation for a chunk of data.
 

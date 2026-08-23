@@ -81,8 +81,8 @@ class ClassicBlockageFinder(MetaEventFinder):
     @override
     def get_empty_settings(
         self,
-        globally_available_plugins=None,
-        standalone=False,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -102,7 +102,7 @@ class ClassicBlockageFinder(MetaEventFinder):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -198,7 +198,7 @@ class ClassicBlockageFinder(MetaEventFinder):
 
         while index < len_data:
             if not entry_state:  # we are not in an event
-                pos = np.argmax(data[index:] < threshold)
+                pos = int(np.argmax(data[index:] < threshold))
                 if pos == 0 and not (data[index] < threshold):
                     break
                 index += pos
@@ -210,7 +210,7 @@ class ClassicBlockageFinder(MetaEventFinder):
                 entry_state = True
                 event_starts.append(event_start + offset)
             else:
-                pos = np.argmax(data[index:] > hysteresis)
+                pos = int(np.argmax(data[index:] > hysteresis))
                 if pos == 0 and not (data[index] > hysteresis):
                     break
                 index += pos  # no backtracking needed here
@@ -222,7 +222,11 @@ class ClassicBlockageFinder(MetaEventFinder):
     @log(logger=logger)
     @override
     def _filter_events(
-        self, event_starts: List[int], event_ends: List[int], channel: int, last_end=0
+        self,
+        event_starts: List[int],
+        event_ends: List[int],
+        channel: int,
+        last_end: int = 0,
     ) -> Tuple[List[int], List[str]]:
         """
         Remove entries from self.event_starts and self.event_ends list based on any filter criteria defined in user settings
@@ -392,13 +396,17 @@ class ClassicBlockageFinder(MetaEventFinder):
 
     @log(logger=logger)
     def _gaussian_fit(
-        self, histogram, bins, mean_guess: float, stdev_guess: float
+        self,
+        histogram: npt.NDArray[np.float64],
+        bins: npt.NDArray[np.float64],
+        mean_guess: float,
+        stdev_guess: float,
     ) -> tuple[float, float, float]:
         """
         Fit a Gaussian function to histogram data using a linearized least squares approach.
 
         :param histogram: Array of counts in each histogram bin.
-        :type histogram: npt.NDArray[np.int64]
+        :type histogram: npt.NDArray[np.float64]
         :param bins: Center positions of histogram bins.
         :type bins: npt.NDArray[np.float64]
         :param mean_guess: Initial estimate of the Gaussian mean.
