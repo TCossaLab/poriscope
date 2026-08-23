@@ -365,6 +365,7 @@ poriscope/utils/BaseDataPlugin.py
     DOC108: Method `BaseDataPlugin.register_parent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BaseDataPlugin.unregister_dependent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BaseDataPlugin.unregister_parent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `BaseDataPlugin.update_raw_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BaseDataPlugin._resolve_metaclass_name`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BaseDataPlugin.apply_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BaseDataPlugin.set_key`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -376,6 +377,13 @@ poriscope/utils/LogDecorator.py
     DOC108: Function `log`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/MetaController.py
+    DOC108: Method `MetaController.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaController.update_plot_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaController.set_force_serial_channel_operations`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaController.load_actions_from_json`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaController.display_write_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaController.check_column_exists`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaController.set_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaController._relay_global_signal`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaController._relay_data_plugin_controller_signal`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaController.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -445,6 +453,7 @@ poriscope/utils/MetaEventFinder.py
     DOC108: Method `MetaEventFinder._get_baseline_stats`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFinder._validate_param_types`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaEventFinder._merge_overlapping_ranges`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/MetaEventFitter.py
     DOC108: Method `MetaEventFitter.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -454,11 +463,13 @@ poriscope/utils/MetaEventFitter.py
     DOC108: Method `MetaEventFitter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_plot_features`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.report_channel_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaEventFitter.reset_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_samplerate`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_metadata_columns`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_sublevel_columns`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.fit_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_event_metadata_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaEventFitter.get_num_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_single_event_metadata`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter.get_eventfitting_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaEventFitter._pre_process_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -493,6 +504,7 @@ poriscope/utils/MetaFilter.py
     DOC108: Method `MetaFilter._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/MetaModel.py
+    DOC108: Method `MetaModel.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaModel.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/MetaReader.py
@@ -512,6 +524,7 @@ poriscope/utils/MetaReader.py
     DOC108: Method `MetaReader._get_file_time_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaReader._get_file_channel_stamps`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaReader._get_file_pattern`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaReader._get_file_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaReader._sort_objects_by_channel_and_time`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaReader._scale_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaReader._get_file_index`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -521,10 +534,18 @@ poriscope/utils/MetaReader.py
     DOC108: Method `MetaReader._validate_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/MetaView.py
+    DOC108: Method `MetaView._factors`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView._update_cache`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView._set_control_area`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaView._reset_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView.set_column_exists`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView.handle_edit_triggered`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaView.handle_add_triggered`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView.handle_delete_triggered`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaView.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView._set_display_area_base`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `MetaView._logscale_and_filter_multiple_columns`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/utils/MetaWriter.py
     DOC108: Method `MetaWriter.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature

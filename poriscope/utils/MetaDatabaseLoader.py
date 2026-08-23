@@ -54,7 +54,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None):
+    def __init__(self, settings: Optional[dict] = None) -> None:
         """
         Initialize and set up the plugin, if settings are available at this stage
         """
@@ -295,7 +295,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
@@ -455,7 +455,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :ytype: float
         """
 
-        def tuple_builder(id_list):
+        def tuple_builder(id_list: List[int]) -> str:
             if not id_list:
                 raise ValueError("Unable to build tuple from empty list")
             filtered_ids = [str(i) for i in id_list if i is not None]
@@ -692,7 +692,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :rtype: Tuple[str, str, str]
         """
 
-        def tuple_builder(id_list):
+        def tuple_builder(id_list: List[int]) -> str:
             if not id_list:
                 raise ValueError("Unable to build tuple from empty list")
             filtered_ids = [str(i) for i in id_list if i is not None]
@@ -955,7 +955,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :rtype: Tuple[str, str]
         """
 
-        def tuple_builder(id_list):
+        def tuple_builder(id_list: List[int]) -> str:
             if not id_list:
                 raise ValueError("Unable to build tuple from empty list")
             filtered_ids = [str(i) for i in id_list if i is not None]
@@ -1301,7 +1301,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         pass
 
     @log(logger=logger)
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         **Purpose:** Apply application-specific settings to the plugin, if needed.
 

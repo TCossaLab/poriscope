@@ -56,7 +56,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None):
+    def __init__(self, settings: Optional[dict] = None) -> None:
         """
         Initialize and set up output environment, save metadata for subclasses.
         """
@@ -231,7 +231,9 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
     # Public API continued, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -385,7 +387,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.

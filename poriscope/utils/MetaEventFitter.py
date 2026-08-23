@@ -166,7 +166,7 @@ class MetaEventFitter(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
@@ -281,7 +281,9 @@ class MetaEventFitter(BaseDataPlugin):
         return serial
 
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -317,7 +319,7 @@ class MetaEventFitter(BaseDataPlugin):
                     return f"Ch{channel}: fitting incomplete"
 
     @log(logger=logger)
-    def reset_channel(self, channel=None) -> None:
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         :param channel: the channel identifier
         :type channel: Optional[int]
@@ -330,20 +332,25 @@ class MetaEventFitter(BaseDataPlugin):
 
             This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super().reset_channel(channel)`` **before** any additional code that you add and it is on you to ensure that your additional code does not conflict with the implementation in :ref:`MetaEventFinder`.
         """
+        # NOTE: unlike MetaEventFinder.reset_channel, this implementation does not
+        # branch on `channel is None` to reset every channel, despite the docstring
+        # above documenting that behavior. `channel=None` is accepted by the
+        # signature but not actually handled here; flagged rather than fixed as
+        # part of a pure type-hint pass (see future_fixes.md).
         try:
-            self.sublevel_metadata.pop(channel)
+            self.sublevel_metadata.pop(channel)  # type: ignore[arg-type]
         except KeyError:
             pass
         try:
-            self.event_metadata.pop(channel)
+            self.event_metadata.pop(channel)  # type: ignore[arg-type]
         except KeyError:
             pass
         try:
-            self.rejected.pop(channel)
+            self.rejected.pop(channel)  # type: ignore[arg-type]
         except KeyError:
             pass
         try:
-            self.eventfitting_status[channel] = False
+            self.eventfitting_status[channel] = False  # type: ignore[index]
         except KeyError:
             pass
         gc.collect()
@@ -748,16 +755,20 @@ class MetaEventFitter(BaseDataPlugin):
             yield self.get_single_event_metadata(channel, i)
 
     @log(logger=logger)
-    def get_channels(self):
+    def get_channels(self) -> List[int]:
         """
         get the number of available channels in the reader
+
+        :raises AttributeError: If no :ref:`MetaEventLoader` instance is attached to this eventfitter.
+        :return: the channel identifiers available in the associated event loader
+        :rtype: List[int]
         """
         if self.eventloader is None:
             raise AttributeError("Event loader has not been initialized.")
         return self.eventloader.get_channels()
 
     @log(logger=logger)
-    def get_num_events(self, channel) -> int:
+    def get_num_events(self, channel: int) -> int:
         """
         get the number of events found in the channel if eventfinding has finished
 

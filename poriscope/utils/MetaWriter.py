@@ -29,7 +29,7 @@ import traceback
 import warnings
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -58,7 +58,7 @@ class MetaWriter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None):
+    def __init__(self, settings: Optional[dict] = None) -> None:
         """
         Initialize and set up output environment, save metadata for subclasses.
         """
@@ -100,7 +100,7 @@ class MetaWriter(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
@@ -194,7 +194,9 @@ class MetaWriter(BaseDataPlugin):
         return True
 
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -313,7 +315,7 @@ class MetaWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _initialize_database(self, channel: int):
+    def _initialize_database(self, channel: int) -> None:
         """
         :param channel: the channel for which to initialize the database
         :type channel: int
@@ -353,7 +355,9 @@ class MetaWriter(BaseDataPlugin):
         :ytype: float
         """
 
-        def lookahead_generator(gen):
+        def lookahead_generator(
+            gen: Generator[Any, None, None],
+        ) -> Generator[Tuple[Any, bool], None, None]:
             try:
                 current = next(gen)
             except StopIteration:
@@ -558,7 +562,7 @@ class MetaWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         **Purpose:** Perform generic class construction operations after settings are applied. This function is called at the end of the :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.apply_settings` function to perform additional initialization specific to the algorithm being implemented.
 

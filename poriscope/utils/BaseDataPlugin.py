@@ -27,6 +27,7 @@
 import logging
 import threading
 from abc import ABC, abstractmethod
+from types import TracebackType
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypedDict, cast
 
 from poriscope.utils.LogDecorator import log
@@ -79,7 +80,7 @@ class BaseDataPlugin(ABC):
     logger = logging.getLogger(__name__)
     lock = threading.Lock()
 
-    def __init__(self, settings: Optional[dict] = None):
+    def __init__(self, settings: Optional[dict] = None) -> None:
         """
         Construct the plugin and, if settings are provided, apply them immediately.
 
@@ -95,13 +96,18 @@ class BaseDataPlugin(ABC):
         if settings:
             self.apply_settings(settings)
 
-    def __enter__(self):
+    def __enter__(self) -> "BaseDataPlugin":
         """
         Enter the context management. Return self to be used within a 'with' statement.
         """
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """
         Exit the context management. Close resources.
         """
@@ -132,7 +138,7 @@ class BaseDataPlugin(ABC):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -160,7 +166,9 @@ class BaseDataPlugin(ABC):
         pass
 
     @abstractmethod
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -274,7 +282,7 @@ class BaseDataPlugin(ABC):
         return self.raw_settings
 
     @log(logger=logger)
-    def update_raw_settings(self, key, val) -> None:
+    def update_raw_settings(self, key: str, val: Any) -> None:
         """
         Update raw settings when needed
 
@@ -371,7 +379,7 @@ class BaseDataPlugin(ABC):
 
     # private API, must be implemented by subclasses
     @abstractmethod
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided paramters and intialize any internal structures needed
         Should Raise if initialization fails.

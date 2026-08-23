@@ -66,7 +66,9 @@ class MetaReader(BaseDataPlugin):
 
     # Public API, probably usable as-is in most cases
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -251,7 +253,7 @@ class MetaReader(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaReader` subclass.
@@ -426,9 +428,12 @@ class MetaReader(BaseDataPlugin):
         return self.name_stub
 
     @log(logger=logger)
-    def get_raw_dtype(self) -> None:
+    def get_raw_dtype(self) -> np.dtype:
         """
         Return the data type for the raw data in files of this type
+
+        :return: the dtype of the raw data on disk for this reader
+        :rtype: np.dtype
         """
         return self.dtype
 
@@ -752,7 +757,7 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @log(logger=logger)
-    def _get_file_names(self, folder, pattern) -> List[str]:
+    def _get_file_names(self, folder: os.PathLike, pattern: str) -> List[str]:
         """
         Get a list of file names with data to map
 

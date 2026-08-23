@@ -86,7 +86,9 @@ class MetaEventFinder(BaseDataPlugin):
 
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -617,7 +619,7 @@ class MetaEventFinder(BaseDataPlugin):
         event_starts: List[int],
         event_ends: List[int],
         last_end: int,
-        last_duration: int,
+        last_duration: Optional[int],
         samplerate: float,
         last_call: bool = False,
         last_sample: int = 0,
@@ -632,7 +634,7 @@ class MetaEventFinder(BaseDataPlugin):
         :param last_end: index of the end of the last event detected in the previous chunk
         :type last_end: int
         :param last_duration: the duration, in samples, of the last event detected in the previous chunk, or None if there was none
-        :type last_duration: int
+        :type last_duration: Optional[int]
         :param samplerate: Sampling rate for the reader in question
         :type samplerate: float
         :param last_call: is this the last time the function will be called?
@@ -735,9 +737,13 @@ class MetaEventFinder(BaseDataPlugin):
                 )
 
     @log(logger=logger)
-    def get_channels(self):
+    def get_channels(self) -> List[int]:
         """
         get the number of available channels in the reader
+
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
+        :return: the channel identifiers available in the associated reader
+        :rtype: List[int]
         """
         if self.reader is None:
             raise AttributeError("Reader has not been initialized.")
@@ -935,7 +941,11 @@ class MetaEventFinder(BaseDataPlugin):
 
     @abstractmethod
     def _filter_events(
-        self, event_starts: List[int], event_ends: List[int], channel: int, last_end=0
+        self,
+        event_starts: List[int],
+        event_ends: List[int],
+        channel: int,
+        last_end: int = 0,
     ) -> Tuple[List[int], List[str]]:
         """
         Given the lists of event start and event ends calculated by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._find_events_in_chunk`, select which ones to reject. For this, you may assume that poriscope has corrected for events that straddle the start of the chink, but not the end, which is to say that ``event_starts[0] < event_ends[0]`` will be ``True``, but it is possible that ``event_start`` will have an additional trailing entry that you should not attempt to reject. You must return a list of indices (N.B, not the actual values in ``event_starts`` or ``event_ends``) to reject, and an equal-length list of strings that provide a reason for rejection (be very terse).
@@ -981,7 +991,7 @@ class MetaEventFinder(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
@@ -1088,7 +1098,9 @@ class MetaEventFinder(BaseDataPlugin):
 
     # Utility functions, specific to subclasses as needed
 
-    def _merge_overlapping_ranges(self, ranges) -> List[Tuple[float, float]]:
+    def _merge_overlapping_ranges(
+        self, ranges: List[Tuple[float, float]]
+    ) -> List[Tuple[float, float]]:
         """
         Merge a list of overlapping or adjacent (start, end) ranges into non-overlapping intervals.
 
