@@ -138,12 +138,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         # database connection is not persistent between calls so no action needed here closing
         pass
@@ -232,7 +232,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     @log(logger=logger)
     @override
     def get_event_counts_by_experiment_and_channel(
-        self, experiment=None, channel=None
+        self, experiment: Optional[str] = None, channel: Optional[int] = None
     ) -> Optional[int]:
         """
         Return the number of events in the database matching the experiment name and channel name.
@@ -749,7 +749,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -889,7 +891,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _load_event_data(self, query) -> Generator[
+    def _load_event_data(self, query: str) -> Generator[
         Tuple[
             int,
             int,
@@ -987,7 +989,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided paramters and intialize any internal structures needed
         Should Raise if initialization fails.
@@ -1073,7 +1075,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         Maps pandas dtype to SQLite data type.
 
         :param dtype: The pandas dtype
-        :type dtype: str
+        :type dtype: np.dtype
 
         :return: The corresponding SQLite data type as a string.
         :rtype: str
