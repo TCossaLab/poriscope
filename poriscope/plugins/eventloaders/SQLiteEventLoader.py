@@ -25,8 +25,9 @@
 
 import logging
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -52,7 +53,7 @@ class SQLiteEventLoader(MetaEventLoader):
     # Public API, probably usable as-is in most cases
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
         """
@@ -60,7 +61,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
         """
@@ -80,7 +81,10 @@ class SQLiteEventLoader(MetaEventLoader):
     @log(logger=logger)
     @override
     def load_event(
-        self, channel, index, data_filter=None
+        self,
+        channel: int,
+        index: int,
+        data_filter: Optional[Callable] = None,
     ) -> Dict[str, Union[npt.NDArray[np.float64], int, float]]:
         """
         :param channel: channel number from which to load data.
@@ -173,7 +177,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_num_events(self, channel) -> int:
+    def get_num_events(self, channel: int) -> int:
         """
         get the number of events available in the given channel
 
@@ -215,7 +219,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_samplerate(self, channel) -> float:
+    def get_samplerate(self, channel: int) -> float:
         """
         Return the sampling rate for the channel.
 
@@ -362,7 +366,9 @@ class SQLiteEventLoader(MetaEventLoader):
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.

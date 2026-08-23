@@ -24,7 +24,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -126,30 +126,32 @@ class BesselFilter(MetaFilter):
     # public API, must be implemented by subclasses
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Reset the state of a specific channel for a new operation or run. If channel is not None, handle only that channel, else reset all of them. No-op here, since this filter holds no persistent per-channel state between calls.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -168,7 +170,7 @@ class BesselFilter(MetaFilter):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter

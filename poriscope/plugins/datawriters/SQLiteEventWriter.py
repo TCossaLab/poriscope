@@ -26,9 +26,10 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -46,12 +47,12 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         called at the start of base class initialization
         """
-        self.conn = None
-        self.cursor = None
+        self.conn: Optional[sqlite3.Connection] = None
+        self.cursor: Optional[sqlite3.Cursor] = None
 
     @override
     def _finalize_initialization(self):
@@ -183,7 +184,9 @@ class SQLiteEventWriter(MetaWriter):
 
     @override
     def get_empty_settings(
-        self, globally_available_plugins=None, standalone=False
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -203,7 +206,7 @@ class SQLiteEventWriter(MetaWriter):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -283,12 +286,12 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Do whatever needs doing to gracefully shut down on app exit
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         if self.cursor:
             try:
@@ -308,7 +311,7 @@ class SQLiteEventWriter(MetaWriter):
             self.conn = None
 
     @log(logger=logger)
-    def get_output_file_name(self):
+    def get_output_file_name(self) -> Path:
         """
         get the name of the output file
         """
@@ -420,19 +423,19 @@ class SQLiteEventWriter(MetaWriter):
     @override
     def _write_data(
         self,
-        data,
-        channel,
-        index,
-        scale=None,
-        offset=None,
-        start_sample=0,
-        padding_before=0,
-        padding_after=None,
-        baseline_mean=None,
-        baseline_std=None,
-        raw_data=False,
-        abort=False,
-        last_call=False,
+        data: npt.NDArray[np.number],
+        channel: int,
+        index: int,
+        scale: Optional[float] = None,
+        offset: Optional[float] = None,
+        start_sample: Optional[int] = 0,
+        padding_before: Optional[int] = 0,
+        padding_after: Optional[int] = None,
+        baseline_mean: Optional[float] = None,
+        baseline_std: Optional[float] = None,
+        raw_data: bool = False,
+        abort: Optional[bool] = False,
+        last_call: Optional[bool] = False,
     ) -> bool:
         """
         Append data and metadata to the active file handle.
@@ -504,9 +507,9 @@ class SQLiteEventWriter(MetaWriter):
                     channel,
                     self.channel_db_id[channel],
                     index,
-                    int(start_sample),
-                    int(padding_before),
-                    int(padding_after),
+                    int(start_sample),  # type: ignore[arg-type] # flagged: base contract types this Optional[int]; see future_fixes.md
+                    int(padding_before),  # type: ignore[arg-type]
+                    int(padding_after),  # type: ignore[arg-type]
                     baseline_mean,
                     baseline_std,
                     data_blob,
@@ -555,14 +558,14 @@ class SQLiteEventWriter(MetaWriter):
     @log(logger=logger)
     def _rescale_data_to_adc(
         self,
-        data,
-        scale=None,
-        offset=None,
-        raw_data=False,
-        dtype="u2",
-        adc_min=np.iinfo(np.int16).min,
-        adc_max=np.iinfo(np.int16).max,
-    ) -> tuple[np.ndarray, Optional[float], Optional[float]]:
+        data: np.ndarray,
+        scale: Optional[float] = None,
+        offset: Optional[float] = None,
+        raw_data: bool = False,
+        dtype: type = "u2",  # type: ignore[assignment]
+        adc_min: int = np.iinfo(np.int16).min,
+        adc_max: int = np.iinfo(np.int16).max,
+    ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
         """
         Not used by this writer
 
@@ -582,7 +585,7 @@ class SQLiteEventWriter(MetaWriter):
         :type adc_max: int
 
         :return: Rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[np.ndarray, Optional[float], Optional[float]]
+        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
         """
         return data, scale, offset
 
