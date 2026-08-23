@@ -40,7 +40,7 @@ from poriscope.utils.LogDecorator import log
 @inherit_docstrings
 class MetaFilter(BaseDataPlugin):
     """
-    :ref:`MetaFilter` is the base class for all things related to filtering and/or preprocessing raw data before it is passed to other plugins for analysis. While it is presented as a filtering method and the most common use case for it is Bessel filtering, it is not specifically limited to timeseries filtering per se, instead providing a general interface through which data can be passed or otherwise transformed before analysis.
+    This class, :ref:`MetaFilter`, is the base class for all things related to filtering and/or preprocessing raw data before it is passed to other plugins for analysis. While it is presented as a filtering method and the most common use case for it is Bessel filtering, it is not specifically limited to timeseries filtering per se, instead providing a general interface through which data can be passed or otherwise transformed before analysis.
 
     What you get by inheriting from MetaFilter
     ------------------------------------------

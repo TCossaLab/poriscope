@@ -43,13 +43,15 @@ class IntroDialog(QDialog):
     """
     Welcome dialog to start the Poriscope walkthrough tutorial.
 
+    .. attribute :: start_walkthrough
+        :type: Signal
+
+        Signal emitted when the user starts the walkthrough.
+
     :param parent: Parent widget, typically the main window.
     :type parent: QWidget
     :param current_step: Identifier for the current step (used to customize intro).
     :type current_step: str
-
-    :ivar start_walkthrough: Signal emitted when the user starts the walkthrough.
-    :vartype start_walkthrough: Signal
     """
 
     start_walkthrough = Signal()

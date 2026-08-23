@@ -106,13 +106,6 @@ class MetaEventLoader(BaseDataPlugin):
         standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -153,6 +146,13 @@ class MetaEventLoader(BaseDataPlugin):
             return settings
 
         which will ensure that your have the ``Input File`` key and limit visible options to sqlite3 files. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings: Dict[str, Dict[str, Any]] = {
             "Input File": {"Type": str, "Options": ["All Files (*.*)"]}
@@ -224,14 +224,6 @@ class MetaEventLoader(BaseDataPlugin):
         self, channel: int, index: int, data_filter: Optional[Callable] = None
     ) -> Dict[str, Union[npt.NDArray[np.float64], int, float]]:
         """
-        :param channel: channel number from which to load data.
-        :type channel: int
-        :param index: The unique identifier for the event to load
-        :type index: int
-
-        :return: data and context corresponding to the event, with baseline padding before and after
-        :rtype: Dict[str, Union[npt.NDArray[np.float64], int, float]]
-
         **Purpose:** Load the data and metadata associated with a single specified event
 
         Return the data and context for the event identified by index, optionally first applying a filter or preprofessing function to the data returned. You are responsible for raising an appropriate error if the index provided is invalid. The data must be returned as a dict with at least the following keys:
@@ -247,6 +239,14 @@ class MetaEventLoader(BaseDataPlugin):
                     'baseline_std': float             # local baseline standard deviation in pA - can be estimated from the padding if need be
                 }
 
+        :param channel: channel number from which to load data.
+        :type channel: int
+        :param index: The unique identifier for the event to load
+        :type index: int
+        :param data_filter: a filter function to apply to the data that is returned
+        :type data_filter: Optional[Callable]
+        :return: data and context corresponding to the event, with baseline padding before and after
+        :rtype: Dict[str, Union[npt.NDArray[np.float64], int, float]]
         """
         pass
 
@@ -254,26 +254,24 @@ class MetaEventLoader(BaseDataPlugin):
     @abstractmethod
     def get_num_events(self, channel: int) -> int:
         """
+        **Purpose:** Return the number of events that exist in the specified channel
+
         :param channel: the channel to consider
         :type channel: int
-
         :return: The number of events in the channel
         :rtype: int
-
-        **Purpose:** Return the number of events that exist in the specified channel
         """
         pass
 
     @abstractmethod
     def get_samplerate(self, channel: int) -> float:
         """
+        **Purpose:** Return the sampling rate used for event data in the specified channel
+
         :param channel: the channel to consider
         :type channel: int
-
         :return: Sampling rate for the dataset.
         :rtype: float
-
-        **Purpose:** Return the sampling rate used for event data in the specified channel
         """
         pass
 
@@ -282,14 +280,6 @@ class MetaEventLoader(BaseDataPlugin):
         self, channel: int, data_filter: Optional[Callable] = None
     ) -> Generator[Dict[str, Union[npt.NDArray, float, int]], bool, None]:
         """
-        :param channel: channel index to analyze.
-        :type channel: int
-        :param data_filter: a filter function to apply to the data that is returned
-        :type data_filter: Optional[Callable]
-
-        :return: Generator yielding event data.
-        :rtype: Generator[Dict[str, Union[npt.NDArray, float, int]], bool, None]
-
         **Purpose:** Load the all events in a specified channel and yield them to the caller one at a time
 
         For each event in the specified channel, yield the data and context for the event identified by index, optionally first applying a filter or preprofessing function to the data returned. You are responsible for raising an appropriate error if the index provided is invalid. The data must be yielded as a dict with at least the following keys:
@@ -314,6 +304,13 @@ class MetaEventLoader(BaseDataPlugin):
                yield self.load_event(channel, index, data_filter)
 
         The generator should cancel and exhaust itself in the event ``True`` is passed back through generator.send()
+
+        :param channel: channel index to analyze.
+        :type channel: int
+        :param data_filter: a filter function to apply to the data that is returned
+        :type data_filter: Optional[Callable]
+        :return: Generator yielding event data.
+        :rtype: Generator[Dict[str, Union[npt.NDArray, float, int]], bool, None]
         """
         event_indices = self.get_valid_indices(channel)
         if event_indices is not None:
@@ -326,10 +323,10 @@ class MetaEventLoader(BaseDataPlugin):
     @abstractmethod
     def get_channels(self) -> List[int]:
         """
+        **Purpose:** Get a list of all valid channel identifiers in the dataset
+
         :return: keys of valid channels in the reader
         :rtype: List[int]
-
-        **Purpose:** Get a list of all valid channel identifiers in the dataset
         """
         pass
 
