@@ -26,12 +26,14 @@
 import functools
 import inspect
 import logging
-from typing import Callable
+from typing import Any, Callable, Generator, Optional
 
 from PySide6.QtCore import Signal
 
 
-def log(_func=None, *, logger, debug_only=False) -> Callable:
+def log(
+    _func: Optional[Callable] = None, *, logger: logging.Logger, debug_only: bool = False
+) -> Callable:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
 
@@ -82,8 +84,8 @@ def log(_func=None, *, logger, debug_only=False) -> Callable:
     :rtype: Callable
     """
 
-    def decorator_log(func):
-        def log_call(args, kwargs):
+    def decorator_log(func: Callable) -> Callable:
+        def log_call(args: tuple, kwargs: dict) -> str:
             name = getattr(func, "__name__", "?")
             try:
                 self = args[0]
@@ -104,7 +106,7 @@ def log(_func=None, *, logger, debug_only=False) -> Callable:
                     setattr(logger.root, "ignore_exceptions", True)
             return name
 
-        def log_return(name, result):
+        def log_return(name: str, result: Any) -> None:
             try:
                 if logger.root.level == logging.DEBUG:
                     logger.debug(f"{name} returned ({result})")
@@ -125,7 +127,7 @@ def log(_func=None, *, logger, debug_only=False) -> Callable:
             # `yield from`, which transparently forwards send()/throw()/close()
             # to it and lets exceptions raised during iteration propagate here.
             @functools.wraps(func)
-            def generator_wrapper(*args, **kwargs):
+            def generator_wrapper(*args: Any, **kwargs: Any) -> Generator[Any, Any, Any]:
                 name = log_call(args, kwargs)
                 result = yield from func(*args, **kwargs)
                 log_return(name, result)
@@ -134,7 +136,7 @@ def log(_func=None, *, logger, debug_only=False) -> Callable:
             return generator_wrapper
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             name = log_call(args, kwargs)
             result = func(*args, **kwargs)
             log_return(name, result)
@@ -148,12 +150,12 @@ def log(_func=None, *, logger, debug_only=False) -> Callable:
         return decorator_log(_func)
 
 
-def register_action():
-    def decorator(func):
+def register_action() -> Callable:
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(
-            self, *args, **kwargs
-        ):  # self is the first argument for instance methods
+            self: Any, *args: Any, **kwargs: Any
+        ) -> Any:  # self is the first argument for instance methods
             result = func(self, *args, **kwargs)
 
             signal_attr = getattr(self, "update_tab_action_history", None)

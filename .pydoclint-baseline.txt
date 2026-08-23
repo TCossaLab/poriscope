@@ -372,6 +372,9 @@ poriscope/utils/BaseDataPlugin.py
     DOC108: Method `BaseDataPlugin._validate_param_types`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `BaseDataPlugin._validate_param_ranges`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
+poriscope/utils/LogDecorator.py
+    DOC108: Function `log`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
 poriscope/utils/MetaController.py
     DOC108: Method `MetaController._relay_global_signal`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `MetaController._relay_data_plugin_controller_signal`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
