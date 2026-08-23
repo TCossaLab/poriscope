@@ -23,6 +23,15 @@ convenient — but it's recorded in this same file because it modifies the
 exact decorator Part 2 relies on and Part 1 already flags for a
 documentation pass.
 
+Part 4 (core `poriscope/utils/` low-level utility modules — decorators,
+metaclasses, the generator worker/thread pair, small Qt widget/validator
+bases) is a different kind of entry than Parts 1-3: it's a raw findings list
+from a read-only simplification audit, not a worked-out design, and it has
+no ordering dependency on anything else in this file. It's kept here rather
+than in `future_fixes.md` because a couple of its findings sit in
+`LogDecorator.py`, the exact file Part 3 modifies and Part 1's Tier 3
+documentation pass already references.
+
 ---
 
 # Part 1: Promote Duplicated Frontend Plugin Code into Base Classes
@@ -709,3 +718,127 @@ existing `@register_action` call sites unchanged and behaviorally identical.
   above) need to be as clearly documented as the two standing invariants
   already flagged there, for the same reason: nothing about this is
   currently discoverable except by reading the decorator's source.
+
+---
+
+# Part 4: Core Utility Module (`poriscope/utils/`) Simplification Candidates
+
+## Background and scope
+
+A read-only audit (2026-08) of nine small, low-level, widely-imported utility
+modules — `LogDecorator.py`, `EventWorker.py`, `QObjectABCMeta.py`,
+`QWidgetABCMeta.py`, `BaseLineEdit.py`, `BaseValidator.py`,
+`JsonDefaultSerializer.py`, `QtHandler.py`, `DocstringDecorator.py` — looked
+for code that's more complex than the problem it solves: over-engineered
+decorators/metaclasses, duplicated logic within a file, and control flow
+that's harder to follow than the underlying task requires. It deliberately
+did not look for correctness bugs or type-hint/docstring gaps (those are
+separate, already-completed audits), and it is not a worked-out design like
+Parts 1-3 — it's a punch list of specific spots worth a closer look. Each
+item below is flagged with what's there and why it stood out; none of them
+depend on each other or on Parts 1-3, so any subset can be picked up
+independently, whenever convenient. Line numbers are as of the 2026-08 audit
+and may drift — re-check the citation before acting on it.
+
+## Findings, roughly in order of expected value if pursued
+
+1. **`LogDecorator.py:96-104` and `111-119` — duplicated exception-suppression
+   logic.** The inner `log_call` and `log_return` closures inside `log()`
+   each carry an identical try/except that swallows a logging failure and
+   sets a one-shot `logger.root.ignore_exceptions` flag (via `hasattr`/
+   `setattr` on the root logger object) so the same warning isn't repeated.
+   Worth checking whether this can become one shared helper instead of two
+   copies — but `log()` wraps nearly every plugin method in the app, so
+   whoever picks this up should scope how wide `@log`'s usage actually is
+   before touching it.
+
+2. **`LogDecorator.py:34,79-80` — `debug_only` parameter looks dead.**
+   `log(_func=None, *, logger, debug_only=False)` documents `debug_only` as
+   controlling whether the decorator "is only to run in debug mode," but
+   nothing in `decorator_log`/`log_call`/`log_return`/`generator_wrapper`/
+   `wrapper` ever reads it, and a repo-wide search found no call site passing
+   `debug_only=True`. Unlike `register_action`'s reserved-for-extension
+   no-arg factory (Part 3 above), nothing in this file or elsewhere
+   documents `debug_only` as an intentional future hook. Worth confirming
+   it's genuinely unused (not, say, read by something outside this file via
+   introspection) before deciding whether to delete it or wire it up.
+
+3. **`EventWorker.py:70-84` — three near-identical `except` clauses in
+   `Worker.process_generator`.** `RuntimeError`, `ValueError`, and `IOError`
+   each get their own clause doing the same thing (log at `error`, `break`),
+   differing only in which exception type the log message names. (Also note
+   `IOError` is just an alias for `OSError` in Python 3 — worth checking
+   whether that aliasing was intentional or just how the list grew over
+   time.) Candidate for collapsing into one tuple-based `except` clause.
+
+4. **`EventWorker.py:85-90` vs. `run()`'s `finally` at line 112 — possibly
+   redundant progress-bar emission.** The catch-all `except Exception`
+   branch inside `process_generator` explicitly emits
+   `update_progressbar.emit(100, ...)` before breaking, but `run()` (the
+   only caller found) already unconditionally emits the same thing in its
+   own `finally`. The other three `except` branches (`StopIteration`,
+   `RuntimeError`, `ValueError`, `IOError`) don't emit it locally. Worth
+   figuring out whether this asymmetry is deliberate (e.g. for some caller
+   of `process_generator` that doesn't go through `run()`) before removing
+   it — a grep for direct callers of `process_generator` would settle it.
+
+5. **`EventWorker.py:103-110` — `except Exception: raise` inside `run()`
+   appears to be a no-op.** It catches every exception only to re-raise it
+   unchanged, which reads as behaviorally identical to omitting the
+   `except` clause and keeping just `try`/`finally`. Cheap to verify and
+   cheap to remove if confirmed inert.
+
+6. **`EventWorker.py:57-61` — `send`-vs-`next` dispatch via catching
+   `TypeError`.**
+   ```python
+   try:
+       p = self.generator.send(self.stop_requested)
+   except TypeError:
+       p = next(self.generator)
+   ```
+   This leans on the generator-protocol detail that `.send()` on a
+   not-yet-started generator raises `TypeError`, so the first iteration
+   falls through to `next()`. Worth a closer look at whether a genuine
+   `TypeError` raised from inside the wrapped generator's own body (not from
+   the send-before-start situation) could be misclassified here and silently
+   retried as "generator not started yet" instead of propagating as the
+   real error it is — and if so, whether an explicit `started` flag would
+   remove that ambiguity. This is the core dispatch loop for every event
+   finder/fitter's generator, so any change here needs real test coverage,
+   not just a read-through.
+
+7. **`QObjectABCMeta.py:34` / `QWidgetABCMeta.py:34` — leftover commented-out
+   line.** Both files contain the identical dead comment
+   `# abc._abc_init(cls)` inside `__new__`. Trivial to remove; flagged only
+   for completeness.
+
+8. **`QObjectABCMeta.py` / `QWidgetABCMeta.py` — duplicated `__call__`/
+   `__new__` across two files.** The two metaclasses are identical except
+   for which Qt base (`QObject` vs `QWidget`) they combine with. Real
+   duplication, but these are two of the most foundational, most widely
+   subclassed types in the whole plugin system — any future session
+   considering deduplicating them (e.g. via a shared mixin) should weigh
+   that against the blast radius of touching either file, not just the
+   line count saved.
+
+9. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
+   class attributes mutated as de facto process-wide globals**, toggled by
+   a `QApplication`-wide event filter that reacts to *any* `QMessageBox`
+   shown anywhere in the app (lines 91-97). Not a concurrency bug (Qt event
+   filters run on the GUI thread), but it's an action-at-a-distance
+   mechanism — reading `focusOutEvent`/`isValid` alone gives no hint that
+   their behavior depends on an unrelated modal dialog elsewhere in the
+   app. Worth at least a comment at the class-attribute declaration if this
+   file is touched for another reason; a behavior-changing fix wasn't
+   judged worth the risk on its own.
+
+## Also reviewed, no findings
+
+`BaseValidator.py`, `JsonDefaultSerializer.py`, `QtHandler.py`, and
+`DocstringDecorator.py` were read in full as part of the same audit and
+found to already be about as simple as the problem they solve — including
+`QtHandler.py`'s `_dialog_open` re-entrancy guard, which is genuine
+concurrency-adjacent logic already justified by an inline comment (a modal
+`QMessageBox` runs a nested event loop that can deliver more queued log
+records while it's open). Not included as findings, but listed so a future
+session doesn't re-audit them from scratch.
