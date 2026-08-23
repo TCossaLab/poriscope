@@ -3,6 +3,53 @@
 Context block for a dedicated future session. Paste/point Claude Code at this file to
 resume this work; it is written to be self-contained.
 
+## Progress (2026-08-23)
+
+First installment landed on `feature/loadbearing_docstrings`: type hints added, copied
+from each family's `Meta*` base, to every method across `poriscope/plugins/datareaders/`,
+`eventfinders/`, `filters/`, `eventloaders/`, `datawriters/`, `db_loaders/`, `dbwriters/`,
+plus the CUSUM-family fitters (`ClassicCUSUM.py`, `CUSUM.py`, `IntraCUSUM.py`,
+`NoFitter.py`). `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` excluded per the
+Exclusions section below, as always. `.pydoclint-baseline.txt` regenerated once,
+centrally, to absorb the new `DOC108` entries. See `changelog.md`'s "New Dev Tooling:
+Type annotations for data plugins" entry for the summary, and the individual commits
+(`feat(types): add type hints to ...`) on that branch for the per-family diffs.
+
+**Still remaining before this pass is done** (per Scope below): the rest of the data
+plugin families not yet covered (`Basic_PeakFinder`/`NanoTrees`/`PeakFinder` themselves,
+once someone other than this pass's owner picks them up), the `Meta*` ABCs in
+`poriscope/utils/` (several, e.g. `MetaEventFitter.py`, already carry partial
+annotations from earlier work but were not exhaustively re-verified here beyond what
+this batch's mypy runs happened to touch), and all of controllers/models/views/app-shell
+code. Steps 2-4 in Scope (flipping the pydoclint/mypy policy flags) have **not** been
+started - do not flip those until annotation coverage is much closer to complete.
+
+**Gotchas confirmed empirically this round, worth internalizing before the next
+session continues this pass:**
+- The "annotation-unchecked cascade" gotcha is real and non-trivial in volume: adding
+  hints to a ~20-file batch surfaced 14 real, blocking `pre-commit run mypy --all-files`
+  errors, none of which were caused by the new hints themselves - all were pre-existing
+  logic/contract mismatches that were simply invisible to mypy before. Budget time for
+  this triage on every future batch, not just the mechanical hint-copying.
+- **Don't trust a bare local `mypy <files>` invocation as the pass/fail signal.**
+  It resolved to a different, newer mypy version than pre-commit's pinned
+  `mirrors-mypy` hook in this environment, and - more importantly - passing a narrow
+  file subset let mypy's import-following pull in unrelated files (via package
+  `__init__.py` re-exports) and report pre-existing errors in files nobody touched
+  (`MetaController.py`, `NanoTrees.py`, `PeakFinder.py`), none of which actually block a
+  commit. `pre-commit run mypy --all-files` (or `pre-commit run mypy --files <paths>`
+  for a quick spot check) is the only trustworthy gate - it matches what CI enforces.
+  Verify this empirically with `git stash` before assuming any mypy output is
+  attributable to your own change.
+- Three concrete "genuine logic-shaped mismatch, flag don't fix" discrepancies were
+  suppressed with narrow, commented `# type: ignore[<code>]` lines (not fixed, not
+  hidden silently) so the batch could land: `CUSUM`/`NoFitter`'s `baseline_std`
+  (`Optional[float]` used in unguarded arithmetic) and `sublevel_starts`
+  (`List[int]`-declared but ndarray at runtime), and `SQLiteEventWriter._write_data`'s
+  `Optional[int]` params passed straight into `int()`. These need an actual human
+  decision, not just a suppression - see `changelog.md` and the suggested-resolutions
+  discussion from the session that added them for options.
+
 ## Goal
 
 Add type hints to every parameter (and return type) of every function/method across
