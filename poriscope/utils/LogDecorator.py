@@ -32,7 +32,10 @@ from PySide6.QtCore import Signal
 
 
 def log(
-    _func: Optional[Callable] = None, *, logger: logging.Logger, debug_only: bool = False
+    _func: Optional[Callable] = None,
+    *,
+    logger: logging.Logger,
+    debug_only: bool = False,
 ) -> Callable:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
@@ -127,7 +130,9 @@ def log(
             # `yield from`, which transparently forwards send()/throw()/close()
             # to it and lets exceptions raised during iteration propagate here.
             @functools.wraps(func)
-            def generator_wrapper(*args: Any, **kwargs: Any) -> Generator[Any, Any, Any]:
+            def generator_wrapper(
+                *args: Any, **kwargs: Any
+            ) -> Generator[Any, Any, Any]:
                 name = log_call(args, kwargs)
                 result = yield from func(*args, **kwargs)
                 log_return(name, result)
