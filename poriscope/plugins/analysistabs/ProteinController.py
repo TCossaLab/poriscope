@@ -117,7 +117,7 @@ class ProteinController(MetaController):
         self.view.set_exported_event_count(written)
 
     @log(logger=logger)
-    def relay_query(self, query, debug, table_name, *args):
+    def relay_query(self, query, debug, table_name, *args) -> None:
         """
         Relay a query and optional debug message to the view, handling optional filter intents.
 
@@ -127,8 +127,8 @@ class ProteinController(MetaController):
         :type debug: str
         :param table_name: Name of the table associated with the query.
         :type table_name: str
-        :param args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type args: tuple
+        :param *args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
+        :type *args: tuple
         """
         intent = args[0] if args else None
 

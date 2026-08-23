@@ -27,6 +27,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 from typing_extensions import override
@@ -83,7 +84,6 @@ class BinaryReader1X(MetaReader):
 
         :param filename: the path to one of the files to be opened
         :type filename: os.Pathlike
-        :raises IOError: If the wrong type is file is fed to the plugin
         """
         pass
 
@@ -95,7 +95,6 @@ class BinaryReader1X(MetaReader):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
         """
         pass
 
@@ -109,7 +108,7 @@ class BinaryReader1X(MetaReader):
 
     @log(logger=logger)
     @override
-    def _map_data(self, datafiles, configs):
+    def _map_data(self, datafiles, configs) -> List[np.ndarray]:
         """
         Map data files into a set of memmaps or similarly define a way to access the raw data on disk.
         Returns a list of memmaps corresponding to each datafile/configfile pair.
@@ -120,7 +119,7 @@ class BinaryReader1X(MetaReader):
         :type configs: List[dict]
 
         :return: List of memmaps containing raw data.
-        :rtype: List[numpy.ndarray]
+        :rtype: List[np.ndarray]
 
         :raises FileNotFoundError: If at least one of the input raw data files is missing or renamed.
         :raises OSError: If the file indicated is inaccessible.
@@ -165,7 +164,7 @@ class BinaryReader1X(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_time_stamps(self, file_names, configs):
+    def _get_file_time_stamps(self, file_names, configs) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
@@ -175,13 +174,13 @@ class BinaryReader1X(MetaReader):
         :type configs: List[dict]
 
         :return: List of timestamps parsed from configuration.
-        :rtype: List[datetime]
+        :rtype: List[int]
         """
         return [0]
 
     @log(logger=logger)
     @override
-    def _get_file_channel_stamps(self, file_names, configs):
+    def _get_file_channel_stamps(self, file_names, configs) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
@@ -197,7 +196,7 @@ class BinaryReader1X(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_pattern(self, file_name):
+    def _get_file_pattern(self, file_name) -> str:
         """
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
@@ -206,14 +205,14 @@ class BinaryReader1X(MetaReader):
 
         :return: Base name for matching other files.
         :rtype: str
-
-        :raises ValueError: If the base naming pattern cannot be ascertained.
         """
         return file_name
 
     @log(logger=logger)
     @override
-    def _convert_data(self, data, config, raw_data=False):
+    def _convert_data(
+        self, data, config, raw_data=False
+    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
         """
         Scale or otherwise transform and return requested data.
         Default behavior assumes data is already scaled when read.
@@ -248,7 +247,7 @@ class BinaryReader1X(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_configs(self, datafiles):
+    def _get_configs(self, datafiles) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
         Default behavior assumes there are no config files needed.
@@ -258,6 +257,8 @@ class BinaryReader1X(MetaReader):
 
         :return: List of configuration dictionaries.
         :rtype: List[dict]
+
+        :raises ValueError: If a filename does not match the required '_<samplerate>Hz.bin' pattern.
         """
         configs = []
         pattern = r"_(\d+)Hz\.bin$"
@@ -288,7 +289,7 @@ class BinaryReader1X(MetaReader):
 
     @log(logger=logger)
     @override
-    def _set_raw_dtype(self, configs):
+    def _set_raw_dtype(self, configs) -> np.dtype:
         """
         Set the data type for the raw data in files of this type
 
@@ -303,7 +304,9 @@ class BinaryReader1X(MetaReader):
     # public API
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -332,8 +335,10 @@ class BinaryReader1X(MetaReader):
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Mapping[str, List[str]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Input File"]["Options"] = ["Binary Files (*.bin)"]

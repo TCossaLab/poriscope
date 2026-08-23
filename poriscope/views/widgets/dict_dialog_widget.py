@@ -71,12 +71,23 @@ class DictDialog(QDialog):
     ):
         """
         :param params: Plugin parameters to edit.
+        :type params: dict
         :param name: Name of the plugin.
+        :type name: str
         :param title: Dialog title.
+        :type title: str
         :param data_server: Base path for folder/file selection.
+        :type data_server: str
         :param editable: If True, allow editing of the plugin name.
+        :type editable: bool
         :param show_delete: If True, show the Delete button (used for edit settings).
+        :type show_delete: bool
+        :param editable_source_plugins: If True, allow editing of the source plugins list.
+        :type editable_source_plugins: bool
+        :param source_plugins: List of available source plugin keys.
+        :type source_plugins: list
         :param parent: Parent widget.
+        :type parent: Optional[QWidget]
         """
         super().__init__(parent)
         self.title = title
@@ -239,8 +250,6 @@ class DictDialog(QDialog):
         :type starting_file_path: Optional[str]
         :param file_types: The types of files to filter, defaults to "All Files (*)".
         :type file_types: str
-        :return: The selected file path.
-        :rtype: str
         :raises Exception: If there is an error determining the file path location.
         """
         loc = ""
@@ -276,8 +285,6 @@ class DictDialog(QDialog):
         :type starting_file_path: Optional[str]
         :param file_types: The types of files to filter, defaults to "All Files (*)".
         :type file_types: str
-        :return: The selected file path for saving.
-        :rtype: str
         :raises Exception: If there is an error determining the file path location.
         """
         loc = ""
@@ -311,12 +318,8 @@ class DictDialog(QDialog):
         """
         Get the name of the output folder to save to
 
-        :param starting_file_path: The starting file path, defaults to None.
-        :type starting_file_path: Optional[str]
-
-        :return: The selected file path for saving.
-        :rtype: str
-        :raises Exception: If there is an error determining the file path location.
+        :param starting_path: The starting file path, defaults to None.
+        :type starting_path: Optional[str]
         """
         loc = starting_path if starting_path else ""
 

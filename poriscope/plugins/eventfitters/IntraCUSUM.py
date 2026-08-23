@@ -24,6 +24,7 @@
 # Kyle Briggs
 
 import logging
+from typing import Any, Dict, Optional, Type, Union
 
 import numpy as np
 from typing_extensions import override
@@ -45,7 +46,9 @@ class IntraCUSUM(CUSUM):
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -68,7 +71,7 @@ class IntraCUSUM(CUSUM):
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
 
@@ -90,7 +93,7 @@ class IntraCUSUM(CUSUM):
     @override
     def _populate_event_metadata(
         self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-    ):
+    ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
 
@@ -106,7 +109,8 @@ class IntraCUSUM(CUSUM):
         :type sublevel_metadata: Mapping[str, List[Numeric]]
 
         :return: a dict of event metadata values
-        :rtype: Mapping[str, float]
+        :rtype: Dict[str, Union[int, float, str, bool]]
+        :raises ValueError: if baseline_mean is not provided, since intra-event thresholds cannot be computed without it
         """
         event_metadata = super()._populate_event_metadata(
             data, samplerate, baseline_mean, baseline_std, sublevel_metadata
@@ -142,14 +146,16 @@ class IntraCUSUM(CUSUM):
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_types(self):
+    def _define_event_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_event_metadata()
         All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
         metadata_types = super()._define_event_metadata_types()
         metadata_types["threshold_crossings"] = int
@@ -157,14 +163,13 @@ class IntraCUSUM(CUSUM):
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_units(self):
+    def _define_event_metadata_units(self) -> Dict[str, Optional[str]]:
         """
-        Build a dict of metadata along with associated datatypes for use by the database writer downstream.
-        Keys must match columns defined in _populate_event_metadata()
-        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
+        Build a dict of metadata units, or None if unitless. Keys must match columns defined in _populate_event_metadata()
+        All of this metadata must be populated during fitting.
 
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
+        :return: a dict of metadata keys and associated units
+        :rtype: Dict[str, Optional[str]]
         """
         metadata_units = super()._define_event_metadata_units()
         metadata_units["threshold_crossings"] = ""

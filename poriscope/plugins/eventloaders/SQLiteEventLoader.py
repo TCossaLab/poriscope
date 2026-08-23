@@ -26,9 +26,10 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Union
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -78,15 +79,24 @@ class SQLiteEventLoader(MetaEventLoader):
     # private API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
-    def load_event(self, channel, index, data_filter=None):
+    def load_event(
+        self, channel, index, data_filter=None
+    ) -> Dict[str, Union[npt.NDArray[np.float64], int, float]]:
         """
         :param channel: channel number from which to load data.
         :type channel: int
         :param index: The unique identifier for the event to load
         :type index: int
+        :param data_filter: an optional filter function to apply to the data before it is returned
+        :type data_filter: Optional[Callable]
 
         :return: data and context corresponding to the event, with baseline padding before and after
         :rtype: Dict[str, Union[npt.NDArray[np.float64], int, float]]
+
+        :raises IndexError: if no event with the given index exists for the given channel
+        :raises ValueError: if a value error occurs while loading the event
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while loading the event
 
         **Purpose:** Load the data and metadata associated with a single specified event
 
@@ -163,7 +173,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_num_events(self, channel):
+    def get_num_events(self, channel) -> int:
         """
         get the number of events available in the given channel
 
@@ -172,6 +182,8 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :return: The number of events in the channel for the given experiment
         :rtype: int
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while counting events
         """
         conn = None
         cursor = None
@@ -203,7 +215,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_samplerate(self, channel):
+    def get_samplerate(self, channel) -> float:
         """
         Return the sampling rate for the channel.
 
@@ -212,6 +224,9 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :return: Sampling rate for the dataset.
         :rtype: float
+        :raises ValueError: if no samplerate is found for the given channel
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while fetching the samplerate
         """
         conn = None
         cursor = None
@@ -257,7 +272,9 @@ class SQLiteEventLoader(MetaEventLoader):
         :return: A list of event ids
         :rtype: List[int]
 
-        :raises: ValueError if no event_ids exist
+        :raises ValueError: if no event_ids exist
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while fetching event ids
 
         **Purpose** Return a list of indices corresponding to the id of events within the given channel. `channel` is required; there is no "all channels" mode.
         """
@@ -297,12 +314,15 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_channels(self):
+    def get_channels(self) -> List[int]:
         """
         Return the keys of valid channels in the reader
 
         :return: keys of valid channels in the reader
         :rtype: List[int]
+        :raises ValueError: if no channels are found
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while fetching channels
         """
         conn = None
         cursor = None
@@ -341,15 +361,10 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -390,6 +405,13 @@ class SQLiteEventLoader(MetaEventLoader):
             return settings
 
         which will ensure that your have the ``Input File`` key and limit visible options to sqlite3 files. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Input File"]["Options"] = [
@@ -407,7 +429,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
+        :raises KeyError: If the settings dict does not contain the correct information.
         """
         if "Input File" not in settings.keys():
             raise KeyError("""settings must include an 'Input File' key""")

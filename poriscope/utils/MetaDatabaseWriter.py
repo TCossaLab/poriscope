@@ -93,12 +93,12 @@ class MetaDatabaseWriter(BaseDataPlugin):
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
         By default, writer plugins are assumed to not be threadsafe and will run in serial mode when called from the poriscope GUI. If you want to change this, you must also ensure that the parent eventfitter object is threadsafe for pulling data from it. You can play it safe by calling ``self.eventfitter.force_serial_channel_operations()``.
+
+        :return: True if only one channel can run at a time, False otherwise
+        :rtype: bool
         """
         return True
 
@@ -110,9 +110,11 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
         :param channel: the index of the channel to commit
         :type channel: int
-
-        :return: the progress of the generator, normalized to [0,1]
-        :rtype: Generator[float, Optional[bool], None]
+        :raises Exception: if writing experiment or channel metadata fails unexpectedly
+        :raises ValueError: if event fitting has not completed on the given channel
+        :raises IOError: if an event cannot be written because it would overwrite an existing one
+        :yield: the progress of the generator, normalized to [0,1]
+        :ytype: float
         """
 
         def lookahead_generator(gen):
@@ -288,14 +290,16 @@ class MetaDatabaseWriter(BaseDataPlugin):
         last_call: Optional[bool] = False,
     ) -> bool:
         """
+        **Purpose:** Write a single event worth of data and metadata to the database.
+
+        Given all of the event information above, write whatever subset you want to save to the database for both event metadata and sublevel metadata for each event. We strongly encourage atomic operations, but given event volume, you might consider committing or flushing events only every few hundred events, or opening a file handle for writing the first time this is called and using the open handle for subsequent writes. Ensure that the ``events`` table has a refernece to the ``channels`` and ``experiments`` tables, and that the ``sublevels`` tables has a way to reference both of those and the ``events`` table for the parent event.
+
         :param channel: identifier for the channel to write events from
         :type channel: int
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
         :param event_metadata: a dict of metadata associated to the event
         :type event_metadata: Dict[str, Union[int, float, str, bool]]
-        :param event_metadata: a dict of lists of metadata associated to sublevels within the event. You can assume they all have the same length.
-        :type event_metadata: Dict[str, List[Union[int, float, str, bool]]]
+        :param sublevel_metadata: a dict of lists of metadata associated to sublevels within the event. You can assume they all have the same length.
+        :type sublevel_metadata: Dict[str, List[Union[int, float, str, bool]]]
         :param event_data: the raw data for the event (not filtered)
         :type event_data: npt.NDArray[np.float64]
         :param raw_data: A numpy array of raw event data to be stored as binary in the database.
@@ -306,13 +310,8 @@ class MetaDatabaseWriter(BaseDataPlugin):
         :type abort: Optional[bool]
         :param last_call: True if this is the last time the function will be called, commit to file and clean up as needed
         :type last_call: Optional[bool]
-
         :return: True on successful write, False on failure or ignore
         :rtype: bool
-
-        **Purpose:** Write a single event worth of data and metadata to the database.
-
-        Given all of the event information above, write whatever subset you want to save to the database for both event metadata and sublevel metadata for each event. We strongly encourage atomic operations, but given event volume, you might consider committing or flushing events only every few hundred events, or opening a file handle for writing the first time this is called and using the open handle for subsequent writes. Ensure that the ``events`` table has a refernece to the ``channels`` and ``experiments`` tables, and that the ``sublevels`` tables has a way to reference both of those and the ``events`` table for the parent event.
         """
         pass
 
@@ -369,7 +368,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         """
         Validate that the filter_params dict contains correct data types
 
-        param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
@@ -389,13 +388,6 @@ class MetaDatabaseWriter(BaseDataPlugin):
         standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -432,6 +424,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
             return settings
 
         which will ensure that your have the 4 keys specified above, as well as two additional keys, ``MetaReader`` and ``Output File``. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :raises KeyError: if no :ref:`MetaEventFitter` has been instantiated and standalone is False
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         eventfitter_options = None
         if globally_available_plugins:

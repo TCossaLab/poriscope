@@ -26,7 +26,7 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 from typing_extensions import override
@@ -56,6 +56,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param channel: channel ID. Note that `channel=None` does not reset all
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
         :type channel: Optional[int]
+        :raises RuntimeError: if the configured experiment cannot be found in the database
         """
         conn = None
         cursor = None
@@ -124,7 +125,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -143,11 +146,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Dict[str, List[str]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Output File"]["Options"] = [
@@ -187,7 +190,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         fit_data,
         abort=False,
         last_call=False,
-    ):
+    ) -> bool:
         """
         Write a single event worth of data and metadata to the database. Do NOT commit.
 
@@ -213,6 +216,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             database error) is raised rather than returned, so the caller can
             report the real reason instead of assuming a duplicate row.
         :rtype: bool
+        :raises ValueError: if a database connection cannot be opened
+        :raises RuntimeError: if the experiment or channel cannot be found in the database
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while writing the event
         """
         if abort is True:
             if self.conn:
@@ -313,6 +320,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         :param channel: int indicating which output to flush
         :type channel: int
+        :raises sqlite3.Error: if a database operation fails
         """
         conn = None
         cursor = None
@@ -360,6 +368,8 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         :param channel: int indicating which output to flush
         :type channel: int
+        :raises RuntimeError: if the configured experiment cannot be found in the database
+        :raises sqlite3.Error: if a database operation fails
         """
         conn = None
         cursor = None
@@ -414,7 +424,6 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
         """
         pass
 
@@ -426,6 +435,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         :param channel: int indicating which output to flush
         :type channel: Optional[int]
+        :raises ValueError: if event or sublevel metadata declares an unsupported datatype
+        :raises RuntimeError: if database initialization fails at the SQL level
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs during initialization
         """
 
         table_creation_queries = [
@@ -649,7 +662,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     @log(logger=logger)
-    def _insert_event(self, cursor, event_metadata, experiment_id, channel_db_id):
+    def _insert_event(self, cursor, event_metadata, experiment_id, channel_db_id) -> bool:
         """
         Insert event metadata into the 'events' table. Return True on success, False on failure.
 
@@ -659,6 +672,8 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :type event_metadata: Mapping[str, Union[int, float, str, bool]]
         :param experiment_id: The ID of the experiment for which the event is being logged.
         :type experiment_id: int
+        :param channel_db_id: The database ID of the channel to associate with the event.
+        :type channel_db_id: int
 
         :return: True on success, False on failure
         :rtype: bool
@@ -676,7 +691,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     @log(logger=logger)
     def _insert_sublevels(
         self, cursor, sublevel_metadata, experiment_id, channel_db_id, event_db_id
-    ):
+    ) -> bool:
         """
         Insert sublevel metadata into the 'sublevels' table.
 
@@ -686,6 +701,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :type sublevel_metadata: Mapping[str, List[Union[int, float, str, bool]]]
         :param experiment_id: The ID of the experiment for which the sublevels are being logged.
         :type experiment_id: int
+        :param channel_db_id: The database ID of the channel to associate with the sublevels.
+        :type channel_db_id: int
+        :param event_db_id: The database ID of the event to associate with the sublevels.
+        :type event_db_id: int
 
         :return: True on success, False on failure
         :rtype: bool
@@ -729,7 +748,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         experiment_id,
         channel_db_id,
         event_db_id,
-    ):
+    ) -> bool:
         """
         Insert the event data into the 'data' table after converting it to the appropriate binary format.
 
@@ -752,6 +771,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
         :return: True on success, False on failure
         :rtype: bool
+        :raises ValueError: if event_data is not a numpy array of dtype np.float64
         """
         if not isinstance(event_data, np.ndarray) or event_data.dtype != np.float64:
             raise ValueError("event_data must be a numpy array of dtype np.float64")
@@ -779,7 +799,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         return True
 
     @log(logger=logger)
-    def _column_exists(self, cursor, table_name, column_name):
+    def _column_exists(self, cursor, table_name, column_name) -> bool:
         """
         Check whether a given column exists in the specified database table.
 

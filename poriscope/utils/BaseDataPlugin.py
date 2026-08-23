@@ -39,7 +39,7 @@ class Setting(TypedDict):
 
 class BaseDataPlugin(ABC):
     """
-    :ref:`BaseDataPlugin` is an abstraction of the functionality and interface that is common to all data plugins. What this means practically is that there is a chain of inheritance: all data plugins inherits from their respective base class, all of which inherit from :ref:`BaseDataPlugin`.
+    This class, :ref:`BaseDataPlugin`, is an abstraction of the functionality and interface that is common to all data plugins. What this means practically is that there is a chain of inheritance: all data plugins inherits from their respective base class, all of which inherit from :ref:`BaseDataPlugin`.
 
     It handles stuff like instantiating the plugins, constructing settings dictionaries, and sanity checking the inputs, as well as a handful of bookkeeping functions used by the poriscope GUI to manage interactions between the MVC architecture and the data plugins themselves - basically, anything that involves interaction with the nuts and bolts of the poriscope GUI.
 
@@ -70,12 +70,22 @@ class BaseDataPlugin(ABC):
     .. note::
 
         For the most part, users will not have to worry much about anything in this base class, as all other abstract base classes for data plugins inherit from this one and will define the relevant interface at the subclass level. However, in the unlikely event that you are defining an entirely new class of data plugin, it will need to inherit from this base in order to fully integrate into poriscope. Because integrating a new base into poriscope requires registration in core app elements, it is strongly encouraged that you contact the repository managers before trying in order to assess whether there is a simpler solution.
+
+    Attributes:
+        logger (logging.Logger): Logger instance for logging messages.
+        lock (threading.Lock): Class-level lock available for subclasses that need to serialize access to shared state.
     """
 
     logger = logging.getLogger(__name__)
     lock = threading.Lock()
 
     def __init__(self, settings: Optional[dict] = None):
+        """
+        Construct the plugin and, if settings are provided, apply them immediately.
+
+        :param settings: A dict specifying the parameters of the plugin to be created. Required keys depend on subclass. If None, the plugin is left unconfigured until :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` is called.
+        :type settings: Optional[dict]
+        """
         self._init()
         self.settings: dict[str, dict[str, Any]] = settings or {}
         self.dependents: Set[Tuple[str, str]] = set()
@@ -180,9 +190,12 @@ class BaseDataPlugin(ABC):
     @log(logger=logger)
     def register_dependent(self, metaclass: str, key: str) -> None:
         """
+        Record that another plugin, identified by (metaclass, key), depends on this one.
 
-        :return: the dict that must be filled in to initialize the plguin
-        :rtype: Optional[dict]
+        :param metaclass: the name of the Meta* base class of the dependent plugin
+        :type metaclass: str
+        :param key: the unique key of the dependent plugin
+        :type key: str
         """
         if metaclass is not None and key is not None:
             self.dependents.add((metaclass, key))
@@ -190,9 +203,12 @@ class BaseDataPlugin(ABC):
     @log(logger=logger)
     def register_parent(self, metaclass: str, key: str) -> None:
         """
+        Record that this plugin depends on another plugin, identified by (metaclass, key).
 
-        :return: the dict that must be filled in to initialize the plguin
-        :rtype: Optional[dict]
+        :param metaclass: the name of the Meta* base class of the parent plugin
+        :type metaclass: str
+        :param key: the unique key of the parent plugin
+        :type key: str
         """
         if metaclass is not None and key is not None:
             self.parents.add((metaclass, key))
@@ -200,9 +216,12 @@ class BaseDataPlugin(ABC):
     @log(logger=logger)
     def unregister_dependent(self, metaclass: str, key: str) -> None:
         """
+        Remove a previously registered dependent, identified by (metaclass, key), if present.
 
-        :return: the dict that must be filled in to initialize the plguin
-        :rtype: Optional[dict]
+        :param metaclass: the name of the Meta* base class of the dependent plugin
+        :type metaclass: str
+        :param key: the unique key of the dependent plugin
+        :type key: str
         """
         try:
             self.dependents.remove((metaclass, key))
@@ -212,9 +231,12 @@ class BaseDataPlugin(ABC):
     @log(logger=logger)
     def unregister_parent(self, metaclass: str, key: str) -> None:
         """
+        Remove a previously registered parent, identified by (metaclass, key), if present.
 
-        :return: the dict that must be filled in to initialize the plguin
-        :rtype: Optional[dict]
+        :param metaclass: the name of the Meta* base class of the parent plugin
+        :type metaclass: str
+        :param key: the unique key of the parent plugin
+        :type key: str
         """
         try:
             self.parents.remove((metaclass, key))
@@ -256,8 +278,10 @@ class BaseDataPlugin(ABC):
         """
         Update raw settings when needed
 
-        :return: the dict that must be filled in to initialize the plguin
-        :rtype: Optional[dict]
+        :param key: the settings key to update
+        :type key: str
+        :param val: the new value to store for that key
+        :type val: Any
         """
         if self.raw_settings and key in self.raw_settings:
             self.raw_settings[key]["Value"] = val
@@ -340,8 +364,8 @@ class BaseDataPlugin(ABC):
         """
         Set the key used to identify this plugin within the global app scope
 
-        :param str: they key of the plugin
-        :type data: str
+        :param key: the key of the plugin
+        :type key: str
         """
         self.key = key
 
@@ -383,7 +407,7 @@ class BaseDataPlugin(ABC):
         Validate that the filter_params dict contains correct data types, but only checks primitives.
         More detailed parameter checking should follow a call to super() in an override.
 
-        param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
@@ -400,9 +424,9 @@ class BaseDataPlugin(ABC):
         """
         Validate that the filter_params dict contains correct data types
 
-        param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
-        :raises TypeError: If the filter_params parameters are of the wrong type
+        :raises ValueError: If the filter_params parameters are out of range or not an allowed option
         """
         if settings:
             for param, val in settings.items():

@@ -69,10 +69,10 @@ class MetaEventLoader(BaseDataPlugin):
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
+        **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
+
         :return: True if only one channel can run at a time, False otherwise
         :rtype: bool
-
-        **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
         """
         return False
 

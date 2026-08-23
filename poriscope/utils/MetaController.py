@@ -63,8 +63,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         :param available_subclasses: mapping of available plugin subclasses, passed through to the view
         :type available_subclasses: Optional[dict]
-        :param kwargs: Additional parameters to set as attributes on the instance
-        :type kwargs: dict
+        :param \\**kwargs: Additional parameters to set as attributes on the instance
+        :type \\**kwargs: dict
         """
 
         super().__init__()
@@ -182,13 +182,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str)
-    def load_actions_from_json(self, filename):
+    def load_actions_from_json(self, filename) -> None:
         """
         Load and apply tab actions from a JSON file.
 
         :param filename: Path to the JSON file containing saved actions.
         :type filename: str
-        :return: None
         """
         try:
             with open(filename, "r") as json_file:
@@ -334,10 +333,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :type subclass_key: str
         :param call_function: A string matching the signature of a callable in the plugin identified by metaclass and subclass. This function should be a public API member of another subclass that has already been instantiated.
         :type call_function: str
-        :param return_function: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function: Optional[str]
         :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: str
+        :type call_args: tuple
+        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
+        :type return_function_name: Optional[str]
         :param ret_args: A tuple that will be appended to the return value of the call_function
         :type ret_args: tuple
         """
@@ -396,10 +395,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :type subclass_key: str
         :param call_function: A string matching the signature of a callable in the data plugin controller. (NOT in the data plugin itself).
         :type call_function: str
-        :param return_function: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function: Optional[str]
         :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: str
+        :type call_args: tuple
+        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
+        :type return_function_name: Optional[str]
         :param ret_args: A tuple that will be appended to the return value of the call_function
         :type ret_args: tuple
         """
@@ -461,7 +460,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(object, bool)
-    def update_tab_actions(self, history: Optional[dict] = None, undo=False):
+    def update_tab_actions(self, history: Optional[dict] = None, undo=False) -> None:
         """
         Update or undo the current tab action history, and emit the updated state.
 

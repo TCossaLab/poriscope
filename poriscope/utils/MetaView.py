@@ -27,9 +27,10 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Dict, List, Literal, Set
+from typing import Any, Dict, List, Literal, Set, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
     NavigationToolbar2QT as NavigationToolbar,
@@ -126,7 +127,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.data_cache_labels = []
 
     @log(logger=logger)
-    def _factors(self, n):
+    def _factors(self, n) -> Tuple[int, int]:
         """
         Find the closest pair of factors for a given number to approximate a square layout.
 
@@ -151,8 +152,9 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
         Update the cache with an arbitrary number of (data, label) pairs.
 
-        :param data_label_pairs: Tuple(s) of (data, label)
-        :type data_label_pairs: Tuple[npt.NDArray[Any], str]
+        :param \\*data_label_pairs: Tuple(s) of (data, label)
+        :type \\*data_label_pairs: Tuple[npt.NDArray[Any], str]
+        :raises ValueError: If any argument is not a tuple or list of 1 or 2 elements.
         """
         for pair in data_label_pairs:
             if not isinstance(pair, (tuple, list)) or len(pair) not in [1, 2]:
@@ -367,11 +369,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         Emit a signal to trigger the saving process for a data plugin, passing the appropriate
         arguments to handle editing plugin settings.
 
-        :param key: the identifier of the plugin to be edited
-        :type key: str
         :param metaclass: The class type of the plugin
         :type metaclass: str
-
+        :param key: the identifier of the plugin to be edited
+        :type key: str
         """
         self.logger.info(
             f"RawDataView: Settings edit request emitted for metaclass: {metaclass}, plugin: {key}"
@@ -387,11 +388,12 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         )
 
     @log(logger=logger)
-    def handle_add_triggered(self, metaclass: str):
+    def handle_add_triggered(self, metaclass: str) -> None:
         """
         Trigger addition of a new plugin by prompting for a subclass.
 
         :param metaclass: The type of plugin to add (e.g., 'MetaReader')
+        :type metaclass: str
         """
 
         subclasses = self.available_subclasses.get(metaclass, [])
@@ -422,11 +424,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
         Emit a signal to trigger the delete process for a data plugin, passing the identifier.
 
-        :param key: the identifier of the plugin to be deleted
-        :type key: str
         :param metaclass: The class type of the plugin
         :type metaclass: str
-
+        :param key: the identifier of the plugin to be deleted
+        :type key: str
         """
         self.logger.info(
             f"Delete request emitted for metaclass: {metaclass}, plugin: {key}"
@@ -670,7 +671,9 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         mainLayout.setStretch(1, 1)  # Decrease stretch factor for control area
 
     @log(logger=logger)
-    def _logscale_and_filter_multiple_columns(self, *data, log_flags=None):
+    def _logscale_and_filter_multiple_columns(
+        self, *data, log_flags=None
+    ) -> Tuple[npt.NDArray[Any], ...]:
         """
         Filters multiple data columns for NaN values and applies logarithmic scaling.
 
@@ -683,11 +686,13 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         non-positive values after rectification. This filtering is applied
         sequentially, meaning filtering based on one column affects all others.
 
-        :param data: A variable number of 1D NumPy arrays representing the data columns.
-        :type data: npt.NDArray
+        :param \\*data: A variable number of 1D NumPy arrays representing the data columns.
+        :type \\*data: npt.NDArray
         :param log_flags: (list or tuple, optional): A list or tuple of booleans, one for each data array. If True, the corresponding array, will be log-scaled. If None, no log scaling is applied. Defaults to None.
         :type log_flags: Union[List[bool],Tuple[bool]]
-        :return: Tuple[Optional[npt.NDArray]]: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
+        :raises ValueError: If log_flags is provided but is not a list or tuple with the same length as the number of data arguments.
+        :return: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
+        :rtype: Tuple[npt.NDArray[Any], ...]
         """
         if not data:
             return ()

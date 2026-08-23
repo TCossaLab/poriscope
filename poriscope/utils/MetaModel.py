@@ -57,8 +57,8 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         """
         Initialize the MetaModel
 
-        :param kwargs: Additional parameters to set as attributes on the instance
-        :type kwargs: dict
+        :param \\**kwargs: Additional parameters to set as attributes on the instance
+        :type \\**kwargs: dict
         """
 
         self.available_plugins: Dict[str, List[str]] = {}

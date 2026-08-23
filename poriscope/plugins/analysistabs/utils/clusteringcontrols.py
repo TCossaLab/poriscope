@@ -342,7 +342,7 @@ class ClusteringControls(QWidget):
 
     # Data Validation
 
-    def collect_parameters(self):
+    def collect_parameters(self) -> dict:
         """
         Collect current input values from the UI widgets.
 

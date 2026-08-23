@@ -26,22 +26,14 @@
 import functools
 import inspect
 import logging
+from typing import Callable
 
 from PySide6.QtCore import Signal
 
 
-def log(_func=None, *, logger, debug_only=False):
+def log(_func=None, *, logger, debug_only=False) -> Callable:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
-
-    :param _func: The function to be decorated. If None, the decorator is returned.
-    :type _func: callable, optional
-    :param logger: The logger instance used for logging.
-    :type logger: logging.Logger
-    :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
-    :type debug_only: bool
-    :return: The decorated function or the decorator itself.
-    :rtype: callable
 
     The decorator logs:
     - Entry into the function with the function name.
@@ -80,6 +72,14 @@ def log(_func=None, *, logger, debug_only=False):
       def my_function(self, ...):
           self.logger.info('This message is informational')
 
+    :param _func: The function to be decorated. If None, the decorator is returned.
+    :type _func: callable, optional
+    :param logger: The logger instance used for logging.
+    :type logger: logging.Logger
+    :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
+    :type debug_only: bool
+    :return: The decorated function or the decorator itself.
+    :rtype: Callable
     """
 
     def decorator_log(func):

@@ -148,7 +148,9 @@ class BesselFilter(MetaFilter):
 
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -167,8 +169,10 @@ class BesselFilter(MetaFilter):
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Dict[str, List[str]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings: Dict[str, Dict[str, Any]] = {
             "Cutoff": {
@@ -197,9 +201,6 @@ class BesselFilter(MetaFilter):
         """
         Apply the provided filter paramters and intialize any internal structures needed by self.apply_filter().
         Should Raise if initialization fails, but corner cases should be handled by _validate_settings already
-
-        :raises ValueError: If invalid cutoff frequency or order are provided
-        :raises RuntimeError: If calculation of filter coefficients fails
         """
         cutoff = self.settings["Cutoff"]["Value"]
         samplerate = self.settings["Samplerate"]["Value"]

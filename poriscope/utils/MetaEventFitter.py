@@ -44,12 +44,15 @@ Numeric = Union[int, float, np.number]
 @inherit_docstrings
 class MetaEventFitter(BaseDataPlugin):
     """
-    :ref:`MetaEventFitter` is the base class for fitting events within your nanopore data to extract physical insights from the details of translocation events. :ref:`MetaEventFitter` depends on and is linked at instantiation to a :ref:`MetaEventLoader` subclass instance that serves as its source of event data, meaning that creating and using one of these plugins requires that you first instantiate an event loader. :ref:`MetaEventFinder` can in turn be the child object of :ref:`MetaDatabaseWriter` subclass isntance for downstream saving of the metadata extracted by the fits.
+    This class, :ref:`MetaEventFitter`, is the base class for fitting events within your nanopore data to extract physical insights from the details of translocation events. :ref:`MetaEventFitter` depends on and is linked at instantiation to a :ref:`MetaEventLoader` subclass instance that serves as its source of event data, meaning that creating and using one of these plugins requires that you first instantiate an event loader. :ref:`MetaEventFinder` can in turn be the child object of :ref:`MetaDatabaseWriter` subclass isntance for downstream saving of the metadata extracted by the fits.
 
     What you get by inheriting from MetaEventFitter
     -----------------------------------------------
 
     :ref:`MetaEventFitter` provides a common and intuitive API through which to fit and extract metadata from nanopore events (whatever that means for you). In practice, typically means fitting sublevels, peaks, or other features of interest within your event for downstream postprocessing, visualization, and statistical analysis. The nanopore field has produced numerous methods of fitting nanopore data over the years. All of them could be implemented as subclasses of this base class in order to fit them into the overall poriscope workflow.
+
+    Attributes:
+        logger (logging.Logger): Logger instance for logging messages.
     """
 
     logger = logging.getLogger(__name__)
@@ -96,17 +99,18 @@ class MetaEventFitter(BaseDataPlugin):
         """
         pass
 
-    def get_fitted_event(self, channel: int, index: int):
+    def get_fitted_event(
+        self, channel: int, index: int
+    ) -> Optional[npt.NDArray[np.float64]]:
         """
         Safe wrapper around subclass construct_fitted_event().
         Enforces the contract: returned array length must equal raw event length.
-
 
         :param channel: Channel from which to retrieve the fitted event.
         :type channel: int
         :param index: Index of the event within the specified channel.
         :type index: int
-
+        :raises ValueError: If the fitted event returned by :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.construct_fitted_event` is not 1D or its length does not match the raw event length.
         :return: A one-dimensional NumPy array representing the fitted event
                 with length equal to the raw event length, or ``None`` if the
                 fitting is not yet complete.
@@ -143,19 +147,17 @@ class MetaEventFitter(BaseDataPlugin):
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:
         """
+        **Purpose:** Construct an array of data corresponding to the fit for the specified event.
+
+        Return a numpy array of floats that corresponds 1:1 to the underlying data, but which shows the fit instead of the raw data. What this means practically depends on what you are fitting, but the returned array must have length equal to the length of the raw data that went into the fit.
+
         :param channel: analyze only events from this channel
         :type channel: int
         :param index: the index of the target event
         :type index: int
-
+        :raises RuntimeError: if fitting is not complete yet
         :return: numpy array of fitted data for the event, or None
         :rtype: Optional[npt.NDArray[np.float64]]
-
-        :raises RuntimeError: if fitting is not complete yet
-
-        **Purpose:** Construct an array of data corresponding to the fit for the specified event.
-
-        Return a numpy array of floats that corresponds 1:1 to the underlying data, but which shows the fit instead of the raw data. What this means practically depends on what you are fitting, but the returned array must have length equal to the length of the raw data that went into the fit.
         """
         pass
 
@@ -167,13 +169,6 @@ class MetaEventFitter(BaseDataPlugin):
         standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -212,6 +207,14 @@ class MetaEventFitter(BaseDataPlugin):
             return settings
 
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :raises KeyError: If standalone is False and no :ref:`MetaEventLoader` instance is available to depend on.
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
 
         eventloader_options: Optional[List[str]] = []
@@ -253,20 +256,18 @@ class MetaEventFitter(BaseDataPlugin):
 
         :return: a list of x locations to plot vertical lines and a list of y locations to plot horizontal lines, list of tuples to plot little x's, labels for the vertical lines, labels for the horizontal lines, labels for x's. Must be lists of equal length, or None
         :rtype: Tuple[Optional[List[float]], Optional[List[float]], Optional[List[Tuple[float, float]]], Optional[List[str]], Optional[List[str]], Optional[List[str]]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
         return None, None, None, None, None, None
 
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
         By default, eventfitter plugins defer to the thread safety of their child :ref:`MetaEventLoader` instance. If any operation in your event finder is not thread-safe independent of the child reader object, this function should be overridden to simply return ``True``. Most event loaders are thread-safe since reading from a file on disk is usually so, and therefore no override is necessary. Take care to verify that the :ref:`MetaReader`: subclass instance on which this object depends is also threadsafe by calling ``self.eventloader.force_serial_channel_operations()`` to check.
+
+        :return: True if only one channel can run at a time, False otherwise
+        :rtype: bool
         """
         serial = False
         try:
@@ -288,7 +289,7 @@ class MetaEventFitter(BaseDataPlugin):
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
-
+        :raises RuntimeError: If no event loader has been attached to this eventfitter.
         :return: the status of the channel as a string
         :rtype: str
         """
@@ -350,13 +351,13 @@ class MetaEventFitter(BaseDataPlugin):
     @log(logger=logger)
     def get_samplerate(self, channel: int) -> float:
         """
+        Return the samplerate of the associated reader object.
+
         :param channel: the channel index
         :type channel: int
-
+        :raises RuntimeError: If no event loader has been attached to this eventfitter.
         :return: the samplerate of the associated event loader object
         :rtype: float
-
-        Return the samplerate of the associated reader object.
         """
         if self.eventloader is None:
             raise RuntimeError("Event loader has not been initialized.")
@@ -365,13 +366,13 @@ class MetaEventFitter(BaseDataPlugin):
     @log(logger=logger)
     def get_metadata_columns(self, channel: int) -> List[str]:
         """
+        Get a list of event metadata column variables
+
         :param channel: analyze only events from this channel
         :type channel: int
-
+        :raises RuntimeError: If no events have been successfully fit yet in this channel.
         :return: a list of column names
         :rtype: List[str]
-
-        Get a list of event metadata column variables
         """
         if self.eventfitting_status.get(channel) is True:
             metadata = self.event_metadata.get(channel, {})
@@ -391,7 +392,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         :param channel: analyze only events from this channel
         :type channel: int
-
+        :raises RuntimeError: If no events have been successfully fit yet in this channel.
         :return: a list of column names
         :rtype: List[str]
         """
@@ -412,7 +413,7 @@ class MetaEventFitter(BaseDataPlugin):
         Return a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
 
         :return: a dict of event metadata types
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
         return self.event_metadata_types
 
@@ -434,7 +435,7 @@ class MetaEventFitter(BaseDataPlugin):
         Assemble a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
 
         :return: a dict of event metadata types
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
         return self.sublevel_metadata_types
 
@@ -466,11 +467,15 @@ class MetaEventFitter(BaseDataPlugin):
         :param silent: indicate whether or not to report progress, default false
         :type silent: bool
         :param data_filter: An optional function to call to preprocess the data before looking for events, usually a filter
-        :type data_filter: Callable[[npt.NDArray[np.float64]],npt.NDArray[np.float64]]
+        :type data_filter: Optional[Callable]
         :param indices: a list of indices to fit, ignoring the rest. Empty list fits all available indices.
-        :type indices: List[int]
-        :return: Yield completion fraction on each iteration.
-        :rtype: Generator[float, Optional[bool], None]
+        :type indices: Optional[List[int]]
+        :raises RuntimeError: If no event loader has been attached to this eventfitter.
+        :raises KeyError: If a subclass fails to populate the required "sublevel_duration" column.
+        :raises TypeError: If event data returned by the event loader has an unexpected type.
+        :raises ValueError: If event data returned by the event loader is malformed.
+        :yield: completion fraction on each iteration
+        :ytype: float
         """
         if self.eventloader is None:
             raise RuntimeError("Event loader has not been initialized.")
@@ -732,9 +737,9 @@ class MetaEventFitter(BaseDataPlugin):
 
         :param channel: analyze only events from this channel
         :type channel: int
-
-        :return: A Generator that gives data in an event and the index of the start of that event relative to the start of the file. If offset was provided during analysis, it will be included here.
-        :rtype: Generator[dict, None, None]
+        :raises AttributeError: If no event loader has been attached to this eventfitter.
+        :yield: the event metadata, sublevel metadata, filtered data, raw data, and fitted data for each event in the channel, as returned by :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.get_single_event_metadata`.
+        :ytype: Tuple[dict, dict, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]
         """
         if self.eventloader is None:
             raise AttributeError("Event loader has not been initialized.")
@@ -761,7 +766,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         :return: number of succesfully fitted events in the channel
         :rtype: int
-
+        :raises AttributeError: If no event loader has been attached to this eventfitter.
         :raises RuntimeError: if called before eventfinding is completed in the given channel
         """
         if self.eventloader is None:
@@ -783,9 +788,12 @@ class MetaEventFitter(BaseDataPlugin):
         Return the metadata for the event and sublevels of the event, as well as the raw and fitted data.
 
         :param channel: Channel from which to retrieve event
+        :type channel: int
         :param index: Index of the event to retrieve
-        :return: Tuple of event metadata, sublevel metadata, filtered data, raw data, and fitted data
+        :type index: int
         :raises RuntimeError: if fitting is not complete or data is missing
+        :return: Tuple of event metadata, sublevel metadata, filtered data, raw data, and fitted data
+        :rtype: Tuple[dict, dict, npt.NDArray[np.float64], npt.NDArray[np.float64], Optional[npt.NDArray[np.float64]]]
         """
         if not self.get_eventfitting_status(channel):
             raise RuntimeError(f"Event fitting not complete for channel {channel}")
@@ -907,12 +915,12 @@ class MetaEventFitter(BaseDataPlugin):
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
         :type sublevel_starts: List[int]
 
-        :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
-        :rtype: Dict[str, npt.NDArray[Numeric]]
-
         **Purpose:** Extract metadata for each sublevel within the event
 
         The ``sublevel_starts`` list corresponds verbatim to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._locate_sublevel_transitions`. Using this information, provide values for all of the sublevle metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Values for each key should be a list of data with length exactly equal to that of ``sublevel_starts`` and types consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
+
+        :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
+        :rtype: Dict[str, npt.NDArray[Numeric]]
         """
         pass
 
@@ -921,9 +929,6 @@ class MetaEventFitter(BaseDataPlugin):
         self,
     ) -> Dict[str, Type[int | float | str | bool]]:
         """
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
-
         **Purpose**: Tell downstream operations what datatypes correspond to event metadata provided by this plugin
 
         This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Event metadata refers to numbers that apply to the event as a whole (for example, its duration, its maximal blockage state, etc. - things that have a single number per event). In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are the primitive datatype of that piece of metadata. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Options for dtypes are int, float, str, bool - basic datatypes compatible with any downstream :ref:`MetaDatabaseWriter` subclass. For example:
@@ -943,15 +948,15 @@ class MetaEventFitter(BaseDataPlugin):
             return metadata_types
 
         Note that the base class will add additional keys to all event metadata (so do not duplicate these keys, they are handled for you: "start_time", "num_sublevel", "event_id")
+
+        :return: a dict of metadata keys and associated base dtypes
+        :rtype: Dict[str, Type[int | float | str | bool]]
         """
         pass
 
     @abstractmethod
     def _define_event_metadata_units(self) -> Dict[str, Optional[str]]:
         """
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
-
         **Purpose**: Tell downstream operations what units apply to event metadata provided by this plugin
 
         This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Event metadata refers to numbers that apply to the event as a whole (for example, its duration, its maximal blockage state, etc. - things that have a single number per event). In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are a string representing the units for that key. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types`. Units can be None. For example:
@@ -973,6 +978,9 @@ class MetaEventFitter(BaseDataPlugin):
             return metadata_units
 
         Note that the base class will add additional keys to all event metadata (so do not duplicate these keys, they are handled for you: "start_time", "num_sublevel", "event_id")
+
+        :return: a dict of metadata keys and associated units
+        :rtype: Dict[str, Optional[str]]
         """
         pass
 
@@ -981,9 +989,6 @@ class MetaEventFitter(BaseDataPlugin):
         self,
     ) -> Dict[str, Type[int | float | str | bool]]:
         """
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
-
         **Purpose**: Tell downstream operations what datatypes correspond to sublevel metadata provided by this plugin
 
         This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Sublevel metadata refers to numbers that apply individual sublevels within an event (for example, the duration or blockage state of a single sublevel) as as such may have an arbitrary number of entries per event. In this function, you must supply a dictionary in which they keys are the names of the sublevel metadata you want to fit, and the values are the primitive datatype of that piece of metadata. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Options for dtypes are int, float, str, bool - basic datatypes compatible with any downstream :ref:`MetaDatabaseWriter` subclass. For example:
@@ -1002,15 +1007,14 @@ class MetaEventFitter(BaseDataPlugin):
             metadata_types["sublevel_fitted_ecd"] = float
             return metadata_types
 
+        :return: a dict of metadata keys and associated base dtypes
+        :rtype: Dict[str, Type[int | float | str | bool]]
         """
         pass
 
     @abstractmethod
     def _define_sublevel_metadata_units(self) -> Dict[str, Optional[str]]:
         """
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Optional[str]]
-
         **Purpose**: Tell downstream operations what units apply to sublevel metadata provided by this plugin
 
         This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Sublevel metadata refers to numbers that apply individual sublevels within an event (for example, the duration or blockage state of a single sublevel) as as such may have an arbitrary number of entries per event. In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are a string representing the units for that key. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types`. Unites can be None. For example:
@@ -1029,6 +1033,8 @@ class MetaEventFitter(BaseDataPlugin):
             metadata_units["sublevel_fitted_ecd"] = "pC"
             return metadata_units
 
+        :return: a dict of metadata keys and associated units
+        :rtype: Dict[str, Optional[str]]
         """
         pass
 
@@ -1051,7 +1057,7 @@ class MetaEventFitter(BaseDataPlugin):
         baseline_mean: Optional[float],
         baseline_std: Optional[float],
         sublevel_metadata: Dict[str, List[Numeric]],
-    ) -> Dict[str, Numeric]:
+    ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
 
@@ -1066,12 +1072,12 @@ class MetaEventFitter(BaseDataPlugin):
         :param sublevel_metadata: the dict of sublevel metadata built by self._populate_sublevel_metadata()
         :type sublevel_metadata: Dict[str, List[Numeric]]
 
-        :return: a dict of event metadata values
-        :rtype: Dict[str, float]
-
         **Purpose:** Extract metadata for each sublevel within the event
 
         The ``sublevel_metadata`` list corresponds  to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_sublevel_metadata`. Using this information, provide values for all of the event metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Values for each key should be a single value with type consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
+
+        :return: a dict of event metadata values
+        :rtype: Dict[str, Union[int, float, str, bool]]
         """
         pass
 
@@ -1106,7 +1112,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         Validate that the filter_params dict contains correct data types
 
-        param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
         :raises TypeError: If the filter_params parameters are of the wrong type
         """

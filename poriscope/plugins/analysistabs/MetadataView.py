@@ -3034,7 +3034,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._pending_old_filter_name = None
 
     @log(logger=logger)
-    def _show_filter_info_dialog(self, comboBox, parameters):
+    def _show_filter_info_dialog(self, comboBox, parameters) -> None:
         """
         Called when clicking the edit button for filters with multiple selection.
 

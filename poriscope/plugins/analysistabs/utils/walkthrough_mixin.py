@@ -167,7 +167,7 @@ class WalkthroughMixin:
             self._walkthrough_active = False
             self.logger.info("Walkthrough finished.")
 
-    def _handle_walkthrough_done(self, steps_completed, *, is_pseudo=False):
+    def _handle_walkthrough_done(self, steps_completed, *, is_pseudo=False) -> None:
         """
         Handles cleanup and transition after a walkthrough step or sequence.
 
@@ -282,7 +282,7 @@ class WalkthroughMixin:
             QPoint(max(window_rect.left(), safe_x), max(window_rect.top(), safe_y))
         )
 
-    def show_walkthrough_intro(self, current_view):
+    def show_walkthrough_intro(self, current_view) -> None:
         """
         Displays the initial tutorial intro dialog.
 
@@ -302,8 +302,9 @@ class WalkthroughMixin:
         """
         Abstract method to get the name of the current view.
 
-        :return: Current view name.
-        :rtype: str
+        Subclasses must override this to return the current view name (str).
+
+        :raises NotImplementedError: Always, unless overridden by a subclass.
         """
         raise NotImplementedError(
             "get_current_view must be implemented in the subclass"
@@ -313,8 +314,10 @@ class WalkthroughMixin:
         """
         Abstract method to retrieve the walkthrough steps for the current view.
 
-        :return: List of walkthrough steps.
-        :rtype: list[tuple[str, str, str, Callable[[], QWidget]]]
+        Subclasses must override this to return a list of walkthrough steps
+        (list[tuple[str, str, str, Callable[[], QWidget]]]).
+
+        :raises NotImplementedError: Always, unless overridden by a subclass.
         """
         raise NotImplementedError(
             "get_walkthrough_steps must be implemented in the subclass"

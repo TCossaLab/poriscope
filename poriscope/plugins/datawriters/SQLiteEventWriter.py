@@ -26,7 +26,7 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 from typing_extensions import override
@@ -68,12 +68,16 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def _initialize_database(self, channel: int):
+    def _initialize_database(self, channel: int) -> None:
         """
         Open a database or file handle for writing events - this function will be called from every channel in the reader
 
         :param channel: the channel for which to initialize the database
         :type channel: int
+        :raises ValueError: if the output file path is not set in settings
+        :raises RuntimeError: if database initialization fails at the SQL level
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs during initialization
         """
         table_creation_queries = [
             """
@@ -178,7 +182,9 @@ class SQLiteEventWriter(MetaWriter):
                 conn.close()
 
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -228,6 +234,8 @@ class SQLiteEventWriter(MetaWriter):
         :param channel: channel ID. Note that `channel=None` does not reset all
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
         :type channel: Optional[int]
+        :raises ValueError: if settings have not been initialized or the output
+            file path is not set in settings
         """
         conn: Optional[sqlite3.Connection] = None
         cursor: Optional[sqlite3.Cursor] = None
@@ -316,6 +324,9 @@ class SQLiteEventWriter(MetaWriter):
 
         :param channel: int indicating which output to flush
         :type channel: int
+        :raises ValueError: if settings are not initialized or required settings are missing
+        :raises RuntimeError: if the channel's database ID cannot be determined after insertion
+        :raises sqlite3.Error: if a database operation fails
         """
         conn: Optional[sqlite3.Connection] = None
         cursor: Optional[sqlite3.Cursor] = None
@@ -422,7 +433,7 @@ class SQLiteEventWriter(MetaWriter):
         raw_data=False,
         abort=False,
         last_call=False,
-    ):
+    ) -> bool:
         """
         Append data and metadata to the active file handle.
 
@@ -448,11 +459,16 @@ class SQLiteEventWriter(MetaWriter):
         :type baseline_std: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
+        :param abort: If True, roll back and close the active connection without writing, default False.
+        :type abort: bool
         :param last_call: If True, close the shared connection after this write, default False.
         :type last_call: bool
 
         :return: success of the write operation.
         :rtype: bool
+        :raises ValueError: if a database connection cannot be opened
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs during the write
         """
         if abort is True:
             if self.conn:
@@ -528,7 +544,7 @@ class SQLiteEventWriter(MetaWriter):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
+        :raises KeyError: If the settings dict does not contain the correct information.
         """
         if "MetaEventFinder" not in settings.keys():
             raise KeyError(
@@ -546,7 +562,7 @@ class SQLiteEventWriter(MetaWriter):
         dtype="u2",
         adc_min=np.iinfo(np.int16).min,
         adc_max=np.iinfo(np.int16).max,
-    ):
+    ) -> tuple[np.ndarray, Optional[float], Optional[float]]:
         """
         Not used by this writer
 
@@ -566,7 +582,7 @@ class SQLiteEventWriter(MetaWriter):
         :type adc_max: int
 
         :return: Rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[numpy.ndarray, Optional[float], Optional[float]]
+        :rtype: tuple[np.ndarray, Optional[float], Optional[float]]
         """
         return data, scale, offset
 

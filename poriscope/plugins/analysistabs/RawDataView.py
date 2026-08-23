@@ -27,7 +27,7 @@
 import logging
 import os
 import warnings
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 from fast_histogram import histogram1d
@@ -145,7 +145,13 @@ class RawDataView(MetaView, WalkthroughMixin):
         Update the plot area with the provided data across multiple channels in a grid layout.
 
         :param data: List of numpy arrays or lists, one for each channel.
+        :type data: list
         :param channels: List of channel identifiers corresponding to the data.
+        :type channels: list
+        :param start: Time offset added to the plotted time axis, in seconds.
+        :type start: float
+        :param baseline: If True, overlay baseline mean and standard deviation statistics on each subplot.
+        :type baseline: bool
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -226,8 +232,14 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         Update the plot area with the provided psd and frequency data across multiple channels in a grid layout.
 
-        :param data: List of numpy arrays or lists, one for each channel.
+        :param psd_data: List of numpy arrays or lists of power spectral density values, one for each channel.
+        :type psd_data: list
+        :param rms_data: List of numpy arrays or lists of integrated RMS noise values corresponding to ``psd_data``, one for each channel.
+        :type rms_data: list
+        :param frequency: Frequency axis shared across all channels.
+        :type frequency: numpy.ndarray
         :param channels: List of channel identifiers corresponding to the data.
+        :type channels: list
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -437,6 +449,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type data: npt.NDArray[np.float64]
         :return: Tuple of local amplitude, mean, and standard deviation.
         :rtype: tuple[float, float, float]
+        :raises ValueError: If a baseline histogram width cannot be estimated for this chunk (no variation in the data), or if the underlying Gaussian fit fails.
         """
         top = np.max(data)
         bottom = np.min(data)
@@ -516,16 +529,18 @@ class RawDataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _gaussian(self, x: float, A: float, m: float, s: float) -> float:
         """
+        Calculate the value of a 1D gaussian distribution at a location x with the given paramters
+
         :param x: location to calculate the value
         :type x: float
         :param A: amplitude of the gaussian
         :type A: float
-        :param A: mean of the gaussian
+        :param m: mean of the gaussian
         :type m: float
         :param s: standard deviation of the gaussian
         :type s: float
-
-        Calculate the value of a 1D gaussian distribution at a location x with the given paramters
+        :return: value of the gaussian distribution at x
+        :rtype: float
         """
         return A * np.exp(-((x - m) ** 2) / (2 * s**2))
 
@@ -644,7 +659,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 self.analysis_time_limits[finder] = result
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
+    def _shift_range_and_update_plot(self, parameters, direction) -> None:
         """
         Shift selected event index ranges left or right and update the plot accordingly.
 
@@ -728,12 +743,13 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _handle_plot_events(self, parameters) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
         :type parameters: dict
+        :raises Exception: If retrieving the eventfinding status or the number of found events fails.
         """
         try:
             eventfinder, data_filter, channels, events = (
@@ -799,7 +815,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             # get the data filter to use
             try:
                 data_filter_args = ()
-                self.data_filter = None
+                self.data_filter: Optional[Callable] = None
                 if data_filter != "No Filter":
                     self.global_signal.emit(
                         "MetaFilter",
@@ -952,7 +968,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _handle_find_events(self, parameters):
+    def _handle_find_events(self, parameters) -> None:
         """
         Handle the initiation of the event finding process using the given parameters.
 
@@ -986,7 +1002,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.logger.debug("Event finding process initiated.")
 
     @log(logger=logger)
-    def _handle_commit_events(self, parameters):
+    def _handle_commit_events(self, parameters) -> None:
         """
         Handle committing of found events to the selected writer plugin.
 
@@ -1013,6 +1029,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type data_filter: str
         :param channels: List of channel indices to run the event finder on.
         :type channels: list
+        :raises Exception: If setting up the data filter fails.
         """
         self.logger.debug(
             "Starting event finder with eventfinder=%s, data_filter=%s, channels=%s",
@@ -1232,7 +1249,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._handle_load_data_and_update_plot(new_params)
 
     @log(logger=logger)
-    def _handle_load_data_and_update_plot(self, parameters, baseline=False):
+    def _handle_load_data_and_update_plot(self, parameters, baseline=False) -> None:
         """
         Handle data loading and update the main signal plot.
 
@@ -1244,6 +1261,8 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         :param parameters: Dictionary containing reader, channels, start time, length, and optional filter.
         :type parameters: dict
+        :param baseline: If True, overlay baseline mean/std statistics on the plot.
+        :type baseline: bool
         """
         # Extract and validate parameters
         try:
@@ -1280,7 +1299,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.logger.error("Invalid parameters for plotting data")
 
     @log(logger=logger)
-    def _handle_load_data_and_update_psd(self, parameters):
+    def _handle_load_data_and_update_psd(self, parameters) -> None:
         """
         Handle data loading and update the PSD (Power Spectral Density) plot.
 

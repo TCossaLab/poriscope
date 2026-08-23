@@ -68,8 +68,6 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
         :return: a list of x locations to plot vertical lines and a list of y locations to plot horizontal lines, list of tuples to plot little x's, labels for the vertical lines, labels for the horizontal lines, labels for x's. Must be lists of equal length, or None
         :rtype: Tuple[Optional[List[float]], Optional[List[float]], Optional[List[Tuple[float, float]]], Optional[List[str]], Optional[List[str]], Optional[List[str]]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
 
         try:

@@ -47,6 +47,9 @@ class IntroDialog(QDialog):
     :type parent: QWidget
     :param current_step: Identifier for the current step (used to customize intro).
     :type current_step: str
+
+    :ivar start_walkthrough: Signal emitted when the user starts the walkthrough.
+    :vartype start_walkthrough: Signal
     """
 
     start_walkthrough = Signal()
@@ -176,7 +179,7 @@ class Overlay(QWidget):
         self.target_widgets = widgets
         self.update()
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, watched, event) -> bool:
         """
         Update overlay geometry if the parent is resized or moved.
 
@@ -192,7 +195,7 @@ class Overlay(QWidget):
             self.update()
         return super().eventFilter(watched, event)
 
-    def paintEvent(self, event):
+    def paintEvent(self, event) -> None:
         """
         Paint the dimmed background and highlight outlines around target widgets.
 
@@ -422,7 +425,7 @@ class StepDialog(QDialog):
         self.close()
 
 
-def start_walkthrough(parent, steps):
+def start_walkthrough(parent, steps) -> QDialog:
     """
     Launch the StepDialog walkthrough with a given list of steps.
 
@@ -430,8 +433,9 @@ def start_walkthrough(parent, steps):
     :type parent: QWidget
     :param steps: List of (title, message, widget) tuples describing the steps.
     :type steps: list[tuple[str, str, QWidget]]
-    :return: The initialized StepDialog instance.
-    :rtype: StepDialog
+    :return: The initialized StepDialog instance, or a fallback QDialog if
+        initialization fails.
+    :rtype: QDialog
     """
     overlay = None
 

@@ -24,6 +24,7 @@
 # Kyle Briggs
 
 import logging
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from typing_extensions import override
@@ -45,7 +46,9 @@ class ClassicCUSUM(CUSUM):
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self, globally_available_plugins=None, standalone=False
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -68,7 +71,7 @@ class ClassicCUSUM(CUSUM):
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "σ"}
@@ -85,7 +88,7 @@ class ClassicCUSUM(CUSUM):
         padding_after,
         baseline_mean,
         baseline_std,
-    ):
+    ) -> Optional[List[Any]]:
         """
         Runs the same CUSUM log-likelihood-ratio changepoint detection as CUSUM, but Step Size is already expressed in units of the local baseline standard deviation (σ) and is used directly rather than normalized against it, unlike CUSUM. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
@@ -108,7 +111,6 @@ class ClassicCUSUM(CUSUM):
         :rtype: Optional[List[Any]]
 
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
-        :raises AttributeError: if the fitting method cannot operate without provision of specific padding and baseline metadata and cannot rescue itself. This will cause a stop to processing of the dataset.
         """
 
         if baseline_std is None:  # the rest of the args can be None without issue

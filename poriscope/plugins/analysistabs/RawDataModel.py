@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import logging
+from typing import Optional
 
 import numpy as np
 from scipy.signal import welch
@@ -51,7 +52,7 @@ class RawDataModel(MetaModel):
         pass
 
     @log(logger=logger)
-    def integrate_noise(self, f, Pxx):
+    def integrate_noise(self, f, Pxx) -> np.ndarray:
         """
         Compute the integrated noise from a power spectral density.
 
@@ -64,22 +65,28 @@ class RawDataModel(MetaModel):
         :param Pxx: Power spectral density values corresponding to `f`.
         :type Pxx: numpy.ndarray or list[float]
         :return: Array of integrated RMS noise values for each frequency point.
-        :rtype: numpy.ndarray
+        :rtype: np.ndarray
         """
         df = f[1] - f[0]
         return np.sqrt(np.cumsum(Pxx * df))
 
     @log(logger=logger)
-    def calculate_psd(self, psd_data, samplerate):
+    def calculate_psd(
+        self, psd_data, samplerate
+    ) -> tuple[list, list, Optional[np.ndarray], list[int]]:
         """
         Calculate a psd for each dataset in the list, assuming a common samplerate
 
+        :param psd_data: List of time-domain signal arrays for which PSD will be computed.
+        :type psd_data: list
+        :param samplerate: Sampling rate of the signal in Hz.
+        :type samplerate: float
         :return: Pxx_list, rms_list, the frequency axis, and the indices into
             ``psd_data`` that were successfully processed. A channel is
             skipped (and its index omitted) if it has too few samples, if
             ``welch()`` fails, or if the resulting frequency axis is too
             short to integrate noise over.
-        :rtype: Tuple[list, list, Optional[numpy.ndarray], list[int]]
+        :rtype: tuple[list, list, Optional[np.ndarray], list[int]]
         """
         Pxx_list = []
         rms_list = []

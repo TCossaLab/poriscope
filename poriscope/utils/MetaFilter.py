@@ -46,6 +46,9 @@ class MetaFilter(BaseDataPlugin):
     ------------------------------------------
 
     :ref:`MetaFilter` will provide a common API with which to define data preprocessing steps that can be swapped in and out of data analysis pipelines.
+
+    Attributes:
+        logger (logging.Logger): Logger instance for logging messages.
     """
 
     logger = logging.getLogger(__name__)
@@ -63,15 +66,14 @@ class MetaFilter(BaseDataPlugin):
     @log(logger=logger)
     def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
         """
+        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+
         :param channel: channel ID
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
-
         :return: the status of the channel as a string
         :rtype: str
-
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
         """
         return ""
 
@@ -90,10 +92,10 @@ class MetaFilter(BaseDataPlugin):
     @log(logger=logger)
     def get_callable_filter(self) -> Callable:
         """
+        Return a function that can be called to filter data on the fly using this filter object properties
+
         :return: A function that can be called to filter a 1-d npt.NDArray[np.float64] object
         :rtype: Callable
-
-        return a function that can be called to filter data on the fly using this filter object properties
         """
         return self.filter_data
 
@@ -129,15 +131,12 @@ class MetaFilter(BaseDataPlugin):
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-
-
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
         For plugins that do not depend on other data plugins, by default this simply returns ``False``, meaning that it is acceptable and thread-safe to run operations on different channels in different threads on this plugin. If such operation is not thread-safe, this function should be overridden to simply return ``True``. In the case where your plugin depends on another plugin (for example, event finder plugins depend on reader plugins), then your plugin should defer thread safety considerations to the plugin on which it depends.
 
-
+        :return: True if only one channel can run at a time, False otherwise
+        :rtype: bool
         """
         return False
 
@@ -149,15 +148,7 @@ class MetaFilter(BaseDataPlugin):
         standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Mapping[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
-         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaReader` subclass.
-
+        **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaReader` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -208,6 +199,13 @@ class MetaFilter(BaseDataPlugin):
                 }
             }
             return settings
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Mapping[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         pass
 
@@ -235,16 +233,14 @@ class MetaFilter(BaseDataPlugin):
     @abstractmethod
     def _apply_filter(self, data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
-        :param data: The data to be filtered
-        :type data: npt.NDArray[np.float64]
-        :return: The filtered data
-        :rtype: npt.NDArray[np.float64]
-
-
         **Purpose:** Called to actually filter or otherwise preprocess data
 
         Take in a 1D timeseries and apply the filter or preprocessing step provided by your plugin.
 
+        :param data: The data to be filtered
+        :type data: npt.NDArray[np.float64]
+        :return: The filtered data
+        :rtype: npt.NDArray[np.float64]
         """
         pass
 

@@ -62,12 +62,12 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
     # public API, MUST be implemented by subclasses
     @abstractmethod
-    def get_llm_prompt(self) -> str:
+    def get_llm_prompt(self) -> Optional[str]:
         """
-        :return: a prompt that gives an LLM context for the database and  how to query it
-        :rtype: str
-
         **Purpose:** Return a prompt that will tell the LLM the structure of the database to be queried to assist users in accessing the data written in your format
+
+        :return: a prompt that gives an LLM context for the database and how to query it, or None on failure
+        :rtype: Optional[str]
         """
         pass
 
@@ -100,69 +100,67 @@ class MetaDatabaseLoader(BaseDataPlugin):
         self, experiment_id: Optional[int] = None
     ) -> Optional[List[str]]:
         """
+        **Purpose:** Retrieve a list of all unique experiment names registered in the database, or a singleton list if an id is given.
+
         :param experiment_id: the id of the experiment for which to fetch the name
         :type experiment_id: Optional[int]
-
         :return: List of experiment names, or None on failure
         :rtype: Optional[List[str]]
-
-        **Purpose:** Retrieve a list of all unique experiment names registered in the database, or a singleton list if an id is given.
         """
         pass
 
     @abstractmethod
     def get_channels_by_experiment(self, experiment: str) -> Optional[List[int]]:
         """
+        **Purpose:** Retrieve a list of all channel identifiers (the identifier, not the primary key of the channels table) associated with a given experiment name or None on failure
+
         :param experiment: The name of the experiment.
         :type experiment: str
         :return: List of channel IDs.
         :rtype: Optional[List[int]]
-
-        **Purpose:** Retrieve a list of all channel identifiers (the identifier, not the primary key of the channels table) associated with a given experiment name or None on failure
         """
         pass
 
     @abstractmethod
     def get_event_counts_by_experiment_and_channel(
         self, experiment: Optional[str] = None, channel: Optional[int] = None
-    ) -> int:
+    ) -> Optional[int]:
         """
-        :param experiment: The name of the experiment.
-        :type experiment: Optional[str]
-        :param channel: The index of the channel
-        :type channel: Optional[int]
-
-        :return: event count matching the conditions
-        :rtype: int
-
         **Purpose:**  Return the number of events in the database matching the experiment name and channel identifier.
 
         If no channel name is provided, count across all channels for that experiment.
         If no experiment is provided, ignore channel and return the number of events in the entire database
+
+        :param experiment: The name of the experiment.
+        :type experiment: Optional[str]
+        :param channel: The index of the channel
+        :type channel: Optional[int]
+        :return: event count matching the conditions, or None on failure
+        :rtype: Optional[int]
         """
         pass
 
     @abstractmethod
     def get_column_units(self, column_name: str) -> Optional[str]:
         """
+        **Purpose:** Retrieve the units associated with a specific column name or None on failure
+
         :param column_name: The name of the column.
         :type column_name: str
         :return: The units of the column.
         :rtype: Optional[str]
-
-        **Purpose:** Retrieve the units associated with a specific column name or None on failure
         """
         pass
 
     @abstractmethod
     def get_column_type(self, column_name: str) -> Optional[str]:
         """
+        **Purpose:** Retrieve the datatype associated with a specific column name or None on failure
+
         :param column_name: The name of the column.
         :type column_name: str
         :return: The datatype of the column.
         :rtype: Optional[str]
-
-        **Purpose:** Retrieve the datatype associated with a specific column name or None on failure
         """
         pass
 
@@ -171,36 +169,36 @@ class MetaDatabaseLoader(BaseDataPlugin):
         self, table: Optional[str] = None
     ) -> Optional[List[str]]:
         """
+        **Purpose:** Retrieve the column names available in a specified table, all columns in the database is table is not specified, or None on failure
+
         :param table: The name of the table.
         :type table: Optional[str]
         :return: List of column names.
         :rtype: Optional[List[str]]
-
-        **Purpose:** Retrieve the column names available in a specified table, all columns in the database is table is not specified, or None on failure
         """
         pass
 
     @abstractmethod
     def get_table_names(self) -> Optional[List[str]]:
         """
+        **Purpose:** Retrieve the names of available tables in the database or None on failure.
+
         :return: List of table names.
         :rtype: Optional[List[str]]
-
-        **Purpose:** Retrieve the names of available tables in the database or None on failure.
         """
         pass
 
     @abstractmethod
     def validate_filter_query(self, query: str) -> Tuple[bool, str]:
         """
-        :param query: The SQL query string.
-        :type query: str
-        :return: ``True, ""`` if the query is valid, and ``False, "[[helpful explanation]]"`` if it is not
-        :rtype:  Tuple[bool, str]
-
         **Purpose:** Validate a SQL query without executing it.
 
         Return ``True, ""`` if the query is valid, and ``False, "[[helpful explanation]]"`` if it is not
+
+        :param query: The SQL query string.
+        :type query: str
+        :return: ``True, ""`` if the query is valid, and ``False, "[[helpful explanation]]"`` if it is not
+        :rtype: Tuple[bool, str]
         """
         pass
 
@@ -209,27 +207,26 @@ class MetaDatabaseLoader(BaseDataPlugin):
         self, experiment: str, channel: int
     ) -> Optional[float]:
         """
+        **Purpose:** Retrieve the sampling rate for a given experiment and channel id, or None on failure
+
         :param experiment: The name of the experiment in the database.
         :type experiment: str
         :param channel: The channel id to get sampling rate for.
         :type channel: int
         :return: sampling rate for the specific expreiment-channel combination, or None on failure
         :rtype: Optional[float]
-
-        **Purpose:** Retrieve the sampling rate for a given experiment and channel id, or None on failure
         """
         pass
 
     @abstractmethod
     def get_table_by_column(self, column: str) -> Optional[str]:
         """
+        **Purpose:** Retrieve the names of the table in which the given column is found, or None on failure
+
         :param column: The name of the column.
         :type column: str
-
-        :return: List of table names.
-        :rtype: List[str]
-
-        **Purpose:** Retrieve the names of the table in which the given column is found, or None on failure
+        :return: The name of the table, or None on failure.
+        :rtype: Optional[str]
         """
         pass
 
@@ -260,13 +257,12 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @abstractmethod
     def alter_database(self, queries: List[str]) -> bool:
         """
+        **Purpose:** Run a given list of queries on the database. There is no validation here, use it sparingly.
+
         :param queries: a list of queries to  run on the database
         :type queries: List[str]
-
         :return: True if the operation succeeded, False otherwise
         :rtype: bool
-
-        **Purpose:** Run a given list of queries on the database. There is no validation here, use it sparingly.
         """
         pass
 
@@ -292,8 +288,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :return: a list of x locations to plot vertical lines and a list of y locations to plot horizontal lines, list of tuples to plot little x's, labels for the vertical lines, labels for the horizontal lines, labels for x's. Must be lists of equal length, or None
         :rtype: Tuple[Optional[List[float]], Optional[List[float]], Optional[List[Tuple[float, float]]], Optional[List[str]], Optional[List[str]], Optional[List[str]]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
         return None, None, None, None, None, None
 
@@ -304,13 +298,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
         standalone=False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -351,6 +338,13 @@ class MetaDatabaseLoader(BaseDataPlugin):
             return settings
 
         which will ensure that your have the ``Input File`` key and limit visible options to sqlite3 files. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings: Dict[str, Dict[str, Any]] = {
             "Input File": {"Type": str, "Options": ["All Files (*.*)"]}
@@ -360,10 +354,10 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
+        **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
+
         :return: True if only one channel can run at a time, False otherwise
         :rtype: bool
-
-        **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
         """
         return False
 
@@ -376,7 +370,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         then maps each experiment to its corresponding list of channels using `get_channels_by_experiment()`.
 
         :return: Dictionary mapping experiment names to lists of channel indices.
-        :rtype: dict[str, Optional[list[int]]]
+        :rtype: Dict[str, Optional[List[int]]]
         """
         experiments = self.get_experiment_names()
         if not experiments:
@@ -393,6 +387,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :return: The experiment's database id, or None if no name was given or no matching experiment was found
         :rtype: Optional[int]
+        :raises Exception: if the underlying database query fails
         """
         if experiment_name:
             try:
@@ -448,18 +443,16 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :param output_folder: The folder to which the subset should be printed. This is assumed to exist already and will raise an error if it does not.
         :type output_folder: str
-
+        :param subset_name: Optional string to append to filenames in the subset
+        :type subset_name: str
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
-        :param conditions: Optional string to append to filenames in the subset
-        :type conditions: Optional[str]
-        :param expeirments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
+        :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: a float between 0 and 1 representing progress toward completion
-        :rtype: float
-
-        :raises: IOError if output_folder does not already exist
-        :raises: ValueError if the SQL string is invalid
+        :raises KeyError: if any of the requested experiment names cannot be found in the database
+        :raises ValueError: if the SQL string constructed from the given conditions is invalid, or no matching data is found
+        :yield: a float between 0 and 1 representing progress toward completion
+        :ytype: float
         """
 
         def tuple_builder(id_list):
@@ -621,9 +614,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
             event count per channel for each experiment, or ``"No experiments found."``
             if the database is empty.
         :rtype: str
-
-        :raises sqlite3.Error: If a database error occurs while reading from
-            event_counts.
         """
         self._ensure_event_counts()
         result = self.query_database_directly(
@@ -694,8 +684,10 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type columns: List[str]
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
-        :param expeirments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
+        :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :raises KeyError: if any of the requested experiment names cannot be found in the database
+        :raises ValueError: if columns is empty, or a column cannot be mapped to a table
         :return: a valid SQL query and an empty string, or an empty string and a debug message, and the table name of the affected id column
         :rtype: Tuple[str, str, str]
         """
@@ -957,7 +949,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
-        :param expeirments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
+        :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: a valid SQL query and an empty string, or an empty string and a debug message
         :rtype: Tuple[str, str]
@@ -1090,7 +1082,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type columns: List[str]
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
-        :param expeirments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
+        :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: pandas dataframe containing retrieved data
         :rtype: pd.DataFrame
@@ -1124,7 +1116,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         :param conditions: Optional filter condition for query.
         :type conditions: Optional[str]
-        :param expeirments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
+        :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
 
         :return: a generator that returns primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, samplerate, and a numpy array with event data
@@ -1248,15 +1240,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @abstractmethod
     def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
         """
-        :param query: a valid SQL query, checked in the calling function for validity
-        :type query: str
-
-        :return: A dataframe containing the requested event data as columns or None on failure
-        :rtype: Optional[pd.DataFrame]
-
         **Purpose:** Load and return the data specified by a valid SQL query, or None on failure
 
         The data should be formatted as a pandas Dataframe object
+
+        :param query: a valid SQL query, checked in the calling function for validity
+        :type query: str
+        :return: A dataframe containing the requested event data as columns or None on failure
+        :rtype: Optional[pd.DataFrame]
         """
         pass
 
@@ -1265,20 +1256,19 @@ class MetaDatabaseLoader(BaseDataPlugin):
         self, query: str
     ) -> Generator[pd.DataFrame, None, None]:
         """
-        :param query: query to  run on the database
-        :type query: str
-
-        :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
-        :rtype: Generator[pd.DataFrame, None, None]
-
         **Purpose:** Load and yield the data specified by a valid SQL query one row at a time. Useful in cases where :py:meth:`~poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_metadata` returns too much data for memory.
 
         Data should be formatted as a pandas dataframe in line with :py:meth:`~poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._load_metadata`. Make sure you exhaust the generator when done with it, or else database connections will remain open.
+
+        :param query: query to  run on the database
+        :type query: str
+        :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
+        :rtype: Generator[pd.DataFrame, None, None]
         """
         pass
 
     @abstractmethod
-    def _load_event_data(self, query: str) -> Generator[Dict[str, Any], bool, None]:
+    def _load_event_data(self, query: str) -> Any:
         """
         Load data and return a generator that gives a one-row dataframe corresponding one row returned by query
         Make sure you exhaust the generator, or else connections will remain open
@@ -1289,8 +1279,8 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
 
-        :return: a generator that returns a dict with id, event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, and numpy array with event data for raw, filtered, and fitted data
-        :rtype: Generator[Dict[str, Any], bool, None]
+        :return: a generator that yields one item per row matching the query, with id, event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, and numpy array with event data for raw, filtered, and fitted data. The exact shape of each yielded item (e.g. dict vs. tuple) is defined by the concrete subclass; see its own docstring for the precise structure.
+        :rtype: Any
         """
         pass
 

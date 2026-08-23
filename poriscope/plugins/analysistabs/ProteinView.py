@@ -182,9 +182,6 @@ class ProteinView(MetaView, WalkthroughMixin):
     def _init(self) -> None:
         """
         Initialize the ProteinView instance.
-
-        :param args: Positional arguments passed to parent constructors.
-        :param kwargs: Keyword arguments passed to parent constructors.
         """
         self._clear_cache()
         self.fit_data = None
@@ -306,7 +303,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._display_mode = "distribution"
 
     @log(logger=logger)
-    def _build_dist_page(self):
+    def _build_dist_page(self) -> tuple:
         """
         Build one distribution page: a histogram canvas and V/M canvas side by
         side, each with its own navigation toolbar underneath.
@@ -356,12 +353,13 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._display_mode = "distribution"
 
     @log(logger=logger)
-    def _commit_fits(self, loader):
+    def _commit_fits(self, loader) -> None:
         """
         Commits fitted data to the database
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
+        :raises AttributeError: If fit data has not been set on this view.
         """
         if self.fit_data is None:
             raise AttributeError("fit data has not been set, unable to commit")
@@ -609,7 +607,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.channel_db_id = channel_db_id
 
     @log(logger=logger)
-    def get_save_filename(self):
+    def get_save_filename(self) -> str:
         """
         Open a file dialog for the user to choose a save location.
 
@@ -729,6 +727,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type units: List[str]
         :param dataset_label: Label for the plotted dataset.
         :type dataset_label: str
+        :param norm: Whether to normalize the plotted y-values.
+        :type norm: bool
         """
         x_label, y_label = cols
         x_units, y_units = units
@@ -875,6 +875,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type dataset_label: str
         :param err_cols: List containing two column names for x and y errors.
         :type err_cols: List[str]
+        :raises ValueError: If `err_cols` is not a list of exactly two column names.
         """
         if err_cols is None or len(err_cols) != 2:
             raise ValueError(
@@ -1014,7 +1015,7 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _construct_all_points_histogram(
         self, event_generator, plot_type, bins=None, sizes=False
-    ):
+    ) -> pd.DataFrame:
         """
         Build a combined histogram across all event current values.
 
@@ -1024,8 +1025,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type plot_type: str
         :param bins: Number of histogram bins.
         :type bins: int | None
+        :param sizes: whether bins represents a number of bins or a bin size.
+        :type sizes: bool
         :return: DataFrame with histogram values and corresponding current levels.
         :rtype: pd.DataFrame
+        :raises ValueError: If `bins` is not a usable bin count/size specification.
         """
         # get global stats from the first event, don't forget to use this one later
         egen1, egen2 = itertools.tee(event_generator)
@@ -1113,7 +1117,7 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _construct_single_event_histogram(
         self, event, plot_type, bins=None, sizes=False
-    ):
+    ) -> Optional[pd.DataFrame]:
         """
         Build a histogram of the current in a single event
 
@@ -1127,6 +1131,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type sizes: Optional[bool]
         :return: DataFrame with histogram values and corresponding current levels.
         :rtype: Optional[pd.DataFrame]
+        :raises ValueError: If `bins` is not a usable bin count/size specification.
         """
         min_current = float("inf")
         max_current = float("-inf")
@@ -1433,9 +1438,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         in the active channel and inflating the reported total count.
 
         :param loader: Name of the database loader.
+        :type loader: str
         :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
+        :type sql_filter: str
         :param exp: Experiment name, or None.
+        :type exp: Optional[str]
         :param channel: Channel identifier, or None.
+        :type channel: Optional[int]
         :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
         :rtype: str
         """
@@ -1481,10 +1490,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         event_id (mirrors ProteinView._rebuild_event_id_cache behaviour).
 
         :param loader: Name of the database loader.
+        :type loader: str
         :param where_clause: Full WHERE clause string (may be empty).
+        :type where_clause: str
         :param sql_filter: Raw filter expression without WHERE (used for label and staleness tracking).
+        :type sql_filter: str
         :param exp: Experiment name.
+        :type exp: Optional[str]
         :param channel: Channel identifier.
+        :type channel: Optional[int]
         :return: True if the cache was populated, False if no events were found.
         :rtype: bool
         """
@@ -1536,7 +1550,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         :param parameters: Action parameters from ProteinControls (must contain
                            'db_loader', 'event_id', 'n_events').
+        :type parameters: dict
         :param direction: 'left' (backward) or 'right' (forward).
+        :type direction: str
         """
         loader = parameters.get("db_loader")
         if not loader:
@@ -1623,7 +1639,7 @@ class ProteinView(MetaView, WalkthroughMixin):
     # -------------------------------------------------------------------------
 
     @log(logger=logger)
-    def _resolve_event_db_ids(self, loader, event_ids, exp, channel):
+    def _resolve_event_db_ids(self, loader, event_ids, exp, channel) -> Optional[pd.DataFrame]:
         """
         Resolve a list of event_id values, scoped to a specific experiment and
         channel, to their corresponding database primary keys (id) via a single
@@ -1680,7 +1696,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         return result
 
     @log(logger=logger)
-    def _fetch_event_data(self, parameters, action_label="events") -> list:
+    def _fetch_event_data(self, parameters, action_label="events") -> list[dict]:
         """
         Shared validation and targeted data fetching for event-based plots.
         Resolves the requested event_index list to database ids via a single
@@ -1793,7 +1809,7 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _build_load_event_data_args(
         self, sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
-    ):
+    ) -> tuple:
         """
         Build the (filter_or_query, exp_and_ch_or_None) args tuple for load_event_data,
         handling raw filter scoping automatically.
@@ -2030,7 +2046,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data, use_raw=False):
+    def _update_event_plot(self, event_data, use_raw=False) -> None:
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -2114,6 +2130,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type sizes: bool
         :param plot_type: Type of histogram to construct.
         :type plot_type: str
+        :raises ValueError: If the double-Gaussian fit fails for an event; caught internally
+            and skipped, so it never propagates to the caller.
         """
         self._set_display_mode("event")
         self._clear_figure_state(create_default_axes=False)
@@ -2452,7 +2470,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
 
     @log(logger=logger)
-    def _double_gaussian(self, x, amp1, mean1, std1, amp2, mean2, std2):
+    def _double_gaussian(
+        self, x, amp1, mean1, std1, amp2, mean2, std2
+    ) -> npt.NDArray[np.float64]:
         """
         return the value of a double gaussian with the specified paramters
 
@@ -2478,7 +2498,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         return g1 + g2
 
     @log(logger=logger)
-    def _fit_double_gaussian(self, bins, amplitude):
+    def _fit_double_gaussian(self, bins, amplitude) -> tuple:
         """
         Attempt to fit a double gaussian to data or return None on failure.
 
@@ -2486,8 +2506,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type bins: npt.NDArray[np.float64]
         :param amplitude: numpy array of amplitude in bins
         :type amplitude: npt.NDArray[np.float64]
-        :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
-        :rtype: Optional[List[float]]
+        :return: Tuple of (best-fit parameters (amplitude, mean, std, amplitude_2,
+                mean_2, std_2), parameter covariance matrix), or (None, None) if
+                fitting fails.
+        :rtype: tuple
+        :raises ValueError: If curve fitting fails or peaks/split points cannot be
+            determined; caught internally by nested fallback logic, so it never
+            propagates to the caller.
         """
         try:
             min_prominence = np.max(amplitude) * 0.05
@@ -2610,7 +2635,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                 return None, None
 
     @log(logger=logger)
-    def _fit_and_sanity_check_double_gaussian(self, bins, amplitude):
+    def _fit_and_sanity_check_double_gaussian(
+        self, bins, amplitude
+    ) -> Optional[npt.NDArray[np.float64]]:
         """
         Attempt to fit a double gaussian to data or None on failure.
 
@@ -2619,7 +2646,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param amplitude: numpy array of amplitude in bins
         :type amplitude: npt.NDArray[np.float64]
         :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
-        :rtype: Optional[List[float]]
+        :rtype: Optional[npt.NDArray[np.float64]]
         """
         popt, pcov = self._fit_double_gaussian(
             bins,
@@ -2814,7 +2841,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             return
 
     @log(logger=logger)
-    def _fit_and_plot_ensemble_geometry(self, plot_data, plot_type, d, L, N):
+    def _fit_and_plot_ensemble_geometry(self, plot_data, plot_type, d, L, N) -> bool:
         """
         Fit a double Gaussian to the aggregated ensemble histogram, then Monte
         Carlo sample prolate/oblate V/m ensembles from that fit and plot them.
@@ -2940,7 +2967,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         return True
 
     @log(logger=logger)
-    def _compute_theoretical_blockages(self, V, m, d, L):
+    def _compute_theoretical_blockages(
+        self, V, m, d, L
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         Vectorized forward model: Calculates theoretical max and min blockages
         for arrays of volume (V) and shape factor (m).
@@ -2954,7 +2983,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param L: the length of the pore in nanometers
         :type L: float
         :return: Tuple of arrays of theoretical max and min blockage values for the given parameters, one per V,m pair
-        :rtype: Tuple[npt.NDArray[np.float64],npt.NDArray[np.float64]]
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        :raises ValueError: If `m` contains a mix of oblate (0<m<1) and prolate (m>1)
+            form factors, or any negative form factor.
         """
         m_sq = m**2
 
@@ -3026,7 +3057,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         L,
         prolate=True,
         cutoff_std=4,
-    ):
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
         Bails out after a maximum number of consecutive failed batches if the experimental
@@ -3051,10 +3082,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param cutoff_std: the number of standard deviations outside the mean after which to cut off solutions
         :type cutoff_std: float
         :return: Tuple of arrays of V,m pairs
-        :rtype: Tuple[npt.NDArray[np.float64],npt.NDArray[np.float64]]
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
         """
-        accepted_V = []
-        accepted_m = []
+        accepted_V: list[float] = []
+        accepted_m: list[float] = []
         x = np.minimum(d, L)
         # --- Dynamic Bounds Calculation ---
         K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
@@ -3191,7 +3222,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
-    def set_query(self, query, table_name):
+    def set_query(self, query, table_name) -> None:
         """
         Set the SQL query and table name used in plotting.
 
@@ -3241,7 +3272,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.units = units
 
     @log(logger=logger)
-    def update_available_columns(self, loader):
+    def update_available_columns(self, loader) -> None:
         """
         Request available columns from the database loader.
 
@@ -3263,7 +3294,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.error(f"Failed to request column data: {repr(e)}")
 
     @log(logger=logger)
-    def request_experiment_structure(self, loader_name: str):
+    def request_experiment_structure(self, loader_name: str) -> None:
         """
         :param loader_name: the key of the loader
         :type loader_name: str
@@ -3346,11 +3377,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type action_name: str
         :param parameters: Parameters associated with the action.
         :type parameters: dict
+        :raises NotImplementedError: Always, since this action is not implemented.
         """
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid, error_msg):
+    def on_raw_filter_validated(self, valid, error_msg) -> None:
         """
         Relay callback from validate_filter_query for raw SQL filter validation.
 
@@ -3392,12 +3424,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.clear_pending_filter_state()
 
     @log(logger=logger)
-    def _show_add_filter_dialog(self, parameters: dict):
+    def _show_add_filter_dialog(self, parameters: dict) -> None:
         """
         Displays the dialog for adding a new subset filter. Validates filter syntax
         before actually saving the filter.
 
         :param parameters: Dictionary with 'db_loader'.
+        :type parameters: dict
         """
         self._show_sql_in_display = True
 
@@ -3466,13 +3499,15 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str):
+    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
         """
         Displays the dialog to edit an existing filter, and validates the updated
         SQL filter syntax via construct_metadata_query before saving it.
 
         :param name: The name of the filter to edit.
+        :type name: str
         :param loader: Name of the active database loader.
+        :type loader: str
         """
         self._show_sql_in_display = True
 
@@ -3544,7 +3579,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._pending_old_filter_name = None
 
     @log(logger=logger)
-    def _show_filter_info_dialog(self, comboBox, parameters):
+    def _show_filter_info_dialog(self, comboBox, parameters) -> None:
         """
         Called when clicking the edit button for filters with multiple selection.
 
@@ -3552,6 +3587,8 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         :param comboBox: The combo box containing the list of selectable filters.
         :type comboBox: MultiSelectComboBox
+        :param parameters: Dictionary with 'db_loader'.
+        :type parameters: dict
         """
         loader = parameters["db_loader"]
         selected = comboBox.getSelectedItems()
