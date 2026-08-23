@@ -256,7 +256,7 @@ class DictDialog(QDialog):
         if starting_file_path is not None:
             try:
                 loc = os.path.dirname(starting_file_path)
-            except:
+            except Exception:
                 raise
 
         options = QFileDialog.Options()
@@ -291,7 +291,7 @@ class DictDialog(QDialog):
         if starting_file_path is not None:
             try:
                 loc = os.path.dirname(starting_file_path)
-            except:
+            except Exception:
                 raise
 
         options = QFileDialog.Options()

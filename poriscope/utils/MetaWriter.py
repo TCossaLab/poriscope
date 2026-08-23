@@ -461,7 +461,7 @@ class MetaWriter(BaseDataPlugin):
                     except StopIteration:
                         break
                     index += 1
-            except:
+            except Exception:
                 raise
             finally:
                 if abort is True:

@@ -424,8 +424,6 @@ poriscope/views/DataPluginView.py
 --------------------
 poriscope/views/widgets/dict_dialog_widget.py
     DOC108: Method `DictDialog.get_input_file`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC503: Method `DictDialog.get_input_file` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: ['Exception']. Raised exceptions in the body: [].
     DOC108: Method `DictDialog.get_output_file`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
-    DOC503: Method `DictDialog.get_output_file` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: ['Exception']. Raised exceptions in the body: [].
     DOC108: Method `DictDialog.get_folder`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------

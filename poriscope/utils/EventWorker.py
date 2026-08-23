@@ -106,7 +106,7 @@ class Worker(QObject):
                     self.process_generator()
             else:
                 self.process_generator()
-        except:
+        except Exception:
             raise
         finally:
             self.update_progressbar.emit(100, f"{self.key}/{self.channel}")
