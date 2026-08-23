@@ -945,6 +945,82 @@ straightforward (`exposed.py`'s long import/`__all__` list is exactly the
 loops but each level does one clear thing and reads linearly; not genuinely
 hard to follow as written.
 
+## Addendum (2026-08-23 re-review)
+
+A follow-up read-only re-review of just this part's files (two fresh
+sub-agent passes, one per MVC triad) turned up one correction and a few
+additional points worth recording alongside the findings above.
+
+**Correction to finding #3:** the claim that "both [dispatch methods] catch
+`TypeError` ... and blindly retry" is only true of `handle_global_signal`.
+Direct re-check of `handle_data_plugin_controller_signal`
+(`main_controller.py:309-323`) confirms it has **no** `TypeError`-retry
+fallback around either the `func(*call_args)` call (line 313) or the
+`return_function(*retval)` call (line 321) — despite its own docstring
+claiming "Same dispatch mechanism as handle_global_signal" (line 277). This
+is a real, observable asymmetry between the two methods today, not just
+theoretical risk from a shared pattern: a caller relying on the None-retry
+fallback behaves differently depending on which of the two signals it goes
+through. Decide deliberately (make both retry, or make neither, and fix the
+docstring either way) when finding #3 is addressed, rather than assuming the
+current split behavior is intentional.
+
+**Second opinion on `populate_available_plugins` (previously "not
+flagged"):** re-confirmed that `main_model.py:216-233` does perform a real
+second pass — `load_plugin` (called with the full tuple of allowed base
+classes) already determines whether a class is a subclass of *any* allowed
+base, then the caller loops over `allowed_base_classes.items()` again just
+to find *which one* matched. This is genuine, if minor, duplicated work, so
+a small fix (have `load_plugin` return the matched metaclass name directly)
+is worth a look even though the original "linear and easy to follow"
+judgment about readability still stands — the two takes weigh different
+things (readability vs. avoiding recomputation) rather than disagreeing on
+the facts.
+
+**Additional points not previously recorded:**
+
+- `main_controller.py:407-434` (`instantiate_analysis_tab`) wires 7 fixed
+  signal→slot connections as 7 sequential `.connect()` calls, where
+  `main_view.py:199-236` (`connect_signals`) already establishes this
+  codebase's own convention for exactly this shape — a list of
+  `(signal_name, slot)` tuples consumed in a loop via `getattr`.
+  Restructuring to match would make it consistent with that convention and
+  easier to extend. Moderate value, moderate risk (tab-instantiation
+  wiring), mechanical.
+- `main_model.py:273` (`get_plugin_data`) reconstructs the plugin-history
+  file path from scratch (`Path(user_data_dir(), "Poriscope", "session",
+  "plugin_history.json")`) instead of reusing `self.session_path`, already
+  built once in `__init__` and reused by `load_session`/`save_session`. Not
+  a bug today (same effective path), but a latent inconsistency a future
+  path-construction change could silently miss. Trivial, low-risk one-line
+  fix.
+- `DataPluginController.edit_plugin`'s delete branch (`:114-132`) is close
+  enough to `delete_plugin` (`:281-327`) that it's worth calling out
+  explicitly as a candidate for `edit_plugin` just calling
+  `self.delete_plugin(metaclass, key)` directly, beyond the general "five
+  jobs in one method" framing in finding #1 — with the caveat that
+  `edit_plugin` already unregisters the instance from its parents earlier
+  in the method, so `unregister_dependent`'s idempotency (safe to call
+  twice) should be confirmed before merging the two paths.
+- The parent-link rollback repeated at `edit_plugin`'s several failure exit
+  points (per finding #1) is a good candidate for a small context manager
+  (e.g. `with self._parent_link_transaction(metaclass, instance, parents):`
+  that unregisters on enter and restores on any exception) rather than a
+  hand-repeated "call restore, then return" at each point — the current
+  shape is exactly the kind of thing that silently breaks if a future edit
+  adds another exit path and forgets the call.
+- `DataPluginController.validate_and_instantiate_plugin`'s settings-from-
+  history block (`:388-446`) reads `self.historical_settings` immediately
+  after emitting `get_settings_from_history` (`:396-397`), relying on the
+  connected slot having already run synchronously by the time execution
+  resumes — true today only because of same-thread direct Qt signal
+  delivery, and not signaled anywhere in the code as a hard requirement.
+  Worth a comment at minimum if this file is touched again; a return-value-
+  based relay would make the dependency explicit instead of implicit.
+
+None of these change the overall value/risk conclusions already reached for
+this part; fold them in whenever findings #1-#3 above are next revisited.
+
 ---
 
 # Part 6: `MetaController` / `MetaModel` / `MetaView` / `BaseDataPlugin`
