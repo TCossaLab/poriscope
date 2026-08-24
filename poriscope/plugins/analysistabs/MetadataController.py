@@ -26,7 +26,9 @@
 
 
 import logging
+from typing import Any, Generator, Optional
 
+import pandas as pd
 from PySide6.QtWidgets import QMessageBox
 from typing_extensions import override
 
@@ -49,7 +51,7 @@ class MetadataController(MetaController):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         Initialize the metadata view and model.
         """
@@ -58,7 +60,7 @@ class MetadataController(MetaController):
 
     @log(logger=logger)
     @override
-    def _setup_connections(self):
+    def _setup_connections(self) -> None:
         """
         Setup signal-slot connections between view and controller.
 
@@ -70,52 +72,52 @@ class MetadataController(MetaController):
         pass
 
     @log(logger=logger)
-    def relay_table_by_column(self, table):
+    def relay_table_by_column(self, table: Optional[str]) -> None:
         """
-        Relay a column-grouped table to the view.
+        Relay the name of the table a column lives in to the view.
 
-        :param table: Dictionary representing a table organized by column.
-        :type table: dict
+        :param table: Name of the table containing the queried column, or None if the loader could not resolve one.
+        :type table: Optional[str]
         """
         self.view.set_table_by_column(table)
 
     @log(logger=logger)
-    def relay_column_type(self, column_type):
+    def relay_column_type(self, column_type: Optional[str]) -> None:
         """
         Relay the data type of a specified column to the view
 
-        :param column_type: The data type of the column.
-        :type column_type: str
+        :param column_type: The data type of the column, or None if the loader could not resolve one.
+        :type column_type: Optional[str]
         """
         self.view.set_column_type(column_type)
 
     @log(logger=logger)
     def update_features(
         self,
-        vertical=None,
-        horizontal=None,
-        points=None,
-        vlabels=None,
-        hlabels=None,
-        plabels=None,
-    ):
+        vertical: Optional[list[float]] = None,
+        horizontal: Optional[list[float]] = None,
+        points: Optional[list[tuple[float, float]]] = None,
+        vlabels: Optional[list[str]] = None,
+        hlabels: Optional[list[str]] = None,
+        plabels: Optional[list[str]] = None,
+    ) -> None:
         """
         Update the plot with visual annotations including vertical lines, horizontal lines, and point markers.
 
         Validates that each visual feature has a corresponding label (or explicit None) if labels are provided.
 
-        :param vertical: List of vertical line positions for each subplot.
-        :type vertical: list[list[float]] or None
-        :param horizontal: List of horizontal line positions for each subplot.
-        :type horizontal: list[list[float]] or None
-        :param points: List of (x, y) point coordinates for each subplot.
-        :type points: list[list[tuple[float, float]]] or None
-        :param vlabels: List of labels for vertical lines.
-        :type vlabels: list[list[str or None]] or None
-        :param hlabels: List of labels for horizontal lines.
-        :type hlabels: list[list[str or None]] or None
-        :param plabels: List of labels for point markers.
-        :type plabels: list[list[str or None]] or None
+        :param vertical: Vertical line positions for the event being plotted.
+        :type vertical: Optional[list[float]]
+        :param horizontal: Horizontal line positions for the event being plotted.
+        :type horizontal: Optional[list[float]]
+        :param points: (x, y) point coordinates for the event being plotted.
+        :type points: Optional[list[tuple[float, float]]]
+        :param vlabels: Labels for the vertical lines.
+        :type vlabels: Optional[list[str]]
+        :param hlabels: Labels for the horizontal lines.
+        :type hlabels: Optional[list[str]]
+        :param plabels: Labels for the point markers.
+        :type plabels: Optional[list[str]]
         :raises ValueError: If a label list is provided and its length does not match the corresponding feature list.
         """
         if (
@@ -143,17 +145,17 @@ class MetadataController(MetaController):
         )
 
     @log(logger=logger)
-    def relay_baseline_duration(self, duration):
+    def relay_baseline_duration(self, duration: Optional[float]) -> None:
         """
         Relay the computed baseline duration to the view.
 
-        :param duration: Duration of the baseline in appropriate units.
-        :type duration: float
+        :param duration: Duration of the baseline in appropriate units, or None if it could not be resolved.
+        :type duration: Optional[float]
         """
         self.view.set_baseline_duration(duration)
 
     @log(logger=logger)
-    def set_exported_event_count(self, written):
+    def set_exported_event_count(self, written: int) -> None:
         """
         Update the view with the number of events exported.
 
@@ -163,7 +165,7 @@ class MetadataController(MetaController):
         self.view.set_exported_event_count(written)
 
     @log(logger=logger)
-    def relay_query(self, query, debug, table_name, *args) -> None:
+    def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:
         """
         Relay a query and optional debug message to the view, handling optional filter intents.
 
@@ -174,7 +176,7 @@ class MetadataController(MetaController):
         :param table_name: Name of the table associated with the query.
         :type table_name: str
         :param *args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type *args: tuple
+        :type *args: str
         """
         intent = args[0] if args else None
 
@@ -242,7 +244,7 @@ class MetadataController(MetaController):
         self.view.clear_pending_filter_state()
 
     @log(logger=logger)
-    def relay_event_query(self, query, debug):
+    def relay_event_query(self, query: str, debug: str) -> None:
         """
         Relay an event-level query to the view.
 
@@ -256,7 +258,7 @@ class MetadataController(MetaController):
         self.view.set_event_query(query)
 
     @log(logger=logger)
-    def relay_event_data_generator(self, generator):
+    def relay_event_data_generator(self, generator: Generator) -> None:
         """
         Relay a generator for event data overlays to the view.
 
@@ -267,7 +269,7 @@ class MetadataController(MetaController):
         self.view.set_event_data_generator(generator)
 
     @log(logger=logger)
-    def relay_event_plot_data_generator(self, generator):
+    def relay_event_plot_data_generator(self, generator: Generator) -> None:
         """
         Relay a generator for event plotting to the view.
 
@@ -278,7 +280,7 @@ class MetadataController(MetaController):
         self.view.set_event_plot_data_generator(generator)
 
     @log(logger=logger)
-    def relay_plot_data(self, data):
+    def relay_plot_data(self, data: Any) -> None:
         """
         Relay processed data to the view for plotting.
 
@@ -288,17 +290,17 @@ class MetadataController(MetaController):
         self.view.set_plot_data(data)
 
     @log(logger=logger)
-    def relay_units(self, units):
+    def relay_units(self, units: Optional[str]) -> None:
         """
-        Provide column unit labels to the view.
+        Provide a column unit label to the view.
 
-        :param units: Dictionary mapping column names to units.
-        :type units: dict
+        :param units: Unit string for the queried column, or None if the loader could not resolve one.
+        :type units: Optional[str]
         """
         self.view.set_units(units)
 
     @log(logger=logger)
-    def update_column_names(self, column_names):
+    def update_column_names(self, column_names: list[str]) -> None:
         """
         Update the view with new column names.
 
@@ -313,12 +315,12 @@ class MetadataController(MetaController):
             self.logger.warning("No column names received to update.")
 
     @log(logger=logger)
-    def update_column_units(self, column_units, axis):
+    def update_column_units(self, column_units: Optional[str], axis: str) -> None:
         """
-        Update the view with unit labels for a specific axis.
+        Update the view with the unit label for a specific axis.
 
-        :param column_units: Dictionary of column names and their corresponding units.
-        :type column_units: dict
+        :param column_units: Unit string for the column plotted on this axis, or None if the loader could not resolve one.
+        :type column_units: Optional[str]
         :param axis: Axis to apply the units to (e.g., 'x' or 'y').
         :type axis: str
         """
@@ -326,7 +328,9 @@ class MetadataController(MetaController):
         self.view.update_column_units(column_units, axis)
 
     @log(logger=logger)
-    def get_experiment_names_for_tree(self, experiments: list[str], loader_name: str):
+    def get_experiment_names_for_tree(
+        self, experiments: list[str], loader_name: str
+    ) -> None:
         """
         Provide a list of experiment names to the view for the tree display.
 
@@ -341,7 +345,7 @@ class MetadataController(MetaController):
     @log(logger=logger)
     def get_experiment_structure_ready(
         self, structure: dict[str, list[int]], loader_name: str
-    ):
+    ) -> None:
         """
         Pass experiment-to-channel mappings to the view in display-ready format.
 
@@ -368,7 +372,7 @@ class MetadataController(MetaController):
         )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id):
+    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
         """
         Relay the experiment ID to the view.
 
@@ -378,7 +382,7 @@ class MetadataController(MetaController):
         self.view.set_experiment_id(experiment_id)
 
     @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id):
+    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
         """
         Relay the channel database ID to the view.
 
@@ -388,7 +392,7 @@ class MetadataController(MetaController):
         self.view.set_channel_db_id(channel_db_id)
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid, error_msg):
+    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
         """
         Relay the result of raw filter validation to the view.
 
@@ -400,7 +404,7 @@ class MetadataController(MetaController):
         self.view.on_raw_filter_validated(valid, error_msg)
 
     @log(logger=logger)
-    def relay_query_result(self, result):
+    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
         Relay the result of a direct DB query to the view.
 
@@ -410,7 +414,7 @@ class MetadataController(MetaController):
         self.view.relay_query_result(result)
 
     @log(logger=logger)
-    def relay_experiment_id(self, exp_id):
+    def relay_experiment_id(self, exp_id: Optional[int]) -> None:
         """
         Relay a resolved experiment id to the view.
 

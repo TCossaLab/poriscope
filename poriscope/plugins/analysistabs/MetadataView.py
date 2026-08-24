@@ -30,29 +30,42 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
 
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.colorbar import Colorbar
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLayout,
+    QMessageBox,
+)
 from scipy import stats
 from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
+from poriscope.views.widgets.multiselect import MultiSelectComboBox
 from poriscope.views.widgets.SelectionTree import SelectionTree
 
 warnings.filterwarnings(
@@ -80,7 +93,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._init()
         self._init_walkthrough()
@@ -115,8 +128,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
-        self.hist_data: List[npt.NDArray[float]] = []
-        self.hist_labels: List[Optional[str]] = []
+        # Heterogeneous by design: the histogram paths append 1-D arrays, the
+        # density path appends whole DataFrames, and the all-points path appends
+        # (x, y) tuples. Flagged for review.
+        self.hist_data: List[Any] = []
+        self.hist_labels: List[Any] = []
         self.subset_filters: Dict[str, str] = {}
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
@@ -142,28 +158,32 @@ class MetadataView(MetaView, WalkthroughMixin):
                 Optional[str],
             ]
         ] = set()
-        self.vertical = None
-        self.horizontal = None
-        self.points = None
-        self.vlabels = None
-        self.hlabels = None
-        self.plabels = None
+        self.vertical: Optional[List[float]] = None
+        self.horizontal: Optional[List[float]] = None
+        self.points: Optional[List[Tuple[float, float]]] = None
+        self.vlabels: Optional[List[str]] = None
+        self.hlabels: Optional[List[str]] = None
+        self.plabels: Optional[List[str]] = None
+        self._heatmap_colorbar: Optional[Colorbar] = None
+        self._pending_filter_name: Optional[str] = None
+        self._pending_filter_text: Optional[str] = None
+        self._pending_old_filter_name: Optional[str] = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
         self.filtered_event_ids: List[int] = []
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[int] = None
+        self.current_channel: Optional[str] = None
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout):
+    def _set_control_area(self, layout: QLayout) -> None:
         """
         Set up the control area layout by inserting metadata controls.
 
         :param layout: The layout to which the controls will be added.
-        :type layout: QVBoxLayout
+        :type layout: QLayout
         """
         self.metadatacontrols = MetadataControls()
         self.metadatacontrols.actionTriggered.connect(self.handle_parameter_change)
@@ -222,7 +242,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :rtype: None
         """
         # Always invalidate references to figure-owned artists
-        self._heatmap_colorbar = None  # type: ignore[attr-defined]
+        self._heatmap_colorbar = None
 
         fig = getattr(self, "figure", None)
         if fig is None:
@@ -297,23 +317,31 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _plot_1d_density(
-        self, ax, data, cols, units, logscales, dataset_label="", bins=None, sizes=False
-    ):
+        self,
+        ax: Axes,
+        data: Any,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        bins: Any = None,
+        sizes: bool = False,
+    ) -> None:
         """
         :param ax: the axis object on which to plot
         :type ax: Axes
-        :param data: Tuple of data, only the first entry will be used
-        :type data: Tuple[npt.NDArray[np.float64]]
-        :param cols: Tuple of column names, only the first will be used
-        :type cols: Tuple[str]
-        :param units: Tuple of unit strings for axis labels, on the first entry will be used
-        :type units: Tuple[str]
+        :param data: Dataframe of metadata to plot. Typed loosely because the body rebinds this name to the extracted column array.
+        :type data: Any
+        :param cols: Sequence of column names, only the first will be used
+        :type cols: Sequence[str]
+        :param units: Sequence of unit strings for axis labels, only the first entry will be used
+        :type units: Sequence[Optional[str]]
         :param logscales: logscale the data in the given column before building the density plot?
-        :type logscales: Tuple[bool]
+        :type logscales: Sequence[bool]
         :param dataset_label: string to label the dataset
         :type dataset_label: str
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
-        :type bins: Union[int, float]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
         :raises ValueError: If bins is an empty list.
@@ -392,23 +420,31 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _plot_capture_rate(
-        self, ax, data, cols, units, logscales, dataset_label="", bins=None, sizes=False
-    ):
+        self,
+        ax: Axes,
+        data: Any,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        bins: Any = None,
+        sizes: bool = False,
+    ) -> None:
         """
         :param ax: the axis object on which to plot
         :type ax: Axes
-        :param data: Tuple of data, only the first entry will be used
-        :type data: Tuple[npt.NDArray[np.float64]]
-        :param cols: Tuple of column names, only the first will be used
-        :type cols: Tuple[str]
-        :param units: Tuple of unit strings for axis labels, on the first entry will be used
-        :type units: Tuple[str]
+        :param data: Dataframe of metadata to plot. Typed loosely because the body rebinds this name to the extracted column array.
+        :type data: Any
+        :param cols: Sequence of column names, only the first will be used
+        :type cols: Sequence[str]
+        :param units: Sequence of unit strings for axis labels, only the first entry will be used
+        :type units: Sequence[Optional[str]]
         :param logscales: logscale the data in the given column before building the density plot? only the first will be used
-        :type logscales: Tuple[bool]
+        :type logscales: Sequence[bool]
         :param dataset_label: string to label the dataset
         :type dataset_label: str
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
-        :type bins: Union[int, float]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
         :raises ValueError: If bins is an empty list, or too little data survives the log filter to estimate a capture rate.
@@ -416,7 +452,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         Calculate the capture rate for the given subset
         """
 
-        def log_exp_pdf(logt, rate, amplitude):
+        def log_exp_pdf(
+            logt: npt.NDArray[np.float64], rate: float, amplitude: float
+        ) -> npt.NDArray[np.float64]:
             x = amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
             return x
 
@@ -499,31 +537,31 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _plot_1d_histogram(
         self,
-        ax,
-        data,
-        cols,
-        units,
-        logscales,
-        dataset_label="",
-        bins=None,
-        sizes=False,
-        norm=False,
-    ):
+        ax: Axes,
+        data: Any,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        bins: Any = None,
+        sizes: bool = False,
+        norm: bool = False,
+    ) -> None:
         """
         :param ax: the axis object on which to plot
         :type ax: Axes
-        :param data: Tuple of data, only the first entry will be used
-        :type data: Tuple[npt.NDArray[np.float64]]
-        :param cols: Tuple of column names, only the first will be used
-        :type cols: Tuple[str]
-        :param units: Tuple of unit strings for axis labels, on the first entry will be used
-        :type units: Tuple[str]
+        :param data: Dataframe of metadata to plot. Typed loosely because the body rebinds this name to the extracted column array.
+        :type data: Any
+        :param cols: Sequence of column names, only the first will be used
+        :type cols: Sequence[str]
+        :param units: Sequence of unit strings for axis labels, only the first entry will be used
+        :type units: Sequence[Optional[str]]
         :param logscales: logscale the data in the given column before building the density plot? only the first will be used
-        :type logscales: Tuple[bool]
+        :type logscales: Sequence[bool]
         :param dataset_label: string to label the dataset
         :type dataset_label: str
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
-        :type bins: Union[int, float]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
         :param norm: normalize output to [0,1]?
@@ -639,25 +677,25 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _plot_categorical_histogram(
         self,
-        ax,
-        data,
-        cols,
-        units,
-        dataset_label="",
-    ):
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        dataset_label: str = "",
+    ) -> None:
         """
+        Calculate and plot a 1d categorical bar chart showing counts of unique values.
+
         :param ax: the axis object on which to plot
         :type ax: Axes
-        :param data: Tuple of data, only the first entry will be used
-        :type data: Tuple[npt.NDArray[np.float64]]
-        :param cols: Tuple of column names, only the first will be used
-        :type cols: Tuple[str]
-        :param units: Tuple of unit strings for axis labels, only the first entry will be used
-        :type units: Tuple[str]
+        :param data: Dataframe of metadata to plot, only the first named column will be used
+        :type data: pd.DataFrame
+        :param cols: Sequence of column names, only the first will be used
+        :type cols: Sequence[str]
+        :param units: Sequence of unit strings for axis labels, only the first entry will be used
+        :type units: Sequence[Optional[str]]
         :param dataset_label: string to label the dataset
         :type dataset_label: str
-
-        Calculate and plot a 1d categorical bar chart showing counts of unique values.
         """
         (x_label,) = cols
         (x_units,) = units
@@ -705,27 +743,35 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _plot_heatmap(
-        self, ax, data, cols, units, logscales, dataset_label="", bins=None, sizes=False
-    ):
+        self,
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        bins: Any = None,
+        sizes: bool = False,
+    ) -> None:
         """
+        Calculate a 2d heatmap with optional logscaling
+
         :param ax: the axis object on which to plot
         :type ax: Axes
-        :param data: Tuple of data, only the first two entries will be used
-        :type data: Tuple[npt.NDArray[np.float64]]
-        :param cols: Tuple of column names, only the first two entries will be used
-        :type cols: Tuple[str]
-        :param units: Tuple of unit strings for axis labels, on the first two entries will be used
-        :type units: Tuple[str]
+        :param data: Dataframe of metadata to plot, only the first two named columns will be used
+        :type data: pd.DataFrame
+        :param cols: Sequence of column names, only the first two entries will be used
+        :type cols: Sequence[str]
+        :param units: Sequence of unit strings for axis labels, only the first two entries will be used
+        :type units: Sequence[Optional[str]]
         :param logscales: logscale the data in the given column before building the density plot? only the first two entries will be used
-        :type logscales: Tuple[bool]
+        :type logscales: Sequence[bool]
         :param dataset_label: string to label the dataset
         :type dataset_label: str
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
-        :type bins: Union[int, float]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
-
-        Calculate a 2d heatmap with optional logscaling
         """
         x_label, y_label = cols
         x_units, y_units = units
@@ -788,20 +834,28 @@ class MetadataView(MetaView, WalkthroughMixin):
         ax.legend(handles=[proxy], loc="best", handlelength=0, handleheight=0)
 
     @log(logger=logger)
-    def _plot_scatterplot(self, ax, data, cols, units, logscales, dataset_label=""):
+    def _plot_scatterplot(
+        self,
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+    ) -> None:
         """
         Create a scatterplot of two metadata columns.
 
         :param ax: Matplotlib axes object.
-        :type ax: matplotlib.axes.Axes
+        :type ax: Axes
         :param data: DataFrame containing the columns to plot.
         :type data: pd.DataFrame
-        :param cols: List containing two column names for x and y axes.
-        :type cols: List[str]
-        :param units: List of corresponding units for x and y axes.
-        :type units: List[str]
-        :param logscales: List indicating log-scaling for x and y axes.
-        :type logscales: List[bool]
+        :param cols: Sequence containing two column names for x and y axes.
+        :type cols: Sequence[str]
+        :param units: Corresponding units for x and y axes.
+        :type units: Sequence[Optional[str]]
+        :param logscales: Log-scaling flags for x and y axes.
+        :type logscales: Sequence[bool]
         :param dataset_label: Label for the dataset.
         :type dataset_label: str
         """
@@ -831,20 +885,28 @@ class MetadataView(MetaView, WalkthroughMixin):
         ax.legend(loc="best")
 
     @log(logger=logger)
-    def _plot_3d_scatterplot(self, ax, data, cols, units, logscales, dataset_label=""):
+    def _plot_3d_scatterplot(
+        self,
+        ax: Axes3D,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+    ) -> None:
         """
         Create a 3D scatterplot of three metadata columns.
 
         :param ax: A 3D Matplotlib axes object.
-        :type ax: mpl_toolkits.mplot3d.Axes3D
+        :type ax: Axes3D
         :param data: DataFrame with the columns to plot.
         :type data: pd.DataFrame
-        :param cols: List with three column names for x, y, and z.
-        :type cols: List[str]
+        :param cols: Sequence with three column names for x, y, and z.
+        :type cols: Sequence[str]
         :param units: Corresponding units.
-        :type units: List[str]
+        :type units: Sequence[Optional[str]]
         :param logscales: Log scale flags for each axis.
-        :type logscales: List[bool]
+        :type logscales: Sequence[bool]
         :param dataset_label: Label to apply to the scatter points.
         :type dataset_label: str
         """
@@ -885,19 +947,25 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _plot_all_points_histogram(
-        self, ax, data, cols, units, dataset_label="", norm=False
-    ):
+        self,
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        dataset_label: str = "",
+        norm: bool = False,
+    ) -> None:
         """
         Plot a histogram of current values across all events (raw or filtered).
 
         :param ax: Matplotlib axes to draw the histogram on.
-        :type ax: matplotlib.axes.Axes
+        :type ax: Axes
         :param data: DataFrame containing time and current values.
         :type data: pd.DataFrame
         :param cols: Column names for x and y axes.
-        :type cols: List[str]
+        :type cols: Sequence[str]
         :param units: Units corresponding to the axes.
-        :type units: List[str]
+        :type units: Sequence[Optional[str]]
         :param dataset_label: Label for the plotted dataset.
         :type dataset_label: str
         :param norm: normalize output to [0,1]?
@@ -935,14 +1003,14 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def update_plot(
         self,
-        plot_type,
-        data,
-        cols,
-        units,
-        logscales,
-        dataset_label="",
-        bins=None,
-        sizes=False,
+        plot_type: str,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        bins: Any = None,
+        sizes: bool = False,
     ) -> None:
         """
         Update the plot area with the provided data across multiple channels in a grid layout.
@@ -950,17 +1018,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param plot_type: The kind of plot to draw (e.g. "Histogram", "Scatterplot", "Heatmap"); selects which internal plotting method is dispatched to.
         :type plot_type: str
         :param data: a pandas dataframe with column headers matching x_col, y_col, z_col
-        :type data: pd.Dataframe
-        :param cols: a list of strings corresponding to column headers in the dataframe
-        :type cols: List[str]
-        :param units: a list of strings corresponding to column units in the dataframe
-        :type units: List[str]
-        :param logscales: a list of bools indicating whether the given axis should be logscaled
-        :type logscales: List[bool]
+        :type data: pd.DataFrame
+        :param cols: a sequence of strings corresponding to column headers in the dataframe
+        :type cols: Sequence[str]
+        :param units: a sequence of strings corresponding to column units in the dataframe
+        :type units: Sequence[Optional[str]]
+        :param logscales: a sequence of bools indicating whether the given axis should be logscaled
+        :type logscales: Sequence[bool]
         :param dataset_label: string to label the dataset
         :type dataset_label: str
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
-        :type bins: Union[int, float]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
         :raises NotImplementedError: If plot_type is not one of the supported plot types.
@@ -1065,7 +1133,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up-to-date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: Mapping[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         super().update_available_plugins(available_plugins)
 
@@ -1122,34 +1190,34 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id):
+    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
         """
+        A global signal callback that provides an experiment id for a given filter.
+
         :param experiment_id: the integer id of the experiment in a MetaEventLoader object
         :type experiment_id: Optional[int]
-
-        a global signal callback that provides an experiment id for a given filter
         """
         self.experiment_id = experiment_id
 
     @log(logger=logger)
-    def set_table_by_column(self, table):
+    def set_table_by_column(self, table: Optional[str]) -> None:
         """
+        Get a list of tables affected by an SQL query.
+
         :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
         :type table: Optional[str]
-
-        Get a list of tables affected by an SQL query
         """
         if table is not None:
             self.involved_tables.append(table)
 
     @log(logger=logger)
     @register_action()
-    def _overlay_plot(self, parameters) -> bool:
+    def _overlay_plot(self, parameters: Dict[str, Any]) -> bool:
         """
         Handle the creation of a new overlay plot based on the selected parameters.
 
         :param parameters: A dictionary of plotting parameters selected by the user.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :return: True if the overlay was successful, False otherwise.
         :rtype: bool
         """
@@ -1488,17 +1556,21 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _construct_all_points_histogram(
-        self, event_generator, plot_type, bins=None, sizes=False
+        self,
+        event_generator: Iterator[Dict[str, Any]],
+        plot_type: str,
+        bins: Any = None,
+        sizes: bool = False,
     ) -> pd.DataFrame:
         """
         Build a combined histogram across all event current values.
 
         :param event_generator: Generator yielding individual event data.
-        :type event_generator: Iterator[dict]
+        :type event_generator: Iterator[Dict[str, Any]]
         :param plot_type: Type of histogram to create (raw or filtered).
         :type plot_type: str
-        :param bins: Number of histogram bins.
-        :type bins: int | None
+        :param bins: Number of histogram bins. Arrives as a single-element list from the controls and is rebound to a scalar (or None) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
         :return: DataFrame with histogram values and corresponding current levels.
@@ -1586,26 +1658,37 @@ class MetadataView(MetaView, WalkthroughMixin):
         return pd.DataFrame({"Current": bincenters, "Count": hist})
 
     @log(logger=logger)
-    def set_baseline_duration(self, duration):
+    def set_baseline_duration(self, duration: Optional[float]) -> None:
         """
         a callback from a global_signal call that sets the baseline_duration variable for further processing
+
+        :param duration: total duration of baseline data in the scoped subset, or None if it could not be resolved.
+        :type duration: Optional[float]
         """
         self.baseline_duration = duration
 
     @log(logger=logger)
-    def set_column_type(self, column_type):
+    def set_column_type(self, column_type: Optional[str]) -> None:
         """
         a callback from a global_signal call that sets the column type of a specified variable
+
+        :param column_type: SQL type name of the queried column, or None on failure.
+        :type column_type: Optional[str]
         """
         self.column_type = column_type
 
     @log(logger=logger)
-    def _construct_event_overlay(self, event_generator, plot_type, loader):
+    def _construct_event_overlay(
+        self,
+        event_generator: Iterator[Dict[str, Any]],
+        plot_type: str,
+        loader: str,
+    ) -> None:
         """
         Overlay multiple event traces in a normalized time plot.
 
         :param event_generator: Generator of events to overlay.
-        :type event_generator: Iterator[dict]
+        :type event_generator: Iterator[Dict[str, Any]]
         :param plot_type: Either 'Raw Event Overlay' or 'Filtered Event Overlay'.
         :type plot_type: str
         :param loader: Identifier of the database loader plugin providing the events.
@@ -1670,24 +1753,24 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.no_cached_data = True
 
     @log(logger=logger)
-    def set_event_data_generator(self, generator):
+    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
         """
         Set the event data generator for event-based plots.
 
         :param generator: A generator that yields event data.
-        :type generator: Iterator[dict]
+        :type generator: Iterator[Dict[str, Any]]
         """
         self.event_data_generator = generator
 
     @log(logger=logger)
-    def _undo_plot(self):
+    def _undo_plot(self) -> None:
         """
         Undo the last plotted action and update the action history.
         """
         self.update_tab_action_history.emit(None, True)
 
     @log(logger=logger)
-    def _save_filter(self):
+    def _save_filter(self) -> None:
         """
         Save the current filters to a JSON file.
 
@@ -1710,10 +1793,13 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.error(f"Failed to save filters: {e}")
 
     @log(logger=logger)
-    def _load_filter(self, parameters):
+    def _load_filter(self, parameters: Dict[str, Any]) -> None:
         """
         Append filters from a JSON file, warn if duplicates are found,
         and apply all new filters only if none conflict with existing ones.
+
+        :param parameters: Dictionary with 'db_loader'.
+        :type parameters: Dict[str, Any]
         """
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
@@ -1779,7 +1865,9 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @Slot(str, str, tuple)
-    def handle_parameter_change(self, submodel_name, action_name, args) -> None:
+    def handle_parameter_change(
+        self, submodel_name: str, action_name: str, args: tuple
+    ) -> None:
         """
         Handle changes triggered by UI controls such as updates to axis selection or filters.
 
@@ -1886,7 +1974,13 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _build_where_clause(self, loader, sql_filter, exp, channel) -> str:
+    def _build_where_clause(
+        self,
+        loader: str,
+        sql_filter: str,
+        exp: Optional[str],
+        channel: Optional[str],
+    ) -> str:
         """
         Build a WHERE clause for direct DB queries on the events table, scoped to
         the current filter, experiment, and channel.
@@ -1923,7 +2017,12 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _rebuild_event_id_cache(
-        self, loader, where_clause, sql_filter, exp, channel
+        self,
+        loader: str,
+        where_clause: str,
+        sql_filter: str,
+        exp: Optional[str],
+        channel: Optional[str],
     ) -> bool:
         """
         Rebuild the filtered event_id cache when filter or scope changes.
@@ -1982,8 +2081,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         return True
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
-        """Shift the current event_id forward or backward through the cached filtered set and update the plot."""
+    def _shift_range_and_update_plot(
+        self, parameters: Dict[str, Any], direction: str
+    ) -> None:
+        """
+        Shift the current event_id forward or backward through the cached filtered set and update the plot.
+
+        :param parameters: Dictionary of current event plotting parameters.
+        :type parameters: Dict[str, Any]
+        :param direction: Either 'left' or 'right'.
+        :type direction: str
+        """
 
         loader = parameters["db_loader"]
         event_id = parameters.get("event_id") or 0
@@ -2067,12 +2175,12 @@ class MetadataView(MetaView, WalkthroughMixin):
         return int(text) if text else 1
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters) -> None:
+    def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         selected_filters = self.get_selected_filters()
         loader_name = parameters["db_loader"]
@@ -2230,12 +2338,14 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         data_list = []
-        vertical_lines: List[Optional[float]] = []
-        vertical_labels: List[Optional[str]] = []
-        horizontal_lines: List[Optional[float]] = []
-        horizontal_labels: List[Optional[str]] = []
-        points: List[Optional[Tuple[float, float]]] = []
-        plabels: List[Optional[str]] = []
+        # One entry per subplot; each entry is the whole feature list for
+        # that subplot, or None when the fitter supplied no features.
+        vertical_lines: List[Optional[List[float]]] = []
+        vertical_labels: List[Optional[List[str]]] = []
+        horizontal_lines: List[Optional[List[float]]] = []
+        horizontal_labels: List[Optional[List[str]]] = []
+        points: List[Optional[List[Tuple[float, float]]]] = []
+        plabels: List[Optional[List[str]]] = []
 
         for event in event_generator:
             data_list.append(event)
@@ -2308,17 +2418,19 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_event_plot_data_generator(self, generator):
+    def set_event_plot_data_generator(
+        self, generator: Iterator[Dict[str, Any]]
+    ) -> None:
         """
-        :param generator: a generator of event data
-        :type generator: Generator[Dict[str, Any]]
+        A callback from a global signal call that sets the generator to be used to construct event plots and overlays.
 
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays
+        :param generator: a generator of event data
+        :type generator: Iterator[Dict[str, Any]]
         """
         self.plot_events_generator = generator
 
     @log(logger=logger)
-    def relay_query_result(self, result):
+    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
         A callback from a global_signal call that stores the result of a direct DB query.
 
@@ -2328,7 +2440,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.relayed_query_result = result
 
     @log(logger=logger)
-    def relay_experiment_id(self, exp_id):
+    def relay_experiment_id(self, exp_id: Optional[int]) -> None:
         """
         A callback from a global_signal call that stores a resolved experiment id.
 
@@ -2340,13 +2452,13 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def update_plot_features(
         self,
-        vertical=None,
-        horizontal=None,
-        points=None,
-        vlabels=None,
-        hlabels=None,
-        plabels=None,
-    ):
+        vertical: Optional[List[float]] = None,
+        horizontal: Optional[List[float]] = None,
+        points: Optional[List[Tuple[float, float]]] = None,
+        vlabels: Optional[List[str]] = None,
+        hlabels: Optional[List[str]] = None,
+        plabels: Optional[List[str]] = None,
+    ) -> None:
         """
         Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
 
@@ -2373,14 +2485,14 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _update_event_plot(
         self,
-        event_data,
-        horizontal_lines,
-        vertical_lines,
-        points,
-        horizontal_labels,
-        vertical_labels,
-        point_labels,
-        use_raw=False,
+        event_data: Sequence[Dict[str, Any]],
+        horizontal_lines: Sequence[Optional[List[float]]],
+        vertical_lines: Sequence[Optional[List[float]]],
+        points: Any,
+        horizontal_labels: Sequence[Optional[List[str]]],
+        vertical_labels: Sequence[Optional[List[str]]],
+        point_labels: Sequence[Optional[List[str]]],
+        use_raw: bool = False,
     ) -> None:
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
@@ -2392,19 +2504,19 @@ class MetadataView(MetaView, WalkthroughMixin):
                         Each dictionary should have the keys:
                         'experiment_id', 'channel_id', 'event_id',
                         'raw_data', 'filtered_data', 'fit_data', and 'samplerate'.
-        :type event_data: list[dict]
-        :param horizontal_lines: List of lists of y-values for horizontal line annotations per subplot.
-        :type horizontal_lines: list[list[float] or None]
-        :param vertical_lines: List of lists of x-values for vertical line annotations per subplot.
-        :type vertical_lines: list[list[float] or None]
-        :param points: List of lists of (x, y) coordinate tuples for marker points per subplot.
-        :type points: list[list[tuple[float, float]] or None]
-        :param horizontal_labels: List of lists of labels for horizontal lines.
-        :type horizontal_labels: list[list[str or None]]
-        :param vertical_labels: List of lists of labels for vertical lines.
-        :type vertical_labels: list[list[str or None]]
-        :param point_labels: List of lists of labels for points.
-        :type point_labels: list[list[str or None]]
+        :type event_data: Sequence[Dict[str, Any]]
+        :param horizontal_lines: One entry per subplot, each a list of y-values for horizontal line annotations, or None.
+        :type horizontal_lines: Sequence[Optional[List[float]]]
+        :param vertical_lines: One entry per subplot, each a list of x-values for vertical line annotations, or None.
+        :type vertical_lines: Sequence[Optional[List[float]]]
+        :param points: One entry per subplot, each a list of (x, y) coordinate tuples for marker points, or None. Typed loosely because the loop below rebinds this name to the per-subplot entry.
+        :type points: Any
+        :param horizontal_labels: One entry per subplot, each a list of labels for the horizontal lines, or None.
+        :type horizontal_labels: Sequence[Optional[List[str]]]
+        :param vertical_labels: One entry per subplot, each a list of labels for the vertical lines, or None.
+        :type vertical_labels: Sequence[Optional[List[str]]]
+        :param point_labels: One entry per subplot, each a list of labels for the points, or None.
+        :type point_labels: Sequence[Optional[List[str]]]
         :param use_raw: Whether to also plot/cache the raw (unfiltered) trace alongside the filtered and fitted ones.
         :type use_raw: bool
         :return: None
@@ -2544,14 +2656,16 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _export_csv_subset(self, loader, filters, selection) -> None:
+    def _export_csv_subset(
+        self, loader: str, filters: Any, selection: Dict[str, List[str]]
+    ) -> None:
         """
         Open a dialog to export a filtered subset of the dataset.
 
         :param loader: Name of the active database loader.
         :type loader: str
-        :param filters: Dict of named subset filters; only a single filter may be selected for export.
-        :type filters: Optional[dict]
+        :param filters: Dict of named subset filters; only a single filter may be selected for export. Typed loosely because the body rebinds this name to the single selected filter string.
+        :type filters: Any
         :param selection: Selected experiments and channels to scope the export to.
         :type selection: Dict[str, List[str]]
         """
@@ -2602,17 +2716,17 @@ class MetadataView(MetaView, WalkthroughMixin):
                 self.subset_export_count += 1
 
     @log(logger=logger)
-    def set_exported_event_count(self, written):
+    def set_exported_event_count(self, written: int) -> None:
         """
+        A global signal callback that provides the number of events written in a call to export events to csv format.
+
         :param written: number of events successfully written
         :type written: int
-
-        a global signal callback that provides the number of events written in a call to export events to csv format
         """
         self.exported_event_count = written
 
     @log(logger=logger)
-    def set_query(self, query, table_name) -> None:
+    def set_query(self, query: str, table_name: str) -> None:
         """
         Set the SQL query and table name used in plotting.
 
@@ -2636,9 +2750,12 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._show_sql_in_display = False
 
     @log(logger=logger)
-    def set_event_query(self, query):
+    def set_event_query(self, query: str) -> None:
         """
         A global signal callback that provides a valid SQL query for fetching event data.
+
+        :param query: SQL query string for fetching event data.
+        :type query: str
         """
         self.event_query = query
         if not query:
@@ -2652,7 +2769,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._show_event_sql_in_display = False
 
     @log(logger=logger)
-    def set_units(self, units):
+    def set_units(self, units: Any) -> None:
         """
         Set the units returned from the database for use in axis labels.
 
@@ -2662,7 +2779,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.units = units
 
     @log(logger=logger)
-    def update_available_columns(self, loader) -> None:
+    def update_available_columns(self, loader: str) -> None:
         """
         Request available columns from the database loader.
 
@@ -2686,10 +2803,10 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def request_experiment_structure(self, loader_name: str) -> None:
         """
+        Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.
+
         :param loader_name: the key of the loader
         :type loader_name: str
-
-        get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
         """
         if not loader_name or loader_name == "No Event Database":
             return
@@ -2735,7 +2852,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.logger.debug(f"Updated selection for {loader_name}: {selected}")
 
     @log(logger=logger)
-    def update_units(self, loader, column, axis):
+    def update_units(self, loader: str, column: str, axis: str) -> None:
         """
         Request units for a specific column from the loader.
 
@@ -2759,7 +2876,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
 
     @log(logger=logger)
-    def update_column_names(self, column_names):
+    def update_column_names(self, column_names: List[str]) -> None:
         """
         Relay function to update the list of available columns.
 
@@ -2769,33 +2886,41 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadatacontrols.update_axes(column_names)
 
     @log(logger=logger)
-    def update_column_units(self, column_units, axis):
+    def update_column_units(self, column_units: Optional[str], axis: str) -> None:
         """
         Relay function to update the column unit label in the UI.
 
-        :param column_units: Units to apply.
-        :type column_units: str
+        :param column_units: Unit string for the column, or None if the loader could not resolve one.
+        :type column_units: Optional[str]
         :param axis: Axis being updated.
         :type axis: str
         """
         self.metadatacontrols.update_column_units_label(column_units, axis)
 
     @log(logger=logger)
-    def _handle_other_actions(self, action_name, parameters):
+    def _handle_other_actions(
+        self, action_name: str, parameters: Dict[str, Any]
+    ) -> None:
         """
         Raise an error for actions not yet implemented.
 
         :param action_name: The name of the unhandled action.
         :type action_name: str
         :param parameters: Parameters associated with the action.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :raises NotImplementedError: Always
         """
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
     def _calculate_heatmap(
-        self, xdata, ydata, logx=False, logy=False, bins=None, sizes=False
+        self,
+        xdata: npt.NDArray[np.float64],
+        ydata: npt.NDArray[np.float64],
+        logx: bool = False,
+        logy: bool = False,
+        bins: Any = None,
+        sizes: bool = False,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         :param xdata: the data on the x axis
@@ -2806,8 +2931,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type logx: bool
         :param logy: logscale the y data before building the heatmap?
         :type logy: bool
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning
-        :type bins: Union[int, float]
+        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a list from the controls and may be rebound to None in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
         :type sizes: bool
         :return: Bin-center x values, bin-center y values, and the log2-scaled 2D histogram counts.
@@ -2918,7 +3043,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             # Store pending data for use in relay_query
             self._pending_filter_name = name
             self._pending_filter_text = filter_text
-            self._pending_old_filter_name: Optional[str] = None
+            self._pending_old_filter_name = None
 
             if dialog.is_raw:
                 # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
@@ -3025,7 +3150,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def clear_pending_filter_state(self):
+    def clear_pending_filter_state(self) -> None:
         """
         reset all filters to factory settings
         """
@@ -3034,7 +3159,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._pending_old_filter_name = None
 
     @log(logger=logger)
-    def _show_filter_info_dialog(self, comboBox, parameters) -> None:
+    def _show_filter_info_dialog(
+        self, comboBox: MultiSelectComboBox, parameters: Dict[str, Any]
+    ) -> None:
         """
         Called when clicking the edit button for filters with multiple selection.
 
@@ -3043,7 +3170,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param comboBox: The combo box containing the list of selectable filters.
         :type comboBox: MultiSelectComboBox
         :param parameters: Dictionary with 'db_loader'.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         loader = parameters["db_loader"]
         selected = comboBox.getSelectedItems()
@@ -3054,7 +3181,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.show_edit_filter_dialog(selected[0], loader)
 
     @log(logger=logger)
-    def _delete_filter_by_name(self, name: str):
+    def _delete_filter_by_name(self, name: str) -> None:
         """
         Deletes a single filter by name.
 
@@ -3064,7 +3191,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._delete_filter(name)
 
     @log(logger=logger)
-    def _delete_all_selected_filters(self):
+    def _delete_all_selected_filters(self) -> None:
         """
         Deletes multiple selected filters.
         """
@@ -3078,9 +3205,12 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._delete_filter(name)
 
     @log(logger=logger)
-    def _delete_filter(self, name: str):
+    def _delete_filter(self, name: str) -> None:
         """
         Internal method to remove a filter and update the UI.
+
+        :param name: The name of the filter to remove.
+        :type name: str
         """
         self.subset_filters.pop(name, None)
 
@@ -3106,9 +3236,12 @@ class MetadataView(MetaView, WalkthroughMixin):
         }
 
     @log(logger=logger)
-    def replace_filter_item(self, name):
+    def replace_filter_item(self, name: str) -> None:
         """
         Remove any existing filter item with the same name and add the new one.
+
+        :param name: The name of the filter to (re)add.
+        :type name: str
         """
         list_widget = self.metadatacontrols.filter_comboBox.listWidget
         for i in range(list_widget.count()):
@@ -3123,9 +3256,14 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
 
     @log(logger=logger)
-    def update_filter_name(self, old_name, new_name):
+    def update_filter_name(self, old_name: str, new_name: str) -> None:
         """
         Replace old filter name with new one in the ComboBox, removing any duplicates.
+
+        :param old_name: The filter name being replaced.
+        :type old_name: str
+        :param new_name: The filter name to display instead.
+        :type new_name: str
         """
         list_widget = self.metadatacontrols.filter_comboBox.listWidget
 
@@ -3154,14 +3292,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.metadatacontrols.filter_comboBox.refreshDisplayText()
 
     @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id):
+    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
         """
         a global signal callback that provides the channel_db_id for raw query scoping
+
+        :param channel_db_id: Database id of the scoped channel, or None if unresolved.
+        :type channel_db_id: Optional[int]
         """
         self.channel_db_id = channel_db_id
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid, error_msg) -> None:
+    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
         """
         Relay callback from validate_filter_query for raw SQL filter validation.
 
@@ -3185,14 +3326,17 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         if old_name is not None:  # edit path
             self.subset_filters.pop(old_name, None)
-            self.subset_filters[name] = filter_text
-            self.update_filter_name(old_name, name)
+            # name/filter_text are only ever populated together with the
+            # pending state that got us here, but nothing enforces that.
+            # Flagged for review.
+            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
+            self.update_filter_name(old_name, name)  # type: ignore[arg-type]
             self.add_text_to_display.emit(
                 f"Filter '{old_name}' updated to '{name}'.",
                 self.__class__.__name__,
             )
         else:  # add path
-            self.subset_filters[name] = filter_text
+            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
             self.metadatacontrols.filter_comboBox.addItem(name)
             self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
             self.metadatacontrols.filter_comboBox.refreshDisplayText()
@@ -3204,7 +3348,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.clear_pending_filter_state()
 
     @log(logger=logger)
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [
             (
                 "Metadata Tab",
@@ -3362,7 +3506,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         ]
 
     @log(logger=logger)
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return "MetadataView"
 
     @log(logger=logger)
@@ -3391,7 +3535,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         return True
 
     @log(logger=logger)
-    def format_axis_label(self, label: str, unit: str) -> str:
+    def format_axis_label(self, label: str, unit: Optional[str]) -> str:
         """
         Ensure the axis label contains the correct unit exactly once.
         Removes any existing trailing unit in parentheses.
