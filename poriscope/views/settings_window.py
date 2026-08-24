@@ -112,6 +112,7 @@ class SettingsWindow(QWidget):
     update_user_plugin_location = Signal(str)
     get_shared_server_location = Signal()
     get_user_plugin_folder_location = Signal()
+    get_shared_logging_level = Signal()
     update_log_level = Signal(int)
     clear_cache = Signal()
 
@@ -142,9 +143,7 @@ class SettingsWindow(QWidget):
         new_dark = is_dark_mode()
         if new_dark == self.theme.dark:
             return
-        self.logger.info(
-            f"OS theme changed (dark={new_dark}); rebuilding Settings UI"
-        )
+        self.logger.info(f"OS theme changed (dark={new_dark}); rebuilding Settings UI")
         self.theme = Theme(new_dark)
         self._current_tab_index = self.tabWidget.currentIndex()
         self._clear_layout(self.layout())
@@ -576,7 +575,9 @@ class SettingsWindow(QWidget):
         layout_language = QHBoxLayout()
         layout_language.addWidget(self.create_label(parent_widget, "Language", 10))
         layout_language.addWidget(
-            self.create_combo_box(parent_widget, ["English"], max_width=self.width() // 3),
+            self.create_combo_box(
+                parent_widget, ["English"], max_width=self.width() // 3
+            ),
             alignment=Qt.AlignLeft,
         )
         language_widget = QWidget()
@@ -623,7 +624,9 @@ class SettingsWindow(QWidget):
     def add_advanced_settings_tab_contents(self, parent_widget, layout):
         layout.setSpacing(0)
 
-        advanced_settings_label = self.create_label(parent_widget, "Advanced Settings", 14)
+        advanced_settings_label = self.create_label(
+            parent_widget, "Advanced Settings", 14
+        )
         description_label = self.create_label(
             parent_widget,
             "Adjust detailed settings and configurations for advanced users and developers",
@@ -637,14 +640,20 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.create_section_layout(advanced_settings_widget))
 
         layout_loggingLevel = QHBoxLayout()
-        layout_loggingLevel.addWidget(self.create_label(parent_widget, "Logging Level", 10))
+        layout_loggingLevel.addWidget(
+            self.create_label(parent_widget, "Logging Level", 10)
+        )
         self.logging_level_combobox = self.create_combo_box(
             parent_widget,
             ["None", "Debug", "Info", "Warning", "Error", "Critical"],
             max_width=self.width() // 3,
         )
-        layout_loggingLevel.addWidget(self.logging_level_combobox, alignment=Qt.AlignLeft)
-        self.logging_level_combobox.currentIndexChanged.connect(self.update_logging_level)
+        layout_loggingLevel.addWidget(
+            self.logging_level_combobox, alignment=Qt.AlignLeft
+        )
+        self.logging_level_combobox.currentIndexChanged.connect(
+            self.update_logging_level
+        )
 
         logging_level_widget = QWidget()
         logging_level_widget.setLayout(layout_loggingLevel)
@@ -681,7 +690,9 @@ class SettingsWindow(QWidget):
             "#FFFFFF",
             max_width=self.width() // 3,
         )
-        layout_resetSettings.addWidget(self.reset_settings_button, alignment=Qt.AlignLeft)
+        layout_resetSettings.addWidget(
+            self.reset_settings_button, alignment=Qt.AlignLeft
+        )
 
         reset_settings_widget = QWidget()
         reset_settings_widget.setLayout(layout_resetSettings)
@@ -708,8 +719,12 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.create_section_layout(about_widget))
 
         layout_versionInfo = QVBoxLayout()
-        layout_versionInfo.addWidget(self.create_label(parent_widget, "Application Version", 10))
-        layout_versionInfo.addWidget(self.create_label(parent_widget, f"Version {__VERSION__}", 10))
+        layout_versionInfo.addWidget(
+            self.create_label(parent_widget, "Application Version", 10)
+        )
+        layout_versionInfo.addWidget(
+            self.create_label(parent_widget, f"Version {__VERSION__}", 10)
+        )
         version_info_widget = QWidget()
         version_info_widget.setLayout(layout_versionInfo)
 
@@ -763,6 +778,20 @@ class SettingsWindow(QWidget):
     @log(logger=logger)
     def set_user_plugin_location(self, user_plugin_loc):
         self.user_plugin_location = user_plugin_loc
+
+    @log(logger=logger)
+    def set_logging_level(self, level):
+        index = {
+            logging.NOTSET: 0,
+            logging.DEBUG: 1,
+            logging.INFO: 2,
+            logging.WARNING: 3,
+            logging.ERROR: 4,
+            logging.CRITICAL: 5,
+        }.get(level, 0)
+        self.logging_level_combobox.blockSignals(True)
+        self.logging_level_combobox.setCurrentIndex(index)
+        self.logging_level_combobox.blockSignals(False)
 
     @Slot(int)
     def update_logging_level(self, index):

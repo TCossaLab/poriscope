@@ -27,7 +27,6 @@
 
 import logging
 
-from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
 from typing_extensions import override
 
@@ -43,7 +42,8 @@ class ProteinController(MetaController):
     """
     Subclass of MetaController for managing protein view-model logic.
 
-    Relays ....
+    Relays queries, event data, and filter/column metadata between the
+    database backend and ProteinView.
     """
 
     logger = logging.getLogger(__name__)
@@ -63,17 +63,18 @@ class ProteinController(MetaController):
         """
         Connect internal view signals to their corresponding controller slots.
         """
-        self.view.request_plugin_refresh.connect(self.refresh_plugin_list)
+        # No view-side connections currently required.
+        pass
 
-    @Slot(str)
-    def refresh_plugin_list(self, loader):
+    @log(logger=logger)
+    def check_column_exists(self, table_name):
         """
-        Trigger a global signal to refresh the list of available database plugins.
+        Notify the view to check if a fit-data column exists in the given table.
+
+        :param table_name: Name of the table to check.
+        :type table_name: str
         """
-        if loader:
-            self.global_signal.emit(
-                "MetaDatabaseLoader", loader, "list_plugins", (), "update_plugins", ()
-            )
+        self.view.set_column_exists(table_name)
 
     @log(logger=logger)
     def alter_database_status(self, status):
@@ -84,16 +85,6 @@ class ProteinController(MetaController):
         :type status: bool
         """
         self.view.set_alter_database_status(status)
-
-    @log(logger=logger)
-    def update_plugins(self, plugin_list):
-        """
-        Slot to receive updated plugin list from MetaDatabaseLoader and emit update_available_plugins.
-
-        :param plugin_list: List of available plugin keys for MetaDatabaseLoader.
-        :type plugin_list: list
-        """
-        self.update_available_plugins.emit("MetaDatabaseLoader", plugin_list)
 
     @log(logger=logger)
     def relay_table_by_column(self, table):

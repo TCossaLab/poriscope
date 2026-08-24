@@ -153,9 +153,15 @@ class ConcreteEventFinder(MetaEventFinder):
         return bad_indices, reasons
 
 
-def make_settings(reader, threshold=20.0, min_duration=0):
+def make_settings(reader, threshold=20.0, min_duration=0.0):
+    # "Type" is None here, not str: get_empty_settings() declares "MetaReader"
+    # as Type=str because the user initially picks a plugin key from a
+    # dropdown, but DataPluginController resolves that string into the real
+    # instance (and resets Type to None) before ever calling apply_settings.
+    # This fixture constructs the post-resolution state that the real
+    # constructor actually sees.
     return {
-        "MetaReader": {"Type": str, "Value": reader, "Options": None},
+        "MetaReader": {"Type": None, "Value": reader, "Options": None},
         "Threshold": {"Type": float, "Value": threshold},
         "Min Duration": {"Type": float, "Value": min_duration},
     }
@@ -312,7 +318,8 @@ class TestReportChannelStatus:
         finder.accepted_data[0] = 5.0
         finder.rejected_data[0] = 0
         report = finder.report_channel_status(0)
-        assert "Accepted" not in report
+        assert "Accepted 5.0s of data" in report
+        assert "Rejected" not in report
 
     def test_all_channels_none(self, finder):
         finder.eventfinding_finished[0] = True
@@ -529,9 +536,35 @@ class TestFindEventsErrorBranches:
         assert finder.eventfinding_finished[0] is False
         assert finder.event_starts[0] == []
 
-    def test_runtime_error_in_one_range_is_skipped(self, finder):
-        # First range raises RuntimeError when iterated; the second range
-        # should still be processed normally afterwards.
+    def test_abort_stops_processing_remaining_ranges(self, finder):
+        # Aborting mid-way through the first of two ranges must not fall
+        # through to processing the second range afterward.
+        real_single_range = finder._find_events_single_range
+        call_count = {"n": 0}
+
+        def fake_single_range(channel, start, end, chunk_length, data_filter):
+            call_count["n"] += 1
+            yield from real_single_range(channel, start, end, chunk_length, data_filter)
+
+        with patch.object(
+            finder, "_find_events_single_range", side_effect=fake_single_range
+        ):
+            gen = finder.find_events(0, [(0, 3.0), (5.0, 0)], chunk_length=1.0)
+            next(gen)
+            try:
+                gen.send(True)
+            except StopIteration:
+                pass
+        assert call_count["n"] == 1
+        assert finder.eventfinding_finished[0] is False
+        assert finder.event_starts[0] == []
+
+    def test_runtime_error_in_one_range_propagates(self, finder):
+        # _find_events_single_range already resets all accumulated channel
+        # state before raising a RuntimeError (e.g. on a start/end count
+        # mismatch), so find_events must not silently swallow it and move on
+        # to the next range - that would hide the fact that prior progress
+        # for the channel was just wiped out.
         real_single_range = finder._find_events_single_range
         call_count = {"n": 0}
 
@@ -545,18 +578,21 @@ class TestFindEventsErrorBranches:
             finder, "_find_events_single_range", side_effect=fake_single_range
         ):
             gen = finder.find_events(0, [(0, 3.0), (5.0, 0)], chunk_length=10.0)
-            list(gen)
-        assert call_count["n"] == 2
+            with pytest.raises(RuntimeError, match="boom"):
+                list(gen)
+        assert call_count["n"] == 1
 
-    def test_stop_iteration_raised_at_call_site_is_caught(self, finder):
+    def test_stop_iteration_at_call_site_propagates_as_runtime_error(self, finder):
         # If calling _find_events_single_range itself raises StopIteration
-        # (rather than the generator stopping normally), find_events should
-        # catch it and continue to the next range.
+        # (rather than the generator stopping normally), find_events no
+        # longer catches it. Since find_events is itself a generator, PEP 479
+        # converts the escaping StopIteration into a RuntimeError.
         with patch.object(
             finder, "_find_events_single_range", side_effect=StopIteration("x")
         ):
             gen = finder.find_events(0, [(0, 0)], chunk_length=10.0)
-            list(gen)
+            with pytest.raises(RuntimeError):
+                list(gen)
         # No events recorded since the (mocked) single-range call never ran
         assert finder.event_starts[0] == []
 
@@ -693,7 +729,7 @@ class TestFindEventsSingleRange:
         reader2 = FakeReader(
             make_signal(1000, events=[(200, 250), (600, 650)]), samplerate=100.0
         )
-        f = build_finder(make_settings(reader2, min_duration=1000))
+        f = build_finder(make_settings(reader2, min_duration=1000.0))
         self._reset(f)
         list(f._find_events_single_range(0, 0, 10.0, 10.0))
         assert f.rejected_events[0].get("too short") == 2
@@ -715,17 +751,15 @@ class TestFindEventsSingleRange:
         assert f.event_ends[0] == [260]
         assert f.num_events_found[0] == 1
 
-    def test_leading_orphan_end_check_is_dead_code(self, finder):
-        # NOTE: the "drop leading orphan end in the first chunk" branch
-        # (``if ... and first_chunk and event_ends[0] < event_starts[0]:
-        # event_ends.pop(0)``) can never actually fire: the preceding
-        # ``finally:`` block of the baseline-stats try/except always sets
-        # ``first_chunk = False`` before this check is reached, even on the
-        # very first chunk. This test documents that a chunk producing a
-        # leading orphan end is NOT corrected (confirming the branch is
-        # unreachable rather than silently broken in some other way), and
-        # instead surfaces as a padding/start-end mismatch that gets caught
-        # and skipped.
+    def test_leading_orphan_end_dropped_in_first_chunk(self, finder):
+        # The "drop leading orphan end in the first chunk" branch
+        # (``if ... and is_first_chunk and event_ends[0] < event_starts[0]:
+        # event_ends.pop(0)``) captures whether this is the first chunk into
+        # ``is_first_chunk`` before the baseline-stats try/except's
+        # ``finally:`` block resets ``first_chunk`` to False, so the check
+        # correctly fires on the very first chunk. A leading orphan end
+        # (event_ends[0] < event_starts[0]) is dropped, leaving a valid
+        # start/end pair that gets recorded as a real event.
         self._reset(finder)
         with patch.object(
             finder,
@@ -733,10 +767,8 @@ class TestFindEventsSingleRange:
             return_value=([50], [10, 90], False),
         ):
             list(finder._find_events_single_range(0, 0, 10.0, 10.0))
-        # The orphan end was never dropped, so the (start=50, end=10) pair
-        # fails validation downstream and nothing gets recorded this chunk.
-        assert finder.event_starts[0] == []
-        assert finder.event_ends[0] == []
+        assert finder.event_starts[0] == [50]
+        assert finder.event_ends[0] == [90]
 
     def test_trailing_correction_pops_both_sides(self, finder):
         # Pre-seed mismatched-looking starts/ends that, after the trailing
@@ -862,8 +894,11 @@ class TestGetEventDataGenerator:
             list(finder.get_event_data_generator(99))
 
     def test_no_event_starts_raises_valueerror(self, finder):
+        # event_ends must be non-empty here so this exercises the "no event
+        # starts" branch specifically, rather than the "both empty" branch
+        # (which now correctly fires "Eventfinder may not have run yet").
         finder.event_starts[0] = []
-        finder.event_ends[0] = []
+        finder.event_ends[0] = [20]
         with pytest.raises(ValueError, match="No event starts found"):
             list(finder.get_event_data_generator(0))
 
@@ -943,14 +978,13 @@ class TestGetSingleEventData:
 # get_event_indices
 # ---------------------------------------------------------------------------
 class TestGetEventIndices:
-    def test_returns_dicts_on_fresh_instance(self, finder):
-        starts, ends = finder.get_event_indices(0)
-        assert starts == {}
-        assert ends == {}
+    def test_raises_on_fresh_instance(self, finder):
+        with pytest.raises(ValueError, match="not been located"):
+            finder.get_event_indices()
 
     def test_returns_populated_dicts_after_find_events(self, finder):
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
-        starts, ends = finder.get_event_indices(0)
+        starts, ends = finder.get_event_indices()
         assert 0 in starts
         assert 0 in ends
 

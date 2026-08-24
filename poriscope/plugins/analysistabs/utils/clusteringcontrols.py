@@ -320,22 +320,6 @@ class ClusteringControls(QWidget):
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
-
     # Signals Connection
     def connect_signals(self):
         """Connects signals to corresponding methods."""
@@ -479,13 +463,11 @@ class ClusteringControls(QWidget):
         current_selection = self.db_loader_comboBox.currentText()
         self.db_loader_comboBox.clear()
 
-        if not loaders:  # If list is empty, insert placeholder
-            loaders.insert(0, "No Event Database")
-
-        self.db_loader_comboBox.addItems(loaders)
+        display_loaders = loaders if loaders else ["No Event Database"]
+        self.db_loader_comboBox.addItems(display_loaders)
 
         # Restore selection if it still exists
-        if current_selection in loaders:
+        if current_selection in display_loaders:
             self.db_loader_comboBox.setCurrentText(current_selection)
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
@@ -513,4 +495,7 @@ class ClusteringControls(QWidget):
         self.label_y_comboBox.clear()
         self.label_y_comboBox.addItems(clusters)
 
-
+    def get_current_loader(self):
+        """Return the currently selected DB loader key, or None if unset."""
+        text = self.db_loader_comboBox.currentText()
+        return text if text and text != "No Event Database" else None

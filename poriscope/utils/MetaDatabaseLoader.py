@@ -386,17 +386,20 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @log(logger=logger)
     def get_experiment_id_by_name(self, experiment_name: str) -> Optional[int]:
         """
-        Retrieve a list of all unique experiment names registered in the database or a singleton list if a name is given.
+        Look up the database primary key of the experiment with the given name.
 
-        :param experiment_id: the id of the experiment for which to fetch the name
-        :type experiment_id: Optional[int]
+        :param experiment_name: the name of the experiment for which to fetch the id
+        :type experiment_name: str
 
-        :return: List of experiment names, or None on failure
-        :rtype: Optional[List[str]]
+        :return: The experiment's database id, or None if no name was given or no matching experiment was found
+        :rtype: Optional[int]
         """
         if experiment_name:
             try:
-                query = f"SELECT id FROM experiments WHERE name = '{experiment_name}' LIMIT 1"
+                escaped_name = experiment_name.replace("'", "''")
+                query = (
+                    f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
+                )
                 result = self.query_database_directly(query)
                 if result is not None:
                     return result.at[0, "id"]
@@ -1133,34 +1136,37 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if query:
             event_generator = self._load_event_data(query)
             abort = False
-            for event in event_generator:
-                (
-                    db_id,
-                    experiment_id,
-                    channel_id,
-                    event_id,
-                    samplerate,
-                    padding_before,
-                    padding_after,
-                    raw_data,
-                    filtered_data,
-                    fit_data,
-                ) = event
-                abort = yield {
-                    "id": db_id,
-                    "event_id": event_id,
-                    "channel_id": channel_id,
-                    "experiment_id": experiment_id,
-                    "samplerate": samplerate,
-                    "padding_before": padding_before,
-                    "padding_after": padding_after,
-                    "raw_data": raw_data,
-                    "filtered_data": filtered_data,
-                    "fit_data": fit_data,
-                }
-                abort = bool(abort)
-                if abort is True:
-                    break
+            try:
+                for event in event_generator:
+                    (
+                        db_id,
+                        experiment_id,
+                        channel_id,
+                        event_id,
+                        samplerate,
+                        padding_before,
+                        padding_after,
+                        raw_data,
+                        filtered_data,
+                        fit_data,
+                    ) = event
+                    abort = yield {
+                        "id": db_id,
+                        "event_id": event_id,
+                        "channel_id": channel_id,
+                        "experiment_id": experiment_id,
+                        "samplerate": samplerate,
+                        "padding_before": padding_before,
+                        "padding_after": padding_after,
+                        "raw_data": raw_data,
+                        "filtered_data": filtered_data,
+                        "fit_data": fit_data,
+                    }
+                    abort = bool(abort)
+                    if abort is True:
+                        break
+            finally:
+                event_generator.close()
             if abort is True:
                 self.logger.info("Generator aborted")
                 return
@@ -1207,12 +1213,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
             metadata_generator = self._load_metadata_generator(query)
             if metadata_generator is not None:
                 abort = False
-                for event in metadata_generator:
-                    event = event.loc[:, ~event.columns.duplicated()]
-                    abort = yield event
-                    abort = bool(abort)
-                    if abort is True:
-                        break
+                try:
+                    for event in metadata_generator:
+                        event = event.loc[:, ~event.columns.duplicated()]
+                        abort = yield event
+                        abort = bool(abort)
+                        if abort is True:
+                            break
+                finally:
+                    metadata_generator.close()
                 if abort is True:
                     self.logger.info("Generator aborted")
                     return
@@ -1329,7 +1338,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
-        :param settings: Parameters for event detection.
+        :param settings: Parameters required to configure this database loader.
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """

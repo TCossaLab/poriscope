@@ -218,7 +218,7 @@ class ChimeraReader20240101(MetaReader):
         """
         # replace date and time in a file name with wildcard, keep id, extension and headstage
         match = re.split(r"_HS\d+_", file_name)
-        if len(match) > 0:
+        if len(match) > 1:
             return match[0] + "*" + self.file_extension
         else:
             raise ValueError(
@@ -230,7 +230,7 @@ class ChimeraReader20240101(MetaReader):
     def _convert_data(self, data, config, raw_data=False):
         """
         Scale or otherwise transform and return requested data.
-        Default behavior assumes data is already scaled when read.
+        Applies the tia_gain/i_offset/filter_gain scale and offset recovered from this file's embedded header to convert raw ADC codes to pA.
         if raw_data is true, return also scale and offset
 
         :param data: Data to convert.
@@ -270,7 +270,7 @@ class ChimeraReader20240101(MetaReader):
     def _get_configs(self, datafiles):
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
-        Default behavior assumes there are no config files needed.
+        Parses the JSON header embedded at the start of each .log file (terminated by an <END HEADER> marker) to build a per-file configuration dict.
 
         :param datafiles: List of data file paths.
         :type datafiles: List[os.PathLike]

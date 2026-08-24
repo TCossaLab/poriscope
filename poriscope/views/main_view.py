@@ -62,6 +62,10 @@ from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
 
 
 class MainView(QMainWindow, WalkthroughMixin):
+    """
+    App-shell main window: hosts the menu bar, sidebar navigation, and the stacked pages for each instantiated analysis tab, and exposes the signals MainController relays to instantiate tabs/plugins, open Settings, and run the app-wide walkthrough.
+    """
+
     # Signals
     rawdata_toggled = Signal()
     instantiate_plugin = Signal(str, str)
@@ -72,6 +76,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     update_logging_level = Signal(int)
     get_shared_data_server = Signal()
     get_user_plugin_location = Signal()
+    get_shared_logging_level = Signal()
     update_data_server_location = Signal(str)
     update_user_plugin_location = Signal(str)
     clear_cache = Signal()
@@ -95,6 +100,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.setup_menubar()
         self._milestone_dialog = None
         self._expected_next_view = None
+        self._plugins_menu_anchor = None
         self.setup_ui()
         self.figure = plt.Figure()
         self.canvas = FigureCanvas(self.figure)
@@ -246,6 +252,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.settings_window.update_user_plugin_location.connect(
             self.update_user_plugin_folder
         )
+        self.settings_window.get_shared_logging_level.connect(self.get_logging_level)
         self.settings_window.update_log_level.connect(self.update_log_level)
         self.settings_window.clear_cache.connect(self.handle_clear_cache)
 
@@ -272,6 +279,11 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.get_user_plugin_location.emit()
 
     @log(logger=logger)
+    @Slot()
+    def get_logging_level(self):
+        self.get_shared_logging_level.emit()
+
+    @log(logger=logger)
     def set_data_server(self, data_server):
         if self.settings_window is not None:
             self.settings_window.set_data_server(data_server)
@@ -286,6 +298,13 @@ class MainView(QMainWindow, WalkthroughMixin):
             raise AttributeError(
                 "Cannot set user plugin folder without a settings winddow!"
             )
+
+    @log(logger=logger)
+    def set_logging_level(self, level):
+        if self.settings_window is not None:
+            self.settings_window.set_logging_level(level)
+        else:
+            raise AttributeError("Cannot set logging level without a settings winddow!")
 
     @log(logger=logger)
     @Slot(str)
@@ -508,6 +527,11 @@ class MainView(QMainWindow, WalkthroughMixin):
     def on_plugins_button_click(self):
         """Emit signal to request analysis tabs from MainController."""
         self.logger.info("Plugins button clicked - requesting analysis tabs.")
+        # Capture the widget that triggered this click now, since by the time
+        # populate_plugins_menu runs (after an async round-trip through
+        # MainController via received_analysis_tabs), self.sender() there
+        # would resolve to this MainView instance instead of the button.
+        self._plugins_menu_anchor = self.sender()
         self.request_analysis_tabs.emit()  # Ask MainController for the list of instantiated tabs
         self.logger.info("request_analysis_tabs signal emitted.")
 
@@ -540,7 +564,7 @@ class MainView(QMainWindow, WalkthroughMixin):
                 )
                 menu.addAction(action)
 
-        button = self.sender()
+        button = self._plugins_menu_anchor
         if button:
             menu_pos = button.mapToGlobal(
                 button.rect().topLeft()
@@ -571,6 +595,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     def on_settings_button_click(self):
         self.add_page("Settings", self.settings_window)
         self.switch_to_page("Settings")
+        self.get_logging_level()
         self.logger.info("Settings button pressed")
 
     @log(logger=logger)
@@ -644,6 +669,17 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     def add_page(self, page_name, widget_instance):
+        existing_page_info = self.pages.get(page_name)
+        if existing_page_info is not None:
+            # Reusing page_name would otherwise leak the previous wrapper
+            # QWidget: addWidget() below always creates a new one, and
+            # reparenting widget_instance into it empties the old wrapper
+            # without ever removing it from the stack.
+            old_page = self.stackedWidget.widget(existing_page_info["index"])
+            if old_page is not None:
+                self.stackedWidget.removeWidget(old_page)
+                old_page.deleteLater()
+
         page = QWidget()
         page.setObjectName(page_name)
         page_layout = QVBoxLayout(page)
@@ -703,14 +739,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
                 self._milestone_dialog = None
 
-                # Clean up any analysis highlight
-                if (
-                    hasattr(self, "_analysis_proxy")
-                    and self._analysis_proxy is not None
-                ):
-                    self._analysis_proxy.hide()
-                    self._analysis_proxy.deleteLater()
-                    self._analysis_proxy = None
+                self._clear_analysis_proxy()
 
                 self._expected_next_view = None
 
@@ -764,14 +793,6 @@ class MainView(QMainWindow, WalkthroughMixin):
             self, title, starting_file_path, file_types
         )
         return file_name
-
-    @log(logger=logger)
-    def display_data(self, data):
-        self.rawDataWidget.display_data(data)
-
-    @log(logger=logger)
-    def on_file_loaded(self):
-        pass
 
     def get_analysis_highlight(self) -> QWidget:
         if not hasattr(self, "analysis_action_ref"):
@@ -936,8 +957,16 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.logger.info("Milestone manually closed by user (X or Done clicked).")
 
         self.clear_milestone_dialog()
+        self._clear_analysis_proxy()
         self._expected_next_view = None
         self._walkthrough_active = False
+
+    def _clear_analysis_proxy(self):
+        """Clean up the transparent 'Analysis' menu highlight overlay, if any."""
+        if hasattr(self, "_analysis_proxy") and self._analysis_proxy is not None:
+            self._analysis_proxy.hide()
+            self._analysis_proxy.deleteLater()
+            self._analysis_proxy = None
 
     def get_expected_next_view(self, previous_view):
         expected_transitions = {

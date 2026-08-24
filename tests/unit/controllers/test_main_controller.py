@@ -803,57 +803,65 @@ def test_handle_data_plugin_controller_signal_calls_method_and_callback(
     assert return_cb.called
 
 
-def test_handle_data_plugin_controller_signal_raises_on_missing_function(
+def test_handle_data_plugin_controller_signal_missing_function_logs_and_returns(
     controller: MainController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Raise ValueError when the requested function does not exist on the controller.
+    Log an error and return early when the requested function does not exist
+    on the data plugin controller, instead of raising out of the Qt slot.
 
     MagicMock auto-creates attributes by default, so we must configure
     getattr to explicitly return None for the missing function name to
-    trigger the ValueError branch.
+    trigger the early-return branch.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
     controller.data_plugin_controller.configure_mock(**{"nonexistent_fn": None})
-    # getattr returns None -> raises ValueError inside the method
-    with pytest.raises((ValueError, Exception)):
-        controller.handle_data_plugin_controller_signal(
-            metaclass="MetaX",
-            subclass_key="Key",
-            call_function="nonexistent_fn",
-            call_args=(),
-            return_function=None,
-            ret_args=(),
-        )
+    return_cb = mocker.Mock()
+
+    controller.handle_data_plugin_controller_signal(
+        metaclass="MetaX",
+        subclass_key="Key",
+        call_function="nonexistent_fn",
+        call_args=(),
+        return_function=return_cb,
+        ret_args=(),
+    )
+
+    return_cb.assert_not_called()
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
 
 
-def test_handle_data_plugin_controller_signal_raises_on_non_callable(
+def test_handle_data_plugin_controller_signal_non_callable_logs_and_returns(
     controller: MainController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Raise ValueError when the resolved attribute is not callable.
+    Log an error and return early when the resolved attribute is not callable,
+    instead of raising out of the Qt slot.
 
     We set the attribute to an integer so callable(func) is False,
-    triggering the ValueError branch inside the method.
+    triggering the early-return branch.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
     controller.data_plugin_controller.not_callable_attr = 42
+    return_cb = mocker.Mock()
 
-    with pytest.raises((ValueError, Exception)):
-        controller.handle_data_plugin_controller_signal(
-            metaclass="MetaX",
-            subclass_key="Key",
-            call_function="not_callable_attr",
-            call_args=(),
-            return_function=None,
-            ret_args=(),
-        )
+    controller.handle_data_plugin_controller_signal(
+        metaclass="MetaX",
+        subclass_key="Key",
+        call_function="not_callable_attr",
+        call_args=(),
+        return_function=return_cb,
+        ret_args=(),
+    )
+
+    return_cb.assert_not_called()
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
 
 
 def test_update_available_plugins_caches_and_pushes_to_tabs(
@@ -1074,31 +1082,6 @@ def test_load_session_logs_error_on_analysis_tab_failure(
     controller.instantiate_analysis_tab.assert_called_once_with("SomeTab")
 
 
-def test_load_session_logs_warning_on_already_exists_value_error(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log a warning when validate_and_instantiate_plugin raises ValueError with 'already exists globally'.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.plugin_history = {
-        "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
-    }
-    controller.main_model.load_session = mocker.Mock(
-        return_value=controller.plugin_history
-    )
-    controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
-        side_effect=ValueError("plugin already exists globally")
-    )
-
-    controller.load_session("session.json")
-
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
-
-
 def test_load_session_logs_error_on_other_value_error(
     controller: MainController,
     mocker: MockerFixture,
@@ -1174,13 +1157,15 @@ def test_handle_global_signal_outer_except_swallows_exception(
     controller.handle_global_signal("MetaX", "Key", "fn", (), None, ())
 
 
-def test_handle_data_plugin_controller_signal_callback_exception_reraises(
+def test_handle_data_plugin_controller_signal_callback_exception_is_logged_and_swallowed(
     controller: MainController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover the ``except Exception as ex: logger.error(...); raise`` branch
-    inside handle_data_plugin_controller_signal when the return callback raises.
+    Cover the ``except Exception as ex: logger.error(...)`` branch inside
+    handle_data_plugin_controller_signal when the return callback raises: the
+    exception is logged and swallowed rather than propagating out of the Qt
+    slot.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -1188,15 +1173,15 @@ def test_handle_data_plugin_controller_signal_callback_exception_reraises(
     controller.data_plugin_controller.some_method = mocker.Mock(return_value="ok")
     return_cb = mocker.Mock(side_effect=RuntimeError("callback blew up"))
 
-    with pytest.raises(RuntimeError, match="callback blew up"):
-        controller.handle_data_plugin_controller_signal(
-            metaclass="MetaX",
-            subclass_key="Key",
-            call_function="some_method",
-            call_args=(),
-            return_function=return_cb,
-            ret_args=(),
-        )
+    # Should not raise -- the exception is caught and logged
+    controller.handle_data_plugin_controller_signal(
+        metaclass="MetaX",
+        subclass_key="Key",
+        call_function="some_method",
+        call_args=(),
+        return_function=return_cb,
+        ret_args=(),
+    )
 
     controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
 

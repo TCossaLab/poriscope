@@ -40,7 +40,7 @@ from poriscope.utils.MetaReader import MetaReader
 @inherit_docstrings
 class ChimeraReaderVC100(MetaReader):
     """
-    Subclass of MetaReader for reading chimera VC1100 .log files
+    Subclass of MetaReader for reading Chimera VC100 .log files
     """
 
     logger = logging.getLogger(__name__)
@@ -204,10 +204,9 @@ class ChimeraReaderVC100(MetaReader):
         """
         # replace date and time in a file name with wildcard, keep id, extension and headstage
         pattern = r"^(.*)_(\d{8}_\d{6})\.log$"
-        match = re.split(pattern, file_name)
+        match = re.match(pattern, file_name)
         if match:
-            match[2]
-            file_pattern = match[1] + "*" + self.file_extension
+            file_pattern = match.group(1) + "*" + self.file_extension
             return file_pattern
         else:
             raise ValueError(
@@ -219,7 +218,7 @@ class ChimeraReaderVC100(MetaReader):
     def _convert_data(self, data, config, raw_data=False):
         """
         Scale or otherwise transform and return requested data.
-        Default behavior assumes data is already scaled when read.
+        Applies the tia_gain/preadc_gain/i_offset/v_ref/adc_bits-derived scale, offset, and bitmask recovered from the companion .mat settings file to convert raw ADC codes to pA.
         if raw_data is true, return also scale and offset
 
         :param data: Data to convert.
@@ -235,7 +234,6 @@ class ChimeraReaderVC100(MetaReader):
         tia_gain = config["tia_gain"]
         preADCgain = config["preadc_gain"]
         currentoffset = config["i_offset"]
-        config["v_offset"]
         ADCvref = config["v_ref"]
         ADCbits = int(config["adc_bits"])
         closedloop_gain = tia_gain * preADCgain
@@ -265,7 +263,7 @@ class ChimeraReaderVC100(MetaReader):
     def _get_configs(self, datafiles):
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
-        Default behavior assumes there are no config files needed.
+        Parses each file's companion .mat settings file to build a per-file configuration dict.
 
         :param datafiles: List of data file paths.
         :type datafiles: List[os.PathLike]

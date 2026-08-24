@@ -122,8 +122,12 @@ class WalkthroughMixin:
                         raise ValueError("No valid widgets found for this view.")
 
                     self.walkthrough_dialog = start_walkthrough(self, steps)
+                    advance_cancelled = False
 
                     def check_next_view():
+                        nonlocal advance_cancelled
+                        if advance_cancelled:
+                            return
                         if self.get_current_view() != target_view:
                             self.logger.info(
                                 "Auto-advancing walkthrough on view change."
@@ -134,9 +138,15 @@ class WalkthroughMixin:
 
                     check_next_view()
 
-                    self.walkthrough_dialog.done_signal.connect(
-                        lambda: self._handle_walkthrough_done(len(steps))
-                    )
+                    def on_dialog_done():
+                        nonlocal advance_cancelled
+                        # Stop the auto-advance polling loop above: once the
+                        # dialog is dismissed, a later view change must not
+                        # trigger _handle_walkthrough_done a second time.
+                        advance_cancelled = True
+                        self._handle_walkthrough_done(len(steps))
+
+                    self.walkthrough_dialog.done_signal.connect(on_dialog_done)
                     self.walkthrough_dialog.moveEvent = self._reposition_dialog
 
                 except Exception as e:

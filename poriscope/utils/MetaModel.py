@@ -134,7 +134,11 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     "set_force_serial_channel_operations",
                     (key, channel),
                 )
-                lock = self.lock if self.serial_ops[key][channel] else None
+                lock = (
+                    self.lock
+                    if self.serial_ops.get(key, {}).get(channel, False)
+                    else None
+                )
                 self.workers[key][channel] = Worker(generator, channel, key, lock)
                 self.workers[key][channel].update_progressbar.connect(
                     self.emit_progress_update, Qt.QueuedConnection
@@ -251,8 +255,12 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                 if self.thread_running[key][channel] is True:
                     self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
 
-                # Let workerthread_finished emit and trigger reset_lock() - avoid race conditions - UNNECESSARY
-                # self.threads[key][channel].wait()
+                if exiting:
+                    # On app exit we must block until the thread actually
+                    # finishes, otherwise Qt destroys a QThread still running.
+                    self.threads[key][channel].wait()
+                # Otherwise let workerthread_finished emit and trigger
+                # reset_lock() asynchronously - avoid blocking here.
                 self.logger.debug(
                     f"Worker and thread stopped for key: {key}, channel: {channel}"
                 )

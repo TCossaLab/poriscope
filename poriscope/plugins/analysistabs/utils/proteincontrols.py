@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
-from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox
+from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
 class ProteinControls(QWidget):
@@ -241,10 +241,25 @@ class ProteinControls(QWidget):
         self.right_arrow_button.setIconSize(QSize(16, 16))
         self.right_arrow_button.setFixedWidth(30)
 
+        self.raw_checkbox = QCheckBox(self.plot_events_widget)
+        self.raw_checkbox.setObjectName("rawCheckBox")
+
+        self.raw_label = self.createLabel(self.groupBox, 12, "RAW")
+        self.raw_label.setAlignment(Qt.AlignCenter)
+        self.raw_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        raw_layout = QVBoxLayout()
+        raw_layout.setContentsMargins(0, 0, 0, 0)
+        raw_layout.setSpacing(2)
+        raw_layout.addWidget(self.raw_label, alignment=Qt.AlignCenter)
+        raw_layout.addWidget(self.raw_checkbox, alignment=Qt.AlignCenter)
+
         plot_events_layout.addWidget(self.left_arrow_button)
         plot_events_layout.addWidget(self.plot_events_pushButton)
         plot_events_layout.addWidget(self.plot_histogram_pushButton)
         plot_events_layout.addWidget(self.right_arrow_button)
+        plot_events_layout.addLayout(raw_layout)
+
         # ---------- MIDDLE COLUMN ----------
 
         # ROW 0: "Distribution event fitting" header
@@ -361,20 +376,16 @@ class ProteinControls(QWidget):
         self.sizes_checkbox.toggled.connect(self._on_sizes_checkbox_toggled)
         self._on_sizes_checkbox_toggled(self.sizes_checkbox.isChecked())
 
-        # ROW 4: Update / Undo / Reset row
+        # ROW 4: Update Plot row
         self.update_plot_button = self.createButton(
             self.groupBox, "Update Plot", bold=True
         )
-        self.undo_button = self.createButton(self.groupBox, "Undo", bold=True)
-        self.reset_button = self.createButton(self.groupBox, "Reset", bold=True)
 
-        update_undo_reset_widget = QWidget(self.groupBox)
-        update_undo_reset_layout = QHBoxLayout(update_undo_reset_widget)
-        update_undo_reset_layout.setContentsMargins(0, 0, 0, 0)
-        update_undo_reset_layout.setSpacing(5)
-        update_undo_reset_layout.addWidget(self.update_plot_button, 2)
-        update_undo_reset_layout.addWidget(self.undo_button, 1)
-        update_undo_reset_layout.addWidget(self.reset_button, 1)
+        update_plot_widget = QWidget(self.groupBox)
+        update_plot_layout = QHBoxLayout(update_plot_widget)
+        update_plot_layout.setContentsMargins(0, 0, 0, 0)
+        update_plot_layout.setSpacing(5)
+        update_plot_layout.addWidget(self.update_plot_button, 1)
 
         # ROW 5: Commit row (Commit Individual / Report All)
         self.commit_individual = self.createButton(
@@ -395,7 +406,7 @@ class ProteinControls(QWidget):
         self.filter_label = self.createLabel(self.groupBox, 12, "FILTER")
         self.filter_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.filter_comboBox = MultiSelectComboBox(self.groupBox)
+        self.filter_comboBox = MultiSelectFilterComboBox(self.groupBox)
         self.filter_comboBox.setObjectName("filterComboBox")
 
         self.filter_add_button = self.create_add_filter_button(
@@ -479,7 +490,7 @@ class ProteinControls(QWidget):
 
         # Row 5
         group_layout.addWidget(event_nav_inputs_widget, 5, 0)
-        group_layout.addWidget(update_undo_reset_widget, 5, 1)
+        group_layout.addWidget(update_plot_widget, 5, 1)
         group_layout.addWidget(self.load_filter_button, 5, 2)
 
         # Row 6
@@ -651,7 +662,7 @@ class ProteinControls(QWidget):
 
     def is_placeholder_item(self, comboBox):
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in ["No Database"]
+        return comboBox.currentText() in ["No Event Database"]
 
     def show_plugin_edit_manager(self, comboBox, metaclass):
         """Displays the plugin manager with details for the selected item from the combobox."""
@@ -674,22 +685,6 @@ class ProteinControls(QWidget):
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
-
     # Signals Connection
     def connect_signals(self):
         """Connects signals to corresponding methods."""
@@ -708,6 +703,7 @@ class ProteinControls(QWidget):
         self.right_arrow_button.clicked.connect(
             lambda: self.on_button_clicked("right_arrow")
         )
+
         self.individual_button.clicked.connect(
             lambda: self.on_button_clicked("individual")
         )
@@ -715,8 +711,6 @@ class ProteinControls(QWidget):
         self.update_plot_button.clicked.connect(
             lambda: self.on_button_clicked("update_plot")
         )
-        self.undo_button.clicked.connect(lambda: self.on_button_clicked("undo"))
-        self.reset_button.clicked.connect(lambda: self.on_button_clicked("reset"))
         self.commit_individual.clicked.connect(
             lambda: self.on_button_clicked("commit_individual")
         )
@@ -752,6 +746,7 @@ class ProteinControls(QWidget):
         self.filter_comboBox.selectionChanged.connect(self.validate_inputs)
         self.individual_button.toggled.connect(self.validate_inputs)
         self.ensemble_button.toggled.connect(self.validate_inputs)
+        self.raw_checkbox.stateChanged.connect(self.validate_inputs)
 
     # Data Validation
 
@@ -774,8 +769,13 @@ class ProteinControls(QWidget):
                 "n_events": n_events,
                 "n_values": self.n_values_lineEdit.text(),
                 "sizes": self.sizes_checkbox.isChecked(),
+                "raw": self.raw_checkbox.isChecked(),
                 "bins": (
-                    [x.strip() for x in self.bins_lineEdit.text().split(",")]
+                    [
+                        x.strip()
+                        for x in self.bins_lineEdit.text().split(",")
+                        if x.strip()
+                    ]
                     if self.bins_lineEdit.text()
                     else None
                 ),
@@ -792,7 +792,7 @@ class ProteinControls(QWidget):
             ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
-        except AttributeError:
+        except (AttributeError, ValueError):
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -837,8 +837,6 @@ class ProteinControls(QWidget):
         is_ensemble_analysis_valid = True
         is_report_all_valid = True
         is_export_valid = True
-        is_undo_valid = True
-        is_reset_valid = True
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
 
@@ -918,8 +916,6 @@ class ProteinControls(QWidget):
         self.update_plot_button.setEnabled(
             db_loader_loaded and pore_diameter_valid and pore_length_valid
         )
-        self.undo_button.setEnabled(is_undo_valid)
-        self.reset_button.setEnabled(is_reset_valid)
 
         self.filter_add_button.setEnabled(db_loader_loaded)
         self.save_filter_button.setEnabled(is_save_edit_delete_filter_valid)
@@ -946,8 +942,6 @@ class ProteinControls(QWidget):
             "plot_histogram": "plot_histogram",
             "right_arrow": "shift_range_forward",
             "update_plot": "update_plot",
-            "reset": "reset_plot",
-            "undo": "undo_plot",
             "add_filter": "add_filter",
             "edit_filter": "edit_filter",
             "delete_filter": "delete_filter",
@@ -973,8 +967,6 @@ class ProteinControls(QWidget):
             "plot_histogram": self.plot_histogram_pushButton,
             "right_arrow": self.right_arrow_button,
             "update_plot": self.update_plot_button,
-            "reset": self.reset_button,
-            "undo": self.undo_button,
             "add_filter": self.filter_add_button,
             "edit_filter": self.filter_info_button,
             "delete_filter": self.filter_delete_button,
@@ -997,13 +989,11 @@ class ProteinControls(QWidget):
         current_selection = self.db_loader_comboBox.currentText()
         self.db_loader_comboBox.clear()
 
-        if not loaders:  # If list is empty, insert placeholder
-            loaders.insert(0, "No Event Database")
-
-        self.db_loader_comboBox.addItems(loaders)
+        display_loaders = loaders if loaders else ["No Event Database"]
+        self.db_loader_comboBox.addItems(display_loaders)
 
         # Restore selection if it still exists
-        if current_selection in loaders:
+        if current_selection in display_loaders:
             self.db_loader_comboBox.setCurrentText(current_selection)
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
@@ -1027,5 +1017,3 @@ class ProteinControls(QWidget):
         for selection in current_selections:
             if selection in [str(i) for i in filters]:
                 self.filter_comboBox.selectItem(selection)
-
-

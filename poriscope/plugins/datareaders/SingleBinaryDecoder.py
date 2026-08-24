@@ -38,7 +38,7 @@ from poriscope.utils.MetaReader import MetaReader
 @inherit_docstrings
 class SingleBinaryDecoder(MetaReader):
     """
-    Subclass of MetaReader for reading chimera VC1100 .log files
+    Subclass of MetaReader for reading a single, user-configured raw binary file, with sampling rate, header size, array count, byte order, and data type all specified via settings rather than inferred from a vendor-specific header.
     """
 
     logger = logging.getLogger(__name__)
@@ -157,18 +157,18 @@ class SingleBinaryDecoder(MetaReader):
         for channel, (filename, config) in enumerate(zip(datafiles, configs)):
             fmt.append((f"data_{channel}", self.dtype))
 
-        memmaps = np.memmap(Path(filename), dtype=fmt, offset=offset, mode="r")
-        for channel, (filename, config) in enumerate(zip(datafiles, configs)):
-            try:
-                datamaps.append(memmaps[f"data_{channel}"])
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    "File Not Found : At least one of the input raw data files is missing or renamed"
-                )
-            except OSError:
-                raise OSError(
-                    "Invalid Argument or Sync Issue : The file indicated is inaccessible. If it is on a remote network location or external media, move it to the local hard drive and try again"
-                )
+        try:
+            memmaps = np.memmap(Path(datafiles[0]), dtype=fmt, offset=offset, mode="r")
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                "File Not Found : At least one of the input raw data files is missing or renamed"
+            )
+        except OSError:
+            raise OSError(
+                "Invalid Argument or Sync Issue : The file indicated is inaccessible. If it is on a remote network location or external media, move it to the local hard drive and try again"
+            )
+        for channel in range(len(datafiles)):
+            datamaps.append(memmaps[f"data_{channel}"])
         return datamaps
 
     # private API, should implemented by subclasses, but has default behavior if it is not needed

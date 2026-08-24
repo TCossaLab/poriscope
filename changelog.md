@@ -3,11 +3,152 @@
 * **New Data Plugin: `ThresholdBlockageFinder`**
     * Subclass of `ClassicBlockageFinder` that imposes much tighter bounds on the start and end times flagged in the output.
 
+* **New: End-to-end (E2E) test suite**
+    * Added comprehensive E2E/UX coverage for RawData, EventAnalysis, Metadata, Clustering , and Protein tabs
+    * Added a shared `tests/synthetic_data` package for reproducible fixtures: synthetic Chimera recordings, synthetic events/metadata SQLite databases (with configurable event lengths and deliberately-rejected events for testing fitter rejection paths), removing reliance on checked-in binary test databases
+
 * **Deprecated Data Plugin: `ABF2Reader`**
     * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
+    * Fixed `ABF2Header` never closing its file handle after parsing an ABF header, since the underlying file is only ever read during construction
+    * Fixed `ABF2Header`'s per-channel scale-factor calculation checking `nTelegraphEnable[0]` for every channel instead of `nTelegraphEnable[i]`, silently corrupting current scaling on multi-channel files where telegraph-enable status differs between channels
+
+* **Updated Data Plugin: `WaveletFilter`**
+    * Fixed a ctypes ABI mismatch (`c_int` vs `int64_t`) on the signal-length argument that risked memory corruption on large arrays
+    * Calls into the shared native library are now serialized with a lock, since filters are invoked directly by other plugins rather than through the channel-management system
+    * Fixed `reset_channel`'s docstring being a copy-paste of `close_resources`'s
+
+* **Updated Data Plugin: `NoFitter`**
+    * Fixed an unbounded backtrack loop that could silently corrupt sublevel edges via negative array indexing instead of cleanly rejecting the event
+    * Added missing validation for `None` baseline/padding inputs
+    * Fixed `_locate_sublevel_transitions`'s docstring being generic abstract-method boilerplate instead of describing what this class actually does (locate a single baseline crossing; no changepoint search)
+
+* **Updated Data Plugin: `ClassicCUSUM`**
+    * Removed an undocumented `/5` threshold divisor and a leftover debug `print()` that made this fitter far more sensitive than `CUSUM`/`IntraCUSUM`
+    * Fixed `_locate_sublevel_transitions`'s docstring being generic abstract-method boilerplate that didn't mention this class's actual difference from `CUSUM`: Step Size is used directly in units of σ instead of being normalized against the local baseline standard deviation
+
+* **Updated Data Plugins: `ClassicBlockageFinder`, `BoundedBlockageFinder`, `ThresholdBlockageFinder`**
+    * Fixed a `ZeroDivisionError` on constant-signal chunks in baseline histogram calculation
+    * Fixed dead code that silently skipped baseline-histogram window symmetrization
+    * Fixed an ambiguous end-of-chunk check that could silently drop the remaining events in a chunk
+    * Removed a dead `median_abs_deviation(data)` call (`ClassicBlockageFinder`/`BoundedBlockageFinder`) whose result was discarded, along with the now-unused import
+    * Fixed `_filter_events`'s `channel` parameter docstring describing it as "Bool indicating whether this is the first chunk of data," despite being typed `int` and unused in the method body
+    * Fixed `_get_baseline_stats`'s docstring (`ClassicBlockageFinder`/`BoundedBlockageFinder`) promising "the local amplitude, mean, and standard deviation," when the method only ever returns `(mean, std)`
+
+* **Updated Data Plugins: `CUSUM`, `IntraCUSUM`, `NoFitter`**
+    * Fixed an off-by-one indexing bug that shifted every reported extreme-sublevel duration by one level
+    * Fixed `NoFitter._locate_sublevel_transitions` not validating `padding_after`/`baseline_std` for `None` despite the method's own docstring promising graceful handling for every argument but `data`; both now raise a clean `ValueError` instead of crashing later with a raw `TypeError`
+    * Fixed `IntraCUSUM._populate_event_metadata` computing `np.sign(baseline_mean)` with no `None` guard despite `baseline_mean` being documented `Optional[float]`; `CUSUM`'s own base-class methods never use `baseline_mean`, so there was no upstream validation this could rely on. Now raises a clean `ValueError` instead of crashing
+    * Fixed `CUSUM`/`NoFitter`'s `construct_fitted_event` docstrings claiming `:raises RuntimeError:` when fitting isn't complete; both actually return `None`
+    * Removed a dead `get_samplerate(channel)` call in `CUSUM`/`NoFitter`'s `construct_fitted_event` whose result was discarded, and fixed a stale copy-pasted "CUSUM cannot operate..." error message inside `NoFitter`'s own error path
+    * Fixed `CUSUM._locate_sublevel_transitions`'s docstring being generic abstract-method boilerplate instead of describing the adaptive-threshold CUSUM log-likelihood-ratio changepoint detection it actually runs
+    * **Flagged for later:** `NoFitter`'s `rise_time` and `CUSUM`'s recovered `baseline_std` are each computed inside `_locate_sublevel_transitions` but needed again in `_populate_sublevel_metadata`, whose signature doesn't receive `padding_before`/`padding_after`; neither value can be safely recomputed independently there. `NoFitter` currently stashes `rise_time` on `self`, a call-ordering hazard, and `CUSUM`'s `baseline_std` recovery for a loader that omits it never propagates to `_populate_sublevel_metadata`, causing a silent `TypeError`-driven rejection instead of a clean one. The base class's own docs point at the fix (encode the extra value into the returned `sublevel_starts`/`edges` structure instead of instance state), but that requires rewriting every `sublevel_starts[i]` reference in both classes' `_populate_sublevel_metadata` - deferred as a real refactor rather than a mechanical fix
+
+* **Updated Data Plugins: `Basic_PeakFinder`, `PeakFinder`**
+    * Fixed an empty-slice bug that wrongly rejected legitimate events ending at the trace boundary
+
+* **Updated Data Plugin: `BesselFilter`**
+    * Fixed a boundary check that allowed `Poles = 0` despite requiring a positive integer
+    * Fixed `reset_channel`'s docstring being a copy-paste of `close_resources`'s
+
+* **Updated Data Plugins: `ChimeraReader20240101`, `ChimeraReader20240501`, `ChimeraReaderVC100`, `TCossaLabABFReader`, `LegacyElementsReader`**
+    * Fixed dead filename-pattern validation code that never actually rejected malformed filenames
+    * Removed a dead `config["v_offset"]` lookup in `ChimeraReaderVC100._convert_data` whose result was discarded
+    * Fixed `ChimeraReaderVC100`'s class docstring saying "VC1100" instead of "VC100"
+    * Fixed `_convert_data`/`_get_configs` docstrings (`ChimeraReader20240101`, `ChimeraReader20240501`, `ChimeraReaderVC100`) claiming "data is already scaled"/"no config files needed" when each actually applies a gain/offset conversion and parses a header (embedded, companion `.json`, or companion `.mat`, respectively); also fixed the same stale `_convert_data` claim in `TCossaLabABFReader`, which applies a per-channel telegraph-derived scale from the ABF2 header
+
+* **Updated Data Plugin: `SingleBinaryDecoder`**
+    * Fixed exception handling wrapped around the wrong line, leaving real file-open errors unprotected
+    * Fixed the class docstring being a leftover "Chimera VC1100" description; this reader is a generic, fully user-configured binary decoder
+
+* **Updated Database Plugins: `SQLiteDBWriter`, `SQLiteEventWriter`, `SQLiteDBLoader`, `SQLitePeakDBLoader`, `SQLiteEventLoader`, `MetaDatabaseLoader`, `MetaDatabaseWriter`**
+    * Fixed several `UnboundLocalError`-masking exception handlers that hid the real database error
+    * Fixed a `finally`-block bug that silently swallowed real write errors and reported success instead
+    * Unused `SAVEPOINT`s are now properly released/rolled back instead of being a no-op
+    * Hardened interpolated experiment/channel/index values and escaped quotes in experiment names so legitimate names no longer break queries
+    * Fixed a crash on an empty query result and on a missing unfolded-level value
+    * Fixed stray logging arguments that would crash the moment the log line was actually emitted
+    * Fixed an overly broad exception clause that made two more specific error handlers unreachable
+    * Fixed `SQLiteDBLoader.get_experiment_names`/`_ensure_event_counts` never explicitly closing their `sqlite3` connections, unlike every other method in the file
+    * Fixed `SQLiteDBLoader._ensure_event_counts` never explicitly closing its cursor
+    * Fixed `SQLiteDBLoader.get_empty_settings` being decorated twice with `@log`, double-logging every call
+    * Fixed a warning log in `SQLiteDBLoader._load_event_data` missing an `f` prefix, logging the literal `{event_id}`/`{channel_id}`/`{experiment_id}` placeholders instead of their values
+    * Fixed `MetaDatabaseLoader.load_event_data`/`query_database_directly_and_get_generator` never explicitly closing the inner generator they wrap, relying on implicit garbage collection instead of the explicit cleanup used elsewhere in this codebase
+    * Fixed `SQLiteDBWriter._write_event` swallowing genuine database errors (disk full, missing row, schema mismatch, etc.) and always reporting them to the user as the misleading, hardcoded "Cannot Overwrite Existing Event"; real errors now propagate with their actual message, while a legitimate duplicate-row rejection from `INSERT OR IGNORE` still returns `False` without raising
+    * Fixed `MetaDatabaseWriter.write_events` breaking out of its loop on abort before ever calling `_write_event(..., abort=True)`, unlike the parallel `MetaWriter._commit_events`; subclasses like `SQLiteDBWriter` that rely on that documented final call to roll back and close their connection on abort were never getting it
+    * Fixed `SQLiteDBWriter`/`SQLiteEventWriter`'s `reset_channel` opening a `SAVEPOINT reset_channel` that was never released or rolled back - a pure no-op - and corrected both methods' docstrings, which were copy-pasted from `close_resources` and described "gracefully closing resources" for a method that actually cascades a destructive `DELETE` of the channel's rows; also documented that `reset_channel(channel=None)` does not reset all channels, since SQL `channel_id = NULL` never matches
+    * Fixed `SQLiteDBWriter.close_resources`'s docstring documenting per-channel behavior even though the method ignores its `channel` parameter entirely and always closes the single shared connection
+    * Fixed `SQLiteDBWriter._insert_event_data`'s docstring documenting a nonexistent `:param channel:`; documented the real `channel_db_id`/`event_db_id` parameters instead
+    * Fixed `SQLiteEventWriter._write_data`'s docstring documenting a nonexistent `batch_size` parameter, and removed a stale comment claiming `executemany` batching when the method has always inserted one row per call
+    * Fixed `SQLiteEventLoader._finalize_initialization` stripping `sqlite_sequence` from the table list *after* `missing_tables`/`extra_tables` were already computed, making the removal dead code; a workaround special-case papered over the common case but still misreported `sqlite_sequence` alongside any other genuinely unexpected table. Moved the exclusion earlier and simplified the now-redundant special-case check
+    * Fixed `SQLiteEventLoader.get_valid_indices`'s docstring claiming an "all channels" mode when `channel` is unspecified; `channel` is actually a required parameter with no default
+    * Removed `SQLiteEventLoader.get_num_events`'s unreachable `if num_events_row is None: raise ValueError(...)` (`SELECT COUNT(*)` always returns exactly one row) and the resulting dead `except ValueError` clause alongside it
+
+* **Updated Backend Infrastructure: `MetaEventFinder`, `MetaEventFitter`, `MetaWriter`, `MetaReader`, `MetaController`, `EventWorker`, `MetaModel`, `LogDecorator`, `BaseValidator`, `QtHandler`**
+    * Fixed a bug where an unexpected exception during event processing left a channel permanently unable to run again
+    * Fixed a falsy-zero bug that silently dropped a legitimate chunk-boundary event start
+    * Fixed a `ZeroDivisionError` in fit-progress logging that could permanently wedge a channel
+    * Removed a redundant global lock now that the channel dispatcher already serializes correctly
+    * App shutdown now correctly waits for worker threads to finish instead of potentially destroying a still-running thread
+    * Fixed the `@log` decorator silently breaking exception handling and result logging for every generator-based method in the app
+    * `BaseValidator` now properly enforces its abstract validation methods
+    * Added a reentrancy guard so concurrent error/warning logs no longer stack multiple modal dialogs
+    * Fixed `MetaEventFinder.__init__` resetting `self.reader` after `apply_settings`, discarding an already-configured reader
+    * Fixed `MetaEventFinder.find_events` not stopping promptly when aborted mid-run: it previously kept processing every remaining range before discarding all results, instead of stopping as soon as the abort was received
+    * Fixed `MetaEventFitter.fit_events` crashing with a `KeyError` when a fitter subclass returned mismatched-length sublevel-metadata arrays; the event is now cleanly rejected instead of aborting the whole channel
+    * Fixed `MetaWriter._rescale_data_to_adc`'s auto-scaling fallback computing its offset from `adc_max` instead of `data_max`, which silently corrupted ADC-encoded values (mapping them far outside the valid ADC range) whenever a writer relied on this fallback instead of an explicit gain setting
+    * Fixed `MetaWriter._validate_param_types` never calling `super()`, unlike every sibling override, which would have silently skipped primitive-type validation for all `MetaWriter` subclasses now that the base check actually works
+    * Fixed `MetaReader.report_channel_status` always formatting the samplerate with 2 decimal places regardless of whether it was a whole number, due to a dead ternary inside the f-string's format spec
+    * Fixed `MetaEventFinder._find_events_single_range`'s "drop leading orphan event-end" check being permanently dead code (a `finally` block reset the flag it depended on before the check ever ran), which silently discarded every event found in a chunk whenever the requested range started mid-event
+    * Fixed `MetaController._relay_global_signal`/`_relay_data_plugin_controller_signal` logging the literal string `"str(e)"` instead of the actual exception when relaying a global/data-plugin-controller signal failed, since neither `except Exception:` clause even bound the exception to a name
+    * Fixed `MetaEventFinder.report_channel_status` skipping the "Accepted ...s of data" line whenever a channel had zero rejected data (the common, fully-successful case), since it was gated on `rejected_data` being truthy instead of always showing alongside a conditional "Rejected" line
+    * Fixed `MetaEventFinder.find_events` silently swallowing a `RuntimeError` from `_find_events_single_range` and continuing to the next range as if nothing happened, even though that error is only raised after `_find_events_single_range` already reset all previously-accumulated events for the channel; the error now propagates, matching how `EventWorker`'s generator-driving loop already handles and reports it. Also removed a dead, unreachable `except StopIteration` alongside it
+    * Fixed `MetaEventFinder.get_event_indices` comparing its per-channel dicts to an empty list literal (always `False`, so it never raised on a fresh instance despite documenting that it should) and dropped its unused `index` parameter; docstring/rtype now describe what the method actually returns
+    * Fixed `MetaEventFinder.get_single_event_data`'s docstring documenting `:raises IndexError:`, even though the method already catches that internally and returns `None`
+    * Fixed `MetaEventFitter.get_metadata_columns`/`get_sublevel_columns` hardcoding `[channel][0]` to sample an event's metadata keys; since `fit_events` pops any rejected event's entry out of that dict (a routine outcome for a noisy/malformed event) and marks fitting complete regardless, a rejected event 0 specifically crashed both methods with `KeyError: 0` even though other valid fitted events remained available. Both now sample from any available entry instead
+
+* **Updated Plugin Management: `DataPluginController`, `DataPluginModel`, `BaseDataPlugin`**
+    * Fixed `BaseDataPlugin._validate_param_types` never actually validating primitive setting types (a broken `isinstance` check made it dead code for every data plugin); `DataPluginController.validate_and_instantiate_plugin` now also resets a resolved plugin-dependency setting's `Type` to `None` (matching `edit_plugin`), so the fixed check correctly skips resolved plugin references instead of rejecting them
+    * Fixed `BaseDataPlugin.apply_settings` registering plugin parent/dependent relationships under the wrong metaclass name for any plugin that subclasses another concrete plugin instead of its `Meta*` base directly (e.g. `BoundedBlockageFinder`/`ThresholdBlockageFinder` via `ClassicBlockageFinder`, `IntraCUSUM` via `CUSUM`): it used the plugin's immediate Python base class instead of its true metaclass, which could crash deletion of an unrelated plugin with a `KeyError` naming a class that was never even instantiated in the session
+    * Fixed `DataPluginController.delete_plugin` never removing the deleted plugin's entry from `plugin_history.json`, unlike every other plugin-mutating operation, which left stale/deleted plugins persisted across app restarts
+    * Fixed `DataPluginController.edit_plugin` unregistering a plugin as a dependent from all of its parents up front, before knowing whether the edit would succeed, and never restoring that link on any abort path (rename collision, a `set_key`/settings-resolution/`apply_settings` failure, or a delete blocked by dependents), even though the plugin instance and its actual parent usage were unchanged
+    * Fixed `DataPluginController.edit_plugin`'s docstring documenting a nonexistent `subclass` parameter, leaving the real `key`/`settings` parameters undocumented, and claiming it raises on "unable to instantiate the plugin" - a description that doesn't match either its purpose (editing, not instantiating) or its actual design (failures are caught internally and reported via `add_text_to_display`/`logger`, not raised)
+    * Fixed `DataPluginModel.update_plugin_key` silently overwriting (and orphaning) any plugin already registered under the destination key, with no existence check beforehand; it now refuses the rename and logs an error instead. Also corrected this method's and `register_plugin`'s/`get_temp_instance`'s docstrings, which variously claimed a `ValueError` or `NotImplementedError` that never happens, were stale copy-pastes of an unrelated method's params, or omitted the real `KeyError` these methods actually raise
+    * Fixed `DataPluginController.set_settings`/`update_data_server_location` each having the other's docstring (a getter description on what are both actually setters)
+    * Fixed `DataPluginModel`'s class docstring calling it a "controller"
+
+* **Updated App Shell: `MainController`, `MainModel`, `MainView`**
+    * Replaced a hardcoded institution-specific network path default with the user's home directory
+    * A corrupted config file now regenerates defaults on startup instead of crashing the app
+    * `JsonDefaultSerializer` now also handles `Enum`, `datetime`/`date`, and `set`/`frozenset` values instead of only `PurePath`
+    * All config file writes in `App`/`MainModel` are now wrapped in error handling instead of letting a write failure crash the app
+    * Fixed a missing comma in `MainController`'s `config_path` construction that silently concatenated `".."` and `"configs"` into a single path segment (currently harmless, since nothing reads `config_path`)
+    * `MainController.previous_plugin_history` is now always initialized to a dict instead of only being set when a prior session exists, removing a fresh-install code path that relied on a caught `AttributeError` in `get_settings_from_history`
+    * Fixed `MainController.handle_global_signal` silently swallowing, with zero logging, any exception raised by its `func(None)`/`return_function(None)` fallback calls (used when the primary call raises a `TypeError`), via a bare outer `except Exception: pass`; it now logs the real error
+    * Fixed `MainController.send_curent_data_server`/`send_curent_user_plugin_location` being decorated `@Slot(str, str, object)` despite taking no parameters and being connected to parameterless `Signal()`s, a stale signature apparently copied from `get_plugin_instance`
+    * Fixed `MainModel.populate_available_plugins`'s `try/except` around `os.walk(base_path)` being dead code (`os.walk` is a lazy generator that never raises, even for a missing directory), which meant an invalid plugin directory (e.g. a `User Plugin Folder` that hasn't been created on disk yet) silently contributed zero plugins with no diagnostic instead of logging the intended warning; replaced with an explicit directory-existence check. Also fixed `clear_cache`'s docstring documenting nonexistent `filepath`/`timeout` parameters and describing deletion/waiting behavior it doesn't have (it synchronously truncates the fixed `app.log` file)
+    * Removed a dead `except ValueError` branch in `MainController.load_session` that special-cased a `"...already exists globally"` message `validate_and_instantiate_plugin` never actually raises (that method swallows all of its own failures internally and just logs/emits/returns); collapsed to a single `except Exception`, which already covers the same restore-and-continue behavior
+    * Added class-level docstrings to `MainController`, `MainModel`, and `MainView`, and method docstrings to `MainController.handle_global_signal`/`handle_data_plugin_controller_signal`, none of which had any despite being the app's central signal-dispatch entry points
 
 * **Updated Frontend Base Class: `MetaView`**
     * New `plugin_state_changed` signal and abstract `notify_plugin_state_changed` hook, allowing any tab to notify all other tabs when a plugin instance's state changes (e.g. new columns added to a database). Every `MetaView` subclass must now implement `notify_plugin_state_changed`, even if the correct implementation is to do nothing. Non-trivial implementations must determine whether the notification is relevant to that tab, and filter and react accordingly.
+    * Removed a stray, uncallable leftover `add(a, b)` method
+
+* **Updated Frontend Widgets: `IntegerRangeLineEdit`, `CommaFloatRangeLineEdit`, `FloatRangeLineEdit`, `FloatRangeValidator`, `DictDialog`, `MultiSelectComboBox` (`multiselect_filter.py`)**
+    * Fixed `IntegerRangeLineEdit`/`CommaFloatRangeLineEdit` silently mis-parsing or truncating ranges containing an extra `-` (e.g. a leading minus sign or a stray third number); these fields only ever represent times or event indices, both non-negative, so a leading `-` is now rejected outright instead of ambiguously parsed
+    * Fixed `FloatRangeLineEdit` crashing with an `AttributeError` on any invalid or empty input (e.g. the Raw Data tab's start-time field): unlike its sibling widgets, it never defined a `logger`, so every validation error path crashed instead of just logging
+    * Fixed `DictDialog`'s hidden Input File/Output File/Folder "has a value" checkbox always starting unchecked regardless of whether the plugin being edited already had a valid path, permanently disabling OK on an already-configured plugin until the user re-ran the file picker just to change some unrelated field
+    * Fixed `FloatRangeValidator` inflating a bare-integer end value (e.g. `"2"` → `"20"`) to guess whether more digits were coming, then using that inflated value for the start/end ordering check; an inverted integer range like `"10-2"` slipped past the check and was silently accepted and stored backwards, while the equivalent decimal range was correctly rejected
+    * Fixed `MultiSelectComboBox.addItems` (filter variant) never refreshing the "Select All"/"Deselect All" button text or summary line-edit after repopulating, unlike the sibling `multiselect.py` widget
+    * Fixed `MultiSelectComboBox`'s (filter variant) outside-click handler closing the popup but still falling through to `super().eventFilter(...)` instead of returning `True`, so the dismiss-click also reached whatever widget sat underneath it
+    * Removed `_edit_button_clicked`/`_delete_button_clicked`, two dead methods (filter variant) superseded by the already-working `edit_filter`/`delete_filter` callback chain; `_edit_button_clicked` referenced a never-defined `self.on_edit_filter`, and `_delete_button_clicked` duplicated logic already correctly implemented in `MetadataView`/`ProteinView`
+
+* **Updated Frontend Controls: `RawDataControls`, `EventAnalysisControls`, `ClusteringControls`, `MetadataControls`, `ProteinControls`**
+    * Fixed `MetadataControls`/`ProteinControls` crashing when the bins field ended in a trailing comma
+    * Removed the duplicated, uncallable `get_nested_value`/`get_plugin_data` helper methods (missing `self`, never called in production) from all five `*controls.py` files, along with their two dedicated unit test classes
+
+* **Updated Frontend Infrastructure: Walkthrough**
+    * Fixed the walkthrough's transparent "Analysis" menu highlight overlay leaking whenever a milestone dialog was dismissed manually (X/Done) instead of by navigating to the expected next view; cleanup now runs on both paths
+    * Fixed the walkthrough's auto-advance polling loop continuing to reschedule itself after the walkthrough dialog was manually dismissed, risking a duplicate/late call into the completion handler if the tracked view was later revisited
 
 * **Updated Frontend Plugins: `MetadataView` and `ProteinView`**
     * Replaced per-click DB queries with a cached event_id list and bisect-based navigation.
@@ -25,8 +166,18 @@
     * Fixed: some plot types (Categorical Histogram, Scatterplot, Raw/Filtered Event Overlay) failed to render after "Plot Events" + "Update Plot" due to a stale `self.axes` reference not caught by existing staleness check. Added `_axes_valid()` to detect and reset it properly.
     * Fixed: Silent crash in `_export_csv_subset` when the "Export Settings" dialog was canceled. Canceling the dialog now backs out cleanly.
     * Now refreshes its available column list automatically when another tab commits new columns to the currently selected database.
+    * Fixed: `ZeroDivisionError` when constructing an event overlay from events that all have the same length
+    * Fixed: crash when formatting an axis label for a column with no defined unit
+    * Fixed: an unhandled plot type could leave plotting data unbound instead of raising a clear error
+    * Fixed: a typo left stale event markers on the plot after a failed feature lookup
+    * Removed a dead, exact-duplicate code block in all-points-histogram construction
+    * Fixed `MetadataControls` DB Loader edit/delete buttons staying enabled when no database was loaded (placeholder text mismatch)
+    * Fixed `MetadataControls` computing bins-field validity but never actually using it to enable/disable **Update Plot**
+    * Fixed `MetadataControls.validate_inputs`'s bins-field validation always requiring whole numbers even when "Sizes" was checked (which expects decimal bin edges), disabling **Update Plot** for exactly the kind of value the field's own placeholder asked for
 
 * **Updated Frontend Plugin: `ProteinView`**
+    * Added a **RAW** checkbox to event plots, matching `MetadataView`: raw traces are shown before fitting, and included alongside fitted results once fitting is complete
+    * Removed the Undo and Reset buttons from the Protein Tab
     * Fixed: `hist_min`/`hist_max` persisted across "Plot Histogram" calls and only ever expanded, so bin edges (and resulting histogram shape/fit) depended on plotting order and history instead of the event itself. Per-event histogram binning is now deterministic, and thus, so is plotting.
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
     * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
@@ -40,35 +191,71 @@
     * Fixed: Leaving the **N** field blank in Ensemble mode raised a `ValueError` instead of falling back to a default, matching behavior already present in Individual mode.
     * Fixed: Default **N** value was set to 100 in the backend and 1000 in the frontend. Updated frontend to match the backend value.
     * Added Freedman-Diaconis auto-binning for per-event histograms
+    * Fixed: zero-baseline divisions silently propagating NaN/Inf into histograms and fits
+    * Added a hard cap to a previously-unbounded Monte Carlo sampling loop that could block the UI indefinitely
+    * Fixed: plugin-list refresh crashing due to calling `.emit()` on a non-`Signal` method
+    * Refactored `_update_distribution_ensemble`'s ~105-line double-Gaussian fit and Monte Carlo sampling block into its own method, `_fit_and_plot_ensemble_geometry`, called once after the loop finishes instead of relying on a comment plus careful indentation to stay safe if the surrounding experiment/channel/filter guards are ever relaxed
+    * Fixed `ProteinControls.is_placeholder_item` checking for `"No Database"` instead of the actual `"No Event Database"` placeholder, which left the DB Loader edit/delete buttons wrongly enabled with no database selected
+    * Fixed `_commit_fits` not aborting when the user clicked Cancel on the "Confirm Overwrite" dialog, falling through to commit the new fit columns anyway; also added the missing `ProteinController.check_column_exists`, without which the dialog could never appear in production at all (the return-callback name it relied on didn't match any real method, so the existing-column check silently never ran)
+    * Fixed the `ProteinView` class docstring, still the literal unfilled placeholder `"Subclass of MetaView for TBD / Attributes: TBD"`
+    * Fixed `ProteinModel`'s class docstring being a copy-paste of `MetadataModel`'s (described metadata processing, not protein volume/shape-factor fitting)
 
-        
 * **Updated Frontend Plugin: `ClusteringView`**
     * Fixed: Commit silently crashing every time due to a broken plugin-list refresh chain (the DB write itself still succeeded, so the crash went unnoticed). Replaced with a direct `update_available_columns(loader)` call. Removed dead code.
     * Committing now notifies other open tabs, so newly added columns appear immediately in any tab currently displaying that database.
+    * Fixed: clicking Cancel on the cluster-overwrite confirmation dialog did not actually cancel the commit
+    * Fixed: an unrecognized clustering method crashed with an unbound-variable error instead of a clear message
+    * Fixed: `ZeroDivisionError` in baseline stats on a flat/constant data chunk
+    * Fixed Gaussian Mixture clustering fitting on data that still included the `id` column, unlike HDBSCAN which already excluded it; `id`'s arbitrary, unnormalized magnitude could dominate the fit and produce meaningless clusters
+    * Fixed `ClusteringSettingsDialog.remove_column_item` never refreshing the Apply-button/warning state after deleting a dynamic column row, unlike every other mutation path in the widget; deleting the row causing a validation warning left Apply stuck disabled until some unrelated widget happened to trigger a refresh
+    * Added a missing docstring to `ClusteringController.display_write_status`
 
-* **Updated Frontend Component: `MainView` / Sidebar Menus**
+* **Updated Frontend Plugin: `RawDataView`**
+    * Fixed: `ZeroDivisionError` in baseline stats on a flat/constant data chunk; now logs a warning and skips just that channel's overlay instead of crashing the whole plot
+    * Fixed: power spectral density calculation crashing or silently producing NaNs on very short channels
+    * Fixed `RawDataModel.integrate_noise` crashing "Update PSD" with an uncaught `IndexError` when a short time window made `welch()` return a single-frequency-bin PSD
+    * Fixed `RawDataModel`/`RawDataController`/`RawDataView` PSD calculation silently mislabeling a surviving channel's PSD under the wrong channel name whenever an earlier channel was skipped
+    * Fixed a log message missing an `f` prefix (another instance of the same bug was fixed in `EventAnalysisView`), so the intended values were never actually interpolated
+    * Fixed `_get_baseline_stats`'s docstring documenting a `tuple[float, float]` return, missing the local amplitude that's actually the first of three returned values
+    * Fixed `RawDataController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
+    * Added missing docstrings to `RawDataController.update_available_plugins`/`update_plot_data`
+
+* **Updated Frontend Plugin: `EventAnalysisView`**
+    * Fixed: crash when zero channels were selected while shifting or plotting events
+    * Fixed: a failed event load could silently reuse stale data from a previous event
+    * Fixed: a typo left stale event markers on the plot after a failed feature lookup
+    * Fixed `eventAnalysisControls.py` inserting `"No EventFitter"` into the fitter combo box while everything else checked for `"No Event Fitter"`, so the "no fitter selected" guard never fired and Fit Events could silently target a nonexistent plugin key; `validate_inputs` now also disables **Fit Events** when no real event fitter is selected, matching the loader/writer checks
+    * Fixed `_start_eventfitter` re-raising a filter-loading failure instead of falling back gracefully like `_handle_plot_events` already does, so a broken/misconfigured filter crashed Fit Events instead of proceeding without one
+    * Fixed `_start_eventfitter` returning out of its whole channel loop when the user clicked "No" on one channel's "already fitted" confirmation dialog during a multi-channel fit batch, silently cancelling fitting (and dropping any already-queued generators) for every remaining channel instead of just skipping that one
+    * Fixed `_extract_plot_event_parameters`'s docstring documenting a 4-tuple return, omitting `loader` from the real 5-tuple
+    * Fixed `EventAnalysisController.update_channels` being decorated `@Slot(dict)` and documented as taking a `dict`, despite always being called with a `List[int]` of channel identifiers
+    * Added a missing docstring to `EventAnalysisController.update_available_plugins`
+
+* **Updated Frontend Component: `MainView`**
     * Fixed: Sidebar highlighting (icon and text menus) did not update when an analysis tab was opened via the top menu bar (Analysis → New Analysis Tab) or via the "Add" dropdown menu — the previously active tab's button stayed highlighted instead of switching to the newly opened tab.
     * Fixed: Selecting Raw Data, Event Analysis, or Metadata from the "Add" dropdown did not highlight their dedicated sidebar button.
     * Fixed: The "Add" dropdown menu reopened immediately after selecting an item, due to a duplicate signal connection 
+    * Fixed menu bar action icons silently failing to render due to an incorrect resource path (bug was invisible until now, since it failed silently)
+    * Fixed the "All Analysis Tabs" dropdown menu always opening anchored at the main window's top-left corner instead of near the clicked button, since `populate_plugins_menu` read `self.sender()` after an async round-trip where it always resolved to `MainView` itself
+    * Fixed `add_page` leaking an orphaned wrapper `QWidget` into the stacked widget every time a page name was reused (e.g. every time Settings was opened), instead of reusing/removing the previous wrapper
+    * Removed `display_data`/`on_file_loaded`, two dead methods with zero callers anywhere in the app or tests; `display_data` referenced a `self.rawDataWidget` attribute that was never assigned, and its target (`RawDataView.display_data`) doesn't even exist under the current per-tab plugin architecture
 
 * **Updated Frontend Component: `Settings`**
     * Settings window now follows OS light/dark mode automatically, and updates live if the OS theme changes while the app is open, no restart required
     * Fixed dropdown menus (combobox popups) rendering with a stray focus outline, a disappearing selection highlight on hover, and a double-border artifact
     * Application version in the About tab is now pulled from `poriscope.constants.__VERSION__` instead of a hardcoded string, so it can no longer drift out of sync
+    * Fixed potential crash (`AttributeError`) if a folder-picker button was clicked before the data server / user plugin location had been set
+    * Fixed the Logging Level combobox always opening at "None" regardless of the actually-configured level, since nothing ever pulled the real persisted value back into the widget (unlike Data Server/User Plugin Location's folder-picker seeding); added the same round-trip pattern (`MainModel.get_logging_level`, `MainController.send_curent_logging_level`, `MainView`/`SettingsWindow` relay plumbing) so opening Settings now shows the level that's actually active
 
 * **Updated Utility: `get_icon` (`poriscope.configs.utils`)**
     * Icons now automatically recolor for light/dark mode instead of requiring separate hardcoded black/white icon files
     * New `get_themed_icon_path` helper for cases (like custom stylesheet arrows) that need a real file path rather than an icon object
-
-### General Fixes and Improvements:
-    * Fixed `MainView` menu bar action icons silently failing to render due to an incorrect resource path (bug was invisible until now, since it failed silently)
-    * Fixed `MetadataControls` DB Loader edit/delete buttons staying enabled when no database was loaded (placeholder text mismatch)
     * Removed unused legacy icon assets and the broken/unused Qt `.qrc` resource system (`resources_rc.py`), which nothing in the app actually depended on
     * Standardized edit/add icons across control panels to use the same icon set consistently
-    * In `Settings` fixed potential crash (`AttributeError`) if a folder-picker button was clicked before the data server / user plugin location had been set
-    * Now: Icons correctly update color depending on dark/light mode
 
-
+### General Fixes and Improvements:
+* Updated tests in `test_main_controller.py`, `test_classic_cusum.py`, `test_no_fitter.py`, and `test_meta_event_finder.py` to match already-landed fixes (RPC dispatcher log-and-return behavior, corrected `ClassicCUSUM` threshold sensitivity, corrected `NoFitter` duration/extreme-value index alignment, and a dead-code precondition fix in `get_event_data_generator`) that had left their expectations stale
+* Fixed placeholder combobox text (`"No Reader"`, `"No Eventfinder"`, `"No Loader"`, `"No Event Database"`, etc.) routinely reaching `global_signal.emit(...)` as if it were a real plugin key, flooding startup/session-restore with failed lookups. Root causes: (1) several `update_X(items)` combobox-population helpers across the `*controls.py` files mutated the *caller's* list in place to insert the placeholder (`items.insert(0, "No X")`), which in `RawDataView.update_available_plugins` leaked the placeholder into a loop that treated it as a genuinely new plugin; (2) `RawDataView`/`EventAnalysisView._handle_other_actions` and `ClusteringView`/`MetadataView`/`ProteinView`'s `update_available_columns`/`request_experiment_structure` used truthy-only checks (`if reader:`) that don't filter out the non-empty placeholder string. Combobox helpers now build a local display list instead of mutating the parameter, and all affected call sites now guard against the specific placeholder value
 
 ## Poriscope 1.6.1: 2026-06-04
 
@@ -140,19 +327,19 @@
     * Stable release of basic and minimal peak finding features
 
 ### General Fixes and Improvements:
-    * Fixed bug with baseline calculation that was causing inaccurate baseline whenever drift was present
-    * Fixed crash when resetting or updating heatmaps in the Metadata tab
-    * Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
-    * Cross-table filtering is now supported for events plot filtered by sublevels column, and sublevels plot filtered by events column.
-    * Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
-    * Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
-    * Fixed plugins' settings not being able to be edited 
-    * Single shared legend from all axes in the EventAnalysis Tab to prevent overlapping and sublplots shifting
-    * Fixed "Update Plot" not working after "Plot Events" due to stale figure state and tracking variables not being reset
-    * Select all items by default in MultiSelectComboBox
-    * Auto-select newly added filter to match reader's, loader's and writer's combobox population behavior
+* Fixed bug with baseline calculation that was causing inaccurate baseline whenever drift was present
+* Fixed crash when resetting or updating heatmaps in the Metadata tab
+* Bin and size changes now trigger correct overlay replotting when clicking "Update Plot"
+* Cross-table filtering is now supported for events plot filtered by sublevels column, and sublevels plot filtered by events column.
+* Fixed float-to-index rounding drift in PeakFinder and NanoTrees 
+* Added strict runtime length check in MetaEventFitter so any mismatch now fails immediately and loudly instead of silently propagating to plotting or downstream logic
+* Fixed plugins' settings not being able to be edited 
+* Single shared legend from all axes in the EventAnalysis Tab to prevent overlapping and sublplots shifting
+* Fixed "Update Plot" not working after "Plot Events" due to stale figure state and tracking variables not being reset
+* Select all items by default in MultiSelectComboBox
+* Auto-select newly added filter to match reader's, loader's and writer's combobox population behavior
 
-    Disclaimer: As of version 1.6.0, Poriscope has experimental Linux support and is primarily tested through an Ubuntu virtual machine environment.
+Disclaimer: As of version 1.6.0, Poriscope has experimental Linux support and is primarily tested through an Ubuntu virtual machine environment.
 
 ## Poriscope 1.5: 2025-12-08
 

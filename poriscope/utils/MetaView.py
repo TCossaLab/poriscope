@@ -761,21 +761,21 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
     def _logscale_and_filter_dataframe(self, df, log_columns=None):
         """
-        In-place filters a DataFrame for NaN values and applies logarithmic scaling to specified columns.
+        Filters a DataFrame for NaN values and applies logarithmic scaling to specified columns, returning a new DataFrame; the input is not modified.
 
         This function:
 
-        - Removes rows with NaN values in any column (modifies df in-place).
+        - Removes rows with NaN values in any column.
         - Applies log10 scaling to specified columns after rectifying based on average sign.
         - Sequentially removes rows with non-positive values in log columns.
 
         Args:
-            df (pd.DataFrame): Input DataFrame with numerical data. Will be modified in-place.
+            df (pd.DataFrame): Input DataFrame with numerical data. Not modified; a copy is filtered and transformed internally.
             log_columns (list of str, optional): List of column names to apply log scaling.
             If None, no log scaling is applied.
 
         Returns:
-            pd.DataFrame: The same DataFrame reference, filtered and transformed in-place.
+            pd.DataFrame: A new, filtered and transformed DataFrame.
         """
 
         if df.empty:
@@ -834,6 +834,3 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             )
 
         return df
-
-    def add(a, b):
-        return a + b

@@ -130,10 +130,8 @@ class CUSUM(MetaEventFitter):
         :param index: the index of the target event
         :type index: int
 
-        :return: numpy array of fitted data for the event, or None
+        :return: numpy array of fitted data for the event, or None if fitting is not complete or the event was rejected
         :rtype: Optional[npt.NDArray[np.float64]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
         if self.sublevel_metadata == {} or not self.eventfitting_status.get(channel):
             self.logger.info(
@@ -141,9 +139,7 @@ class CUSUM(MetaEventFitter):
             )
             return None
         try:
-            if self.eventloader is not None:
-                self.eventloader.get_samplerate(channel)
-            else:
+            if self.eventloader is None:
                 raise AttributeError(
                     "CUSUM cannot operate without a linked MetaEventLoader"
                 )
@@ -200,9 +196,7 @@ class CUSUM(MetaEventFitter):
         baseline_std,
     ):
         """
-        Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
-        Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
-        Raising an an acceptable handler.
+        Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size normalized by the local baseline standard deviation, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
@@ -609,13 +603,13 @@ class CUSUM(MetaEventFitter):
         )
         event_metadata["max_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["min_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["max_deviation_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
         event_metadata["baseline_current"] = (
             sublevel_metadata["sublevel_current"][0]
             * sublevel_metadata["sublevel_duration"][0]

@@ -92,13 +92,12 @@ class TestFloatRangeValidatorIntermediate(unittest.TestCase):
         self.assertEqual(self._state("3-"), QValidator.Acceptable)
 
     def test_start_greater_than_end(self):
-        """'5-3' → simulated_end appends '0' → end=30, start=5 < 30 → Acceptable.
-        The validator cannot detect start>end for single-digit ends while typing."""
-        self.assertEqual(self._state("5-3"), QValidator.Acceptable)
+        """'5-3' is backwards (start > end) → Intermediate, not a final value yet."""
+        self.assertEqual(self._state("5-3"), QValidator.Intermediate)
 
     def test_start_equals_end_exact(self):
-        """'4-4' → simulated_end='40', start=4 < 40 → Acceptable."""
-        self.assertEqual(self._state("4-4"), QValidator.Acceptable)
+        """'4-4' has a zero-width range (start == end) → Intermediate, not a final value yet."""
+        self.assertEqual(self._state("4-4"), QValidator.Intermediate)
 
     def test_partial_second_range(self):
         """First range done, second range partially typed."""

@@ -65,14 +65,12 @@ class FloatRangeValidator(QValidator):
                 self.logger.debug(" Intermediate: missing start")
                 return QValidator.Intermediate, input, pos
 
-            simulated_end_str = end_str if end_str else "0"
-            if re.fullmatch(r"\d+", end_str):
-                simulated_end_str += "0"
-            self.logger.debug(f"Simulated end: '{simulated_end_str}'")
+            effective_end_str = end_str if end_str else "0"
+            self.logger.debug(f"Effective end: '{effective_end_str}'")
 
             try:
                 start = float(start_str)
-                end = float(simulated_end_str)
+                end = float(effective_end_str)
                 self.logger.debug(f"Parsed: start={start}, end={end}")
 
                 if start == 0.0 and end == 0.0:

@@ -59,12 +59,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     def __init__(self, available_subclasses=None, **kwargs) -> None:
         """
-        Initialize the MetaController with instances of MetaView and MetaModel
+        Initialize the MetaController, along with its MetaView and MetaModel (built by the subclass's `_init()`).
 
-        :param view: an object conforming to the MetaView interface
-        :type view: MetaView
-        :param model: an object conforming to the MetaModel interface
-        :type Model: MetaModel
+        :param available_subclasses: mapping of available plugin subclasses, passed through to the view
+        :type available_subclasses: Optional[dict]
         :param kwargs: Additional parameters to set as attributes on the instance
         :type kwargs: dict
         """
@@ -368,9 +366,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 return_function,
                 ret_args,
             )
-        except Exception:
+        except Exception as e:
             self.logger.warning(
-                f"Unable to relay global signal: {return_function_name} is not a callable attribute of {type(self).__name__}: str(e)"
+                f"Unable to relay global signal: {return_function_name} is not a callable attribute of {type(self).__name__}: {e}"
             )
 
     @Slot(str, str, str, tuple, str, tuple)
@@ -430,9 +428,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 return_function,
                 ret_args,
             )
-        except Exception:
+        except Exception as e:
             self.logger.warning(
-                f"Unable to relay Data Plugin Controller signal: {return_function_name} is not a callable attribute of {type(self).__name__}: str(e)"
+                f"Unable to relay Data Plugin Controller signal: {return_function_name} is not a callable attribute of {type(self).__name__}: {e}"
             )
 
     # public API, should generally be left alone by subclasses

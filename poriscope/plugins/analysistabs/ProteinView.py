@@ -41,7 +41,7 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -75,13 +75,12 @@ warnings.filterwarnings(
 @inherit_docstrings
 class ProteinView(MetaView, WalkthroughMixin):
     """
-    Subclass of MetaView for TBD
-    Attributes:
-        TBD
+    Subclass of MetaView for estimating translocating protein size and shape from nanopore blockage events.
+
+    Given pore diameter/length, fits a two-population (prolate/oblate) volume-and-shape-factor model via Monte Carlo rejection sampling, either per event (Individual mode) or across the aggregate distribution (Ensemble mode). Also supports subset filtering, per-event trace/histogram inspection, and committing or reporting fit results.
     """
 
     logger = logging.getLogger(__name__)
-    request_plugin_refresh = Signal(str)
 
     @property
     def fig_hist(self):
@@ -209,11 +208,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
         self.current_channel: Optional[int] = None
-        self.cached_events: Dict[int, Dict[str, Any]] = {}
-        # Cache of all filtered event_ids for the current scope/filter combination.
-        # Populated by _rebuild_event_id_cache; used by _shift_range_and_update_plot,
-        # _handle_plot_events, and _handle_plot_histogram to resolve event_id + n_events
-        # into a concrete list of event_ids without re-querying the DB on every arrow click.
         self.filtered_event_ids: List[int] = []
         self.subset_filters: Dict[str, str] = {}
         self.plot_events_generator = None
@@ -463,6 +457,8 @@ class ProteinView(MetaView, WalkthroughMixin):
                         self.__class__.__name__,
                     )
                     return
+            else:
+                return
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -653,7 +649,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.fig_event.clear()
 
         self.event_outer_ax = None
-        self.fig_event.set_constrained_layout(True)
+        self.fig_event.set_layout_engine("constrained")
         self._clear_cache()
 
     @log(logger=logger)
@@ -1049,6 +1045,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 np.median(timeseries[:padding_before])
                 + np.median(timeseries[-padding_after:])
             )
+            if baseline == 0:
+                self.logger.warning(
+                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
+                )
+                continue
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
 
             min_curr = np.min(dI_I)
@@ -1093,6 +1094,11 @@ class ProteinView(MetaView, WalkthroughMixin):
                 np.median(timeseries[:padding_before])
                 + np.median(timeseries[-padding_after:])
             )
+            if baseline == 0:
+                self.logger.warning(
+                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
+                )
+                continue
             dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
             event_hist, _ = np.histogram(
                 dI_I,
@@ -1205,13 +1211,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type generator: Iterator[dict]
         """
         self.event_data_generator = generator
-
-    @log(logger=logger)
-    def _undo_plot(self):
-        """
-        Undo the last plotted action and update the action history.
-        """
-        self.update_tab_action_history.emit(None, True)
 
     @log(logger=logger)
     def _save_filter(self):
@@ -1366,19 +1365,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 parameters["plot_type"] = "Filtered Histogram"
                 self._update_distribution_ensemble(parameters)
 
-        elif action_name == "reset_plot":
-            mode_label = (
-                "Individual" if self._analysis_mode == "individual" else "Ensemble"
-            )
-            self._reset_actions()
-            self.add_text_to_display.emit(
-                f"Reset cleared the {mode_label} mode fit.",
-                self.__class__.__name__,
-            )
-
-        elif action_name == "undo_plot":
-            self._undo_plot()
-
         elif action_name == "add_filter":
             self._show_add_filter_dialog(parameters)
 
@@ -1439,20 +1425,40 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _build_where_clause(self, loader: str, sql_filter: str, exp, channel) -> str:
         """
-        Build a WHERE clause string suitable for the event_id cache query.
+        Build a WHERE clause string suitable for the event_id cache query,
+        scoped to the current experiment and channel. event_id is only unique
+        within an experiment/channel scope, not across the whole events table,
+        so without this scoping filtered_event_ids mixes duplicate event_ids
+        from every channel, causing navigation to jump to ids that don't exist
+        in the active channel and inflating the reported total count.
 
-        Experiment/channel scoping is handled downstream by _fetch_event_data
-        via load_event_data; here we only need the SQL filter predicate so that
-        the event_id list reflects the active filter subset.
-
-        :param loader: Name of the database loader (unused here, kept for interface symmetry).
+        :param loader: Name of the database loader.
         :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
-        :param exp: Experiment name (unused here).
-        :param channel: Channel identifier (unused here).
-        :return: "WHERE <sql_filter>" or "" if no filter is active.
+        :param exp: Experiment name, or None.
+        :param channel: Channel identifier, or None.
+        :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
         :rtype: str
         """
-        return f"WHERE {sql_filter}" if sql_filter else ""
+        filter_parts = []
+        if sql_filter:
+            filter_parts.append(sql_filter)
+
+        if exp is not None:
+            self.experiment_id = None
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_experiment_id_by_name",
+                (exp,),
+                "set_experiment_id",
+                (),
+            )
+            if self.experiment_id is not None:
+                filter_parts.append(f"experiment_id = {self.experiment_id}")
+                if channel is not None:
+                    filter_parts.append(f"channel_id = {channel}")
+
+        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
 
     @log(logger=logger)
     def _rebuild_event_id_cache(
@@ -1603,16 +1609,94 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.plot_events_generator = generator
         self.plot_events_generator_updated = True
 
+    # -------------------------------------------------------------------------
+    # NOTE: This targeted-fetch-by-id pattern (_resolve_event_db_ids +
+    # _fetch_event_data) is factored out here because ProteinView has two
+    # callers that need it — _handle_plot_events and _handle_plot_histogram.
+    # MetadataView's equivalent id-resolution/fetch logic is only used by
+    # _handle_plot_events, so it's kept inline there rather than duplicating
+    # this abstraction for a single call site. If another tab ever grows a
+    # second consumer of "fetch these event_ids' full data" (e.g. a
+    # histogram feature mirroring this one), port this pattern over rather
+    # than reinventing it — see ProteinView._resolve_event_db_ids/
+    # _fetch_event_data for the scoped-query approach both should use.
+    # -------------------------------------------------------------------------
+
+    @log(logger=logger)
+    def _resolve_event_db_ids(self, loader, event_ids, exp, channel):
+        """
+        Resolve a list of event_id values, scoped to a specific experiment and
+        channel, to their corresponding database primary keys (id) via a single
+        direct query. event_id is only unique within an experiment/channel
+        scope, not across the whole events table, so this scoping is required
+        to avoid resolving to the wrong row when two channels share an event_id.
+
+        :param loader: Name of the database loader.
+        :type loader: str
+        :param event_ids: List of event_id values to resolve.
+        :type event_ids: List[int]
+        :param exp: Experiment name, or None.
+        :type exp: Optional[str]
+        :param channel: Channel identifier, or None.
+        :type channel: Optional[str]
+        :return: DataFrame with columns id, event_id for the matching rows, or None on failure.
+        :rtype: Optional[pd.DataFrame]
+        """
+        if not event_ids:
+            return None
+
+        id_tuple = f"({','.join(str(eid) for eid in event_ids)})"
+        where_parts = [f"event_id IN {id_tuple}"]
+
+        if exp is not None:
+            self.experiment_id = None
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "get_experiment_id_by_name",
+                (exp,),
+                "set_experiment_id",
+                (),
+            )
+            if self.experiment_id is not None:
+                where_parts.append(f"experiment_id = {self.experiment_id}")
+
+        if channel is not None:
+            where_parts.append(f"channel_id = {channel}")
+
+        query = f"SELECT id, event_id FROM events WHERE {' AND '.join(where_parts)}"
+        self.relayed_query_result = None
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "query_database_directly",
+            (query,),
+            "relay_query_result",
+            (),
+        )
+        result = getattr(self, "relayed_query_result", None)
+        if result is None or result.empty or "id" not in result.columns:
+            return None
+        return result
+
     @log(logger=logger)
     def _fetch_event_data(self, parameters, action_label="events") -> list:
         """
-        Shared validation, generator management, and data fetching for event-based plots.
+        Shared validation and targeted data fetching for event-based plots.
+        Resolves the requested event_index list to database ids via a single
+        query scoped to the current experiment/channel, then fetches exactly
+        those rows. Always fetches fresh rather than caching event blobs in
+        memory — event_id is only unique within an experiment/channel scope,
+        and a per-event_id blob cache is an easy invariant to accidentally
+        violate later; the targeted DB query is already O(events requested)
+        rather than O(distance into the dataset), so the extra memoization
+        isn't worth the correctness risk.
 
         :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
         :type parameters: dict
         :param action_label: Label used in error messages to identify the plot type.
         :type action_label: str
-        :return: List of fetched event dictionaries, or empty list on failure.
+        :return: List of fetched event dictionaries, in the order requested, or empty list on failure.
         :rtype: list[dict]
         """
         selected_filters = self.get_selected_filters()
@@ -1664,79 +1748,45 @@ class ProteinView(MetaView, WalkthroughMixin):
             selected_filters = {"Full Dataset": ""}
 
         event_index = parameters["event_index"]
-        sql_filter = next(iter(selected_filters.values()))
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
         exp = next(iter(exp_and_ch.keys()))
         channel = next(iter(exp_and_ch.values()))[0]
 
-        if not (
-            sql_filter == self.current_sql_filter
-            and self.current_experiment == exp
-            and self.current_channel == channel
-            and self.plot_events_generator is not None
-        ):
-            if self.plot_events_generator is not None:
-                try:
-                    try:
-                        self.plot_events_generator.send(True)
-                    except StopIteration:
-                        pass
-                except TypeError:
-                    try:
-                        next(self.plot_events_generator)
-                        self.plot_events_generator.send(True)
-                    except StopIteration:
-                        pass
-                self.cached_events = {}
-                self.plot_events_generator = None
-
-            subset_name = next(iter(selected_filters.keys()))
-            load_event_data_args = self._build_load_event_data_args(
-                sql_filter, subset_name, exp, channel, exp_and_ch, loader_name
+        id_result = self._resolve_event_db_ids(loader_name, event_index, exp, channel)
+        if id_result is None or id_result.empty:
+            self.add_text_to_display.emit(
+                f"No data available for the requested {action_label}",
+                self.__class__.__name__,
             )
+            return []
 
-            self.plot_events_generator_updated = False
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader_name,
-                "load_event_data",
-                load_event_data_args,
-                "relay_event_plot_data_generator",
-                (),
+        db_ids = id_result["id"].tolist()
+        id_tuple = f"({','.join(str(i) for i in db_ids)})"
+        event_db_id_filter = f"e.id IN {id_tuple}"
+
+        self.plot_events_generator_updated = False
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader_name,
+            "load_event_data",
+            (event_db_id_filter, exp_and_ch),
+            "relay_event_plot_data_generator",
+            (),
+        )
+
+        generator = getattr(self, "plot_events_generator", None)
+        if generator is None:
+            self.add_text_to_display.emit(
+                f"No data available for the requested {action_label}",
+                self.__class__.__name__,
             )
-            if self.plot_events_generator_updated is True:
-                self.current_sql_filter = sql_filter
-                self.current_experiment = exp
-                self.current_channel = int(channel) if channel is not None else None
+            return []
 
-        data_list = []
-        for index in event_index:
-            cached_event = self.cached_events.get(index)
-            if cached_event is not None:
-                data_list.append(cached_event)
-                continue
-            else:
-                while True:
-                    new_event = None
-                    try:
-                        if self.plot_events_generator is not None:
-                            try:
-                                new_event = self.plot_events_generator.send(False)
-                            except TypeError:
-                                new_event = next(self.plot_events_generator)
-                        else:
-                            raise AttributeError(
-                                "Establish a plot events generator before trying to use it"
-                            )
-                    except StopIteration:
-                        break
-                    if new_event is not None:
-                        self.cached_events[new_event["event_id"]] = new_event
-                        if new_event["event_id"] == index:
-                            data_list.append(new_event)
-                            break
-                        elif new_event["event_id"] > index:
-                            break
+        data_list = list(generator)
+
+        # restore the caller's requested order
+        order = {eid: i for i, eid in enumerate(event_index)}
+        data_list.sort(key=lambda e: order.get(e["event_id"], len(order)))
 
         return data_list
 
@@ -1803,9 +1853,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         Handle loading and plotting of selected events based on provided parameters.
 
-        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
-        and bisect, then delegates to _fetch_event_data and
-        uses the generator + cached_events blob cache for actual data fetching.
+        Resolves event_id + n_events into a concrete list of event_ids via the
+        filtered_event_ids cache and bisect, then delegates to _fetch_event_data,
+        which resolves those event_ids to database ids and fetches them directly.
 
         :param parameters: Dictionary containing db_loader, filter, channels,
                            event_id (int), and n_events (int).
@@ -1874,7 +1924,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         data_list = self._fetch_event_data(fetch_params, action_label="events")
 
         if data_list:
-            self._update_event_plot(data_list)
+            use_raw = parameters.get("raw", False)
+            self._update_event_plot(data_list, use_raw=use_raw)
         else:
             self.add_text_to_display.emit(
                 f"No data available for event_id {snapped_event_id}",
@@ -1887,10 +1938,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         Handle loading and plotting of the ΔI/I histogram for selected events,
         each in its own subplot on the event canvas.
 
-        Resolves event_id + n_events into a concrete list of event_ids via the filtered_event_ids cache
-        and bisect, then delegates to _fetch_event_data which uses
-        the generator + cached_events blob cache for actual data fetching.
-
+        Resolves event_id + n_events into a concrete list of event_ids via the
+        filtered_event_ids cache and bisect, then delegates to _fetch_event_data,
+        which resolves those event_ids to database ids and fetches them directly.
 
         :param parameters: Dictionary containing db_loader, filter, channels,
                            event_id (int), n_events (int), bins, and sizes.
@@ -1980,7 +2030,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data):
+    def _update_event_plot(self, event_data, use_raw=False):
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -1992,6 +2042,8 @@ class ProteinView(MetaView, WalkthroughMixin):
                         'experiment_id', 'channel_id', 'event_id',
                         'raw_data', 'filtered_data', 'fit_data', and 'samplerate'.
         :type event_data: list[dict]
+        :param use_raw: Whether to overlay the unfiltered raw signal alongside filtered/fit traces.
+        :type use_raw: bool
         :return: None
         :rtype: None
         """
@@ -2013,17 +2065,19 @@ class ProteinView(MetaView, WalkthroughMixin):
             samplerate = event["samplerate"]
 
             time = np.arange(len(raw_data)) / samplerate * 1e6
-            ax.plot(time, raw_data / 1000, zorder=1)
+            if use_raw:
+                ax.plot(time, raw_data / 1000, zorder=1)
             ax.plot(time, filtered_data / 1000, zorder=2)
             ax.plot(time, fit_data / 1000, zorder=3)
 
             x_label = r"Time (us)"
             y_label = r"Current (nA)"
 
-            self._update_cache(
-                (time, label + " " + x_label),
-                (raw_data / 1000, label + " Raw " + y_label),
-            )
+            if use_raw:
+                self._update_cache(
+                    (time, label + " " + x_label),
+                    (raw_data / 1000, label + " Raw " + y_label),
+                )
             self._update_cache(
                 (time, label + " " + x_label),
                 (filtered_data / 1000, label + " Filtered " + y_label),
@@ -2041,7 +2095,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             if i >= labelnum:
                 ax.set_xlabel(r"Time ($\mu s$)")
 
-        self.fig_event.set_constrained_layout(True)
+        self.fig_event.set_layout_engine("constrained")
         self.canvas_event.draw()
         self._commit_cache()
 
@@ -2155,7 +2209,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 (plot_data["Amplitude"].values, label + " " + y_label),
             )
 
-        self.fig_event.set_constrained_layout(True)
+        self.fig_event.set_layout_engine("constrained")
         self.canvas_event.draw()
         self._commit_cache()
 
@@ -2272,6 +2326,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                             self.logger.info(
                                 f'Unable to construct histogram for event {event["event_id"]}: {e}'
                             )
+                            continue
                         if plot_data is None:
                             continue
 
@@ -2369,7 +2424,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Scatterplot",
                     df_prolate,
                     ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
+                    ["nm$^{3}$", None],
                     logscales=[False, False],
                     dataset_label="Prolate Solutions",
                 )
@@ -2378,7 +2433,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "Scatterplot",
                     df_oblate,
                     ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
+                    ["nm$^{3}$", None],
                     logscales=[False, False],
                     dataset_label="Oblate Solutions",
                 )
@@ -2663,6 +2718,10 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             return
 
+        # The three guards above guarantee that experiments_and_channels, every
+        # channels list, and selected_filters each contain exactly one entry,
+        # so the triple-nested loop below runs exactly once.
+
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
@@ -2751,108 +2810,134 @@ class ProteinView(MetaView, WalkthroughMixin):
                         (loader, exp, channel, sql_filter, subset_name)
                     )
 
-            # --- Fit Double Gaussian ---
-            popt = self._fit_and_sanity_check_double_gaussian(
-                plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):
+            return
+
+    @log(logger=logger)
+    def _fit_and_plot_ensemble_geometry(self, plot_data, plot_type, d, L, N):
+        """
+        Fit a double Gaussian to the aggregated ensemble histogram, then Monte
+        Carlo sample prolate/oblate V/m ensembles from that fit and plot them.
+
+        Called once by _update_distribution_ensemble after its single
+        (experiment, channel, filter) combination has been plotted, using
+        whatever plot_data that produced.
+
+        :param plot_data: the aggregated histogram DataFrame to fit against.
+        :type plot_data: pd.DataFrame
+        :param plot_type: the plot type label to reuse when plotting the fit.
+        :type plot_type: str
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each of the prolate/oblate ensembles
+        :type N: int
+
+        :return: True if fitting and plotting succeeded, False if any failure occurred (already logged/displayed to the user).
+        :rtype: bool
+        """
+        popt = self._fit_and_sanity_check_double_gaussian(
+            plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        )
+
+        if popt is None:
+            self.logger.info("Unable to fit a double gaussian to the histogram")
+            self.add_text_to_display.emit(
+                "Unable to fit a double gaussian to the histogram",
+                self.__class__.__name__,
+            )
+            return False
+
+        fit_data = self._double_gaussian(plot_data["Normalized Current"].values, *popt)
+        plot_data["Amplitude"] = fit_data
+        self.update_plot(
+            plot_type,
+            plot_data,
+            plot_data.columns,
+            ["pA", ""],
+            logscales=[False, False],
+            dataset_label="Fit",
+        )
+        # --- record fit + binning for Report All reporting ---
+        self.ensemble_fit_params = popt
+        self.ensemble_fit_bins = self.allowed_bins
+        self.ensemble_fit_sizes = self.allowed_sizes
+
+        amp1, mean1, std1, amp2, mean2, std2 = popt
+
+        if mean1 > mean2:
+            mean_max, std_max = mean1, np.abs(std1)
+            mean_min, std_min = mean2, np.abs(std2)
+        else:
+            mean_max, std_max = mean2, np.abs(std2)
+            mean_min, std_min = mean1, np.abs(std1)
+
+        # --- OPTIMIZED GENERATIVE SAMPLING ---
+        # Call the Monte Carlo generators directly
+        prolate_V, prolate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        )
+        oblate_V, oblate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        )
+
+        if len(prolate_V) == 0 and len(oblate_V) == 0:
+            self.logger.warning(
+                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
+            )
+            self.add_text_to_display.emit(
+                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
+                self.__class__.__name__,
+            )
+            return False
+        elif len(prolate_V) < N or len(oblate_V) < N:
+            self.logger.info(
+                "Sampling hit bailout limit; returning partial ensemble arrays."
             )
 
-            if popt is not None:
-                fit_data = self._double_gaussian(
-                    plot_data["Normalized Current"].values, *popt
-                )
-                plot_data["Amplitude"] = fit_data
-                self.update_plot(
-                    plot_type,
-                    plot_data,
-                    plot_data.columns,
-                    ["pA", ""],
-                    logscales=[False, False],
-                    dataset_label="Fit",
-                )
-                # --- record fit + binning for Report All reporting ---
-                self.ensemble_fit_params = popt
-                self.ensemble_fit_bins = self.allowed_bins
-                self.ensemble_fit_sizes = self.allowed_sizes
-            else:
-                self.logger.info("Unable to fit a double gaussian to the histogram")
-                self.add_text_to_display.emit(
-                    "Unable to fit a double gaussian to the histogram",
-                    self.__class__.__name__,
-                )
-                return
+        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+        prolate_a = prolate_b * prolate_m
 
-            amp1, mean1, std1, amp2, mean2, std2 = popt
+        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+        oblate_a = oblate_b * oblate_m
 
-            if mean1 > mean2:
-                mean_max, std_max = mean1, np.abs(std1)
-                mean_min, std_min = mean2, np.abs(std2)
-            else:
-                mean_max, std_max = mean2, np.abs(std2)
-                mean_min, std_min = mean1, np.abs(std1)
+        # --- Create the Pandas DataFrames ---
+        df_prolate = pd.DataFrame(
+            {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
+        )
+        df_oblate = pd.DataFrame(
+            {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
+        )
 
-            # --- OPTIMIZED GENERATIVE SAMPLING ---
-            # Call the Monte Carlo generators directly
-            prolate_V, prolate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        # --- record V/m summaries for Report All reporting ---
+        self.ensemble_fit_prolate_summary = (
+            self._summarize_vm(df_prolate) if not df_prolate.empty else None
+        )
+        self.ensemble_fit_oblate_summary = (
+            self._summarize_vm(df_oblate) if not df_oblate.empty else None
+        )
+
+        if not df_prolate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_prolate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Prolate Solutions",
             )
-            oblate_V, oblate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        if not df_oblate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_oblate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Oblate Solutions",
             )
 
-            if len(prolate_V) == 0 and len(oblate_V) == 0:
-                self.logger.warning(
-                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
-                )
-                self.add_text_to_display.emit(
-                    "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
-                    self.__class__.__name__,
-                )
-                return
-            elif len(prolate_V) < N or len(oblate_V) < N:
-                self.logger.info(
-                    "Sampling hit bailout limit; returning partial ensemble arrays."
-                )
-
-            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-            prolate_a = prolate_b * prolate_m
-
-            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-            oblate_a = oblate_b * oblate_m
-
-            # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(
-                {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
-            )
-            df_oblate = pd.DataFrame(
-                {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
-            )
-
-            # --- record V/m summaries for Report All reporting ---
-            self.ensemble_fit_prolate_summary = (
-                self._summarize_vm(df_prolate) if not df_prolate.empty else None
-            )
-            self.ensemble_fit_oblate_summary = (
-                self._summarize_vm(df_oblate) if not df_oblate.empty else None
-            )
-
-            if not df_prolate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_prolate,
-                    ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
-                    logscales=[False, False],
-                    dataset_label="Prolate Solutions",
-                )
-            if not df_oblate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_oblate,
-                    ["V", "m"],
-                    ["nm$^{3}$", "arb. units"],
-                    logscales=[False, False],
-                    dataset_label="Oblate Solutions",
-                )
+        return True
 
     @log(logger=logger)
     def _compute_theoretical_blockages(self, V, m, d, L):
@@ -2988,8 +3073,15 @@ class ProteinView(MetaView, WalkthroughMixin):
         # --- Bailout Logic Variables ---
         max_consecutive_zeros = 5
         consecutive_zeros = 0
+        max_batches = 200
+        batches = 0
 
-        while len(accepted_V) < N_target and consecutive_zeros < max_consecutive_zeros:
+        while (
+            len(accepted_V) < N_target
+            and consecutive_zeros < max_consecutive_zeros
+            and batches < max_batches
+        ):
+            batches += 1
             # 1. Propose physically valid uniform samples
             V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
             ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
@@ -3090,6 +3182,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                 accepted_V.extend(new_V)
                 accepted_m.extend(new_m)
 
+        if len(accepted_V) < N_target:
+            self.logger.warning(
+                f"_generate_vm_ensemble stopped with only {len(accepted_V)}/{N_target} "
+                f"accepted samples after {batches} batches (consecutive_zeros={consecutive_zeros})"
+            )
+
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
@@ -3150,6 +3248,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param loader: Name of the active database loader.
         :type loader: str
         """
+        if not loader or loader == "No Event Database":
+            return
         try:
             self.global_signal.emit(
                 "MetaDatabaseLoader",
@@ -3170,6 +3270,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
         """
+        if not loader_name or loader_name == "No Event Database":
+            return
+
         self.logger.debug(
             f"Requesting experiment-channel structure from loader: {loader_name}"
         )
@@ -3616,18 +3719,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
             (
                 "Protein Tab",
-                "Not happy with the changes? Click 'Undo' to revert to the previous state at any point.",
-                "ProteinView",
-                lambda: [self.proteincontrols.undo_button],
-            ),
-            (
-                "Protein Tab",
-                "Click 'Reset' to clear the current mode's plot and fit, and restore default settings.",
-                "ProteinView",
-                lambda: [self.proteincontrols.reset_button],
-            ),
-            (
-                "Protein Tab",
                 "In Individual mode, click 'Commit Individual' to write the per-event fit results to the database.",
                 "ProteinView",
                 lambda: [self.proteincontrols.commit_individual],
@@ -3712,6 +3803,12 @@ class ProteinView(MetaView, WalkthroughMixin):
                     self.proteincontrols.left_arrow_button,
                     self.proteincontrols.right_arrow_button,
                 ],
+            ),
+            (
+                "Protein Tab",
+                "Check the RAW box to overlay the unfiltered raw signal alongside the filtered and fitted traces.",
+                "ProteinView",
+                lambda: [self.proteincontrols.raw_checkbox],
             ),
         ]
 

@@ -84,7 +84,15 @@ class MetaReader(BaseDataPlugin):
             return report
         else:
             if init:
-                return f"\nCh{channel}: {self.total_channel_samples[channel]/self.samplerate:.1f}s at {self.samplerate if self.samplerate.is_integer() else self.samplerate:.2f}Hz"
+                samplerate_str = (
+                    f"{self.samplerate:.0f}"
+                    if self.samplerate.is_integer()
+                    else f"{self.samplerate:.2f}"
+                )
+                return (
+                    f"\nCh{channel}: {self.total_channel_samples[channel]/self.samplerate:.1f}s "
+                    f"at {samplerate_str}Hz"
+                )
             else:
                 return ""
 
@@ -965,7 +973,7 @@ class MetaReader(BaseDataPlugin):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
-        :param settings: Parameters for event detection.
+        :param settings: Parameters required to configure this reader.
         :type settings: dict
         :raises ValueError: If the settings dict does not contain the correct information.
         """

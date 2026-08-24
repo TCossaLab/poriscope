@@ -34,7 +34,7 @@ from poriscope.utils.LogDecorator import log
 
 class DataPluginModel(QObject):
     """
-    Base controller class that manages data plugins
+    Base model class that manages data plugins
     """
 
     logger = logging.getLogger(__name__)
@@ -65,7 +65,10 @@ class DataPluginModel(QObject):
         :type metaclass: str
         :param key: The key to register the plugin with
         :type key: str
-        :raises ValueError: If the key already exists
+        :raises KeyError: If metaclass is not a supported plugin type
+
+        If key is already registered under metaclass, the plugin is not registered
+        and an error is logged instead of raising.
         """
         if metaclass not in self.plugins.keys():
             self.logger.error(f"Cannot register plugin: {metaclass} not supported")
@@ -81,19 +84,27 @@ class DataPluginModel(QObject):
     @log(logger=logger)
     def update_plugin_key(self, metaclass: str, new_key: str, old_key: str):
         """
-        Register a plugin instance with the given key.
+        Re-key an already-registered plugin instance from old_key to new_key.
 
-        :param instance: The plugin instance
-        :type instance: object of the type of plugin managed by the instance
         :param metaclass: the base class of the plugin
         :type metaclass: str
-        :param key: The key to register the plugin with
-        :type key: str
-        :raises ValueError: If the key already exists
+        :param new_key: The new key to register the plugin instance under
+        :type new_key: str
+        :param old_key: The existing key the plugin instance is currently registered under
+        :type old_key: str
+        :raises KeyError: If metaclass is not supported, or if old_key is not currently registered under metaclass
+
+        If new_key is already registered under metaclass (and differs from old_key), the
+        rename is refused and an error is logged instead of overwriting the existing entry.
         """
         if metaclass not in self.plugins.keys():
             self.logger.error(f"Cannot update plugin key: {metaclass} not supported")
             raise KeyError(f"Metaclass {metaclass} not found")
+        if new_key != old_key and new_key in self.plugins[metaclass]:
+            self.logger.error(
+                f"Cannot rename plugin key {old_key} to {new_key}: {new_key} already exists under metaclass {metaclass}"
+            )
+            return
         self.plugins[metaclass][new_key] = self.plugins[metaclass].pop(old_key)
 
     @log(logger=logger)
@@ -107,7 +118,7 @@ class DataPluginModel(QObject):
         :type subclass: str
         :return: The temporary plugin instance.
         :rtype: object of the type of plugin managed by the instance
-        :raises NotImplementedError: If the subclass is not provided.
+        :raises KeyError: If metaclass or subclass is not a recognized/available plugin type.
         """
         return self.available_plugins[metaclass][subclass]()
 
@@ -148,7 +159,12 @@ class DataPluginModel(QObject):
         :raises KeyError: If the plugin key does not exist.
         """
         if key in self.plugins[metaclass]:
-            self.plugins[metaclass][key].close_resources()
+            try:
+                self.plugins[metaclass][key].close_resources()
+            except Exception as e:
+                self.logger.error(
+                    f"Error closing resources for plugin {key} in {metaclass}: {e}"
+                )
             del self.plugins[metaclass][key]
             self.logger.info(
                 f"Plugin {key} successfully unregistered from {metaclass}."

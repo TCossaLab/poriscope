@@ -197,7 +197,7 @@ class TestWidgetFactories:
 class TestPlaceholderAndToggle:
     def test_is_placeholder_no_database(self, mc):
         mc.db_loader_comboBox.clear()
-        mc.db_loader_comboBox.addItem("No Database")
+        mc.db_loader_comboBox.addItem("No Event Database")
         assert mc.is_placeholder_item(mc.db_loader_comboBox)
 
     def test_is_placeholder_real_item(self, mc):
@@ -214,7 +214,7 @@ class TestPlaceholderAndToggle:
 
     def test_toggle_info_button_disables_with_placeholder(self, mc):
         mc.db_loader_comboBox.clear()
-        mc.db_loader_comboBox.addItem("No Database")
+        mc.db_loader_comboBox.addItem("No Event Database")
         btn = mc.createButton(mc, "test")
         mc.toggle_info_button(btn, mc.db_loader_comboBox)
         assert not btn.isEnabled()
@@ -439,42 +439,6 @@ class TestClearPopupReference:
     def test_ignores_missing_popup(self, mc):
         cb = mc.create_comboBox(mc)
         mc.clear_popup_reference(cb)  # should not raise
-
-
-# ===========================================================================
-# get_nested_value (static)
-# ===========================================================================
-
-
-class TestGetNestedValue:
-    def test_simple_key(self):
-        d = {"a": 1}
-        assert MetadataControls.get_nested_value(d, ["a"]) == 1
-
-    def test_nested_keys(self):
-        d = {"a": {"b": {"c": 42}}}
-        assert MetadataControls.get_nested_value(d, ["a", "b", "c"]) == 42
-
-    def test_missing_key_returns_default(self):
-        d = {"a": 1}
-        assert MetadataControls.get_nested_value(d, ["x"], default=99) == 99
-
-    def test_missing_nested_key_returns_default(self):
-        d = {"a": {"b": 1}}
-        assert (
-            MetadataControls.get_nested_value(d, ["a", "z"], default="nope") == "nope"
-        )
-
-    def test_non_dict_intermediate_returns_default(self):
-        d = {"a": "not_a_dict"}
-        assert MetadataControls.get_nested_value(d, ["a", "b"], default=0) == 0
-
-    def test_empty_dict(self):
-        assert MetadataControls.get_nested_value({}, ["a"], default="x") == "x"
-
-    def test_invalid_keys_type_raises(self):
-        with pytest.raises(AssertionError):
-            MetadataControls.get_nested_value({}, "not_a_list")
 
 
 # ===========================================================================

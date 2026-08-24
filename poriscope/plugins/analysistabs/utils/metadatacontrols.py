@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
-from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox
+from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
 class MetadataControls(QWidget):
@@ -407,7 +407,7 @@ class MetadataControls(QWidget):
         self.filter_label = self.createLabel(self.groupBox, 12, "FILTER")
         self.filter_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self.filter_comboBox = MultiSelectComboBox(self.groupBox)
+        self.filter_comboBox = MultiSelectFilterComboBox(self.groupBox)
         self.filter_comboBox.setObjectName("filterComboBox")
 
         self.filter_add_button = self.create_add_filter_button(
@@ -885,22 +885,6 @@ class MetadataControls(QWidget):
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
-
     # Signals Connection
     def connect_signals(self):
         """Connects signals to corresponding methods."""
@@ -995,7 +979,11 @@ class MetadataControls(QWidget):
                 "y_axis_units": self.y_axis_units_label.text() or None,
                 "z_axis_units": self.z_axis_units_label.text() or None,
                 "bins": (
-                    [x.strip() for x in self.bins_lineEdit.text().split(",")]
+                    [
+                        x.strip()
+                        for x in self.bins_lineEdit.text().split(",")
+                        if x.strip()
+                    ]
                     if self.bins_lineEdit.text()
                     else None
                 ),
@@ -1012,7 +1000,7 @@ class MetadataControls(QWidget):
             ):
                 parameters["bins"] = [float(x) for x in parameters["bins"]]
 
-        except AttributeError:
+        except (AttributeError, ValueError):
             pass
 
         self.logger.debug(f"Collected parameters: {parameters}")
@@ -1063,22 +1051,31 @@ class MetadataControls(QWidget):
         is_plot_events_valid = True
         is_save_edit_delete_filter_valid = True
         is_export_subset_valid = True
-        is_bins_valid = (
-            all(
-                part.strip().isdigit() and int(part.strip()) > 0
-                for part in bins_text.split(",")
-                if part.strip()
-            )
-            if bins_text
-            else False
-        )
+        # When "Sizes" is checked, bins are explicit decimal bin edges (parsed
+        # with float() in collect_parameters); otherwise they are whole bin
+        # counts (parsed with int()). Validate against whichever format is
+        # actually expected instead of always requiring digits.
+        use_decimal_bins = self.sizes_checkbox.isChecked()
+        is_bins_valid = True
+        for part in bins_text.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                bin_value = float(part) if use_decimal_bins else int(part)
+            except ValueError:
+                is_bins_valid = False
+                break
+            if bin_value <= 0:
+                is_bins_valid = False
+                break
 
         self.logger.debug(
             f"Validating inputs: DB Loader: {db_loader}, Plot Type: {plot_type}, Axes: {x_axis}, {y_axis}, {z_axis}, Filter: {filter_selected}"
         )
 
         if not is_bins_valid:
-            pass
+            is_update_plot_valid = False
 
         if not db_loader or db_loader == "No Event Database":
             db_loader_loaded = False
@@ -1188,13 +1185,11 @@ class MetadataControls(QWidget):
         current_selection = self.db_loader_comboBox.currentText()
         self.db_loader_comboBox.clear()
 
-        if not loaders:  # If list is empty, insert placeholder
-            loaders.insert(0, "No Event Database")
-
-        self.db_loader_comboBox.addItems(loaders)
+        display_loaders = loaders if loaders else ["No Event Database"]
+        self.db_loader_comboBox.addItems(display_loaders)
 
         # Restore selection if it still exists
-        if current_selection in loaders:
+        if current_selection in display_loaders:
             self.db_loader_comboBox.setCurrentText(current_selection)
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
@@ -1224,5 +1219,3 @@ class MetadataControls(QWidget):
         for selection in current_selections:
             if selection in [str(i) for i in filters]:
                 self.filter_comboBox.selectItem(selection)
-
-

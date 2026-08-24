@@ -36,6 +36,7 @@ from pathlib import Path
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -51,6 +52,10 @@ from poriscope.utils.MetaWriter import MetaWriter
 
 
 class MainModel(QObject):
+    """
+    App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
+    """
+
     configUpdated = Signal()
     errorOccurred = Signal(str)
     dataReadInstancesUpdated = Signal(dict)
@@ -59,9 +64,9 @@ class MainModel(QObject):
 
     def __init__(self, app_config):
         """
-        Initializes the MainModel with the given configuration file path.
+        Initializes the MainModel with the given app configuration.
         Args:
-            config_path (str): The path to the configuration file.
+            app_config (dict): The application's configuration settings.
         """
         super().__init__()
         self.app_config = app_config
@@ -77,10 +82,7 @@ class MainModel(QObject):
     @log(logger=logger)
     def clear_cache(self):
         """
-        Deletes log file and wait until it's confirmed deleted.
-
-        :param filepath: Path to the file to be deleted.
-        :param timeout: Maximum time (in seconds) to wait for file deletion.
+        Truncate the app's log file (flushing any buffered log data first).
         """
         log_file_path = Path(self.log_path, "app.log")
 
@@ -190,13 +192,13 @@ class MainModel(QObject):
         ]
 
         for base_path in plugin_dirs_to_search:
-            try:
-                walker = os.walk(base_path)
-            except Exception as e:
-                self.logger.warning(f"Skipping plugin directory {base_path}: {e}")
+            if not Path(base_path).is_dir():
+                self.logger.warning(
+                    f"Skipping plugin directory {base_path}: not a valid directory"
+                )
                 continue
 
-            for root_dir, _, files in walker:
+            for root_dir, _, files in os.walk(base_path):
                 try:
                     files = [
                         f
@@ -363,8 +365,13 @@ class MainModel(QObject):
     def update_app_config(self, key, val):
         self.app_config[key] = val
         config_file_path = Path(self.config_path, "config.json")
-        with open(config_file_path, "w") as f:
-            json.dump(self.app_config, f, indent=4)
+        try:
+            with open(config_file_path, "w") as f:
+                json.dump(self.app_config, f, default=serialize_object, indent=4)
+        except Exception as e:
+            self.logger.warning(
+                f"Unable to persist updated config file {config_file_path}: {e}"
+            )
 
     @log(logger=logger)
     def get_data_server_location(self):
@@ -373,6 +380,10 @@ class MainModel(QObject):
     @log(logger=logger)
     def get_user_plugin_location(self):
         return self.get_app_config("User Plugin Folder")
+
+    @log(logger=logger)
+    def get_logging_level(self):
+        return self.get_app_config("Log Level")
 
     @log(logger=logger)
     @Slot(int)

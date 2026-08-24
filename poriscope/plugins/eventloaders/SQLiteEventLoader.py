@@ -186,17 +186,11 @@ class SQLiteEventLoader(MetaEventLoader):
                        WHERE e.channel_id = ?;"""
             cursor.execute(query, (channel,))
 
-            num_events_row = cursor.fetchone()
-            if num_events_row is None:
-                raise ValueError(f"No events found for channel {channel}")
-            num_events = num_events_row[0]
+            num_events = cursor.fetchone()[0]
 
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error in get_num_events: {e}")
             raise  # Re-raise the exception to propagate it
-        except ValueError as e:
-            self.logger.error(f"Value error in get_num_events: {e}")
-            raise
         except Exception as e:
             self.logger.error(f"Unexpected error in get_num_events: {e}", exc_info=True)
             raise
@@ -237,7 +231,7 @@ class SQLiteEventLoader(MetaEventLoader):
                 raise ValueError(f"No samplerate found for channel {channel}")
             samplerate = samplerate_row[0]
 
-        except (sqlite3.Error, ValueError, Exception) as e:
+        except sqlite3.Error as e:
             self.logger.error(f"SQLite error in get_samplerate: {e}")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:
@@ -265,7 +259,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :raises: ValueError if no event_ids exist
 
-        **Purpose** Return a list of indices correspond to the id of events within the given channel, or a list of all valid indices in the database if channel is not specified
+        **Purpose** Return a list of indices corresponding to the id of events within the given channel. `channel` is required; there is no "all channels" mode.
         """
         conn = None
         cursor = None
@@ -442,6 +436,12 @@ class SQLiteEventLoader(MetaEventLoader):
             # Fetch all tables from the database
             existing_tables = [row[0] for row in cursor.fetchall()]
 
+            # sqlite_sequence is an internal table SQLite creates automatically for
+            # any AUTOINCREMENT column; it's not part of the expected schema, but its
+            # presence is normal and not itself a validation problem.
+            if "sqlite_sequence" in existing_tables:
+                existing_tables.remove("sqlite_sequence")
+
             # Check if the existing tables match the expected channels
             missing_tables = [
                 table for table in expected_tables if table not in existing_tables
@@ -450,17 +450,12 @@ class SQLiteEventLoader(MetaEventLoader):
                 table for table in existing_tables if table not in expected_tables
             ]
 
-            if "sqlite_sequence" in existing_tables:
-                existing_tables.remove("sqlite_sequence")
-
             if missing_tables:
                 raise ValueError(
                     f"Missing tables: {', '.join(missing_tables)}. Double check that you are loading a database of raw event data."
                 )
 
-            if extra_tables and not (
-                len(extra_tables) == 1 and extra_tables[0] == "sqlite_sequence"
-            ):
+            if extra_tables:
                 raise ValueError(
                     f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of raw event data."
                 )

@@ -73,13 +73,32 @@ class RawDataModel(MetaModel):
     def calculate_psd(self, psd_data, samplerate):
         """
         Calculate a psd for each dataset in the list, assuming a common samplerate
+
+        :return: Pxx_list, rms_list, the frequency axis, and the indices into
+            ``psd_data`` that were successfully processed. A channel is
+            skipped (and its index omitted) if it has too few samples, if
+            ``welch()`` fails, or if the resulting frequency axis is too
+            short to integrate noise over.
+        :rtype: Tuple[list, list, Optional[numpy.ndarray], list[int]]
         """
         Pxx_list = []
         rms_list = []
-        for data in psd_data:
-            length = len(data) / 10
-            f, Pxx = welch(data, samplerate, nperseg=length)
-            rms = self.integrate_noise(f, Pxx)
+        kept_indices = []
+        f = None
+        for index, data in enumerate(psd_data):
+            length = int(len(data) / 10)
+            if length < 1:
+                self.logger.warning(
+                    f"Skipping PSD calculation for a channel with insufficient data ({len(data)} samples)"
+                )
+                continue
+            try:
+                f, Pxx = welch(data, samplerate, nperseg=length)
+                rms = self.integrate_noise(f, Pxx)
+            except Exception as e:
+                self.logger.warning(f"Unable to calculate PSD for a channel: {e}")
+                continue
             Pxx_list.append(Pxx)
             rms_list.append(rms)
-        return Pxx_list, rms_list, f
+            kept_indices.append(index)
+        return Pxx_list, rms_list, f, kept_indices

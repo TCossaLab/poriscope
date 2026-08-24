@@ -54,6 +54,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         Initialize the MetaEventFinder instance.
         """
+        self.reader: Optional[MetaReader] = None
         super().__init__(settings)
         self.num_events_found: Dict[int, int] = {}
         self.event_starts: Dict[int, List[int]] = {}
@@ -66,7 +67,6 @@ class MetaEventFinder(BaseDataPlugin):
         self.accepted_data: Dict[int, float] = {}
         self.rejected_events: Dict[int, Dict[str, int]] = {}
         self.eventfinding_finished: Dict[int, bool] = {}
-        self.reader: Optional[MetaReader] = None
 
     # public API, must be overridden by subclasses
     @abstractmethod
@@ -108,14 +108,11 @@ class MetaEventFinder(BaseDataPlugin):
                     report = (
                         f"\nCh{channel}: Found {self.num_events_found[channel]} events"
                     )
+                    report += f"\nAccepted {self.accepted_data[channel]:.1f}s of data"
                     if self.rejected_data.get(channel):
                         report += (
-                            f"\nAccepted {self.accepted_data[channel]:.1f}s of data"
+                            f"\nRejected {self.rejected_data[channel]:.1f}s of data"
                         )
-                        if self.rejected_data[channel] > 0:
-                            report += (
-                                f"\nRejected {self.rejected_data[channel]:.1f}s of data"
-                            )
                     if self.rejected_events.get(channel):
                         report += "\nRejected Events:\n"
                         report += "\n".join(
@@ -307,25 +304,26 @@ class MetaEventFinder(BaseDataPlugin):
             self.logger.info(f"Processing range {i+1}/{len(ranges)}: ({start}, {end})")
             events_before = len(self.event_starts[channel])
 
-            try:
-                weight = (end - start) / total_length
-                for value in self._find_events_single_range(
-                    channel, start, end, chunk_length, data_filter
-                ):
-                    abort = yield value * weight + completed
-                    abort = bool(abort)
-                    if abort is True:
-                        break
-            except RuntimeError:
-                continue
-            except StopIteration:
-                continue
+            weight = (end - start) / total_length
+            for value in self._find_events_single_range(
+                channel, start, end, chunk_length, data_filter
+            ):
+                abort = yield value * weight + completed
+                abort = bool(abort)
+                if abort is True:
+                    break
 
             events_after = len(self.event_starts[channel])
             events_in_range = events_after - events_before
             total_found += events_in_range
             self.logger.info(f"Range {i+1}: Found {events_in_range} events")
             completed += weight
+
+            if abort is True:
+                self.logger.info(
+                    f"Eventfinding aborted after range {i+1}/{len(ranges)} in channel {channel}"
+                )
+                break
 
         # Final consistency check
         if abort is False:
@@ -424,6 +422,7 @@ class MetaEventFinder(BaseDataPlugin):
             if data_filter:
                 data = data_filter(data)
 
+            is_first_chunk = first_chunk
             try:
                 mean, std = self._get_baseline_stats(data)
                 if (
@@ -462,7 +461,7 @@ class MetaEventFinder(BaseDataPlugin):
                     last_call = True
 
             if (
-                prev_start
+                prev_start is not None
             ):  # if we saved a start from last iteration, insert it at the beginning of this chunk
                 event_starts.insert(0, prev_start)
 
@@ -476,7 +475,7 @@ class MetaEventFinder(BaseDataPlugin):
                 len(event_ends) > len(event_starts)
                 and len(event_starts) > 0
                 and len(event_ends) > 0
-                and first_chunk
+                and is_first_chunk
                 and event_ends[0] < event_starts[0]
             ):
                 # if we have a leading event end in the first chunk, drop it
@@ -668,22 +667,29 @@ class MetaEventFinder(BaseDataPlugin):
         raw_data: bool = False,
     ) -> Generator[npt.NDArray[np.float64], None, None]:
         """
-        Set up a generator that will return the start and end indices of event i within the data chunk analyzed. If offset was provided during analysis, it will be included here.
+        Set up a generator that yields the data and metadata dict for each event found in the given channel, in order, via repeated calls to :meth:`get_single_event_data`.
 
-        :param channel: label for the channel from which to retrieve event indices
+        :param channel: label for the channel from which to retrieve event data
         :type channel: int
+        :param data_filter: a function that is called to preprocess the data before it is returned
+        :type data_filter: Optional[Callable]
+        :param rectify: should the data be returned rectified?
+        :type rectify: bool
+        :param raw_data: return raw adc codes on True, pA values on False
+        :type raw_data: bool
 
-        :raises ValueError: If events have not been found or if index is out of bounds.
+        :raises KeyError: If the channel does not exist.
+        :raises ValueError: If events have not been found, or event finding has not finished, for this channel.
 
-        :return: A Generator that gives data in an event and the index of the start of that event relative to the start of the file. If offset was provided during analysis, it will be included here.
-        :rtype: Generator[Tuple[int,int], None, None]
+        :return: A Generator that yields, for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`.
+        :rtype: Generator[Dict[str, Union[npt.NDArray[np.float64], float]], None, None]
         """
         if (
             self.event_starts.get(channel) is None
             or self.event_ends.get(channel) is None
         ):
             raise KeyError(f"Channel {channel} is not present in the eventfinder")
-        elif self.event_starts[channel] == {} or self.event_ends[channel] == {}:
+        elif self.event_starts[channel] == [] and self.event_ends[channel] == []:
             raise ValueError("Eventfinder may not have run yet")
         elif self.event_starts.get(channel) == []:
             raise ValueError(f"No event starts found for channel {channel}")
@@ -734,12 +740,11 @@ class MetaEventFinder(BaseDataPlugin):
         :type raw_data: Optional[bool]
 
 
-        :raises IndexError: If index is out of bounds
         :raises KeyError: If the channel does not exist
         :raises ValueError: if no events have been found in the channel
 
-        :return: A dictionary of data and metadata for the specicied event
-        :rtype: Dict[str, Union[npt.NDArray[np.float64], float]]
+        :return: A dictionary of data and metadata for the specified event, or None if index is out of bounds
+        :rtype: Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]
         """
         if self.event_starts == {} or self.event_ends == {}:
             raise ValueError("Eventfinder may not have run yet")
@@ -790,27 +795,24 @@ class MetaEventFinder(BaseDataPlugin):
                     "offset": offset,
                 }
                 return event
-            except IndexError:
+            except (IndexError, ValueError) as e:
                 self.logger.error(
-                    f"Event index {index} out of bounds for channel {channel}"
+                    f"Event index {index} out of bounds for channel {channel}: {e}"
                 )
                 return None
 
     @log(logger=logger)
     def get_event_indices(
-        self, index: int
+        self,
     ) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
         """
-        return the start and end indices of event i within the data chunk analyzed.
+        Return the full sets of event start and end indices located so far, keyed by channel.
 
-        :param index: The index of the event to retrieve data for
-        :type index: int
-
-        :raises IndexError: If index is out of bounds
-        :return: Lists of start and end indices for all events found in the data. If offset was provided during analysis, it will be included here.
-        :rtype: Tuple[List[int],List[int]]
+        :raises ValueError: If no events have been located yet (find_events has not been run)
+        :return: Two dicts, each mapping channel to its list of event start indices and event end indices respectively.
+        :rtype: Tuple[Dict[int, List[int]], Dict[int, List[int]]]
         """
-        if self.event_starts == [] or self.event_ends == []:
+        if self.event_starts == {} or self.event_ends == {}:
             raise ValueError("Events have not been located or no events were found")
         else:
             return self.event_starts, self.event_ends

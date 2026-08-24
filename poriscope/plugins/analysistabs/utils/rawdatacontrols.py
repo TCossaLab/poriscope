@@ -23,10 +23,7 @@
 # Contributors:
 # Alejandra Carolina González González
 
-import json
 import logging
-import os
-from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QSize, Qt, Signal
 from PySide6.QtGui import QFont
@@ -409,37 +406,6 @@ class RawDataControls(QWidget):
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
-    def get_plugin_data(self):
-        """Fetch plugin data from a JSON file located in the application's local data directory."""
-        localappdata = os.getenv("LOCALAPPDATA")
-        if localappdata is None:
-            raise IOError("Unable to resolve LOCALAPPDATA folder")
-        file_path = Path(localappdata, "nanolyzer", "session", "plugin_history.json")
-        try:
-            with open(file_path, "r") as file:
-                return json.load(file)
-        except FileNotFoundError:
-            self.logger.error(f"Plugin data file not found at {file_path}")
-        except json.JSONDecodeError:
-            self.logger.error("Error decoding JSON from plugin data file")
-        return {}
-
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
-
     def validate_inputs(self):
         is_trace_psd_valid = True
         is_commit_valid = True
@@ -732,12 +698,11 @@ class RawDataControls(QWidget):
 
         self.readers_comboBox.clear()
 
-        if readers == []:
-            readers.insert(0, "No Reader")
-        self.readers_comboBox.addItems(readers)
+        display_readers = readers if readers != [] else ["No Reader"]
+        self.readers_comboBox.addItems(display_readers)
 
         # Restore selection if it still exists
-        if current_selection in readers:
+        if current_selection in display_readers:
             self.readers_comboBox.setCurrentText(current_selection)
         else:
             self.readers_comboBox.setCurrentIndex(0)
@@ -749,12 +714,11 @@ class RawDataControls(QWidget):
         current_selection = self.filters_comboBox.currentText()
 
         self.filters_comboBox.clear()
-        if filters == []:
-            filters.insert(0, "No Filter")
-        self.filters_comboBox.addItems(filters)
+        display_filters = filters if filters != [] else ["No Filter"]
+        self.filters_comboBox.addItems(display_filters)
 
         # Restore selection if it still exists
-        if current_selection in filters:
+        if current_selection in display_filters:
             self.filters_comboBox.setCurrentText(current_selection)
         else:
             self.filters_comboBox.setCurrentIndex(0)
@@ -767,12 +731,11 @@ class RawDataControls(QWidget):
 
         self.writers_comboBox.clear()
 
-        if writers == []:
-            writers.insert(0, "No Writer")
-        self.writers_comboBox.addItems(writers)
+        display_writers = writers if writers != [] else ["No Writer"]
+        self.writers_comboBox.addItems(display_writers)
 
         # Restore selection if it still exists
-        if current_selection in writers:
+        if current_selection in display_writers:
             self.writers_comboBox.setCurrentText(current_selection)
         else:
             self.writers_comboBox.setCurrentIndex(0)
@@ -784,12 +747,13 @@ class RawDataControls(QWidget):
         current_selection = self.eventfinders_comboBox.currentText()
 
         self.eventfinders_comboBox.clear()
-        if eventfinders == []:
-            eventfinders.insert(0, "No Eventfinder")
-        self.eventfinders_comboBox.addItems(eventfinders)
+        display_eventfinders = (
+            eventfinders if eventfinders != [] else ["No Eventfinder"]
+        )
+        self.eventfinders_comboBox.addItems(display_eventfinders)
 
         # Restore selection if it still exists
-        if current_selection in eventfinders:
+        if current_selection in display_eventfinders:
             self.eventfinders_comboBox.setCurrentText(current_selection)
         else:
             self.eventfinders_comboBox.setCurrentIndex(0)
@@ -817,5 +781,3 @@ if __name__ == "__main__":
     widget = RawDataControls()
     widget.show()
     sys.exit(app.exec())
-
-

@@ -71,7 +71,12 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     finder = ClassicBlockageFinder()
     finderset = finder.get_empty_settings(standalone=True)
     if "MetaReader" in finderset:
+        # Type must be reset to None to reflect a resolved plugin reference
+        # (mirroring what DataPluginController does before apply_settings),
+        # since the declared "Type": str only describes the pre-resolution
+        # dropdown-key state.
         finderset["MetaReader"]["Value"] = reader
+        finderset["MetaReader"]["Type"] = None
     # Dataset-tuned values you mentioned
     if "Threshold" in finderset:
         finderset["Threshold"]["Value"] = 2000.0  # pA
@@ -129,6 +134,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     writer = SQLiteEventWriter()
     writer_settings = writer.get_empty_settings(standalone=True)
     writer_settings["MetaEventFinder"]["Value"] = finder
+    writer_settings["MetaEventFinder"]["Type"] = None
     writer_settings["Experiment Name"]["Value"] = "chimera_integration_test"
     writer_settings["Voltage"]["Value"] = 200.0
     writer_settings["Membrane Thickness"]["Value"] = 10.0

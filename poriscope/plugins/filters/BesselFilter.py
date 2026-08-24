@@ -86,7 +86,7 @@ class BesselFilter(MetaFilter):
             raise ValueError(
                 "Cutoff must be a positive number less than half the sampling rate"
             )
-        if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] < 0:
+        if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] <= 0:
             raise ValueError("Poles must be a positive integer between 1 and 10")
         z, p, k = bessel(
             settings["Poles"]["Value"],
@@ -139,7 +139,7 @@ class BesselFilter(MetaFilter):
     @override
     def reset_channel(self, channel=None):
         """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
+        Reset the state of a specific channel for a new operation or run. If channel is not None, handle only that channel, else reset all of them. No-op here, since this filter holds no persistent per-channel state between calls.
 
         :param channel: channel ID
         :type channel: int

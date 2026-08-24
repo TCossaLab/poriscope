@@ -1,14 +1,52 @@
 """
 Full unit-test suite for ProteinView.
 
+Covers the ProteinView analysis tab end-to-end, including:
+  - format_axis_label (module-level helper)
+  - Gaussian fitting: _double_gaussian, _fit_double_gaussian,
+    _fit_and_sanity_check_double_gaussian
+  - Physical model: _compute_theoretical_blockages, _generate_vm_ensemble
+  - Histogram construction: _construct_single_event_histogram,
+    _construct_all_points_histogram
+  - Plotting: _plot_all_points_histogram, _plot_scatterplot,
+    _plot_xyerr_scatterplot, update_plot
+  - Event/histogram navigation and caching: _fetch_event_data,
+    _handle_plot_events, _handle_plot_histogram, _shift_range_and_update_plot
+  - Filter management: add/edit/delete/save/load, and raw-SQL validation
+    callbacks (on_raw_filter_validated)
+  - Fit commit/reset lifecycle: _commit_fits, _reset_actions
+  - Qt wiring: _set_custom_display_area, _set_control_area,
+    handle_parameter_change dispatch
+  - A small integration/pipeline test class exercising histogram -> fit ->
+    V/M scatter as a whole
+
 Uses:
-  - A session-scoped QApplication fixture
-  - A per-test ProteinView() fixture
-  - Real imports from the poriscope package
+  - A session-scoped QApplication fixture (qt_app) so Qt widgets can be
+    constructed once per test session.
+  - A per-test ProteinView fixture (view) built via the same
+    _set_custom_display_area / _set_control_area sequence MetaView uses in
+    the running application, so canvases, axes, and ProteinControls are
+    fully wired.
+  - Real imports from the poriscope package rather than a mocked ProteinView,
+    so tests exercise actual widget and signal behaviour.
+  - unittest.mock (MagicMock, patch) to stub out global_signal emissions,
+    file dialogs, and modal dialogs (AddSubsetFilterDialog,
+    EditSubsetFilterDialog, SelectionTree) so tests remain non-blocking and
+    independent of a live plugin bus or database backend.
+
+Notes:
+  - Several tests are annotated "documented" or "_bug" in their names; these
+    intentionally pin down current behaviour (including known quirks, e.g.
+    format_axis_label's regex on nested parentheses, or the double-Gaussian
+    fallback fit's degenerate single-peak behaviour) rather than asserting
+    an ideal/fixed outcome. Treat failures in these tests as a prompt to
+    re-evaluate intent, not just to "fix" them blindly.
+  - Tests involving global_signal generally leave it unconnected (no live
+    plugin bus), so any code path depending on a slot's return value should
+    be set up manually on the view fixture before calling into it.
 
 Run with:
-    pytest test_protein_view_final.py -v
-    pytest test_protein_view_final.py --cov=poriscope --cov-report=html
+    pytest tests/unit/views/test_protein_view.py -v
 """
 
 import json
@@ -696,6 +734,7 @@ class TestStateSetters:
 
     def test_get_current_view(self, view):
         assert view.get_current_view() == "ProteinView"
+        assert view.get_current_view() == "ProteinView"
 
     def test_set_query_stores(self, view):
         view.set_query("SELECT * FROM events", "events")
@@ -1370,11 +1409,6 @@ class TestSaveLoadFilter:
 
 
 class TestMiscMethods:
-    def test_undo_plot_emits_signal(self, view):
-        received = []
-        view.update_tab_action_history.connect(lambda a, b: received.append((a, b)))
-        view._undo_plot()
-        assert (None, True) in received
 
     def test_get_walkthrough_steps_returns_list(self, view):
         steps = view.get_walkthrough_steps()
@@ -1603,16 +1637,6 @@ class TestHandleParameterChange:
             view.handle_parameter_change("p", "update_plot", (self._params(),))
         assert view._display_mode == "distribution"
 
-    def test_reset_plot_routes(self, view):
-        with patch.object(view, "_reset_actions") as mock:
-            view.handle_parameter_change("p", "reset_plot", ({},))
-        mock.assert_called_once()
-
-    def test_undo_plot_routes(self, view):
-        with patch.object(view, "_undo_plot") as mock:
-            view.handle_parameter_change("p", "undo_plot", ({},))
-        mock.assert_called_once()
-
     def test_add_filter_routes(self, view):
         with patch.object(view, "_show_add_filter_dialog") as mock:
             view.handle_parameter_change("p", "add_filter", (self._params(),))
@@ -1750,16 +1774,17 @@ class TestFetchEventData:
         result = view._fetch_event_data(params)
         assert result == []
 
-    def test_uses_cached_events_when_available(self, view):
+    def test_fetches_fresh_via_resolve_and_generator(self, view):
         view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
         view.current_channel = "0"
-        # current_* matches the requested exp/channel/filter exactly, so the
-        # generator-refresh branch is skipped entirely and only the cache is read.
-        view.plot_events_generator = MagicMock()
-        view.cached_events = {1: _make_event(1)}
+        view._resolve_event_db_ids = MagicMock(
+            return_value=pd.DataFrame({"id": [10], "event_id": [1]})
+        )
+        view.global_signal = MagicMock()
+        view.plot_events_generator = iter([_make_event(1)])
         result = view._fetch_event_data(self._params())
         assert len(result) == 1
         assert result[0]["event_id"] == 1
@@ -1788,7 +1813,7 @@ class TestHandlePlotEvents:
         view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(view, "_update_event_plot") as mock_plot:
             view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
-        mock_plot.assert_called_once_with(events)
+        mock_plot.assert_called_once_with(events, use_raw=False)
 
     def test_no_data_emits_warning(self, view):
         self._setup(view)

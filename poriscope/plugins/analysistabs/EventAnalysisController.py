@@ -61,6 +61,12 @@ class EventAnalysisController(MetaController):
     @log(logger=logger)
     @Slot(dict)
     def update_available_plugins(self, available_plugins: dict) -> None:
+        """
+        Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
+
+        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
+        :type available_plugins: dict
+        """
         self.logger.debug(
             f"Controller received available plugins update: {available_plugins}"
         )
@@ -161,13 +167,13 @@ class EventAnalysisController(MetaController):
         self.view.update_plot_samplerate(samplerate)
 
     @log(logger=logger)
-    @Slot(dict)
+    @Slot(list)
     def update_channels(self, channels):
         """
         Update the view with the current number of channels available or selected.
 
-        :param num_channels: Dictionary containing channel information.
-        :type num_channels: dict
+        :param channels: List of channel identifiers.
+        :type channels: List[int]
         """
         self.view.update_channels(channels)
 

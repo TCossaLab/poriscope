@@ -20,15 +20,24 @@ rather than fail, because:
    platform. pytest-qt already provides a session-scoped `qapp` fixture -
    if view code creates its own QApplication instead of reusing that
    one, we will hit this.
+
+4. Matplotlib canvas GC segfaults. Matplotlib figures wrapping PySide6
+   widgets trigger C++ segfaults when garbage collected asynchronously
+   after Qt widgets have been destroyed.
+   -> Fixed by forcing the 'Agg' backend and explicitly closing figures and
+      running garbage collection at teardown.
 """
 
+import gc
 import os
 
-# Must be set BEFORE any Qt module is imported anywhere in the process,
-# which is why this happens at module scope, at the very top of this file,
-# rather than inside a fixture.
+# Set headless Qt platform AND non-GUI Matplotlib backend BEFORE module imports
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import matplotlib  # noqa: E402
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
 import pytest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
@@ -60,12 +69,18 @@ def _prevent_blocking_dialogs(monkeypatch):
 @pytest.fixture(autouse=True)
 def _close_leftover_widgets():
     """
-    Safety net: close any top-level widgets left open by a test (e.g. a
-    view that was shown but never closed) so they can't keep an event loop
-    alive into the next test.
+    Safety net: close any top-level widgets left open by a test, close all
+    Matplotlib figures, and force a GC sweep while Qt is still active.
     """
     yield
+    # Close all Matplotlib figures to disown C++ Qt bindings explicitly
+    plt.close("all")
+
     app = QApplication.instance()
     if app is not None:
         for widget in app.topLevelWidgets():
             widget.close()
+        app.processEvents()
+
+    # Force Python GC to clean up Shiboken/PySide wrappers before the session advances
+    gc.collect()

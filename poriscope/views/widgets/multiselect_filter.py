@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 from poriscope.configs.utils import get_icon
 
 
-class MultiSelectComboBox(QComboBox):
+class MultiSelectFilterComboBox(QComboBox):
     selectionChanged = Signal(list)  # Signal to emit when the selection changes
     logger = logging.getLogger(__name__)
 
@@ -120,6 +120,7 @@ class MultiSelectComboBox(QComboBox):
                 if not self.containerWidget.geometry().contains(event.globalPos()):
                     self.logger.debug("Clicked outside containerWidget - closing")
                     self.containerWidget.close()
+                    return True  # Event handled
         return super().eventFilter(obj, event)
 
     def addItem(self, name, userData=None):
@@ -163,6 +164,8 @@ class MultiSelectComboBox(QComboBox):
             self.listWidget.clear()  # Clear all existing items
             for text in texts:
                 self.addItem(text)
+
+            self.handleItemChanged(None)  # refresh text + signal
         except Exception as e:
             self.logger.exception(f"Error while adding items: {e}")
         finally:
@@ -293,27 +296,6 @@ class MultiSelectComboBox(QComboBox):
     def refreshDisplayText(self):
         self.lineEdit().setText(", ".join(self.getSelectedItems()))
 
-    def _edit_button_clicked(self, checkbox):
-        name = checkbox.text()
-        if hasattr(self, "on_edit_filter"):
-            self.on_edit_filter(name)
-        else:
-            self.logger.warning("No edit handler connected.")
-
-    def _delete_button_clicked(self, checkbox):
-        checkbox.text()
-
-        for i in range(self.listWidget.count()):
-            item = self.listWidget.item(i)
-            widget = self.listWidget.itemWidget(item)
-            if widget:
-                cb = widget.findChild(QCheckBox)
-                if cb and cb is checkbox:
-                    self.listWidget.takeItem(i)
-                    break
-
-        self.refreshDisplayText()
-
     def _handle_internal_edit(self, name):
         self.hidePopup()
 
@@ -331,4 +313,3 @@ class MultiSelectComboBox(QComboBox):
         self.lineEdit().clear()
         self.selectAllButton.setChecked(False)
         self.selectAllButton.setText("Select All")
-

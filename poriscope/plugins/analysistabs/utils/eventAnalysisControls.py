@@ -24,10 +24,7 @@
 # Alejandra Carolina González González
 
 
-import json
 import logging
-import os
-from pathlib import Path
 
 from PySide6.QtCore import (
     QCoreApplication,
@@ -378,7 +375,7 @@ class EventAnalysisControls(QWidget):
             "No Loader",
             "No Database Writer",
             "No Filter",
-            "No EventFitter",
+            "No Event Fitter",
         ]
 
     def clear_popup_reference(self, comboBox):
@@ -402,37 +399,6 @@ class EventAnalysisControls(QWidget):
         key = comboBox.currentText()
         self.delete_processed.emit(metaclass, key)
 
-    def get_plugin_data(self):
-        """Fetch plugin data from a JSON file located in the application's local data directory."""
-        localappdata = os.getenv("LOCALAPPDATA")
-        if localappdata is None:
-            raise IOError("Unable to resolve LOCALAPPDATA")
-        file_path = Path(localappdata, "nanolyzer", "session", "plugin_history.json")
-        try:
-            with open(file_path, "r") as file:
-                return json.load(file)
-        except FileNotFoundError:
-            self.logger.error(f"Plugin data file not found at {file_path}")
-        except json.JSONDecodeError:
-            self.logger.error("Error decoding JSON from plugin data file")
-        return {}
-
-    def get_nested_value(d, keys, default=None):
-        """
-        Recursively fetches values from nested dictionaries.
-        :param d: The dictionary to fetch data from.
-        :param keys: List of keys to navigate through the nested dictionary.
-        :param default: Default value if any key is not found.
-        :return: Value fetched from the dictionary or default.
-        """
-        assert isinstance(keys, list), "Keys must be provided as a list of key names"
-        for key in keys:
-            if d and isinstance(d, dict):
-                d = d.get(key)
-            else:
-                return default
-        return d if d is not None else default
-
     def validate_inputs(self):
         is_commit_valid = True
         is_plot_events_valid = True
@@ -440,7 +406,7 @@ class EventAnalysisControls(QWidget):
 
         # Gather relevant inputs
         loader = self.loaders_comboBox.currentText()
-        self.eventfitters_comboBox.currentText()
+        eventfitter = self.eventfitters_comboBox.currentText()
         channels = self.channel_comboBox.getSelectedItems()
         event_index_valid = self.event_index_lineEdit.isValid()
         writer = self.writers_comboBox.currentText()
@@ -476,6 +442,10 @@ class EventAnalysisControls(QWidget):
         if not writer or writer == "No Database Writer":
             self.logger.debug("No writer selected")
             is_commit_valid = False
+
+        if not eventfitter or eventfitter == "No Event Fitter":
+            self.logger.debug("No event fitter selected")
+            is_fit_events_valid = False
 
         # Enable or disable buttons based on validation
         self.commit_btn.setEnabled(is_commit_valid)
@@ -670,12 +640,11 @@ class EventAnalysisControls(QWidget):
 
         self.loaders_comboBox.clear()
 
-        if loaders == []:
-            loaders.insert(0, "No Loader")
-        self.loaders_comboBox.addItems(loaders)
+        display_loaders = loaders if loaders != [] else ["No Loader"]
+        self.loaders_comboBox.addItems(display_loaders)
 
         # Restore selection if it still exists
-        if current_selection in loaders:
+        if current_selection in display_loaders:
             self.loaders_comboBox.setCurrentText(current_selection)
         else:
             self.loaders_comboBox.setCurrentIndex(0)
@@ -687,12 +656,11 @@ class EventAnalysisControls(QWidget):
         current_selection = self.filters_comboBox.currentText()
 
         self.filters_comboBox.clear()
-        if filters == []:
-            filters.insert(0, "No Filter")
-        self.filters_comboBox.addItems(filters)
+        display_filters = filters if filters != [] else ["No Filter"]
+        self.filters_comboBox.addItems(display_filters)
 
         # Restore selection if it still exists
-        if current_selection in filters:
+        if current_selection in display_filters:
             self.filters_comboBox.setCurrentText(current_selection)
         else:
             self.filters_comboBox.setCurrentIndex(0)
@@ -705,12 +673,11 @@ class EventAnalysisControls(QWidget):
 
         self.writers_comboBox.clear()
 
-        if writers == []:
-            writers.insert(0, "No Database Writer")
-        self.writers_comboBox.addItems(writers)
+        display_writers = writers if writers != [] else ["No Database Writer"]
+        self.writers_comboBox.addItems(display_writers)
 
         # Restore selection if it still exists
-        if current_selection in writers:
+        if current_selection in display_writers:
             self.writers_comboBox.setCurrentText(current_selection)
         else:
             self.writers_comboBox.setCurrentIndex(0)
@@ -722,12 +689,13 @@ class EventAnalysisControls(QWidget):
         current_selection = self.eventfitters_comboBox.currentText()
 
         self.eventfitters_comboBox.clear()
-        if eventfitters == []:
-            eventfitters.insert(0, "No EventFitter")
-        self.eventfitters_comboBox.addItems(eventfitters)
+        display_eventfitters = (
+            eventfitters if eventfitters != [] else ["No Event Fitter"]
+        )
+        self.eventfitters_comboBox.addItems(display_eventfitters)
 
         # Restore selection if it still exists
-        if current_selection in eventfitters:
+        if current_selection in display_eventfitters:
             self.eventfitters_comboBox.setCurrentText(current_selection)
         else:
             self.eventfitters_comboBox.setCurrentIndex(0)
@@ -749,5 +717,3 @@ if __name__ == "__main__":
     widget = EventAnalysisControls()
     widget.show()
     sys.exit(app.exec())
-
-

@@ -85,7 +85,12 @@ class WaveletFilter(MetaFilter):
         padlen = 100
         data = np.pad(data, padlen, mode="edge")
         wavelet = self.settings["Wavelet"]["Value"].encode("utf-8")
-        self.fun(data, len(data), wavelet)
+        # filters are invoked as plain callables from within other plugins' own
+        # channel loops rather than being dispatched through the channel-management
+        # system, so force_serial_channel_operations() is never consulted for them;
+        # guard the shared DLL handle directly instead.
+        with self.lock:
+            self.fun(data, len(data), wavelet)
         return data[padlen:-padlen]
 
     @log(logger=logger)
@@ -103,7 +108,7 @@ class WaveletFilter(MetaFilter):
     @override
     def reset_channel(self, channel=None):
         """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
+        Reset the state of a specific channel for a new operation or run. If channel is not None, handle only that channel, else reset all of them. No-op here, since this filter holds no persistent per-channel state between calls.
 
         :param channel: channel ID
         :type channel: int
@@ -177,7 +182,7 @@ class WaveletFilter(MetaFilter):
         self.fun.restype = None
         self.fun.argtypes = [
             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-            ctypes.c_int,
+            ctypes.c_int64,
             ctypes.c_char_p,
         ]
 

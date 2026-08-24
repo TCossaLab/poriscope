@@ -224,7 +224,7 @@ class TCossaLabABFReader(MetaReader):
         """
         # replace date and time in a file name with wildcard, keep id, extension and headstage
         match = re.split(r"_\d{12}_CH\d{3}_\d{3}\.abf", file_name)
-        if len(match) > 0:
+        if len(match) > 1:
             return match[0] + "*" + self.file_extension
         else:
             raise ValueError(
@@ -236,7 +236,7 @@ class TCossaLabABFReader(MetaReader):
     def _convert_data(self, data, config, raw_data=False):
         """
         Scale or otherwise transform and return requested data.
-        Default behavior assumes data is already scaled when read.
+        Applies the per-channel telegraph-derived scale recovered from the ABF2 header to convert raw ADC codes to pA.
         if raw_data is true, return also scale and offset
 
         :param data: Data to convert.

@@ -36,13 +36,17 @@ from poriscope.utils.LogDecorator import log
 
 
 class MainController(QObject):
+    """
+    App-shell controller: owns the DataPluginController and every instantiated analysis-tab controller, wires up their signals, and acts as the central relay for the app's signal-bus dispatch pattern (see handle_global_signal/handle_data_plugin_controller_signal), by which one tab or plugin can invoke a method on another plugin instance, or on the DataPluginController itself, without holding a direct reference to it. Also drives session/plugin-history persistence and restore.
+    """
+
     logger = logging.getLogger(__name__)
 
     def __init__(self, main_model, main_view):
         super().__init__()
         self.main_model = main_model
         self.main_view = main_view
-        self.config_path = Path(Path(__file__).resolve().parent, ".." "configs")
+        self.config_path = Path(Path(__file__).resolve().parent, "..", "configs")
 
         # analysis tab managers
         self.analysis_tabs = (
@@ -63,8 +67,9 @@ class MainController(QObject):
         self.tab_action_history: Dict[str, Any] = {}
 
         previous_plugin_history = self.main_model.load_session(None)
-        if previous_plugin_history is not None:
-            self.previous_plugin_history = previous_plugin_history
+        self.previous_plugin_history: Dict[str, Any] = (
+            previous_plugin_history if previous_plugin_history is not None else {}
+        )
 
         self.setup_connections()
 
@@ -96,6 +101,7 @@ class MainController(QObject):
         self.main_view.get_user_plugin_location.connect(
             self.send_curent_user_plugin_location
         )
+        self.main_view.get_shared_logging_level.connect(self.send_curent_logging_level)
         self.main_view.update_data_server_location.connect(
             self.update_data_server_location
         )
@@ -117,16 +123,22 @@ class MainController(QObject):
         self.data_plugin_controller.handle_exit()
 
     @log(logger=logger)
-    @Slot(str, str, object)
+    @Slot()
     def send_curent_data_server(self):
         data_server = self.main_model.get_app_config("Parent Folder")
         self.main_view.set_data_server(data_server)
 
     @log(logger=logger)
-    @Slot(str, str, object)
+    @Slot()
     def send_curent_user_plugin_location(self):
         data_server = self.main_model.get_app_config("User Plugin Folder")
         self.main_view.set_user_plugin_location(data_server)
+
+    @log(logger=logger)
+    @Slot()
+    def send_curent_logging_level(self):
+        level = self.main_model.get_logging_level()
+        self.main_view.set_logging_level(level)
 
     @log(logger=logger)
     @Slot(str)
@@ -151,23 +163,14 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str, str)
     def get_settings_from_history(self, metaclass, subclass):
-        try:
-            for key, val in self.plugin_history.items():
-                if (
-                    val.get("subclass") == subclass
-                    and val.get("metaclass") == metaclass
-                ):
-                    self.data_plugin_controller.set_settings(val.get("settings"))
-                    return
-            for key, val in self.previous_plugin_history.items():
-                if (
-                    val.get("subclass") == subclass
-                    and val.get("metaclass") == metaclass
-                ):
-                    self.data_plugin_controller.set_settings(val.get("settings"))
-                    return
-        except AttributeError:
-            self.data_plugin_controller.set_settings(None)
+        for key, val in self.plugin_history.items():
+            if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
+                self.data_plugin_controller.set_settings(val.get("settings"))
+                return
+        for key, val in self.previous_plugin_history.items():
+            if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
+                self.data_plugin_controller.set_settings(val.get("settings"))
+                return
         self.data_plugin_controller.set_settings(None)
 
     @log(logger=logger)
@@ -191,6 +194,22 @@ class MainController(QObject):
         return_function: Optional[Callable],
         ret_args: tuple,
     ) -> None:
+        """
+        Resolve (metaclass, subclass_key) to a live data plugin instance and call call_function(*call_args) on it, so a tab or plugin can invoke a method on another plugin without holding a direct reference to it. If call_function raises TypeError, retries with a single None argument, on the assumption call_args didn't apply. If return_function is given, it is called with the result plus ret_args once call_function succeeds (again falling back to a single None argument on TypeError). Errors resolving the instance, function, or either call are logged and swallowed rather than raised.
+
+        :param metaclass: The metaclass of the target plugin instance.
+        :type metaclass: str
+        :param subclass_key: The unique key of the target plugin instance.
+        :type subclass_key: str
+        :param call_function: Name of the method to call on the resolved instance.
+        :type call_function: str
+        :param call_args: Positional arguments to call_function.
+        :type call_args: tuple
+        :param return_function: Optional callable to invoke with the result of call_function.
+        :type return_function: Optional[Callable]
+        :param ret_args: Additional positional arguments appended after the result when calling return_function.
+        :type ret_args: tuple
+        """
         self.logger.debug(
             f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
         )
@@ -198,7 +217,11 @@ class MainController(QObject):
             metaclass, subclass_key
         )
 
-        if instance is not None:
+        if instance is None:
+            self.logger.error(
+                f"No plugin instance found for {metaclass}/{subclass_key}, unable to call {call_function}"
+            )
+        else:
             func = getattr(instance, call_function, None)
             if func is None:
                 self.logger.error(
@@ -234,8 +257,10 @@ class MainController(QObject):
                                 f"Error executing return function with args {ret_args}: {repr(e)}"
                             )
                             return
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.exception(
+                        f"Unexpected error handling global signal for {metaclass}/{subclass_key}.{call_function}: {repr(e)}"
+                    )
 
     @log(logger=logger)
     @Slot(str, str, str, tuple, object, tuple)
@@ -248,6 +273,22 @@ class MainController(QObject):
         return_function: Optional[Callable],
         ret_args: tuple,
     ) -> None:
+        """
+        Same dispatch mechanism as handle_global_signal, except call_function is looked up and called on the DataPluginController itself rather than on a resolved plugin instance (metaclass/subclass_key are accepted for signal-signature parity with handle_global_signal but are not used to resolve a target here). Used when a tab needs to invoke a DataPluginController method (e.g. to instantiate or edit a plugin) rather than a method on an existing plugin instance.
+
+        :param metaclass: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
+        :type metaclass: str
+        :param subclass_key: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
+        :type subclass_key: str
+        :param call_function: Name of the method to call on the DataPluginController.
+        :type call_function: str
+        :param call_args: Positional arguments to call_function.
+        :type call_args: tuple
+        :param return_function: Optional callable to invoke with the result of call_function.
+        :type return_function: Optional[Callable]
+        :param ret_args: Additional positional arguments appended after the result when calling return_function.
+        :type ret_args: tuple
+        """
         self.logger.debug(
             f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
         )
@@ -258,11 +299,13 @@ class MainController(QObject):
         if instance is not None:
             func = getattr(instance, call_function, None)
             if func is None:
-                raise ValueError(
+                self.logger.error(
                     f"No value {call_function} found in data plugin controller"
                 )
+                return
             elif not callable(func):
-                raise ValueError(f"{call_function} is not callable")
+                self.logger.error(f"{call_function} is not callable")
+                return
             else:
                 try:
                     call_args = self._ensure_tuple(call_args)
@@ -278,9 +321,10 @@ class MainController(QObject):
                             return_function(*retval)
                         except Exception as ex:
                             self.logger.error(f"Error executing return function: {ex}")
-                            raise
-                except:
-                    raise
+                except Exception as e:
+                    self.logger.exception(
+                        f"Unable to resolve function {metaclass}/{subclass_key}.{call_function} with arguments {call_args}: {repr(e)}"
+                    )
 
     @log(logger=logger)
     @Slot(str, list)
@@ -300,7 +344,7 @@ class MainController(QObject):
             if history:
                 self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
-            self.plugin_history.pop(delete_key)
+            self.plugin_history.pop(delete_key, None)
         elif history and delete_key:
             new_history = {}
             for key, val in self.plugin_history.items():
@@ -327,7 +371,16 @@ class MainController(QObject):
     @Slot(str)
     def instantiate_analysis_tab(self, subclass):
         """
-        Instantiate a reader plugin to read a given dataset. Exceptions are handled in the caller.
+        Instantiate a new analysis-tab controller of the given subclass and wire it into the app
+        (add its page, connect its signals, register it in plugin history), or reuse the existing
+        instance if a tab of that type has already been instantiated.
+
+        Exceptions raised while instantiating the controller itself are caught and logged here.
+        Exceptions raised afterward, while wiring up or registering the new tab, are not caught
+        by this method and will propagate to the caller.
+
+        :param subclass: The class name of the MetaController subclass to instantiate (e.g. "RawDataController").
+        :type subclass: str
         """
         new_analysis_tab = None
         history = {}
@@ -423,26 +476,10 @@ class MainController(QObject):
                         settings=settings,
                         key=key,
                     )
-                except ValueError as e:
-                    if "already exists globally" in str(e):
-                        self.logger.warning(
-                            f"Skipped loading plugin {key} from session: {str(e)}. Plugin with key '{key}' already exists."
-                        )
-                    else:
-                        self.logger.error(
-                            f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
-                        )
                 except Exception as e:
-                    # unexpected failure: keep restore running
                     self.logger.error(
-                        "Unexpected restore error (%s/%s, key=%s): %s",
-                        metaclass,
-                        subclass,
-                        key,
-                        e,
+                        f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
-                # optionally: logger.debug("traceback", exc_info=True)
-                # continue
 
     @log(logger=logger)
     @Slot()

@@ -33,7 +33,6 @@ import numpy as np
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox
-from scipy.stats import median_abs_deviation
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
@@ -165,34 +164,40 @@ class RawDataView(MetaView, WalkthroughMixin):
             ax.plot(time, channel_data / 1000, zorder=1)
 
             if baseline is True:
-                amp, mean, std = self._get_baseline_stats(channel_data / 1000)
-                # Add green rectangle for mean ± 3*std
-                ax.axhspan(
-                    mean - 3 * std,
-                    mean + 3 * std,
-                    xmin=0,
-                    xmax=1,
-                    color="green",
-                    alpha=0.2,
-                    zorder=2,
-                )
+                try:
+                    amp, mean, std = self._get_baseline_stats(channel_data / 1000)
+                except ValueError as e:
+                    self.logger.warning(
+                        f"Unable to compute baseline stats for channel {channel}: {e}"
+                    )
+                else:
+                    # Add green rectangle for mean ± 3*std
+                    ax.axhspan(
+                        mean - 3 * std,
+                        mean + 3 * std,
+                        xmin=0,
+                        xmax=1,
+                        color="green",
+                        alpha=0.2,
+                        zorder=2,
+                    )
 
-                # Add red horizontal line at the mean
-                ax.axhline(mean, color="red", linestyle="--", linewidth=1, zorder=3)
+                    # Add red horizontal line at the mean
+                    ax.axhline(mean, color="red", linestyle="--", linewidth=1, zorder=3)
 
-                # Add label with mean and std
-                label = f"Mean = {mean:.2f} nA\nStd = {std:.2f} nA"
-                ax.text(
-                    0.98,
-                    0.95,
-                    label,
-                    transform=ax.transAxes,
-                    verticalalignment="top",
-                    horizontalalignment="right",
-                    fontsize=8,
-                    bbox=dict(facecolor="white", alpha=0.6, edgecolor="gray"),
-                    zorder=4,
-                )
+                    # Add label with mean and std
+                    label = f"Mean = {mean:.2f} nA\nStd = {std:.2f} nA"
+                    ax.text(
+                        0.98,
+                        0.95,
+                        label,
+                        transform=ax.transAxes,
+                        verticalalignment="top",
+                        horizontalalignment="right",
+                        fontsize=8,
+                        bbox=dict(facecolor="white", alpha=0.6, edgecolor="gray"),
+                        zorder=4,
+                    )
 
             y_label = r"Current (nA)"
             x_label = r"Time (s)"
@@ -212,7 +217,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 ax.set_xlabel(x_label)
             ax.set_title(dataset_label)
             ax.grid(True)
-        self.figure.set_constrained_layout(True)
+        self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
 
@@ -276,7 +281,7 @@ class RawDataView(MetaView, WalkthroughMixin):
 
             ax.set_title(dataset_label)
             ax.grid(True)
-        self.figure.set_constrained_layout(True)
+        self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
 
@@ -430,14 +435,17 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
-        :return: Tuple of mean and standard deviation.
-        :rtype: tuple[float, float]
+        :return: Tuple of local amplitude, mean, and standard deviation.
+        :rtype: tuple[float, float, float]
         """
         top = np.max(data)
         bottom = np.min(data)
 
-        median_abs_deviation(data)
         width = 2 * (top - bottom) / len(data) ** (1 / 3)
+        if width <= 0:
+            raise ValueError(
+                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
+            )
         bins = int((top - bottom) / width)
         hist = histogram1d(data, range=[bottom, top], bins=bins)
         centers = np.linspace(bottom, top, len(hist))
@@ -461,7 +469,9 @@ class RawDataView(MetaView, WalkthroughMixin):
         except StopIteration:
             bottom_index = 0
 
-        np.minimum(top_index - max_index, max_index - bottom_index)
+        half_width = np.minimum(top_index - max_index, max_index - bottom_index)
+        top_index = max_index + half_width
+        bottom_index = max_index - half_width
 
         top = centers[top_index]
         bottom = centers[bottom_index]
@@ -781,7 +791,7 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         if events and max(events) >= self.num_events_allowed:
             self.logger.info(
-                "Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
+                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
             )
 
         if events:
@@ -937,7 +947,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 ax.set_xlabel(r"Time ($\mu s$)")
             ax.set_title(dataset_label)
             ax.grid(True)
-        self.figure.set_constrained_layout(True)
+        self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
 
@@ -1307,8 +1317,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                 data_list = filtered_data_list
             if data_list:
                 self.calculate_psd.emit(data_list, self.plot_samplerate)
+                psd_channels = [channels[i] for i in self.psd_kept_indices]
                 self.update_psd(
-                    self.Pxx_list, self.rms_list, self.psd_frequency, channels
+                    self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels
                 )
             else:
                 self.logger.error("No data available for psd calculation")
@@ -1316,7 +1327,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.logger.error("Invalid parameters for plotting data")
 
     @log(logger=logger)
-    def set_psd(self, Pxx_list, rms_list, frequency):
+    def set_psd(self, Pxx_list, rms_list, frequency, kept_indices):
         """
         Set the PSD and RMS lists for visualization.
 
@@ -1324,10 +1335,14 @@ class RawDataView(MetaView, WalkthroughMixin):
             Pxx_list (list): Power spectral density data.
             rms_list (list): RMS noise data.
             frequency (ndarray): Frequency axis data.
+            kept_indices (list[int]): Indices into the channel list passed to
+                calculate_psd that were successfully processed, since some
+                channels may have been skipped.
         """
         self.Pxx_list = Pxx_list
         self.rms_list = rms_list
         self.psd_frequency = frequency
+        self.psd_kept_indices = kept_indices
 
     @log(logger=logger)
     def _apply_filter(self, data_filter, channel_data):
@@ -1467,7 +1482,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             parameters (dict): Parameters needed for the action.
         """
         reader = parameters.get("reader")
-        if reader:
+        if reader and reader != "No Reader":
             self.global_signal.emit(
                 "MetaReader", reader, "get_channels", (), "update_channels", ()
             )
