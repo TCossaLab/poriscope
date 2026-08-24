@@ -26,7 +26,7 @@
 
 import logging
 import re
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from PySide6.QtGui import QValidator
 
@@ -37,11 +37,13 @@ from poriscope.utils.BaseValidator import BaseValidator
 class CommaFloatRangeValidator(BaseValidator):
     logger = logging.getLogger(__name__)
 
-    def has_forbidden_characters(self, input):
+    def has_forbidden_characters(self, input: str) -> Optional[re.Match]:
         """Only allow digits, dots, commas, and hyphens."""
         return re.search(r"[^0-9.,\-]", input)
 
-    def _validate_intermediate(self, input, pos):
+    def _validate_intermediate(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Allow intermediate inputs while editing."""
         # Negative numbers are never valid here (times/indices are non-negative),
         # so a leading '-' can be rejected immediately rather than waiting for
@@ -57,7 +59,7 @@ class CommaFloatRangeValidator(BaseValidator):
             return QValidator.Intermediate, input, pos
         return QValidator.Acceptable, input, pos
 
-    def _validate_final(self, input):
+    def _validate_final(self, input: str) -> Tuple[QValidator.State, str, int]:
         """Strict validation of float ranges."""
         input = input.strip()
         if input == "":
@@ -107,14 +109,14 @@ class CommaFloatRangeValidator(BaseValidator):
 class CommaFloatRangeLineEdit(BaseLineEdit):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._used_floats = False
 
-    def create_validator(self):
+    def create_validator(self) -> CommaFloatRangeValidator:
         return CommaFloatRangeValidator(self)
 
-    def get_values(self):
+    def get_values(self) -> List[Tuple[Optional[float], Optional[float]]]:
         """Parse and return a list of (start, end) tuples. None means open-ended."""
         text = self.text().strip()
         ranges: List[Tuple[Optional[float], Optional[float]]] = []
@@ -155,26 +157,28 @@ class CommaFloatRangeLineEdit(BaseLineEdit):
 
         return ranges
 
-    def get_values_with_type_info(self):
+    def get_values_with_type_info(
+        self,
+    ) -> Tuple[List[Tuple[Optional[float], Optional[float]]], bool]:
         return self.get_values(), self._used_floats
 
     def used_floats(self) -> bool:
         return self._used_floats
 
-    def get_start(self):
+    def get_start(self) -> Optional[float]:
         values = self.get_values()
         if values:
             return values[0][0]
         return None
 
-    def get_duration(self):
+    def get_duration(self) -> Optional[float]:
         values = self.get_values()
         if values:
             flat = [v for pair in values for v in pair if v is not None]
             return max(flat) - min(flat)
         return None
 
-    def set_range(self, start: float, duration: float):
+    def set_range(self, start: float, duration: float) -> None:
         end = start + duration
         if self._used_floats:
             self.setText(f"{start:.1f}-{end:.1f}")
