@@ -14,7 +14,7 @@ than here.
 | 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | Done 2026-08-24 |
 | 3b | Fix pass over the defects step 3 surfaced | Done 2026-08-24 |
 | 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Done 2026-08-25 |
-| 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | **Next** - it is now the whole baseline |
+| 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Resolved 2026-08-25 - all three annotated; logic still off limits |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
 | 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on 4-6, and see the `@log` note |
 
@@ -126,7 +126,7 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
 
-### Defects in the excluded fitter plugins - flagged, never to be fixed here
+### Defects in the formerly excluded fitter plugins - flagged, never to be fixed here
 
 Policy as of 2026-08-25: `NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` are
 **in scope for docstring, signature and type-hint work but never for logic changes**,
@@ -150,6 +150,17 @@ narrow `# type: ignore` and a `NOTE:` comment at the site.
   passes `len(data[padding_before:-padding_after])` as `event_length`, and the body then
   computes `event_length * samplerate * 1e-6` and logs it as
   `f"event_length={event_length:.1f} us"`. Either the argument or the label is wrong.
+- **`NanoTrees._DNA` slices with two unguarded `Optional[int]` paddings.**
+  `data[:padding_before]` and `data[-padding_after:]` are computed with no `None`
+  check, so the negation raises `TypeError` for any event loader that supplies
+  neither. The method has no live caller today - the only call site is commented out
+  inside `_locate_sublevel_transitions` - which is presumably why it has gone unnoticed.
+- **`NanoTrees._locate_sublevel_transitions` overwrites both baseline arguments.**
+  Its first two statements recompute `baseline_std` and `baseline_mean` from
+  `data[:padding_before]`, discarding whatever the event loader passed in. That may
+  well be deliberate, but it means the two parameters are inert and the docstring's
+  promise to "handle gracefully the case where any of the arguments except data are
+  None" is met by accident rather than by design.
 - **Both PeakFinders' `sublevel_starts` really holds dicts, not indices.** Their
   `_locate_sublevel_transitions` returns a list of dicts keyed `"type"` and friends. This
   is now consistent rather than broken - the `MetaEventFitter` contract was widened to
