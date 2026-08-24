@@ -166,3 +166,5 @@ of every session, so it should stay a short list of standing rules.
   related logic paths to ensure that nothing breaks downstream as the result of an applied
   fix, and explain any issues surfaced to the user and request input before proceeding if
   you find that a user-based assumption or instruction would cause problems.
+- We are not in a rush, and the poriscope codebase is complex. Take the time and spend the 
+  tokens you need to get it right.
