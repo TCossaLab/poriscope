@@ -378,12 +378,6 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         return font
 
     # @log(logger=logger)
-    def update_unit_label(self, text: str) -> None:
-        unit = self.column_units.get(text, "")
-        self.unit_label.setText(f"({unit})" if unit else "")
-        self.unit_label.setVisible(bool(unit))
-
-    # @log(logger=logger)
     def update_unit_label_for_row(self, text: str, label: QLabel) -> None:
         unit = self.column_units.get(text, "")
         label.setText(f"({unit})" if unit else "")
@@ -526,15 +520,6 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
 
         self.logger.info(f"Clustering Settings Dialog params: {result}")
         return result
-
-    # @log(logger=logger)
-    def reset_top_inputs(self) -> None:
-        self.column_combo.setCurrentIndex(0)
-        self.unit_label.clear()
-        self.unit_label.setVisible(False)
-        self.log_cb.setChecked(False)
-        self.norm_cb.setChecked(False)
-        self.plot_cb.setChecked(False)
 
     def _add_default_row(self, layout: QGridLayout, row: int) -> None:
         combo = QComboBox()

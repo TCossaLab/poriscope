@@ -24,7 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
-from typing import Any, Iterable, List, Optional
+from typing import Iterable, List, Optional
 
 from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent
@@ -134,7 +134,7 @@ class MultiSelectFilterComboBox(QComboBox):
                     return True  # Event handled
         return super().eventFilter(obj, event)
 
-    def addItem(self, name: str, userData: Any = None) -> None:
+    def addItem(self, name: str) -> None:
         item_widget = QWidget()
         layout = QHBoxLayout(item_widget)
         layout.setContentsMargins(4, 0, 0, 0)

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QDialog, QGridLayout, QLabel, QLineEdit, QPushButt
 logging.basicConfig(level=logging.DEBUG)
 
 
-class FloatRangeValidator(QValidator):
+class TimeRangeValidator(QValidator):
     logger = logging.getLogger(__name__)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
@@ -120,7 +120,7 @@ class TimeWidget(QDialog):
 
             label = QLabel(f"Channel {key}")
             entry = QLineEdit()
-            entry.setValidator(FloatRangeValidator(entry))
+            entry.setValidator(TimeRangeValidator(entry))
             entry.setPlaceholderText("e.g., 0.0-2.5, 3.0-6.0")
             self.entrywidgets[key] = entry
 

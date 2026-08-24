@@ -281,7 +281,7 @@ class TestUpdateMethodParameters:
 
 
 # ===========================================================================
-# update_unit_label / update_unit_label_for_row
+# update_unit_label_for_row
 # ===========================================================================
 
 

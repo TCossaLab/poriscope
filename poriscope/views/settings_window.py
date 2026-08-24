@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+import sys
 from typing import Iterable, Optional, Union
 
 from PySide6.QtCore import (
@@ -841,8 +842,6 @@ class SettingsWindow(QWidget):
         self.setWindowTitle(QCoreApplication.translate("Form", "Settings", None))
 
     def main(self) -> None:
-        import sys
-
         app = QApplication(sys.argv)
         SettingsWindow().show()
         sys.exit(app.exec())

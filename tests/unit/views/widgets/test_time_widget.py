@@ -1,5 +1,5 @@
 """
-Unit tests for FloatRangeValidator and TimeWidget.
+Unit tests for TimeRangeValidator and TimeWidget.
 Qt widgets are tested without a display using QApplication + offscreen platform.
 """
 
@@ -19,20 +19,20 @@ app = QApplication.instance() or QApplication(sys.argv)
 # Import the module under test
 # ---------------------------------------------------------------------------
 from poriscope.views.widgets.time_widget import (  # noqa: E402
-    FloatRangeValidator,
+    TimeRangeValidator,
     TimeWidget,
 )
 
 # ===========================================================================
-# FloatRangeValidator
+# TimeRangeValidator
 # ===========================================================================
 
 
-class TestFloatRangeValidatorAcceptable(unittest.TestCase):
+class TestTimeRangeValidatorAcceptable(unittest.TestCase):
     """Inputs that should be fully Acceptable."""
 
     def setUp(self):
-        self.v = FloatRangeValidator()
+        self.v = TimeRangeValidator()
 
     def _state(self, text):
         state, _, _ = self.v.validate(text, 0)
@@ -70,11 +70,11 @@ class TestFloatRangeValidatorAcceptable(unittest.TestCase):
         self.assertEqual(self._state("0.0-2.5,3.0-6.0"), QValidator.Acceptable)
 
 
-class TestFloatRangeValidatorIntermediate(unittest.TestCase):
+class TestTimeRangeValidatorIntermediate(unittest.TestCase):
     """Inputs that are incomplete but fixable (Intermediate)."""
 
     def setUp(self):
-        self.v = FloatRangeValidator()
+        self.v = TimeRangeValidator()
 
     def _state(self, text):
         state, _, _ = self.v.validate(text, 0)
@@ -104,11 +104,11 @@ class TestFloatRangeValidatorIntermediate(unittest.TestCase):
         self.assertEqual(self._state("0-1,2"), QValidator.Intermediate)
 
 
-class TestFloatRangeValidatorInvalid(unittest.TestCase):
+class TestTimeRangeValidatorInvalid(unittest.TestCase):
     """Inputs that are definitively Invalid."""
 
     def setUp(self):
-        self.v = FloatRangeValidator()
+        self.v = TimeRangeValidator()
 
     def _state(self, text):
         state, _, _ = self.v.validate(text, 0)

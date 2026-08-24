@@ -27,16 +27,14 @@
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
+from poriscope.models.main_model import MainModel
 from poriscope.utils.LogDecorator import log
-
-if TYPE_CHECKING:  # imported for typing only - main_app wires these together
-    from poriscope.models.main_model import MainModel
-    from poriscope.views.main_view import MainView
+from poriscope.views.main_view import MainView
 
 
 class MainController(QObject):
@@ -46,7 +44,7 @@ class MainController(QObject):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, main_model: "MainModel", main_view: "MainView") -> None:
+    def __init__(self, main_model: MainModel, main_view: MainView) -> None:
         super().__init__()
         self.main_model = main_model
         self.main_view = main_view

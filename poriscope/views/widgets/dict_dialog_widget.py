@@ -67,7 +67,7 @@ class DictDialog(QDialog):
         editable: bool = True,
         show_delete: bool = False,
         editable_source_plugins: bool = True,
-        source_plugins: list = [],
+        source_plugins: Optional[list] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         """
@@ -86,7 +86,7 @@ class DictDialog(QDialog):
         :param editable_source_plugins: If True, allow editing of the source plugins list.
         :type editable_source_plugins: bool
         :param source_plugins: List of available source plugin keys.
-        :type source_plugins: list
+        :type source_plugins: Optional[list]
         :param parent: Parent widget.
         :type parent: Optional[QWidget]
         """
@@ -100,7 +100,7 @@ class DictDialog(QDialog):
         # three shapes: (params, name) on OK, (None, None) on cancel,
         # and the sentinel string "delete" on delete
         self._result: Union[Tuple[Optional[dict], Optional[str]], str, None] = None
-        self.source_plugins = source_plugins
+        self.source_plugins = source_plugins if source_plugins is not None else []
         self.editable_source_plugins = editable_source_plugins
         self.init_ui(params, name)
 
@@ -205,9 +205,9 @@ class DictDialog(QDialog):
                     self.entrywidgets[key] = QCheckBox()
                     self.entrywidgets[key].setChecked(val.get("Value"))
                 else:
-                    print(key, val)
                     raise ValueError(
-                        f"Unsupported value type for plugin settings: {val.get('Type')}"
+                        f"Unsupported value type for plugin setting {key!r}: "
+                        f"{val.get('Type')} (value {val.get('Value')!r})"
                     )
 
             if key not in ["Input File", "Output File", "Folder"]:

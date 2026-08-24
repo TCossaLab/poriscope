@@ -63,7 +63,9 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
         self.available_plugins: Dict[str, List[str]] = {}
         self.reporter_metaclasses: Dict[str, str] = {}
-        self.generators: Dict[str, Dict[int, Generator]] = {}
+        self.generators: Dict[
+            str, Dict[int, Generator[float, Optional[bool], None]]
+        ] = {}
         self.threads: Dict[str, Dict[int, WorkerThread]] = (
             {}
         )  # Holds worker objects per key/channel
@@ -104,7 +106,11 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     def set_generator(
-        self, generator: Generator, channel: int, key: str, metaclass: str
+        self,
+        generator: Generator[float, Optional[bool], None],
+        channel: int,
+        key: str,
+        metaclass: str,
     ) -> None:
         """Add generator and set it to be run by a QThread."""
         if key not in self.thread_running.keys():

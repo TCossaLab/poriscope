@@ -26,7 +26,7 @@
 
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -59,12 +59,10 @@ from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
     WalkthroughStep,
 )
 from poriscope.utils.LogDecorator import log
+from poriscope.views.help import HelpCentre
 from poriscope.views.settings_window import SettingsWindow
 from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
-
-if TYPE_CHECKING:  # HelpCentre is imported lazily where it is constructed
-    from poriscope.views.help import HelpCentre
 
 
 class MainView(QMainWindow, WalkthroughMixin):
@@ -112,7 +110,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.canvas = FigureCanvas(self.figure)
         self.toggle_in_progress = False
         self.child_windows: List[QWidget] = []
-        self.help_window: Optional["HelpCentre"] = None
+        self.help_window: Optional[HelpCentre] = None
         self.settings_window: Optional[SettingsWindow] = None
         self._analysis_proxy: Optional[QWidget] = None
         self.setup_settings_window_connections()
@@ -450,8 +448,6 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_help_button_click(self) -> None:
         if self.help_window is None:
-            from poriscope.views.help import HelpCentre
-
             self.help_window = HelpCentre()
             self.help_window.show()
             self.help_window.closeEvent = self.on_help_window_closed
@@ -841,12 +837,15 @@ class MainView(QMainWindow, WalkthroughMixin):
         }
         return step_mapping.get(view_name, "You're starting a guided tutorial.")
 
-    def show_walkthrough_intro(self) -> None:  # type: ignore[override]
+    def show_walkthrough_intro(self, current_view: str = "") -> None:
         if self._walkthrough_active:
             self.logger.info("Walkthrough is already active, skipping intro.")
             return  # Exit if the walkthrough is already active
 
-        current_view = self.get_current_view()
+        # WalkthroughMixin passes the view in; MainView's own callers do not,
+        # and it can derive it itself, so the argument stays optional.
+        if not current_view:
+            current_view = self.get_current_view()
         intro = IntroDialog(self, current_step=current_view)
         intro.start_walkthrough.connect(lambda: self._on_intro_finished(current_view))
         intro.exec()

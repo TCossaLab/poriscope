@@ -297,13 +297,17 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     def set_generator(
-        self, generator: Generator, channel: int, key: str, metaclass: str
+        self,
+        generator: Generator[float, Optional[bool], None],
+        channel: int,
+        key: str,
+        metaclass: str,
     ) -> None:
         """
         Assign a generator to the model for asynchronous event processing.
 
         :param generator: Generator object for producing event data.
-        :type generator: Generator
+        :type generator: Generator[float, Optional[bool], None]
         :param channel: Target channel number.
         :type channel: int
         :param key: Identifier key for the data stream.

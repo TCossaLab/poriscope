@@ -233,12 +233,6 @@ class IconMenuWidget(QWidget):
     ) -> QPushButton:
         button = QPushButton(self)
         button.setObjectName(f"{objectName}_iconButton")
-        # Ensure paths are properly combined into strings
-        if isinstance(iconPathOff, tuple):
-            iconPathOff = os.path.join(*iconPathOff)
-        if isinstance(iconPathOn, tuple):
-            iconPathOn = os.path.join(*iconPathOn)
-
         icon = QIcon()
         icon.addFile(iconPathOff, QSize(), QIcon.Normal, QIcon.Off)
         icon.addFile(iconPathOn, QSize(), QIcon.Normal, QIcon.On)

@@ -51,6 +51,15 @@ from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
 
+#: Maps the class names written into session JSON back to real types.
+_JSON_CLASS_NAMES: Mapping[str, Any] = {
+    "str": str,
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "null": None,
+}
+
 
 class MainModel(QObject):
     """
@@ -366,13 +375,7 @@ class MainModel(QObject):
     def replace_class_names_with_classes(
         self,
         d: Any,
-        class_dict: Mapping[str, Any] = {
-            "str": str,
-            "int": int,
-            "float": float,
-            "bool": bool,
-            "null": None,
-        },
+        class_dict: Mapping[str, Any] = _JSON_CLASS_NAMES,
     ) -> None:
         if isinstance(d, dict):
             for key, value in d.items():

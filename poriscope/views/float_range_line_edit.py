@@ -130,14 +130,6 @@ class FloatRangeLineEdit(BaseLineEdit):
 
         return sorted(result)
 
-    def get_values_with_type_info(self) -> Tuple[List[float], bool]:
-        """
-        Returns a tuple of (parsed values, used_floats flag).
-        Example: ([1.0, 1.1, 1.2], True)
-        """
-        values = self.get_values()
-        return values, self._used_floats
-
     def used_floats(self) -> bool:
         return self._used_floats
 

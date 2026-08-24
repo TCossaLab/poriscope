@@ -25,7 +25,7 @@
 
 import logging
 import sys
-from typing import Any, Iterable, List, Optional
+from typing import Iterable, List, Optional
 
 from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
 from PySide6.QtGui import QMouseEvent
@@ -123,7 +123,7 @@ class MultiSelectComboBox(QComboBox):
 
         QApplication.instance().installEventFilter(self)
 
-    def addItem(self, text: str, userData: Any = None) -> None:
+    def addItem(self, text: str) -> None:
         item = QListWidgetItem(text, self.listWidget)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked)

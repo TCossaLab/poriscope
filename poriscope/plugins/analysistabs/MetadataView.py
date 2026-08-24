@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import bisect
 import itertools
 import json
 import logging
@@ -2133,8 +2134,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         # Find current position in the cached list using binary search
-        import bisect
-
         ids = self.filtered_event_ids
         n = len(ids)
 
@@ -2267,8 +2266,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         # Snap using cache — bisect into filtered_event_ids
-        import bisect
-
         ids = self.filtered_event_ids
         snap_idx = bisect.bisect_left(ids, event_id)
         if snap_idx >= len(ids):
