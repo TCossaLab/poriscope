@@ -26,7 +26,9 @@
 
 
 import logging
+from typing import Any, Generator, Optional
 
+import pandas as pd
 from PySide6.QtWidgets import QMessageBox
 from typing_extensions import override
 
@@ -50,7 +52,7 @@ class ProteinController(MetaController):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         Initialize the protein view and model.
         """
@@ -59,7 +61,7 @@ class ProteinController(MetaController):
 
     @log(logger=logger)
     @override
-    def _setup_connections(self):
+    def _setup_connections(self) -> None:
         """
         Connect internal view signals to their corresponding controller slots.
         """
@@ -67,17 +69,17 @@ class ProteinController(MetaController):
         pass
 
     @log(logger=logger)
-    def check_column_exists(self, table_name):
+    def check_column_exists(self, table_name: Optional[str]) -> None:
         """
         Notify the view to check if a fit-data column exists in the given table.
 
-        :param table_name: Name of the table to check.
-        :type table_name: str
+        :param table_name: Name of the table containing the queried column, or None if the loader could not resolve one.
+        :type table_name: Optional[str]
         """
         self.view.set_column_exists(table_name)
 
     @log(logger=logger)
-    def alter_database_status(self, status):
+    def alter_database_status(self, status: bool) -> None:
         """
         Inform the view whether database alteration was successful.
 
@@ -87,27 +89,27 @@ class ProteinController(MetaController):
         self.view.set_alter_database_status(status)
 
     @log(logger=logger)
-    def relay_table_by_column(self, table):
+    def relay_table_by_column(self, table: Optional[str]) -> None:
         """
-        Relay a column-grouped table to the view.
+        Relay the name of the table a column lives in to the view.
 
-        :param table: Dictionary representing a table organized by column.
-        :type table: dict
+        :param table: Name of the table containing the queried column, or None if the loader could not resolve one.
+        :type table: Optional[str]
         """
         self.view.set_table_by_column(table)
 
     @log(logger=logger)
-    def relay_baseline_duration(self, duration):
+    def relay_baseline_duration(self, duration: Optional[float]) -> None:
         """
         Relay the computed baseline duration to the view.
 
-        :param duration: Duration of the baseline in appropriate units.
-        :type duration: float
+        :param duration: Duration of the baseline in appropriate units, or None if it could not be resolved.
+        :type duration: Optional[float]
         """
         self.view.set_baseline_duration(duration)
 
     @log(logger=logger)
-    def set_exported_event_count(self, written):
+    def set_exported_event_count(self, written: int) -> None:
         """
         Update the view with the number of events exported.
 
@@ -117,7 +119,7 @@ class ProteinController(MetaController):
         self.view.set_exported_event_count(written)
 
     @log(logger=logger)
-    def relay_query(self, query, debug, table_name, *args) -> None:
+    def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:
         """
         Relay a query and optional debug message to the view, handling optional filter intents.
 
@@ -128,7 +130,7 @@ class ProteinController(MetaController):
         :param table_name: Name of the table associated with the query.
         :type table_name: str
         :param *args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type *args: tuple
+        :type *args: str
         """
         intent = args[0] if args else None
 
@@ -197,7 +199,7 @@ class ProteinController(MetaController):
         self.view.clear_pending_filter_state()
 
     @log(logger=logger)
-    def relay_event_query(self, query, debug):
+    def relay_event_query(self, query: str, debug: str) -> None:
         """
         Relay an event-level query to the view.
 
@@ -211,7 +213,7 @@ class ProteinController(MetaController):
         self.view.set_event_query(query)
 
     @log(logger=logger)
-    def relay_event_data_generator(self, generator):
+    def relay_event_data_generator(self, generator: Generator) -> None:
         """
         Relay a generator for event data overlays to the view.
 
@@ -222,7 +224,7 @@ class ProteinController(MetaController):
         self.view.set_event_data_generator(generator)
 
     @log(logger=logger)
-    def relay_event_plot_data_generator(self, generator):
+    def relay_event_plot_data_generator(self, generator: Generator) -> None:
         """
         Relay a generator for event plotting to the view.
 
@@ -233,7 +235,7 @@ class ProteinController(MetaController):
         self.view.set_event_plot_data_generator(generator)
 
     @log(logger=logger)
-    def relay_plot_data(self, data):
+    def relay_plot_data(self, data: Any) -> None:
         """
         Relay processed data to the view for plotting.
 
@@ -243,17 +245,17 @@ class ProteinController(MetaController):
         self.view.set_plot_data(data)
 
     @log(logger=logger)
-    def relay_units(self, units):
+    def relay_units(self, units: Optional[str]) -> None:
         """
-        Provide column unit labels to the view.
+        Provide a column unit label to the view.
 
-        :param units: Dictionary mapping column names to units.
-        :type units: dict
+        :param units: Unit string for the queried column, or None if the loader could not resolve one.
+        :type units: Optional[str]
         """
         self.view.set_units(units)
 
     @log(logger=logger)
-    def update_column_names(self, column_names):
+    def update_column_names(self, column_names: list[str]) -> None:
         """
         Update the view with new column names.
 
@@ -268,12 +270,12 @@ class ProteinController(MetaController):
             self.logger.warning("No column names received to update.")
 
     @log(logger=logger)
-    def update_column_units(self, column_units, axis):
+    def update_column_units(self, column_units: Optional[str], axis: str) -> None:
         """
-        Update the view with unit labels for a specific axis.
+        Update the view with the unit label for a specific axis.
 
-        :param column_units: Dictionary of column names and their corresponding units.
-        :type column_units: dict
+        :param column_units: Unit string for the column plotted on this axis, or None if the loader could not resolve one.
+        :type column_units: Optional[str]
         :param axis: Axis to apply the units to (e.g., 'x' or 'y').
         :type axis: str
         """
@@ -281,7 +283,9 @@ class ProteinController(MetaController):
         self.view.update_column_units(column_units, axis)
 
     @log(logger=logger)
-    def get_experiment_names_for_tree(self, experiments: list[str], loader_name: str):
+    def get_experiment_names_for_tree(
+        self, experiments: list[str], loader_name: str
+    ) -> None:
         """
         Provide a list of experiment names to the view for the tree display.
 
@@ -296,7 +300,7 @@ class ProteinController(MetaController):
     @log(logger=logger)
     def get_experiment_structure_ready(
         self, structure: dict[str, list[int]], loader_name: str
-    ):
+    ) -> None:
         """
         Pass experiment-to-channel mappings to the view in display-ready format.
 
@@ -323,7 +327,7 @@ class ProteinController(MetaController):
         )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id):
+    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
         """
         Relay the experiment ID to the view.
 
@@ -333,7 +337,7 @@ class ProteinController(MetaController):
         self.view.set_experiment_id(experiment_id)
 
     @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id):
+    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
         """
         Relay the channel database ID to the view.
 
@@ -343,7 +347,7 @@ class ProteinController(MetaController):
         self.view.set_channel_db_id(channel_db_id)
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid, error_msg):
+    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
         """
         Relay the result of raw filter validation to the view.
 
@@ -355,12 +359,12 @@ class ProteinController(MetaController):
         self.view.on_raw_filter_validated(valid, error_msg)
 
     @log(logger=logger)
-    def relay_query_result(self, result):
+    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
         Relay a direct database query result to the view.
         Used by ProteinView._rebuild_event_id_cache to receive the list of filtered event_ids.
 
-        :param result: DataFrame returned by query_database_directly.
-        :type result: pd.DataFrame
+        :param result: DataFrame returned by query_database_directly, or None if the query failed.
+        :type result: Optional[pd.DataFrame]
         """
         self.view.relay_query_result(result)

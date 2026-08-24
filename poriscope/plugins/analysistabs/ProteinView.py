@@ -31,11 +31,12 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
     NavigationToolbar2QT as NavigationToolbar,
@@ -47,6 +48,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,
+    QLayout,
     QMessageBox,
     QStackedWidget,
     QVBoxLayout,
@@ -58,12 +60,16 @@ from scipy.stats import t
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
+from poriscope.views.widgets.multiselect import MultiSelectComboBox
 from poriscope.views.widgets.SelectionTree import SelectionTree
 
 warnings.filterwarnings(
@@ -83,7 +89,7 @@ class ProteinView(MetaView, WalkthroughMixin):
     logger = logging.getLogger(__name__)
 
     @property
-    def fig_hist(self):
+    def fig_hist(self) -> Figure:
         return (
             self.fig_hist_individual
             if self._analysis_mode == "individual"
@@ -91,14 +97,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
     @fig_hist.setter
-    def fig_hist(self, value):
+    def fig_hist(self, value: Figure) -> None:
         if self._analysis_mode == "individual":
             self.fig_hist_individual = value
         else:
             self.fig_hist_ensemble = value
 
     @property
-    def ax_hist(self):
+    def ax_hist(self) -> Axes:
         return (
             self.ax_hist_individual
             if self._analysis_mode == "individual"
@@ -106,14 +112,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
     @ax_hist.setter
-    def ax_hist(self, value):
+    def ax_hist(self, value: Axes) -> None:
         if self._analysis_mode == "individual":
             self.ax_hist_individual = value
         else:
             self.ax_hist_ensemble = value
 
     @property
-    def canvas_hist(self):
+    def canvas_hist(self) -> FigureCanvas:
         return (
             self.canvas_hist_individual
             if self._analysis_mode == "individual"
@@ -121,14 +127,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
     @canvas_hist.setter
-    def canvas_hist(self, value):
+    def canvas_hist(self, value: FigureCanvas) -> None:
         if self._analysis_mode == "individual":
             self.canvas_hist_individual = value
         else:
             self.canvas_hist_ensemble = value
 
     @property
-    def fig_vm(self):
+    def fig_vm(self) -> Figure:
         return (
             self.fig_vm_individual
             if self._analysis_mode == "individual"
@@ -136,14 +142,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
     @fig_vm.setter
-    def fig_vm(self, value):
+    def fig_vm(self, value: Figure) -> None:
         if self._analysis_mode == "individual":
             self.fig_vm_individual = value
         else:
             self.fig_vm_ensemble = value
 
     @property
-    def ax_vm(self):
+    def ax_vm(self) -> Axes:
         return (
             self.ax_vm_individual
             if self._analysis_mode == "individual"
@@ -151,14 +157,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
     @ax_vm.setter
-    def ax_vm(self, value):
+    def ax_vm(self, value: Axes) -> None:
         if self._analysis_mode == "individual":
             self.ax_vm_individual = value
         else:
             self.ax_vm_ensemble = value
 
     @property
-    def canvas_vm(self):
+    def canvas_vm(self) -> FigureCanvas:
         return (
             self.canvas_vm_individual
             if self._analysis_mode == "individual"
@@ -166,13 +172,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         )
 
     @canvas_vm.setter
-    def canvas_vm(self, value):
+    def canvas_vm(self, value: FigureCanvas) -> None:
         if self._analysis_mode == "individual":
             self.canvas_vm_individual = value
         else:
             self.canvas_vm_ensemble = value
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._init()
         self._init_walkthrough()
@@ -184,12 +190,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         Initialize the ProteinView instance.
         """
         self._clear_cache()
-        self.fit_data = None
+        self.fit_data: Optional[pd.DataFrame] = None
+        self.operation_success: bool = False
         self.ensemble_fit_params: Optional[tuple] = None
-        self.ensemble_fit_bins = None
-        self.ensemble_fit_sizes = None
-        self.ensemble_fit_prolate_summary = None
-        self.ensemble_fit_oblate_summary = None
+        self.ensemble_fit_bins: Optional[Any] = None
+        self.ensemble_fit_sizes: Optional[bool] = None
+        self.ensemble_fit_prolate_summary: Optional[tuple] = None
+        self.ensemble_fit_oblate_summary: Optional[tuple] = None
         self.plot_initialized = False
         self.no_cached_data = False
 
@@ -200,14 +207,21 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.subset_export_count = 0
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
-        self.hist_data: List[npt.NDArray[float]] = []
+        # Heterogeneous by design: _plot_all_points_histogram appends (x, y)
+        # tuples rather than plain arrays. Flagged for review.
+        self.hist_data: List[Any] = []
         self.hist_labels: List[Optional[str]] = []
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[int] = None
+        # Holds the display string from the experiment/channel selection tree,
+        # not the integer channel id.
+        self.current_channel: Optional[str] = None
+        self._pending_filter_name: Optional[str] = None
+        self._pending_filter_text: Optional[str] = None
+        self._pending_old_filter_name: Optional[str] = None
         self.filtered_event_ids: List[int] = []
         self.subset_filters: Dict[str, str] = {}
-        self.plot_events_generator = None
+        self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
@@ -218,8 +232,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
-        self.allowed_bins = None
-        self.allowed_sizes = None
+        self.allowed_bins: Optional[Any] = None
+        self.allowed_sizes: Optional[bool] = None
 
         self._show_sql_in_display: bool = False
         self._show_event_sql_in_display: bool = False
@@ -230,7 +244,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             Tuple[
                 Optional[str],
                 Optional[str],
-                Optional[int],
+                Optional[str],
                 Optional[str],
                 Optional[str],
             ]
@@ -238,7 +252,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
     @override
-    def _set_custom_display_area(self, layout) -> None:
+    def _set_custom_display_area(self, layout: QLayout) -> None:
         """
         Initialize the display area with two independent sets of canvases — one for
         Individual mode, one for Ensemble mode — shown via a nested QStackedWidget,
@@ -353,7 +367,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._display_mode = "distribution"
 
     @log(logger=logger)
-    def _commit_fits(self, loader) -> None:
+    def _commit_fits(self, loader: str) -> None:
         """
         Commits fitted data to the database
 
@@ -471,7 +485,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         )  # notify everyone else
 
     @log(logger=logger)
-    def _summarize_vm(self, df) -> tuple:
+    def _summarize_vm(self, df: pd.DataFrame) -> tuple:
         """
         Build a one-line median +/- std summary of V, a, b, m for a sampled shape DataFrame.
         Falls back to a plain-value readout when there is only one sample (std is undefined
@@ -554,7 +568,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.add_text_to_display.emit("<br>".join(lines), self.__class__.__name__)
 
     @log(logger=logger)
-    def set_alter_database_status(self, status):
+    def set_alter_database_status(self, status: bool) -> None:
         """
         Sets the success status of a database operation.
 
@@ -565,12 +579,12 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout):
+    def _set_control_area(self, layout: QLayout) -> None:
         """
         Set up the control area layout by inserting metadata controls.
 
         :param layout: The layout to which the controls will be added.
-        :type layout: QVBoxLayout
+        :type layout: QLayout
         """
         self.proteincontrols = ProteinControls()
         self.proteincontrols.actionTriggered.connect(self.handle_parameter_change)
@@ -592,17 +606,23 @@ class ProteinView(MetaView, WalkthroughMixin):
         layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def update_column_names(self, column_names):
+    def update_column_names(self, column_names: List[str]) -> None:
         """
         Store available column names for internal use (filter validation, etc.)
         No UI update is performed.
+
+        :param column_names: List of column names retrieved from the database.
+        :type column_names: List[str]
         """
         self.available_columns = column_names
 
     @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id):
+    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
         """
-        a global signal callback that provides the channel_db_id for raw query scoping
+        A global signal callback that provides the channel_db_id for raw query scoping.
+
+        :param channel_db_id: Database id of the scoped channel, or None if unresolved.
+        :type channel_db_id: Optional[int]
         """
         self.channel_db_id = channel_db_id
 
@@ -712,19 +732,25 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _plot_all_points_histogram(
-        self, ax, data, cols, units, dataset_label="", norm=False
-    ):
+        self,
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        dataset_label: str = "",
+        norm: bool = False,
+    ) -> None:
         """
         Plot a histogram of current values across all events (raw or filtered).
 
         :param ax: Matplotlib axes to draw the histogram on.
-        :type ax: matplotlib.axes.Axes
+        :type ax: Axes
         :param data: DataFrame containing time and current values.
         :type data: pd.DataFrame
         :param cols: Column names for x and y axes.
-        :type cols: List[str]
+        :type cols: Sequence[str]
         :param units: Units corresponding to the axes.
-        :type units: List[str]
+        :type units: Sequence[Optional[str]]
         :param dataset_label: Label for the plotted dataset.
         :type dataset_label: str
         :param norm: Whether to normalize the plotted y-values.
@@ -761,16 +787,16 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     def update_plot(
         self,
-        plot_type,
-        data,
-        cols,
-        units,
-        logscales,
-        dataset_label="",
-        bins=None,
-        sizes=False,
-        err_cols=None,
-    ):
+        plot_type: str,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        bins: Any = None,
+        sizes: bool = False,
+        err_cols: Optional[Sequence[str]] = None,
+    ) -> None:
         """
         update the plot area
         """
@@ -812,20 +838,28 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _plot_scatterplot(self, ax, data, cols, units, logscales, dataset_label=""):
+    def _plot_scatterplot(
+        self,
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+    ) -> None:
         """
         Create a scatterplot of two metadata columns.
 
         :param ax: Matplotlib axes object.
-        :type ax: matplotlib.axes.Axes
+        :type ax: Axes
         :param data: DataFrame containing the columns to plot.
         :type data: pd.DataFrame
-        :param cols: List containing two column names for x and y axes.
-        :type cols: List[str]
-        :param units: List of corresponding units for x and y axes.
-        :type units: List[str]
-        :param logscales: List indicating log-scaling for x and y axes.
-        :type logscales: List[bool]
+        :param cols: Sequence containing two column names for x and y axes.
+        :type cols: Sequence[str]
+        :param units: Corresponding units for x and y axes.
+        :type units: Sequence[Optional[str]]
+        :param logscales: Log-scaling flags for x and y axes.
+        :type logscales: Sequence[bool]
         :param dataset_label: Label for the dataset.
         :type dataset_label: str
         """
@@ -856,25 +890,32 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _plot_xyerr_scatterplot(
-        self, ax, data, cols, units, logscales, dataset_label="", err_cols=None
-    ):
+        self,
+        ax: Axes,
+        data: pd.DataFrame,
+        cols: Sequence[str],
+        units: Sequence[Optional[str]],
+        logscales: Sequence[bool],
+        dataset_label: str = "",
+        err_cols: Optional[Sequence[str]] = None,
+    ) -> None:
         """
         Create a scatterplot of two metadata columns with error bars.
 
         :param ax: Matplotlib axes object.
-        :type ax: matplotlib.axes.Axes
+        :type ax: Axes
         :param data: DataFrame containing the columns to plot.
         :type data: pd.DataFrame
-        :param cols: List containing two column names for x and y axes.
-        :type cols: List[str]
-        :param units: List of corresponding units for x and y axes.
-        :type units: List[str]
-        :param logscales: List indicating log-scaling for x and y axes.
-        :type logscales: List[bool]
+        :param cols: Sequence containing two column names for x and y axes.
+        :type cols: Sequence[str]
+        :param units: Corresponding units for x and y axes.
+        :type units: Sequence[Optional[str]]
+        :param logscales: Log-scaling flags for x and y axes.
+        :type logscales: Sequence[bool]
         :param dataset_label: Label for the dataset.
         :type dataset_label: str
-        :param err_cols: List containing two column names for x and y errors.
-        :type err_cols: List[str]
+        :param err_cols: Sequence containing two column names for x and y errors.
+        :type err_cols: Optional[Sequence[str]]
         :raises ValueError: If `err_cols` is not a list of exactly two column names.
         """
         if err_cols is None or len(err_cols) != 2:
@@ -935,7 +976,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up-to-date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: Mapping[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         super().update_available_plugins(available_plugins)
 
@@ -992,39 +1033,43 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id):
+    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
         """
+        A global signal callback that provides an experiment id for a given filter.
+
         :param experiment_id: the integer id of the experiment in a MetaEventLoader object
         :type experiment_id: Optional[int]
-
-        a global signal callback that provides an experiment id for a given filter
         """
         self.experiment_id = experiment_id
 
     @log(logger=logger)
-    def set_table_by_column(self, table):
+    def set_table_by_column(self, table: Optional[str]) -> None:
         """
+        Get a list of tables affected by an SQL query.
+
         :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
         :type table: Optional[str]
-
-        Get a list of tables affected by an SQL query
         """
         if table is not None:
             self.involved_tables.append(table)
 
     @log(logger=logger)
     def _construct_all_points_histogram(
-        self, event_generator, plot_type, bins=None, sizes=False
+        self,
+        event_generator: Iterator[Dict[str, Any]],
+        plot_type: str,
+        bins: Any = None,
+        sizes: bool = False,
     ) -> pd.DataFrame:
         """
         Build a combined histogram across all event current values.
 
         :param event_generator: Generator yielding individual event data.
-        :type event_generator: Iterator[dict]
+        :type event_generator: Iterator[Dict[str, Any]]
         :param plot_type: Type of histogram to create (raw or filtered).
         :type plot_type: str
-        :param bins: Number of histogram bins.
-        :type bins: int | None
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: whether bins represents a number of bins or a bin size.
         :type sizes: bool
         :return: DataFrame with histogram values and corresponding current levels.
@@ -1116,7 +1161,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _construct_single_event_histogram(
-        self, event, plot_type, bins=None, sizes=False
+        self,
+        event: Dict[str, Any],
+        plot_type: str,
+        bins: Any = None,
+        sizes: bool = False,
     ) -> Optional[pd.DataFrame]:
         """
         Build a histogram of the current in a single event
@@ -1125,10 +1174,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type event: Dict[str, Any]
         :param plot_type: Type of histogram to create (raw or filtered).
         :type plot_type: str
-        :param bins: Number of histogram bins.
-        :type bins: Optional[int]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: whether bins represents a number or a binsize
-        :type sizes: Optional[bool]
+        :type sizes: bool
         :return: DataFrame with histogram values and corresponding current levels.
         :rtype: Optional[pd.DataFrame]
         :raises ValueError: If `bins` is not a usable bin count/size specification.
@@ -1201,24 +1250,27 @@ class ProteinView(MetaView, WalkthroughMixin):
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
 
     @log(logger=logger)
-    def set_baseline_duration(self, duration):
+    def set_baseline_duration(self, duration: Optional[float]) -> None:
         """
-        a callback from a global_signal call that sets the baseline_duration variable for further processing
+        A callback from a global_signal call that sets the baseline_duration variable for further processing.
+
+        :param duration: total duration of baseline data in the scoped subset, or None if it could not be resolved.
+        :type duration: Optional[float]
         """
         self.baseline_duration = duration
 
     @log(logger=logger)
-    def set_event_data_generator(self, generator):
+    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
         """
         Set the event data generator for event-based plots.
 
         :param generator: A generator that yields event data.
-        :type generator: Iterator[dict]
+        :type generator: Iterator[Dict[str, Any]]
         """
         self.event_data_generator = generator
 
     @log(logger=logger)
-    def _save_filter(self):
+    def _save_filter(self) -> None:
         """
         Save the current filters to a JSON file.
 
@@ -1241,10 +1293,13 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.error(f"Failed to save filters: {e}")
 
     @log(logger=logger)
-    def _load_filter(self, parameters):
+    def _load_filter(self, parameters: Dict[str, Any]) -> None:
         """
         Append filters from a JSON file, warn if duplicates are found,
         and apply all new filters only if none conflict with existing ones.
+
+        :param parameters: Dictionary with 'db_loader'.
+        :type parameters: Dict[str, Any]
         """
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
@@ -1316,7 +1371,9 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @Slot(str, str, tuple)
-    def handle_parameter_change(self, submodel_name, action_name, args):
+    def handle_parameter_change(
+        self, submodel_name: str, action_name: str, args: tuple
+    ) -> None:
         """
         Handle changes triggered by UI controls such as updates to axis selection or filters.
 
@@ -1417,18 +1474,24 @@ class ProteinView(MetaView, WalkthroughMixin):
     # -------------------------------------------------------------------------
 
     @log(logger=logger)
-    def relay_query_result(self, result) -> None:
+    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
         A global signal callback that stores the result of a direct database query.
         Used by _rebuild_event_id_cache to receive the list of filtered event_ids.
 
-        :param result: DataFrame returned by query_database_directly.
-        :type result: pd.DataFrame
+        :param result: DataFrame returned by query_database_directly, or None if the query failed.
+        :type result: Optional[pd.DataFrame]
         """
         self.relayed_query_result = result
 
     @log(logger=logger)
-    def _build_where_clause(self, loader: str, sql_filter: str, exp, channel) -> str:
+    def _build_where_clause(
+        self,
+        loader: str,
+        sql_filter: str,
+        exp: Optional[str],
+        channel: Optional[str],
+    ) -> str:
         """
         Build a WHERE clause string suitable for the event_id cache query,
         scoped to the current experiment and channel. event_id is only unique
@@ -1443,8 +1506,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type sql_filter: str
         :param exp: Experiment name, or None.
         :type exp: Optional[str]
-        :param channel: Channel identifier, or None.
-        :type channel: Optional[int]
+        :param channel: Channel identifier as displayed in the selection tree, or None.
+        :type channel: Optional[str]
         :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
         :rtype: str
         """
@@ -1475,8 +1538,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         loader: str,
         where_clause: str,
         sql_filter: str,
-        exp,
-        channel,
+        exp: Optional[str],
+        channel: Optional[str],
     ) -> bool:
         """
         Fetch all event_ids matching the current filter in one DB query and
@@ -1497,8 +1560,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type sql_filter: str
         :param exp: Experiment name.
         :type exp: Optional[str]
-        :param channel: Channel identifier.
-        :type channel: Optional[int]
+        :param channel: Channel identifier as displayed in the selection tree.
+        :type channel: Optional[str]
         :return: True if the cache was populated, False if no events were found.
         :rtype: bool
         """
@@ -1615,12 +1678,14 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._handle_plot_events(new_params)
 
     @log(logger=logger)
-    def set_event_plot_data_generator(self, generator):
+    def set_event_plot_data_generator(
+        self, generator: Iterator[Dict[str, Any]]
+    ) -> None:
         """
-        :param generator: a generator of event data
-        :type generator: Generator[Dict[str, Any]]
+        A callback from a global signal call that sets the generator to be used to construct event plots and overlays.
 
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays
+        :param generator: a generator of event data
+        :type generator: Iterator[Dict[str, Any]]
         """
         self.plot_events_generator = generator
         self.plot_events_generator_updated = True
@@ -1640,7 +1705,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _resolve_event_db_ids(
-        self, loader, event_ids, exp, channel
+        self,
+        loader: str,
+        event_ids: Sequence[int],
+        exp: Optional[str],
+        channel: Optional[str],
     ) -> Optional[pd.DataFrame]:
         """
         Resolve a list of event_id values, scoped to a specific experiment and
@@ -1652,7 +1721,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param loader: Name of the database loader.
         :type loader: str
         :param event_ids: List of event_id values to resolve.
-        :type event_ids: List[int]
+        :type event_ids: Sequence[int]
         :param exp: Experiment name, or None.
         :type exp: Optional[str]
         :param channel: Channel identifier, or None.
@@ -1698,7 +1767,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         return result
 
     @log(logger=logger)
-    def _fetch_event_data(self, parameters, action_label="events") -> list[dict]:
+    def _fetch_event_data(
+        self, parameters: Dict[str, Any], action_label: str = "events"
+    ) -> list[dict]:
         """
         Shared validation and targeted data fetching for event-based plots.
         Resolves the requested event_index list to database ids via a single
@@ -1711,7 +1782,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         isn't worth the correctness risk.
 
         :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :param action_label: Label used in error messages to identify the plot type.
         :type action_label: str
         :return: List of fetched event dictionaries, in the order requested, or empty list on failure.
@@ -1810,7 +1881,13 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _build_load_event_data_args(
-        self, sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
+        self,
+        sql_filter: str,
+        subset_name: str,
+        exp: Optional[str],
+        channel: str,
+        exp_and_ch_arg: dict,
+        loader: str,
     ) -> tuple:
         """
         Build the (filter_or_query, exp_and_ch_or_None) args tuple for load_event_data,
@@ -2048,7 +2125,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data, use_raw=False) -> None:
+    def _update_event_plot(
+        self, event_data: Sequence[Dict[str, Any]], use_raw: bool = False
+    ) -> None:
         """
         Update the event plot with raw, filtered, and fitted traces for multiple events.
 
@@ -2059,7 +2138,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                         Each dictionary should have the keys:
                         'experiment_id', 'channel_id', 'event_id',
                         'raw_data', 'filtered_data', 'fit_data', and 'samplerate'.
-        :type event_data: list[dict]
+        :type event_data: Sequence[Dict[str, Any]]
         :param use_raw: Whether to overlay the unfiltered raw signal alongside filtered/fit traces.
         :type use_raw: bool
         :return: None
@@ -2119,15 +2198,19 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _update_event_histogram(
-        self, event_data, bins=None, sizes=False, plot_type="Filtered Histogram"
-    ):
+        self,
+        event_data: Sequence[Dict[str, Any]],
+        bins: Any = None,
+        sizes: bool = False,
+        plot_type: str = "Filtered Histogram",
+    ) -> None:
         """
         Update the event canvas with per-event ΔI/I histograms, one subplot per event.
 
         :param event_data: List of event dictionaries, each containing data and metadata for one event.
-        :type event_data: list[dict]
-        :param bins: Number of histogram bins.
-        :type bins: int | None
+        :type event_data: Sequence[Dict[str, Any]]
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :type bins: Any
         :param sizes: Whether bins represent bin sizes.
         :type sizes: bool
         :param plot_type: Type of histogram to construct.
@@ -2234,10 +2317,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _update_distribution_individual(self, parameters):
+    def _update_distribution_individual(self, parameters: Dict[str, Any]) -> None:
         """
         Compute and plot the ΔI/I histogram and V/M scatterplot for a single
         selected event in Individual analysis mode.
+
+        :param parameters: Dictionary of plotting parameters collected from the controls.
+        :type parameters: Dict[str, Any]
         """
         self._reset_actions()
         self._clear_cache()
@@ -2329,9 +2415,9 @@ class ProteinView(MetaView, WalkthroughMixin):
                         return
 
                     processed = 0
-                    prolate_solutions = []
-                    oblate_solutions = []
-                    averaged_event_data = []
+                    prolate_solutions: List[Any] = []
+                    oblate_solutions: List[Any] = []
+                    averaged_event_data: List[Dict[str, Any]] = []
 
                     for event in self.event_data_generator:
                         processed += 1
@@ -2473,7 +2559,14 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _double_gaussian(
-        self, x, amp1, mean1, std1, amp2, mean2, std2
+        self,
+        x: npt.NDArray[np.float64],
+        amp1: float,
+        mean1: float,
+        std1: float,
+        amp2: float,
+        mean2: float,
+        std2: float,
     ) -> npt.NDArray[np.float64]:
         """
         return the value of a double gaussian with the specified paramters
@@ -2500,7 +2593,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         return g1 + g2
 
     @log(logger=logger)
-    def _fit_double_gaussian(self, bins, amplitude) -> tuple:
+    def _fit_double_gaussian(
+        self, bins: npt.NDArray[np.float64], amplitude: npt.NDArray[np.float64]
+    ) -> tuple:
         """
         Attempt to fit a double gaussian to data or return None on failure.
 
@@ -2638,7 +2733,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _fit_and_sanity_check_double_gaussian(
-        self, bins, amplitude
+        self, bins: npt.NDArray[np.float64], amplitude: npt.NDArray[np.float64]
     ) -> Optional[npt.NDArray[np.float64]]:
         """
         Attempt to fit a double gaussian to data or None on failure.
@@ -2700,10 +2795,13 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @register_action()
-    def _update_distribution_ensemble(self, parameters):
+    def _update_distribution_ensemble(self, parameters: Dict[str, Any]) -> None:
         """
         Compute and plot the ΔI/I histogram and V/M scatterplot aggregated across
         all events in Ensemble analysis mode.
+
+        :param parameters: Dictionary of plotting parameters collected from the controls.
+        :type parameters: Dict[str, Any]
         """
         self._reset_actions()
         self._clear_cache()
@@ -2843,7 +2941,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             return
 
     @log(logger=logger)
-    def _fit_and_plot_ensemble_geometry(self, plot_data, plot_type, d, L, N) -> bool:
+    def _fit_and_plot_ensemble_geometry(
+        self, plot_data: pd.DataFrame, plot_type: str, d: float, L: float, N: int
+    ) -> bool:
         """
         Fit a double Gaussian to the aggregated ensemble histogram, then Monte
         Carlo sample prolate/oblate V/m ensembles from that fit and plot them.
@@ -2970,7 +3070,11 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _compute_theoretical_blockages(
-        self, V, m, d, L
+        self,
+        V: npt.NDArray[np.float64],
+        m: npt.NDArray[np.float64],
+        d: float,
+        L: float,
     ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         Vectorized forward model: Calculates theoretical max and min blockages
@@ -3050,15 +3154,15 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _generate_vm_ensemble(
         self,
-        N_target,
-        mean_max,
-        std_max,
-        mean_min,
-        std_min,
-        d,
-        L,
-        prolate=True,
-        cutoff_std=4,
+        N_target: int,
+        mean_max: float,
+        std_max: float,
+        mean_min: float,
+        std_min: float,
+        d: float,
+        L: float,
+        prolate: bool = True,
+        cutoff_std: float = 4,
     ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """
         Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
@@ -3224,7 +3328,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
-    def set_query(self, query, table_name) -> None:
+    def set_query(self, query: str, table_name: str) -> None:
         """
         Set the SQL query and table name used in plotting.
 
@@ -3248,9 +3352,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._show_sql_in_display = False
 
     @log(logger=logger)
-    def set_event_query(self, query):
+    def set_event_query(self, query: str) -> None:
         """
         A global signal callback that provides a valid SQL query for fetching event data.
+
+        :param query: SQL query string for fetching event data.
+        :type query: str
         """
         self.event_query = query
         if not query:
@@ -3264,7 +3371,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._show_event_sql_in_display = False
 
     @log(logger=logger)
-    def set_units(self, units):
+    def set_units(self, units: Any) -> None:
         """
         Set the units returned from the database for use in axis labels.
 
@@ -3274,7 +3381,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.units = units
 
     @log(logger=logger)
-    def update_available_columns(self, loader) -> None:
+    def update_available_columns(self, loader: str) -> None:
         """
         Request available columns from the database loader.
 
@@ -3298,10 +3405,10 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def request_experiment_structure(self, loader_name: str) -> None:
         """
+        Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.
+
         :param loader_name: the key of the loader
         :type loader_name: str
-
-        get a dict of all experiments and channels available in a specified MetaDatabaseLoader object
         """
         if not loader_name or loader_name == "No Event Database":
             return
@@ -3347,7 +3454,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.logger.debug(f"Updated selection for {loader_name}: {selected}")
 
     @log(logger=logger)
-    def update_units(self, loader, column, axis):
+    def update_units(self, loader: str, column: str, axis: str) -> None:
         """
         Request units for a specific column from the loader.
 
@@ -3371,20 +3478,22 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
 
     @log(logger=logger)
-    def _handle_other_actions(self, action_name, parameters):
+    def _handle_other_actions(
+        self, action_name: str, parameters: Dict[str, Any]
+    ) -> None:
         """
         Raise an error for actions not yet implemented.
 
         :param action_name: The name of the unhandled action.
         :type action_name: str
         :param parameters: Parameters associated with the action.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :raises NotImplementedError: Always, since this action is not implemented.
         """
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid, error_msg) -> None:
+    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
         """
         Relay callback from validate_filter_query for raw SQL filter validation.
 
@@ -3407,14 +3516,17 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         if old_name is not None:  # edit path
             self.subset_filters.pop(old_name, None)
-            self.subset_filters[name] = filter_text
+            # name/filter_text are only ever populated together with the
+            # pending state that got us here, but nothing enforces that.
+            # Flagged for review.
+            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
             self.update_filter_name(old_name, name)
             self.add_text_to_display.emit(
                 f"Filter '{old_name}' updated to '{name}'.",
                 self.__class__.__name__,
             )
         else:  # add path
-            self.subset_filters[name] = filter_text
+            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
             self.proteincontrols.filter_comboBox.addItem(name)
             self.proteincontrols.filter_comboBox.selectItem(name, select=True)
             self.proteincontrols.filter_comboBox.refreshDisplayText()
@@ -3460,7 +3572,7 @@ class ProteinView(MetaView, WalkthroughMixin):
 
             self._pending_filter_name = name
             self._pending_filter_text = filter_text
-            self._pending_old_filter_name: Optional[str] = None
+            self._pending_old_filter_name = None
 
             if dialog.is_raw:
                 if not filter_text.strip().upper().startswith("SELECT"):
@@ -3572,7 +3684,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def clear_pending_filter_state(self):
+    def clear_pending_filter_state(self) -> None:
         """
         reset all filters to factory settings
         """
@@ -3581,7 +3693,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._pending_old_filter_name = None
 
     @log(logger=logger)
-    def _show_filter_info_dialog(self, comboBox, parameters) -> None:
+    def _show_filter_info_dialog(
+        self, comboBox: MultiSelectComboBox, parameters: Dict[str, Any]
+    ) -> None:
         """
         Called when clicking the edit button for filters with multiple selection.
 
@@ -3590,7 +3704,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param comboBox: The combo box containing the list of selectable filters.
         :type comboBox: MultiSelectComboBox
         :param parameters: Dictionary with 'db_loader'.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         loader = parameters["db_loader"]
         selected = comboBox.getSelectedItems()
@@ -3601,7 +3715,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.show_edit_filter_dialog(selected[0], loader)
 
     @log(logger=logger)
-    def _delete_filter_by_name(self, name: str):
+    def _delete_filter_by_name(self, name: str) -> None:
         """
         Deletes a single filter by name.
 
@@ -3611,7 +3725,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self._delete_filter(name)
 
     @log(logger=logger)
-    def _delete_all_selected_filters(self):
+    def _delete_all_selected_filters(self) -> None:
         """
         Deletes multiple selected filters.
         """
@@ -3625,9 +3739,12 @@ class ProteinView(MetaView, WalkthroughMixin):
             self._delete_filter(name)
 
     @log(logger=logger)
-    def _delete_filter(self, name: str):
+    def _delete_filter(self, name: str) -> None:
         """
         Internal method to remove a filter and update the UI.
+
+        :param name: The name of the filter to remove.
+        :type name: str
         """
         self.subset_filters.pop(name, None)
 
@@ -3653,9 +3770,12 @@ class ProteinView(MetaView, WalkthroughMixin):
         }
 
     @log(logger=logger)
-    def replace_filter_item(self, name):
+    def replace_filter_item(self, name: str) -> None:
         """
         Remove any existing filter item with the same name and add the new one.
+
+        :param name: The name of the filter to (re)add.
+        :type name: str
         """
         list_widget = self.proteincontrols.filter_comboBox.listWidget
         for i in range(list_widget.count()):
@@ -3670,9 +3790,14 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.proteincontrols.filter_comboBox.selectItem(name, select=True)
 
     @log(logger=logger)
-    def update_filter_name(self, old_name, new_name):
+    def update_filter_name(self, old_name: str, new_name: str) -> None:
         """
         Replace old filter name with new one in the ComboBox, removing any duplicates.
+
+        :param old_name: The filter name being replaced.
+        :type old_name: str
+        :param new_name: The filter name to display instead.
+        :type new_name: str
         """
         list_widget = self.proteincontrols.filter_comboBox.listWidget
 
@@ -3700,7 +3825,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.proteincontrols.filter_comboBox.selectItem(new_name, select=True)
         self.proteincontrols.filter_comboBox.refreshDisplayText()
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [
             (
                 "Protein Tab",
@@ -3851,11 +3976,11 @@ class ProteinView(MetaView, WalkthroughMixin):
             ),
         ]
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return "ProteinView"
 
 
-def format_axis_label(label: str, unit: str) -> str:
+def format_axis_label(label: str, unit: Optional[str]) -> str:
     """
     Ensure the axis label contains the correct unit exactly once.
     Removes any existing trailing unit in parentheses.

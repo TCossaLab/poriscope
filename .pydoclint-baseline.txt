@@ -173,23 +173,85 @@ poriscope/plugins/analysistabs/MetadataView.py
     DOC108: Method `MetadataView.on_raw_filter_validated`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/ProteinController.py
+    DOC108: Method `ProteinController.check_column_exists`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.alter_database_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_table_by_column`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_baseline_duration`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.set_exported_event_count`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_query`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_event_query`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_event_data_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_event_plot_data_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_plot_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.update_column_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.update_column_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinController.get_experiment_names_for_tree`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinController.get_experiment_structure_ready`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.set_experiment_id`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.set_channel_db_id`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.on_raw_filter_validated`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinController.relay_query_result`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/ProteinView.py
+    DOC108: Method `ProteinView._commit_fits`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._summarize_vm`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_alter_database_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._set_control_area`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.update_column_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_channel_db_id`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._clear_figure_state`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._reset_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._plot_all_points_histogram`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._plot_scatterplot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._plot_xyerr_scatterplot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_experiment_id`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_table_by_column`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._construct_all_points_histogram`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._construct_single_event_histogram`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_baseline_duration`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_event_data_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._load_filter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC501: Method `ProteinView._load_filter` has raise statements, but the docstring does not have a "Raises" section
+    DOC503: Method `ProteinView._load_filter` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
+    DOC108: Method `ProteinView.handle_parameter_change`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.relay_query_result`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._build_where_clause`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._rebuild_event_id_cache`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._shift_range_and_update_plot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_event_plot_data_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._resolve_event_db_ids`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._fetch_event_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._build_load_event_data_args`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._handle_plot_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._handle_plot_histogram`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._update_event_plot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._update_event_histogram`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._update_distribution_individual`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._double_gaussian`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._fit_double_gaussian`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._fit_and_sanity_check_double_gaussian`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._update_distribution_ensemble`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._fit_and_plot_ensemble_geometry`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._compute_theoretical_blockages`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._generate_vm_ensemble`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_query`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_event_query`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.set_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.update_available_columns`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView.request_experiment_structure`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.update_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._handle_other_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.on_raw_filter_validated`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._show_add_filter_dialog`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView.show_edit_filter_dialog`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._show_filter_info_dialog`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ProteinView._delete_filter_by_name`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView._delete_filter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.replace_filter_item`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ProteinView.update_filter_name`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/RawDataController.py
     DOC108: Method `RawDataController.calculate_psd`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
