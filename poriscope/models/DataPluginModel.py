@@ -59,16 +59,16 @@ class DataPluginModel(QObject):
         """
         Register a plugin instance with the given key.
 
-        :param instance: The plugin instance
-        :type instance: object of the type of plugin managed by the instance
+        If key is already registered under metaclass, the plugin is not registered
+        and an error is logged instead of raising.
+
+        :param instance: The plugin instance, of the type of plugin managed by this model
+        :type instance: object
         :param metaclass: the base class of the plugin
         :type metaclass: str
         :param key: The key to register the plugin with
         :type key: str
         :raises KeyError: If metaclass is not a supported plugin type
-
-        If key is already registered under metaclass, the plugin is not registered
-        and an error is logged instead of raising.
         """
         if metaclass not in self.plugins.keys():
             self.logger.error(f"Cannot register plugin: {metaclass} not supported")

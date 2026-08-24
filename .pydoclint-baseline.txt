@@ -1,6 +1,3 @@
-poriscope/models/DataPluginModel.py
-    DOC105: Method `DataPluginModel.register_plugin`: Argument names match, but type hints in these args do not match: instance
---------------------
 poriscope/plugins/analysistabs/MetadataView.py
     DOC501: Method `MetadataView._load_filter` has raise statements, but the docstring does not have a "Raises" section
     DOC503: Method `MetadataView._load_filter` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['ValueError'].
@@ -11,13 +8,6 @@ poriscope/plugins/analysistabs/ProteinView.py
 --------------------
 poriscope/plugins/analysistabs/utils/walkthrough.py
     DOC605: Class `IntroDialog`: Attribute names match, but type hints in these attributes do not match: start_walkthrough  (Please read https://jsh9.github.io/pydoclint/checking_class_attributes.html on how to correctly document class attributes.)
---------------------
-poriscope/plugins/datawriters/SQLiteEventWriter.py
-    DOC105: Method `SQLiteEventWriter._write_data`: Argument names match, but type hints in these args do not match: data, abort, last_call
-    DOC105: Method `SQLiteEventWriter._rescale_data_to_adc`: Argument names match, but type hints in these args do not match: data, scale, offset, dtype
---------------------
-poriscope/plugins/db_loaders/SQLiteDBLoader.py
-    DOC105: Method `SQLiteDBLoader.get_empty_settings`: Argument names match, but type hints in these args do not match: globally_available_plugins
 --------------------
 poriscope/plugins/eventfitters/Basic_PeakFinder.py
     DOC106: Method `Basic_PeakFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
@@ -56,13 +46,6 @@ poriscope/plugins/eventfitters/Basic_PeakFinder.py
     DOC107: Method `Basic_PeakFinder.enumerate_peaks`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
     DOC105: Method `Basic_PeakFinder.enumerate_peaks`: Argument names match, but type hints in these args do not match: sublevel_starts, num_states, sublevel_types
     DOC203: Method `Basic_PeakFinder.enumerate_peaks` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
---------------------
-poriscope/plugins/eventfitters/ClassicCUSUM.py
-    DOC105: Method `ClassicCUSUM.get_empty_settings`: Argument names match, but type hints in these args do not match: globally_available_plugins
---------------------
-poriscope/plugins/eventfitters/IntraCUSUM.py
-    DOC105: Method `IntraCUSUM.get_empty_settings`: Argument names match, but type hints in these args do not match: globally_available_plugins
-    DOC105: Method `IntraCUSUM._populate_event_metadata`: Argument names match, but type hints in these args do not match: sublevel_metadata
 --------------------
 poriscope/plugins/eventfitters/NanoTrees.py
     DOC106: Method `NanoTrees.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature

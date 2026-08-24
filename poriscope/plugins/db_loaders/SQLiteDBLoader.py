@@ -780,7 +780,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter

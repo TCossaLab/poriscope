@@ -441,7 +441,7 @@ class SQLiteEventWriter(MetaWriter):
         Append data and metadata to the active file handle.
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.number]
         :param channel: Int indicating the channel from which it was acquired.
         :type channel: int
         :param index: event index
@@ -463,9 +463,9 @@ class SQLiteEventWriter(MetaWriter):
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
         :param abort: If True, roll back and close the active connection without writing, default False.
-        :type abort: bool
+        :type abort: Optional[bool]
         :param last_call: If True, close the shared connection after this write, default False.
-        :type last_call: bool
+        :type last_call: Optional[bool]
 
         :return: success of the write operation.
         :rtype: bool
@@ -575,15 +575,15 @@ class SQLiteEventWriter(MetaWriter):
         Not used by this writer
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: np.ndarray
         :param scale: Scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: float, optional
+        :type scale: Optional[float]
         :param offset: Offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: float, optional
+        :type offset: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
         :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: type, optional
+        :type dtype: type
         :param adc_min: Integer encoding the minimum adc code for the adc conversion.
         :type adc_min: int
         :param adc_max: Integer encoding the maximum adc code for the adc conversion.

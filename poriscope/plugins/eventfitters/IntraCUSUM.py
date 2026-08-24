@@ -70,7 +70,7 @@ class IntraCUSUM(CUSUM):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -114,7 +114,7 @@ class IntraCUSUM(CUSUM):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_metadata: the dict of sublevel metadata built by self._populate_sublevel_metadata()
-        :type sublevel_metadata: Mapping[str, List[Numeric]]
+        :type sublevel_metadata: Dict[str, List[Numeric]]
 
         :return: a dict of event metadata values
         :rtype: Dict[str, Union[int, float, str, bool]]
