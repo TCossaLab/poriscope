@@ -408,11 +408,11 @@ class MainModel(QObject):
             )
 
     @log(logger=logger)
-    def get_data_server_location(self) -> Any:
+    def get_data_server_location(self) -> str:
         return self.get_app_config("Parent Folder")
 
     @log(logger=logger)
-    def get_user_plugin_location(self) -> Any:
+    def get_user_plugin_location(self) -> str:
         return self.get_app_config("User Plugin Folder")
 
     @log(logger=logger)

@@ -437,7 +437,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         subset_name: str = "",
         conditions: Optional[str] = None,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
-    ) -> Generator[float, None, None]:
+    ) -> Generator[float, Optional[bool], None]:
         """
         Return a generator that shows progress toward outputting a csv version of the subset of the database satisfying the conditions, including both data and metadata
 
@@ -593,7 +593,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 }
             )
             df.to_csv(Path(output_folder, filename), index=False)
-            yield i / num_events
+            abort_opt = yield i / num_events
+            if bool(abort_opt):
+                self.logger.info(
+                    "CSV export aborted after "
+                    f"{i + 1} of {num_events} events; "
+                    "files already written are left in place"
+                )
+                break
         yield 1.0
 
     @log(logger=logger)

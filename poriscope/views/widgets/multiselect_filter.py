@@ -109,8 +109,17 @@ class MultiSelectFilterComboBox(QComboBox):
 
         # Configure the embedded line edit
         self.setEditable(True)
-        self.lineEdit().setReadOnly(True)
-        self.lineEdit().setPlaceholderText("Select filters...")
+        # lineEdit() only returns a widget once the combo is editable, which the
+        # line above guarantees. Bind it here, where that invariant is actually
+        # established, so the later uses do not each have to restate it.
+        line_edit = self.lineEdit()
+        if line_edit is None:  # pragma: no cover - unreachable while editable
+            raise RuntimeError(
+                "QComboBox.lineEdit() returned None despite setEditable(True)"
+            )
+        self._line_edit = line_edit
+        self._line_edit.setReadOnly(True)
+        self._line_edit.setPlaceholderText("Select filters...")
         self.setInsertPolicy(QComboBox.NoInsert)
 
         QApplication.instance().installEventFilter(self)
@@ -179,7 +188,7 @@ class MultiSelectFilterComboBox(QComboBox):
         if item is None or item.checkState() in (Qt.Checked, Qt.Unchecked):
             selected_items = self.getSelectedItems()
             new_text = ", ".join(selected_items)
-            self.lineEdit().setText(new_text)
+            self._line_edit.setText(new_text)
             if item is None or item.checkState() in (Qt.Checked, Qt.Unchecked):
                 self.selectionChanged.emit(selected_items)
             self.updateSelectAllButton()  # Update without affecting individual selections
@@ -296,7 +305,7 @@ class MultiSelectFilterComboBox(QComboBox):
         super().mousePressEvent(event)
 
     def refreshDisplayText(self) -> None:
-        self.lineEdit().setText(", ".join(self.getSelectedItems()))
+        self._line_edit.setText(", ".join(self.getSelectedItems()))
 
     def _handle_internal_edit(self, name: str) -> None:
         self.hidePopup()
@@ -312,6 +321,6 @@ class MultiSelectFilterComboBox(QComboBox):
         Clear all filter items and reset the text display.
         """
         self.listWidget.clear()
-        self.lineEdit().clear()
+        self._line_edit.clear()
         self.selectAllButton.setChecked(False)
         self.selectAllButton.setText("Select All")

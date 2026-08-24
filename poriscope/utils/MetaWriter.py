@@ -343,7 +343,7 @@ class MetaWriter(BaseDataPlugin):
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     @log(logger=logger)
-    def _commit_events(self, channel: int) -> Generator[float, None, None]:
+    def _commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file

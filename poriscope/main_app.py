@@ -74,9 +74,13 @@ class App(QApplication):
         self.config_path = Path(self.app_folder, "config")
         config_file_path = Path(self.config_path, "config.json")
 
+        # stored as str, not Path: these round-trip through JSON, and a
+        # Path left in the dict fails the isinstance(value, str) check in
+        # BaseDataPlugin._validate_param_types when it is used to
+        # pre-populate a plugin's Folder setting
         self.app_config: Dict[str, Any] = {
-            "Parent Folder": Path.home(),
-            "User Plugin Folder": self.user_plugin_path,
+            "Parent Folder": str(Path.home()),
+            "User Plugin Folder": str(self.user_plugin_path),
             "Log Level": logging.WARNING,
         }
         default_app_config = self.app_config
@@ -97,7 +101,7 @@ class App(QApplication):
                 with open(config_file_path, "r") as f:
                     self.app_config = json.load(f)
                 if "User Plugin Folder" not in self.app_config.keys():
-                    self.app_config["User Plugin Folder"] = self.user_plugin_path
+                    self.app_config["User Plugin Folder"] = str(self.user_plugin_path)
                     try:
                         with open(config_file_path, "w") as f:
                             json.dump(
