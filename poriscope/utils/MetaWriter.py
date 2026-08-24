@@ -74,24 +74,24 @@ class MetaWriter(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.commit_events`), and so should be used to ensure atomic write operations if possible.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -141,7 +141,7 @@ class MetaWriter(BaseDataPlugin):
         which will ensure that your have the 4 keys specified above, as well as two additional keys, ``MetaReader`` and ``Output File``. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Mapping[str, List[str]]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :raises KeyError: if no :ref:`MetaEventFinder` has been instantiated and standalone is False
@@ -272,7 +272,7 @@ class MetaWriter(BaseDataPlugin):
         Given a series of metadata about the event to be written, write it to the database file (append to an existing databse in the case of atomic operations). Return True if that operation succeeds. If the write operation fails, Raise an exception for handling in the caller. Note that raising on a write failure will not cause a crash - poriscope will continue trying to write subsequent events and store the string associated with the raised error as reason for that write failure for downstream reporting.
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.number]
         :param channel: Int indicating the channel from which it was acquired.
         :type channel: int
         :param index: event index
@@ -296,7 +296,7 @@ class MetaWriter(BaseDataPlugin):
         :param abort: True if an abort request was issued in the caller, perform cleanup as needed, default False.
         :type abort: Optional[bool]
         :param last_call: If True, flush the remaining batch, default False.
-        :type last_call: bool
+        :type last_call: Optional[bool]
         :return: success of the write operation.
         :rtype: bool
         """
@@ -317,14 +317,14 @@ class MetaWriter(BaseDataPlugin):
     @abstractmethod
     def _initialize_database(self, channel: int) -> None:
         """
-        :param channel: the channel for which to initialize the database
-        :type channel: int
-
         **Purpose**: Initialize a database for subsequent write operations.
 
         This function is called at the start of a write operation and is used to do anything you need to do in order to open the output file for writing. You are responsible for checking whether such an operation is needed (for example, by setting an appropriate flag to avoid duplicate innitialization). Note that this operation will be called for each channel and you must ensure that any initializations operations are threadsafe if you are not forcing serial channel operations (see :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations`).
 
         We strongly encourage atomic operations by ensuring that any file handles opened in this function are later closed in :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.close_resources` which will be called at the end of any batch write operation.
+
+        :param channel: the channel for which to initialize the database
+        :type channel: int
         """
         pass
 
@@ -509,15 +509,15 @@ class MetaWriter(BaseDataPlugin):
         For other adc code types or encoding schemes, this function should be overridden. Default to Chimera-style conversion.
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: np.ndarray
         :param scale: Float indicating scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: float, optional
+        :type scale: Optional[float]
         :param offset: Float indicating offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: float, optional
+        :type offset: Optional[float]
         :param raw_data: Boolean, True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
         :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: type, optional
+        :type dtype: type
         :param adc_min: Integer encoding the minimum adc code for the adc conversion.
         :type adc_min: int
         :param adc_max: Integer encoding the maximum adc code for the adc conversion.

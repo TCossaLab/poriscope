@@ -75,12 +75,12 @@ class MetaEventFinder(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``.
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         pass
 
@@ -156,9 +156,6 @@ class MetaEventFinder(BaseDataPlugin):
     @log(logger=logger)
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run, or all of them if no channel is specified.
 
         :ref:`MetaEventFinder` already has an implementation of this function, but you may override it is you need to do further resetting beyond what is included in :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder.reset_channel` already.
@@ -166,6 +163,9 @@ class MetaEventFinder(BaseDataPlugin):
         .. warning::
 
             This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super().reset_channel(channel)`` **before** any additional code that you add and it is on you to ensure that your additional code does not conflict with the implementation in :ref:`MetaEventFinder`.
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         if channel is not None:
             self.event_starts[channel] = []
@@ -1108,7 +1108,7 @@ class MetaEventFinder(BaseDataPlugin):
         Overlapping or adjacent ranges are merged into a single continuous interval.
 
         :param ranges: List of (start, end) tuples representing numeric ranges.
-        :type ranges: list[tuple[float, float]]
+        :type ranges: List[Tuple[float, float]]
         :return: List of merged non-overlapping (start, end) tuples.
         :rtype: List[Tuple[float, float]]
         """

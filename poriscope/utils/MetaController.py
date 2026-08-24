@@ -66,9 +66,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         Initialize the MetaController, along with its MetaView and MetaModel (built by the subclass's `_init()`).
 
         :param available_subclasses: mapping of available plugin subclasses, passed through to the view
-        :type available_subclasses: Optional[dict]
+        :type available_subclasses: Optional[Mapping[str, List[str]]]
         :param \\**kwargs: Additional parameters to set as attributes on the instance
-        :type \\**kwargs: dict
+        :type \\**kwargs: Any
         """
 
         super().__init__()
@@ -128,7 +128,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         Update the view with new plot data.
 
         :param data: Optional data to be plotted (e.g., event traces or fitted results).
-        :type data: Any or None
+        :type data: Optional[Any]
         """
         self.view.update_plot_data(data)
 

@@ -58,7 +58,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         Initialize the MetaModel
 
         :param \\**kwargs: Additional parameters to set as attributes on the instance
-        :type \\**kwargs: dict
+        :type \\**kwargs: Any
         """
 
         self.available_plugins: Dict[str, List[str]] = {}
@@ -200,7 +200,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up to date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
+        :type available_plugins: Dict[str, List[str]]
         """
         self.logger.info(f"Model updated: {available_plugins}")
         self.available_plugins = available_plugins

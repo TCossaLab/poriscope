@@ -69,24 +69,24 @@ class MetaDatabaseWriter(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be flushed and closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.write_events`), and so can be used to ensure atomic write operations if possible.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most database writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -322,36 +322,36 @@ class MetaDatabaseWriter(BaseDataPlugin):
     @abstractmethod
     def _write_experiment_metadata(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: int indicating which output to flush
-        :type channel: int
-
         **Purpose:** Write any information you need to save about the experiment itself.
 
         Given an optional channel argument, write any experiment level information (for example, as provided by the user in the settings dict) to the database files you created in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._initialize_database`.
+
+        :param channel: int indicating which output to flush
+        :type channel: Optional[int]
         """
         pass
 
     @abstractmethod
     def _write_channel_metadata(self, channel: int) -> None:
         """
-        :param channel: int indicating which output to flush
-        :type channel: int
-
         **Purpose:** Write any information you need to save about the channel
 
         Given a channel, write any channel level information (for example, as provided by the user in the settings dict, or the associated samplerate) to the database files you created in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._initialize_database`. Your ``channels`` table in yout database should share a key with ``experiments`` or ahev some other way of cross-referencing channels to experiments in cases where experiments can have many channels.
+
+        :param channel: int indicating which output to flush
+        :type channel: int
         """
         pass
 
     @abstractmethod
     def _initialize_database(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: int indicating which output to flush
-        :type channel: Optional[int]
-
         **Purpose:** initialize your database for writing
 
         In this function, do whatever you need to do in order to prepare your database for writing data to it. This is called at the start of a batch write operation, with an optional channel argument. In the case of a single database file you can ignore channel and simply create the file and database schema. In the case of a single file per channel, you might open a file handle associated to each channel and write any top-level metadata required. We strongly encourage atomic operations, so that file handles are closed in the same function they are opened wherever possible to avoid trailing file handles in the event of an unrecoverable exception.
+
+        :param channel: int indicating which output to flush
+        :type channel: Optional[int]
         """
         pass
 

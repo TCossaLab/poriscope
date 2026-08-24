@@ -60,7 +60,7 @@ class MetaReader(BaseDataPlugin):
         Initialize instance attributes based on provided parameters and perform initialization tasks such as mapping data files, loading configurations, and setting sample rate.
 
         :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
-        :type settings: dict
+        :type settings: Optional[dict]
         """
         super().__init__(settings)
 
@@ -111,12 +111,12 @@ class MetaReader(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. If channel is not None, handle only that channel, else close all of them. If no such operation is needed, it suffices to ``pass``. Note that readers that operate based on memmaps need not explicitly close those memmaps, as they will be handled by the garbage collector, but it does no harm to do so. Any open file handles should be closed explicitly if not closed at  the end of read operations.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -124,12 +124,12 @@ class MetaReader(BaseDataPlugin):
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit.
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If reading through a channel does not create any persistent state changes in your plugin, you can simply ``pass`` this function.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -140,10 +140,10 @@ class MetaReader(BaseDataPlugin):
         """
         Return raw data starting from index start and of length samples and rescale it to pA
 
-        :param start: Starting index of data to load.
-        :type start: int
-        :param length: Number of samples to load.
-        :type length: int
+        :param start: Start time of the data to load, in seconds.
+        :type start: float
+        :param length: Length of data to load, in seconds.
+        :type length: float
         :param channel: Channel number from which to load data.
         :type channel: int
         :param raw_data: Decide whether to rescale data or return raw adc codes
@@ -302,7 +302,7 @@ class MetaReader(BaseDataPlugin):
         which will ensure that your have key specified above, as well as an additional key, ``Input File``, as required by readers. You can learn more about formatting input file option strings in the `PySide6 module documentation <https://doc.qt.io/qt-6/qfiledialog.html#getOpenFileName>`_.  In the case of multiple file types, supply the relevant strings as a comma-separated list in the "Options" key; poriscope will handle formatting it for :mod:`PySide6`.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Optional[Mapping[str, List[str]]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: True if this is outside the context of a GUI, False otherwise, Default False.
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -354,14 +354,14 @@ class MetaReader(BaseDataPlugin):
         """
         Read data in chunks and return it as a generator.
 
-        :param start: Starting index in the timeseries data (default is 0).
-        :type start: int
-        :param total_length: Ending index in the timeseries data (default is 0, meaning end of data).
-        :type total_length: int
+        :param start: Start time in the timeseries data, in seconds (default is 0).
+        :type start: float
+        :param total_length: Length of data to read, in seconds (default is 0, meaning to the end of the data).
+        :type total_length: float
         :param channel: channel index to analyze.
         :type channel: int
-        :param chunk_length: Size of data chunks to process at a time (default is 0, auto-determined).
-        :type chunk_length: int
+        :param chunk_length: Length of the data chunks to process at a time, in seconds (default is 0, auto-determined).
+        :type chunk_length: float
         :param raw_data: Decide whether to rescale data or return raw adc codes
         :type raw_data: bool
         :yield: successive chunks of data, or tuples of (data, scale, offset) if raw_data is True.
@@ -466,7 +466,7 @@ class MetaReader(BaseDataPlugin):
         Check that the file(s) being opened are of the correct type, and raise IOError if not
 
         :param filename: the path to one of the files to be opened
-        :type filename: os.Pathlike
+        :type filename: os.PathLike
         :raises IOError: If the wrong type is file is fed to the plugin
         """
         pass
@@ -572,7 +572,7 @@ class MetaReader(BaseDataPlugin):
                     return data
 
         :param data: Data to convert.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
         :param raw_data: Decide whether to rescale data or return raw adc codes
@@ -750,7 +750,7 @@ class MetaReader(BaseDataPlugin):
         For more information on ``glob`` patterns, refer to the `glob module documentation <https://docs.python.org/3/library/glob.html>`_.
 
         :param file_name: File name to get the base pattern for.
-        :type file_name: os.PathLike
+        :type file_name: str
         :return: Base pattern for matching other files.
         :rtype: str
         """
@@ -790,7 +790,7 @@ class MetaReader(BaseDataPlugin):
         :param objects: List of objects to sort.
         :type objects: List[Any]
         :param channel_numbers: List of channel numbers corresponding to objects.
-        :type channel_numbers: List[int]
+        :type channel_numbers: List[Any]
         :param timestamps: List of timestamps corresponding to objects.
         :type timestamps: List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]
         :return: Dictionary where keys are channel numbers and values are lists of objects,
@@ -836,25 +836,25 @@ class MetaReader(BaseDataPlugin):
     ) -> npt.NDArray[Any]:
         """
         Apply scaling and masking operations to data as needed.
-                Default behavior assumes data is already scaled and does nothing.
+        Default behavior assumes data is already scaled and does nothing.
 
-                :param data: Data to scale.
-                :type data: numpy.ndarray
-                :param copy: Whether to create a copy of the data, defaults to True.
-                :type copy: bool, optional
-                :param bitmask: Bitmask to apply to data, defaults to None.
-                :type bitmask: Optional[np.uint64], optional
-                :param dtype: Desired data type after scaling, defaults to None.
-                :type dtype: Optional[str], optional
-                :param scale: Scaling factor, defaults to None.
-                :type scale: Optional[float], optional
-                :param offset: Offset to add to scaled data, defaults to None.
-                :type offset: Optional[float], optional
-                :param raw_data: is the data to be returned as the original type?
-                :type raw_data: Optional[bool]
-                :raises ValueError: If raw_data is True but no dtype is specified.
-                :return: Scaled data.
-                :rtype: npt.NDArray[Any]
+        :param data: Data to scale.
+        :type data: npt.NDArray[Any]
+        :param copy: Whether to create a copy of the data, defaults to True.
+        :type copy: Optional[bool]
+        :param bitmask: Bitmask to apply to data, defaults to None.
+        :type bitmask: Optional[np.uint64]
+        :param dtype: Desired data type after scaling, defaults to None.
+        :type dtype: Optional[str]
+        :param scale: Scaling factor, defaults to None.
+        :type scale: Optional[float]
+        :param offset: Offset to add to scaled data, defaults to None.
+        :type offset: Optional[float]
+        :param raw_data: is the data to be returned as the original type?
+        :type raw_data: Optional[bool]
+        :raises ValueError: If raw_data is True but no dtype is specified.
+        :return: Scaled data.
+        :rtype: npt.NDArray[Any]
         """
         if bitmask == 0:
             bitmask = None
@@ -906,7 +906,7 @@ class MetaReader(BaseDataPlugin):
         the dictionary output from _sort_objects_by_channel_and_time.
 
         :param datamaps: Dictionary of data maps, where keys are channel numbers.
-        :type datamaps: Dict[int, List[numpy.ndarray]]
+        :type datamaps: Dict[int, List[npt.NDArray[np.float64]]]
         :return: Dictionary of starting indices, keyed by channel number.
         :rtype: Dict[int, List[int]]
         """
@@ -934,7 +934,7 @@ class MetaReader(BaseDataPlugin):
         Populate a dictionary of the number of datapoints in each channel.
 
         :param datamaps: Dictionary of data maps, keyed by channel number.
-        :type datamaps: Dict[int, List[numpy.ndarray]]
+        :type datamaps: Dict[int, List[npt.NDArray[np.float64]]]
         :param file_start_indices: Dictionary of starting indices for each file in each channel, keyed by channel number.
         :type file_start_indices: Dict[int, List[int]]
         :return: Dictionary of total channel samples, keyed by channel number.
@@ -962,7 +962,7 @@ class MetaReader(BaseDataPlugin):
         Check that the file(s) being opened are of the correct type, and raise IOError if not
 
         :param filename: the path to one of the files to be opened
-        :type filename: os.Pathlike
+        :type filename: os.PathLike
         :raises IOError: If the wrong type is file is fed to the plugin
         """
         _, ext = os.path.splitext(filename)

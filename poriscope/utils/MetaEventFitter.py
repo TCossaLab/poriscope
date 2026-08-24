@@ -90,12 +90,12 @@ class MetaEventFitter(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``.
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         pass
 
@@ -321,9 +321,6 @@ class MetaEventFitter(BaseDataPlugin):
     @log(logger=logger)
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run, or all of them if no channel is specified.
 
         :ref:`MetaEventFitter` already has an implementation of this function, but you may override it is you need to do further resetting beyond what is included in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.reset_channel` already.
@@ -331,6 +328,9 @@ class MetaEventFitter(BaseDataPlugin):
         .. warning::
 
             This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super().reset_channel(channel)`` **before** any additional code that you add and it is on you to ensure that your additional code does not conflict with the implementation in :ref:`MetaEventFinder`.
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         # NOTE: unlike MetaEventFinder.reset_channel, this implementation does not
         # branch on `channel is None` to reset every channel, despite the docstring
@@ -855,10 +855,10 @@ class MetaEventFitter(BaseDataPlugin):
     @abstractmethod
     def _pre_process_events(self, channel: int) -> None:
         """
+        **Purpose:** Apply any operations to the fits that need to occur before fitting occurs, for example finding the longest and shorted events. Try to avoid computationally intensive operations here if possible. Most fitters can simple ``pass``.
+
         :param channel: the channel to pre-process
         :type channel: int
-
-        **Purpose:** Apply any operations to the fits that need to occur before fitting occurs, for example finding the longest and shorted events. Try to avoid computationally intensive operations here if possible. Most fitters can simple ``pass``.
         """
         pass
 
@@ -915,6 +915,10 @@ class MetaEventFitter(BaseDataPlugin):
         sublevel_starts: List[int],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
+        **Purpose:** Extract metadata for each sublevel within the event
+
+        The ``sublevel_starts`` list corresponds verbatim to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._locate_sublevel_transitions`. Using this information, provide values for all of the sublevle metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Values for each key should be a list of data with length exactly equal to that of ``sublevel_starts`` and types consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
+
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
@@ -925,10 +929,6 @@ class MetaEventFitter(BaseDataPlugin):
         :type baseline_std: Optional[float]
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
         :type sublevel_starts: List[int]
-
-        **Purpose:** Extract metadata for each sublevel within the event
-
-        The ``sublevel_starts`` list corresponds verbatim to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._locate_sublevel_transitions`. Using this information, provide values for all of the sublevle metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Values for each key should be a list of data with length exactly equal to that of ``sublevel_starts`` and types consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
         :rtype: Dict[str, npt.NDArray[Numeric]]
@@ -1072,6 +1072,10 @@ class MetaEventFitter(BaseDataPlugin):
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
 
+        **Purpose:** Extract metadata for each sublevel within the event
+
+        The ``sublevel_metadata`` list corresponds  to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_sublevel_metadata`. Using this information, provide values for all of the event metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Values for each key should be a single value with type consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
+
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
@@ -1083,10 +1087,6 @@ class MetaEventFitter(BaseDataPlugin):
         :param sublevel_metadata: the dict of sublevel metadata built by self._populate_sublevel_metadata()
         :type sublevel_metadata: Dict[str, List[Numeric]]
 
-        **Purpose:** Extract metadata for each sublevel within the event
-
-        The ``sublevel_metadata`` list corresponds  to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_sublevel_metadata`. Using this information, provide values for all of the event metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Values for each key should be a single value with type consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
-
         :return: a dict of event metadata values
         :rtype: Dict[str, Union[int, float, str, bool]]
         """
@@ -1095,10 +1095,10 @@ class MetaEventFitter(BaseDataPlugin):
     @abstractmethod
     def _post_process_events(self, channel: int) -> None:
         """
+        **Purpose:** Apply any operations to the fits that need to occur after preliminary fitting is finished, for example, refining fits using information about the global dataset structure. Try to avoid computationally intensive operations here if possible. Most fitters can simple ``pass``.
+
         :param channel: the index of the channel to preprocess
         :type channel: int
-
-        **Purpose:** Apply any operations to the fits that need to occur after preliminary fitting is finished, for example, refining fits using information about the global dataset structure. Try to avoid computationally intensive operations here if possible. Most fitters can simple ``pass``.
         """
         pass
 

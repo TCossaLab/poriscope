@@ -104,29 +104,24 @@ class MetaFilter(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``, which will be the case for most :ref:`MetaFilter` instances.
 
-
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
-
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If calling part of this plugin from different channels to do not create persistent state changes in your plugin, you can simply ``pass`` this function, which will be the case for most :ref:`MetaFilter` instances.
 
-
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -203,7 +198,7 @@ class MetaFilter(BaseDataPlugin):
             return settings
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Mapping[str, List[str]]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter

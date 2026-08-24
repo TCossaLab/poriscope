@@ -78,7 +78,7 @@ def log(
           self.logger.info('This message is informational')
 
     :param _func: The function to be decorated. If None, the decorator is returned.
-    :type _func: callable, optional
+    :type _func: Optional[Callable]
     :param logger: The logger instance used for logging.
     :type logger: logging.Logger
     :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False

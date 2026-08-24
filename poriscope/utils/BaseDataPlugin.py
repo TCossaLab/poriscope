@@ -416,7 +416,7 @@ class BaseDataPlugin(ABC):
         More detailed parameter checking should follow a call to super() in an override.
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type settings: dict
+        :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
         if settings:
