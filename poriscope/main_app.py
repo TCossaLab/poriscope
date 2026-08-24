@@ -29,6 +29,7 @@ import logging
 import platform
 import sys
 from pathlib import Path
+from typing import Any, Dict, List
 
 from platformdirs import user_data_dir
 from PySide6.QtWidgets import QApplication
@@ -43,7 +44,7 @@ from poriscope.views.main_view import MainView
 class App(QApplication):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, sys_argv):
+    def __init__(self, sys_argv: List[str]) -> None:
         super(App, self).__init__(sys_argv)
         self.create_appdata_folders()
         self.configure_logger(self.app_config["Log Level"])
@@ -52,7 +53,7 @@ class App(QApplication):
 
         self.main_view.show()
 
-    def create_appdata_folders(self):
+    def create_appdata_folders(self) -> None:
         local = Path(user_data_dir())
         self.app_folder = Path(local, "Poriscope")
         if not self.app_folder.exists():
@@ -73,7 +74,7 @@ class App(QApplication):
         self.config_path = Path(self.app_folder, "config")
         config_file_path = Path(self.config_path, "config.json")
 
-        self.app_config = {
+        self.app_config: Dict[str, Any] = {
             "Parent Folder": Path.home(),
             "User Plugin Folder": self.user_plugin_path,
             "Log Level": logging.WARNING,
@@ -126,12 +127,12 @@ class App(QApplication):
         if str(parent_path) not in sys.path:
             sys.path.append(str(parent_path))
 
-    def initialize_components(self):
+    def initialize_components(self) -> None:
         self.main_model = MainModel(self.app_config)
         self.main_view = MainView(self.main_model.get_available_plugins())
         self.main_controller = MainController(self.main_model, self.main_view)
 
-    def configure_logger(self, loglevel):
+    def configure_logger(self, loglevel: int) -> None:
 
         formatter = logging.Formatter(
             "%(asctime)s: %(levelname)s:\t%(threadName)s(%(thread)d):\t%(name)s:\t%(message)s"
@@ -162,7 +163,7 @@ class App(QApplication):
         )
 
 
-def main():
+def main() -> None:
     logger = logging.getLogger(__name__)
 
     # Refuse to run if 32-bit Python
