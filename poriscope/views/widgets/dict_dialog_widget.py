@@ -99,7 +99,7 @@ class DictDialog(QDialog):
         self.show_delete = show_delete
         # three shapes: (params, name) on OK, (None, None) on cancel,
         # and the sentinel string "delete" on delete
-        self.result: Union[Tuple[Optional[dict], Optional[str]], str, None] = None
+        self._result: Union[Tuple[Optional[dict], Optional[str]], str, None] = None
         self.source_plugins = source_plugins
         self.editable_source_plugins = editable_source_plugins
         self.init_ui(params, name)
@@ -379,20 +379,20 @@ class DictDialog(QDialog):
                             self.entrywidgets[key].text()
                         )
 
-        self.result = (self.params, self.name_entry.text())
+        self._result = (self.params, self.name_entry.text())
         self.accept()
 
     @log(logger=logger)
     def on_cancel(self) -> None:
-        self.result = (None, None)
+        self._result = (None, None)
         self.reject()
 
     @log(logger=logger)
     def on_delete(self) -> None:
         """Handle Delete button click."""
-        self.result = "delete"  # Mark delete request
+        self._result = "delete"  # Mark delete request
         self.reject()  # Close dialog
 
     @log(logger=logger)
     def get_result(self) -> Union[Tuple[Optional[dict], Optional[str]], str, None]:
-        return self.result
+        return self._result

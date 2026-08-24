@@ -102,7 +102,7 @@ class TimeWidget(QDialog):
     def __init__(self, params: Dict[int, Dict[str, Any]]) -> None:
         super().__init__()
         self.setWindowTitle("Event Finding Time Limits")
-        self.result: Optional[Dict[int, Dict[str, Any]]] = None
+        self._result: Optional[Dict[int, Dict[str, Any]]] = None
         self.params: Dict[int, Dict[str, Any]] = {}
         self.entrywidgets: Dict[int, QLineEdit] = {}
         self.ok_button = QPushButton("OK", self)
@@ -169,15 +169,15 @@ class TimeWidget(QDialog):
         for key, entry in self.entrywidgets.items():
             ranges = self._parse_ranges(entry.text())
             self.params[key]["ranges"] = ranges
-        self.result = self.params
+        self._result = self.params
         self.accept()
 
     def _on_cancel(self) -> None:
-        self.result = None
+        self._result = None
         self.reject()
 
     def get_result(self) -> Optional[Dict[int, Dict[str, Any]]]:
-        return self.result
+        return self._result
 
     def _parse_ranges(self, text: str) -> list[tuple[float, float | None]]:
         result: list[tuple[float, float | None]] = []

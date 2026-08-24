@@ -65,11 +65,11 @@ class BaseSubsetFilterDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self) -> None:
-        self.layout = QVBoxLayout(self)
+        layout = QVBoxLayout(self)
 
         self.name_input = QLineEdit(self.default_name)
-        self.layout.addWidget(QLabel("Subset:"))
-        self.layout.addWidget(self.name_input)
+        layout.addWidget(QLabel("Subset:"))
+        layout.addWidget(self.name_input)
 
         # Mode selection: Assisted builds the query automatically,
         # Raw SQL passes the filter text directly to the database
@@ -84,7 +84,7 @@ class BaseSubsetFilterDialog(QDialog):
 
         mode_layout.addWidget(self.assisted_radio)
         mode_layout.addWidget(self.raw_radio)
-        self.layout.addLayout(mode_layout)
+        layout.addLayout(mode_layout)
 
         # Pre-select mode based on existing suffix when editing,
         # and lock the radio buttons so mode cannot be changed after creation
@@ -99,13 +99,13 @@ class BaseSubsetFilterDialog(QDialog):
 
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)
-        self.layout.addWidget(QLabel("Filter:"))
-        self.layout.addWidget(self.filter_input)
+        layout.addWidget(QLabel("Filter:"))
+        layout.addWidget(self.filter_input)
 
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        self.layout.addWidget(self.button_box)
+        layout.addWidget(self.button_box)
         self.button_box.accepted.connect(self.try_accept)
         self.button_box.rejected.connect(self.reject)
 

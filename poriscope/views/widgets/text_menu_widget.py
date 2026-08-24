@@ -67,7 +67,6 @@ class IconTextMenuWidget(QWidget):
     switchToPlugins = Signal()
     switchToHelp = Signal()
     switchToSettings = Signal()
-    switchUser = Signal()
     switchToExit = Signal()
     logger = logging.getLogger(__name__)
 

@@ -68,7 +68,6 @@ class IconMenuWidget(QWidget):
     switchToPlugins = Signal()
     switchToHelp = Signal()
     switchToSettings = Signal()
-    switchUser = Signal()
     switchToExit = Signal()
 
     logger = logging.getLogger(__name__)
@@ -356,11 +355,6 @@ class IconMenuWidget(QWidget):
     @log(logger=logger)
     def handleSettings(self) -> None:
         self.switchToSettings.emit()
-
-    @log(logger=logger)
-    def handleUser(self) -> None:
-        self.switchUser.emit()
-        self.logger.info("User clicked")
 
     @log(logger=logger)
     def handleExit(self) -> None:

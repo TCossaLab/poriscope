@@ -39,7 +39,7 @@ class NumericLineEdit(QLineEdit):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.validator: Optional[QValidator] = None
+        self._validator: Optional[QValidator] = None
 
     @log(logger=logger)
     def setRange(
@@ -52,32 +52,32 @@ class NumericLineEdit(QLineEdit):
         max_val = valtype(max_val) if max_val is not None else None
         if valtype is int:
             # Use the custom validator for integers
-            self.validator = CustomIntValidator(min_val, max_val, self)
+            self._validator = CustomIntValidator(min_val, max_val, self)
         elif valtype is float:
             # Use the QDoubleValidator for floating-point numbers
-            self.validator = QDoubleValidator(self)
+            self._validator = QDoubleValidator(self)
             if min_val is not None:
-                self.validator.setBottom(min_val)
+                self._validator.setBottom(min_val)
             if max_val is not None:
-                self.validator.setTop(max_val)
+                self._validator.setTop(max_val)
         else:
             raise TypeError("Invalid min/max value types")
 
-        self.setValidator(self.validator)
+        self.setValidator(self._validator)
 
     def isValid(self) -> bool:
         if self.text() == "":
             return False
-        if self.validator is not None:
-            state, _, _ = self.validator.validate(self.text(), 0)
+        if self._validator is not None:
+            state, _, _ = self._validator.validate(self.text(), 0)
         else:
             raise AttributeError("Validator is not set in numeric_validation;")
         return state == QValidator.Acceptable
 
     def currentText(self) -> Union[int, float, str]:
-        if isinstance(self.validator, QIntValidator):
+        if isinstance(self._validator, QIntValidator):
             return int(self.text())
-        elif isinstance(self.validator, QDoubleValidator):
+        elif isinstance(self._validator, QDoubleValidator):
             return float(self.text())
         else:
             return self.text()

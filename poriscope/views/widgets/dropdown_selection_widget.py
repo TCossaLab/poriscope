@@ -48,7 +48,7 @@ class DropdownDialog(QDialog):
         super().__init__(parent)
         self.selected_item: Optional[str] = None
         self.save_choice: bool = False
-        self.result: Tuple[Optional[str], bool] = (
+        self._result: Tuple[Optional[str], bool] = (
             self.selected_item,
             self.save_choice,
         )
@@ -89,14 +89,14 @@ class DropdownDialog(QDialog):
     def on_ok(self) -> None:
         self.selected_item = self.combo_box.currentText()
         self.save_choice = self.checkbox.isChecked()
-        self.result = (self.selected_item, self.save_choice)
+        self._result = (self.selected_item, self.save_choice)
         self.accept()
 
     @log(logger=logger)
     def on_cancel(self) -> None:
-        self.result = (None, False)
+        self._result = (None, False)
         self.reject()
 
     @log(logger=logger)
     def get_result(self) -> Tuple[Optional[str], bool]:
-        return self.result
+        return self._result
