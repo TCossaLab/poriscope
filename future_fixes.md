@@ -72,143 +72,42 @@ Batch 1 exists because steps 1 and 2 left small gaps in areas they reported comp
 None` pair repeated across four data plugins. Worth clearing first so the completed-step
 claims are actually true.
 
-## Step 3b - defects surfaced by step 3, to fix in a follow-up pass
+## Step 3b - defects surfaced by step 3 - DONE
 
-Step 3 was annotations and docstrings only; everything below needs a logic, signature or
-API change and was deliberately left alone. Nothing here is a regression - these are
-pre-existing defects that became visible once mypy could see the bodies concerned.
+Closed out across `41adc07`, `7e374db`, `6cf1602` and `0abd08c`. Every item is either
+fixed, deliberately judged to need no action, or moved to the queue below with a reason.
 
-### A. An attribute shadows an inherited Qt method (5 sites) - DONE (7e374db)
-
-Each of these assigns an instance attribute over the name of a method the Qt base class
-already defines, so the inherited method becomes unreachable on that instance.
-
-| Class | Attribute | Shadows |
-| --- | --- | --- |
-| `NumericLineEdit` (`validators/numeric_validation.py`) | `self.validator` | `QLineEdit.validator()` |
-| `DropdownDialog` (`dropdown_selection_widget.py`) | `self.result` | `QDialog.result()` |
-| `DictDialog` (`dict_dialog_widget.py`) | `self.result` | `QDialog.result()` |
-| `TimeWidget` (`time_widget.py`) | `self.result` | `QDialog.result()` |
-| `BaseSubsetFilterDialog` (`base_widgets/base_subset_filter_dialog.py`) | `self.layout` | `QWidget.layout()` |
-
-Renaming is the fix; it is an API change for anything that reads these attributes.
-
-### B. Methods that reference attributes which are never created - PARTLY DONE
-
-Both would raise `AttributeError` on first call. Neither has a caller anywhere in
-`poriscope/`, which is the only reason they have never been noticed.
-
-- ~~`setLanguageChecked` / `setThemeChecked` in the two menu widgets~~ - **done**,
-  removed along with `handleLanguage` / `handleTheme`; there is no language or theme
-  control anywhere in the UI. `handleUser` and the `switchUser` signal in both widgets
-  are also unreached, but they are merely unused rather than broken (nothing connects
-  to `switchUser`, and `handleUser` references no missing attribute), so they are left
-  for a decision rather than deleted.
-- `ClusteringSettingsDialog.update_unit_label` and `reset_top_inputs` reference
-  `unit_label`, `column_combo`, `log_cb`, `norm_cb` and `plot_cb`, none of which is
-  assigned anywhere in the class.
-
-### C. Qt accessors that return `Optional`, used without a guard - RESOLVED (6cf1602)
-
-- ~~`self.lineEdit()` in `multiselect.py` and `multiselect_filter.py`~~ - **done**. It
-  returns `None` unless the combo is editable; now bound once as `self._line_edit`
-  immediately after `setEditable(True)`, where that guarantee is established.
-- `QApplication.instance()` in `BaseLineEdit.__init__` and `multiselect.py`: **no action
-  needed**. Both sit in a `QWidget.__init__`, and a `QWidget` cannot be constructed
-  before a `QApplication` exists, so `None` is unreachable.
-- `item.child(i)` / `topLevelItem(i)` in `SelectionTree.py`: **no action needed**. Every
-  site is inside `for j in range(...childCount())`, so the index is always valid; this is
-  mypy failing to connect `range(n)` with "valid index", not a defect.
-
-### D. Override signature mismatches
-
-- `MultiSelectComboBox.addItem` and `MultiSelectFilterComboBox.addItem` do not implement
-  `QComboBox.addItem`'s icon overload.
-- `MainView.show_walkthrough_intro()` takes no argument where
-  `WalkthroughMixin.show_walkthrough_intro(current_view: str)` takes one. Latent: every
-  `MainView` call site passes nothing, but a mixin-level caller would `TypeError`.
-
-### E. Mutable default arguments
-
-- `DictDialog.__init__(source_plugins=[])`
-- `MainModel.replace_class_names_with_classes(class_dict={...})` - read-only in practice.
-
-Both are `B006` hits; see the bugbear/bandit item below.
-
-### F. A parameter that is accepted and silently discarded
-
-`addItem(text, userData=None)` in both multi-select widgets accepts `userData` for
-`QComboBox` signature compatibility and never stores it.
-
-### G. Types that are inconsistent across the codebase
-
-- **`MetaModel.generators`** is declared `Dict[str, Dict[int, Generator]]`. A bare
-  `Generator` reads as `Generator[Any, None, None]`, but the real contract is
-  `Generator[float, Optional[bool], None]`. **Now actionable**: this was previously
-  blocked because the five producers disagreed - `_commit_events` was mis-annotated and
-  `export_subset_to_csv` genuinely ignored the sent value. Both were fixed in `6cf1602`,
-  so all five now share one contract and the storage type can be tightened. Doing so
-  touches `set_generator` on both `MetaModel` and `MetaController`.
-- ~~**`app_config` path values**~~ - **done** (`6cf1602`). Coerced to `str` at both
-  points where they enter the dict, so `get_data_server_location` and
-  `get_user_plugin_location` now declare `-> str` honestly. The dangerous branch was the
-  upgrade path, which assigns a `Path` into an otherwise all-`str` loaded config and
-  never re-reads it; that value pre-populates a Folder setting, which
-  `BaseDataPlugin._validate_param_types` rejects unless `isinstance(value, str)`.
-- **`DictDialog.result`** holds three shapes: `(params, name)`, `(None, None)`, and the
-  sentinel string `"delete"`.
-- **`get_values`** returns `List[float]` on `FloatRangeLineEdit` but
-  `List[Tuple[Optional[float], Optional[float]]]` on `CommaFloatRangeLineEdit`.
-- Two unrelated classes are both named **`FloatRangeValidator`**, in
-  `float_range_line_edit.py` and `time_widget.py`.
-
-### H. Lazy imports to hoist to module level
-
-Standing preference: imports belong at module level. All four of these are removable.
-
-| Location | Import |
+| Item | Outcome |
 | --- | --- |
-| `main_view.py:453` (`on_help_button_click`) | `from poriscope.views.help import HelpCentre` |
-| `MetadataView.py:2136, 2270` | `import bisect` |
-| `settings_window.py:844` (`main`) | `import sys` |
+| A. Attributes shadowing inherited Qt methods (5) | Renamed to `_result`/`_validator`; `BaseSubsetFilterDialog.layout` deleted as redundant |
+| B. Methods reading attributes that are never assigned | Language/theme setters and `ClusteringSettingsDialog.update_unit_label`/`reset_top_inputs` deleted |
+| C. Unguarded `Optional`-returning Qt accessors | `lineEdit()` bound once where `setEditable(True)` establishes it; the other two judged unreachable, no action |
+| D. Override signature mismatches | `addItem`'s `userData` dropped; `show_walkthrough_intro` made substitutable |
+| E. Mutable default arguments | `source_plugins` defaults to `None`; `class_dict` hoisted to `_JSON_CLASS_NAMES` |
+| F. Silently discarded parameter | Same change as D |
+| G. Cross-codebase type inconsistencies | `app_config` normalised to `str`; `MetaModel.generators` tightened; `time_widget`'s validator renamed; `CommaFloatRangeLineEdit` deleted, which disposed of the `get_values` divergence. **`DictDialog.result`'s three shapes deferred - see below** |
+| H. Lazy imports | All four hoisted; `poriscope/` now has zero function-local imports |
+| I. Dead / unreachable code | All removed |
+| J. Aborting an operation is invisible in the message panel | **Deferred - see below** |
 
-Hoisting the `HelpCentre` one also removes the `TYPE_CHECKING` block in `main_view.py`
-that exists only to make its annotation resolve. The `TYPE_CHECKING` block in
-`main_controller.py` can likewise become plain imports - verified by importing
-`main_model`, `main_view` and `main_controller` together with no cycle. The
-`TYPE_CHECKING` blocks in `icon_menu_widget.py` and `text_menu_widget.py` **must stay**:
-`main_view.py` imports both widgets, so importing `MainView` back would cycle. Both now
-carry a comment saying so.
+### Still queued from step 3b
 
-### I. Dead or unreachable code
-
-- `CommaFloatRangeLineEdit` has no callers anywhere in `poriscope/`.
-- `get_values_with_type_info` has no callers on either line-edit class.
-- `IconMenuWidget.createIconButton`'s `isinstance(iconPathOff, tuple)` branch is
-  unreachable - every call site passes an `os.path.join` result.
-- In `text_menu_widget.py`, `emitSignal`'s `"menu"` entry is unreachable (no
-  `createTextButton` passes that objectName) and would emit a `bool` on
-  `menuToggled = Signal()`, which declares no arguments.
-- A stray `print("text_menu_button_clicked")` sits in
-  `IconTextMenuWidget.menu_button_clicked`, alongside the equivalent `logger.info`.
-
-### J. Aborting any operation is invisible to the user
-
-Surfaced while making CSV export abortable. `MetaController.handle_kill_worker` and
-`handle_kill_all_workers` only call `self.logger`; nothing reaches the message panel, so
-a user whose log level is above INFO sees no confirmation that a stop took effect - for
-any operation, not just export.
-
-Note that a **data plugin cannot emit to the panel directly**: `BaseDataPlugin` is a
-plain `ABC`, not a `QObject`, and has no signals. The established route is to return a
-string from `report_channel_status()`, which `MetaModel.generate_report` relays to
-`relay_add_text_to_display` when a worker finishes. `add_text_to_display` itself exists
-only on `MetaController`/`MetaModel`/`MetaView`.
-
-Two options: emit from `handle_kill_worker`/`handle_kill_all_workers`, which fixes every
-operation at one site; or have `MetaDatabaseLoader.report_channel_status` mention the
-abort, which fixes export alone but can add the "files already written are left in
-place" detail only the loader knows.
+- **`DictDialog.result` holds three shapes**: `(params, name)` on OK, `(None, None)` on
+  Cancel, and the sentinel string `"delete"` on Delete, so callers must `isinstance`-check
+  to tell a deletion from a cancellation. Honestly annotated today. Fixing it properly
+  means a small result type or a sentinel enum plus updating `DataPluginView` and both
+  consumers - a design change of the same character as the `hist_data` item above, not a
+  cleanup.
+- **Aborting any operation produces no message in the panel.** `MetaController`'s
+  `handle_kill_worker`/`handle_kill_all_workers` only call `self.logger`, so a user whose
+  log level is above INFO gets no confirmation that a stop took effect - for every
+  operation, not just CSV export. Note a data plugin **cannot** emit to the panel: it is a
+  plain `ABC` with no signals, and the established route is returning a string from
+  `report_channel_status()`, which `MetaModel.generate_report` relays. `add_text_to_display`
+  exists only on `MetaController`/`MetaModel`/`MetaView`, so that is where any fix belongs.
+- **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
+  `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
+  harmless, but plainly a copy-paste artifact.
 
 ### Step 6 - why it blocks the flip
 
