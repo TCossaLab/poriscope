@@ -1150,7 +1150,7 @@ class TestShiftRangeAndUpdatePlot:
         view.filtered_event_ids = list(cache)
         view.current_sql_filter = sql_filter
         view.current_experiment = exp
-        view.current_channel = channel
+        view.current_channel = int(channel) if channel is not None else None
 
     def test_shift_right_updates_input(self, view):
         self._setup_cache(view)
@@ -1779,7 +1779,7 @@ class TestFetchEventData:
         view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
-        view.current_channel = "0"
+        view.current_channel = 0
         view._resolve_event_db_ids = MagicMock(
             return_value=pd.DataFrame({"id": [10], "event_id": [1]})
         )
@@ -1797,7 +1797,7 @@ class TestHandlePlotEvents:
         view.filtered_event_ids = [1, 2, 3]
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
-        view.current_channel = "0"
+        view.current_channel = 0
 
     def test_sets_last_event_action(self, view):
         self._setup(view)
@@ -1831,7 +1831,7 @@ class TestHandlePlotHistogram:
         view.filtered_event_ids = [1, 2, 3]
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
-        view.current_channel = "0"
+        view.current_channel = 0
 
     def test_sets_last_event_action(self, view):
         self._setup(view)
@@ -1912,7 +1912,7 @@ class TestShiftRangeDispatch:
         view.filtered_event_ids = [0, 3, 5, 7]
         view.current_sql_filter = ""
         view.current_experiment = "exp1"
-        view.current_channel = "0"
+        view.current_channel = 0
 
     def test_histogram_action_dispatches_to_histogram(self, view):
         self._setup_cache(view)

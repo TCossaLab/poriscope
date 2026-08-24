@@ -41,10 +41,10 @@ from mpl_toolkits.mplot3d import Axes3D
 from pandas.api.types import is_float_dtype
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QDialog,
     QFileDialog,
     QHBoxLayout,
-    QLayout,
     QMessageBox,
 )
 from sklearn.mixture import GaussianMixture
@@ -92,15 +92,19 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self._clear_cache()
         self.cluster_data: Optional[pd.DataFrame] = None
         self.query = ""
+        # Positional units for the currently plotted columns, set by
+        # update_plot and read back by _merge_clusters when it replots.
+        # Declared here so the attribute exists before the first plot.
+        self.plot_units: Sequence[Optional[str]] = []
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout: QLayout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Sets up the left-hand control area for the clustering plugin.
 
         :param layout: The parent layout to which controls are added.
-        :type layout: QLayout
+        :type layout: QBoxLayout
         """
 
         self.clusteringcontrols = ClusteringControls()
