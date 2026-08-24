@@ -13,8 +13,8 @@ than here.
 | 2 | `analysistabs/` - 5 tab triads, `*controls.py`, `walkthrough*` (22 files) | Done 2026-08-24 |
 | 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | Done 2026-08-24 |
 | 3b | Fix pass over the defects step 3 surfaced | Done 2026-08-24 |
-| 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | **Next** |
-| 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Queued |
+| 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Done 2026-08-25 |
+| 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | **Next** - it is now the whole baseline |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
 | 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on 4-6, and see the `@log` note |
 
@@ -90,7 +90,7 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
 | I. Dead / unreachable code | All removed |
 | J. Aborting an operation is invisible in the message panel | **Deferred - see below** |
 
-### Still queued from step 3b
+### Still queued from steps 3b and 4
 
 - **`DictDialog.result` holds three shapes**: `(params, name)` on OK, `(None, None)` on
   Cancel, and the sentinel string `"delete"` on Delete, so callers must `isinstance`-check
@@ -105,32 +105,71 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
   plain `ABC` with no signals, and the established route is returning a string from
   `report_channel_status()`, which `MetaModel.generate_report` relays. `add_text_to_display`
   exists only on `MetaController`/`MetaModel`/`MetaView`, so that is where any fix belongs.
+- **`_load_filter` raises into its own handler.** In both `MetadataView._load_filter`
+  (`MetadataView.py:1802`) and `ProteinView._load_filter` (`ProteinView.py:1295`), the
+  `raise ValueError("Invalid filter file format. Expected a dictionary.")` sits inside a
+  `try:` whose `except Exception as e:` is in the same function and only logs. The
+  exception is being used as a local goto; the honest form is to log and `return` at that
+  point. Surfaced by step 4, which left the resulting `DOC501`/`DOC503` pairs baselined
+  rather than document an exception that cannot escape - see `DECISIONS.md`. Fixing the
+  control flow removes four baseline entries for free.
+- **`IntroDialog`'s signal is documented with malformed reStructuredText.**
+  `plugins/analysistabs/utils/walkthrough.py:56` writes `.. attribute :: start_walkthrough`
+  with a space before the `::`, which docutils reads as a comment, so Sphinx renders
+  nothing for it. It cannot simply be corrected: pydoclint only recognises the attribute in
+  the malformed form, and every valid form measured turns one baseline entry into two.
+  Resolving it properly means either `check-class-attributes = false` under
+  `[tool.pydoclint]` or annotating the `Signal` and moving to a form both tools read - the
+  latter touches a PySide6 signal declaration and needs a test run. Evidence table in
+  `DECISIONS.md`.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
 
-### Step 4 - what it actually is
+### Step 4 - DONE 2026-08-25
 
-The baseline is **184 entries**, down from 709 when the pass started. It breaks down as:
+Closed across `929cb47` (utils), `b556344` (datareaders) and `75702cf` (the tail).
+The baseline went **184 entries -> 104**, and all 80 in-scope `DOC105` are gone.
 
-| Code | Count | Meaning |
-| --- | --- | --- |
-| `DOC105` | ~107 | A signature hint and the docstring's `:type:` disagree |
-| `DOC203` | ~30 | Return type in the docstring does not match `:rtype:`/signature |
-| `DOC5xx` | ~13 | `:raises:` sections that do not match what the body raises |
-| others | small | `DOC102`, `DOC103`, `DOC201`, `DOC605` |
+Re-measuring first changed the plan, and the numbers written down before were wrong in
+a way worth remembering: of the 184 entries, **99 belonged to the three excluded
+plugins** - including every single `DOC106`, `DOC107` and `DOC203`. The in-scope work
+was never ~107 `DOC105`; it was 80, plus five other entries. What is left in the
+baseline today is those same 99 excluded-plugin entries plus exactly five in-scope ones,
+all five deliberate (see below). That makes step 5 - deciding what to do about
+`NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` - the whole remaining baseline.
 
-Step 4 is the `DOC105` bulk. These are *not* auto-fixable: each one needs a judgement
-about which side is right - the hint or the prose - and the hint is usually right, since
-it was derived from call sites during steps 1-3 while the docstring text may predate it.
+**Half the work was the trailing-prose trap, not real disagreements.** Twenty-four of
+the 48 `utils/` violations were docstrings whose `:type:` text already matched the
+signature exactly; pydoclint folds any prose following a field list into the last
+`:type:` it saw, so "params first, description last" reports a spurious `DOC105` against
+whichever parameter happens to be documented last. These were fixed by moving the prose
+above the field list with both parts preserved verbatim. A `sig`-vs-`doc` probe that
+prints the two side by side identifies them instantly: textually identical means the
+trap, not a mismatch.
 
-Two traps, both already paid for once:
+**The substantive corrections were units, not types.** `MetaReader.load_data` and
+`continuous_read` documented `start`/`length`/`total_length`/`chunk_length` as sample
+indices typed `int`, but every body multiplies them by `self.samplerate` and
+`continuous_read` calls `load_data` with `float(i / self.samplerate)` - they are times in
+seconds. The prose was as wrong as the type. Everything else was mechanical:
+`os.Pathlike` -> `os.PathLike`, `numpy.ndarray` -> the declared `npt.NDArray` forms, the
+numpy-style `", optional"` suffixes dropped for `Optional[...]`, and
+`get_empty_settings`' `globally_available_plugins` realigned across ten files to the
+`Optional[Dict[str, List[str]]]` that `BaseDataPlugin` declares.
 
-- **pydoclint folds trailing prose into the last `:type:`.** A docstring written "params
-  first, description last" reports a spurious `DOC105` against whichever parameter is
-  documented last. Put the description first. Nine docstrings hit this in step 2.
-- Regenerate the baseline only once per batch, from a clean tree, with
-  `--auto-regenerate-baseline=False` for the read-only checks in between.
+`MetaReader._scale_data`'s docstring was also indented sixteen spaces from its second
+line on, which renders as a blockquote; re-indented to eight.
+
+**The five in-scope entries left in the baseline are deliberate**, both recorded in
+`DECISIONS.md`:
+
+- `MetadataView._load_filter` and `ProteinView._load_filter`, `DOC501` + `DOC503` each.
+  The `ValueError` they raise is caught by an `except Exception` in the same function, so
+  documenting it would promise callers an exception they can never see.
+- `IntroDialog`'s `DOC605`. Every correctly-formed alternative measured *worse* (two
+  entries instead of one); the only form pydoclint accepts is the one that keeps
+  malformed reStructuredText.
 
 ### Prerequisite for step 7 - the `@log` decorator erases signatures
 

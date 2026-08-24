@@ -144,3 +144,76 @@ a different problem.
 of widgets with `deleteLater()` plus a drained event loop instead of `QWidget.destroy()`.
 See `changelog.md`. The exoneration above stands and is kept because the `moveEvent` hook
 is exactly the kind of change this crash would be blamed on again.
+
+---
+
+## 2026-08-25 - Leave `_load_filter`'s DOC501/DOC503 baselined; the `ValueError` never escapes
+
+**Context.** Step 4 finished the in-scope pydoclint backlog and left five entries in the
+baseline. Four of them are a matched DOC501/DOC503 pair on `MetadataView._load_filter`
+(`MetadataView.py:1802`) and `ProteinView._load_filter` (`ProteinView.py:1295`): each body
+contains `raise ValueError("Invalid filter file format. Expected a dictionary.")` while the
+docstring has no `Raises` section.
+
+**Decision.** Do not add a `:raises ValueError:` line to either docstring. Leave both pairs
+baselined.
+
+**Evidence.** In both methods the `raise` sits inside a `try:` whose `except Exception as e:`
+is in the *same function* and merely logs (`self.logger.error(f"Failed to load filters: {e}")`).
+The exception cannot reach a caller, so documenting it would tell callers to handle something
+they will never see - strictly worse than the current silence. pydoclint's DOC501 counts
+`raise` statements syntactically and does no try/except reachability analysis, so it reports
+these regardless.
+
+**What would actually fix it.** The `raise`/`except` pair is being used as a local goto: the
+honest form is to log the error and `return` at that point instead of raising into the
+function's own handler. That is a logic change, deliberately out of scope for the
+type-annotation pass, and it is queued in `future_fixes.md`.
+
+**Revisit if.** That control flow is straightened out, at which point both pairs disappear
+from the baseline on their own.
+
+---
+
+## 2026-08-25 - Leave `IntroDialog`'s DOC605 baselined rather than keep malformed RST to satisfy it
+
+**Context.** The fifth surviving in-scope baseline entry is DOC605 on `IntroDialog`
+(`plugins/analysistabs/utils/walkthrough.py:52`), whose class docstring documents its Qt
+signal as:
+
+```
+    .. attribute :: start_walkthrough
+        :type: Signal
+```
+
+against a bare `start_walkthrough = Signal()`. Note the space before the `::`.
+
+**Decision.** Leave it exactly as it is, and leave the DOC605 baselined.
+
+**Evidence.** Every combination was measured against pydoclint directly rather than guessed:
+
+| Docstring form | Attribute declaration | Result |
+| --- | --- | --- |
+| `.. attribute :: ` (as-is) | `= Signal()` | DOC605 - one entry |
+| `.. attribute:: ` (valid RST) | `= Signal()` | DOC601 + DOC603 - two entries |
+| `.. attribute:: ` | `: Signal = Signal()` | DOC601 + DOC603 |
+| `.. attribute:: ` | `: ClassVar[Signal] = Signal()` | DOC601 + DOC603 |
+| `:ivar:`/`:vartype:` | either | DOC601 + DOC603 |
+| `.. attribute :: ` (as-is) | `: Signal = Signal()` | clean |
+
+So the only form pydoclint accepts is the one that keeps the malformed directive. Correcting
+the reStructuredText makes the baseline *worse*, because pydoclint stops recognising the
+attribute at all.
+
+**The cost of leaving it.** `.. attribute :: name` is not a valid docutils directive - the
+space before `::` turns it into a comment - so Sphinx renders nothing for it either. This is
+the codebase's only use of the construct, so there is no convention at stake.
+
+**What would actually fix it.** Either set `check-class-attributes = false` under
+`[tool.pydoclint]`, which is defensible given that no sphinx-style attribute syntax appears to
+satisfy this version, or annotate the signal and switch the docstring to a form that both
+Sphinx and pydoclint read. The latter touches a PySide6 `Signal` declaration and so needs a
+test run; it is not a docstring-only change and was therefore out of scope for step 4.
+
+**Revisit if.** `check-class-attributes` is configured, or another class documents attributes
+and makes the question general rather than a one-off.
