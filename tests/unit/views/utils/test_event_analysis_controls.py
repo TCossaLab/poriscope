@@ -520,11 +520,11 @@ class TestOnButtonClicked:
         ec.on_button_clicked("commit_events")
         assert not ec.commit_btn.isChecked()
 
-    def test_unknown_button_same_bug_as_metadata_controls(self, ec):
-        # BUG: button_mapping.get(button_type, lambda: None).setChecked(False)
-        # calls .setChecked() on a plain function for unknown button types.
-        with pytest.raises(AttributeError):
-            ec.on_button_clicked("nonexistent")
+    def test_unknown_button_is_ignored(self, ec):
+        # An unmapped button_type is a no-op. This used to raise AttributeError,
+        # because the fallback passed to button_mapping.get() was a plain
+        # function with no setChecked.
+        ec.on_button_clicked("nonexistent")
 
     def test_parameters_included_in_signal(self, ec):
         received_params = []

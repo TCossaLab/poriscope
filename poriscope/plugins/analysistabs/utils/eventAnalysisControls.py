@@ -589,7 +589,9 @@ class EventAnalysisControls(QWidget):
             "right_arrow": self.right_arrow_button,
         }
 
-        button_mapping.get(button_type, lambda: None).setChecked(False)
+        button = button_mapping.get(button_type)
+        if button is not None:
+            button.setChecked(False)
 
     def update_channels(self, channels: Sequence[int]) -> None:
         """

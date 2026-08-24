@@ -1194,7 +1194,9 @@ class MetadataControls(QWidget):
             "load_filter": self.load_filter_button,
         }
 
-        button_mapping.get(button_type, lambda: None).setChecked(False)
+        button = button_mapping.get(button_type)
+        if button is not None:
+            button.setChecked(False)
 
     def update_loaders(self, loaders: list[str]) -> None:
         self.logger.info(f"Updating loaders: {loaders}")

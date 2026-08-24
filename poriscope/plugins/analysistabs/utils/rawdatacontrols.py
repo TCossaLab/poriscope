@@ -647,7 +647,9 @@ class RawDataControls(QWidget):
             "plot_events": self.plot_events_pushButton,
         }
 
-        button_mapping.get(button_type, lambda: None).setChecked(False)
+        button = button_mapping.get(button_type)
+        if button is not None:
+            button.setChecked(False)
 
     def update_channels(self, channels: Sequence[int]) -> None:
         """

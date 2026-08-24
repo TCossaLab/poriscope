@@ -712,13 +712,12 @@ class TestOnButtonClicked:
         mc.on_button_clicked("selection_tree")
         assert any(a == "select_experiment_and_channel" for _, a in received)
 
-    def test_unknown_button_no_signal_bug(self, mc):
-        # BUG: button_mapping.get(button_type, lambda: None).setChecked(False)
-        # calls .setChecked() on a plain function when the key is not found,
-        # raising AttributeError. Unknown button types should be silently ignored.
+    def test_unknown_button_is_ignored(self, mc):
+        # An unmapped button_type emits nothing and unchecks nothing. This used
+        # to raise AttributeError, because the fallback passed to
+        # button_mapping.get() was a plain function with no setChecked.
         received = self._collect_actions(mc)
-        with pytest.raises(AttributeError):
-            mc.on_button_clicked("nonexistent_button")
+        mc.on_button_clicked("nonexistent_button")
         assert received == []
 
     def test_button_auto_unchecked_after_click(self, mc):
