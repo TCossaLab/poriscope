@@ -357,7 +357,7 @@ class RawDataControls(QWidget):
         button.setStyleSheet(
             "QToolButton { border: none; background: transparent; }"
             "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        ) 
+        )
         button.setToolTip(info_text)
         button.clicked.connect(
             lambda _, comboBox=comboBox, metaclass=metaclass: self.delete_plugin(

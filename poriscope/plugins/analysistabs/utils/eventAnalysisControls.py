@@ -306,7 +306,7 @@ class EventAnalysisControls(QWidget):
         button.setStyleSheet(
             "QToolButton { border: none; background: transparent; }"
             "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        ) 
+        )
         button.setToolTip(info_text)
         button.clicked.connect(
             lambda _, comboBox=comboBox, metaclass=metaclass: self.show_plugin_edit_manager(
@@ -334,7 +334,7 @@ class EventAnalysisControls(QWidget):
         button.setStyleSheet(
             "QToolButton { border: none; background: transparent; }"
             "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )        
+        )
         button.setToolTip(add_text)
         button.clicked.connect(
             lambda: self.show_plugin_add_manager(comboBox, metaclass)
@@ -350,7 +350,7 @@ class EventAnalysisControls(QWidget):
         button.setStyleSheet(
             "QToolButton { border: none; background: transparent; }"
             "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        ) 
+        )
         button.setToolTip(info_text)
         button.clicked.connect(
             lambda _, comboBox=comboBox, metaclass=metaclass: self.delete_plugin(
