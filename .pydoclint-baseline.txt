@@ -1,30 +1,10 @@
-poriscope/controllers/DataPluginController.py
-    DOC106: Method `DataPluginController.edit_plugin`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DataPluginController.edit_plugin`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DataPluginController.edit_plugin`: Argument names match, but type hints in these args do not match: metaclass, key, settings
-    DOC106: Method `DataPluginController._restore_parent_dependent_links`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DataPluginController._restore_parent_dependent_links`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DataPluginController._restore_parent_dependent_links`: Argument names match, but type hints in these args do not match: metaclass, key, parents
-    DOC106: Method `DataPluginController.get_plugin_instance`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DataPluginController.get_plugin_instance`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DataPluginController.get_plugin_instance`: Argument names match, but type hints in these args do not match: metaclass, key
---------------------
 poriscope/controllers/main_controller.py
     DOC106: Method `MainController.instantiate_analysis_tab`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
     DOC107: Method `MainController.instantiate_analysis_tab`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
     DOC105: Method `MainController.instantiate_analysis_tab`: Argument names match, but type hints in these args do not match: subclass
 --------------------
 poriscope/models/DataPluginModel.py
-    DOC106: Method `DataPluginModel.__init__`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DataPluginModel.__init__`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DataPluginModel.__init__`: Argument names match, but type hints in these args do not match: available_plugin_classes
     DOC105: Method `DataPluginModel.register_plugin`: Argument names match, but type hints in these args do not match: instance
-    DOC106: Method `DataPluginModel.apply_settings`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DataPluginModel.apply_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DataPluginModel.apply_settings`: Argument names match, but type hints in these args do not match: instance, settings
-    DOC106: Method `DataPluginModel.get_plugin_details`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DataPluginModel.get_plugin_details`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DataPluginModel.get_plugin_details`: Argument names match, but type hints in these args do not match: metaclass, key
 --------------------
 poriscope/plugins/analysistabs/MetadataView.py
     DOC501: Method `MetadataView._load_filter` has raise statements, but the docstring does not have a "Raises" section

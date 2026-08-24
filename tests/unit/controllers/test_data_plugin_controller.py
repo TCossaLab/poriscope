@@ -37,7 +37,7 @@ def mock_model(mocker: MockerFixture) -> MagicMock:
     :return: Mocked data plugin model.
     """
     model: MagicMock = mocker.Mock()
-    model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     model.get_available_metaclasses.return_value = []
     return model
 
@@ -117,12 +117,12 @@ def test_init_sets_view_model_and_data_server(mocker: MockerFixture) -> None:
 
     with patch("poriscope.controllers.DataPluginController.QObject.__init__"):
         ctrl = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
-        DataPluginController.__init__(ctrl, {"MetaReader": []}, "/data")  # type: ignore[misc]
+        DataPluginController.__init__(ctrl, {"MetaReader": {}}, "/data")  # type: ignore[misc]
 
     assert ctrl.data_server == "/data"
     assert ctrl.plugin_manager is None
     mock_view_cls.assert_called_once()
-    mock_model_cls.assert_called_once_with({"MetaReader": []})
+    mock_model_cls.assert_called_once_with({"MetaReader": {}})
 
 
 # -------------------- edit_plugin_settings ---------------------------
@@ -214,7 +214,7 @@ def test_delete_plugin_removes_plugin_when_no_dependents(
     instance.get_dependents.return_value = []
     instance.get_parents.return_value = []
     mock_model.get_plugin_instance.return_value = instance
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     controller.delete_plugin("MetaReader", "r1")
 
@@ -242,7 +242,7 @@ def test_delete_plugin_unregisters_from_parents_before_deletion(
     mock_model.get_plugin_instance.side_effect = lambda mc, k: (
         instance if k == "r1" else parent_instance
     )
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     controller.delete_plugin("MetaReader", "r1")
 
@@ -363,7 +363,7 @@ def test_validate_and_instantiate_plugin_success_with_provided_settings(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     settings = {"param": {"Value": 1}}
 
     controller.validate_and_instantiate_plugin(
@@ -440,7 +440,7 @@ def test_validate_and_instantiate_plugin_logs_error_on_apply_settings_failure(
     plugin.apply_settings.side_effect = RuntimeError("bad settings")
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     controller.validate_and_instantiate_plugin(
         metaclass="MetaReader",
@@ -468,7 +468,7 @@ def test_validate_and_instantiate_plugin_logs_error_on_register_failure(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     mock_model.register_plugin.side_effect = RuntimeError("register failed")
 
     controller.validate_and_instantiate_plugin(
@@ -497,7 +497,7 @@ def test_validate_and_instantiate_plugin_returns_early_on_empty_settings(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     controller.validate_and_instantiate_plugin(
         metaclass="MetaReader",
@@ -525,7 +525,7 @@ def test_validate_and_instantiate_plugin_logs_exception_on_plugin_reference_erro
     mock_model.get_temp_instance.return_value = plugin
     # Mark one settings key as a metaclass so the reference resolution runs
     mock_model.get_available_metaclasses.return_value = ["MetaLoader"]
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     # Trigger failure inside the reference resolution loop
     mock_model.get_plugin_instance.side_effect = RuntimeError("lookup failed")
 
@@ -650,7 +650,7 @@ def test_validate_and_instantiate_plugin_populates_from_historical_settings(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     # get_empty_settings returns a dict with a param key
     empty = {"param": {"Value": None}}
@@ -699,7 +699,7 @@ def test_validate_and_instantiate_plugin_defaults_folder_to_data_server(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     empty = {"Folder": {"Value": None}}
     plugin.get_empty_settings.return_value = empty
@@ -743,7 +743,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_user_cancels(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     plugin.get_empty_settings.return_value = {"param": {"Value": None}}
     controller.historical_settings = None  # type: ignore[assignment]
@@ -781,7 +781,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_result_first_none(
     plugin = _make_plugin(mocker)
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     plugin.get_empty_settings.return_value = {"param": {"Value": None}}
     controller.historical_settings = None  # type: ignore[assignment]
@@ -887,7 +887,7 @@ def test_edit_plugin_deletes_plugin_when_result_is_delete_and_no_dependents(
     instance.report_channel_status.return_value = "ok"
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
     mock_view.get_user_settings.return_value = "delete"
 
     try:
@@ -1238,7 +1238,7 @@ def test_validate_and_instantiate_plugin_logs_exception_on_key_setup_error(
     plugin.set_key.side_effect = RuntimeError("set_key failed")
     mock_model.get_temp_instance.return_value = plugin
     mock_model.get_available_metaclasses.return_value = []
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     plugin.get_empty_settings.return_value = {"param": {"Value": None}}
     controller.historical_settings = None  # type: ignore[assignment]

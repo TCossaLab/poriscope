@@ -47,7 +47,11 @@ class DataPluginController(QObject):
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, available_plugin_classes, data_server) -> None:
+    def __init__(
+        self,
+        available_plugin_classes: Mapping[str, Mapping[str, type]],
+        data_server: str,
+    ) -> None:
         super().__init__()
         self.view = DataPluginView()
         self.model = DataPluginModel(available_plugin_classes)
@@ -56,7 +60,7 @@ class DataPluginController(QObject):
 
     @log(logger=logger)
     @Slot(str, str)
-    def edit_plugin_settings(self, metaclass: str, key: str):
+    def edit_plugin_settings(self, metaclass: str, key: str) -> None:
         """
         Retrieve plugin details and allow editing of the plugin's settings in the view.
         """
@@ -69,7 +73,7 @@ class DataPluginController(QObject):
             else:
                 self.edit_plugin(metaclass, key, settings)
 
-    def edit_plugin(self, metaclass, key, settings) -> None:
+    def edit_plugin(self, metaclass: str, key: str, settings: dict) -> None:
         """
         Edit and apply settings for an existing plugin
 
@@ -255,7 +259,9 @@ class DataPluginController(QObject):
                 )
 
     @log(logger=logger)
-    def _restore_parent_dependent_links(self, metaclass, key, parents):
+    def _restore_parent_dependent_links(
+        self, metaclass: str, key: str, parents: List[Tuple[str, str]]
+    ) -> None:
         """
         Re-register this plugin as a dependent on each of its parents.
 
@@ -269,7 +275,7 @@ class DataPluginController(QObject):
         :param key: The key of the plugin being restored.
         :type key: str
         :param parents: The (metaclass, key) pairs of the plugin's parents.
-        :type parents: list[tuple[str, str]]
+        :type parents: List[Tuple[str, str]]
         """
         for pmetaclass, pkey in parents:
             pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
@@ -334,7 +340,7 @@ class DataPluginController(QObject):
         self.model.handle_exit()
 
     @log(logger=logger)
-    def get_plugin_instance(self, metaclass, key) -> object:
+    def get_plugin_instance(self, metaclass: str, key: str) -> object:
         """
         Get the plugin instance corresponding to the given key.
 
@@ -370,7 +376,7 @@ class DataPluginController(QObject):
         """
         history: Dict[str, Any] = {}
         temp_instance = None
-        self.historical_settings = None
+        self.historical_settings: Optional[Dict[str, Any]] = None
 
         # instantiate a temporary instance of the requested data plugin type
         try:
@@ -509,14 +515,14 @@ class DataPluginController(QObject):
         self.update_plugin_history.emit(history, "")
 
     @log(logger=logger)
-    def set_settings(self, settings):
+    def set_settings(self, settings: Optional[Dict[str, Any]]) -> None:
         """
         Receive previously used settings for a plugin type, relayed here in response to get_settings_from_history, and cache them for use by validate_and_instantiate_plugin.
         """
         self.historical_settings = settings
 
     @log(logger=logger)
-    def update_data_server_location(self, data_server):
+    def update_data_server_location(self, data_server: str) -> None:
         """
         Update the cached data server location used to pre-populate a new plugin's Folder setting.
         """

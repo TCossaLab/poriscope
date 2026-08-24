@@ -39,7 +39,9 @@ class DataPluginModel(QObject):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, available_plugin_classes) -> None:
+    def __init__(
+        self, available_plugin_classes: Mapping[str, Mapping[str, type]]
+    ) -> None:
         """
         Initialize the plugin model.
 
@@ -53,7 +55,7 @@ class DataPluginModel(QObject):
         }
 
     @log(logger=logger)
-    def register_plugin(self, instance: object, metaclass: str, key: str):
+    def register_plugin(self, instance: object, metaclass: str, key: str) -> None:
         """
         Register a plugin instance with the given key.
 
@@ -183,12 +185,14 @@ class DataPluginModel(QObject):
                 plugin.close_resources()
 
     @log(logger=logger)
-    def apply_settings(self, instance, settings):
+    def apply_settings(
+        self, instance: Any, settings: Mapping[str, Mapping[str, Any]]
+    ) -> None:
         """
         If the plugin needs settings dict to work, call the appropriate method in an instance to apply it
 
         :param instance: the object to apply the settings to
-        :type instance: A data plugin object
+        :type instance: Any
         :param settings: a nested dict of settings to apply
         :type settings: Mapping[str, Mapping[str, Any]]
         """
@@ -209,7 +213,7 @@ class DataPluginModel(QObject):
         return self.plugins[metaclass].get(key)
 
     @log(logger=logger)
-    def get_plugin_details(self, metaclass, key) -> Optional[dict]:
+    def get_plugin_details(self, metaclass: str, key: str) -> Optional[dict]:
         """
         Retrieve the raw settings associated to an already-instantiated plugin by metaclass and key.
 
