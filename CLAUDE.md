@@ -149,4 +149,8 @@ the appropriate header/subheader, respecting formatting ceonventions already pre
 
 - Do not nest functions inside other functions
 - When the user reports a bug to you and asks you to fix it, double check the assumptions 
-  before implementing the fix. 
+  before implementing the fix. Do not blindly accept the assertions of the user as to the
+  cause of potential issues. Be thorough in your analysis, ensuring that you fully trace 
+  related logic paths to ensure that nothing breaks downstream as the result of an applied
+  fix, and explain any issues surfaced to the user and request input before proceeding if
+  you find that a user-based assumption or instruction would cause problems.
