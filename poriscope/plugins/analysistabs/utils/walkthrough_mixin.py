@@ -25,13 +25,20 @@
 
 
 import logging
+from typing import Callable, List, Optional, Tuple, Union, cast
 
 from PySide6.QtCore import QPoint, QRect, QTimer, Signal
+from PySide6.QtGui import QMoveEvent
+from PySide6.QtWidgets import QWidget
 
 from poriscope.plugins.analysistabs.utils.walkthrough import (
     IntroDialog,
+    StepDialog,
     start_walkthrough,
 )
+
+WalkthroughStep = Tuple[str, str, str, Callable[[], Union[QWidget, List[QWidget]]]]
+"""A single walkthrough step: (title, description, view name, widget getter)."""
 
 
 class WalkthroughMixin:
@@ -50,16 +57,16 @@ class WalkthroughMixin:
     walkthrough_finished = Signal(str, bool)
     logger = logging.getLogger(__name__)
 
-    def _init_walkthrough(self):
+    def _init_walkthrough(self) -> None:
         """
         Initializes walkthrough state and internal tracking variables.
         """
         self._walkthrough_active = False
         self._walkthrough_index = 0
-        self._global_walkthrough_steps = []
-        self.walkthrough_dialog = None
+        self._global_walkthrough_steps: List[WalkthroughStep] = []
+        self.walkthrough_dialog: Optional[StepDialog] = None
 
-    def launch_walkthrough(self):
+    def launch_walkthrough(self) -> None:
         """
         Starts the walkthrough process from the appropriate view.
         Skips to the relevant section depending on the current view.
@@ -85,7 +92,7 @@ class WalkthroughMixin:
 
         self._run_next_walkthrough_step()
 
-    def _run_next_walkthrough_step(self):
+    def _run_next_walkthrough_step(self) -> None:
         """
         Executes the next step in the walkthrough, waiting for the correct view.
         """
@@ -98,7 +105,7 @@ class WalkthroughMixin:
             self._walkthrough_index
         ]
 
-        def wait_for_view():
+        def wait_for_view() -> None:
             """
             Recursively waits until the user is on the correct view before launching the step.
             """
@@ -107,7 +114,7 @@ class WalkthroughMixin:
             )
             if self.get_current_view() == target_view:
                 try:
-                    steps = []
+                    steps: List[Tuple[str, str, Union[QWidget, List[QWidget]]]] = []
                     for i in range(
                         self._walkthrough_index, len(self._global_walkthrough_steps)
                     ):
@@ -121,10 +128,17 @@ class WalkthroughMixin:
                     if not steps:
                         raise ValueError("No valid widgets found for this view.")
 
-                    self.walkthrough_dialog = start_walkthrough(self, steps)
+                    # start_walkthrough is declared to return QDialog because it
+                    # falls back to a bare QDialog if StepDialog construction
+                    # fails; every use below relies on the StepDialog API, and
+                    # the resulting AttributeError is caught by the enclosing
+                    # try. Flagged for review.
+                    self.walkthrough_dialog = cast(
+                        StepDialog, start_walkthrough(cast(QWidget, self), steps)
+                    )
                     advance_cancelled = False
 
-                    def check_next_view():
+                    def check_next_view() -> None:
                         nonlocal advance_cancelled
                         if advance_cancelled:
                             return
@@ -138,7 +152,7 @@ class WalkthroughMixin:
 
                     check_next_view()
 
-                    def on_dialog_done():
+                    def on_dialog_done() -> None:
                         nonlocal advance_cancelled
                         # Stop the auto-advance polling loop above: once the
                         # dialog is dismissed, a later view change must not
@@ -147,7 +161,9 @@ class WalkthroughMixin:
                         self._handle_walkthrough_done(len(steps))
 
                     self.walkthrough_dialog.done_signal.connect(on_dialog_done)
-                    self.walkthrough_dialog.moveEvent = self._reposition_dialog
+                    self.walkthrough_dialog.moveEvent = (  # type: ignore[method-assign]
+                        self._reposition_dialog
+                    )
 
                 except Exception as e:
                     self.logger.error(f"Error in walkthrough step '{label}': {e}")
@@ -156,7 +172,7 @@ class WalkthroughMixin:
 
         wait_for_view()
 
-    def _advance_walkthrough_index(self):
+    def _advance_walkthrough_index(self) -> None:
         """
         Increments the walkthrough index and moves to the next step, if available.
         """
@@ -167,7 +183,9 @@ class WalkthroughMixin:
             self._walkthrough_active = False
             self.logger.info("Walkthrough finished.")
 
-    def _handle_walkthrough_done(self, steps_completed, *, is_pseudo=False) -> None:
+    def _handle_walkthrough_done(
+        self, steps_completed: int, *, is_pseudo: bool = False
+    ) -> None:
         """
         Handles cleanup and transition after a walkthrough step or sequence.
 
@@ -208,10 +226,13 @@ class WalkthroughMixin:
 
             self.logger.info("Walkthrough pseudo-ended, no next step found.")
 
-    def _reposition_dialog(self, event):
+    def _reposition_dialog(self, event: QMoveEvent) -> None:
         """
         Reposition the walkthrough dialog near the highlighted widget,
         avoiding overlap and staying within the main window.
+
+        :param event: The move event that triggered the repositioning.
+        :type event: QMoveEvent
         """
         if not self.walkthrough_dialog:
             return
@@ -226,7 +247,10 @@ class WalkthroughMixin:
         dialog_size = dialog.size()
         margin = 20
 
-        window_rect = QRect(self.mapToGlobal(QPoint(0, 0)), self.size())
+        parent_widget = cast(QWidget, self)
+        window_rect = QRect(
+            parent_widget.mapToGlobal(QPoint(0, 0)), parent_widget.size()
+        )
         widget = widgets[0]
         widget_rect = QRect(widget.mapToGlobal(QPoint(0, 0)), widget.size())
 
@@ -282,7 +306,7 @@ class WalkthroughMixin:
             QPoint(max(window_rect.left(), safe_x), max(window_rect.top(), safe_y))
         )
 
-    def show_walkthrough_intro(self, current_view) -> None:
+    def show_walkthrough_intro(self, current_view: str) -> None:
         """
         Displays the initial tutorial intro dialog.
 
@@ -294,36 +318,40 @@ class WalkthroughMixin:
             return
 
         self.logger.info(f"Starting walkthrough intro for {current_view}.")
-        intro = IntroDialog(self, current_step=current_view)
+        intro = IntroDialog(cast(QWidget, self), current_step=current_view)
         intro.start_walkthrough.connect(self.launch_walkthrough)
         intro.exec()
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         """
         Abstract method to get the name of the current view.
 
-        Subclasses must override this to return the current view name (str).
+        Subclasses must override this to return the current view name.
 
+        :return: The name of the view currently displayed.
+        :rtype: str
         :raises NotImplementedError: Always, unless overridden by a subclass.
         """
         raise NotImplementedError(
             "get_current_view must be implemented in the subclass"
         )
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         """
         Abstract method to retrieve the walkthrough steps for the current view.
 
-        Subclasses must override this to return a list of walkthrough steps
-        (list[tuple[str, str, str, Callable[[], QWidget]]]).
+        Subclasses must override this to return a list of walkthrough steps,
+        each a (title, description, view name, widget getter) tuple.
 
+        :return: The ordered walkthrough steps for this view.
+        :rtype: List[WalkthroughStep]
         :raises NotImplementedError: Always, unless overridden by a subclass.
         """
         raise NotImplementedError(
             "get_walkthrough_steps must be implemented in the subclass"
         )
 
-    def _force_close_walkthrough_dialog(self):
+    def _force_close_walkthrough_dialog(self) -> None:
         """
         Forcefully closes the walkthrough dialog and emits a termination signal.
         """

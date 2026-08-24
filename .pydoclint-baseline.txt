@@ -20,10 +20,37 @@ poriscope/models/DataPluginModel.py
     DOC108: Method `DataPluginModel.get_plugin_instance`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/ClusteringController.py
+    DOC108: Method `ClusteringController.check_cluster_column_exists`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.alter_database_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.relay_query`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.relay_event_data_generator`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.relay_plot_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.relay_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.update_column_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringController.update_column_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClusteringController.display_write_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/ClusteringView.py
+    DOC108: Method `ClusteringView._set_control_area`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._reset_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.handle_parameter_change`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._merge_clusters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.set_cluster_column_exists`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.set_alter_database_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._commit_clusters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.set_query`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.set_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.update_available_columns`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.update_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.update_column_names`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.update_column_units`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._handle_other_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._handle_clustering_settings`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._load_metadata_and_cluster`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.update_plot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClusteringView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringView._normalize_column_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClusteringView._update_clusters_hdbscan`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/EventAnalysisController.py
@@ -79,10 +106,27 @@ poriscope/plugins/analysistabs/RawDataView.py
     DOC108: Method `RawDataView.set_data_filter_function`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/utils/clusteringcontrols.py
+    DOC108: Method `ClusteringControls.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClusteringControls.update_loaders`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `ClusteringControls.update_clusters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/utils/metadatacontrols.py
     DOC108: Method `MetadataControls.set_event_id_input`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
+poriscope/plugins/analysistabs/utils/walkthrough.py
+    DOC108: Method `IntroDialog.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `IntroDialog.paintEvent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `Overlay.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `Overlay.highlight`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `Overlay.eventFilter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `Overlay.paintEvent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `StepDialog.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Function `start_walkthrough`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
+poriscope/plugins/analysistabs/utils/walkthrough_mixin.py
+    DOC108: Method `WalkthroughMixin._handle_walkthrough_done`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `WalkthroughMixin._reposition_dialog`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `WalkthroughMixin.show_walkthrough_intro`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/datareaders/BinaryReader1X.py
     DOC108: Method `BinaryReader1X.close_resources`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
