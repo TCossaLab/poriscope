@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import logging
+from typing import Any, Callable, List, Sequence
 
 from PySide6.QtCore import Slot
 from typing_extensions import override
@@ -48,18 +49,18 @@ class RawDataController(MetaController):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         self.view = RawDataView()
         self.model = RawDataModel()
 
     @log(logger=logger)
     @override
-    def _setup_connections(self):
+    def _setup_connections(self) -> None:
         self.view.calculate_psd.connect(self.calculate_psd)
 
     @log(logger=logger)
     @Slot(list, float)
-    def calculate_psd(self, psd_data, samplerate):
+    def calculate_psd(self, psd_data: list, samplerate: float) -> None:
         """
         Calculate the Power Spectral Density (PSD) from the provided signal data and update the view.
 
@@ -89,7 +90,7 @@ class RawDataController(MetaController):
         self.view.update_available_plugins(available_plugins)
 
     @log(logger=logger)
-    def set_event_filter(self, data_filter):
+    def set_event_filter(self, data_filter: Callable) -> None:
         """
         Set the data filter function used for processing events.
 
@@ -99,7 +100,7 @@ class RawDataController(MetaController):
         self.view.set_data_filter_function(data_filter)
 
     @log(logger=logger)
-    def update_plot_data(self, data):
+    def update_plot_data(self, data: Any) -> None:
         """
         Relay processed data to the view for plotting.
 
@@ -109,7 +110,7 @@ class RawDataController(MetaController):
         self.view.update_plot_data(data)
 
     @log(logger=logger)
-    def update_plot_samplerate(self, samplerate):
+    def update_plot_samplerate(self, samplerate: float) -> None:
         """
         Set the sampling rate to be used for time axis conversion in the plot.
 
@@ -120,7 +121,7 @@ class RawDataController(MetaController):
 
     @log(logger=logger)
     @Slot(list)
-    def update_channels(self, num_channels):
+    def update_channels(self, num_channels: List[int]) -> None:
         """
         Update the view with the current number of channels available or selected.
 
@@ -130,17 +131,17 @@ class RawDataController(MetaController):
         self.view.update_channels(num_channels)
 
     @log(logger=logger)
-    def update_timer_channels(self, channels):
+    def update_timer_channels(self, channels: Sequence[int]) -> None:
         """
         Update the view with the list of channels for timer-based processing.
 
-        :param channels: List or dictionary of channel identifiers.
-        :type channels: list or dict
+        :param channels: Channel identifiers reported by the event finder.
+        :type channels: Sequence[int]
         """
         self.view.update_timer_channels(channels)
 
     @log(logger=logger)
-    def set_num_events_allowed(self, num_events):
+    def set_num_events_allowed(self, num_events: int) -> None:
         """
         Set the maximum number of events allowed to be processed or visualized.
 
@@ -150,7 +151,7 @@ class RawDataController(MetaController):
         self.view.set_num_events_allowed(num_events)
 
     @log(logger=logger)
-    def set_eventfinding_status(self, status):
+    def set_eventfinding_status(self, status: bool) -> None:
         """
         Set the current status of the event finding process in the view.
 
@@ -160,7 +161,7 @@ class RawDataController(MetaController):
         self.view.set_eventfinding_status(status)
 
     @log(logger=logger)
-    def relay_eventfinding_status(self, status):
+    def relay_eventfinding_status(self, status: bool) -> None:
         """
         Relay the event finding status to the view for UI updates.
 

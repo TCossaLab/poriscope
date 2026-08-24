@@ -27,16 +27,20 @@
 import logging
 import os
 import warnings
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLayout, QMessageBox
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
@@ -54,26 +58,26 @@ class RawDataView(MetaView, WalkthroughMixin):
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._init()
         self._init_walkthrough()
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """Initialize the RawDataView-specific attributes."""
 
-        self.analysis_time_limits = {}
+        self.analysis_time_limits: Dict[str, Dict[int, Dict[str, Any]]] = {}
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout):
+    def _set_control_area(self, layout: QLayout) -> None:
         """
         Set up the control area layout by embedding the RawDataControls widget.
 
-        Args:
-            layout (QLayout): The layout where controls will be added.
+        :param layout: The layout where controls will be added.
+        :type layout: QLayout
         """
         self.rawdatacontrols = RawDataControls()
         self.rawdatacontrols.actionTriggered.connect(self.handle_parameter_change)
@@ -92,7 +96,7 @@ class RawDataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _reset_actions(self, axis_type="2d"):
+    def _reset_actions(self, axis_type: str = "2d") -> None:
         """
         Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
 
@@ -102,15 +106,14 @@ class RawDataView(MetaView, WalkthroughMixin):
         pass
 
     @log(logger=logger)
-    def _factors(self, n):
+    def _factors(self, n: int) -> Tuple[int, int]:
         """
         Determine the factor pair (rows, cols) closest to a square layout.
 
-        Args:
-            n (int): Total number of plots.
-
-        Returns:
-            tuple: (rows, columns) representing subplot grid dimensions.
+        :param n: Total number of plots.
+        :type n: int
+        :return: (rows, columns) representing subplot grid dimensions.
+        :rtype: Tuple[int, int]
         """
         diff = n
         min_diff_pair = (1, n)
@@ -124,12 +127,12 @@ class RawDataView(MetaView, WalkthroughMixin):
         return min_diff_pair
 
     @log(logger=logger)
-    def get_save_filename(self):
+    def get_save_filename(self) -> str:
         """
         Open a dialog to save a CSV file.
 
-        Returns:
-            str: Selected file path or empty string if cancelled.
+        :return: Selected file path, or an empty string if cancelled.
+        :rtype: str
         """
         file_name, _ = QFileDialog.getSaveFileName(
             self,
@@ -140,14 +143,20 @@ class RawDataView(MetaView, WalkthroughMixin):
         return file_name
 
     @log(logger=logger)
-    def update_plot(self, data, channels, start=0, baseline=False):
+    def update_plot(
+        self,
+        data: Sequence[npt.NDArray[np.float64]],
+        channels: Sequence[int],
+        start: float = 0,
+        baseline: bool = False,
+    ) -> None:
         """
         Update the plot area with the provided data across multiple channels in a grid layout.
 
-        :param data: List of numpy arrays or lists, one for each channel.
-        :type data: list
+        :param data: One array of current samples per channel.
+        :type data: Sequence[npt.NDArray[np.float64]]
         :param channels: List of channel identifiers corresponding to the data.
-        :type channels: list
+        :type channels: Sequence[int]
         :param start: Time offset added to the plotted time axis, in seconds.
         :type start: float
         :param baseline: If True, overlay baseline mean and standard deviation statistics on each subplot.
@@ -228,18 +237,24 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def update_psd(self, psd_data, rms_data, frequency, channels):
+    def update_psd(
+        self,
+        psd_data: Sequence[npt.NDArray[np.float64]],
+        rms_data: Sequence[npt.NDArray[np.float64]],
+        frequency: npt.NDArray[np.float64],
+        channels: Sequence[int],
+    ) -> None:
         """
         Update the plot area with the provided psd and frequency data across multiple channels in a grid layout.
 
-        :param psd_data: List of numpy arrays or lists of power spectral density values, one for each channel.
-        :type psd_data: list
-        :param rms_data: List of numpy arrays or lists of integrated RMS noise values corresponding to ``psd_data``, one for each channel.
-        :type rms_data: list
+        :param psd_data: Power spectral density values, one array for each channel.
+        :type psd_data: Sequence[npt.NDArray[np.float64]]
+        :param rms_data: Integrated RMS noise values corresponding to ``psd_data``, one array for each channel.
+        :type rms_data: Sequence[npt.NDArray[np.float64]]
         :param frequency: Frequency axis shared across all channels.
-        :type frequency: numpy.ndarray
+        :type frequency: npt.NDArray[np.float64]
         :param channels: List of channel identifiers corresponding to the data.
-        :type channels: list
+        :type channels: Sequence[int]
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -298,12 +313,12 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def update_plot_data(self, data):
+    def update_plot_data(self, data: Optional[Any] = None) -> None:
         """
         Update the stored plot data for future use.
 
-        Args:
-            data (dict or ndarray): Data dictionary or raw array to store.
+        :param data: Data dictionary or raw array to store.
+        :type data: Optional[Any]
         """
         self.logger.debug(f"Received data for plotting: {data}")
         if not isinstance(data, dict):
@@ -314,23 +329,23 @@ class RawDataView(MetaView, WalkthroughMixin):
             ]  # event data now returns a dict - this should be refactored to handle this explicitly
 
     @log(logger=logger)
-    def update_plot_samplerate(self, samplerate):
+    def update_plot_samplerate(self, samplerate: float) -> None:
         """
         Update the sampling rate used for plotting.
 
-        Args:
-            samplerate (float): Sampling frequency in Hz.
+        :param samplerate: Sampling frequency in Hz.
+        :type samplerate: float
         """
         self.logger.debug(f"Received sampling rate: {samplerate}")
         self.plot_samplerate = samplerate
 
     @log(logger=logger)
-    def update_timer_channels(self, channels):
+    def update_timer_channels(self, channels: Sequence[int]) -> None:
         """
         Update the list of channels for event timing.
 
-        Args:
-            channels (list): List of valid channel indices.
+        :param channels: Valid channel indices.
+        :type channels: Sequence[int]
         """
         self.timer_channels = channels
 
@@ -341,7 +356,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up-to-date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: Dict[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         super().update_available_plugins(available_plugins)
 
@@ -399,7 +414,9 @@ class RawDataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @Slot(str, str, tuple)
-    def handle_parameter_change(self, submodel_name, action_name, args):
+    def handle_parameter_change(
+        self, submodel_name: str, action_name: str, args: tuple
+    ) -> None:
         """
         Handle parameter changes triggered by RawDataControls and dispatch the corresponding action.
 
@@ -440,15 +457,17 @@ class RawDataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _get_baseline_stats(self, data) -> tuple[float, float, float]:
+    def _get_baseline_stats(
+        self, data: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
         """
         Get the local amplitude, mean, and standard deviation for a chunk of data. Assumes data is rectified.
 
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
-        :return: Tuple of local amplitude, mean, and standard deviation.
-        :rtype: tuple[float, float, float]
+        :return: Array of local amplitude, mean, and standard deviation, in that order.
+        :rtype: npt.NDArray[np.float64]
         :raises ValueError: If a baseline histogram width cannot be estimated for this chunk (no variation in the data), or if the underlying Gaussian fit fails.
         """
         top = np.max(data)
@@ -546,13 +565,17 @@ class RawDataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _gaussian_fit(
-        self, histogram, bins, mean_guess: float, stdev_guess: float
+        self,
+        histogram: npt.NDArray[np.float64],
+        bins: npt.NDArray[np.float64],
+        mean_guess: float,
+        stdev_guess: float,
     ) -> tuple[float, float, float]:
         """
         Fit a Gaussian function to histogram data using a linearized least squares approach.
 
         :param histogram: Array of counts in each histogram bin.
-        :type histogram: npt.NDArray[np.int64]
+        :type histogram: npt.NDArray[np.float64]
         :param bins: Center positions of histogram bins.
         :type bins: npt.NDArray[np.float64]
         :param mean_guess: Initial estimate of the Gaussian mean.
@@ -643,12 +666,12 @@ class RawDataView(MetaView, WalkthroughMixin):
         return amplitude, mean, np.absolute(stdev)
 
     @log(logger=logger)
-    def _handle_timer(self, parameters):
+    def _handle_timer(self, parameters: Dict[str, Any]) -> None:
         """
         Open a time range selection dialog for a given event finder and update the internal time limits.
 
         :param parameters: Dictionary containing the 'eventfinder' key.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         finder = parameters["eventfinder"]
         if finder != "No Eventfinder":
@@ -659,12 +682,14 @@ class RawDataView(MetaView, WalkthroughMixin):
                 self.analysis_time_limits[finder] = result
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction) -> None:
+    def _shift_range_and_update_plot(
+        self, parameters: Dict[str, Any], direction: str
+    ) -> None:
         """
         Shift selected event index ranges left or right and update the plot accordingly.
 
         :param parameters: Dictionary containing current event plotting parameters.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :param direction: Direction to shift ('left' or 'right').
         :type direction: str
         """
@@ -721,21 +746,19 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         Get the event index input from the UI.
 
-        Returns:
-            str: The current text from the event index input field.
+        :return: The current text from the event index input field.
+        :rtype: str
         """
         return self.rawdatacontrols.event_index_lineEdit.text().strip()
 
     @log(logger=logger)
-    def validate_single_channel(self, channels):
+    def validate_single_channel(self, channels: Sequence[int]) -> None:
         """
         Ensure only one channel is selected.
 
-        Args:
-            channels (list): List of selected channel indices.
-
-        Raises:
-            ValueError: If more than one channel is selected.
+        :param channels: List of selected channel indices.
+        :type channels: Sequence[int]
+        :raises ValueError: If more than one channel is selected.
         """
         if len(channels) > 1:
             raise ValueError(
@@ -743,12 +766,12 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _handle_plot_events(self, parameters) -> None:
+    def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :raises Exception: If retrieving the eventfinding status or the number of found events fails.
         """
         try:
@@ -868,14 +891,14 @@ class RawDataView(MetaView, WalkthroughMixin):
                 self.logger.error("Unable to plot event data")
 
     @log(logger=logger)
-    def _start_writer(self, writer, channels):
+    def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
         """
         Start a writer plugin to commit events for the specified channels.
 
         :param writer: Identifier for the writer plugin.
         :type writer: str
-        :param channels: List of channel indices.
-        :type channels: list
+        :param channels: Channel index, or list of channel indices.
+        :type channels: Union[int, List[int]]
         """
         if not isinstance(channels, list):
             channels = [channels]
@@ -901,34 +924,38 @@ class RawDataView(MetaView, WalkthroughMixin):
                 self.run_generators.emit(writer)
 
     @log(logger=logger)
-    def set_num_events_allowed(self, num_events):
+    def set_num_events_allowed(self, num_events: int) -> None:
         """
         Set the number of events available for display.
 
-        Args:
-            num_events (int): Maximum valid event index + 1.
+        :param num_events: Maximum valid event index + 1.
+        :type num_events: int
         """
         self.num_events_allowed = num_events
 
     @log(logger=logger)
-    def set_eventfinding_status(self, status):
+    def set_eventfinding_status(self, status: bool) -> None:
         """
         Set the current event finding status.
 
-        Args:
-            status (bool): Whether event finding is complete.
+        :param status: Whether event finding is complete.
+        :type status: bool
         """
         self.eventfinding_status = status
 
     @log(logger=logger)
-    def _update_event_plot(self, event_data, event_indices):
+    def _update_event_plot(
+        self,
+        event_data: Sequence[npt.NDArray[np.float64]],
+        event_indices: Sequence[int],
+    ) -> None:
         """
-        :param event_data: a list of event data to plot in a grid
-        :type event_data: List[npt.NDArray[np.float64]]
-        :param event_indices: the indices of the events to plot
-        :type event_indices: List[int]
-
         Plot the event data in a grid that gets as close to square as possible
+
+        :param event_data: a list of event data to plot in a grid
+        :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param event_indices: the indices of the events to plot
+        :type event_indices: Sequence[int]
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -968,12 +995,12 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _handle_find_events(self, parameters) -> None:
+    def _handle_find_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle the initiation of the event finding process using the given parameters.
 
         :param parameters: Dictionary containing eventfinder, filter, and channels.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         self.logger.debug(
             "Starting to handle find events with parameters: %s", parameters
@@ -1002,12 +1029,12 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.logger.debug("Event finding process initiated.")
 
     @log(logger=logger)
-    def _handle_commit_events(self, parameters) -> None:
+    def _handle_commit_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle committing of found events to the selected writer plugin.
 
         :param parameters: Dictionary containing writer and channels.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         try:
             writer, channels = self._extract_commit_event_parameters(parameters)
@@ -1019,7 +1046,9 @@ class RawDataView(MetaView, WalkthroughMixin):
             self._start_writer(writer, channels)
 
     @log(logger=logger)
-    def _start_eventfinder(self, eventfinder, data_filter, channels):
+    def _start_eventfinder(
+        self, eventfinder: str, data_filter: str, channels: Union[int, List[int]]
+    ) -> None:
         """
         Start the event finding operation on the specified channels with an optional filter.
 
@@ -1027,8 +1056,8 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type eventfinder: str
         :param data_filter: Identifier for the filter plugin, or 'No Filter'.
         :type data_filter: str
-        :param channels: List of channel indices to run the event finder on.
-        :type channels: list
+        :param channels: Channel index, or list of channel indices, to run the event finder on.
+        :type channels: Union[int, List[int]]
         :raises Exception: If setting up the data filter fails.
         """
         self.logger.debug(
@@ -1141,15 +1170,16 @@ class RawDataView(MetaView, WalkthroughMixin):
                 )
 
     @log(logger=logger)
-    def _extract_plot_event_parameters(self, parameters):
+    def _extract_plot_event_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[Optional[str], Optional[str], List[int], Optional[List[int]]]:
         """
         Extract event plotting parameters from input.
 
-        Args:
-            parameters (dict): Input parameter dictionary.
-
-        Returns:
-            tuple: (eventfinder, data_filter, channels, events)
+        :param parameters: Input parameter dictionary.
+        :type parameters: Dict[str, Any]
+        :return: (eventfinder, data_filter, channels, events)
+        :rtype: Tuple[Optional[str], Optional[str], List[int], Optional[List[int]]]
         """
         eventfinder = parameters.get("eventfinder")
         data_filter = parameters.get("filter")
@@ -1158,15 +1188,16 @@ class RawDataView(MetaView, WalkthroughMixin):
         return eventfinder, data_filter, channels, events
 
     @log(logger=logger)
-    def _extract_event_parameters(self, parameters):
+    def _extract_event_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[Optional[str], Optional[str], List[int]]:
         """
         Extract parameters used for event finding.
 
-        Args:
-            parameters (dict): Dictionary of parameters.
-
-        Returns:
-            tuple: (eventfinder, data_filter, channels)
+        :param parameters: Dictionary of parameters.
+        :type parameters: Dict[str, Any]
+        :return: (eventfinder, data_filter, channels)
+        :rtype: Tuple[Optional[str], Optional[str], List[int]]
         """
         eventfinder = parameters.get("eventfinder")
         data_filter = parameters.get("filter")
@@ -1174,15 +1205,16 @@ class RawDataView(MetaView, WalkthroughMixin):
         return eventfinder, data_filter, channels
 
     @log(logger=logger)
-    def _extract_commit_event_parameters(self, parameters):
+    def _extract_commit_event_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[Optional[str], List[int]]:
         """
         Extract writer and channels from parameters.
 
-        Args:
-            parameters (dict): Input dictionary.
-
-        Returns:
-            tuple: (writer, channels)
+        :param parameters: Input dictionary.
+        :type parameters: Dict[str, Any]
+        :return: (writer, channels)
+        :rtype: Tuple[Optional[str], List[int]]
         """
         writer = parameters.get("writer")
         channels = [int(ch) for ch in parameters["channel"]]
@@ -1199,8 +1231,17 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.data_filter = data_filter
 
     @log(logger=logger)
-    def _shift_range_and_update_trace(self, parameters: dict, direction: str):
-        """Shift numeric range left or right and update the plot and GUI input."""
+    def _shift_range_and_update_trace(
+        self, parameters: Dict[str, Any], direction: str
+    ) -> None:
+        """
+        Shift numeric range left or right and update the plot and GUI input.
+
+        :param parameters: Dictionary containing current trace plotting parameters.
+        :type parameters: Dict[str, Any]
+        :param direction: Direction to shift ('left' or 'right').
+        :type direction: str
+        """
 
         # Extract and validate parameters
         try:
@@ -1249,7 +1290,9 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._handle_load_data_and_update_plot(new_params)
 
     @log(logger=logger)
-    def _handle_load_data_and_update_plot(self, parameters, baseline=False) -> None:
+    def _handle_load_data_and_update_plot(
+        self, parameters: Dict[str, Any], baseline: bool = False
+    ) -> None:
         """
         Handle data loading and update the main signal plot.
 
@@ -1260,7 +1303,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         - Updates the main plot area with the retrieved data
 
         :param parameters: Dictionary containing reader, channels, start time, length, and optional filter.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         :param baseline: If True, overlay baseline mean/std statistics on the plot.
         :type baseline: bool
         """
@@ -1299,7 +1342,7 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.logger.error("Invalid parameters for plotting data")
 
     @log(logger=logger)
-    def _handle_load_data_and_update_psd(self, parameters) -> None:
+    def _handle_load_data_and_update_psd(self, parameters: Dict[str, Any]) -> None:
         """
         Handle data loading and update the PSD (Power Spectral Density) plot.
 
@@ -1307,7 +1350,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         optionally applies a filter, emits the signal to calculate PSD, and updates the PSD plot.
 
         :param parameters: Dictionary containing reader, channels, start time, length, and optional filter.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         try:
             reader, channels, start, length = self._extract_plot_parameters(parameters)
@@ -1346,17 +1389,24 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.logger.error("Invalid parameters for plotting data")
 
     @log(logger=logger)
-    def set_psd(self, Pxx_list, rms_list, frequency, kept_indices):
+    def set_psd(
+        self,
+        Pxx_list: List[npt.NDArray[np.float64]],
+        rms_list: List[npt.NDArray[np.float64]],
+        frequency: Optional[npt.NDArray[np.float64]],
+        kept_indices: List[int],
+    ) -> None:
         """
         Set the PSD and RMS lists for visualization.
 
-        Args:
-            Pxx_list (list): Power spectral density data.
-            rms_list (list): RMS noise data.
-            frequency (ndarray): Frequency axis data.
-            kept_indices (list[int]): Indices into the channel list passed to
-                calculate_psd that were successfully processed, since some
-                channels may have been skipped.
+        :param Pxx_list: Power spectral density data, one array per kept channel.
+        :type Pxx_list: List[npt.NDArray[np.float64]]
+        :param rms_list: RMS noise data, one array per kept channel.
+        :type rms_list: List[npt.NDArray[np.float64]]
+        :param frequency: Frequency axis data, or None if no channel was processed.
+        :type frequency: Optional[npt.NDArray[np.float64]]
+        :param kept_indices: Indices into the channel list passed to calculate_psd that were successfully processed, since some channels may have been skipped.
+        :type kept_indices: List[int]
         """
         self.Pxx_list = Pxx_list
         self.rms_list = rms_list
@@ -1364,16 +1414,18 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.psd_kept_indices = kept_indices
 
     @log(logger=logger)
-    def _apply_filter(self, data_filter, channel_data):
+    def _apply_filter(
+        self, data_filter: str, channel_data: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
         """
         Apply a data filter using a signal-based plugin system.
 
-        Args:
-            data_filter (str): Name of the filter plugin.
-            channel_data (ndarray): Data to filter.
-
-        Returns:
-            ndarray: Filtered data if successful, else original data.
+        :param data_filter: Name of the filter plugin.
+        :type data_filter: str
+        :param channel_data: Data to filter.
+        :type channel_data: npt.NDArray[np.float64]
+        :return: Filtered data if successful, else the original data.
+        :rtype: npt.NDArray[np.float64]
         """
         try:
             filter_data_args = (channel_data,)
@@ -1391,15 +1443,16 @@ class RawDataView(MetaView, WalkthroughMixin):
             return channel_data  # Return unfiltered data if the filter fails
 
     @log(logger=logger)
-    def _extract_plot_parameters(self, parameters):
+    def _extract_plot_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[Optional[str], List[int], float, float]:
         """
         Extract reader, channel, start time, and length from parameters.
 
-        Args:
-            parameters (dict): Parameter dictionary.
-
-        Returns:
-            tuple: (reader, channels, start, length)
+        :param parameters: Parameter dictionary.
+        :type parameters: Dict[str, Any]
+        :return: (reader, channels, start, length)
+        :rtype: Tuple[Optional[str], List[int], float, float]
         """
         reader = parameters.get("reader")
         channels = [int(ch) for ch in parameters["channel"]]
@@ -1408,31 +1461,48 @@ class RawDataView(MetaView, WalkthroughMixin):
         return reader, channels, start, length
 
     @log(logger=logger)
-    def _validate_plot_parameters(self, reader, channel, start, length):
+    def _validate_plot_parameters(
+        self,
+        reader: Optional[str],
+        channel: Optional[List[int]],
+        start: Optional[float],
+        length: Optional[float],
+    ) -> bool:
         """
         Validate the extracted parameters for plotting.
 
-        Args:
-            reader (str): Reader plugin name.
-            channel (list): List of channel numbers.
-            start (float): Start time.
-            length (float): Duration.
-
-        Returns:
-            bool: True if all parameters are valid, else False.
+        :param reader: Reader plugin name.
+        :type reader: Optional[str]
+        :param channel: List of channel numbers.
+        :type channel: Optional[List[int]]
+        :param start: Start time.
+        :type start: Optional[float]
+        :param length: Duration.
+        :type length: Optional[float]
+        :return: True if all parameters are valid, else False.
+        :rtype: bool
         """
         return all([reader, channel is not None, start is not None, length is not None])
 
     @log(logger=logger)
-    def _load_event_data(self, eventfinder, channel, event, data_filter):
+    def _load_event_data(
+        self,
+        eventfinder: Optional[str],
+        channel: int,
+        event: int,
+        data_filter: Optional[Callable],
+    ) -> None:
         """
         Load data for a single event from the eventfinder.
 
-        Args:
-            eventfinder (str): Name of the event finder plugin.
-            channel (int): Channel number.
-            event (int): Event index.
-            data_filter (str): Filter plugin name, if any.
+        :param eventfinder: Name of the event finder plugin.
+        :type eventfinder: Optional[str]
+        :param channel: Channel number.
+        :type channel: int
+        :param event: Event index.
+        :type event: int
+        :param data_filter: Callable filter to apply, if any.
+        :type data_filter: Optional[Callable]
         """
         try:
             load_data_args = (channel, event, data_filter, False)
@@ -1451,15 +1521,24 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _load_data(self, reader, channels, start, length):
+    def _load_data(
+        self,
+        reader: Optional[str],
+        channels: Union[int, List[int]],
+        start: float,
+        length: float,
+    ) -> None:
         """
         Load data from the specified reader plugin.
 
-        Args:
-            reader (str): Reader plugin name.
-            channels (list): List of channel indices.
-            start (float): Start time.
-            length (float): Duration.
+        :param reader: Reader plugin name.
+        :type reader: Optional[str]
+        :param channels: Channel index, or list of channel indices.
+        :type channels: Union[int, List[int]]
+        :param start: Start time.
+        :type start: float
+        :param length: Duration.
+        :type length: float
         """
         try:
             self.global_signal.emit(
@@ -1492,13 +1571,16 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _handle_other_actions(self, action_name, parameters):
+    def _handle_other_actions(
+        self, action_name: str, parameters: Dict[str, Any]
+    ) -> None:
         """
         Handle plugin-specific actions not otherwise accounted for.
 
-        Args:
-            action_name (str): Action to execute.
-            parameters (dict): Parameters needed for the action.
+        :param action_name: Action to execute.
+        :type action_name: str
+        :param parameters: Parameters needed for the action.
+        :type parameters: Dict[str, Any]
         """
         reader = parameters.get("reader")
         if reader and reader != "No Reader":
@@ -1507,17 +1589,17 @@ class RawDataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def update_channels(self, channels):
+    def update_channels(self, channels: Sequence[int]) -> None:
         """
         Update the channel combo box with available channels.
 
-        Args:
-            channels (list): Available channel identifiers.
+        :param channels: Available channel identifiers.
+        :type channels: Sequence[int]
         """
         self.rawdatacontrols.update_channels(channels)
         self.logger.info("Updated channels in RawDataControls through RawDataView")
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [
             # Raw Data Tab
             (
@@ -1624,5 +1706,5 @@ class RawDataView(MetaView, WalkthroughMixin):
             ),
         ]
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return "RawDataView"

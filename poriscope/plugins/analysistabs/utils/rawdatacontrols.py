@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+from typing import Any, Dict, Optional, Sequence
 
 from PySide6.QtCore import QCoreApplication, QSize, Qt, Signal
 from PySide6.QtGui import QFont
@@ -59,7 +60,7 @@ class RawDataControls(QWidget):
     add_processed = Signal(str)
     delete_processed = Signal(str, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.logger.info("Initializing RawDataControls")
         self.setupUi()
@@ -67,9 +68,9 @@ class RawDataControls(QWidget):
         self.logger.info("RawDataControls initialized")
         self.validate_inputs()
         self.max_range_size = 16
-        self.active_popups = {}
+        self.active_popups: Dict[QComboBox, Any] = {}
 
-    def setupUi(self):
+    def setupUi(self) -> None:
         self.logger.info("Setting up UI")
         self.setObjectName("Form")
         self.resize(663, 295)
@@ -305,7 +306,9 @@ class RawDataControls(QWidget):
         self.retranslateUi()
         self.logger.info("UI setup complete")
 
-    def create_info_button(self, parent, comboBox, info_text, metaclass):
+    def create_info_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates an info button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("pencil-square.svg"))
@@ -330,7 +333,9 @@ class RawDataControls(QWidget):
         )
         return button
 
-    def create_add_button(self, parent, comboBox, add_text, metaclass):
+    def create_add_button(
+        self, parent: QWidget, comboBox: QComboBox, add_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates an add button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("plus-square.svg"))
@@ -343,7 +348,9 @@ class RawDataControls(QWidget):
         button.setEnabled(True)
         return button
 
-    def create_delete_button(self, parent, comboBox, info_text, metaclass):
+    def create_delete_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates a delete button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("trash.svg"))
@@ -368,7 +375,7 @@ class RawDataControls(QWidget):
         )
         return button
 
-    def toggle_info_button(self, button, comboBox):
+    def toggle_info_button(self, button: QToolButton, comboBox: QComboBox) -> None:
         """Enables or disables the info button based on the comboBox selection and item count."""
         button.setEnabled(
             comboBox.count() > 0
@@ -376,7 +383,7 @@ class RawDataControls(QWidget):
             and not self.is_placeholder_item(comboBox)
         )
 
-    def is_placeholder_item(self, comboBox):
+    def is_placeholder_item(self, comboBox: QComboBox) -> bool:
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
         return comboBox.currentText() in [
             "No Reader",
@@ -385,28 +392,28 @@ class RawDataControls(QWidget):
             "No Eventfinder",
         ]
 
-    def show_plugin_edit_manager(self, comboBox, metaclass):
+    def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """Displays the plugin manager with details for the selected item from the combobox."""
         key = comboBox.currentText()
         self.edit_processed.emit(metaclass, key)
 
-    def show_plugin_add_manager(self, comboBox, metaclass):
+    def show_plugin_add_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """Displays the plugin manager with details for the selected item from the combobox."""
 
         self.add_processed.emit(metaclass)
 
-    def delete_plugin(self, comboBox, metaclass):
+    def delete_plugin(self, comboBox: QComboBox, metaclass: str) -> None:
         """Deletes the plugin corresponding tot he current ComboBox selection"""
 
         key = comboBox.currentText()
         self.delete_processed.emit(metaclass, key)
 
-    def clear_popup_reference(self, comboBox):
+    def clear_popup_reference(self, comboBox: QComboBox) -> None:
         """Clears the reference to the popup when it is closed."""
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
-    def validate_inputs(self):
+    def validate_inputs(self) -> None:
         is_trace_psd_valid = True
         is_commit_valid = True
         is_plot_events_valid = True
@@ -469,7 +476,7 @@ class RawDataControls(QWidget):
         self.right_plot_arrow_button.setEnabled(is_plot_events_valid)
         self.find_events_pushButton.setEnabled(is_find_events_valid)
 
-    def connect_signals(self):
+    def connect_signals(self) -> None:
         self.left_trace_arrow_button.clicked.connect(
             lambda: self.on_button_clicked("left_arrow")
         )
@@ -513,19 +520,21 @@ class RawDataControls(QWidget):
         self.readers_comboBox.currentIndexChanged.connect(self.validate_inputs)
         self.writers_comboBox.currentIndexChanged.connect(self.validate_inputs)
 
-    def on_parameter_changed(self):
+    def on_parameter_changed(self) -> None:
         parameters = self.collect_parameters()
         self.logger.debug(
             f"Emitting actionTriggered due to parameter change with parameters {parameters}"
         )
         self.actionTriggered.emit("RawDataModel", "parameter_changed", (parameters,))
 
-    def create_comboBox(self, parent):
+    def create_comboBox(self, parent: QWidget) -> QComboBox:
         comboBox = QComboBox(parent)
         comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return comboBox
 
-    def createButton(self, parent, text, bold=False):
+    def createButton(
+        self, parent: QWidget, text: str, bold: bool = False
+    ) -> QPushButton:
         button = QPushButton(parent)
         font = QFont()
         font.setBold(bold)
@@ -537,7 +546,7 @@ class RawDataControls(QWidget):
         button.setStyleSheet("")  # Resetting to default style
         return button
 
-    def createLabel(self, parent, pointSize, text):
+    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
         label = QLabel(parent)
         font = QFont()
         font.setPointSize(pointSize - 6)
@@ -546,15 +555,15 @@ class RawDataControls(QWidget):
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return label
 
-    def retranslateUi(self):
+    def retranslateUi(self) -> None:
         self.setWindowTitle(QCoreApplication.translate("Form", "Form", None))
         self.readers_comboBox.setCurrentText("")
 
-    def collect_parameters(self):
+    def collect_parameters(self) -> Dict[str, Any]:
         self.logger.info("Collecting parameters")
 
         # Initialize with default values to handle possible None values
-        parameters = {
+        parameters: Dict[str, Any] = {
             "reader": self.readers_comboBox.currentText() or "No Reader",
             "filter": self.filters_comboBox.currentText() or "No Filter",
             "writer": self.writers_comboBox.currentText() or "No Writer",
@@ -577,7 +586,7 @@ class RawDataControls(QWidget):
         self.logger.debug(f"Collected parameters: {parameters}")
         return parameters
 
-    def on_button_clicked(self, button_type):
+    def on_button_clicked(self, button_type: str) -> None:
         parameters = self.collect_parameters()
         self.logger.debug(
             f"Emitting actionTriggered for {button_type} with parameters {parameters}"
@@ -640,9 +649,12 @@ class RawDataControls(QWidget):
 
         button_mapping.get(button_type, lambda: None).setChecked(False)
 
-    def update_channels(self, channels):
+    def update_channels(self, channels: Sequence[int]) -> None:
         """
         Updates the channels displayed in the MultiSelectComboBox widget and restores previous selections.
+
+        :param channels: Channel indices to display.
+        :type channels: Sequence[int]
         """
         self.logger.info(f"Updating channels to {channels}")
 
@@ -758,14 +770,14 @@ class RawDataControls(QWidget):
         else:
             self.eventfinders_comboBox.setCurrentIndex(0)
 
-    def set_range_inputs(self, start: float, length: float):
+    def set_range_inputs(self, start: float, length: float) -> None:
         self.start_time_lineEdit.blockSignals(True)
         self.start_time_lineEdit.set_range(start, length)
         self.start_time_lineEdit.blockSignals(False)
         self.validate_inputs()
 
     @log(logger=logger)
-    def set_event_index_input(self, value: str):
+    def set_event_index_input(self, value: str) -> None:
         self.event_index_lineEdit.blockSignals(True)
         self.event_index_lineEdit.set_range(value)
         self.event_index_lineEdit.blockSignals(False)

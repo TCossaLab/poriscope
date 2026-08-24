@@ -48,11 +48,11 @@ class RawDataModel(MetaModel):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         pass
 
     @log(logger=logger)
-    def integrate_noise(self, f, Pxx) -> np.ndarray:
+    def integrate_noise(self, f: np.ndarray, Pxx: np.ndarray) -> np.ndarray:
         """
         Compute the integrated noise from a power spectral density.
 
@@ -61,9 +61,9 @@ class RawDataModel(MetaModel):
         frequency. It assumes evenly spaced frequency bins.
 
         :param f: Array of frequency values (Hz), evenly spaced.
-        :type f: numpy.ndarray or list[float]
+        :type f: np.ndarray
         :param Pxx: Power spectral density values corresponding to `f`.
-        :type Pxx: numpy.ndarray or list[float]
+        :type Pxx: np.ndarray
         :return: Array of integrated RMS noise values for each frequency point.
         :rtype: np.ndarray
         """
@@ -72,7 +72,7 @@ class RawDataModel(MetaModel):
 
     @log(logger=logger)
     def calculate_psd(
-        self, psd_data, samplerate
+        self, psd_data: list, samplerate: float
     ) -> tuple[list, list, Optional[np.ndarray], list[int]]:
         """
         Calculate a psd for each dataset in the list, assuming a common samplerate
