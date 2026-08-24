@@ -682,9 +682,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         vertical_lines: Sequence[Optional[List[float]]],
         horizontal_lines: Sequence[Optional[List[float]]],
         points: Sequence[Optional[List[Tuple[float, float]]]],
-        vlabels: Sequence[Optional[List[str]]],
-        hlabels: Sequence[Optional[List[str]]],
-        plabels: Sequence[Optional[List[str]]],
+        vlabels: Sequence[Optional[Sequence[Optional[str]]]],
+        hlabels: Sequence[Optional[Sequence[Optional[str]]]],
+        plabels: Sequence[Optional[Sequence[Optional[str]]]],
         use_raw: bool = False,
     ) -> None:
         """
@@ -705,12 +705,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type horizontal_lines: Sequence[Optional[List[float]]]
         :param points: List of lists of (x, y) coordinate tuples for marker points per subplot.
         :type points: Sequence[Optional[List[Tuple[float, float]]]]
-        :param vlabels: List of lists of labels for vertical lines.
-        :type vlabels: Sequence[Optional[List[str]]]
-        :param hlabels: List of lists of labels for horizontal lines.
-        :type hlabels: Sequence[Optional[List[str]]]
-        :param plabels: List of lists of labels for points.
-        :type plabels: Sequence[Optional[List[str]]]
+        :param vlabels: One entry per subplot, each a list of labels for that subplot's vertical lines, or None if the fitter supplied no labels. Individual labels may also be None.
+        :type vlabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param hlabels: One entry per subplot, each a list of labels for that subplot's horizontal lines, or None if the fitter supplied no labels. Individual labels may also be None.
+        :type hlabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param plabels: One entry per subplot, each a list of labels for that subplot's points, or None if the fitter supplied no labels. Individual labels may also be None.
+        :type plabels: Sequence[Optional[Sequence[Optional[str]]]]
         :param use_raw: Whether to plot/cache the raw (unfiltered) trace entries in event_data
             (labeled "Raw") alongside the filtered/fit ones. Entries so labeled are skipped
             entirely when this is False, regardless of whether the caller included them.
@@ -783,15 +783,19 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 vertical_labels = vlabels[j - 1]
                 color_idx = 0
                 if verticals is not None:
-                    # Guarded on the feature list, not on its label list: a
-                    # fitter that returns features but no labels would zip
-                    # against None here. Flagged for review.
-                    for line, label in zip(verticals, vertical_labels):  # type: ignore[arg-type]
-                        if label is None:
+                    # A fitter may supply features with no labels at all; the
+                    # branch below already renders those unlabeled, so stand in
+                    # a matching run of Nones rather than zipping against None.
+                    if vertical_labels is None:
+                        vertical_labels = [None] * len(verticals)
+                    for line, line_label in zip(verticals, vertical_labels):
+                        if line_label is None:
                             ax.axvline(x=line, color="black", linestyle="--")
                         else:
                             color = colors_no_black[color_idx % len(colors_no_black)]
-                            ax.axvline(x=line, linestyle="--", color=color, label=label)
+                            ax.axvline(
+                                x=line, linestyle="--", color=color, label=line_label
+                            )
                             color_idx += 1
 
                 # --- Horizontal lines ---
@@ -799,16 +803,21 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 horizontal_labels = hlabels[j - 1]
                 color_idx = 0
                 if horizontals is not None:
-                    # Guarded on the feature list, not on its label list: a
-                    # fitter that returns features but no labels would zip
-                    # against None here. Flagged for review.
-                    for line, label in zip(horizontals, horizontal_labels):  # type: ignore[arg-type]
-                        if label is None:
+                    # A fitter may supply features with no labels at all; the
+                    # branch below already renders those unlabeled, so stand in
+                    # a matching run of Nones rather than zipping against None.
+                    if horizontal_labels is None:
+                        horizontal_labels = [None] * len(horizontals)
+                    for line, line_label in zip(horizontals, horizontal_labels):
+                        if line_label is None:
                             ax.axhline(y=line / 1000, color="black", linestyle="--")
                         else:
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.axhline(
-                                y=line / 1000, linestyle="--", color=color, label=label
+                                y=line / 1000,
+                                linestyle="--",
+                                color=color,
+                                label=line_label,
                             )
                             color_idx += 1
 
@@ -817,11 +826,13 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 pt_labels = plabels[j - 1]
                 color_idx = 0
                 if pts is not None:
-                    # Guarded on the feature list, not on its label list: a
-                    # fitter that returns features but no labels would zip
-                    # against None here. Flagged for review.
-                    for (x, y), label in zip(pts, pt_labels):  # type: ignore[arg-type]
-                        if label is None:
+                    # A fitter may supply features with no labels at all; the
+                    # branch below already renders those unlabeled, so stand in
+                    # a matching run of Nones rather than zipping against None.
+                    if pt_labels is None:
+                        pt_labels = [None] * len(pts)
+                    for (x, y), point_label in zip(pts, pt_labels):
+                        if point_label is None:
                             ax.plot(
                                 x, y / 1000, marker="x", color="black", markersize=10
                             )
@@ -832,7 +843,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                 y / 1000,
                                 marker="x",
                                 linestyle="None",
-                                label=label,
+                                label=point_label,
                                 color=color,
                                 markersize=10,
                             )

@@ -458,11 +458,13 @@ def start_walkthrough(
     except Exception:
         overlay = None
 
+    if overlay is None:
+        # StepDialog requires an overlay; without one it would fail on its
+        # first update_step(), so fall back here rather than constructing it.
+        return QDialog(parent)  # Fallback dialog to avoid returning None
+
     try:
-        # StepDialog declares a non-optional Overlay; if construction above
-        # failed, the resulting AttributeError is deliberately caught below and
-        # turned into the fallback QDialog. Flagged for review.
-        dialog = StepDialog(parent, steps, overlay)  # type: ignore[arg-type]
+        dialog = StepDialog(parent, steps, overlay)
         dialog.show()
         return dialog
     except Exception:

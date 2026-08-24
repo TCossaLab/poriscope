@@ -213,9 +213,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.hist_labels: List[Optional[str]] = []
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
-        # Holds the display string from the experiment/channel selection tree,
-        # not the integer channel id.
-        self.current_channel: Optional[str] = None
+        self.current_channel: Optional[int] = None
         self._pending_filter_name: Optional[str] = None
         self._pending_filter_text: Optional[str] = None
         self._pending_old_filter_name: Optional[str] = None
@@ -244,7 +242,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             Tuple[
                 Optional[str],
                 Optional[str],
-                Optional[str],
+                Optional[int],
                 Optional[str],
                 Optional[str],
             ]
@@ -1490,7 +1488,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         loader: str,
         sql_filter: str,
         exp: Optional[str],
-        channel: Optional[str],
+        channel: Optional[int],
     ) -> str:
         """
         Build a WHERE clause string suitable for the event_id cache query,
@@ -1506,8 +1504,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type sql_filter: str
         :param exp: Experiment name, or None.
         :type exp: Optional[str]
-        :param channel: Channel identifier as displayed in the selection tree, or None.
-        :type channel: Optional[str]
+        :param channel: Channel identifier, or None.
+        :type channel: Optional[int]
         :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
         :rtype: str
         """
@@ -1539,7 +1537,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         where_clause: str,
         sql_filter: str,
         exp: Optional[str],
-        channel: Optional[str],
+        channel: Optional[int],
     ) -> bool:
         """
         Fetch all event_ids matching the current filter in one DB query and
@@ -1560,8 +1558,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type sql_filter: str
         :param exp: Experiment name.
         :type exp: Optional[str]
-        :param channel: Channel identifier as displayed in the selection tree.
-        :type channel: Optional[str]
+        :param channel: Channel identifier.
+        :type channel: Optional[int]
         :return: True if the cache was populated, False if no events were found.
         :rtype: bool
         """
@@ -1633,7 +1631,8 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         sql_filter = next(iter(selected_filters.values()))
         exp = next(iter(experiments_and_channels.keys()))
-        channel = next(iter(experiments_and_channels.values()))[0]
+        selected_channel = next(iter(experiments_and_channels.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
 
         # Rebuild cache if the filter/scope has changed or the cache is empty
         if (
@@ -1709,7 +1708,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         loader: str,
         event_ids: Sequence[int],
         exp: Optional[str],
-        channel: Optional[str],
+        channel: Optional[int],
     ) -> Optional[pd.DataFrame]:
         """
         Resolve a list of event_id values, scoped to a specific experiment and
@@ -1725,7 +1724,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         :param exp: Experiment name, or None.
         :type exp: Optional[str]
         :param channel: Channel identifier, or None.
-        :type channel: Optional[str]
+        :type channel: Optional[int]
         :return: DataFrame with columns id, event_id for the matching rows, or None on failure.
         :rtype: Optional[pd.DataFrame]
         """
@@ -1839,7 +1838,8 @@ class ProteinView(MetaView, WalkthroughMixin):
         event_index = parameters["event_index"]
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
         exp = next(iter(exp_and_ch.keys()))
-        channel = next(iter(exp_and_ch.values()))[0]
+        selected_channel = next(iter(exp_and_ch.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
 
         id_result = self._resolve_event_db_ids(loader_name, event_index, exp, channel)
         if id_result is None or id_result.empty:
@@ -1982,7 +1982,8 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         sql_filter = next(iter(selected_filters.values()))
         exp = next(iter(experiments_and_channels.keys()))
-        channel = next(iter(experiments_and_channels.values()))[0]
+        selected_channel = next(iter(experiments_and_channels.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
 
         # Rebuild the event_id cache if the filter or scope has changed
         if (
@@ -2078,7 +2079,8 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         sql_filter = next(iter(selected_filters.values()))
         exp = next(iter(experiments_and_channels.keys()))
-        channel = next(iter(experiments_and_channels.values()))[0]
+        selected_channel = next(iter(experiments_and_channels.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
 
         # Rebuild the event_id cache if the filter or scope has changed
         if (
@@ -2934,7 +2936,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                     self.allowed_sizes = sizes
 
                     self.plotted_datasets.add(
-                        (loader, exp, channel, sql_filter, subset_name)
+                        (
+                            loader,
+                            exp,
+                            int(channel) if channel is not None else None,
+                            sql_filter,
+                            subset_name,
+                        )
                     )
 
         if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):
@@ -3514,19 +3522,25 @@ class ProteinView(MetaView, WalkthroughMixin):
         filter_text = self._pending_filter_text
         old_name = self._pending_old_filter_name
 
+        if name is None:
+            # Mirrors the guard the assisted-filter path already applies in
+            # relay_query: with no pending name there is nothing to commit.
+            self.logger.warning(
+                "Raw filter validated with no pending filter name, ignoring."
+            )
+            self.clear_pending_filter_state()
+            return
+
         if old_name is not None:  # edit path
             self.subset_filters.pop(old_name, None)
-            # name/filter_text are only ever populated together with the
-            # pending state that got us here, but nothing enforces that.
-            # Flagged for review.
-            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
+            self.subset_filters[name] = filter_text or ""
             self.update_filter_name(old_name, name)
             self.add_text_to_display.emit(
                 f"Filter '{old_name}' updated to '{name}'.",
                 self.__class__.__name__,
             )
         else:  # add path
-            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
+            self.subset_filters[name] = filter_text or ""
             self.proteincontrols.filter_comboBox.addItem(name)
             self.proteincontrols.filter_comboBox.selectItem(name, select=True)
             self.proteincontrols.filter_comboBox.refreshDisplayText()

@@ -239,7 +239,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
             self.cluster_data["cluster_confidence"].values,
             self.logs,
             self.normalized,
-            self.units,
+            self.plot_units,
             self.plot,
         )
 
@@ -677,10 +677,10 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self.labels = labels
         self.logs = logs
         self.normalized = normalized
-        # self.units is a Dict[str, str] when populated column-by-column via
-        # update_column_units, but a positional sequence of unit strings when it
-        # comes back from _load_metadata_and_cluster. Flagged for review.
-        self.units = units  # type: ignore[assignment]
+        # Kept separate from self.units, which is the column-name -> unit map
+        # used by the settings dialog. This one is positional: one unit per
+        # plotted column, in the order _load_metadata_and_cluster returned them.
+        self.plot_units = units
         self.plot = plot
 
         dims = sum(plot)

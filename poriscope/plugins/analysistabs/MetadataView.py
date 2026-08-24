@@ -174,7 +174,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.filtered_event_ids: List[int] = []
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[str] = None
+        self.current_channel: Optional[int] = None
 
     @log(logger=logger)
     @override
@@ -1979,7 +1979,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         loader: str,
         sql_filter: str,
         exp: Optional[str],
-        channel: Optional[str],
+        channel: Optional[int],
     ) -> str:
         """
         Build a WHERE clause for direct DB queries on the events table, scoped to
@@ -1992,7 +1992,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param exp: Experiment name.
         :type exp: Optional[str]
         :param channel: Channel identifier.
-        :type channel: Optional[str]
+        :type channel: Optional[int]
         :return: WHERE clause string (including the WHERE keyword), or empty string.
         :rtype: str
         """
@@ -2022,7 +2022,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         where_clause: str,
         sql_filter: str,
         exp: Optional[str],
-        channel: Optional[str],
+        channel: Optional[int],
     ) -> bool:
         """
         Rebuild the filtered event_id cache when filter or scope changes.
@@ -2037,7 +2037,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param exp: Current experiment name.
         :type exp: Optional[str]
         :param channel: Current channel identifier.
-        :type channel: Optional[str]
+        :type channel: Optional[int]
         :return: True if cache was rebuilt successfully, False otherwise.
         :rtype: bool
         """
@@ -2108,7 +2108,8 @@ class MetadataView(MetaView, WalkthroughMixin):
             return
 
         exp = next(iter(exp_and_ch.keys()))
-        channel = next(iter(exp_and_ch.values()))[0]
+        selected_channel = next(iter(exp_and_ch.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
 
         # Rebuild cache if filter or scope changed
         if (
@@ -2237,7 +2238,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
         loader = parameters["db_loader"]
         exp = next(iter(exp_and_ch.keys()))
-        channel = next(iter(exp_and_ch.values()))[0]
+        selected_channel = next(iter(exp_and_ch.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
 
         # Rebuild cache only when filter or scope changes — display panel emitted inside
         cache_needs_rebuild = (
@@ -3324,19 +3326,25 @@ class MetadataView(MetaView, WalkthroughMixin):
         filter_text = self._pending_filter_text
         old_name = self._pending_old_filter_name
 
+        if name is None:
+            # Mirrors the guard the assisted-filter path already applies in
+            # relay_query: with no pending name there is nothing to commit.
+            self.logger.warning(
+                "Raw filter validated with no pending filter name, ignoring."
+            )
+            self.clear_pending_filter_state()
+            return
+
         if old_name is not None:  # edit path
             self.subset_filters.pop(old_name, None)
-            # name/filter_text are only ever populated together with the
-            # pending state that got us here, but nothing enforces that.
-            # Flagged for review.
-            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
-            self.update_filter_name(old_name, name)  # type: ignore[arg-type]
+            self.subset_filters[name] = filter_text or ""
+            self.update_filter_name(old_name, name)
             self.add_text_to_display.emit(
                 f"Filter '{old_name}' updated to '{name}'.",
                 self.__class__.__name__,
             )
         else:  # add path
-            self.subset_filters[name] = filter_text  # type: ignore[index,assignment]
+            self.subset_filters[name] = filter_text or ""
             self.metadatacontrols.filter_comboBox.addItem(name)
             self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
             self.metadatacontrols.filter_comboBox.refreshDisplayText()
