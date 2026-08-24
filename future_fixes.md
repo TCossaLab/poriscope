@@ -78,7 +78,7 @@ Step 3 was annotations and docstrings only; everything below needs a logic, sign
 API change and was deliberately left alone. Nothing here is a regression - these are
 pre-existing defects that became visible once mypy could see the bodies concerned.
 
-### A. An attribute shadows an inherited Qt method (5 sites)
+### A. An attribute shadows an inherited Qt method (5 sites) - DONE (7e374db)
 
 Each of these assigns an instance attribute over the name of a method the Qt base class
 already defines, so the inherited method becomes unreachable on that instance.
@@ -93,7 +93,7 @@ already defines, so the inherited method becomes unreachable on that instance.
 
 Renaming is the fix; it is an API change for anything that reads these attributes.
 
-### B. Methods that reference attributes which are never created
+### B. Methods that reference attributes which are never created - PARTLY DONE
 
 Both would raise `AttributeError` on first call. Neither has a caller anywhere in
 `poriscope/`, which is the only reason they have never been noticed.
@@ -108,11 +108,17 @@ Both would raise `AttributeError` on first call. Neither has a caller anywhere i
   `unit_label`, `column_combo`, `log_cb`, `norm_cb` and `plot_cb`, none of which is
   assigned anywhere in the class.
 
-### C. Qt accessors that return `Optional`, used without a guard
+### C. Qt accessors that return `Optional`, used without a guard - RESOLVED (6cf1602)
 
-- `QApplication.instance()` in `BaseLineEdit.__init__` and `multiselect.py`.
-- `self.lineEdit()` in `multiselect.py` and `multiselect_filter.py` (several sites each).
-- `item.child(i)` / `topLevelItem(i)` in `SelectionTree.py`.
+- ~~`self.lineEdit()` in `multiselect.py` and `multiselect_filter.py`~~ - **done**. It
+  returns `None` unless the combo is editable; now bound once as `self._line_edit`
+  immediately after `setEditable(True)`, where that guarantee is established.
+- `QApplication.instance()` in `BaseLineEdit.__init__` and `multiselect.py`: **no action
+  needed**. Both sit in a `QWidget.__init__`, and a `QWidget` cannot be constructed
+  before a `QApplication` exists, so `None` is unreachable.
+- `item.child(i)` / `topLevelItem(i)` in `SelectionTree.py`: **no action needed**. Every
+  site is inside `for j in range(...childCount())`, so the index is always valid; this is
+  mypy failing to connect `range(n)` with "valid index", not a defect.
 
 ### D. Override signature mismatches
 
@@ -138,12 +144,17 @@ Both are `B006` hits; see the bugbear/bandit item below.
 
 - **`MetaModel.generators`** is declared `Dict[str, Dict[int, Generator]]`. A bare
   `Generator` reads as `Generator[Any, None, None]`, but the real contract is
-  `Generator[float, Optional[bool], Any]` - `Worker` sends a `bool` and scales the
-  yielded value. Tightening it touches every `set_generator` caller.
-- **`app_config` path values** are `pathlib.Path` on a fresh install (`Path.home()`) and
-  `str` after the config round-trips through JSON. `get_data_server_location` is
-  therefore typed `Any`, and `DataPluginController.data_server` is declared `str` while
-  actually receiving either.
+  `Generator[float, Optional[bool], None]`. **Now actionable**: this was previously
+  blocked because the five producers disagreed - `_commit_events` was mis-annotated and
+  `export_subset_to_csv` genuinely ignored the sent value. Both were fixed in `6cf1602`,
+  so all five now share one contract and the storage type can be tightened. Doing so
+  touches `set_generator` on both `MetaModel` and `MetaController`.
+- ~~**`app_config` path values**~~ - **done** (`6cf1602`). Coerced to `str` at both
+  points where they enter the dict, so `get_data_server_location` and
+  `get_user_plugin_location` now declare `-> str` honestly. The dangerous branch was the
+  upgrade path, which assigns a `Path` into an otherwise all-`str` loaded config and
+  never re-reads it; that value pre-populates a Folder setting, which
+  `BaseDataPlugin._validate_param_types` rejects unless `isinstance(value, str)`.
 - **`DictDialog.result`** holds three shapes: `(params, name)`, `(None, None)`, and the
   sentinel string `"delete"`.
 - **`get_values`** returns `List[float]` on `FloatRangeLineEdit` but
@@ -180,6 +191,24 @@ carry a comment saying so.
   `menuToggled = Signal()`, which declares no arguments.
 - A stray `print("text_menu_button_clicked")` sits in
   `IconTextMenuWidget.menu_button_clicked`, alongside the equivalent `logger.info`.
+
+### J. Aborting any operation is invisible to the user
+
+Surfaced while making CSV export abortable. `MetaController.handle_kill_worker` and
+`handle_kill_all_workers` only call `self.logger`; nothing reaches the message panel, so
+a user whose log level is above INFO sees no confirmation that a stop took effect - for
+any operation, not just export.
+
+Note that a **data plugin cannot emit to the panel directly**: `BaseDataPlugin` is a
+plain `ABC`, not a `QObject`, and has no signals. The established route is to return a
+string from `report_channel_status()`, which `MetaModel.generate_report` relays to
+`relay_add_text_to_display` when a worker finishes. `add_text_to_display` itself exists
+only on `MetaController`/`MetaModel`/`MetaView`.
+
+Two options: emit from `handle_kill_worker`/`handle_kill_all_workers`, which fixes every
+operation at one site; or have `MetaDatabaseLoader.report_channel_status` mention the
+abort, which fixes export alone but can add the "files already written are left in
+place" detail only the loader knows.
 
 ### Step 6 - why it blocks the flip
 
