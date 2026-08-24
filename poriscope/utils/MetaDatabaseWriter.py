@@ -27,7 +27,7 @@
 import logging
 import traceback
 from abc import abstractmethod
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -117,7 +117,9 @@ class MetaDatabaseWriter(BaseDataPlugin):
         :ytype: float
         """
 
-        def lookahead_generator(gen):
+        def lookahead_generator(
+            gen: Generator[Any, None, None],
+        ) -> Generator[Tuple[Any, bool], None, None]:
             try:
                 current = next(gen)
             except StopIteration:

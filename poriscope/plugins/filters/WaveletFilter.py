@@ -120,7 +120,7 @@ class WaveletFilter(MetaFilter):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -152,7 +152,7 @@ class WaveletFilter(MetaFilter):
 
     @log(logger=logger)
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided filter paramters and intialize any internal structures needed by self.apply_filter().
         Should Raise if initialization fails, but corner cases should be handled by _validate_settings already

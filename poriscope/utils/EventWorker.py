@@ -24,6 +24,8 @@
 # Kyle Briggs
 
 import logging
+import threading
+from typing import Any, Generator, Optional
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -35,7 +37,13 @@ class Worker(QObject):
     stop_signal = Signal()
     logger = logging.getLogger(__name__)
 
-    def __init__(self, generator, channel, key, lock=None):
+    def __init__(
+        self,
+        generator: Generator[Any, Any, Any],
+        channel: int,
+        key: str,
+        lock: Optional[threading.Lock] = None,
+    ) -> None:
         super().__init__()
         self.generator = generator
         self.channel = channel
@@ -47,9 +55,9 @@ class Worker(QObject):
         self.logger.debug("Worker initialized.")
 
     @log(logger=logger)
-    def process_generator(self):
+    def process_generator(self) -> None:
         """Run the generator loop in a separate thread."""
-        p = 0
+        p: float = 0
         while True:
             self.logger.debug(
                 f"Worker [{self.key}/{self.channel}] waiting for generator output..."
@@ -96,9 +104,9 @@ class Worker(QObject):
                 )
 
     @log(logger=logger)
-    def run(self):
+    def run(self) -> None:
         self.logger.info(f"Worker [{self.key}/{self.channel}] started.")
-        p = 0
+        p: float = 0
         self.update_progressbar.emit(p, f"{self.key}/{self.channel}")
         try:
             if self.lock:
@@ -114,7 +122,7 @@ class Worker(QObject):
 
     @Slot()
     @log(logger=logger)
-    def stop(self):
+    def stop(self) -> None:
         """Stop the worker gracefully."""
         self.stop_requested = True
 
@@ -123,7 +131,7 @@ class WorkerThread(QThread):
     workerthread_finished = Signal(int, str)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, worker, channel, key):
+    def __init__(self, worker: Worker, channel: int, key: str) -> None:
         super().__init__()
         self.worker = worker
         self.channel = channel
@@ -132,7 +140,7 @@ class WorkerThread(QThread):
         self.logger.debug("WorkerThread initialized.")
 
     @log(logger=logger)
-    def run(self):
+    def run(self) -> None:
         """Run the worker inside the thread."""
         self.logger.info("WorkerThread started.")
         try:

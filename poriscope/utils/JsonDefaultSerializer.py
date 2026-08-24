@@ -26,9 +26,10 @@
 from datetime import date, datetime
 from enum import Enum
 from pathlib import PurePath
+from typing import Any
 
 
-def serialize_object(obj):
+def serialize_object(obj: Any) -> Any:
     if isinstance(obj, PurePath):
         return str(obj)
     if isinstance(obj, Enum):

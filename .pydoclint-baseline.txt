@@ -77,8 +77,6 @@ poriscope/plugins/datareaders/TCossaLabABFReader.py
     DOC105: Method `TCossaLabABFReader.get_empty_settings`: Argument names match, but type hints in these args do not match: globally_available_plugins
 --------------------
 poriscope/plugins/datawriters/SQLiteEventWriter.py
-    DOC107: Method `SQLiteEventWriter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `SQLiteEventWriter.get_empty_settings`: Argument names match, but type hints in these args do not match: standalone
     DOC105: Method `SQLiteEventWriter._write_data`: Argument names match, but type hints in these args do not match: data, abort, last_call
     DOC105: Method `SQLiteEventWriter._rescale_data_to_adc`: Argument names match, but type hints in these args do not match: data, scale, offset, dtype
 --------------------
@@ -196,18 +194,6 @@ poriscope/plugins/eventfitters/PeakFinder.py
     DOC107: Method `PeakFinder.enumerate_peaks`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
     DOC105: Method `PeakFinder.enumerate_peaks`: Argument names match, but type hints in these args do not match: sublevel_starts, num_states, sublevel_types
     DOC203: Method `PeakFinder.enumerate_peaks` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
---------------------
-poriscope/plugins/eventloaders/SQLiteEventLoader.py
-    DOC107: Method `SQLiteEventLoader.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `SQLiteEventLoader.get_empty_settings`: Argument names match, but type hints in these args do not match: standalone
---------------------
-poriscope/plugins/filters/BesselFilter.py
-    DOC107: Method `BesselFilter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `BesselFilter.get_empty_settings`: Argument names match, but type hints in these args do not match: standalone
---------------------
-poriscope/plugins/filters/WaveletFilter.py
-    DOC107: Method `WaveletFilter.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `WaveletFilter.get_empty_settings`: Argument names match, but type hints in these args do not match: standalone
 --------------------
 poriscope/utils/BaseDataPlugin.py
     DOC105: Method `BaseDataPlugin._validate_param_types`: Argument names match, but type hints in these args do not match: settings

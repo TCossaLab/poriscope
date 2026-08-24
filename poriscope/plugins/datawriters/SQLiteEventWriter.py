@@ -55,7 +55,7 @@ class SQLiteEventWriter(MetaWriter):
         self.cursor: Optional[sqlite3.Cursor] = None
 
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided paramters and intialize any internal structures needed
         Should Raise if initialization fails.
@@ -65,7 +65,7 @@ class SQLiteEventWriter(MetaWriter):
         """
         self.eventfinder = self.settings["MetaEventFinder"]["Value"]
         self.samplerate = self.eventfinder.get_samplerate()
-        self.channel_db_id = {}
+        self.channel_db_id: Dict[int, Any] = {}
 
     @log(logger=logger)
     @override
@@ -186,7 +186,7 @@ class SQLiteEventWriter(MetaWriter):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
