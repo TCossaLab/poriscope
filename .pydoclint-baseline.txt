@@ -55,11 +55,41 @@ poriscope/plugins/analysistabs/ClusteringView.py
 --------------------
 poriscope/plugins/analysistabs/EventAnalysisController.py
     DOC108: Method `EventAnalysisController.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.set_event_filter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.set_eventfitting_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.update_plot_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.update_features`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.update_plot_samplerate`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.update_channels`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.set_num_events_allowed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisController.relay_eventfitting_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/EventAnalysisView.py
+    DOC108: Method `EventAnalysisView._reset_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._set_control_area`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._factors`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.update_plot_data`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.update_plot_features`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.update_plot_samplerate`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `EventAnalysisView.update_available_plugins`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `EventAnalysisView.notify_plugin_state_changed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.handle_parameter_change`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._shift_range_and_update_plot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._handle_plot_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.set_eventfitting_status`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.validate_single_channel`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._start_writer`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.set_num_events_allowed`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._update_event_plot`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._handle_fit_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._handle_commit_events`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._start_eventfitter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._extract_plot_event_parameters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._extract_event_fit_parameters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._extract_commit_event_parameters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `EventAnalysisView.set_data_filter_function`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView.update_channels`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `EventAnalysisView._handle_other_actions`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/MetadataController.py
     DOC108: Method `MetadataController.get_experiment_names_for_tree`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
@@ -109,6 +139,9 @@ poriscope/plugins/analysistabs/utils/clusteringcontrols.py
     DOC108: Method `ClusteringControls.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClusteringControls.update_loaders`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `ClusteringControls.update_clusters`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+--------------------
+poriscope/plugins/analysistabs/utils/eventAnalysisControls.py
+    DOC108: Method `EventAnalysisControls.update_channels`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/utils/metadatacontrols.py
     DOC108: Method `MetadataControls.set_event_id_input`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature

@@ -27,7 +27,7 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -157,7 +157,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         Update the cache with an arbitrary number of (data, label) pairs.
 
         :param \\*data_label_pairs: Tuple(s) of (data, label)
-        :type \\*data_label_pairs: Tuple[npt.NDArray[Any], str]
+        :type \\*data_label_pairs: Sequence[Any]
         :raises ValueError: If any argument is not a tuple or list of 1 or 2 elements.
         """
         for pair in data_label_pairs:
@@ -208,7 +208,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         Create and set up the control area for user interaction elements.
 
         :param layout: The main layout to which the control area will be added.
-        :type layout: Union[PySide6.QtWidgets.QVBoxLayout, PySide6.QtWidgets.QHBoxLayout, PySide6.QtWidgets.QGridLayout]
+        :type layout: QLayout
         """
         pass
 
@@ -259,7 +259,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         Sets the status indicating if cluster columns already exist.
 
         :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: str or None
+        :type exists_in_table: Optional[str]
         """
         self.column_table = exists_in_table
 
@@ -505,7 +505,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
         :param available_plugins: Dict of lists keyed by MetaClass, listing the identifiers of all
                                   instantiated plugins throughout the app.
-        :type available_plugins: Dict[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         self.logger.info(f"View updated: {available_plugins}")
         self.available_plugins = available_plugins
@@ -546,13 +546,14 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
     @log(logger=logger)
     def _parse_event_indices(
-        self, indices: str, allow_floats: Literal[True]
+        self, indices: str, allow_floats: bool
     ) -> list[tuple[float, float]]:
         """
         Parse '7-10,12' → [(7,10), (12,12)]
-        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)]
+        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
+        otherwise every bound is parsed with int().
         """
-        result = []
+        result: list[tuple[float, float]] = []
         caster = float if allow_floats else int
 
         for segment in indices.split(","):
@@ -574,10 +575,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
     @log(logger=logger)
     def _shift_ranges(
-        self, ranges: list[tuple[int, int]], direction: str, offset: int
-    ) -> list[tuple[int, int]]:
+        self, ranges: Sequence[tuple[float, float]], direction: str, offset: float
+    ) -> list[tuple[float, float]]:
         """Shift each tuple range left or right."""
-        shifted = []
+        shifted: list[tuple[float, float]] = []
         for start, end in ranges:
             if start == end:  # Sigle index
                 val = start + offset if direction == "right" else start - offset
@@ -597,9 +598,11 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         return shifted
 
     @log(logger=logger)
-    def _merge_ranges(self, ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    def _merge_ranges(
+        self, ranges: Sequence[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
         """Merge overlapping or contiguous ranges."""
-        merged: list[tuple[int, int]] = []
+        merged: list[tuple[float, float]] = []
         for start, end in sorted(ranges):
             if not merged or merged[-1][1] < start - 1:
                 merged.append((start, end))
@@ -609,7 +612,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         return merged
 
     @log(logger=logger)
-    def _format_ranges(self, ranges: list[tuple[int, int]]) -> str:
+    def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
         """Format list of tuples into '8-11,13'"""
         return ",".join(
             f"{start}-{end}" if start != end else str(start) for start, end in ranges
@@ -649,7 +652,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         Create and set up the display area for the plot canvas.
 
         :param layout: The main layout to which the display area will be added.
-        :type layout: Union[PySide6.QtWidgets.QVBoxLayout, PySide6.QtWidgets.QHBoxLayout, PySide6.QtWidgets.QGridLayout]
+        :type layout: QLayout
         """
         self.dataDisplayArea = QWidget(self)
         self.dataDisplayArea.setStyleSheet(
@@ -700,9 +703,9 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         sequentially, meaning filtering based on one column affects all others.
 
         :param \\*data: A variable number of 1D NumPy arrays representing the data columns.
-        :type \\*data: npt.NDArray
-        :param log_flags: (list or tuple, optional): A list or tuple of booleans, one for each data array. If True, the corresponding array, will be log-scaled. If None, no log scaling is applied. Defaults to None.
-        :type log_flags: Union[List[bool],Tuple[bool]]
+        :type \\*data: npt.NDArray[Any]
+        :param log_flags: A sequence of booleans, one for each data array. If True, the corresponding array will be log-scaled. If None, no log scaling is applied. Defaults to None.
+        :type log_flags: Optional[Sequence[bool]]
         :raises ValueError: If log_flags is provided but is not a list or tuple with the same length as the number of data arguments.
         :return: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
         :rtype: Tuple[npt.NDArray[Any], ...]
