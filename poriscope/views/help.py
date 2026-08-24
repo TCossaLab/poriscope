@@ -27,8 +27,16 @@ import logging
 import os
 import sys
 import webbrowser
+from typing import Optional
 
-from PySide6.QtCore import QCoreApplication, QEvent, QMetaObject, QRectF, Qt
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QMetaObject,
+    QObject,
+    QRectF,
+    Qt,
+)
 from PySide6.QtGui import QCursor, QFont, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -65,8 +73,8 @@ class LinkCard(QFrame):
         icon_path_normal: str,
         icon_path_hover: str,
         initial_bg: str = "black",
-        parent=None,
-    ):
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self._url = url
         self._initial_bg = initial_bg
@@ -108,7 +116,7 @@ class LinkCard(QFrame):
         self._refresh(hovered=False)
         self.installEventFilter(self)
 
-    def _load_icon(self, path: str):
+    def _load_icon(self, path: str) -> None:
         if not path or not os.path.exists(path):
             return
 
@@ -139,7 +147,7 @@ class LinkCard(QFrame):
         pixmap.setDevicePixelRatio(2.0)
         self._icon_label.setPixmap(pixmap)
 
-    def _refresh(self, hovered: bool):
+    def _refresh(self, hovered: bool) -> None:
         if self._initial_bg == "black":
             bg = "white" if hovered else "black"
             fg = "black" if hovered else "white"
@@ -164,7 +172,7 @@ class LinkCard(QFrame):
         )
         self._load_icon(icon)
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if obj is self:
             if event.type() == QEvent.Enter:
                 self._refresh(hovered=True)
@@ -178,7 +186,7 @@ class LinkCard(QFrame):
 class HelpCentre(QWidget):
     logger = logging.getLogger(__name__)
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.icon_path = os.path.join(
             os.path.dirname(__file__), "..", "configs", "icons"
@@ -186,7 +194,7 @@ class HelpCentre(QWidget):
         self.setupUi()
 
     @log(logger=logger)
-    def setupUi(self):
+    def setupUi(self) -> None:
         self.setMinimumSize(900, 400)
         self.resize(1100, 500)
         self.setStyleSheet("HelpCentre { padding: 20px; }")
@@ -334,7 +342,7 @@ class HelpCentre(QWidget):
         self.retranslateUi()
         QMetaObject.connectSlotsByName(self)
 
-    def retranslateUi(self):
+    def retranslateUi(self) -> None:
         self.setWindowTitle(QCoreApplication.translate("Form", "Help Centre", None))
         self.help_centre_label.setText(
             QCoreApplication.translate("Form", "Help Centre", None)

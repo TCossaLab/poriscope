@@ -38,6 +38,11 @@
     * A cross-tab inconsistency surfaced and left as-is for review: the channel slot of `plotted_datasets` is an `int` in `MetadataView`, which converts with `int(channel)`, but the raw selection-tree string in `ProteinView`, which does not. Each tab is internally consistent and is now annotated to match its own behaviour, but the same conceptual tuple meaning two different things across tabs looks unintended.
     * With this the whole `analysistabs/` family (22 files) is annotation-complete: no parameter or return left unannotated, and `pydoclint --arg-type-hints-in-signature=True` reports zero `DOC104`-`DOC107` anywhere under it. See `future_fixes.md` for the recurring defect classes this pass surfaced, the items flagged for follow-up, and the measured remaining scope (369 functions across 39 files, concentrated in `views/`).
 
+* **New Dev Tooling: Type annotations for the settings and help windows**
+    * Sixth batch of step 3: `views/settings_window.py` and `views/help.py`. 35 functions across 2 files, including the whole `create_*` widget-factory family that builds the settings tabs. Docstring/signature only - no behavior changes.
+    * `_NoFocusRectDelegate.paint`'s `index` parameter is typed `Union[QModelIndex, QPersistentModelIndex]` to match what `QStyledItemDelegate` actually declares; the narrower `QModelIndex` alone is a Liskov violation that mypy reports against both `QStyledItemDelegate` and `QAbstractItemDelegate`.
+    * `HelpWindow._load_icon` is `-> None`: despite three `return` statements it never returns a value - each is an early exit, and the pixmap it builds is handed to the label rather than returned.
+
 * **New Dev Tooling: Type annotations for the remaining view widgets**
     * Fifth batch of step 3: `multiselect.py`, `multiselect_filter.py`, `time_widget.py` and `SelectionTree.py`. 42 functions across 4 files. Docstring/signature only - no behavior changes.
     * `handleItemChanged`'s parameter is `Optional[QListWidgetItem]` in both multi-select widgets, not `QListWidgetItem`: `addItems` calls it with an explicit `None` to force a display refresh after a bulk load, so the optionality is load-bearing rather than defensive.

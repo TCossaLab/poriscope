@@ -24,9 +24,18 @@
 # Alejandra Carolina González González
 
 import logging
+from typing import Iterable, Optional, Union
 
-from PySide6.QtCore import QCoreApplication, QMetaObject, Qt, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtCore import (
+    QCoreApplication,
+    QMetaObject,
+    QModelIndex,
+    QPersistentModelIndex,
+    Qt,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QFont, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -35,6 +44,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -43,6 +53,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QStyledItemDelegate,
     QStyleFactory,
+    QStyleOptionViewItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -65,7 +76,12 @@ class _NoFocusRectDelegate(QStyledItemDelegate):
     normal paint logic.
     """
 
-    def paint(self, painter, option, index):
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: Union[QModelIndex, QPersistentModelIndex],
+    ) -> None:
         option.state &= ~QStyle.StateFlag.State_HasFocus
         super().paint(painter, option, index)
 
@@ -80,7 +96,7 @@ class Theme:
     string scattered through the file.
     """
 
-    def __init__(self, dark: bool):
+    def __init__(self, dark: bool) -> None:
         self.dark = dark
         if dark:
             self.bg = "#1E1E1E"
@@ -116,7 +132,7 @@ class SettingsWindow(QWidget):
     update_log_level = Signal(int)
     clear_cache = Signal()
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.theme = Theme(is_dark_mode())
         # Values are populated externally via set_data_server() /
@@ -139,7 +155,7 @@ class SettingsWindow(QWidget):
             app.paletteChanged.connect(self._on_palette_changed)
 
     @log(logger=logger)
-    def _on_palette_changed(self, _palette=None):
+    def _on_palette_changed(self, _palette: Optional[QPalette] = None) -> None:
         new_dark = is_dark_mode()
         if new_dark == self.theme.dark:
             return
@@ -150,7 +166,7 @@ class SettingsWindow(QWidget):
         self.setupUi()
 
     @staticmethod
-    def _clear_layout(layout):
+    def _clear_layout(layout: Optional[QLayout]) -> None:
         """Recursively delete every widget/sub-layout from a layout so it
         can be rebuilt from scratch, rather than erroring on a second
         QVBoxLayout(self) call while one is already installed."""
@@ -167,7 +183,7 @@ class SettingsWindow(QWidget):
                     SettingsWindow._clear_layout(child_layout)
 
     @log(logger=logger)
-    def setupUi(self):
+    def setupUi(self) -> None:
         self.setObjectName("Form")
         self.resize(915, 900)
         # Only cascade text color here, not background. The original
@@ -251,7 +267,9 @@ class SettingsWindow(QWidget):
     # ------------------------------------------------------------------
 
     @log(logger=logger)
-    def create_label(self, parent, text, font_size, bold=False):
+    def create_label(
+        self, parent: QWidget, text: str, font_size: int, bold: bool = False
+    ) -> QLabel:
         label = QLabel(parent)
         label.setText(QCoreApplication.translate("Form", text, None))
         font = QFont()
@@ -262,13 +280,15 @@ class SettingsWindow(QWidget):
         return label
 
     @log(logger=logger)
-    def create_tab(self, tabWidget, tab_name):
+    def create_tab(self, tabWidget: QTabWidget, tab_name: str) -> QWidget:
         tab = QWidget()
         tabWidget.addTab(tab, QCoreApplication.translate("Form", tab_name, None))
         return tab
 
     @log(logger=logger)
-    def create_combo_box(self, parent, items, max_width=None):
+    def create_combo_box(
+        self, parent: QWidget, items: Iterable[str], max_width: Optional[int] = None
+    ) -> QComboBox:
         comboBox = QComboBox(parent)
         for item in items:
             comboBox.addItem(QCoreApplication.translate("Form", item, None))
@@ -345,7 +365,9 @@ class SettingsWindow(QWidget):
         return comboBox
 
     @log(logger=logger)
-    def create_checkable_list_widget(self, parent, items):
+    def create_checkable_list_widget(
+        self, parent: QWidget, items: Iterable[str]
+    ) -> QListWidget:
         listWidget = QListWidget(parent)
         for item in items:
             list_item = QListWidgetItem(QCoreApplication.translate("Form", item, None))
@@ -384,7 +406,7 @@ class SettingsWindow(QWidget):
         return listWidget
 
     @log(logger=logger)
-    def create_check_box(self, parent):
+    def create_check_box(self, parent: QWidget) -> QCheckBox:
         checkBox = QCheckBox(parent)
         checkBox.setStyleSheet(
             """
@@ -397,7 +419,9 @@ class SettingsWindow(QWidget):
         return checkBox
 
     @log(logger=logger)
-    def create_line_edit(self, parent, max_width=None):
+    def create_line_edit(
+        self, parent: QWidget, max_width: Optional[int] = None
+    ) -> QLineEdit:
         lineEdit = QLineEdit(parent)
         if max_width:
             lineEdit.setMaximumWidth(max_width)
@@ -422,13 +446,13 @@ class SettingsWindow(QWidget):
     @log(logger=logger)
     def create_push_button(
         self,
-        parent,
-        text,
-        background_color,
-        text_color,
-        max_width=None,
-        border_color=None,
-    ):
+        parent: QWidget,
+        text: str,
+        background_color: str,
+        text_color: str,
+        max_width: Optional[int] = None,
+        border_color: Optional[str] = None,
+    ) -> QPushButton:
         pushButton = QPushButton(parent)
         pushButton.setText(QCoreApplication.translate("Form", text, None))
         if max_width:
@@ -461,7 +485,9 @@ class SettingsWindow(QWidget):
         return pushButton
 
     @log(logger=logger)
-    def create_secondary_button(self, parent, text, max_width=None):
+    def create_secondary_button(
+        self, parent: QWidget, text: str, max_width: Optional[int] = None
+    ) -> QPushButton:
         """
         Folder-picker action button (Change Data Server Location / Change
         User Plugin Location).
@@ -534,7 +560,7 @@ class SettingsWindow(QWidget):
         return pushButton
 
     @log(logger=logger)
-    def create_section_layout(self, widget):
+    def create_section_layout(self, widget: QWidget) -> QWidget:
         container = QWidget()
         container.setStyleSheet("background-color: transparent;")
         container_layout = QVBoxLayout(container)
@@ -542,7 +568,7 @@ class SettingsWindow(QWidget):
         container_layout.addWidget(widget)
         return container
 
-    def add_horizontal_line(self):
+    def add_horizontal_line(self) -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
@@ -556,7 +582,9 @@ class SettingsWindow(QWidget):
     # ------------------------------------------------------------------
 
     @log(logger=logger)
-    def add_general_tab_contents(self, parent_widget, layout):
+    def add_general_tab_contents(
+        self, parent_widget: QWidget, layout: QVBoxLayout
+    ) -> None:
         layout.setSpacing(0)
 
         general_label = self.create_label(parent_widget, "General", 14)
@@ -621,7 +649,9 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.add_horizontal_line())
 
     @log(logger=logger)
-    def add_advanced_settings_tab_contents(self, parent_widget, layout):
+    def add_advanced_settings_tab_contents(
+        self, parent_widget: QWidget, layout: QVBoxLayout
+    ) -> None:
         layout.setSpacing(0)
 
         advanced_settings_label = self.create_label(
@@ -702,7 +732,9 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.add_horizontal_line())
 
     @log(logger=logger)
-    def add_about_tab_contents(self, parent_widget, layout):
+    def add_about_tab_contents(
+        self, parent_widget: QWidget, layout: QVBoxLayout
+    ) -> None:
         layout.setSpacing(0)
 
         about_label = self.create_label(parent_widget, "About", 14)
@@ -750,11 +782,11 @@ class SettingsWindow(QWidget):
     # Slots / actions
     # ------------------------------------------------------------------
 
-    def handle_clear_cache(self):
+    def handle_clear_cache(self) -> None:
         self.clear_cache.emit()
 
     @log(logger=logger)
-    def update_data_server(self):
+    def update_data_server(self) -> None:
         self.get_shared_server_location.emit()
         folder_path = QFileDialog.getExistingDirectory(
             self, "Select Folder", self.data_server
@@ -763,7 +795,7 @@ class SettingsWindow(QWidget):
             self.update_data_server_location.emit(folder_path)
 
     @log(logger=logger)
-    def update_user_plugin_folder(self):
+    def update_user_plugin_folder(self) -> None:
         self.get_user_plugin_folder_location.emit()
         folder_path = QFileDialog.getExistingDirectory(
             self, "Select Folder", self.user_plugin_location
@@ -772,15 +804,15 @@ class SettingsWindow(QWidget):
             self.update_user_plugin_location.emit(folder_path)
 
     @log(logger=logger)
-    def set_data_server(self, data_server):
+    def set_data_server(self, data_server: str) -> None:
         self.data_server = data_server
 
     @log(logger=logger)
-    def set_user_plugin_location(self, user_plugin_loc):
+    def set_user_plugin_location(self, user_plugin_loc: str) -> None:
         self.user_plugin_location = user_plugin_loc
 
     @log(logger=logger)
-    def set_logging_level(self, level):
+    def set_logging_level(self, level: int) -> None:
         index = {
             logging.NOTSET: 0,
             logging.DEBUG: 1,
@@ -794,7 +826,7 @@ class SettingsWindow(QWidget):
         self.logging_level_combobox.blockSignals(False)
 
     @Slot(int)
-    def update_logging_level(self, index):
+    def update_logging_level(self, index: int) -> None:
         level = {
             0: logging.NOTSET,
             1: logging.DEBUG,
@@ -805,10 +837,10 @@ class SettingsWindow(QWidget):
         }.get(index, logging.NOTSET)
         self.update_log_level.emit(level)
 
-    def retranslateUi(self):
+    def retranslateUi(self) -> None:
         self.setWindowTitle(QCoreApplication.translate("Form", "Settings", None))
 
-    def main(self):
+    def main(self) -> None:
         import sys
 
         app = QApplication(sys.argv)
