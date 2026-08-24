@@ -145,6 +145,18 @@ the `post-merge` git hook. Published at https://tcossalab.github.io/poriscope/.
 Any time you make changes to the code, update `changelog.md` with a terse explanation under 
 the appropriate header/subheader, respecting formatting ceonventions already present in that file.
 
+## Where things are written down
+
+- `changelog.md` — what changed, user-facing. Update it for any code change.
+- `future_fixes.md` — what is still queued. Keep it terse; prune items as they land
+  rather than leaving completed-work narrative behind.
+- `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
+  would make it worth revisiting. Check here before re-litigating a settled question.
+- `future_refactors_and_features.md` — larger speculative work.
+
+Depth belongs in those files, not in this one: this file is loaded in full at the start
+of every session, so it should stay a short list of standing rules.
+
 ## General Instructions
 
 - Do not nest functions inside other functions

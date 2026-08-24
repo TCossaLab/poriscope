@@ -1,145 +1,71 @@
 # Future Fix: Full Codebase Type-Annotation Pass
 
 Context block for a dedicated future session. Paste/point Claude Code at this file to
-resume this work; it is written to be self-contained.
+resume this work; it is written to be self-contained. Choices made along the way -
+particularly things deliberately *not* done - are recorded in `DECISIONS.md` rather
+than here.
 
-## Progress (2026-08-23)
+## Status
 
-First installment landed on `feature/loadbearing_docstrings`: type hints added, copied
-from each family's `Meta*` base, to every method across `poriscope/plugins/datareaders/`,
-`eventfinders/`, `filters/`, `eventloaders/`, `datawriters/`, `db_loaders/`, `dbwriters/`,
-plus the CUSUM-family fitters (`ClassicCUSUM.py`, `CUSUM.py`, `IntraCUSUM.py`,
-`NoFitter.py`). `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` excluded per the
-Exclusions section below, as always. `.pydoclint-baseline.txt` regenerated once,
-centrally, to absorb the new `DOC108` entries. See `changelog.md`'s "New Dev Tooling:
-Type annotations for data plugins" entry for the summary, and the individual commits
-(`feat(types): add type hints to ...`) on that branch for the per-family diffs.
+| Step | Scope | State |
+| --- | --- | --- |
+| 1 | `poriscope/utils/` - the 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files | Done 2026-08-23 |
+| 2 | `analysistabs/` - 5 tab triads, `*controls.py`, `walkthrough*` (22 files) | Done 2026-08-24 |
+| 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | **Next** |
+| 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Queued |
+| 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Queued |
+| 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
+| 7 | Flip both policy flags, regenerate the baseline fresh, confirm gates clean, update `CLAUDE.md` | Blocked on 3-6 |
 
-**Still remaining before this pass is done** (per Scope below): the rest of the data
-plugin families not yet covered (`Basic_PeakFinder`/`NanoTrees`/`PeakFinder` themselves,
-once someone other than this pass's owner picks them up), the `Meta*` ABCs in
-`poriscope/utils/` (several, e.g. `MetaEventFitter.py`, already carry partial
-annotations from earlier work but were not exhaustively re-verified here beyond what
-this batch's mypy runs happened to touch), and all of controllers/models/views/app-shell
-code. Steps 2-4 in Scope (flipping the pydoclint/mypy policy flags) have **not** been
-started - do not flip those until annotation coverage is much closer to complete.
+Steps 1 and 2 are summarised in `changelog.md` (the two "Type annotations for ..."
+entries) and recorded in detail by the `feat(types):` and `fix:` commits on
+`feature/loadbearing_docstrings`. That narrative is deliberately not repeated here.
 
-**Gotchas confirmed empirically this round, worth internalizing before the next
-session continues this pass:**
-- The "annotation-unchecked cascade" gotcha is real and non-trivial in volume: adding
-  hints to a ~20-file batch surfaced 14 real, blocking `pre-commit run mypy --all-files`
-  errors, none of which were caused by the new hints themselves - all were pre-existing
-  logic/contract mismatches that were simply invisible to mypy before. Budget time for
-  this triage on every future batch, not just the mechanical hint-copying.
-- **Don't trust a bare local `mypy <files>` invocation as the pass/fail signal.**
-  It resolved to a different, newer mypy version than pre-commit's pinned
-  `mirrors-mypy` hook in this environment, and - more importantly - passing a narrow
-  file subset let mypy's import-following pull in unrelated files (via package
-  `__init__.py` re-exports) and report pre-existing errors in files nobody touched
-  (`MetaController.py`, `NanoTrees.py`, `PeakFinder.py`), none of which actually block a
-  commit. `pre-commit run mypy --all-files` (or `pre-commit run mypy --files <paths>`
-  for a quick spot check) is what actually gates a commit - it matches what CI enforces.
-  Verify this empirically with `git stash` before assuming any mypy output is
-  attributable to your own change.
-  **Amended 2026-08-24:** an earlier version of this note called the pre-commit hook
-  "the only trustworthy gate". That is right about *which* run blocks a commit, but
-  wrong to imply it sees everything - the two runs are blind in different directions.
-  The hook is authoritative for pass/fail; the project-venv `mypy poriscope` is the
-  only one that can see third-party types at all. See "The mypy hook cannot see the
-  project's dependencies" below.
-- Three concrete "genuine logic-shaped mismatch, flag don't fix" discrepancies were
-  initially suppressed with narrow, commented `# type: ignore[<code>]` lines (not
-  fixed, not hidden silently) so the batch could land, then resolved for real in the
-  same session once reviewed: `CUSUM`/`NoFitter`'s `baseline_std` (`Optional[float]`
-  used in unguarded arithmetic) now raises a clear `ValueError` if `None`;
-  `sublevel_starts` (`List[int]`-declared but ndarray at runtime) is now wrapped in
-  `np.asarray(...)` at the two arithmetic call sites rather than widening
-  `MetaEventFitter`'s declared type (which turned out to be intentionally generic -
-  worth double-checking a `Meta*` base's docstring for "this can be more than it
-  looks like" language before assuming a narrower type is the right fix, as the
-  first-pass suggestion here was wrong until that was checked); and
-  `SQLiteEventWriter._write_data`'s `Optional[int]` params passed straight into
-  `int()` now get an explicit `ValueError` guard instead. See `changelog.md`'s
-  updated entries for the final resolutions and the no-longer-relevant
-  `# type: ignore` lines have been removed - none remain from this batch.
+Both completed steps finished with: every parameter and return annotated (checked by an
+AST scan, not by eye), zero `DOC104`-`DOC107` under
+`pydoclint --arg-type-hints-in-signature=True`, no `# type: ignore` left behind, and a
+green `pytest -m "not e2e and not slow"` plus `test_plugin_compliance.py`. Use the same
+bar for step 3.
 
-## Measured remaining scope (2026-08-23)
+### Step 3 - measured scope (2026-08-24)
 
-Rather than guess, both policy flags were flipped temporarily (`arg-type-hints-in-signature = true` in `pyproject.toml`, `disallow_untyped_defs`/`check_untyped_defs = True` in `mypy.ini`), the real gates run against the whole tree, then both reverted. Findings:
+**439 functions across 42 files** still have at least one unannotated parameter or
+return. Concentration: `views/main_view.py` 65, `views/widgets/icon_menu_widget.py` 30,
+`views/settings_window.py` 28, `views/widgets/clustering_settings_widget.py` 20,
+`models/main_model.py` 19, `controllers/main_controller.py` 19,
+`views/widgets/text_menu_widget.py` 18, then a tail of smaller widgets. `NanoTrees.py`
+(45), `PeakFinder.py` (13) and `Basic_PeakFinder.py` (12) are inside that count but
+excluded per the Exclusions section.
 
-**pydoclint** (`arg-type-hints-in-signature = true`): 995 new violation lines across 48 files - `plugins/` (31 files), `utils/` (13), `controllers/` (2), `models/` (1), `views/` (1). Two distinct kinds of work, not one:
-1. Genuinely unannotated methods (`DOC106`/`DOC107`), concentrated entirely in files this pass hasn't touched: all 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files in `utils/`, the whole `analysistabs/` GUI family (5 Controller/Model/View triads + `utils/*controls.py` mixins + `walkthrough*`), `DataPluginController.py`/`DataPluginModel.py`/`main_controller.py`, and `dict_dialog_widget.py`. Plus the excluded `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py`, which need an explicit decision (permanent exclusion vs. eventually annotating) before any global flip, since they can't just stay silently broken once the policy is on.
-2. Stale docstring `:type:` text in files this pass *already* typed (`DOC105` - hint exists, docstring wording doesn't match it exactly), a smaller mechanical cleanup in those 13 already-completed data-plugin files: e.g. `MetaReader._validate_file_type`'s docstring says `os.Pathlike` (lowercase typo) instead of `os.PathLike`; `_get_file_pattern`'s docstring still says `os.PathLike` for a parameter that's actually `str`; `_convert_data`'s docstring says generic `numpy.ndarray` instead of the real `npt.NDArray[np.int16]`; and every `get_empty_settings`/`standalone`/`globally_available_plugins` docstring line needs its optional-argument phrasing tightened to match exactly. These propagated into every subclass that copied the same base docstring.
+### Step 6 - why it blocks the flip
 
-**mypy** (`disallow_untyped_defs`/`check_untyped_defs = True`): 3248 errors, but 2167 of those are in `tests/` - a gotcha not previously documented here: pre-commit's `mypy` hook passes explicit file paths (including test files), which bypasses `mypy.ini`'s `exclude = ^tests/` entirely (`exclude` only applies to directory-discovery, not explicitly-listed files - a known mypy quirk). **The pre-commit hook config needs its own `exclude`/`files` scoping added before this flip**, independent of `mypy.ini`, or the flip will look clean via `mypy poriscope` but break every real commit. The remaining 1021 real errors in `poriscope/` are heavily concentrated in the same not-yet-annotated areas: `analysistabs/ProteinView.py` (78), `main_view.py` (67), `MetadataView.py` (62), `NanoTrees.py` (45), `RawDataView.py` (41), the `*controls.py` mixins, tapering down through the rest of `utils/`, `views/widgets/`, and the controllers/models.
+The pre-commit `mypy` hook passes explicit file paths, test files included, which
+bypasses `mypy.ini`'s `exclude = ^tests/` entirely - `exclude` applies to directory
+discovery, not to explicitly listed files. Without scoping the hook itself, flipping
+`disallow_untyped_defs` looks clean under `mypy poriscope` and then breaks every real
+commit. (That hook also cannot see third-party types at all; `DECISIONS.md` records why
+closing *that* gap is judged not worth doing, and why it does not block the flip.)
 
-**Ordered remaining work:**
-1. `poriscope/utils/` - the 13 `Meta*`/base files (biggest leverage: everything else depends on them). **Done** (2026-08-23): all 13 files (`BaseDataPlugin.py`, `LogDecorator.py`, `MetaController.py`, `MetaDatabaseLoader.py`, `MetaDatabaseWriter.py`, `MetaEventFinder.py`, `MetaEventFitter.py`, `MetaEventLoader.py`, `MetaFilter.py`, `MetaModel.py`, `MetaReader.py`, `MetaView.py`, `MetaWriter.py`) now fully annotated per the same contract-matching rule as the data-plugin batch. `test_plugin_compliance.py` (71 cases) and `pre-commit run mypy --all-files` both pass clean with everything applied together. **Correction:** an earlier version of this note claimed `.pydoclint-baseline.txt` needed no regeneration - that was wrong, confirmed by directly running `pre-commit run --all-files`, which failed on 21 new, not-yet-baselined `DOC108` lines across `BaseDataPlugin.py`/`MetaController.py`/`MetaEventFinder.py`/`MetaEventFitter.py`/`MetaModel.py`/`MetaReader.py`/`MetaView.py` (methods that had zero prior hints, not partial ones, so nothing pre-baselined them). Regenerated fresh from the full tree (`pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope`); the diff was a clean 21-line addition with nothing removed or altered. See `changelog.md`'s updated "New Dev Tooling: Type annotations for data plugins" entry for the per-file summary and the couple of genuinely new flagged discrepancies (`MetaEventFitter.reset_channel`'s `channel=None` no-op gap, `MetaView`'s two unguarded-`Optional` call sites) - both marked with commented `# type: ignore` and left for a follow-up pass, not fixed, per this round's no-logic-changes instruction.
+## Also queued - found during this pass, not part of it
 
-   **Process note:** this batch was run as 6 parallel forks; 4 of them were killed mid-task by the Claude account's own session usage limit (not a bug in the fork prompts) after already writing their file edits to disk but before sending a final report. All 4 killed forks' edits were independently verified afterward (full diff review + compliance/mypy re-run) and found complete and correct, but this is a real risk worth remembering: **don't assume a fork's edits are trustworthy just because a report arrived - and don't assume they're worthless just because a report *didn't* arrive.** Verify by re-running the real checks and diffing the actual files, either way. Launching 6 forks at once on files this large may have contributed to hitting the limit; a future large batch might do 3-4 at a time instead, or check remaining session budget first if that becomes visible.
-2. `analysistabs/` GUI family - 5 tab triads + `*controls.py` mixins + `walkthrough*` (the largest single chunk of remaining volume). **Done** (2026-08-24): all 22 files annotated, one tab family per commit, in the order shared-utils -> Clustering -> EventAnalysis -> RawData -> Metadata -> Protein. Every file passes the AST completeness scan (no parameter or return left unannotated) and `pydoclint --arg-type-hints-in-signature=True` reports zero `DOC104`-`DOC107` anywhere under `analysistabs/`. `pre-commit run --all-files`, `test_plugin_compliance.py` (71 cases), and `pytest -m "not e2e and not slow"` (2615 passed, 2 skipped) were all run green after each tab before committing it. `.pydoclint-baseline.txt` was regenerated per tab; every regeneration was a pure addition of `DOC108` policy nags with nothing removed or altered.
-
-   **Method that worked well and is worth reusing for step 3:** write each file's edits as a standalone `rep(old, new)` Python script in a scratchpad, dry-run it with writes stubbed out to validate every anchor string matches exactly once, then apply. Anchors that fail the dry run are almost always a sign the docstring differs from what you assumed, which is worth knowing *before* touching the file. Prepare the next tab's scripts while the current tab's 35-minute test run is in flight - the suite is the long pole, not the editing.
-
-   **Recurring defect classes this surfaced** (all corrected, none behavioural): (a) *callback-shape annotations* - `relay_*`/`update_column_units`/`relay_units`/`relay_table_by_column`/`relay_column_type` are `global_signal` return-callbacks, so their parameter type is whatever the *called* `Meta*` method returns (usually `Optional[str]`), not the `dict` the parameter name suggests; nine of these were typed wrong across three controllers. (b) *off-by-one nesting on plot features* - `get_plot_features` returns one flat list per event, but three call sites declared list-of-lists. (c) *channel stringification* - `current_channel`/`plotted_datasets` slots declared `Optional[int]` while holding the selection-tree display string. **Resolved by converting rather than by widening the annotation**, on review: the value is an `int` channel id everywhere it matters (it is interpolated unquoted into `channel_id = {channel}` predicates and stored in `current_channel`), so both views now convert once at the derivation site - `selected_channel = next(iter(...))[0]` then `channel = int(selected_channel) if selected_channel is not None else None` - which keeps the stored value and the staleness comparison on the same type. Note the `exp_and_ch`/`exp_and_ch_arg` **dicts** handed to loader plugins were deliberately left as strings: `MetaDatabaseLoader`'s `tuple_builder` stringifies them unquoted, so they behave identically either way and changing them would touch the loader contract for no benefit. (d) *attributes first assigned `None`* need an explicit `Optional[...]` in `_init` or mypy infers `None` and every later assignment errors.
-
-   **pydoclint parser quirk worth internalising:** prose placed *after* a sphinx field list gets folded into the last field's `:type:`, producing a spurious `DOC105` on whichever parameter happens to be documented last. Nine docstrings across `MetadataView`/`ProteinView` hit this; the fix is to put the description first, which is the conventional layout anyway.
-
-   **Reviewed and fixed after the pass** (both were raised for review and approved): the channel-id conversion described in (c) above, and the missing guard in `on_raw_filter_validated`. On that second one - the subset-filter feature has two validation paths that share the same `_pending_filter_name`/`_pending_filter_text`/`_pending_old_filter_name` handoff: assisted filters validate through `construct_metadata_query` and commit in `Metadata`/`ProteinController.relay_query`, raw SQL filters validate through `validate_filter_query` and commit in the *view's* `on_raw_filter_validated`. The controller half already guarded with `if name is not None:` and coerced the body with `filter_text or ""`; the view half did neither, so a callback arriving with no pending state would use `None` as a `Dict[str, str]` key and value. The view now applies the same guard (early return with a warning log), which removed both `# type: ignore` lines rather than carrying them. Not reachable today - the pending fields are assigned immediately before the emit and `global_signal` dispatch is synchronous - but the two halves of one feature no longer disagree about the contract.
-
-   **Reviewed and fixed in a follow-up round** (raised for review, then approved): three of the remaining suppressions were cleared for real rather than carried.
-   - `ClusteringView.units` was doing two unrelated jobs - a column-name -> unit map read by `ClusteringSettingsDialog`, and a positional list of units for the plotted columns consumed by `update_plot`/`_merge_clusters`. Whichever wrote last won, so opening the settings dialog after a plot handed a list to code calling `.get()`. Split into `self.units` (the map) and `self.plot_units` (the positional list).
-   - `EventAnalysisView._update_event_plot` zipped each feature list against its label list while guarding only on the feature list. `EventAnalysisController.update_features` explicitly permits "a label ... for every feature, **or no labels at all**", and the loop bodies already render an unlabeled feature when the per-element label is `None` - only the whole-list-is-`None` form was unhandled, and it raised `TypeError`. All three sites now stand in a matching run of `None`s. The label parameters were widened to `Sequence[Optional[Sequence[Optional[str]]]]` to describe what the bodies actually accept, and the inner loop variables renamed (`line_label`/`point_label`) because they were shadowing the outer `label`, which is a plain `str`.
-   - `start_walkthrough` now returns its fallback `QDialog` explicitly when `Overlay(parent)` fails, instead of passing `None` into `StepDialog` and relying on the `AttributeError` from `update_step()` being caught. Same outcome, minus constructing a dialog guaranteed to fail.
-
-   **`on_button_clicked`, also fixed:** `button_mapping.get(button_type, lambda: None).setChecked(False)` supplied a plain function as the fallback, so an unmapped `button_type` raised `AttributeError` instead of doing nothing. It was present in *three* files, not the two first reported - `rawdatacontrols`, `eventAnalysisControls` and `metadatacontrols` - while `clusteringcontrols` and `proteincontrols` already guarded it correctly, so the fix was to make the three match the pattern the other two already used. Unreachable from the GUI (every `button_type` emitted by `connect_signals` is a key in `button_mapping` in all three, verified by comparing the two sets), but two existing tests - `test_unknown_button_no_signal_bug` and `test_unknown_button_same_bug_as_metadata_controls` - had pinned the `AttributeError` in place with `pytest.raises` while their own comments described the intended no-op; both were flipped to assert the no-op.
-
-   Note the reason this was *not* caught by the commit gate, which turned out to be far more interesting than the line itself: the pre-commit mypy hook cannot see PySide6 at all, so `QPushButton` is `Any` to it. The project venv's mypy reports it precisely. See step 6 below.
-
-   **Still flagged, not fixed:** `MetadataView.hist_data` and `ProteinView.hist_data` hold three different shapes depending on which plot path filled them (widened to `List[Any]` with a comment; unifying them is a real refactor). There are no `# type: ignore` lines left under `analysistabs/` at all.
-3. `main_controller.py`/`main_model.py`/`main_view.py`, `DataPluginController.py`/`DataPluginModel.py`, `settings_window.py`, `help.py`, `views/widgets/*`. Measured 2026-08-24, after step 2: **439 functions across 42 files** still have at least one unannotated parameter or return, concentrated in `views/main_view.py` (65), `views/widgets/icon_menu_widget.py` (30), `views/settings_window.py` (28), `views/widgets/clustering_settings_widget.py` (20), `models/main_model.py` (19), `controllers/main_controller.py` (19), and `views/widgets/text_menu_widget.py` (18), tapering into the smaller widgets. `NanoTrees.py` (45), `PeakFinder.py` (13) and `Basic_PeakFinder.py` (12) are in that count but excluded per the standing policy below.
-4. A docstring-text-only cleanup pass over the 13 files already typed by the first installment (the `DOC105` stale-wording list above).
-5. A decision on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` - permanent carve-out or eventual inclusion - before flipping anything globally.
-6. Add `exclude`/scoping to the pre-commit `mypy` hook itself so it stops checking `tests/` as explicit paths, independent of `mypy.ini`. **This one is a hard blocker for the flip** - without it the flip looks clean under `mypy poriscope` and then fails on every real commit.
-
-   **Separately, and NOT a blocker: the mypy hook cannot see the project's dependencies.** Measured 2026-08-24. The `mirrors-mypy` hook runs in an isolated virtualenv containing only mypy, with `additional_dependencies: []`, and its upstream default args are `["--ignore-missing-imports", "--scripts-are-modules"]`. So PySide6, numpy, pandas, scipy and sklearn all resolve to `Any` under the gate. Concretely, `reveal_type(button_mapping.get(button_type, lambda: None))` where `button_mapping: Dict[str, QPushButton]` prints `Any` under the hook and `QPushButton | (def ())` under the project venv's mypy.
-
-   **Is it worth fixing? On the evidence, only marginally - do not treat this as required work.** Running the project venv's mypy over `poriscope/` reports 377 errors where the hook reports 0, but essentially all of that is noise rather than signal:
-   - 191 are PySide6 short-form enum accesses (`QSizePolicy.Expanding`, `Qt.AlignCenter`, `QMessageBox.No`) that the bundled PySide6 stubs no longer declare but that still work at runtime - stub-vs-runtime drift, not defects. **Deliberately not fixed; see the decision below.**
-   - 38 are `MetaController` not declaring `self.view`/`self.model`, which subclasses assign in `_init()` - structural and known.
-   - 34 `arg-type` are numpy stub pedantry, e.g. `np.sum`/`np.argmax` refusing a heterogeneous Python list against `_SupportsArray[dtype[Never]]`. Runtime-fine.
-   - 11 `assignment` are the already-known, deliberately-accepted `sublevel_starts` declared `List[int]` but ndarray at runtime (see the first installment's notes - `MetaEventFitter`'s type is intentionally generic).
-   - 34 `import-untyped` are informational, and 3 `call-overload` are `Signal` on the non-QObject `WalkthroughMixin`.
-
-   The genuine signal was **11 `union-attr` findings, all one narrow class: a Qt getter that can return `None`.** Three were the `button_mapping` bug (now fixed); the remaining eight are `SelectionTree.py`'s six `QTreeWidgetItem | None` accesses and `MetaView.__init__`'s two `QLayout | None` accesses. That is the entire practical benefit on offer.
-
-   **Recommendation:** do not add stubs to the hook as part of this pass. The cost is real and recurring - you would have to suppress or fix ~110 enum sites first, then keep the hook's pinned stub versions in sync with the runtime PySide6 forever, and stub drift is exactly what generated that noise. If the team wants the `union-attr` class of finding, the cheap route is to run `mypy poriscope` in the dev venv periodically and review it by hand (it is already possible today, needs no config change), or add it to the pre-PR checklist in the QA docs, rather than making it block commits. Revisit the hook only if the enum short-form cleanup happens for other reasons.
-
-   ### Decision (2026-08-24): leave the PySide6 short-form enums alone
-
-   Recorded so this is not re-litigated the next time somebody runs a stub-aware mypy, sees 191 errors, and assumes they are a backlog.
-
-   **Measured, not assumed.** On the installed PySide6 6.9.0: `QSizePolicy.Expanding` emits *no* warning of any kind - not a `DeprecationWarning`, nothing - and `QSizePolicy.Expanding is QSizePolicy.Policy.Expanding` evaluates to `True`, as does the equivalent for `Qt.AlignCenter`. These are not aliases that resemble the scoped members; they are the identical objects. Qt's "forgiving enum" mode is live and unwarned. The only thing that has changed is that the bundled stubs stopped declaring the short forms, so this is a stub omission, not a code defect.
-
-   **Distribution** (repo-wide, 191 sites over ~11 files): `metadatacontrols.py` 44, `proteincontrols.py` 28, `walkthrough.py` 26, `eventAnalysisControls.py` 15, `time_widget.py` 11, `SelectionTree.py` 11, `rawdatacontrols.py` 11, `clusteringcontrols.py` 10, `help.py` 8, `MetaView.py` 6, `dict_dialog_widget.py` 5, then a tail.
-
-   **Why not fix.** A 191-site mechanical rename with zero behavioural change is a large diff that makes review *harder*, not easier - it buries real changes in the same commits and rewrites `git blame` across eleven files for no semantic gain. `Qt.AlignCenter` is also plainly more readable than `Qt.AlignmentFlag.AlignCenter`, and they are the same object, so this is not a readability win either.
-
-   **Why the QA argument does not carry it.** The tempting justification is "clearing these makes a stub-aware `mypy poriscope` usable as a review tool". Counting the actual composition of that run's 377 errors: 191 enum + 34 `import-untyped` + 38 `MetaController.view`/`model` + 34 numpy-stub pedantry + 11 known-accepted `sublevel_starts` is about 308. Clearing only the enums still leaves roughly 117 noise items against a handful of real findings, so you would take the whole diff and *still* not have a usable tool. The enums are neither the cheapest nor a sufficient step toward that goal.
-
-   **Cheaper alternative if a usable stub-aware run is ever wanted:** suppress rather than rewrite. The noise is confined to `attr-defined` on Qt classes, so a scoped `[mypy-...]` section or a `--disable-error-code` limited to the GUI modules buys the same signal-to-noise for a few lines of config, reversible and reviewable on one screen, with no source churn.
-
-   **Revisit trigger:** only if PySide6 actually deprecates or removes forgiving-enum mode. Note that waiting costs nothing - the day it changes, every site fails loudly at widget-construction time and the fix is a mechanical find-and-replace with the failures pointing at each location.
-
-   **What this does and does not undermine:** the hook still checks all first-party logic and the whole `Meta*` plugin contract, which is the load-bearing part of this architecture - the "annotation-unchecked cascade" errors this pass triaged were found by the hook. What it cannot check is behaviour at the Qt/numpy/pandas boundary. That reduces, but does not negate, the value of flipping `check_untyped_defs`: the flip still forces annotations to exist and still checks pure-Python bodies and first-party contracts. Do the flip without waiting on this.
-7. Resolve the last `# type: ignore` under `analysistabs/`: `WalkthroughMixin._run_next_walkthrough_step` monkey-patched the dialog's Qt virtual with `self.walkthrough_dialog.moveEvent = self._reposition_dialog`, which mypy reports as `method-assign`. **Done** (2026-08-24), in its own commit so it could be exercised in the running app.
-
-   **Verified, do not re-derive:** the patch was *live*, not dead code. `StepDialog` had no class-level `moveEvent`, and PySide6 normally dispatches Qt virtuals through the type, so the natural conclusion is that Qt never called it. A direct probe (assign `moveEvent` on a `QDialog` instance after `show()`, then `move()` and `processEvents()`) shows Shiboken *does* honour an instance attribute. Deleting the line would have removed real behaviour.
-
-   **The fix applied:** `StepDialog` gained an `on_move: Optional[Callable[[QMoveEvent], None]]` attribute and a class-level `moveEvent` that calls `super().moveEvent(event)` and then the hook when one is set; the mixin now assigns `self.walkthrough_dialog.on_move = self._reposition_dialog`.
-
-   **On the "extra move events" worry, which turned out to be unfounded:** a first probe suggested the class-level override fired three times against the patch's once, implying the hook would see more events. Replaying the *real* install order - `start_walkthrough` calls `dialog.show()` and only then does the mixin attach the handler - gives 3 against 3. The original asymmetry was an artefact of attaching the instance patch after `show()` while defining the class override before it. `on_move` also defaults to `None` and is only set after `start_walkthrough` returns, so any move events during construction and `show()` stay no-ops. The change is behaviour-neutral.
-8. Only then: flip both flags, regenerate the pydoclint baseline fresh, confirm both gates are clean, update `CLAUDE.md`.
+- **Test-suite ordering fragility.** Running `tests/unit/views` before
+  `tests/unit/plugins` segfaults the interpreter inside
+  `test_walkthrough_mixin.py::test_no_valid_widgets_logs_error`, in a `qtbot.wait(100)`
+  that only spins the event loop - so the leaked Qt object comes from earlier view
+  tests, not from that test. Pre-existing and unrelated to the walkthrough `moveEvent`
+  hook (see `DECISIONS.md`). CI never hits it because alphabetical collection runs
+  `plugins` first, but a suite that dies on a legitimate partial selection is worth
+  fixing.
+- **Session-directory isolation is conventional, not structural.** Everything that
+  builds a real `MainModel` today redirects `user_data_dir` for itself - `tests/e2e/`'s
+  autouse `sandbox_appdata` and `tests/unit/models/`'s `main_model` fixture - but a test
+  added anywhere else would write to the developer's real
+  `%LOCALAPPDATA%/Poriscope/session/`. A top-level `tests/conftest.py` autouse fixture
+  would make isolation inherited by default.
+- **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
+  receives 1-D arrays from the histogram path, whole DataFrames from the density path,
+  and `(x, y)` tuples from the all-points path. Widened to `List[Any]` with a comment;
+  unifying it is a real refactor.
 
 ## Goal
 
@@ -186,23 +112,6 @@ False` leniency has nothing left to exempt and becomes a no-op — it can be saf
 flipped to `True` (or removed) at that point, verified by the fact that the test suite
 and `pre-commit run --all-files` still pass identically before and after the flip.
 
-## Scope / sequencing
-
-1. Add type hints file-by-file (or in small independent batches via subagents — see
-   Method below) across all of `poriscope/`, including `Meta*` ABCs in
-   `poriscope/utils/`, all plugin families, controllers/models/views, and app-shell
-   code.
-2. Once annotation coverage is effectively complete, flip
-   `[tool.pydoclint] arg-type-hints-in-signature = true` in `pyproject.toml`, run
-   `pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope`
-   fresh from a clean tree, and confirm the new baseline is empty or near-empty (a
-   near-empty remainder here would represent a real gap to close, not something to
-   wave through).
-3. Flip `mypy.ini`'s `disallow_untyped_defs`/`check_untyped_defs` to `True` and confirm
-   `mypy poriscope` is still clean (or fix what it now surfaces — see Known gotchas).
-4. Update `CLAUDE.md`'s description of the pydoclint/mypy config to reflect the new,
-   stricter policy (it currently documents the old permissive one).
-
 ## Method (lessons carried over from the pydoclint baseline cleanup)
 
 This mirrors the process that worked well for the docstring/baseline cleanup on
@@ -218,6 +127,13 @@ This mirrors the process that worked well for the docstring/baseline cleanup on
 - Update `changelog.md` as you go, but keep entries terse — a "New Dev Tooling"-style
   consolidated summary at the end is more useful to other developers than a per-file
   violation list (see the `## Poriscope 1.7` section for the pattern used last time).
+- **Write each file's edits as a `rep(old, new)` script, and dry-run it.** Put the
+  script in a scratchpad, run it once with writes stubbed out so every anchor string is
+  proven to match exactly once, then apply. An anchor that fails the dry run almost
+  always means the docstring differs from what you assumed, which is worth discovering
+  before touching the file. This scaled cleanly across 22 files in step 2.
+- Prepare the next file's script while the current test run is in flight; the suite is
+  the long pole, not the editing.
 
 ## Known gotchas to expect (all hit during the pydoclint pass; will likely recur)
 
@@ -248,6 +164,35 @@ This mirrors the process that worked well for the docstring/baseline cleanup on
   `--auto-regenerate-baseline=False` for read-only checks during the pass, and only do
   one authoritative full-tree `--generate-baseline=True` regeneration once all edits
   for a batch are complete.
+- **pydoclint folds trailing prose into the last `:type:`.** A docstring written
+  "params first, description last" reports a spurious `DOC105` against whichever
+  parameter happens to be documented last. Put the description first. Nine docstrings
+  hit this in step 2.
+- **Recurring defect classes**, all surfaced by adding hints rather than by reading:
+  - *Callback-shape annotations.* `relay_*`-style methods are `global_signal` return
+    callbacks, so the parameter type is whatever the *called* `Meta*` method returns -
+    usually `Optional[str]` - not the `dict` the parameter name suggests. Nine were
+    wrong across three controllers.
+  - *Off-by-one nesting.* `get_plot_features` returns one flat list per event; three
+    call sites declared list-of-lists.
+  - *Channel stringification.* The selection tree hands back display strings while the
+    domain type is `int`. Convert once at the derivation site, not at each consumer, or
+    cache-staleness comparisons silently compare `str` to `int` and always differ. The
+    `exp_and_ch` dicts passed to loader plugins stay strings deliberately -
+    `tuple_builder` stringifies them unquoted either way.
+  - *Attributes first assigned `None`* need an explicit `Optional[...]` at the
+    declaration, or mypy infers `None` and rejects every later assignment.
+- **Two gates, blind in different directions.** `pre-commit run mypy --all-files` is
+  what blocks a commit and matches CI, but it runs in an isolated venv with no project
+  dependencies, so every PySide6/numpy/pandas type is `Any` to it. The project venv's
+  `mypy poriscope` sees real types but is a different version and is not the gate.
+  Neither alone is sufficient; see `DECISIONS.md`.
+- **Never pass test paths in a hand-picked order.** Pytest runs explicitly listed paths
+  in the order given, so `pytest tests/unit/views tests/unit/plugins` inverts natural
+  collection order and reliably segfaults the interpreter. Let pytest collect naturally,
+  or list paths alphabetically. Relatedly, never pipe a test run through `tail`/`grep`
+  as its only record: a faulthandler dump names the crashing test at the *top* of its
+  output, which is exactly what a tail discards.
 
 ## Exclusions (standing project policy — do not spend effort here)
 
