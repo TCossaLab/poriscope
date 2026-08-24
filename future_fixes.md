@@ -48,14 +48,6 @@ closing *that* gap is judged not worth doing, and why it does not block the flip
 
 ## Also queued - found during this pass, not part of it
 
-- **Test-suite ordering fragility.** Running `tests/unit/views` before
-  `tests/unit/plugins` segfaults the interpreter inside
-  `test_walkthrough_mixin.py::test_no_valid_widgets_logs_error`, in a `qtbot.wait(100)`
-  that only spins the event loop - so the leaked Qt object comes from earlier view
-  tests, not from that test. Pre-existing and unrelated to the walkthrough `moveEvent`
-  hook (see `DECISIONS.md`). CI never hits it because alphabetical collection runs
-  `plugins` first, but a suite that dies on a legitimate partial selection is worth
-  fixing.
 - **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,
   and `(x, y)` tuples from the all-points path. Widened to `List[Any]` with a comment;

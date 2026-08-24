@@ -41,6 +41,23 @@ app = QApplication.instance() or QApplication(sys.argv)
 # ---------------------------------------------------------------------------
 
 
+def dispose(widget) -> None:
+    """
+    Tear a widget down through the event loop.
+
+    ``QWidget.destroy()`` only releases the native window - the C++ object
+    survives until Shiboken collects the Python wrapper, at an arbitrary
+    later point in the run. A widget disposed of that way can leave posted
+    events behind that fault the interpreter the next time *any* test spins
+    the event loop, which is how this file used to segfault
+    ``test_walkthrough_mixin.py`` several hundred tests later.
+    ``deleteLater()`` plus a drained loop deletes it while Qt can still clean
+    up after it.
+    """
+    widget.deleteLater()
+    app.processEvents()
+
+
 def make_combo() -> MultiSelectComboBox:
     return MultiSelectComboBox()
 
@@ -72,7 +89,7 @@ class TestAddItems(unittest.TestCase):
         self.c = make_combo()
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_add_single_item_creates_row(self):
         self.c.addItem("0")
@@ -122,7 +139,7 @@ class TestGetSelectedItems(unittest.TestCase):
         self.c.addItems(["0", "1", "2"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_all_selected_immediately_after_add(self):
         # Items default to checked, so nothing needs to be selected first.
@@ -155,7 +172,7 @@ class TestSelectItem(unittest.TestCase):
         check_all_items(self.c, False)  # start from a known, empty state
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_select_by_name(self):
         self.c.selectItem("1")
@@ -217,7 +234,7 @@ class TestHandleItemChanged(unittest.TestCase):
         check_all_items(self.c, False)  # start from a known, empty state
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_line_edit_empty_when_nothing_selected(self):
         self.assertEqual(self.c.lineEdit().text(), "")
@@ -260,7 +277,7 @@ class TestSelectAllButton(unittest.TestCase):
         self.c = make_combo()
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_state_after_add_items_is_all_selected(self):
         """Confirmed real behavior: since addItem() defaults to checked,
@@ -336,7 +353,7 @@ class TestRefreshDisplayText(unittest.TestCase):
         check_all_items(self.c, False)
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_refresh_reflects_current_state(self):
         set_checked(self.c, 0, True)
@@ -361,7 +378,7 @@ class TestPopup(unittest.TestCase):
         self.c.addItems(["0", "1"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_container_hidden_initially(self):
         self.assertFalse(self.c.containerWidget.isVisible())

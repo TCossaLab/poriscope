@@ -91,3 +91,9 @@ explicitly listed paths in the order given, and natural alphabetical collection 
 
 **Revisit if.** The crash appears under natural collection order, which would mean it is
 a different problem.
+
+**Resolved 2026-08-24.** Bisected to `tests/unit/views/widgets/test_multiselect_filter.py`
+-> `TestClearSelectionList` -> the single `listWidget.clear()` call, and fixed by disposing
+of widgets with `deleteLater()` plus a drained event loop instead of `QWidget.destroy()`.
+See `changelog.md`. The exoneration above stands and is kept because the `moveEvent` hook
+is exactly the kind of change this crash would be blamed on again.
