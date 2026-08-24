@@ -65,6 +65,11 @@ class WalkthroughMixin:
         self._walkthrough_index = 0
         self._global_walkthrough_steps: List[WalkthroughStep] = []
         self.walkthrough_dialog: Optional[StepDialog] = None
+        # Bumped every time a step starts or the walkthrough ends. Pending
+        # retry callbacks capture the value current when they were scheduled
+        # and retire themselves once it no longer matches, so an abandoned
+        # walkthrough stops polling instead of retrying forever.
+        self._walkthrough_token = 0
 
     def launch_walkthrough(self) -> None:
         """
@@ -105,10 +110,17 @@ class WalkthroughMixin:
             self._walkthrough_index
         ]
 
+        self._walkthrough_token += 1
+        token = self._walkthrough_token
+
         def wait_for_view() -> None:
             """
             Recursively waits until the user is on the correct view before launching the step.
             """
+            if token != self._walkthrough_token:
+                # Superseded by a newer step, or the walkthrough ended while
+                # this retry was pending.
+                return
             self.logger.debug(
                 f"Current view during wait: {self.get_current_view()}, target: {target_view}"
             )
@@ -148,7 +160,7 @@ class WalkthroughMixin:
                             )
                             self._handle_walkthrough_done(len(steps), is_pseudo=True)
                         else:
-                            QTimer.singleShot(500, check_next_view)
+                            QTimer.singleShot(500, cast(QWidget, self), check_next_view)
 
                     check_next_view()
 
@@ -166,7 +178,10 @@ class WalkthroughMixin:
                 except Exception as e:
                     self.logger.error(f"Error in walkthrough step '{label}': {e}")
             else:
-                QTimer.singleShot(200, wait_for_view)
+                # Context-bound so the callback is dropped if the widget dies
+                # first; an unparented singleShot would fire into a deleted
+                # C++ object.
+                QTimer.singleShot(200, cast(QWidget, self), wait_for_view)
 
         wait_for_view()
 
@@ -212,6 +227,9 @@ class WalkthroughMixin:
                 self.walkthrough_finished.emit(self.get_current_view(), False)
 
         self._walkthrough_active = False
+        # Retire any retry still pending from the step just finished. The
+        # pseudo-advance below issues a fresh token via _run_next_walkthrough_step.
+        self._walkthrough_token += 1
 
         if is_pseudo:
             current_view = self.get_current_view()
@@ -366,3 +384,4 @@ class WalkthroughMixin:
             finally:
                 self.walkthrough_dialog = None
                 self._walkthrough_active = False
+                self._walkthrough_token += 1
