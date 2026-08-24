@@ -40,7 +40,14 @@ from PySide6.QtWidgets import (
 
 from poriscope.utils.LogDecorator import log
 
-if TYPE_CHECKING:  # avoids a circular import - main_view imports this module
+# This import cannot be made at module level. main_view.py imports both menu
+# widgets in order to build the sidebar, so importing MainView back from here
+# would close a cycle and fail at startup. TYPE_CHECKING is False at runtime,
+# so the block below never executes and costs nothing; type checkers read it
+# anyway, which is why the annotation on __init__'s main_view parameter is
+# written as the string "MainView" - the name genuinely does not exist once
+# the module is running. Do not "clean this up" into a plain import.
+if TYPE_CHECKING:
     from poriscope.views.main_view import MainView
 
 
