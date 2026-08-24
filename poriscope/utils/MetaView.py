@@ -39,6 +39,7 @@ from matplotlib.backends.backend_qt5agg import (
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -203,12 +204,12 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         layout.addWidget(display_container, stretch=4)  # Adjusted stretch factor
 
     @abstractmethod
-    def _set_control_area(self, layout: QLayout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Create and set up the control area for user interaction elements.
 
-        :param layout: The main layout to which the control area will be added.
-        :type layout: QLayout
+        :param layout: The main layout to which the control area will be added. A box layout specifically, since implementations nest a sub-layout with addLayout().
+        :type layout: QBoxLayout
         """
         pass
 

@@ -44,6 +44,7 @@ from matplotlib.backends.backend_qt5agg import (
 from matplotlib.figure import Figure
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QDialog,
     QFileDialog,
@@ -577,12 +578,12 @@ class ProteinView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout: QLayout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Set up the control area layout by inserting metadata controls.
 
         :param layout: The layout to which the controls will be added.
-        :type layout: QLayout
+        :type layout: QBoxLayout
         """
         self.proteincontrols = ProteinControls()
         self.proteincontrols.actionTriggered.connect(self.handle_parameter_change)
@@ -2854,6 +2855,11 @@ class ProteinView(MetaView, WalkthroughMixin):
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
+                # The selection tree hands back the channel as a display
+                # string; plotted_datasets keys on the real int channel id.
+                # Normalise once so that a future membership test cannot
+                # disagree with the insert below, as it did in MetadataView.
+                channel_id = int(channel) if channel is not None else None
 
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
@@ -2936,13 +2942,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     self.allowed_sizes = sizes
 
                     self.plotted_datasets.add(
-                        (
-                            loader,
-                            exp,
-                            int(channel) if channel is not None else None,
-                            sql_filter,
-                            subset_name,
-                        )
+                        (loader, exp, channel_id, sql_filter, subset_name)
                     )
 
         if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):

@@ -34,7 +34,7 @@ import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLayout, QMessageBox
+from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
@@ -94,12 +94,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout: QLayout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Set up the control area with widgets for user interaction.
 
         :param layout: Layout to which the controls will be added.
-        :type layout: QLayout
+        :type layout: QBoxLayout
         """
         self.eventAnalysisControls = EventAnalysisControls()
         self.eventAnalysisControls.actionTriggered.connect(self.handle_parameter_change)

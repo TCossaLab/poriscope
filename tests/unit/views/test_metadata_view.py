@@ -2230,7 +2230,7 @@ def test_overlay_plot_rejects_duplicate_columns(
 def test_overlay_plot_skips_already_plotted_datasets(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify already plotted datasets are skipped and function completes successfully."""
+    """Verify already plotted datasets are skipped and the no-op is reported."""
     view.figure.axes = []
     view.query = "SELECT * FROM events"
     view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
@@ -2254,7 +2254,11 @@ def test_overlay_plot_skips_already_plotted_datasets(
 
     result = view._overlay_plot(parameters)
 
-    assert result is True
+    # Every requested dataset was skipped as already plotted, so nothing
+    # reached the axes. _overlay_plot reports that as False so the caller can
+    # roll back the recorded action, rather than leaving an Undo step that
+    # would restore an identical figure.
+    assert result is False
     view.update_plot.assert_not_called()
 
 

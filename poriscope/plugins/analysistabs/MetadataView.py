@@ -42,11 +42,11 @@ from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
-    QLayout,
     QMessageBox,
 )
 from scipy import stats
@@ -178,12 +178,12 @@ class MetadataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout: QLayout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Set up the control area layout by inserting metadata controls.
 
         :param layout: The layout to which the controls will be added.
-        :type layout: QLayout
+        :type layout: QBoxLayout
         """
         self.metadatacontrols = MetadataControls()
         self.metadatacontrols.actionTriggered.connect(self.handle_parameter_change)
@@ -1218,7 +1218,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         :param parameters: A dictionary of plotting parameters selected by the user.
         :type parameters: Dict[str, Any]
-        :return: True if the overlay was successful, False otherwise.
+        :return: True if at least one dataset was plotted, False otherwise - including when every requested dataset was skipped as already plotted, so that the caller can roll the recorded action back rather than leave an undo step that would restore an identical figure.
         :rtype: bool
         """
         self._show_sql_in_display = False
@@ -1268,9 +1268,19 @@ class MetadataView(MetaView, WalkthroughMixin):
                 )
                 return False
 
+        # Tracks whether anything actually made it onto the axes. A click that
+        # skips every dataset as already-plotted must not leave a recorded
+        # action behind, or Undo would spend a step restoring the same figure.
+        plotted_any = False
+
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
+                # The selection tree hands back the channel as a display
+                # string; plotted_datasets keys on the real int channel id.
+                # Normalise once so the membership test and the insert below
+                # cannot disagree.
+                channel_id = int(channel) if channel is not None else None
 
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
@@ -1380,7 +1390,7 @@ class MetadataView(MetaView, WalkthroughMixin):
 
                         if (
                             self.plotted_datasets
-                            and (loader, exp, channel, sql_filter, subset_name)
+                            and (loader, exp, channel_id, sql_filter, subset_name)
                             in self.plotted_datasets
                         ):  # do not overlay the same thing twice
                             continue
@@ -1543,16 +1553,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                         self.allowed_logs = []
 
                     self.plotted_datasets.add(
-                        (
-                            loader,
-                            exp,
-                            int(channel) if channel is not None else None,
-                            sql_filter,
-                            subset_name,
-                        )
+                        (loader, exp, channel_id, sql_filter, subset_name)
                     )
+                    plotted_any = True
 
-        return True
+        return plotted_any
 
     @log(logger=logger)
     def _construct_all_points_histogram(

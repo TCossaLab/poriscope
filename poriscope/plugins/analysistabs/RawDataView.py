@@ -33,7 +33,7 @@ import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLayout, QMessageBox
+from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
@@ -72,12 +72,12 @@ class RawDataView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout: QLayout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Set up the control area layout by embedding the RawDataControls widget.
 
         :param layout: The layout where controls will be added.
-        :type layout: QLayout
+        :type layout: QBoxLayout
         """
         self.rawdatacontrols = RawDataControls()
         self.rawdatacontrols.actionTriggered.connect(self.handle_parameter_change)
