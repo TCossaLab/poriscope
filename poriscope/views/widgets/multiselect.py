@@ -25,8 +25,10 @@
 
 import logging
 import sys
+from typing import Any, Iterable, List, Optional
 
-from PySide6.QtCore import QEvent, QRect, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -44,7 +46,7 @@ class MultiSelectComboBox(QComboBox):
     selectionChanged = Signal(list)  # Signal to emit when the selection changes
     logger = logging.getLogger(__name__)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.listWidget = QListWidget(self)
         self.listWidget.setAlternatingRowColors(True)
@@ -112,12 +114,12 @@ class MultiSelectComboBox(QComboBox):
 
         QApplication.instance().installEventFilter(self)
 
-    def addItem(self, text, userData=None):
+    def addItem(self, text: str, userData: Any = None) -> None:
         item = QListWidgetItem(text, self.listWidget)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked)
 
-    def addItems(self, texts):
+    def addItems(self, texts: Iterable[str]) -> None:
         try:
             self.listWidget.itemChanged.disconnect(
                 self.handleItemChanged
@@ -134,7 +136,7 @@ class MultiSelectComboBox(QComboBox):
                 self.handleItemChanged
             )  # Reconnect the signal
 
-    def handleItemChanged(self, item):
+    def handleItemChanged(self, item: Optional[QListWidgetItem]) -> None:
         if item is None or item.checkState() in (Qt.Checked, Qt.Unchecked):
             selected_items = self.getSelectedItems()
             new_text = ", ".join(selected_items)
@@ -143,7 +145,7 @@ class MultiSelectComboBox(QComboBox):
                 self.selectionChanged.emit(selected_items)
             self.updateSelectAllButton()  # Update without affecting individual selections
 
-    def updateSelectAllButton(self):
+    def updateSelectAllButton(self) -> None:
         total = self.listWidget.count()
         checked = len(
             [
@@ -172,7 +174,7 @@ class MultiSelectComboBox(QComboBox):
 
         self.selectAllButton.blockSignals(False)  # Unblock signals
 
-    def selectAllToggle(self, checked):
+    def selectAllToggle(self, checked: bool) -> None:
         self.listWidget.blockSignals(True)  # Block signals on the entire list widget
 
         state = Qt.Checked if checked else Qt.Unchecked
@@ -193,7 +195,7 @@ class MultiSelectComboBox(QComboBox):
         ]
         self.logger.info(f"All checked items after toggle: {checked_items}")
 
-    def getSelectedItems(self):
+    def getSelectedItems(self) -> List[str]:
         selected_items = []
         for index in range(self.listWidget.count()):
             item = self.listWidget.item(index)
@@ -202,14 +204,14 @@ class MultiSelectComboBox(QComboBox):
         self.logger.info(f"Selected items: {selected_items}")
         return selected_items
 
-    def selectItem(self, text, select=True):
+    def selectItem(self, text: str, select: bool = True) -> None:
         for index in range(self.listWidget.count()):
             item = self.listWidget.item(index)
             if item.text() == text:
                 item.setCheckState(Qt.Checked if select else Qt.Unchecked)
                 break
 
-    def showPopup(self):
+    def showPopup(self) -> None:
         window = self.window()  # Get the main window of the application
         window_geom = window.geometry()  # Get the geometry of the main window
 
@@ -230,18 +232,18 @@ class MultiSelectComboBox(QComboBox):
         )
         self.containerWidget.show()
 
-    def hidePopup(self):
+    def hidePopup(self) -> None:
         # Hide the container widget when it should be closed
         self.containerWidget.hide()
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if self.containerWidget.isVisible():
             self.hidePopup()
         else:
             self.showPopup()
         super().mousePressEvent(event)
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.MouseButtonPress:
             # Only hide if the popup is visible and the click is outside it
             if self.containerWidget.isVisible():
@@ -250,5 +252,5 @@ class MultiSelectComboBox(QComboBox):
                     return True  # Event handled
         return super().eventFilter(obj, event)
 
-    def refreshDisplayText(self):
+    def refreshDisplayText(self) -> None:
         self.lineEdit().setText(", ".join(self.getSelectedItems()))

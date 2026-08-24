@@ -1,7 +1,8 @@
 import logging
 import re
+from typing import Any, Dict, Optional, Tuple
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QDialog, QGridLayout, QLabel, QLineEdit, QPushButton
 
@@ -12,10 +13,10 @@ logging.basicConfig(level=logging.DEBUG)
 class FloatRangeValidator(QValidator):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
 
-    def validate(self, input: str, pos: int):
+    def validate(self, input: str, pos: int) -> Tuple[QValidator.State, str, int]:
         input = input.strip()
         self.logger.debug(f"Validating input: '{input}'")
 
@@ -98,18 +99,20 @@ class FloatRangeValidator(QValidator):
 class TimeWidget(QDialog):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, params):
+    def __init__(self, params: Dict[int, Dict[str, Any]]) -> None:
         super().__init__()
         self.setWindowTitle("Event Finding Time Limits")
-        self.result = None
-        self.params = {}
-        self.entrywidgets = {}
+        self.result: Optional[Dict[int, Dict[str, Any]]] = None
+        self.params: Dict[int, Dict[str, Any]] = {}
+        self.entrywidgets: Dict[int, QLineEdit] = {}
         self.ok_button = QPushButton("OK", self)
         self.ok_button.setEnabled(False)
         cancel_button = QPushButton("Cancel", self)
         self._init_ui(params, cancel_button)
 
-    def _init_ui(self, params, cancel_button):
+    def _init_ui(
+        self, params: Dict[int, Dict[str, Any]], cancel_button: QPushButton
+    ) -> None:
         layout = QGridLayout(self)
         row = 0
         for key, val in params.items():
@@ -143,7 +146,7 @@ class TimeWidget(QDialog):
         cancel_button.clicked.connect(self._on_cancel)
         QTimer.singleShot(0, self._check_validity)
 
-    def _check_validity(self):
+    def _check_validity(self) -> None:
         all_valid = True
 
         for entry in self.entrywidgets.values():
@@ -162,18 +165,18 @@ class TimeWidget(QDialog):
 
         self.ok_button.setEnabled(all_valid)
 
-    def _on_ok(self):
+    def _on_ok(self) -> None:
         for key, entry in self.entrywidgets.items():
             ranges = self._parse_ranges(entry.text())
             self.params[key]["ranges"] = ranges
         self.result = self.params
         self.accept()
 
-    def _on_cancel(self):
+    def _on_cancel(self) -> None:
         self.result = None
         self.reject()
 
-    def get_result(self):
+    def get_result(self) -> Optional[Dict[int, Dict[str, Any]]]:
         return self.result
 
     def _parse_ranges(self, text: str) -> list[tuple[float, float | None]]:
