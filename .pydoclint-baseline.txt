@@ -9,44 +9,6 @@ poriscope/plugins/analysistabs/ProteinView.py
 poriscope/plugins/analysistabs/utils/walkthrough.py
     DOC605: Class `IntroDialog`: Attribute names match, but type hints in these attributes do not match: start_walkthrough  (Please read https://jsh9.github.io/pydoclint/checking_class_attributes.html on how to correctly document class attributes.)
 --------------------
-poriscope/plugins/eventfitters/Basic_PeakFinder.py
-    DOC106: Method `Basic_PeakFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `Basic_PeakFinder.get_empty_settings`: Argument names match, but type hints in these args do not match: globally_available_plugins, standalone
-    DOC203: Method `Basic_PeakFinder.get_empty_settings` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `Basic_PeakFinder.construct_fitted_event`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder.construct_fitted_event`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `Basic_PeakFinder.construct_fitted_event`: Argument names match, but type hints in these args do not match: channel, index
-    DOC203: Method `Basic_PeakFinder.construct_fitted_event` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC502: Method `Basic_PeakFinder.get_plot_features` has a "Raises" section in the docstring, but there are not "raise" statements in the body
-    DOC106: Method `Basic_PeakFinder._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `Basic_PeakFinder._locate_sublevel_transitions`: Argument names match, but type hints in these args do not match: data, samplerate, padding_before, padding_after, baseline_mean, baseline_std
-    DOC203: Method `Basic_PeakFinder._locate_sublevel_transitions` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC503: Method `Basic_PeakFinder._locate_sublevel_transitions` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: ['AttributeError', 'ValueError']. Raised exceptions in the body: ['ValueError'].
-    DOC106: Method `Basic_PeakFinder._populate_sublevel_metadata`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder._populate_sublevel_metadata`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `Basic_PeakFinder._populate_sublevel_metadata`: Argument names match, but type hints in these args do not match: data, samplerate, baseline_mean, baseline_std, sublevel_starts
-    DOC203: Method `Basic_PeakFinder._populate_sublevel_metadata` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `Basic_PeakFinder._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `Basic_PeakFinder._populate_event_metadata`: Argument names match, but type hints in these args do not match: data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-    DOC203: Method `Basic_PeakFinder._populate_event_metadata` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC502: Method `Basic_PeakFinder._validate_settings` has a "Raises" section in the docstring, but there are not "raise" statements in the body
-    DOC203: Method `Basic_PeakFinder._define_event_metadata_types` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `Basic_PeakFinder._define_sublevel_metadata_types` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `Basic_PeakFinder._define_event_metadata_units` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `Basic_PeakFinder._define_sublevel_metadata_units` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC102: Method `Basic_PeakFinder.find_mode_blockage_level`: Docstring contains more arguments than in function signature.
-    DOC106: Method `Basic_PeakFinder.find_mode_blockage_level`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder.find_mode_blockage_level`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC103: Method `Basic_PeakFinder.find_mode_blockage_level`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the docstring but not in the function signature: [is_carrier: bool].
-    DOC203: Method `Basic_PeakFinder.find_mode_blockage_level` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `Basic_PeakFinder.enumerate_peaks`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `Basic_PeakFinder.enumerate_peaks`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `Basic_PeakFinder.enumerate_peaks`: Argument names match, but type hints in these args do not match: sublevel_starts, num_states, sublevel_types
-    DOC203: Method `Basic_PeakFinder.enumerate_peaks` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
---------------------
 poriscope/plugins/eventfitters/NanoTrees.py
     DOC106: Method `NanoTrees.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
     DOC107: Method `NanoTrees.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
@@ -76,41 +38,4 @@ poriscope/plugins/eventfitters/NanoTrees.py
     DOC203: Method `NanoTrees._define_event_metadata_units` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
     DOC203: Method `NanoTrees._define_sublevel_metadata_units` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
     DOC502: Method `NanoTrees._validate_settings` has a "Raises" section in the docstring, but there are not "raise" statements in the body
---------------------
-poriscope/plugins/eventfitters/PeakFinder.py
-    DOC106: Method `PeakFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder.get_empty_settings`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder.get_empty_settings`: Argument names match, but type hints in these args do not match: globally_available_plugins, standalone
-    DOC203: Method `PeakFinder.get_empty_settings` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `PeakFinder.construct_fitted_event`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder.construct_fitted_event`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder.construct_fitted_event`: Argument names match, but type hints in these args do not match: channel, index
-    DOC203: Method `PeakFinder.construct_fitted_event` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC502: Method `PeakFinder.get_plot_features` has a "Raises" section in the docstring, but there are not "raise" statements in the body
-    DOC106: Method `PeakFinder._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder._locate_sublevel_transitions`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder._locate_sublevel_transitions`: Argument names match, but type hints in these args do not match: data, samplerate, padding_before, padding_after, baseline_mean, baseline_std
-    DOC203: Method `PeakFinder._locate_sublevel_transitions` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC503: Method `PeakFinder._locate_sublevel_transitions` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: ['AttributeError', 'ValueError']. Raised exceptions in the body: ['ValueError'].
-    DOC106: Method `PeakFinder._populate_sublevel_metadata`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder._populate_sublevel_metadata`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder._populate_sublevel_metadata`: Argument names match, but type hints in these args do not match: data, samplerate, baseline_mean, baseline_std, sublevel_starts
-    DOC203: Method `PeakFinder._populate_sublevel_metadata` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `PeakFinder._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder._populate_event_metadata`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder._populate_event_metadata`: Argument names match, but type hints in these args do not match: data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-    DOC203: Method `PeakFinder._populate_event_metadata` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC502: Method `PeakFinder._validate_settings` has a "Raises" section in the docstring, but there are not "raise" statements in the body
-    DOC203: Method `PeakFinder._define_event_metadata_types` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `PeakFinder._define_sublevel_metadata_types` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `PeakFinder._define_event_metadata_units` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC203: Method `PeakFinder._define_sublevel_metadata_units` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `PeakFinder.find_mode_blockage_level`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder.find_mode_blockage_level`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder.find_mode_blockage_level`: Argument names match, but type hints in these args do not match: data, max_unfolded, baseline_mean, baseline_std, is_carrier
-    DOC203: Method `PeakFinder.find_mode_blockage_level` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
-    DOC106: Method `PeakFinder.enumerate_peaks`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `PeakFinder.enumerate_peaks`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `PeakFinder.enumerate_peaks`: Argument names match, but type hints in these args do not match: sublevel_starts, num_states, sublevel_types
-    DOC203: Method `PeakFinder.enumerate_peaks` return type(s) in docstring not consistent with the return annotation. Return annotation has 0 type(s); docstring return section has 1 type(s).
 --------------------

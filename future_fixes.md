@@ -126,6 +126,36 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
 
+### Defects in the excluded fitter plugins - flagged, never to be fixed here
+
+Policy as of 2026-08-25: `NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` are
+**in scope for docstring, signature and type-hint work but never for logic changes**,
+even when annotating surfaces a real bug. The logic in these files belongs to another
+developer. Everything below was found while annotating and left in place, marked with a
+narrow `# type: ignore` and a `NOTE:` comment at the site.
+
+- **`find_mode_blockage_level` guards two of its three Optional parameters.** In both
+  `PeakFinder.py` and `Basic_PeakFinder.py` the body explicitly handles `data is None`
+  and `baseline_std is None`, then computes `abs(data_min - baseline_mean)` with no
+  guard at all on `baseline_mean`, which is equally `Optional[float]` under the
+  `MetaEventFitter` contract. A caller with no baseline estimate gets a `TypeError`.
+  The asymmetry looks like a simple oversight rather than a decision.
+- **`PeakFinder.filter_peaks` multiplies by a possibly-`None` `baseline_std`** at three
+  adjacent lines (`type0_thresh`/`type1_thresh`/`type2_thresh`). Same root cause.
+- **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata.**
+  It assigns `baseline_mean` and `baseline_std` straight into `event_metadata`, whose
+  declared value type is `Union[int, float, str, bool]`. A `None` reaching the database
+  writer downstream is not something that contract allows for.
+- **`PeakFinder.filter_peaks` treats a sample count as microseconds.** Its only caller
+  passes `len(data[padding_before:-padding_after])` as `event_length`, and the body then
+  computes `event_length * samplerate * 1e-6` and logs it as
+  `f"event_length={event_length:.1f} us"`. Either the argument or the label is wrong.
+- **Both PeakFinders' `sublevel_starts` really holds dicts, not indices.** Their
+  `_locate_sublevel_transitions` returns a list of dicts keyed `"type"` and friends. This
+  is now consistent rather than broken - the `MetaEventFitter` contract was widened to
+  `List[Any]` to match what it has always actually produced - but it is worth knowing
+  that the parameter name still says "starts" while the payload is per-sublevel records.
+
 ### Step 4 - DONE 2026-08-25
 
 Closed across `929cb47` (utils), `b556344` (datareaders) and `75702cf` (the tail).

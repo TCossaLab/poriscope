@@ -912,7 +912,7 @@ class MetaEventFitter(BaseDataPlugin):
         samplerate: float,
         baseline_mean: Optional[float],
         baseline_std: Optional[float],
-        sublevel_starts: List[int],
+        sublevel_starts: List[Any],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
         **Purpose:** Extract metadata for each sublevel within the event
@@ -928,7 +928,7 @@ class MetaEventFitter(BaseDataPlugin):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
-        :type sublevel_starts: List[int]
+        :type sublevel_starts: List[Any]
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
         :rtype: Dict[str, npt.NDArray[Numeric]]

@@ -256,7 +256,7 @@ class NoFitter(MetaEventFitter):
         samplerate: float,
         baseline_mean: Optional[float],
         baseline_std: Optional[float],
-        sublevel_starts: List[int],
+        sublevel_starts: List[Any],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
         Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
@@ -270,7 +270,7 @@ class NoFitter(MetaEventFitter):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
-        :type sublevel_starts: List[int]
+        :type sublevel_starts: List[Any]
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
         :rtype: Dict[str, npt.NDArray[Numeric]]
