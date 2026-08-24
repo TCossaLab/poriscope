@@ -96,7 +96,7 @@ class ChimeraReaderVC100(MetaReader):
         Check that the file(s) being opened are of the correct type, and raise IOError if not
 
         :param filename: the path to one of the files to be opened
-        :type filename: os.Pathlike
+        :type filename: os.PathLike
         """
         pass
 
@@ -199,7 +199,7 @@ class ChimeraReaderVC100(MetaReader):
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
         :param file_name: File path.
-        :type file_name: os.PathLike
+        :type file_name: str
 
         :return: Base name for matching other files.
         :rtype: str
@@ -228,7 +228,7 @@ class ChimeraReaderVC100(MetaReader):
         if raw_data is true, return also scale and offset
 
         :param data: Data to convert.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
         :param raw_data: Decide whether to rescale data or return raw adc codes
@@ -355,7 +355,7 @@ class ChimeraReaderVC100(MetaReader):
         These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter

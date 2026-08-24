@@ -103,7 +103,7 @@ class LegacyElementsReader(TCossaLabABFReader):
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
         :param file_name: File path.
-        :type file_name: os.PathLike
+        :type file_name: str
 
         :return: Base name for matching other files.
         :rtype: str
