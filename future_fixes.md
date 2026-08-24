@@ -12,11 +12,11 @@ than here.
 | 1 | `poriscope/utils/` - the 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files | Done 2026-08-23 |
 | 2 | `analysistabs/` - 5 tab triads, `*controls.py`, `walkthrough*` (22 files) | Done 2026-08-24 |
 | 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | Done 2026-08-24 |
-| 3b | Fix pass over the defects step 3 surfaced (list below) | **Next** |
-| 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Queued |
+| 3b | Fix pass over the defects step 3 surfaced | Done 2026-08-24 |
+| 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | **Next** |
 | 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Queued |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
-| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on 3-6 |
+| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on 4-6, and see the `@log` note |
 
 The pydoclint half of what used to be step 7 is **done** (2026-08-24).
 `arg-type-hints-in-signature` is now `true` and the baseline was regenerated fresh:
@@ -108,6 +108,37 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
+
+### Step 4 - what it actually is
+
+The baseline is **184 entries**, down from 709 when the pass started. It breaks down as:
+
+| Code | Count | Meaning |
+| --- | --- | --- |
+| `DOC105` | ~107 | A signature hint and the docstring's `:type:` disagree |
+| `DOC203` | ~30 | Return type in the docstring does not match `:rtype:`/signature |
+| `DOC5xx` | ~13 | `:raises:` sections that do not match what the body raises |
+| others | small | `DOC102`, `DOC103`, `DOC201`, `DOC605` |
+
+Step 4 is the `DOC105` bulk. These are *not* auto-fixable: each one needs a judgement
+about which side is right - the hint or the prose - and the hint is usually right, since
+it was derived from call sites during steps 1-3 while the docstring text may predate it.
+
+Two traps, both already paid for once:
+
+- **pydoclint folds trailing prose into the last `:type:`.** A docstring written "params
+  first, description last" reports a spurious `DOC105` against whichever parameter is
+  documented last. Put the description first. Nine docstrings hit this in step 2.
+- Regenerate the baseline only once per batch, from a clean tree, with
+  `--auto-regenerate-baseline=False` for the read-only checks in between.
+
+### Prerequisite for step 7 - the `@log` decorator erases signatures
+
+`LogDecorator.log` returns a bare `Callable`, so every one of the **935 methods across
+71 files** it decorates is `Any` to its callers. Confirmed with `reveal_type`; see
+`DECISIONS.md`. Bodies are checked, call sites are not, and flipping
+`disallow_untyped_defs` will not change that. Give `log` a `TypeVar` bound to `Callable`
+(or a `ParamSpec`) before step 7, or the flip will appear to verify far more than it does.
 
 ### Step 6 - why it blocks the flip
 

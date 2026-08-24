@@ -38,11 +38,13 @@ yourself before committing if you want formatting applied; the pre-commit hook i
 runs ruff (strict, no fix), mypy, and pydoclint.
 
 `pydoclint` checks that a docstring's documented parameters, return type, and raised
-exceptions actually match the real function signature/body — it does NOT require every
-function to have a docstring, or every signature to carry type hints (see
-`[tool.pydoclint]` in `pyproject.toml`; this repo deliberately runs with
-`arg-type-hints-in-signature = false` since `mypy.ini` already tolerates unannotated
-plugin methods). Pre-existing violations at the time it was introduced are grandfathered
+exceptions actually match the real function signature/body. It does NOT require every
+function to have a docstring — functions with no docstring are skipped entirely — but it
+DOES require that a documented function's signature carry type hints, and that those
+hints agree with the docstring's `:type:`/`:rtype:`
+(`arg-type-hints-in-signature = true` in `pyproject.toml`). Every function under
+`poriscope/` is now fully annotated apart from `NanoTrees.py`/`PeakFinder.py`/
+`Basic_PeakFinder.py`, so new code is expected to be too. Pre-existing violations at the time it was introduced are grandfathered
 into `.pydoclint-baseline.txt`; only *new* mismatches introduced going forward fail the
 hook. If you fix an existing baselined violation, regenerate the baseline so it doesn't
 silently keep passing for a docstring that no longer exists in that exact form:
@@ -160,6 +162,10 @@ of every session, so it should stay a short list of standing rules.
 ## General Instructions
 
 - Do not nest functions inside other functions
+- Imports go at module level. Do not add function-local ("lazy") imports, and hoist
+  any you come across. The only exception is a real circular import, which goes in an
+  `if TYPE_CHECKING:` block with a comment explaining the cycle (see
+  `views/widgets/icon_menu_widget.py` for the pattern).
 - When the user reports a bug to you and asks you to fix it, double check the assumptions 
   before implementing the fix. Do not blindly accept the assertions of the user as to the
   cause of potential issues. Be thorough in your analysis, ensuring that you fully trace 

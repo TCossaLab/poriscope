@@ -9,6 +9,53 @@ is only for the reasoning that would otherwise be lost.
 
 ---
 
+## 2026-08-24 - Leave two of the three unguarded `Optional` Qt accessors alone
+
+**Context.** The type-annotation pass flagged three families of Qt accessor that return
+`Optional` and are used without a `None` check: `QApplication.instance()`,
+`QComboBox.lineEdit()`, and `QTreeWidgetItem.child(i)`/`topLevelItem(i)`.
+
+**Decision.** Only `lineEdit()` was changed. It is now bound once in `__init__`,
+immediately after the `setEditable(True)` that makes it non-`None`, because that
+guarantee previously sat hundreds of lines away from the uses depending on it. The other
+two need no action and should not be "fixed" later:
+
+- `QApplication.instance()` is called inside a `QWidget.__init__`. A `QWidget` cannot be
+  constructed before a `QApplication` exists, so `None` is unreachable there.
+- `item.child(j)` / `topLevelItem(i)` are always called inside
+  `for j in range(...childCount())`, so the index is always valid. This is mypy being
+  unable to connect `range(n)` with "valid index", not a defect.
+
+**Revisit if.** Either call moves somewhere that is not a widget constructor, or an
+index stops being derived from the matching count.
+
+---
+
+## 2026-08-24 - `@log` erases decorated signatures, which caps what step 7 can buy
+
+**Context.** `LogDecorator.log` is declared `-> Callable`, i.e. `Callable[..., Any]`.
+Applying it therefore replaces the decorated method's type with `Any` from the caller's
+point of view. Verified with `reveal_type` against the project mypy: for a method
+`decorated(self, x: int) -> str`, `reveal_type(p.decorated)` is `Any` and
+`reveal_type(p.decorated(1))` is `Any`, while the undecorated twin reveals
+`def (x: int) -> str` and `str`. A deliberately wrong call - `p.decorated("not an int")`
+- raises no error, where the same call on the undecorated twin does.
+
+**Why it matters.** `@log(logger=logger)` is applied to **935 methods across 71 files**.
+So the type-annotation pass has made every *body* checkable, but call sites into any
+decorated method are still unchecked. Turning on `disallow_untyped_defs` in step 7 will
+not change that.
+
+**Decision.** Not fixed as part of the annotation pass, which was scoped to hints and
+docstrings. Recorded as a prerequisite for getting full value from step 7. The fix is
+standard and small: give `log` a `TypeVar` bound to `Callable` (or `ParamSpec`) so it
+returns the same type it was handed, instead of a bare `Callable`.
+
+**Revisit if.** Step 7 is picked up - this should be done first, or the flip will look
+like it verified far more than it did.
+
+---
+
 ## 2026-08-24 - Leave the PySide6 short-form enum accesses alone
 
 **Context.** A stub-aware `mypy poriscope` reports 191 `attr-defined` errors of the form
