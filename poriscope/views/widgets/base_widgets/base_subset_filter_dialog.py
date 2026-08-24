@@ -25,6 +25,7 @@
 
 
 import logging
+from typing import Collection, Optional
 
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 
@@ -44,20 +46,25 @@ class BaseSubsetFilterDialog(QDialog):
     logger = logging.getLogger(__name__)
 
     def __init__(
-        self, parent, title, existing_names, default_name="", default_filter=""
-    ):
+        self,
+        parent: Optional[QWidget],
+        title: str,
+        existing_names: Collection[str],
+        default_name: str = "",
+        default_filter: str = "",
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.existing_names = existing_names
-        self.name = None
-        self.filter_text = None
-        self.is_raw = False
+        self.name: Optional[str] = None
+        self.filter_text: Optional[str] = None
+        self.is_raw: bool = False
         self.default_name = default_name
         self.default_filter = default_filter
 
         self._init_ui()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         self.layout = QVBoxLayout(self)
 
         self.name_input = QLineEdit(self.default_name)
@@ -102,7 +109,7 @@ class BaseSubsetFilterDialog(QDialog):
         self.button_box.accepted.connect(self.try_accept)
         self.button_box.rejected.connect(self.reject)
 
-    def try_accept(self):
+    def try_accept(self) -> None:
         name = self.name_input.text().strip()
         if not name:
             QMessageBox.warning(

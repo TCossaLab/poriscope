@@ -3576,8 +3576,13 @@ class ProteinView(MetaView, WalkthroughMixin):
                 )
 
         if dialog.exec() == QDialog.Accepted:
-            name = dialog.name
-            filter_text = dialog.filter_text
+            # These are Optional[str] until the dialog's try_accept/accept
+            # fills them, and exec() cannot return Accepted without that
+            # having run - but the guarantee travels through a signal
+            # connection mypy cannot follow, so it is asserted here once
+            # rather than guarded at each of the six downstream uses.
+            name: str = dialog.name  # type: ignore[assignment]
+            filter_text: str = dialog.filter_text  # type: ignore[assignment]
             loader = parameters["db_loader"]
 
             if not loader:
@@ -3645,8 +3650,13 @@ class ProteinView(MetaView, WalkthroughMixin):
         dialog = EditSubsetFilterDialog(self, name, self.subset_filters)
 
         if dialog.exec():
-            new_name = dialog.new_name
-            new_filter = dialog.new_filter
+            # These are Optional[str] until the dialog's try_accept/accept
+            # fills them, and exec() cannot return Accepted without that
+            # having run - but the guarantee travels through a signal
+            # connection mypy cannot follow, so it is asserted here once
+            # rather than guarded at each of the six downstream uses.
+            new_name: str = dialog.new_name  # type: ignore[assignment]
+            new_filter: str = dialog.new_filter  # type: ignore[assignment]
 
             self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
 

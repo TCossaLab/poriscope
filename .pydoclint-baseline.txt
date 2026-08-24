@@ -267,8 +267,3 @@ poriscope/utils/MetaWriter.py
     DOC105: Method `MetaWriter._initialize_database`: Argument names match, but type hints in these args do not match: channel
     DOC105: Method `MetaWriter._rescale_data_to_adc`: Argument names match, but type hints in these args do not match: data, scale, offset, dtype
 --------------------
-poriscope/views/widgets/dict_dialog_widget.py
-    DOC106: Method `DictDialog.__init__`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
-    DOC107: Method `DictDialog.__init__`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
-    DOC105: Method `DictDialog.__init__`: Argument names match, but type hints in these args do not match: params, name, title, data_server, editable, show_delete, editable_source_plugins, source_plugins, parent
---------------------

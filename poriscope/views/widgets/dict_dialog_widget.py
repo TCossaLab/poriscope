@@ -36,7 +36,7 @@ import logging
 import os
 import re
 import sys  ### FIX: Imported sys to check the operating system
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple, Union
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QWidget,
 )
 
 from poriscope.utils.LogDecorator import log
@@ -59,16 +60,16 @@ class DictDialog(QDialog):
 
     def __init__(
         self,
-        params,
-        name,
-        title="",
-        data_server="",
-        editable=True,
-        show_delete=False,
-        editable_source_plugins=True,
-        source_plugins=[],
-        parent=None,
-    ):
+        params: dict,
+        name: str,
+        title: str = "",
+        data_server: str = "",
+        editable: bool = True,
+        show_delete: bool = False,
+        editable_source_plugins: bool = True,
+        source_plugins: list = [],
+        parent: Optional[QWidget] = None,
+    ) -> None:
         """
         :param params: Plugin parameters to edit.
         :type params: dict
@@ -96,17 +97,19 @@ class DictDialog(QDialog):
         self.editable = editable
         self.params = params
         self.show_delete = show_delete
-        self.result = None
+        # three shapes: (params, name) on OK, (None, None) on cancel,
+        # and the sentinel string "delete" on delete
+        self.result: Union[Tuple[Optional[dict], Optional[str]], str, None] = None
         self.source_plugins = source_plugins
         self.editable_source_plugins = editable_source_plugins
         self.init_ui(params, name)
 
     @log(logger=logger)
-    def init_ui(self, params, name):
+    def init_ui(self, params: dict, name: str) -> None:
         layout = QGridLayout(self)
-        labels = {}
-        self.entrywidgets = {}
-        self.unitwidgets = {}
+        labels: Dict[str, QLabel] = {}
+        self.entrywidgets: Dict[str, Any] = {}
+        self.unitwidgets: Dict[str, Any] = {}
         self.ok_button = QPushButton("OK", self)
         self.ok_button.setEnabled(False)  # Initially disable the OK button
         cancel_button = QPushButton("Cancel", self)
@@ -242,7 +245,7 @@ class DictDialog(QDialog):
         self,
         starting_file_path: Optional[str] = None,
         file_types: str = "All Files (*)",
-    ):
+    ) -> None:
         """
         Get the name of the file to be opened as the basis for a raw data set.
 
@@ -277,7 +280,7 @@ class DictDialog(QDialog):
         self,
         starting_file_path: Optional[str] = None,
         file_types: str = "All Files (*)",
-    ):
+    ) -> None:
         """
         Get the name of the file to save to.
 
@@ -314,7 +317,7 @@ class DictDialog(QDialog):
             self.check_validity()
 
     @log(logger=logger)
-    def get_folder(self, starting_path: Optional[str] = None):
+    def get_folder(self, starting_path: Optional[str] = None) -> None:
         """
         Get the name of the output folder to save to
 
@@ -338,7 +341,7 @@ class DictDialog(QDialog):
             self.unitwidgets["Folder"].setChecked(True)
             self.check_validity()
 
-    def check_validity(self):
+    def check_validity(self) -> None:
         all_valid = True
         for key, widget in self.entrywidgets.items():
             if isinstance(widget, NumericLineEdit):
@@ -359,7 +362,7 @@ class DictDialog(QDialog):
         self.ok_button.setEnabled(all_valid)
 
     @log(logger=logger)
-    def on_ok(self):
+    def on_ok(self) -> None:
         for key, val in self.params.items():
             if key not in ["Input File", "Output File", "Folder"]:
                 try:
@@ -380,16 +383,16 @@ class DictDialog(QDialog):
         self.accept()
 
     @log(logger=logger)
-    def on_cancel(self):
+    def on_cancel(self) -> None:
         self.result = (None, None)
         self.reject()
 
     @log(logger=logger)
-    def on_delete(self):
+    def on_delete(self) -> None:
         """Handle Delete button click."""
         self.result = "delete"  # Mark delete request
         self.reject()  # Close dialog
 
     @log(logger=logger)
-    def get_result(self):
+    def get_result(self) -> Union[Tuple[Optional[dict], Optional[str]], str, None]:
         return self.result

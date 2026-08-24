@@ -26,8 +26,17 @@
 
 # walkthrough_steps.py
 
+from typing import Any, Callable, Dict, List
 
-def get_global_walkthrough_steps(pages, get_analysis_highlight):
+from PySide6.QtWidgets import QWidget
+
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughStep
+
+
+def get_global_walkthrough_steps(
+    pages: Dict[str, Dict[str, Any]],
+    get_analysis_highlight: Callable[[], QWidget],
+) -> List[WalkthroughStep]:
     return [
         (
             "New Analysis Tab",
