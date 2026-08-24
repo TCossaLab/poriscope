@@ -25,6 +25,7 @@
 
 import logging
 import os
+from typing import TYPE_CHECKING, Callable, Optional
 
 from PySide6.QtCore import QRect, QSize, Signal
 from PySide6.QtGui import QIcon
@@ -38,6 +39,9 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.utils.LogDecorator import log
+
+if TYPE_CHECKING:  # avoids a circular import - main_view imports this module
+    from poriscope.views.main_view import MainView
 
 
 class IconMenuWidget(QWidget):
@@ -62,7 +66,7 @@ class IconMenuWidget(QWidget):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, main_view, parent=None):
+    def __init__(self, main_view: "MainView", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.icon_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "configs", "icons"
@@ -87,7 +91,7 @@ class IconMenuWidget(QWidget):
         main_view.help_window_closed.connect(self.setHelpUnchecked)
 
     @log(logger=logger)
-    def setupUi(self):
+    def setupUi(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(9, 30, 9, 30)
         layout.setSpacing(10)
@@ -171,7 +175,7 @@ class IconMenuWidget(QWidget):
         layout.addItem(QSpacerItem(20, 5, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     @log(logger=logger)
-    def createMenuButton(self, layout):
+    def createMenuButton(self, layout: QVBoxLayout) -> QPushButton:
         button = QPushButton(self)
         button.setObjectName("menu_iconButton")
         icon = QIcon()
@@ -212,8 +216,15 @@ class IconMenuWidget(QWidget):
 
     @log(logger=logger)
     def createIconButton(
-        self, layout, objectName, iconPathOff, iconPathOn, iconSize, handler, tooltip
-    ):
+        self,
+        layout: QVBoxLayout,
+        objectName: str,
+        iconPathOff: str,
+        iconPathOn: str,
+        iconSize: int,
+        handler: Callable[[], None],
+        tooltip: str,
+    ) -> QPushButton:
         button = QPushButton(self)
         button.setObjectName(f"{objectName}_iconButton")
         # Ensure paths are properly combined into strings
@@ -261,7 +272,7 @@ class IconMenuWidget(QWidget):
         return button
 
     @log(logger=logger)
-    def createLogoButton(self, layout):
+    def createLogoButton(self, layout: QVBoxLayout) -> QPushButton:
         button = QPushButton(self)
         button.setObjectName("icon_menu_pushButton")
         icon = QIcon()
@@ -285,7 +296,7 @@ class IconMenuWidget(QWidget):
         return button
 
     @log(logger=logger)
-    def connectSignals(self):
+    def connectSignals(self) -> None:
         self.raw_data_icon_button.clicked.connect(self.switchToRawData.emit)
         self.event_analysis_icon_button.clicked.connect(self.switchToEventAnalysis.emit)
         self.metadata_icon_button.clicked.connect(self.switchToMetadata.emit)
@@ -295,7 +306,7 @@ class IconMenuWidget(QWidget):
         self.exit_icon_button.clicked.connect(self.switchToExit.emit)
 
     @log(logger=logger)
-    def emitSignal(self, buttonName, checked):
+    def emitSignal(self, buttonName: str, checked: bool) -> None:
         signals = {
             "menu": self.menuToggled,
             "data": self.rawDataToggled,
@@ -312,100 +323,100 @@ class IconMenuWidget(QWidget):
             self.logger.warning(f"emitSignal: unrecognized buttonName {buttonName!r}")
 
     @log(logger=logger)
-    def handleMenu(self):
+    def handleMenu(self) -> None:
         self.logger.info("Menu clicked")
 
     @log(logger=logger)
-    def handleRawData(self):
+    def handleRawData(self) -> None:
         self.logger.info("Raw Data clicked")
 
     @log(logger=logger)
-    def handleEventAnalysis(self):
+    def handleEventAnalysis(self) -> None:
         self.logger.info("Event Analysis clicked")
 
     @log(logger=logger)
-    def handleMetadata(self):
+    def handleMetadata(self) -> None:
         self.logger.info("Metadata clicked")
 
     @log(logger=logger)
-    def handlePlugins(self):
+    def handlePlugins(self) -> None:
         self.logger.info("Plugins clicked")
 
     @log(logger=logger)
-    def handleHelp(self):
+    def handleHelp(self) -> None:
         self.switchToHelp.emit()
 
     @log(logger=logger)
-    def handleSettings(self):
+    def handleSettings(self) -> None:
         self.switchToSettings.emit()
 
     @log(logger=logger)
-    def handleUser(self):
+    def handleUser(self) -> None:
         self.switchUser.emit()
         self.logger.info("User clicked")
 
     @log(logger=logger)
-    def handleLanguage(self):
+    def handleLanguage(self) -> None:
         self.logger.info("Language settings clicked")
 
     @log(logger=logger)
-    def handleTheme(self):
+    def handleTheme(self) -> None:
         self.logger.info("Theme settings clicked")
 
     @log(logger=logger)
-    def handleExit(self):
+    def handleExit(self) -> None:
         self.logger.info("Exit clicked")
         self.switchToExit.emit()
         QApplication.quit()
 
     # Slot methods to update button states
     @log(logger=logger)
-    def setMenuChecked(self, checked):
+    def setMenuChecked(self, checked: bool) -> None:
         self.menu_button.setChecked(checked)
 
     @log(logger=logger)
-    def setRawDataChecked(self, checked):
+    def setRawDataChecked(self, checked: bool) -> None:
         self.raw_data_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setEventAnalysisChecked(self, checked):
+    def setEventAnalysisChecked(self, checked: bool) -> None:
         self.event_analysis_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setMetadataChecked(self, checked):
+    def setMetadataChecked(self, checked: bool) -> None:
         self.metadata_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setPluginsChecked(self, checked):
+    def setPluginsChecked(self, checked: bool) -> None:
         self.add_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setHelpChecked(self, checked):
+    def setHelpChecked(self, checked: bool) -> None:
         self.help_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setSettingsChecked(self, checked):
+    def setSettingsChecked(self, checked: bool) -> None:
         self.settings_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setLanguageChecked(self, checked):
+    def setLanguageChecked(self, checked: bool) -> None:
         self.language_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setThemeChecked(self, checked):
+    def setThemeChecked(self, checked: bool) -> None:
         self.theme_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setExitChecked(self, checked):
+    def setExitChecked(self, checked: bool) -> None:
         self.exit_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setHelpUnchecked(self):
+    def setHelpUnchecked(self) -> None:
         self.help_icon_button.setChecked(False)
         self.help_icon_button.repaint()
         self.help_icon_button.setDown(False)
 
     @log(logger=logger)
-    def uncheckMenuButton(self):
+    def uncheckMenuButton(self) -> None:
         self.menu_button.setChecked(False)
         self.logger.info("unchecked")

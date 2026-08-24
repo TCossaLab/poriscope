@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+from typing import List, Optional, Tuple
 
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from poriscope.utils.LogDecorator import log
@@ -42,16 +44,19 @@ class DropdownDialog(QDialog):
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
-    def __init__(self, items, parent=None):
+    def __init__(self, items: List[str], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.selected_item = None
-        self.save_choice = False
-        self.result = (self.selected_item, self.save_choice)
+        self.selected_item: Optional[str] = None
+        self.save_choice: bool = False
+        self.result: Tuple[Optional[str], bool] = (
+            self.selected_item,
+            self.save_choice,
+        )
         self.setWindowTitle("Select Reader Plugin")
         self.init_ui(items)
 
     @log(logger=logger)
-    def init_ui(self, items):
+    def init_ui(self, items: List[str]) -> None:
         layout = QVBoxLayout(self)
 
         # Instruction label
@@ -81,17 +86,17 @@ class DropdownDialog(QDialog):
         cancel_button.clicked.connect(self.on_cancel)
 
     @log(logger=logger)
-    def on_ok(self):
+    def on_ok(self) -> None:
         self.selected_item = self.combo_box.currentText()
         self.save_choice = self.checkbox.isChecked()
         self.result = (self.selected_item, self.save_choice)
         self.accept()
 
     @log(logger=logger)
-    def on_cancel(self):
+    def on_cancel(self) -> None:
         self.result = (None, False)
         self.reject()
 
     @log(logger=logger)
-    def get_result(self):
+    def get_result(self) -> Tuple[Optional[str], bool]:
         return self.result
