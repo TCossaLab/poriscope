@@ -11,7 +11,8 @@ than here.
 | --- | --- | --- |
 | 1 | `poriscope/utils/` - the 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files | Done 2026-08-23 |
 | 2 | `analysistabs/` - 5 tab triads, `*controls.py`, `walkthrough*` (22 files) | Done 2026-08-24 |
-| 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | **Next** |
+| 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | Done 2026-08-24 |
+| 3b | Fix pass over the defects step 3 surfaced (list below) | **Next** |
 | 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Queued |
 | 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Queued |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
@@ -70,6 +71,114 @@ Batch 1 exists because steps 1 and 2 left small gaps in areas they reported comp
 `EventWorker`, and a `get_empty_settings: standalone` / `_finalize_initialization: ->
 None` pair repeated across four data plugins. Worth clearing first so the completed-step
 claims are actually true.
+
+## Step 3b - defects surfaced by step 3, to fix in a follow-up pass
+
+Step 3 was annotations and docstrings only; everything below needs a logic, signature or
+API change and was deliberately left alone. Nothing here is a regression - these are
+pre-existing defects that became visible once mypy could see the bodies concerned.
+
+### A. An attribute shadows an inherited Qt method (5 sites)
+
+Each of these assigns an instance attribute over the name of a method the Qt base class
+already defines, so the inherited method becomes unreachable on that instance.
+
+| Class | Attribute | Shadows |
+| --- | --- | --- |
+| `NumericLineEdit` (`validators/numeric_validation.py`) | `self.validator` | `QLineEdit.validator()` |
+| `DropdownDialog` (`dropdown_selection_widget.py`) | `self.result` | `QDialog.result()` |
+| `DictDialog` (`dict_dialog_widget.py`) | `self.result` | `QDialog.result()` |
+| `TimeWidget` (`time_widget.py`) | `self.result` | `QDialog.result()` |
+| `BaseSubsetFilterDialog` (`base_widgets/base_subset_filter_dialog.py`) | `self.layout` | `QWidget.layout()` |
+
+Renaming is the fix; it is an API change for anything that reads these attributes.
+
+### B. Methods that reference attributes which are never created
+
+Both would raise `AttributeError` on first call. Neither has a caller anywhere in
+`poriscope/`, which is the only reason they have never been noticed.
+
+- `setLanguageChecked` / `setThemeChecked` in **both** `icon_menu_widget.py` and
+  `text_menu_widget.py` set `language_*_button` / `theme_*_button`. Those buttons are
+  never constructed. `MainView.sync_sidebar_highlight` only ever selects one of four
+  other setters. The matching `handleLanguage` / `handleTheme` / `handleUser` handlers
+  are unwired for the same reason.
+- `ClusteringSettingsDialog.update_unit_label` and `reset_top_inputs` reference
+  `unit_label`, `column_combo`, `log_cb`, `norm_cb` and `plot_cb`, none of which is
+  assigned anywhere in the class.
+
+### C. Qt accessors that return `Optional`, used without a guard
+
+- `QApplication.instance()` in `BaseLineEdit.__init__` and `multiselect.py`.
+- `self.lineEdit()` in `multiselect.py` and `multiselect_filter.py` (several sites each).
+- `item.child(i)` / `topLevelItem(i)` in `SelectionTree.py`.
+
+### D. Override signature mismatches
+
+- `MultiSelectComboBox.addItem` and `MultiSelectFilterComboBox.addItem` do not implement
+  `QComboBox.addItem`'s icon overload.
+- `MainView.show_walkthrough_intro()` takes no argument where
+  `WalkthroughMixin.show_walkthrough_intro(current_view: str)` takes one. Latent: every
+  `MainView` call site passes nothing, but a mixin-level caller would `TypeError`.
+
+### E. Mutable default arguments
+
+- `DictDialog.__init__(source_plugins=[])`
+- `MainModel.replace_class_names_with_classes(class_dict={...})` - read-only in practice.
+
+Both are `B006` hits; see the bugbear/bandit item below.
+
+### F. A parameter that is accepted and silently discarded
+
+`addItem(text, userData=None)` in both multi-select widgets accepts `userData` for
+`QComboBox` signature compatibility and never stores it.
+
+### G. Types that are inconsistent across the codebase
+
+- **`MetaModel.generators`** is declared `Dict[str, Dict[int, Generator]]`. A bare
+  `Generator` reads as `Generator[Any, None, None]`, but the real contract is
+  `Generator[float, Optional[bool], Any]` - `Worker` sends a `bool` and scales the
+  yielded value. Tightening it touches every `set_generator` caller.
+- **`app_config` path values** are `pathlib.Path` on a fresh install (`Path.home()`) and
+  `str` after the config round-trips through JSON. `get_data_server_location` is
+  therefore typed `Any`, and `DataPluginController.data_server` is declared `str` while
+  actually receiving either.
+- **`DictDialog.result`** holds three shapes: `(params, name)`, `(None, None)`, and the
+  sentinel string `"delete"`.
+- **`get_values`** returns `List[float]` on `FloatRangeLineEdit` but
+  `List[Tuple[Optional[float], Optional[float]]]` on `CommaFloatRangeLineEdit`.
+- Two unrelated classes are both named **`FloatRangeValidator`**, in
+  `float_range_line_edit.py` and `time_widget.py`.
+
+### H. Lazy imports to hoist to module level
+
+Standing preference: imports belong at module level. All four of these are removable.
+
+| Location | Import |
+| --- | --- |
+| `main_view.py:453` (`on_help_button_click`) | `from poriscope.views.help import HelpCentre` |
+| `MetadataView.py:2136, 2270` | `import bisect` |
+| `settings_window.py:844` (`main`) | `import sys` |
+
+Hoisting the `HelpCentre` one also removes the `TYPE_CHECKING` block in `main_view.py`
+that exists only to make its annotation resolve. The `TYPE_CHECKING` block in
+`main_controller.py` can likewise become plain imports - verified by importing
+`main_model`, `main_view` and `main_controller` together with no cycle. The
+`TYPE_CHECKING` blocks in `icon_menu_widget.py` and `text_menu_widget.py` **must stay**:
+`main_view.py` imports both widgets, so importing `MainView` back would cycle. Both now
+carry a comment saying so.
+
+### I. Dead or unreachable code
+
+- `CommaFloatRangeLineEdit` has no callers anywhere in `poriscope/`.
+- `get_values_with_type_info` has no callers on either line-edit class.
+- `IconMenuWidget.createIconButton`'s `isinstance(iconPathOff, tuple)` branch is
+  unreachable - every call site passes an `os.path.join` result.
+- In `text_menu_widget.py`, `emitSignal`'s `"menu"` entry is unreachable (no
+  `createTextButton` passes that objectName) and would emit a `bool` on
+  `menuToggled = Signal()`, which declares no arguments.
+- A stray `print("text_menu_button_clicked")` sits in
+  `IconTextMenuWidget.menu_button_clicked`, alongside the equivalent `logger.info`.
 
 ### Step 6 - why it blocks the flip
 
