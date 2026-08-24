@@ -157,8 +157,8 @@ class MetaReader(BaseDataPlugin):
         """
         try:
             channel = int(channel)
-            start = int(start * self.samplerate)
-            length = int(length * self.samplerate)
+            start_sample = int(start * self.samplerate)
+            length_samples = int(length * self.samplerate)
         except ValueError:
             raise ValueError(
                 "channel, start, and length must all a type that can be coerced to int"
@@ -180,8 +180,8 @@ class MetaReader(BaseDataPlugin):
         samplerate = self.samplerate
         total_samples = self.total_channel_samples[channel]
         file_start_index = self.file_start_indices[channel]
-        start_index = start
-        end_index = start + length
+        start_index = start_sample
+        end_index = start_sample + length_samples
 
         if start_index > total_samples:
             start_index = total_samples
@@ -367,27 +367,27 @@ class MetaReader(BaseDataPlugin):
         :yield: successive chunks of data, or tuples of (data, scale, offset) if raw_data is True.
         :ytype: Union[npt.NDArray[np.float64], Tuple[npt.NDArray[np.float64], float, float]]
         """
-        i = int(start * self.samplerate)
-        start = int(start * self.samplerate)
-        total_length = int(total_length * self.samplerate)
-        chunk_length = int(chunk_length * self.samplerate)
+        start_sample = int(start * self.samplerate)
+        total_length_samples = int(total_length * self.samplerate)
+        chunk_length_samples = int(chunk_length * self.samplerate)
+        i = start_sample
         channel = int(channel)
         channel_length = self.get_channel_length(channel)
-        if chunk_length == 0:
-            chunk_length = int(
+        if chunk_length_samples == 0:
+            chunk_length_samples = int(
                 np.minimum(self.get_samplerate(), self.get_channel_length(channel))
             )
-        if total_length == 0:
-            total_length = channel_length - start
-        last_sample = np.minimum(channel_length, start + total_length)
+        if total_length_samples == 0:
+            total_length_samples = channel_length - start_sample
+        last_sample = np.minimum(channel_length, start_sample + total_length_samples)
         scale = None
         offset = None
         while i < last_sample:
-            samples_to_load = np.minimum(chunk_length, last_sample - i)
+            samples_to_load = np.minimum(chunk_length_samples, last_sample - i)
 
             if (
-                samples_to_load == chunk_length
-                and last_sample - (i + chunk_length) < chunk_length / 2
+                samples_to_load == chunk_length_samples
+                and last_sample - (i + chunk_length_samples) < chunk_length_samples / 2
             ):  # if we are near the end, just load it to avoid small offset errors
                 samples_to_load = last_sample - i
 
@@ -775,7 +775,7 @@ class MetaReader(BaseDataPlugin):
     def _sort_objects_by_channel_and_time(
         self,
         objects: List[Any],
-        channel_numbers: List[Any],
+        channel_numbers: List[int],
         timestamps: List[
             Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]
         ],
@@ -790,7 +790,7 @@ class MetaReader(BaseDataPlugin):
         :param objects: List of objects to sort.
         :type objects: List[Any]
         :param channel_numbers: List of channel numbers corresponding to objects.
-        :type channel_numbers: List[Any]
+        :type channel_numbers: List[int]
         :param timestamps: List of timestamps corresponding to objects.
         :type timestamps: List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]
         :return: Dictionary where keys are channel numbers and values are lists of objects,
