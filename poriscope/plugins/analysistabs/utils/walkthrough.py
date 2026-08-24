@@ -24,10 +24,18 @@
 # Alejandra Carolina González González
 
 
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPalette, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QMoveEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+    QPen,
+)
 from PySide6.QtWidgets import QDialog, QFrame, QLabel, QPushButton, QWidget
 
 """
@@ -267,6 +275,11 @@ class StepDialog(QDialog):
         self.target_widget: Optional[Union[QWidget, List[QWidget]]] = None
         self._last_pos: Optional[QPoint] = None
         self._was_completed = False
+        # Optional hook invoked on every move; WalkthroughMixin uses it to keep
+        # the dialog positioned next to the widget being highlighted. Left None
+        # here so the move events Qt delivers during construction and show()
+        # are no-ops until an owner opts in.
+        self.on_move: Optional[Callable[[QMoveEvent], None]] = None
 
         palette = self.palette()
         bg_color = palette.color(QPalette.Window)
@@ -350,6 +363,17 @@ class StepDialog(QDialog):
         self.reposition_timer.start(300)
 
         self.update_step()
+
+    def moveEvent(self, event: QMoveEvent) -> None:
+        """
+        Run the default handling, then notify the ``on_move`` hook if one is set.
+
+        :param event: The move event.
+        :type event: QMoveEvent
+        """
+        super().moveEvent(event)
+        if self.on_move is not None:
+            self.on_move(event)
 
     def _reposition_now(self) -> None:
         widgets = self.target_widget

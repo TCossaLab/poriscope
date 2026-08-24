@@ -161,9 +161,7 @@ class WalkthroughMixin:
                         self._handle_walkthrough_done(len(steps))
 
                     self.walkthrough_dialog.done_signal.connect(on_dialog_done)
-                    self.walkthrough_dialog.moveEvent = (  # type: ignore[method-assign]
-                        self._reposition_dialog
-                    )
+                    self.walkthrough_dialog.on_move = self._reposition_dialog
 
                 except Exception as e:
                     self.logger.error(f"Error in walkthrough step '{label}': {e}")

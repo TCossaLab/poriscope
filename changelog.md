@@ -55,6 +55,10 @@
 * **Updated: `start_walkthrough` falls back explicitly when the overlay cannot be created**
     * It previously passed a `None` overlay into `StepDialog`, whose constructor calls `update_step()` and therefore raised `AttributeError`, which the enclosing `try` turned into the fallback `QDialog`. Same outcome, but it now returns the fallback directly instead of constructing a dialog guaranteed to fail.
 
+* **Updated: walkthrough dialog repositioning uses a hook instead of a monkey-patched Qt virtual**
+    * `WalkthroughMixin` replaced the dialog's `moveEvent` on the instance (`self.walkthrough_dialog.moveEvent = self._reposition_dialog`). That does work - PySide6 honours an instance attribute for a virtual, confirmed by direct probe, so it was live code rather than the dead code it looks like - but it is invisible to static checking and it suppressed `QDialog`'s own `moveEvent` entirely. `StepDialog` now exposes an `on_move` callback and a real `moveEvent` override that chains to `super()` before invoking it, and the mixin assigns that instead.
+    * Behaviour-neutral, verified rather than assumed: replaying the real install order (`start_walkthrough` shows the dialog, the mixin attaches the handler afterwards) gives the same handler call count for both forms, and `on_move` defaults to `None` so move events during construction and `show()` remain no-ops. This clears the last `# type: ignore` under `poriscope/plugins/analysistabs/`.
+
 * **New Data Plugin: `ThresholdBlockageFinder`**
     * Subclass of `ClassicBlockageFinder` that imposes much tighter bounds on the start and end times flagged in the output.
 

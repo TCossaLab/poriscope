@@ -334,6 +334,7 @@ poriscope/plugins/analysistabs/utils/walkthrough.py
     DOC108: Method `Overlay.eventFilter`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `Overlay.paintEvent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Method `StepDialog.__init__`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
+    DOC108: Method `StepDialog.moveEvent`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
     DOC108: Function `start_walkthrough`: The option `--arg-type-hints-in-signature` is `False` but there are argument type hints in the signature
 --------------------
 poriscope/plugins/analysistabs/utils/walkthrough_mixin.py
