@@ -98,11 +98,12 @@ Renaming is the fix; it is an API change for anything that reads these attribute
 Both would raise `AttributeError` on first call. Neither has a caller anywhere in
 `poriscope/`, which is the only reason they have never been noticed.
 
-- `setLanguageChecked` / `setThemeChecked` in **both** `icon_menu_widget.py` and
-  `text_menu_widget.py` set `language_*_button` / `theme_*_button`. Those buttons are
-  never constructed. `MainView.sync_sidebar_highlight` only ever selects one of four
-  other setters. The matching `handleLanguage` / `handleTheme` / `handleUser` handlers
-  are unwired for the same reason.
+- ~~`setLanguageChecked` / `setThemeChecked` in the two menu widgets~~ - **done**,
+  removed along with `handleLanguage` / `handleTheme`; there is no language or theme
+  control anywhere in the UI. `handleUser` and the `switchUser` signal in both widgets
+  are also unreached, but they are merely unused rather than broken (nothing connects
+  to `switchUser`, and `handleUser` references no missing attribute), so they are left
+  for a decision rather than deleted.
 - `ClusteringSettingsDialog.update_unit_label` and `reset_top_inputs` reference
   `unit_label`, `column_combo`, `log_cb`, `norm_cb` and `plot_cb`, none of which is
   assigned anywhere in the class.

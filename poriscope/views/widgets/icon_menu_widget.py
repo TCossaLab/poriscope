@@ -363,14 +363,6 @@ class IconMenuWidget(QWidget):
         self.logger.info("User clicked")
 
     @log(logger=logger)
-    def handleLanguage(self) -> None:
-        self.logger.info("Language settings clicked")
-
-    @log(logger=logger)
-    def handleTheme(self) -> None:
-        self.logger.info("Theme settings clicked")
-
-    @log(logger=logger)
     def handleExit(self) -> None:
         self.logger.info("Exit clicked")
         self.switchToExit.emit()
@@ -404,14 +396,6 @@ class IconMenuWidget(QWidget):
     @log(logger=logger)
     def setSettingsChecked(self, checked: bool) -> None:
         self.settings_icon_button.setChecked(checked)
-
-    @log(logger=logger)
-    def setLanguageChecked(self, checked: bool) -> None:
-        self.language_icon_button.setChecked(checked)
-
-    @log(logger=logger)
-    def setThemeChecked(self, checked: bool) -> None:
-        self.theme_icon_button.setChecked(checked)
 
     @log(logger=logger)
     def setExitChecked(self, checked: bool) -> None:

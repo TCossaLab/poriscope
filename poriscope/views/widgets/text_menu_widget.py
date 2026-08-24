@@ -327,14 +327,6 @@ class IconTextMenuWidget(QWidget):
         self.settings_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setLanguageChecked(self, checked: bool) -> None:
-        self.language_text_button.setChecked(checked)
-
-    @log(logger=logger)
-    def setThemeChecked(self, checked: bool) -> None:
-        self.theme_text_button.setChecked(checked)
-
-    @log(logger=logger)
     def setExitChecked(self, checked: bool) -> None:
         self.exit_text_button.setChecked(checked)
 
