@@ -137,7 +137,11 @@ class MultiSelectFilterComboBox(QComboBox):
         edit_button = QToolButton()
         edit_button.setIcon(get_icon("pencil-square.svg"))
         edit_button.setIconSize(QSize(16, 16))
-        edit_button.setStyleSheet("border: none; background: transparent;")
+        edit_button.setStyleSheet(
+            "QToolButton { border: none; background: transparent; }"
+            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
+        )
+        edit_button.setToolTip(f"Edit {name}")
         edit_button.clicked.connect(lambda _, t=name: self._handle_internal_edit(t))
         layout.addWidget(edit_button)
 
@@ -145,7 +149,11 @@ class MultiSelectFilterComboBox(QComboBox):
         delete_button = QToolButton()
         delete_button.setIcon(get_icon("trash.svg"))
         delete_button.setIconSize(QSize(16, 16))
-        delete_button.setStyleSheet("border: none; background: transparent;")
+        delete_button.setStyleSheet(
+            "QToolButton { border: none; background: transparent; }"
+            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
+        )
+        delete_button.setToolTip(f"Delete {name}")
         delete_button.clicked.connect(lambda _, t=name: self.delete_filter(t))
         layout.addWidget(delete_button)
 
