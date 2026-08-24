@@ -15,7 +15,18 @@ than here.
 | 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Queued |
 | 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Queued |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
-| 7 | Flip both policy flags, regenerate the baseline fresh, confirm gates clean, update `CLAUDE.md` | Blocked on 3-6 |
+| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on 3-6 |
+
+The pydoclint half of what used to be step 7 is **done** (2026-08-24).
+`arg-type-hints-in-signature` is now `true` and the baseline was regenerated fresh:
+709 entries down to 216, `DOC108` eliminated. It was split out of step 7 because it was
+never actually blocked - step 6's problem is that the pre-commit `mypy` hook passes
+explicit test paths, and the pydoclint hook is already scoped `files: ^poriscope/`.
+`mypy`'s `strict_equality` was turned on at the same time (measured: zero new errors).
+
+Consequence for the remaining batches: a batch now *removes* `DOC106`/`DOC107` lines
+from the baseline instead of adding `DOC108` lines to it. Regenerate the baseline at the
+end of each batch as before; the count should only ever go down.
 
 Steps 1 and 2 are summarised in `changelog.md` (the two "Type annotations for ..."
 entries) and recorded in detail by the `feat(types):` and `fix:` commits on
@@ -41,7 +52,7 @@ Planned as one family per commit, smallest and most self-contained first:
 
 | # | Batch | Files | Fns |
 | --- | --- | --- | --- |
-| 1 | Leftovers from steps 1-2 | `utils/{QObjectABCMeta,QWidgetABCMeta,QtHandler,EventWorker,DocstringDecorator,JsonDefaultSerializer,MetaDatabaseWriter}`, `plugins/{SQLiteEventWriter,BesselFilter,WaveletFilter,SQLiteEventLoader}`, `plugins/datareaders/helpers/ABF2Header.py` | 51 |
+| 1 | Leftovers from steps 1-2 - **done** | `utils/{QObjectABCMeta,QWidgetABCMeta,QtHandler,EventWorker,DocstringDecorator,JsonDefaultSerializer,MetaDatabaseWriter}`, `plugins/{SQLiteEventWriter,BesselFilter,WaveletFilter,SQLiteEventLoader}`, `plugins/datareaders/helpers/ABF2Header.py` | 37 |
 | 2 | Line-edit / validator family | `views/{comma_delimited_float_range_edit,float_range_line_edit,integer_range_line_edit}`, `utils/{BaseLineEdit,BaseValidator}`, `views/widgets/validators/numeric_validation` | 44 |
 | 3 | `views/widgets` menus | `icon_menu_widget` (30), `text_menu_widget` (18), `dropdown_selection_widget` (5) | 53 |
 | 4 | `views/widgets` dialogs | `clustering_settings_widget` (20), `dict_dialog_widget` (10), the three subset-filter dialogs, `walkthrough_steps` | 39 |
@@ -50,6 +61,9 @@ Planned as one family per commit, smallest and most self-contained first:
 | 7 | Data-plugin management | `controllers/DataPluginController.py` (7), `models/DataPluginModel.py` (4) | 11 |
 | 8 | App shell, non-view | `main_app.py` (5), `models/main_model.py` (19), `controllers/main_controller.py` (19) | 43 |
 | 9 | `views/main_view.py` | on its own - the largest single file | 65 |
+
+The per-batch counts above are the plan's original estimates and have drifted; batch 1
+measured 37, not 51. Re-measure before starting each batch.
 
 Batch 1 exists because steps 1 and 2 left small gaps in areas they reported complete:
 `MetaDatabaseWriter.lookahead_generator`, both `Qt*ABCMeta` metaclasses, `QtHandler`,
@@ -67,6 +81,32 @@ commit. (That hook also cannot see third-party types at all; `DECISIONS.md` reco
 closing *that* gap is judged not worth doing, and why it does not block the flip.)
 
 ## Also queued - found during this pass, not part of it
+
+- **Adopt ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the grounds that
+  both run against real code logic and so complement pydoclint's docstring/signature
+  checking for catching silent bugs. Measured on `poriscope/` (2026-08-24): **B = 106,
+  S = 40**.
+
+  | Rule | Hits | Character |
+  | --- | --- | --- |
+  | `B905` zip-without-explicit-strict | 56 | real silent-truncation class; each site needs a `strict=` decision |
+  | `B904` raise-without-from-inside-except | 23 | loses the exception chain; mechanical but touches `raise` statements |
+  | `B007` unused-loop-control-variable | 19 | mostly cosmetic |
+  | `B006` mutable-argument-default | 4 | near-certain bug |
+  | `B010`/`B028`/`B020` | 4 | cosmetic, except `B020` (1) which is a real shadowing bug |
+  | `S608` hardcoded-sql-expression | 25 | worth real scrutiny - user-entered subset filters feed `_build_where_clause` |
+  | `S101` assert | 8 | asserts in non-test code |
+  | `S110` try-except-pass | 7 | silently swallowed exceptions in a GUI app |
+
+  **Keep this out of the type-annotation pass.** Almost every fix above is a logic
+  change, and that pass is deliberately hints-and-docstrings only. Suggested order when
+  it is picked up: `B006` + `B020` first (5 near-certain bugs), then `S608`, then
+  `S110`; enable the rules only once the backlog they gate is small enough not to need
+  its own baseline.
+
+  Note this overlaps, but is not the same as, the bandit proposal in the
+  community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
+  boundary for unvetted contributions, this one is codebase-wide as a bug-catcher.
 
 - **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,

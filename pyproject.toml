@@ -78,12 +78,15 @@ combine-as-imports = true
 
 [tool.pydoclint]
 style = "sphinx"
-# Most plugin methods intentionally omit signature type hints and rely on
-# ":type:"/":rtype:" in the docstring instead (see mypy.ini's
-# disallow_untyped_defs=False) - only check that documented param/return
-# names, order, and presence match the real signature, not that hints exist
-# in the signature itself.
-arg-type-hints-in-signature = false
+# Signature type hints are the source of truth for parameter and return
+# types; ":type:"/":rtype:" in the docstring must agree with them. An earlier
+# revision set this to false on the premise that most plugin methods omit
+# signature hints - an AST scan disproved that (the large majority carry at
+# least one hint), and the false setting turned 663 of the baseline's 709
+# entries into DOC108 "you have hints but policy says you shouldn't" noise
+# that masked nothing and fixed nothing. See future_fixes.md's
+# type-annotation pass for the work that closes the remaining DOC106/DOC107.
+arg-type-hints-in-signature = true
 # Every __init__ in this codebase has its own docstring separate from the
 # class docstring; that's an established convention here, not a violation.
 allow-init-docstring = true
