@@ -340,10 +340,10 @@ def test_clear_figure_state_skips_axes_creation_when_disabled(
 
 
 def test_clear_figure_state_sets_constrained_layout(view: MetadataView) -> None:
-    """Verify constrained layout is set."""
+    """Verify constrained layout engine is set."""
     view._clear_figure_state()
 
-    view.figure.set_constrained_layout.assert_called_with(True)
+    view.figure.set_layout_engine.assert_called_with("constrained")
 
 
 def test_clear_figure_state_calls_clear_cache(view: MetadataView) -> None:
