@@ -56,12 +56,6 @@ closing *that* gap is judged not worth doing, and why it does not block the flip
   hook (see `DECISIONS.md`). CI never hits it because alphabetical collection runs
   `plugins` first, but a suite that dies on a legitimate partial selection is worth
   fixing.
-- **Session-directory isolation is conventional, not structural.** Everything that
-  builds a real `MainModel` today redirects `user_data_dir` for itself - `tests/e2e/`'s
-  autouse `sandbox_appdata` and `tests/unit/models/`'s `main_model` fixture - but a test
-  added anywhere else would write to the developer's real
-  `%LOCALAPPDATA%/Poriscope/session/`. A top-level `tests/conftest.py` autouse fixture
-  would make isolation inherited by default.
 - **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,
   and `(x, y)` tuples from the all-points path. Widened to `List[Any]` with a comment;
