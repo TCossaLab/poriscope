@@ -27,15 +27,35 @@ AST scan, not by eye), zero `DOC104`-`DOC107` under
 green `pytest -m "not e2e and not slow"` plus `test_plugin_compliance.py`. Use the same
 bar for step 3.
 
-### Step 3 - measured scope (2026-08-24)
+### Step 3 - measured scope and batch plan (2026-08-24, re-measured)
 
-**439 functions across 42 files** still have at least one unannotated parameter or
-return. Concentration: `views/main_view.py` 65, `views/widgets/icon_menu_widget.py` 30,
-`views/settings_window.py` 28, `views/widgets/clustering_settings_widget.py` 20,
-`models/main_model.py` 19, `controllers/main_controller.py` 19,
-`views/widgets/text_menu_widget.py` 18, then a tail of smaller widgets. `NanoTrees.py`
-(45), `PeakFinder.py` (13) and `Basic_PeakFinder.py` (12) are inside that count but
-excluded per the Exclusions section.
+**369 functions across 39 files** have at least one unannotated parameter or return,
+once `NanoTrees.py` (45), `PeakFinder.py` (13) and `Basic_PeakFinder.py` (12) are set
+aside per the Exclusions section. (An earlier note said 439 across 42 files; that figure
+counted those three excluded plugins.)
+
+Re-measure at any time with `scratchpad/check_hints.py`, or the equivalent AST walk over
+`poriscope/` - do not trust the numbers below once work has started.
+
+Planned as one family per commit, smallest and most self-contained first:
+
+| # | Batch | Files | Fns |
+| --- | --- | --- | --- |
+| 1 | Leftovers from steps 1-2 | `utils/{QObjectABCMeta,QWidgetABCMeta,QtHandler,EventWorker,DocstringDecorator,JsonDefaultSerializer,MetaDatabaseWriter}`, `plugins/{SQLiteEventWriter,BesselFilter,WaveletFilter,SQLiteEventLoader}`, `plugins/datareaders/helpers/ABF2Header.py` | 51 |
+| 2 | Line-edit / validator family | `views/{comma_delimited_float_range_edit,float_range_line_edit,integer_range_line_edit}`, `utils/{BaseLineEdit,BaseValidator}`, `views/widgets/validators/numeric_validation` | 44 |
+| 3 | `views/widgets` menus | `icon_menu_widget` (30), `text_menu_widget` (18), `dropdown_selection_widget` (5) | 53 |
+| 4 | `views/widgets` dialogs | `clustering_settings_widget` (20), `dict_dialog_widget` (10), the three subset-filter dialogs, `walkthrough_steps` | 39 |
+| 5 | `views/widgets` remaining | `multiselect_filter` (16), `multiselect` (13), `time_widget` (8), `SelectionTree` (5) | 42 |
+| 6 | Settings + help | `views/settings_window.py` (28), `views/help.py` (7) | 35 |
+| 7 | Data-plugin management | `controllers/DataPluginController.py` (7), `models/DataPluginModel.py` (4) | 11 |
+| 8 | App shell, non-view | `main_app.py` (5), `models/main_model.py` (19), `controllers/main_controller.py` (19) | 43 |
+| 9 | `views/main_view.py` | on its own - the largest single file | 65 |
+
+Batch 1 exists because steps 1 and 2 left small gaps in areas they reported complete:
+`MetaDatabaseWriter.lookahead_generator`, both `Qt*ABCMeta` metaclasses, `QtHandler`,
+`EventWorker`, and a `get_empty_settings: standalone` / `_finalize_initialization: ->
+None` pair repeated across four data plugins. Worth clearing first so the completed-step
+claims are actually true.
 
 ### Step 6 - why it blocks the flip
 
