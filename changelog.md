@@ -12,6 +12,14 @@
     * The `if unfolded is not None:` guard was removed while the line above still assigns `None` whenever the `unfolded_level` column is absent, so `baseline - sign * unfolded` raised `TypeError` in exactly that case.
     * Each fix carries a `NOTE (integration):` comment at the site explaining what changed and why.
 
+* **Fixed: seven latent defects in the PeakFinder classifier code**
+    * **`fit_2_gauss` could never succeed.** Its nested `Gauss` declared four parameters but was called with five, so every call raised `TypeError` - swallowed by a bare `except Exception` around `curve_fit`, which then took the "fit failed" path unconditionally. The return statement unpacks `popt` in two groups of four, so four parameters per Gaussian is the intended shape; `Gauss` gained an `offset` term and `Gauss_2`'s parameters were renamed from `A/x/m/s` to `A/u/s/c`.
+    * **Four `Optional` values were used in arithmetic without a guard**: `baseline_mean` in `find_mode_blockage_level`, `baseline_std` in `redefine_padding` and at seven threshold sites in `filter_peaks`, and the metadata-dict reads feeding `find_mode_blockage_level`. All now check and raise `RuntimeError` with a message naming what was missing, rather than surfacing a `TypeError` from inside numpy.
+    * **A `None` test that could never fire.** `_save_classification_report` called `float(prominence_stats.get("threshold"))` and only then tested `threshold is not None`, so a missing key raised `TypeError` instead of skipping the line. The check now guards the conversion, and the `cast()` it existed to satisfy is gone.
+    * **Two `float(bt.get("midpoint"))` calls** on an `Optional` lookup now raise explicitly.
+    * `find_mode_blockage_level`'s `baseline_std` handling was a `float()` inside a bare `except Exception`, which made a legitimately-`None` value indistinguishable from a conversion failure; the `None` case now selects the `'auto'` binning path explicitly.
+    * Every one of these carries a `NOTE (integration):` comment at the site, so the owning developer can see what changed and why when she re-branches.
+
 * **Fixed: stale fixtures in `test_peak_finder.py`**
     * The event-metadata key `baseline_std` was renamed `baseline_stdev` and `longest_blockage_level` was replaced by `primary_level`, but the fixtures were never updated. Eight of the failures presented as `TypeError: object of type 'NoneType' has no len()` rather than a missing key, because `get_plot_features` catches the `KeyError` and converts it into an all-`None` return. Fixtures also gained the `sequence` and `translocation_direction` keys the method now reads, and the "Some" gauge-count expectation was corrected from 2 to 4.
 

@@ -460,19 +460,23 @@ class PeakFinder(MetaEventFitter):
         :type baseline_std: Optional[float]
         :return: the located edge positions, beginning at 0 and ending at len(data)
         :rtype: npt.NDArray[np.float64]
+        :raises RuntimeError: if baseline_std is None, since it sets the CUSUM step size
         """
         # NOTE (integration): this method had no docstring at all, which is what
         # test_plugin_compliance.py was reporting as
         # "missing docstrings: ['filter_peaks', 'redefine_padding']". Added one
-        # describing the existing behaviour; no logic was changed.
-        # NOTE: baseline_std is Optional under the MetaEventFitter contract but is
-        # used unguarded on the next line, so a caller with no baseline estimate gets
-        # a TypeError. This method has no live caller today - its only call site, at
-        # the "edges=self.redefine_padding(...)" line further down, is commented out.
-        # Flagged, not fixed - the logic in this plugin belongs to its owner.
-        step_size = self.settings["Min Carrier Blockage"]["Value"] / (
-            2 * baseline_std  # type: ignore[operator]
-        )
+        # describing the existing behaviour.
+        # NOTE (integration): baseline_std is Optional under the MetaEventFitter
+        # contract but was used unguarded below, so an event loader supplying no
+        # baseline estimate produced a TypeError from the division. Checked and raised
+        # explicitly instead. The method has no live caller today - its only call site
+        # is commented out - so this path was latent.
+        if baseline_std is None:
+            raise RuntimeError(
+                "redefine_padding requires a baseline standard deviation to set its "
+                "CUSUM step size; the event loader supplied None"
+            )
+        step_size = self.settings["Min Carrier Blockage"]["Value"] / (2 * baseline_std)
         rise_time = int(1.0e-6 * samplerate)
         length = len(data)
 
@@ -497,7 +501,7 @@ class PeakFinder(MetaEventFitter):
             # set up running mean and variance calculation
             mean = data[0]
             # NOTE: baseline_std is Optional under the MetaEventFitter contract and is used here without a guard. Flagged, not fixed - the logic in this plugin belongs to its owner.
-            variance = baseline_std * baseline_std  # type: ignore[operator]
+            variance = baseline_std * baseline_std
             num_states = 0
             varM = data[0]
             varS = 0
@@ -521,7 +525,7 @@ class PeakFinder(MetaEventFitter):
                     variance == 0
                 ):  # with low-precision data sets it is possible that two adjacent values are equal, in which case there is zero variance for the two-vector of sample if this occurs next to a detected jump. This is very, very rare, but it does happen.
                     variance = (
-                        baseline_std * baseline_std  # type: ignore[operator]
+                        baseline_std * baseline_std
                     )  # in that case, we default to the local baseline variance, which is a good an estimate as any.
                 logp = (
                     step_size
@@ -1374,6 +1378,7 @@ class PeakFinder(MetaEventFitter):
 
         :return: a dict of event metadata values
         :rtype: Dict[str, Union[int, float, str, bool]]
+        :raises RuntimeError: if the baseline current or standard deviation is non-numeric, or if no primary blockage level can be determined
         """
         event_metadata: Dict[str, Union[int, float, str, bool]] = {}
 
@@ -1430,8 +1435,29 @@ class PeakFinder(MetaEventFitter):
         self.logger.debug(
             f"find_primary_level: data len={len(data)}, start_idx={start_idx}, end_idx={end_idx}, slice len={len(slice_data)}"
         )
-        # NOTE: the event metadata dict is declared Union[int, float, str, bool] by the base contract, so these reads come back wider than the Optional[float] find_mode_blockage_level accepts, and the None assignments below are not values that contract allows at all. Flagged, not fixed - the logic in this plugin belongs to its owner.
-        event_metadata["primary_level"],_ = self.find_mode_blockage_level(  # type: ignore[assignment]
+        # NOTE (integration): these two came out of the metadata dict, whose value type
+        # the base contract declares Union[int, float, str, bool] - wider than the
+        # Optional[float] find_mode_blockage_level accepts - and were previously passed
+        # straight through. Narrowed explicitly, so a metadata dict holding a string or
+        # a bool in either slot is reported rather than silently mis-fitted.
+        baseline_current = event_metadata["baseline_current"]
+        baseline_stdev = event_metadata["baseline_stdev"]
+        if isinstance(baseline_current, bool) or not isinstance(
+            baseline_current, (int, float)
+        ):
+            raise RuntimeError(
+                f"event metadata 'baseline_current' must be numeric, got "
+                f"{type(baseline_current).__name__}"
+            )
+        if isinstance(baseline_stdev, bool) or not isinstance(
+            baseline_stdev, (int, float)
+        ):
+            raise RuntimeError(
+                f"event metadata 'baseline_stdev' must be numeric, got "
+                f"{type(baseline_stdev).__name__}"
+            )
+
+        primary_level, _ = self.find_mode_blockage_level(
                 data[
                     int(
                         sublevel_metadata["sublevel_start_times"][1] * samplerate * 1e-6
@@ -1439,9 +1465,15 @@ class PeakFinder(MetaEventFitter):
                         sublevel_metadata["sublevel_start_times"][-1] * samplerate * 1e-6
                     )
                 ],
-                event_metadata["baseline_current"],  # type: ignore[arg-type]
-                event_metadata["baseline_stdev"],  # type: ignore[arg-type]
+                float(baseline_current),
+                float(baseline_stdev),
         )
+        if primary_level is None:
+            raise RuntimeError(
+                "find_mode_blockage_level could not determine a primary blockage "
+                "level for this event"
+            )
+        event_metadata["primary_level"] = primary_level
         # Leave unfolded_level and folded_level as None - will be determined in post-processing
         event_metadata["unfolded_level"] = None  # type: ignore[assignment]
         event_metadata["folded_level"] = None  # type: ignore[assignment]
@@ -2157,10 +2189,19 @@ class PeakFinder(MetaEventFitter):
                     f"{higher_prominence_count/total_prominence_peaks:.1%} class 1)"
                 )
                 
-            threshold = float(prominence_stats.get("threshold"))  # type: ignore
-            
-            if threshold is not None:
-                classification_report += f"\n  Threshold: {cast(float, threshold):.2f} pA"
+            # NOTE (integration): this read the value, converted it with float(),
+            # and only then tested `threshold is not None` - a test that can never
+            # fire, since float() either returns a float or raises. A missing
+            # "threshold" key therefore raised TypeError from float(None) instead
+            # of skipping the line below. The check now guards the conversion,
+            # which is what was intended, and the cast() it needed is gone too.
+            raw_threshold = prominence_stats.get("threshold")
+            if isinstance(raw_threshold, (int, float)) and not isinstance(
+                raw_threshold, bool
+            ):
+                classification_report += (
+                    f"\n  Threshold: {float(raw_threshold):.2f} pA"
+                )
 
             centers = prominence_stats.get("centers")
             
@@ -2596,7 +2637,16 @@ class PeakFinder(MetaEventFitter):
             class_labels = np.ones(len(prominence_array), dtype=np.float64)
             threshold = None
         else:
-            threshold = float(bt.get('midpoint'))  # type: ignore[arg-type]
+            # NOTE (integration): bt.get('midpoint') is Optional, so float()
+            # raised TypeError whenever bitthresh returned without a midpoint.
+            # Checked and raised explicitly instead.
+            midpoint = bt.get('midpoint')
+            if midpoint is None:
+                raise RuntimeError(
+                    "bitthresh returned no 'midpoint'; prominence classes "
+                    "cannot be assigned without a threshold"
+                )
+            threshold = float(midpoint)
             class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(np.float64)
 
         # Assign classifications back to sublevel metadata
@@ -2833,7 +2883,16 @@ class PeakFinder(MetaEventFitter):
         sorted_indices = np.argsort(centers)
         lower_center = float(centers[sorted_indices[0]])
         higher_center = float(centers[sorted_indices[1]])
-        threshold = float(bt.get("midpoint"))  # type: ignore[arg-type]
+        # NOTE (integration): bt.get("midpoint") is Optional, so float() raised
+        # TypeError whenever bitthresh returned without a midpoint. Checked and
+        # raised explicitly instead.
+        midpoint = bt.get("midpoint")
+        if midpoint is None:
+            raise RuntimeError(
+                "bitthresh returned no 'midpoint'; translocation direction "
+                "cannot be classified without a threshold"
+            )
+        threshold = float(midpoint)
 
         # Classify only the filtered events, then map results back to original event refs
         class_labels = (filtered_log_ecds >= threshold).astype(int)
@@ -3129,10 +3188,14 @@ class PeakFinder(MetaEventFitter):
         # describes both. Annotated honestly as Tuple[Any, ...]. Flagged, not fixed:
         # the logic in this plugin belongs to its owner.
         def Gauss(
-            x: np.ndarray, Amplitude: float, mean: float, stdev: float
+            x: np.ndarray,
+            Amplitude: float,
+            mean: float,
+            stdev: float,
+            offset: float,
         ) -> np.ndarray:
             """
-            Evaluate a single Gaussian.
+            Evaluate a single Gaussian with a vertical offset.
 
             :param x: points at which to evaluate the Gaussian
             :type x: np.ndarray
@@ -3142,55 +3205,57 @@ class PeakFinder(MetaEventFitter):
             :type mean: float
             :param stdev: standard deviation of the Gaussian
             :type stdev: float
+            :param offset: constant added to the Gaussian
+            :type offset: float
             :return: the Gaussian evaluated at x
             :rtype: np.ndarray
             """
-            return Amplitude * np.exp(-(x - mean)**2 / (2 * stdev**2))
+            return Amplitude * np.exp(-(x - mean)**2 / (2 * stdev**2)) + offset
 
         def Gauss_2(
             x: np.ndarray,
             A1: float,
-            x1: float,
-            m1: float,
+            u1: float,
             s1: float,
+            c1: float,
             A2: float,
-            x2: float,
-            m2: float,
+            u2: float,
             s2: float,
+            c2: float,
         ) -> np.ndarray:
             """
-            Evaluate the sum of two Gaussians.
+            Evaluate the sum of two offset Gaussians.
 
             :param x: points at which to evaluate the sum
             :type x: np.ndarray
             :param A1: amplitude of the first Gaussian
             :type A1: float
-            :param x1: first parameter of the first Gaussian
-            :type x1: float
-            :param m1: second parameter of the first Gaussian
-            :type m1: float
-            :param s1: third parameter of the first Gaussian
+            :param u1: centre of the first Gaussian
+            :type u1: float
+            :param s1: standard deviation of the first Gaussian
             :type s1: float
+            :param c1: vertical offset of the first Gaussian
+            :type c1: float
             :param A2: amplitude of the second Gaussian
             :type A2: float
-            :param x2: first parameter of the second Gaussian
-            :type x2: float
-            :param m2: second parameter of the second Gaussian
-            :type m2: float
-            :param s2: third parameter of the second Gaussian
+            :param u2: centre of the second Gaussian
+            :type u2: float
+            :param s2: standard deviation of the second Gaussian
             :type s2: float
+            :param c2: vertical offset of the second Gaussian
+            :type c2: float
             :return: the summed Gaussians evaluated at x
             :rtype: np.ndarray
             """
-            # NOTE: Gauss() takes four parameters (x, Amplitude, mean, stdev) but is
-            # called here with five, so both calls raise TypeError at runtime. The
-            # curve_fit() call below is wrapped in try/except, which swallows it and
-            # takes the `popt is None` path, so fit_2_gauss never actually fits
-            # anything. Flagged, not fixed - the logic in this plugin belongs to its
-            # owner.
-            return Gauss(x, A1, x1, m1, s1) + Gauss(  # type: ignore[call-arg]
-                x, A2, x2, m2, s2  # type: ignore[call-arg]
-            )
+            # NOTE (integration): Gauss() previously declared four parameters
+            # (x, Amplitude, mean, stdev) but was called here with five, so both calls
+            # raised TypeError. The curve_fit() call below catches everything and takes
+            # the `popt is None` path, so the error was silent and fit_2_gauss never
+            # actually fitted anything. Since the return statement unpacks popt in two
+            # groups of four, four parameters per Gaussian is the intended shape, so
+            # Gauss gained an `offset` term and these parameters were renamed from
+            # A/x/m/s to A/u/s/c to say which is which.
+            return Gauss(x, A1, u1, s1, c1) + Gauss(x, A2, u2, s2, c2)
 
         data_reshaped = np.array(data).reshape(-1, 1)
         
@@ -3489,6 +3554,7 @@ class PeakFinder(MetaEventFitter):
         :type event_length: int
         :return: the properties dict, with its "filtered" entry updated with peak classifications
         :rtype: Dict[str, Any]
+        :raises RuntimeError: if baseline_std is None, since it scales every classification threshold
         """
         # NOTE (integration): this docstring previously sat *below* the four
         # statements that follow, which meant Python treated it as a no-op string
@@ -3497,6 +3563,16 @@ class PeakFinder(MetaEventFitter):
         # "missing docstrings: ['filter_peaks', 'redefine_padding']". Moved it up to
         # the first position and added the :param:/:rtype: fields pydoclint requires;
         # no logic was changed.
+        # NOTE (integration): baseline_std is Optional under the MetaEventFitter
+        # contract but was used unguarded in every threshold expression below, so an
+        # event loader supplying no baseline estimate raised TypeError part-way through
+        # classification. Checked once here and raised explicitly instead.
+        if baseline_std is None:
+            raise RuntimeError(
+                "filter_peaks requires a baseline standard deviation to set its "
+                "classification thresholds; the event loader supplied None"
+            )
+
         # Defining variables and thresholds
         t1_std = int(self.settings["Lower Filter Threshold"]["Value"])
         t2_std = int(self.settings["Higher Filter Threshold"]["Value"])
@@ -3537,13 +3613,9 @@ class PeakFinder(MetaEventFitter):
             # up to (but not including) the type-2 lower bound. Type-2 is centered
             # around 2*unfolded_level ± thresholds, and anything above that upper
             # bound is -1 (noise).
-            # NOTE: baseline_std is Optional[float] per the MetaEventFitter
-            # contract and is used here without a guard, so a caller that has no
-            # baseline estimate raises TypeError. Flagged, not fixed - the logic
-            # in this plugin belongs to its owner.
-            type0_thresh = t2_std * baseline_std  # type: ignore[operator]
-            type1_thresh = unfolded_level + t1_std * baseline_std  # type: ignore[operator]
-            type2_thresh = unfolded_level + t2_std * baseline_std  # type: ignore[operator]
+            type0_thresh = t2_std * baseline_std
+            type1_thresh = unfolded_level + t1_std * baseline_std
+            type2_thresh = unfolded_level + t2_std * baseline_std
 
             # Debug prints to help trace classification during development
             # print(
@@ -3672,17 +3744,17 @@ class PeakFinder(MetaEventFitter):
             
             unfolded_lower_bound = (
                 # NOTE: baseline_std is Optional under the MetaEventFitter contract and is used here without a guard. Flagged, not fixed - the logic in this plugin belongs to its owner.
-                (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0  # type: ignore[operator]
+                (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0
             )
             unfolded_upper_bound = (
-                (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0  # type: ignore[operator]
+                (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0
             )
 
             folded_lower_bound = (
-                (folded_level - t1_std * baseline_std) if folded_level is not None else 0  # type: ignore[operator]
+                (folded_level - t1_std * baseline_std) if folded_level is not None else 0
             )
             folded_upper_bound = (
-                (folded_level + t2_std * baseline_std) if folded_level is not None else 0  # type: ignore[operator]
+                (folded_level + t2_std * baseline_std) if folded_level is not None else 0
             )
 
             classified_peaks = []
@@ -3784,6 +3856,7 @@ class PeakFinder(MetaEventFitter):
         :type baseline_std: Optional[float]
         :return: Tuple of (primary_blockage_level, secondary_blockage_level) - the 2 most populated distinct blockage levels
         :rtype: Tuple[Optional[float], Optional[float]]
+        :raises RuntimeError: if baseline_mean is None, since blockage levels are measured relative to the baseline
         """
         # Data is already trimmed to longest segment in _locate_sublevel_transitions
         # Find the 2 most populated levels using histogram
@@ -3792,13 +3865,27 @@ class PeakFinder(MetaEventFitter):
         if arr.size == 0:
             return None, None
 
+        # NOTE (integration): baseline_mean is Optional under the MetaEventFitter
+        # contract but was used unguarded in the two np.abs() expressions at the end of
+        # this method, so an event loader that supplies no baseline estimate produced a
+        # TypeError from inside numpy rather than a diagnosable error. Checked up front
+        # and raised explicitly instead.
+        if baseline_mean is None:
+            raise RuntimeError(
+                "find_mode_blockage_level requires a baseline mean; the event loader "
+                "supplied None, so blockage levels cannot be referenced to a baseline"
+            )
+
         # Fast histogram-based level detection using numpy
         # Prefer bins based on baseline noise when possible, but fall back to 'auto'
-        try:
-            # NOTE: baseline_std is Optional here; float(None) raises, and the try/except around it silently takes the fallback path. Flagged, not fixed.
-            bin_width = float(baseline_std) / 8.0  # type: ignore[arg-type]
-        except Exception:
+        # NOTE (integration): this was float(baseline_std) inside a bare
+        # `except Exception`, which meant a None baseline_std was indistinguishable
+        # from a genuine conversion failure. baseline_std is legitimately Optional
+        # here, so the None case now selects the 'auto' binning path explicitly.
+        if baseline_std is None:
             bin_width = 0.0
+        else:
+            bin_width = float(baseline_std) / 8.0
 
         min_val = float(np.min(arr))
         max_val = float(np.max(arr))
@@ -3824,10 +3911,6 @@ class PeakFinder(MetaEventFitter):
         # Find the 2 bins with maximum counts
         top_2_indices = np.argsort(counts)[-2:][::-1]  # Sort descending, take top 2
 
-        # NOTE: this function tolerates a None `baseline_std` (the float() call above
-        # is wrapped in try/except) but uses `baseline_mean` unguarded, although it is
-        # equally Optional. A caller with no baseline estimate gets a TypeError here.
-        # Flagged, not fixed - the logic in this plugin belongs to its owner.
         primary_level = np.abs(bin_centers[top_2_indices[0]] - baseline_mean)
         secondary_level = (
             np.abs(bin_centers[top_2_indices[1]] - baseline_mean)

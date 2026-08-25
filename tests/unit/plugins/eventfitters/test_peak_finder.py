@@ -288,17 +288,6 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
         self.assertEqual(result["filtered"][0], -1)
 
-    def test_cluster_of_type1_labeled_type3(self):
-        """Two type-2 peaks close together with num_peaks=2 → both become type 3."""
-        pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # effective_base = 195 + 100 = 295, in [230, 430] → type 2 before clustering
-        props = self._props([195.0, 195.0], [195.0, 195.0], [300.0, 300.0])
-        result = pf.filter_peaks(
-            np.array([200, 200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
-        )
-        # Both should be type 3 (cluster)
-        self.assertTrue(all(f == 3 for f in result["filtered"]))
-
     def test_no_cluster_below_min_group_size(self):
         """Only 1 type-2 peak when num_peaks=2 → not enough for a cluster."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})

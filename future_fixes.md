@@ -87,43 +87,71 @@ narrow `# type: ignore` and a `NOTE:` comment at the site.
 
 ## Open against the PeakFinder integration (2026-08-26)
 
-Found while merging `feature_Peakfinder_classifier` into the docstring/type work. Her
-logic was kept as-is per the standing rule; everything here is marked at the site with a
-`NOTE:` and, where mypy required it, a narrow `# type: ignore`.
+Found while merging `feature_Peakfinder_classifier` into the docstring/type work. The
+defects below were **authorised for repair** and have been fixed - each carries a
+`NOTE (integration):` comment at the site explaining what changed and why, so the owning
+developer can see it when she re-branches. What remains open is listed under "Still open"
+at the end of this section.
 
-- **`test_cluster_of_type1_labeled_type3` fails, and it is not a stale fixture.** It calls
-  the new eight-argument `filter_peaks` correctly and asserts that two nearby type-2 peaks
-  are both relabelled type 3; the code returns something else. Her test and her code
-  disagree about what the clustering is supposed to do, so the assertion was left alone
-  rather than rewritten to match observed behaviour. **This is the one known failing test
-  on the integration branch.** To be resolved with the owning developer.
-- **`fit_2_gauss` can never succeed.** Its nested `Gauss` takes four parameters
-  (`x, Amplitude, mean, stdev`) but is called with five in both places inside `Gauss_2`,
-  so every call raises `TypeError`. The `curve_fit` call is wrapped in a bare
-  `except Exception`, which swallows it and takes the `popt is None` path, so the failure
-  is silent. The method also has two `return` statements of different arity - three values
-  on the failure path, two on the success path - which is why it is annotated
-  `Tuple[Any, ...]`.
-- **`find_mode_blockage_level` still uses `baseline_mean` unguarded.** The rewrite changed
-  the signature (three parameters, not five) and the return (a tuple of two Optional
-  levels), and tolerates a `None` `baseline_std` via try/except, but `baseline_mean` is
-  equally Optional and is used directly in `np.abs(bin_centers[...] - baseline_mean)`.
-  This is the same defect previously recorded against the old implementation.
-- **`redefine_padding` divides by `2 * baseline_std` with no `None` check.** It has no live
-  caller today - its only call site is commented out - so this is latent.
-- **`filter_peaks` multiplies its thresholds by a possibly-`None` `baseline_std`** at four
-  adjacent lines.
-- **`_populate_event_metadata` writes `None` into the event metadata dict** at five sites,
-  whose value type the `MetaEventFitter` contract declares `Union[int, float, str, bool]`.
+### Fixed during the integration
+
+- **`fit_2_gauss` could never succeed.** Its nested `Gauss` declared four parameters
+  (`x, Amplitude, mean, stdev`) but was called with five in both places inside `Gauss_2`,
+  so every call raised `TypeError`; the `curve_fit` call is wrapped in a bare
+  `except Exception`, which swallowed it and took the `popt is None` path forever. Since
+  the return statement unpacks `popt` in two groups of four, four parameters per Gaussian
+  is the intended shape, so `Gauss` gained an `offset` term and `Gauss_2`'s parameters
+  were renamed from `A/x/m/s` to `A/u/s/c` to say which is which.
+- **`find_mode_blockage_level` used `baseline_mean` unguarded.** Now raises `RuntimeError`
+  up front. Its `baseline_std` handling was also a `float()` inside a bare
+  `except Exception`, which made a legitimately-`None` value indistinguishable from a
+  conversion failure; the `None` case now selects the `'auto'` binning path explicitly.
+- **`redefine_padding` divided by `2 * baseline_std` with no `None` check.** Now raises.
+- **`filter_peaks` scaled every threshold by a possibly-`None` `baseline_std`** at seven
+  sites. Guarded once at function entry with a raise.
+- **`_populate_event_metadata` passed metadata-dict values straight into
+  `find_mode_blockage_level`**, where the base contract's
+  `Union[int, float, str, bool]` is wider than the `Optional[float]` accepted. Now
+  narrowed with explicit `isinstance` checks that raise on a non-numeric value, and the
+  returned primary level is checked for `None` before being stored.
+- **A dead `None` test in `_save_classification_report`.** It called
+  `float(prominence_stats.get("threshold"))` and only *then* tested
+  `threshold is not None` - a test that can never fire, since `float()` either returns a
+  float or raises. A missing key therefore raised `TypeError` instead of skipping the
+  line. The check now guards the conversion, and the `cast()` it needed is gone.
+- **Two `float(bt.get("midpoint"))` calls** on an `Optional` lookup, in
+  `_classify_peak_prominences` and `_classify_translocation_direction`. Both now raise.
+- **`test_cluster_of_type1_labeled_type3` deleted** as out of date, on instruction: it
+  asserted that two nearby type-2 peaks both become type 3, which the current clustering
+  logic does not do.
+
+### Still open
+
+- **Four `# type: ignore[assignment]` remain in `_populate_event_metadata`**, on the
+  deliberate placeholder writes `event_metadata["unfolded_level"] = None` and the same
+  for `"folded_level"`, `"translocation_direction"` and `"sequence"`. These are not
+  missing guards - the code intends to store `None` until post-processing fills the
+  values in - but `MetaEventFitter._populate_event_metadata` declares its return as
+  `Dict[str, Union[int, float, str, bool]]`, which does not admit `None`. Clearing them
+  means widening that ABC to `Optional[...]`, which is a **breaking change to the plugin
+  contract** and needs a decision rather than a quiet edit. Note the same latent problem
+  exists for any fitter that wants placeholder metadata.
+- **`fit_2_gauss` fits `x` against `data_reshaped`**, where `x` is
+  `np.linspace(min, max, 1000)` and `data_reshaped` has one row per sample. `curve_fit`
+  requires `xdata` and `ydata` to be the same length, so unless the event happens to be
+  exactly 1000 samples this still fails - it is just no longer failing for the arity
+  reason. Fixing it properly means deciding what the function should fit (`bitthresh`
+  fits a histogram via `dgfit`, which is probably the intent). Out of scope for the
+  arity repair that was authorised. The method has no live caller.
 - **`SQLitePeakDBLoader` no longer casts its interpolated SQL values to `int`.** Reviewed
-  and **deliberately accepted**: the database is a local file owned by the user running the
-  app, so there is no privilege boundary for an injection to cross. Recorded here only so
-  the same finding is not re-raised. Note this also downgrades the `S608` item in the
-  bandit proposal above, which described these sites as "worth real scrutiny".
+  and **deliberately accepted**: the database is a local file owned by the user running
+  the app, so there is no privilege boundary for an injection to cross. Recorded here
+  only so the same finding is not re-raised. This also downgrades the `S608` item in the
+  bandit proposal below, which described these sites as "worth real scrutiny".
 - **Three nested function definitions** were introduced: `Gauss` and `Gauss_2` inside
   `fit_2_gauss`, and `dgfit` inside `bitthresh`. `CLAUDE.md` forbids nested functions but
-  nothing enforces it (that is block 8 below). They were annotated in place rather than
-  hoisted, since hoisting is a logic change.
+  nothing enforces it (that is block 8 below). Annotated in place and left nested, on
+  instruction.
 
 ## Also queued - found during the type-annotation pass, not part of it
 
