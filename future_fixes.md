@@ -7,6 +7,11 @@ than here.
 
 ## Status
 
+**Where this stands (2026-08-25):** every function under `poriscope/` is annotated with
+no exclusions, and `.pydoclint-baseline.txt` is empty. Steps 1-5 are closed. What is left
+is step 6 (a one-line pre-commit scoping fix), the `@log` signature-erasure fix, and then
+step 7, the flip this whole pass exists to enable.
+
 | Step | Scope | State |
 | --- | --- | --- |
 | 1 | `poriscope/utils/` - the 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files | Done 2026-08-23 |
@@ -16,7 +21,7 @@ than here.
 | 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Done 2026-08-25 |
 | 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Resolved 2026-08-25 - all three annotated; logic still off limits |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Queued - blocks step 7 |
-| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on 4-6, and see the `@log` note |
+| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on step 6 and on the `@log` fix below - 4 and 5 are cleared |
 
 The pydoclint half of what used to be step 7 is **done** (2026-08-24).
 `arg-type-hints-in-signature` is now `true` and the baseline was regenerated fresh:
@@ -213,6 +218,18 @@ commit. (That hook also cannot see third-party types at all; `DECISIONS.md` reco
 closing *that* gap is judged not worth doing, and why it does not block the flip.)
 
 ## Also queued - found during this pass, not part of it
+
+- **Report the `pydoclint` class-attribute bug upstream (not yet filed).** File at
+  https://github.com/jsh9/pydoclint/issues - jsh9 maintains both `pydoclint` and
+  `docstring_parser_fork`, but pydoclint is the right front door because its own
+  documentation page prescribes the invalid syntax and its `DOC601`/`DOC603` codes are
+  the visible symptom. The full diagnosis, including the measured table of which
+  spellings parse, is in `DECISIONS.md` under the `IntroDialog` entry. The one-line fix
+  is to replace the two hardcoded `".. attribute ::"` literals in
+  `rest_attr_parser.py` with `re.compile(r"^\.\.\s+attribute\s*::\s*(?P<name>.+)$")`,
+  which accepts both spellings so no existing docstring breaks. Reproduction: a class
+  documented with the *correct* `.. attribute::` directive plus any `:param:` block
+  reports `DOC601` + `DOC603`; adding a space before the `::` makes it pass.
 
 - **Adopt ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the grounds that
   both run against real code logic and so complement pydoclint's docstring/signature
