@@ -69,7 +69,12 @@ line-length = 88
 src = ["poriscope", "tests"]
 
 [tool.ruff.lint]
-extend-select = ["I"]
+# I  = isort import ordering.
+# B006/B020 = the two flake8-bugbear rules whose backlog is zero, so they are
+#   enforced rather than baselined: mutable data structures as argument
+#   defaults, and a loop control variable shadowing the iterable it iterates.
+#   The rest of bugbear is not adopted yet - see future_fixes.md.
+extend-select = ["I", "B006", "B020"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["poriscope", "tests"]

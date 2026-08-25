@@ -697,12 +697,16 @@ class ProteinView(MetaView, WalkthroughMixin):
         try:
             self.fig_hist.tight_layout(pad=0.5)
         except Exception:
-            pass
+            # tight_layout can fail on awkward axes geometry; the plot still
+            # renders, just less tidily, so carry on but leave a trace.
+            self.logger.debug("tight_layout failed for self.fig_hist", exc_info=True)
         self.canvas_hist.draw()
         try:
             self.fig_vm.tight_layout(pad=0.5)
         except Exception:
-            pass
+            # tight_layout can fail on awkward axes geometry; the plot still
+            # renders, just less tidily, so carry on but leave a trace.
+            self.logger.debug("tight_layout failed for self.fig_vm", exc_info=True)
         self.canvas_vm.draw()
 
         # Reset plot bookkeeping variables TBD
@@ -832,7 +836,9 @@ class ProteinView(MetaView, WalkthroughMixin):
         try:
             canvas.figure.tight_layout(pad=0.5)
         except Exception:
-            pass
+            # tight_layout can fail on awkward axes geometry; the plot still
+            # renders, just less tidily, so carry on but leave a trace.
+            self.logger.debug("tight_layout failed for the plot canvas", exc_info=True)
         canvas.draw()
         self._commit_cache()
 

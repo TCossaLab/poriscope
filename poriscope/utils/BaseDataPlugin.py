@@ -231,10 +231,7 @@ class BaseDataPlugin(ABC):
         :param key: the unique key of the dependent plugin
         :type key: str
         """
-        try:
-            self.dependents.remove((metaclass, key))
-        except Exception:
-            pass
+        self.dependents.discard((metaclass, key))
 
     @log(logger=logger)
     def unregister_parent(self, metaclass: str, key: str) -> None:
@@ -246,10 +243,7 @@ class BaseDataPlugin(ABC):
         :param key: the unique key of the parent plugin
         :type key: str
         """
-        try:
-            self.parents.remove((metaclass, key))
-        except Exception:
-            pass
+        self.parents.discard((metaclass, key))
 
     @log(logger=logger)
     def get_dependents(self) -> Set[Tuple[str, str]]:
@@ -341,7 +335,15 @@ class BaseDataPlugin(ABC):
                     self.raw_settings[key]["Value"] = self.settings[key][
                         "Value"
                     ].get_key()  # store keys for plugins in raw settings instead of actual instances, ignore other values
-                except Exception:
+                except AttributeError:
+                    # A plain settings value (int, str, float, ...) has no
+                    # get_key(); that is the signal that this entry is not a
+                    # plugin instance and needs no parent/dependent wiring. Only
+                    # AttributeError means that. Anything else is a real fault and
+                    # must not be swallowed: the else branch below builds the
+                    # dependency graph that DataPluginController relies on to refuse
+                    # deleting a plugin that still has dependents, so silently
+                    # skipping it would let a plugin be deleted out from under one.
                     pass
                 else:
                     # register parents and dependents to ensure sane deletion later

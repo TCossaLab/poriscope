@@ -56,7 +56,7 @@ class DataPluginView(QWidget):
         editable: bool = True,
         show_delete: bool = False,
         editable_source_plugins: bool = False,
-        source_plugins: List[str] = [],
+        source_plugins: Optional[List[str]] = None,
     ) -> Tuple[Optional[dict], Optional[str], bool]:
         """
         Prompt the user to specify a reader plugin to use to open the given file.
@@ -74,8 +74,8 @@ class DataPluginView(QWidget):
         :type show_delete: bool
         :param editable_source_plugins: allow editing of the source plugins list? Default False
         :type editable_source_plugins: bool
-        :param source_plugins: List of available source plugin keys. Default empty list
-        :type source_plugins: List[str]
+        :param source_plugins: Available source plugin keys. Default None, which the dialog treats as an empty list.
+        :type source_plugins: Optional[List[str]]
         :return: The updated user settings and plugin key, followed by a flag
                  that is True if deletion was requested. The settings and key are
                  both ``None`` if the dialog was cancelled or dismissed.

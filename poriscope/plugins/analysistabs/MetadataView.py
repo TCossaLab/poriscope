@@ -826,7 +826,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                 if getattr(cb, "ax", None) is not None and cb.ax.figure is self.figure:
                     cb.remove()
             except Exception:
-                pass
+                # Cosmetic only - the stale colorbar is dropped either way by the
+                # reset below. Logged so a plot that looks wrong leaves a trace.
+                self.logger.debug(
+                    "Could not remove the previous heatmap colorbar", exc_info=True
+                )
             self._heatmap_colorbar = None
 
         self._heatmap_colorbar = self.figure.colorbar(im, ax=ax, ticks=ticks)
@@ -2500,10 +2504,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         event_data: Sequence[Dict[str, Any]],
         horizontal_lines: Sequence[Optional[List[float]]],
         vertical_lines: Sequence[Optional[List[float]]],
-        points: Any,
-        horizontal_labels: Sequence[Optional[List[str]]],
-        vertical_labels: Sequence[Optional[List[str]]],
-        point_labels: Sequence[Optional[List[str]]],
+        points: Sequence[Optional[List[Tuple[float, float]]]],
+        horizontal_labels: Sequence[Optional[Sequence[Optional[str]]]],
+        vertical_labels: Sequence[Optional[Sequence[Optional[str]]]],
+        point_labels: Sequence[Optional[Sequence[Optional[str]]]],
         use_raw: bool = False,
     ) -> None:
         """
@@ -2521,14 +2525,14 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type horizontal_lines: Sequence[Optional[List[float]]]
         :param vertical_lines: One entry per subplot, each a list of x-values for vertical line annotations, or None.
         :type vertical_lines: Sequence[Optional[List[float]]]
-        :param points: One entry per subplot, each a list of (x, y) coordinate tuples for marker points, or None. Typed loosely because the loop below rebinds this name to the per-subplot entry.
-        :type points: Any
+        :param points: One entry per subplot, each a list of (x, y) coordinate tuples for marker points, or None.
+        :type points: Sequence[Optional[List[Tuple[float, float]]]]
         :param horizontal_labels: One entry per subplot, each a list of labels for the horizontal lines, or None.
-        :type horizontal_labels: Sequence[Optional[List[str]]]
+        :type horizontal_labels: Sequence[Optional[Sequence[Optional[str]]]]
         :param vertical_labels: One entry per subplot, each a list of labels for the vertical lines, or None.
-        :type vertical_labels: Sequence[Optional[List[str]]]
+        :type vertical_labels: Sequence[Optional[Sequence[Optional[str]]]]
         :param point_labels: One entry per subplot, each a list of labels for the points, or None.
-        :type point_labels: Sequence[Optional[List[str]]]
+        :type point_labels: Sequence[Optional[Sequence[Optional[str]]]]
         :param use_raw: Whether to also plot/cache the raw (unfiltered) trace alongside the filtered and fitted ones.
         :type use_raw: bool
         :return: None
@@ -2542,7 +2546,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
         j = 0
-        for i, (event, vlines, hlines, points, vlabels, hlabels, plabels) in enumerate(
+        for i, (event, vlines, hlines, pts, vlabels, hlabels, plabels) in enumerate(
             zip(
                 event_data,
                 vertical_lines,
@@ -2577,6 +2581,14 @@ class MetadataView(MetaView, WalkthroughMixin):
             ax.plot(time, fit_data / 1000, zorder=3)
             color_idx = 0
             if hlines is not None:
+                # A fitter may supply features with no labels at all, or fewer
+                # labels than features; the branch below already renders those
+                # unlabeled, so stand in a matching run of Nones rather than
+                # letting zip() silently drop the features that have no label.
+                if hlabels is None:
+                    hlabels = [None] * len(hlines)
+                elif len(hlabels) < len(hlines):
+                    hlabels = list(hlabels) + [None] * (len(hlines) - len(hlabels))
                 for line, label in zip(hlines, hlabels):
                     if label is None:
                         ax.axhline(y=line / 1000, color="black", linestyle="--")
@@ -2588,6 +2600,14 @@ class MetadataView(MetaView, WalkthroughMixin):
                         color_idx += 1
             color_idx = 0
             if vlines is not None:
+                # A fitter may supply features with no labels at all, or fewer
+                # labels than features; the branch below already renders those
+                # unlabeled, so stand in a matching run of Nones rather than
+                # letting zip() silently drop the features that have no label.
+                if vlabels is None:
+                    vlabels = [None] * len(vlines)
+                elif len(vlabels) < len(vlines):
+                    vlabels = list(vlabels) + [None] * (len(vlines) - len(vlabels))
                 for line, label in zip(vlines, vlabels):
                     if label is None:
                         ax.axvline(x=line, color="black", linestyle="--")
@@ -2597,8 +2617,16 @@ class MetadataView(MetaView, WalkthroughMixin):
                         color_idx += 1
 
             color_idx = 0
-            if points is not None:
-                for (x, y), label in zip(points, plabels):
+            if pts is not None:
+                # A fitter may supply features with no labels at all, or fewer
+                # labels than features; the branch below already renders those
+                # unlabeled, so stand in a matching run of Nones rather than
+                # letting zip() silently drop the features that have no label.
+                if plabels is None:
+                    plabels = [None] * len(pts)
+                elif len(plabels) < len(pts):
+                    plabels = list(plabels) + [None] * (len(pts) - len(plabels))
+                for (x, y), label in zip(pts, plabels):
                     if label is None:
                         ax.plot(x, y / 1000, marker="x", color="black", markersize=10)
                     else:
