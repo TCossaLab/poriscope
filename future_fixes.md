@@ -125,34 +125,39 @@ at the end of this section.
   asserted that two nearby type-2 peaks both become type 3, which the current clustering
   logic does not do.
 
-### Still open
+### Closed by decision, not by code
 
-- **Four `# type: ignore[assignment]` remain in `_populate_event_metadata`**, on the
-  deliberate placeholder writes `event_metadata["unfolded_level"] = None` and the same
-  for `"folded_level"`, `"translocation_direction"` and `"sequence"`. These are not
-  missing guards - the code intends to store `None` until post-processing fills the
-  values in - but `MetaEventFitter._populate_event_metadata` declares its return as
-  `Dict[str, Union[int, float, str, bool]]`, which does not admit `None`. Clearing them
-  means widening that ABC to `Optional[...]`, which is a **breaking change to the plugin
-  contract** and needs a decision rather than a quiet edit. Note the same latent problem
-  exists for any fitter that wants placeholder metadata.
-- **`fit_2_gauss` has been deleted** rather than repaired. It had no call sites and
-  could not have worked: beyond the `Gauss` arity bug, it passed a 1000-point linspace
-  as `xdata` against the raw `(N, 1)` sample array as `ydata`, which `curve_fit` rejects
-  unless an event is exactly 1000 samples, and which is not a distribution fit in any
-  case. Deciding what it *should* fit is the double-Gaussian consolidation described
-  below, so deleting the dead implementation is the first step of that work rather than
-  a competing change.
+Both settled 2026-08-25; the reasoning is in `DECISIONS.md`. Recorded here only so they
+are not re-raised as open work.
+
+- The four `# type: ignore[assignment]` on the deliberate `None` placeholder writes in
+  `_populate_event_metadata` **stay**. They are safe and correct; clearing them would mean
+  widening a `Meta*` ABC across six fitter plugins.
+- The **double-Gaussian consolidation is not being pursued here.** The owning developer is
+  rewriting that fitting code from scratch, which supersedes it. `fit_2_gauss`, the dead
+  third implementation, has already been deleted.
+
+### Still open
 
 - **`SQLitePeakDBLoader` no longer casts its interpolated SQL values to `int`.** Reviewed
   and **deliberately accepted**: the database is a local file owned by the user running
   the app, so there is no privilege boundary for an injection to cross. Recorded here
   only so the same finding is not re-raised. This also downgrades the `S608` item in the
   bandit proposal below, which described these sites as "worth real scrutiny".
-- **Three nested function definitions** were introduced: `Gauss` and `Gauss_2` inside
-  `fit_2_gauss`, and `dgfit` inside `bitthresh`. `CLAUDE.md` forbids nested functions but
-  nothing enforces it (that is block 8 below). Annotated in place and left nested, on
-  instruction.
+- **Three nested function definitions** remain: `dgfit` inside `bitthresh`, and formerly
+  `Gauss`/`Gauss_2` inside the now-deleted `fit_2_gauss`. `CLAUDE.md` forbids nested
+  functions but nothing enforces it (that is block 8 below). Annotated in place and left
+  nested, on instruction.
+- **The histogram low-end cut-off in the classifier plots.** Diagnosed but not fixed, and
+  parked pending the double-Gaussian rewrite: the "All Events (incl. outliers)" bar chart
+  is binned against edges `bitthresh` computed from a *filtered subset*, and
+  `np.histogram` silently discards values outside the given bin range. Which subset wins
+  is decided by discrete ratio tests, so the plot's left edge jumps to the 25th percentile
+  when the blockage-filter re-run branch fires - which is why the cut-off appears at
+  certain threshold settings and not others. Three call sites share the pattern
+  (`_classify_folded_unfolded`, `_classify_peak_prominences`,
+  `_classify_translocation_direction`). The fix is to build the histogram once from the
+  full data and pass it into the fit, rather than letting the fit dictate the plot's bins.
 
 ## Also queued - found during the type-annotation pass, not part of it
 
