@@ -254,20 +254,17 @@ class MainModel(QObject):
                             metaclass = key
                             break
 
-                    if metaclass:
+                    # plugin_class is necessarily non-None whenever metaclass was
+                    # set above; the explicit check is what lets mypy see that.
+                    if metaclass and plugin_class is not None:
                         available_plugin_classes[metaclass][subclass] = plugin_class
                         available_plugins_list[metaclass].append(subclass)
 
         return available_plugin_classes, available_plugins_list
 
     @log(logger=logger)
-    def get_available_plugins(
-        self, metaclass: Optional[str] = None
-    ) -> Union[List[str], Dict[str, List[str]]]:
-        if metaclass:
-            return self.available_plugins_list[metaclass]
-        else:
-            return self.available_plugins_list
+    def get_available_plugins(self) -> Dict[str, List[str]]:
+        return self.available_plugins_list
 
     @log(logger=logger)
     def get_plugin_classes(

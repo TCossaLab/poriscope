@@ -217,12 +217,14 @@ class SingleBinaryDecoder(MetaReader):
         return list(range(self.settings["Number of Arrays"]["Value"]))
 
     @log(logger=logger)
-    def _get_file_names(self, folder: os.PathLike, pattern: str) -> List[str]:
+    def _get_file_names(
+        self, folder: Union[str, os.PathLike], pattern: str
+    ) -> List[str]:
         """
         Get a list of file names with data to map
 
         :param folder: File name to get the base pattern for.
-        :type folder: os.PathLike
+        :type folder: Union[str, os.PathLike]
         :param pattern: pattern to match
         :type pattern: str
 

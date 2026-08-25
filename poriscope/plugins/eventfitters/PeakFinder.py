@@ -1215,8 +1215,11 @@ class PeakFinder(MetaEventFitter):
                 )
             ],
             self.settings["Max Unfolded"]["Value"],
-            event_metadata["baseline_current"],
-            event_metadata["baseline_stdev"],
+            # NOTE: the event metadata dict is declared Union[int, float, str, bool]
+            # by the base contract, so these read back wider than the Optional[float]
+            # find_mode_blockage_level accepts. Flagged, not fixed.
+            event_metadata["baseline_current"],  # type: ignore[arg-type]
+            event_metadata["baseline_stdev"],  # type: ignore[arg-type]
             True,
         )
 

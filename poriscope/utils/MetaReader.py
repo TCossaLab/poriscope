@@ -312,21 +312,16 @@ class MetaReader(BaseDataPlugin):
         return settings
 
     @log(logger=logger)
-    def get_channel_length(
-        self, channel: Optional[int] = None
-    ) -> int | Dict[int, int]:  # Changed return type hint
+    def get_channel_length(self, channel: int) -> int:
         """
-        Return the number of samples in a channel, or a dict of all of them if no channel is provided.
+        Return the number of samples in a channel.
 
         :param channel: Channel number to get length for.
-        :type channel: Optional[int]
-        :return: Number of samples in the specified channel, or a dict of all channel lengths.
-        :rtype: int | Dict[int, int]
+        :type channel: int
+        :return: Number of samples in the specified channel.
+        :rtype: int
         """
-        if channel is not None:
-            return self.total_channel_samples[channel]
-        else:
-            return self.total_channel_samples  # Changed return value
+        return self.total_channel_samples[channel]
 
     @log(logger=logger)
     def get_samplerate(self) -> float:
@@ -757,12 +752,14 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @log(logger=logger)
-    def _get_file_names(self, folder: os.PathLike, pattern: str) -> List[str]:
+    def _get_file_names(
+        self, folder: Union[str, os.PathLike], pattern: str
+    ) -> List[str]:
         """
         Get a list of file names with data to map
 
         :param folder: File name to get the base pattern for.
-        :type folder: os.PathLike
+        :type folder: Union[str, os.PathLike]
         :param pattern: pattern to match
         :type pattern: str
 
@@ -779,10 +776,7 @@ class MetaReader(BaseDataPlugin):
         timestamps: List[
             Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]
         ],
-    ) -> Dict[
-        int,
-        List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]],
-    ]:
+    ) -> Dict[int, List[Any]]:
         """
         Sort a list of objects into a dictionary of lists, indexed by channel number.
         The objects within each channel's list are sorted by timestamp.
@@ -795,7 +789,7 @@ class MetaReader(BaseDataPlugin):
         :type timestamps: List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]
         :return: Dictionary where keys are channel numbers and values are lists of objects,
                         sorted by timestamp.
-        :rtype: Dict[int, List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]]
+        :rtype: Dict[int, List[Any]]
         :raises ValueError: If the input lists have inconsistent lengths.
         """
         if len(objects) != len(channel_numbers) or len(objects) != len(timestamps):

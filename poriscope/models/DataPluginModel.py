@@ -25,10 +25,11 @@
 # Alejandra Carolina González González
 
 import logging
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Type
 
 from PySide6.QtCore import QObject
 
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.LogDecorator import log
 
 
@@ -40,22 +41,24 @@ class DataPluginModel(QObject):
     logger = logging.getLogger(__name__)
 
     def __init__(
-        self, available_plugin_classes: Mapping[str, Mapping[str, type]]
+        self, available_plugin_classes: Mapping[str, Mapping[str, Type[BaseDataPlugin]]]
     ) -> None:
         """
         Initialize the plugin model.
 
         :param available_plugin_classes: Dict of available plugin classes, keyed by metaclass then subclass name.
-        :type available_plugin_classes: Mapping[str, Mapping[str, type]]
+        :type available_plugin_classes: Mapping[str, Mapping[str, Type[BaseDataPlugin]]]
         """
         super().__init__()
         self.available_plugins = available_plugin_classes
-        self.plugins: Dict[str, Dict[str, Any]] = {
+        self.plugins: Dict[str, Dict[str, BaseDataPlugin]] = {
             metaclass: {} for metaclass in available_plugin_classes.keys()
         }
 
     @log(logger=logger)
-    def register_plugin(self, instance: object, metaclass: str, key: str) -> None:
+    def register_plugin(
+        self, instance: BaseDataPlugin, metaclass: str, key: str
+    ) -> None:
         """
         Register a plugin instance with the given key.
 
@@ -63,7 +66,7 @@ class DataPluginModel(QObject):
         and an error is logged instead of raising.
 
         :param instance: The plugin instance, of the type of plugin managed by this model
-        :type instance: object
+        :type instance: BaseDataPlugin
         :param metaclass: the base class of the plugin
         :type metaclass: str
         :param key: The key to register the plugin with
@@ -108,7 +111,7 @@ class DataPluginModel(QObject):
         self.plugins[metaclass][new_key] = self.plugins[metaclass].pop(old_key)
 
     @log(logger=logger)
-    def get_temp_instance(self, metaclass: str, subclass: str) -> object:
+    def get_temp_instance(self, metaclass: str, subclass: str) -> BaseDataPlugin:
         """
         Get a temporary plugin instance without settings applied.
 
@@ -117,7 +120,7 @@ class DataPluginModel(QObject):
         :param subclass: The subclass of the plugin, defaults to None.
         :type subclass: str
         :return: The temporary plugin instance.
-        :rtype: object
+        :rtype: BaseDataPlugin
         :raises KeyError: If metaclass or subclass is not a recognized/available plugin type.
         """  # noqa: DOC502 (KeyError is raised implicitly by the dict lookups below, not via an explicit `raise`)
         return self.available_plugins[metaclass][subclass]()
@@ -199,7 +202,9 @@ class DataPluginModel(QObject):
         instance.apply_settings(settings)
 
     @log(logger=logger)
-    def get_plugin_instance(self, metaclass: str, key: str) -> object:
+    def get_plugin_instance(
+        self, metaclass: str, key: str
+    ) -> Optional[BaseDataPlugin]:
         """
         Get the plugin instance corresponding to the given key.
 
@@ -208,7 +213,7 @@ class DataPluginModel(QObject):
         :param key: The key of the plugin instance.
         :type key: str
         :return: The plugin instance or None if the key is not found.
-        :rtype: object
+        :rtype: Optional[BaseDataPlugin]
         """
         return self.plugins[metaclass].get(key)
 

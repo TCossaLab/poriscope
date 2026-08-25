@@ -1073,7 +1073,10 @@ class Basic_PeakFinder(MetaEventFitter):
                     sublevel_metadata["sublevel_start_times"][-1] * samplerate * 1e-6
                 )
             ],
-            event_metadata["baseline_current"],
+            # NOTE: the event metadata dict is declared Union[int, float, str, bool]
+            # by the base contract, so this reads back wider than the Optional[float]
+            # find_mode_blockage_level accepts. Flagged, not fixed.
+            event_metadata["baseline_current"],  # type: ignore[arg-type]
             baseline_std,
         )
         event_metadata["baseline_std"] = baseline_std  # type: ignore[assignment]

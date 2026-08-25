@@ -26,17 +26,32 @@
 import functools
 import inspect
 import logging
-from typing import Any, Callable, Generator, Optional
+from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast, overload
 
 from PySide6.QtCore import Signal
 
+# Bound to the decorated callable so that these decorators hand back the *same*
+# type they were given. Declaring them ``-> Callable`` instead erases the
+# signature of every method they wrap, leaving all call sites into it unchecked.
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+@overload
+def log(_func: F, *, logger: logging.Logger, debug_only: bool = False) -> F: ...
+
+
+@overload
+def log(
+    _func: None = None, *, logger: logging.Logger, debug_only: bool = False
+) -> Callable[[F], F]: ...
+
 
 def log(
-    _func: Optional[Callable] = None,
+    _func: Optional[F] = None,
     *,
     logger: logging.Logger,
     debug_only: bool = False,
-) -> Callable:
+) -> Union[F, Callable[[F], F]]:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
 
@@ -78,16 +93,16 @@ def log(
           self.logger.info('This message is informational')
 
     :param _func: The function to be decorated. If None, the decorator is returned.
-    :type _func: Optional[Callable]
+    :type _func: Optional[F]
     :param logger: The logger instance used for logging.
     :type logger: logging.Logger
     :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
     :type debug_only: bool
     :return: The decorated function or the decorator itself.
-    :rtype: Callable
+    :rtype: Union[F, Callable[[F], F]]
     """
 
-    def decorator_log(func: Callable) -> Callable:
+    def decorator_log(func: F) -> F:
         def log_call(args: tuple, kwargs: dict) -> str:
             name = getattr(func, "__name__", "?")
             try:
@@ -138,7 +153,7 @@ def log(
                 log_return(name, result)
                 return result
 
-            return generator_wrapper
+            return cast(F, generator_wrapper)
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -147,7 +162,7 @@ def log(
             log_return(name, result)
             return result
 
-        return wrapper
+        return cast(F, wrapper)
 
     if _func is None:
         return decorator_log
@@ -155,8 +170,8 @@ def log(
         return decorator_log(_func)
 
 
-def register_action() -> Callable:
-    def decorator(func: Callable) -> Callable:
+def register_action() -> Callable[[F], F]:
+    def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(
             self: Any, *args: Any, **kwargs: Any
@@ -172,6 +187,6 @@ def register_action() -> Callable:
                     self.logger.info(f"Unable to log tab action: {str(e)}")
             return result
 
-        return wrapper
+        return cast(F, wrapper)
 
     return decorator

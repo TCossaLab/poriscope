@@ -755,8 +755,8 @@ class MetaEventFinder(BaseDataPlugin):
         channel: int,
         index: int,
         data_filter: Optional[Callable] = None,
-        rectify: Optional[bool] = False,
-        raw_data: Optional[bool] = False,
+        rectify: bool = False,
+        raw_data: bool = False,
     ) -> Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]:
         """
         Return a dictionary of data and metadata for the requested event
@@ -768,9 +768,9 @@ class MetaEventFinder(BaseDataPlugin):
         :param data_filter: a function that is called to preprocess the data before it is returned
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
-        :type rectify: Optional[bool]
+        :type rectify: bool
         :param raw_data: return raw adc codes on True, pA values on False
-        :type raw_data: Optional[bool]
+        :type raw_data: bool
         :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :raises KeyError: If the channel does not exist
         :raises ValueError: if no events have been found in the channel

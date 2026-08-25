@@ -24,13 +24,16 @@ repos:
         exclude: ^tests/slow/
         stages: [pre-commit]
 
-  # Static Type Checking (runs during default commit stage)
+  # Static Type Checking (runs during default commit stage).
+  # Scoped to ^poriscope/ to match mypy.ini's `exclude = ^tests/`. That exclude
+  # governs directory *discovery* only, so without this the hook hands mypy the
+  # test files as explicit paths and type-checks them anyway.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.17.1
     hooks:
       - id: mypy
         # args: ["--strict"]
-        exclude: ^tests/slow/
+        files: ^poriscope/
 
   # Docstring/signature consistency (runs during default commit stage).
   # Only fails on NEW violations - pre-existing ones are grandfathered into
