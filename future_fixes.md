@@ -14,10 +14,177 @@ that they describe finished work; the narrative is in `changelog.md` and the sta
 rules that came out of it are in `CLAUDE.md` and `DECISIONS.md`. What remains below is
 only what is still open.
 
+## Structural audit findings (2026-08-25)
+
+A read of the app shell, plugin contract and threading layer - the paths every analysis
+tab traverses. None of these were already recorded here or in `DECISIONS.md`. Full
+write-up with per-finding reasoning:
+<https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>
+
+Everything except the CI-marker and stale-comment items is a logic change, so it needs
+an approved plan first. **This section outranks "What to pick up next" below until it is
+cleared.** The common thread: the app's main control path is a method name passed as a
+string and resolved with `getattr`, which none of the four pre-commit gates can see, and
+every Critical item lives in that blind spot.
+
+### Critical - on the shared core, and each one fails quietly
+
+- **The signal dispatcher retries plugin methods with `None`.**
+  `main_controller.py:207-222`. `except TypeError: retval = func(None)` is meant as arity
+  recovery but cannot distinguish a signature mismatch at the call boundary from a
+  `TypeError` raised inside the callee, so a method that already ran halfway is invoked a
+  second time with different arguments. `commit_events` on a `MetaWriter` is on this path;
+  the same pattern also wraps `return_function`. The docstring documents it as intentional,
+  so this needs a decision rather than a patch. Fix: check arity up front with
+  `inspect.signature(func).bind(*call_args)` and let body `TypeError`s propagate.
+- **CI's `-m "not e2e and not slow"` filter selects nothing.**
+  `.github/workflows/ci-branches.yml:121`. The `e2e` marker is never applied - the tests
+  under `tests/e2e/` carry `e2e_ux` (19) or no marker (4) - and `slow` appears nowhere in
+  the repo. `tests/e2e/conftest.py` only registers the names; there is no
+  `pytest_collection_modifyitems` hook. Verified: `pytest tests/e2e --collect-only -q`
+  collects 20 with and without the filter, so the click-driven Qt tests run under Xvfb on
+  every branch push. `pytest -m fast` likewise matches 3 tests. Fix: mark them `e2e`
+  (keeping `e2e_ux` as the narrower click-driven subset) or use `--ignore=tests/e2e`, then
+  add `--strict-markers` to `addopts` so an unregistered marker fails instead of matching
+  everything. `CLAUDE.md` and the Quality Control docs page both currently describe the
+  exclusion as working and need correcting with the fix.
+- **`force_serial_channel_operations()` is enforced at the wrong granularity.**
+  `MetaModel.py:79,118-128`. It is a per-plugin declaration, but the lock handed to the
+  worker is `MetaModel.lock` - one per model, and every tab builds its own. Two tabs
+  driving the same writer take different locks and it runs concurrently on two channels
+  despite declaring it must not (`MetaWriter` and `MetaDatabaseWriter` both return `True`).
+  Within one tab that single lock is shared across all keys, so unrelated plugins
+  serialize against each other for nothing. The lock belongs to the plugin instance.
+  `BaseDataPlugin.lock` is *not* the fix as written: it is a class attribute, one lock for
+  every data plugin in the process, which `WaveletFilter._apply_filter` relies on today.
+- **A `TypeError` inside any generator is reported as successful completion.**
+  `EventWorker.py:63-68`. `send()` on a not-yet-started generator raises `TypeError`, so
+  the `next()` fallback fires by design on iteration one. But when `send()` raises
+  `TypeError` from the generator body the generator is already terminated, `next()` raises
+  `StopIteration`, and the loop logs "Generator finished StopIteration." at INFO. Verified
+  by execution. Event finding or fitting appears to succeed and produces nothing,
+  indistinguishable from "no events found" - likely the costliest item here. Fix: prime
+  the generator with one `next()` before the loop, then `send()` unconditionally, so
+  plugin `TypeError`s reach the `except Exception` arm already below.
+
+### High - working today, but for reasons nothing records or tests
+
+- **Two paths use a signal as a synchronous call and read the answer from an attribute.**
+  `MetaModel.py:118-128` emits `force_serial_channel_operations` then reads
+  `self.serial_ops` on the next line; `DataPluginController.py:428-433` emits
+  `get_settings_from_history` then reads `self.historical_settings`. Correct only because
+  every hop is a same-thread automatic connection that Qt resolves as a direct call.
+  Nothing states that requirement and no test covers it. One `Qt.QueuedConnection` in
+  either chain silently degrades the item above to `lock = None` - no error, no log line.
+  Both sites want a direct call, or an explicit synchronous relay entry point that returns
+  a value so the coupling lives in a signature instead of in statement order.
+- **Every `WARNING` and `ERROR` record raises a modal dialog.** `QtHandler.py:38-60`, on
+  the root logger with no level filter, so log severity doubles as a UI modality decision.
+  Routine states hit it: `handle_kill_worker`'s "No active worker found",
+  `send_analysis_tabs`' "No instantiated analysis tabs found" (true at every cold start),
+  `populate_available_plugins`' skipped-directory warning (fires before the main window
+  shows). The `_dialog_open` guard also *discards* records arriving while a dialog is up,
+  so a burst of real errors shows the first and drops the rest. Minimum:
+  `qtHandler.setLevel(logging.ERROR)`. Better: route user-facing messages through the
+  existing `add_text_to_display` channel and let the log be a log.
+- **A user plugin silently replaces a built-in of the same filename.**
+  `main_model.py:174-246`. The walk visits `poriscope/plugins/` then the user folder into
+  one flat `{subclass_name: class}` map, so a user `ClassicBlockageFinder.py` overwrites
+  the shipped one with no warning and no way to tell which ran - a reproducibility problem,
+  not just a packaging one. Related: `load_plugin` calls `exec_module` on every `.py` file
+  *before* checking whether it holds a plugin, and never registers modules in
+  `sys.modules`, so two plugins importing a shared helper by file each get their own copy.
+  Minimum fix: detect the collision and log it loudly, keyed by resolved path. Worth
+  folding into compliance-gate block 4 below.
+- **Finished `Worker`/`WorkerThread` objects are retained for the whole session.**
+  `MetaModel.py:129-140` assigns them; nothing ever pops them - there is no `pop` or `del`
+  against `self.workers`/`self.threads` anywhere under `poriscope/`. `reset_lock` clears
+  only `thread_running` and `generators`, so every dead `QThread` stays alive holding the
+  generator closure and the data it touched. Also why `handle_kill_worker` reports
+  "Stopping worker for channel N" for runs that finished hours ago (harmless -
+  `stop_workers` skips them on `thread_running`, but the log misleads). Pop both entries in
+  `reset_lock` and `deleteLater()` the thread. While there: `reset_lock` resets no lock, it
+  clears run state - rename it.
+
+### Moderate
+
+- **`@log`'s debug gate reads the root logger's exact level.** `LogDecorator.py:106,128`:
+  `if logger.root.level == logging.DEBUG`. Testing the root rather than the decorated
+  module's effective level makes per-module debug logging impossible, and `==` disables
+  argument logging at any level that is not exactly 10 (confirmed at level 5).
+  `logger.isEnabledFor(logging.DEBUG)` fixes both. Separately, across 949 decorated
+  methods the per-call cost is paid whether logging is on or not - `log_call` builds the
+  f-string name before the level is consulted. Build it lazily inside the check, and
+  consider dropping the decorator from `get_key()` and `WaveletFilter._apply_filter`,
+  which run per dependency-wiring call and per data chunk respectively.
+- **`get_raw_settings()` hands out live internal state and callers write to it.**
+  `DataPluginController.py:169-185`. On rename, `edit_plugin` mutates each dependent's dict
+  directly (`dsettings[metaclass]["Value"] = key`, `Options.remove(...)`) *and* calls
+  `update_raw_settings`, which does the same write through the accessor - drop the direct
+  one. Worse, `dhistory["settings"] = dsettings` stores a live reference to plugin-internal
+  state in session history, so a later mutation retroactively changes what is persisted.
+  `BaseDataPlugin.apply_settings:266` compounds it by aliasing rather than copying
+  (`self.raw_settings = settings`). Return a copy; make `update_raw_settings` the only
+  writer.
+- **`save_session` has no error handling, unlike `update_app_config` beside it.**
+  `main_model.py:307-316` opens a user-supplied path and calls `json.dump` bare, from a Qt
+  slot - and PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
+  read-only destination can take the process down. It also re-serializes the whole history
+  on the GUI thread on every plugin change. Contrast the 161 `except Exception` handlers
+  elsewhere: `validate_and_instantiate_plugin` alone has six sequential
+  try/except/log/return blocks, so a failure leaves the UI partially updated with no
+  indication of which stage failed.
+- **The two dispatch handlers are near-duplicates that have already drifted.**
+  `main_controller.py:186-246` vs `:248-310` differ only in how the target is resolved;
+  everything after is copied. The first has the `TypeError` retry and uses
+  `logger.exception`, the second has neither - neither divergence looks deliberate. One
+  `_dispatch(target, ...)` helper removes ~55 lines. Note `_ensure_tuple` splats a returned
+  tuple into the callback's arguments, so a method legitimately returning a pair is
+  indistinguishable from one returning two values; and a method returning `None` yields
+  `()`, so its callback is called with zero arguments, raising the `TypeError` that
+  triggers the retry.
+- **Oversized units, measured.** Five functions exceed 300 lines:
+  `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
+  `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
+  `_locate_sublevel_transitions` (377). `ProteinView.py` is 4,027 lines across 83 methods;
+  `MetadataView.py` 3,598 across 70. `MetaDatabaseLoader` declares 21 abstract methods over
+  1,344 lines, which is the real implementation burden behind the community-plugin gate
+  below. The mechanical win is the `setupUi` methods - straight-line widget construction,
+  extractable into per-panel builders without touching behaviour.
+
+### Minor
+
+- **`_validate_param_ranges` raises the exception its docstring rules out.**
+  `BaseDataPlugin.py:437-455`. The bound comparisons run before any `None` check, so
+  `Value: None` with a `Min` set raises `TypeError: '<' not supported between instances of
+  'NoneType' and 'float'` (confirmed) where the docstring promises `ValueError`. The caller
+  reports every failure with one generic message, so the user sees a type error instead of
+  "Threshold is required". Same method: the `Options` check special-cases the literal names
+  `"Output File"` and `"Input File"` - plugin-specific knowledge in the universal validator.
+  A `"Validate Options": False` flag in the settings schema expresses it without the base
+  class knowing any names.
+- **The docs workflow triggers on `main` while its comments say `develop`.**
+  `.github/workflows/build_and_deploy_docs.yml:5-12,27` - header comment "Run automatically
+  on pushes to develop", step named "Checkout (develop)", trigger `branches: ["main"]`.
+  Under git flow publishing from `main` is very likely correct, so fix the comments; left
+  alone, someone will eventually "fix" the trigger instead.
+- **Two dead conditions in the plugin loader.** `main_model.py:190` filters
+  `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
+  `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
+  code ignores, so the clause has never excluded anything. `main_model.py:55`'s
+  `_JSON_CLASS_NAMES` maps `"null"` to `None`, but the writer emits `type.__name__`, which
+  for `None`'s type is `"NoneType"` - the entry can never match.
+- **A missing config key at startup is fatal before logging exists.** `main_app.py:31`
+  reads `self.app_config["Log Level"]` by subscript, but the backfill at `:96-104` covers
+  only `"User Plugin Folder"`. A hand-edited or older `config.json` therefore dies with a
+  `KeyError` before any handler exists to record it. Backfill every key from
+  `default_app_config`, or read through `.get()` with a default.
+
 ## What to pick up next (order revised 2026-08-25)
 
-Two standing constraints reshape the queue below, so read this before working down it
-in file order:
+The structural audit section above outranks this list until it is cleared. Two standing
+constraints also reshape the queue below, so read this before working down it in file
+order:
 
 - **Test-writing is owned by another developer.** New pytest suites are out of scope
   here, which pushes compliance-gate blocks 1 and 7 down the queue indefinitely, and
@@ -53,6 +220,9 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   plain `ABC` with no signals, and the established route is returning a string from
   `report_channel_status()`, which `MetaModel.generate_report` relays. `add_text_to_display`
   exists only on `MetaController`/`MetaModel`/`MetaView`, so that is where any fix belongs.
+  Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
+  currently surface, as modal dialogs, while the `info` ones do not - so fix the two
+  together rather than routing more traffic into a handler that pops a dialog per record.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
