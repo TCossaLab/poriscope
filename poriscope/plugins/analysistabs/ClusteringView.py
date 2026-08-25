@@ -602,17 +602,22 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 f"All columns {columns} must be present in the provided dataframe"
             )
 
-        columns.append("id")
-        clustering_data = self.plot_data[columns]
+        # "id" is carried through for row identity, but is kept out of `columns` so
+        # that `columns` stays index-aligned with the per-column flag lists (logs,
+        # norm, plot) built alongside it. Appending to `columns` here is what used to
+        # make the zips below truncate silently, so that no flag list could ever
+        # reach "id" - which is why it was never actually excluded from
+        # normalization despite the code appearing to exclude it.
+        frame_columns = columns + ["id"]
+        clustering_data = self.plot_data[frame_columns]
         clustering_data = self._logscale_and_filter_dataframe(
-            clustering_data, log_columns=[c for c, b in zip(columns, logs) if b]
+            clustering_data,
+            log_columns=[c for c, b in zip(columns, logs, strict=True) if b],
         )
-        # "id" is appended to `columns` above but not to `norm`, so zip() truncates
-        # and can never place it in the exclude list. Exclude it explicitly rather
-        # than relying on its int dtype being skipped by _normalize_column_data.
         clustering_data = self._normalize_column_data(
             clustering_data,
-            exclude_cols=[c for c, b in zip(columns, norm) if not b] + ["id"],
+            exclude_cols=[c for c, b in zip(columns, norm, strict=True) if not b]
+            + ["id"],
         )
 
         if config["method"] == "HDBSCAN":
@@ -690,12 +695,17 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self.plot = plot
 
         dims = sum(plot)
-        plot_cols = [col for col, p in zip(data.columns, plot) if p]
         cols_no_id = [
             col
             for col in data.columns
             if col != "id" and col != "cluster_label" and col != "cluster_confidence"
         ]
+        # Derived from the explicitly filtered user-column list rather than from
+        # data.columns, whose trailing "id"/"cluster_label"/"cluster_confidence"
+        # entries previously left this zip relying on the user columns happening to
+        # come first. plot_cols indexes the plot axes below, so a silent mis-mapping
+        # here would render the wrong data against the wrong labels.
+        plot_cols = [col for col, p in zip(cols_no_id, plot) if p]
         if dims < 2 or dims > 3:
             self.logger.error(
                 f"Must plot 2 or 3 columns, but you are trying to plot {sum(plot)}"

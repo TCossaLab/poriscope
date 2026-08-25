@@ -745,8 +745,14 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             + ", experiment_id, channel_db_id, event_db_id"
         )
         values = ", ".join("?" for _ in sublevel_metadata) + ", ?, ?, ?"
+        # Every list in sublevel_metadata is the same length by the time it reaches
+        # here: MetaEventFitter.fit_events rejects any event whose metadata lists
+        # disagree with its sublevel count. strict=True asserts that invariant at the
+        # point of use, so a hand-built dict from a test or a future fitter fails
+        # loudly instead of silently transposing into fewer rows than the event has.
         rows = zip(
-            *(map(convert_value, sublevel_metadata[key]) for key in sublevel_metadata)
+            *(map(convert_value, sublevel_metadata[key]) for key in sublevel_metadata),
+            strict=True,
         )
         cursor.executemany(
             f"INSERT OR IGNORE INTO sublevels ({columns}) VALUES ({values});",
