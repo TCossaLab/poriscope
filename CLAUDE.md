@@ -28,7 +28,7 @@ pytest -m fast                                # quick tests only (<5s)
 
 pre-commit run --all-files --hook-stage manual   # auto-fix: black, ruff --fix
 pre-commit run --all-files                       # strict check: ruff + mypy + pydoclint (what pre-commit/CI enforce on real commits)
-mypy poriscope                                    # type check directly (excludes tests/)
+mypy poriscope                                    # NOT the gate - see the warning below
 pydoclint --baseline=.pydoclint-baseline.txt poriscope   # docstring/signature consistency check directly
 ```
 
@@ -36,6 +36,15 @@ Note: `black` and the ruff auto-fix hook only run at `stages: [manual]` — they
 run automatically on `git commit`. Run `pre-commit run --all-files --hook-stage manual`
 yourself before committing if you want formatting applied; the pre-commit hook itself
 runs ruff (strict, no fix), mypy, and pydoclint.
+
+**`pre-commit run mypy --all-files` is the mypy gate; `mypy poriscope` is not.** The two
+disagree wildly and are blind in opposite directions. The hook runs in an isolated
+virtualenv with no project dependencies, so PySide6/numpy/pandas types are all `Any` to
+it; the project venv's `mypy poriscope` sees real types but is a different version and
+reports several hundred errors that are overwhelmingly known noise (191 PySide6
+short-form enum accesses alone - see `DECISIONS.md`). **Always measure with the hook.**
+The hook is scoped `files: ^poriscope/` because `mypy.ini`'s `exclude = ^tests/` governs
+directory discovery only and does not apply to explicitly listed paths.
 
 `pydoclint` checks that a docstring's documented parameters, return type, and raised
 exceptions actually match the real function signature/body. It does NOT require every
@@ -169,7 +178,14 @@ of every session, so it should stay a short list of standing rules.
 
 ## General Instructions
 
-- Do not nest functions inside other functions
+- Do not nest functions inside other functions (`utils/LogDecorator.py` is the standing
+  exception - decorators require it).
+- **Never add `@overload` or `cast()` to work around an over-broad return union.** Verify
+  every incoming call and delete the dead branch instead. If both arms are genuinely live,
+  flag it for review rather than overloading - the fix is usually to change the callers.
+  See `DECISIONS.md`.
+- **Call out breaking changes explicitly in `changelog.md`**, rather than describing them
+  as ordinary fixes. Narrowing or removing anything on a `Meta*` ABC counts.
 - Imports go at module level. Do not add function-local ("lazy") imports, and hoist
   any you come across. The only exception is a real circular import, which goes in an
   `if TYPE_CHECKING:` block with a comment explaining the cycle (see

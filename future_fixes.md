@@ -33,8 +33,9 @@ logic defect or a design question that needs a decision.** They are enumerated b
 The pydoclint half of what used to be step 7 is **done** (2026-08-24).
 `arg-type-hints-in-signature` is now `true` and the baseline was regenerated fresh:
 709 entries down to 216, `DOC108` eliminated. It was split out of step 7 because it was
-never actually blocked - step 6's problem is that the pre-commit `mypy` hook passes
-explicit test paths, and the pydoclint hook is already scoped `files: ^poriscope/`.
+never actually blocked - step 6's problem was that the pre-commit `mypy` hook passed
+explicit test paths, and the pydoclint hook was already scoped `files: ^poriscope/`
+(which is exactly the fix step 6 went on to copy).
 `mypy`'s `strict_equality` was turned on at the same time (measured: zero new errors).
 
 Consequence for the remaining batches: a batch now *removes* `DOC106`/`DOC107` lines

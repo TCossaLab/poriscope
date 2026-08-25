@@ -31,7 +31,7 @@ index stops being derived from the matching count.
 
 ---
 
-## 2026-08-24 - `@log` erases decorated signatures, which caps what step 7 can buy
+## 2026-08-24 - `@log` erases decorated signatures (RESOLVED 2026-08-26)
 
 **Context.** `LogDecorator.log` is declared `-> Callable`, i.e. `Callable[..., Any]`.
 Applying it therefore replaces the decorated method's type with `Any` from the caller's
@@ -46,13 +46,82 @@ So the type-annotation pass has made every *body* checkable, but call sites into
 decorated method are still unchecked. Turning on `disallow_untyped_defs` in step 7 will
 not change that.
 
-**Decision.** Not fixed as part of the annotation pass, which was scoped to hints and
-docstrings. Recorded as a prerequisite for getting full value from step 7. The fix is
-standard and small: give `log` a `TypeVar` bound to `Callable` (or `ParamSpec`) so it
-returns the same type it was handed, instead of a bare `Callable`.
+**Original decision (2026-08-24).** Not fixed as part of the annotation pass, which was
+scoped to hints and docstrings. Recorded as a prerequisite for getting full value from
+step 7.
 
-**Revisit if.** Step 7 is picked up - this should be done first, or the flip will look
-like it verified far more than it did.
+**RESOLVED 2026-08-26 (commit `5a215d8`).** Fixed as written: `log` and `register_action`
+now take a `TypeVar` bound to `Callable` and return the type they were handed, with
+`@overload`s for `log`'s two calling conventions. `reveal_type` confirms the erasure is
+gone - a decorated `(x: int) -> str` reveals as `def (x: int) -> str` rather than `Any`,
+generator methods keep their `Generator[...]` type through the `yield from` wrapper, and
+deliberately wrong calls now error. Runtime is unchanged; the two `cast()` calls are
+no-ops and `functools.wraps` / `inspect.signature` / `isgeneratorfunction` all behave as
+before.
+
+**What it cost, which is the part worth knowing.** Turning it on surfaced **84 call-site
+errors** under a gate that had been reporting **clean**. 32 were annotation defects and
+were fixed in the same commit; **52 were genuine logic defects** and are enumerated in
+`future_fixes.md` under "Blocking step 7". So the pre-commit gate's clean history up to
+this point should not be read as evidence that call sites were ever checked - they were
+not. Treat any pre-`5a215d8` claim of "mypy clean" accordingly.
+
+---
+
+## 2026-08-26 - Never `@overload` around an over-broad return union
+
+**Context.** `MetaReader.get_channel_length` was
+`(self, channel: Optional[int] = None) -> int | Dict[int, int]` - one channel's sample
+count when given a channel, a dict of every channel when given nothing. Because mypy
+resolves a return type from the declaration and not from the argument passed, every caller
+saw the union, and 15 of the 84 errors above were arithmetic on `int | dict[int, int]`.
+The obvious typing fix is two `@overload` stubs.
+
+**Decision.** Do not do that. When a return union makes a value unusable at its call
+sites, **verify every incoming call and delete the dead branch instead**. `cast()` at the
+call sites is equally rejected. If *both* arms turn out to be genuinely live, **flag it
+for review** rather than overloading - the preferred resolution is to change the incoming
+calls so the branch is unnecessary. In practice `@overload` is never the answer here.
+
+**Evidence.** The `get_channel_length` dict branch had **no callers anywhere**: all five
+call sites in `poriscope/` passed a channel, the `MetaReader` test double at
+`tests/unit/utils/test_meta_event_finder.py:48` has always declared `channel` as required,
+and internally the dict was reached through the `total_channel_samples` attribute directly
+rather than through the method. The union dated to the initial commit and no caller ever
+motivated it. Narrowing to `(self, channel: int) -> int` cleared all 15 errors with no
+casts and no overloads. `MainModel.get_available_plugins` had the identical shape and the
+identical outcome.
+
+**On breaking the plugin contract.** Both of those are public API - `MetaReader` is a
+`Meta*` ABC. This is acceptable: there are no third-party plugins in existence yet. The
+obligation that remains is that **the break is called out explicitly in `changelog.md`**,
+because the changelog is what a future plugin author will read.
+
+**Revisit if.** A third-party plugin ecosystem actually exists, at which point the
+cost/benefit of narrowing an ABC changes and these become deprecation cycles instead.
+
+---
+
+## 2026-08-26 - Scoping the mypy hook to `poriscope/` gives up type-checking of `tests/`
+
+**Context.** Step 6 scoped the pre-commit `mypy` hook with `files: ^poriscope/`, because
+it had been passing test files as explicit paths and `mypy.ini`'s `exclude = ^tests/`
+does not apply to explicitly listed paths - only to directory discovery.
+
+**Decision.** Accept that test files are now unchecked by the gate.
+
+**Evidence, including the cost.** That blind spot was not purely noise: it caught a real
+defect once, the `{"MetaReader": []}` fixture shape in
+`tests/unit/controllers/test_data_plugin_controller.py` that should have been
+`{"MetaReader": {}}` (see `changelog.md`, "Type annotations for data-plugin management").
+So this trades away one genuine finding source. It is still right: `tests/` is excluded by
+project policy in `mypy.ini`, the hook was contradicting that policy by accident rather
+than by design, and leaving it would mean `disallow_untyped_defs` starts failing every
+commit on unannotated test code that nobody intends to annotate. If test type-checking is
+ever wanted, it should be a deliberate second hook with its own config, not a side effect
+of how pre-commit passes filenames.
+
+**Revisit if.** Someone decides `tests/` should be type-checked on purpose.
 
 ---
 
