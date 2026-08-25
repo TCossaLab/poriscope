@@ -1309,64 +1309,72 @@ class ProteinView(MetaView, WalkthroughMixin):
         try:
             with open(path, "r") as f:
                 new_filters = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            message = f"Failed to load filters from {path}: {e}"
+            self.logger.error(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
 
-            if not isinstance(new_filters, dict):
-                raise ValueError("Invalid filter file format. Expected a dictionary.")
+        if not isinstance(new_filters, dict):
+            message = (
+                f"Invalid filter file format in {path}: expected a dictionary, "
+                f"got {type(new_filters).__name__}."
+            )
+            self.logger.error(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
 
-            # Check for name conflicts
-            existing_names = set(self.subset_filters.keys())
-            new_names = set(new_filters.keys())
-            duplicate_names = existing_names & new_names
+        # Check for name conflicts
+        existing_names = set(self.subset_filters.keys())
+        new_names = set(new_filters.keys())
+        duplicate_names = existing_names & new_names
 
-            if duplicate_names:
-                self.logger.error(
-                    f"Duplicate filter names found when loading from {path}: {', '.join(duplicate_names)}. "
-                    "No filters were loaded."
-                )
-                return
+        if duplicate_names:
+            message = (
+                f"Duplicate filter names found when loading from {path}: "
+                f"{', '.join(duplicate_names)}. No filters were loaded."
+            )
+            self.logger.warning(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
 
-            combo = self.proteincontrols.filter_comboBox
-            loader = parameters.get("db_loader")
+        combo = self.proteincontrols.filter_comboBox
+        loader = parameters.get("db_loader")
 
-            if not loader:
-                self.logger.warning(
-                    "No loader found – filters loaded but not validated."
-                )
+        if not loader:
+            self.logger.warning("No loader found – filters loaded but not validated.")
 
-            for name, filter_text in new_filters.items():
-                if loader:
-                    # Raw filters bypass validation — suffix already baked in
-                    if name.endswith("_raw"):
-                        self.subset_filters[name] = filter_text
-                        combo.addItem(name)
-                        combo.selectItem(name, select=True)
-                    else:
-                        # Temporarily store to validate
-                        self._pending_filter_name = name
-                        self._pending_filter_text = filter_text
-
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_metadata_query",
-                            (
-                                ["sublevel_current", "voltage", "duration"],
-                                filter_text,
-                                None,
-                            ),
-                            "relay_query",
-                            ("validate_new_filter",),
-                        )
-                else:
+        for name, filter_text in new_filters.items():
+            if loader:
+                # Raw filters bypass validation — suffix already baked in
+                if name.endswith("_raw"):
                     self.subset_filters[name] = filter_text
                     combo.addItem(name)
                     combo.selectItem(name, select=True)
+                else:
+                    # Temporarily store to validate
+                    self._pending_filter_name = name
+                    self._pending_filter_text = filter_text
 
-            combo.refreshDisplayText()
-            self.logger.info(f"Filters loaded from {path}")
+                    self.global_signal.emit(
+                        "MetaDatabaseLoader",
+                        loader,
+                        "construct_metadata_query",
+                        (
+                            ["sublevel_current", "voltage", "duration"],
+                            filter_text,
+                            None,
+                        ),
+                        "relay_query",
+                        ("validate_new_filter",),
+                    )
+            else:
+                self.subset_filters[name] = filter_text
+                combo.addItem(name)
+                combo.selectItem(name, select=True)
 
-        except Exception as e:
-            self.logger.error(f"Failed to load filters: {e}")
+        combo.refreshDisplayText()
+        self.logger.info(f"Filters loaded from {path}")
 
     @log(logger=logger)
     @Slot(str, str, tuple)

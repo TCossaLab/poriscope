@@ -173,6 +173,12 @@ type-annotation pass, and it is queued in `future_fixes.md`.
 **Revisit if.** That control flow is straightened out, at which point both pairs disappear
 from the baseline on their own.
 
+**Resolved 2026-08-25.** The control flow was straightened out on request. The read and
+parse step keeps a narrow `except (OSError, json.JSONDecodeError)`, the shape check is a
+plain log-and-return, and the forty lines of combo-box and signal work below are no longer
+wrapped - so a genuine Qt failure there now surfaces instead of being swallowed. Both
+`DOC501`/`DOC503` pairs disappeared with the `raise`. See `changelog.md`.
+
 ---
 
 ## 2026-08-25 - Leave `IntroDialog`'s DOC605 baselined rather than keep malformed RST to satisfy it
@@ -215,5 +221,21 @@ satisfy this version, or annotate the signal and switch the docstring to a form 
 Sphinx and pydoclint read. The latter touches a PySide6 `Signal` declaration and so needs a
 test run; it is not a docstring-only change and was therefore out of scope for step 4.
 
-**Revisit if.** `check-class-attributes` is configured, or another class documents attributes
-and makes the question general rather than a one-off.
+**Revisit if.** `pydoclint` fixes the parser, at which point the correct directive should
+start being recognised and the check can be turned back on.
+
+**Resolved 2026-08-25, and the cause is an upstream bug rather than a quirk.**
+`docstring_parser_fork/rest_attr_parser.py` hardcodes the literal `".. attribute ::"` -
+*with a space before the `::`* - in both `parse_attributes()` and `parse_attribute_block()`.
+That is not a valid reStructuredText directive: docutils requires `.. name:: arguments`, and
+the extra space makes the line a comment, which is why Sphinx rendered nothing for it. The
+correct `.. attribute::` form and every canonical field form (`:ivar:`, `:cvar:`, `:var:`)
+all parse to an empty attribute list, so under sphinx style the check could only ever fire
+against docstrings that were wrong. pydoclint's own documentation page prescribes the
+invalid spelling. Both packages were already at their latest release (`pydoclint` 0.9.1,
+`docstring_parser_fork` 0.0.16), so there was no upgrade to take.
+
+The resolution was therefore to correct the reStructuredText in `walkthrough.py` so Sphinx
+actually renders the signal, and set `check-class-attributes = false` in `pyproject.toml`
+with that rationale recorded inline. A bug report for the maintainer is drafted at
+`pydoclint-issue.md` in the session scratchpad.

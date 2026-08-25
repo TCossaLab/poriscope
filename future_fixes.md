@@ -105,23 +105,6 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
   plain `ABC` with no signals, and the established route is returning a string from
   `report_channel_status()`, which `MetaModel.generate_report` relays. `add_text_to_display`
   exists only on `MetaController`/`MetaModel`/`MetaView`, so that is where any fix belongs.
-- **`_load_filter` raises into its own handler.** In both `MetadataView._load_filter`
-  (`MetadataView.py:1802`) and `ProteinView._load_filter` (`ProteinView.py:1295`), the
-  `raise ValueError("Invalid filter file format. Expected a dictionary.")` sits inside a
-  `try:` whose `except Exception as e:` is in the same function and only logs. The
-  exception is being used as a local goto; the honest form is to log and `return` at that
-  point. Surfaced by step 4, which left the resulting `DOC501`/`DOC503` pairs baselined
-  rather than document an exception that cannot escape - see `DECISIONS.md`. Fixing the
-  control flow removes four baseline entries for free.
-- **`IntroDialog`'s signal is documented with malformed reStructuredText.**
-  `plugins/analysistabs/utils/walkthrough.py:56` writes `.. attribute :: start_walkthrough`
-  with a space before the `::`, which docutils reads as a comment, so Sphinx renders
-  nothing for it. It cannot simply be corrected: pydoclint only recognises the attribute in
-  the malformed form, and every valid form measured turns one baseline entry into two.
-  Resolving it properly means either `check-class-attributes = false` under
-  `[tool.pydoclint]` or annotating the `Signal` and moving to a form both tools read - the
-  latter touches a PySide6 signal declaration and needs a test run. Evidence table in
-  `DECISIONS.md`.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
@@ -389,10 +372,22 @@ This mirrors the process that worked well for the docstring/baseline cleanup on
   as its only record: a faulthandler dump names the crashing test at the *top* of its
   output, which is exactly what a tail discards.
 
-## Exclusions (standing project policy — do not spend effort here)
+## Exclusions (standing project policy)
+
+Revised 2026-08-25. These three files are no longer excluded wholesale; the exclusion
+now splits by *kind of change*.
 
 - `NanoTrees.py` — likely to be deprecated soon.
 - `Basic_PeakFinder.py` / `PeakFinder.py` — owned by another developer.
+
+**Docstring, signature and type-hint changes: in scope.** All three are now fully
+annotated and report zero pydoclint violations.
+
+**Logic changes: out of scope, unconditionally.** This holds even when annotating
+surfaces a real bug, and several did. Write the honest annotation describing what the
+code does today, mark the defect with a narrow `# type: ignore` and a `NOTE:` at the
+site, record it under "Defects in the formerly excluded fitter plugins" above, and leave
+the fix to the owning developer.
 
 ## Verification checklist before considering this pass done
 

@@ -28,6 +28,7 @@ import logging
 from typing import Optional
 
 import numpy as np
+import numpy.typing as npt
 from scipy.signal import welch
 from typing_extensions import override
 
@@ -52,7 +53,9 @@ class RawDataModel(MetaModel):
         pass
 
     @log(logger=logger)
-    def integrate_noise(self, f: np.ndarray, Pxx: np.ndarray) -> np.ndarray:
+    def integrate_noise(
+        self, f: npt.NDArray[np.floating], Pxx: npt.NDArray[np.floating]
+    ) -> npt.NDArray[np.floating]:
         """
         Compute the integrated noise from a power spectral density.
 
@@ -61,11 +64,11 @@ class RawDataModel(MetaModel):
         frequency. It assumes evenly spaced frequency bins.
 
         :param f: Array of frequency values (Hz), evenly spaced.
-        :type f: np.ndarray
+        :type f: npt.NDArray[np.floating]
         :param Pxx: Power spectral density values corresponding to `f`.
-        :type Pxx: np.ndarray
+        :type Pxx: npt.NDArray[np.floating]
         :return: Array of integrated RMS noise values for each frequency point.
-        :rtype: np.ndarray
+        :rtype: npt.NDArray[np.floating]
         """
         df = f[1] - f[0]
         return np.sqrt(np.cumsum(Pxx * df))

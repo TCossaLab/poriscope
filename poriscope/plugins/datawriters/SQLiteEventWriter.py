@@ -563,11 +563,11 @@ class SQLiteEventWriter(MetaWriter):
     @log(logger=logger)
     def _rescale_data_to_adc(
         self,
-        data: np.ndarray,
+        data: npt.NDArray[np.number],
         scale: Optional[float] = None,
         offset: Optional[float] = None,
         raw_data: bool = False,
-        dtype: type = np.uint16,
+        dtype: npt.DTypeLike = np.uint16,
         adc_min: int = np.iinfo(np.int16).min,
         adc_max: int = np.iinfo(np.int16).max,
     ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
@@ -575,15 +575,15 @@ class SQLiteEventWriter(MetaWriter):
         Not used by this writer
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: np.ndarray
+        :type data: npt.NDArray[np.number]
         :param scale: Scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
         :type scale: Optional[float]
         :param offset: Offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
         :type offset: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
-        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: type
+        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit unsigned int.
+        :type dtype: npt.DTypeLike
         :param adc_min: Integer encoding the minimum adc code for the adc conversion.
         :type adc_min: int
         :param adc_max: Integer encoding the maximum adc code for the adc conversion.

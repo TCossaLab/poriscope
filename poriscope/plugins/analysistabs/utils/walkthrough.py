@@ -53,7 +53,7 @@ class IntroDialog(QDialog):
     """
     Welcome dialog to start the Poriscope walkthrough tutorial.
 
-    .. attribute :: start_walkthrough
+    .. attribute:: start_walkthrough
         :type: Signal
 
         Signal emitted when the user starts the walkthrough.

@@ -42,13 +42,21 @@ exceptions actually match the real function signature/body. It does NOT require 
 function to have a docstring — functions with no docstring are skipped entirely — but it
 DOES require that a documented function's signature carry type hints, and that those
 hints agree with the docstring's `:type:`/`:rtype:`
-(`arg-type-hints-in-signature = true` in `pyproject.toml`). Every function under
-`poriscope/` is now fully annotated apart from `NanoTrees.py`/`PeakFinder.py`/
-`Basic_PeakFinder.py`, so new code is expected to be too. Pre-existing violations at the time it was introduced are grandfathered
-into `.pydoclint-baseline.txt`; only *new* mismatches introduced going forward fail the
-hook. If you fix an existing baselined violation, regenerate the baseline so it doesn't
-silently keep passing for a docstring that no longer exists in that exact form:
-`pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope`.
+(`arg-type-hints-in-signature = true` in `pyproject.toml`). **Every function under
+`poriscope/` is annotated, with no exclusions**, so new code is expected to be too.
+
+**`.pydoclint-baseline.txt` is empty (0 bytes) as of 2026-08-25** — the ~1,090
+grandfathered violations this tool was adopted with are all cleared. Every violation
+from here on is a real one that fails the hook, so there is normally nothing to
+regenerate. If you ever do need to, `pydoclint --generate-baseline=True
+--baseline=.pydoclint-baseline.txt poriscope` — but prefer fixing the violation, and do
+not let the file grow back silently.
+
+`check-class-attributes` is deliberately `false`. It cannot work under sphinx style
+with the parser pydoclint 0.9.1 ships: only the *malformed* `.. attribute :: name`
+(note the space, which makes it a comment rather than a directive) is recognised, while
+the correct `.. attribute::` and every canonical field form parse to nothing. See
+`DECISIONS.md`; a bug report is drafted for upstream.
 
 Qt-based tests need `qt_api = pyside6` (already set in `pytest.ini`) and, on Linux/CI,
 `QT_QPA_PLATFORM=offscreen` plus `xvfb-run`.

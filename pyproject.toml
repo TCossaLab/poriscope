@@ -90,4 +90,12 @@ arg-type-hints-in-signature = true
 # Every __init__ in this codebase has its own docstring separate from the
 # class docstring; that's an established convention here, not a violation.
 allow-init-docstring = true
+# Class-attribute checking cannot work under sphinx style with the parser
+# pydoclint 0.9.1 ships. It reads docstring_parser_fork's `.attrs`, and in
+# REST/sphinx mode that list is only ever populated by a malformed
+# ".. attribute :: name" (note the space, which makes it a field rather than a
+# directive). The correct directive and every canonical field form - `:ivar:`,
+# `:cvar:`, `:var:` - all yield nothing, so the check can only ever fire against
+# docstrings that are wrong. Both packages are already at their latest release.
+check-class-attributes = false
 exclude = "^tests/"
