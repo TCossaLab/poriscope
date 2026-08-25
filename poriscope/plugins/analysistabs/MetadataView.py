@@ -2500,7 +2500,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         event_data: Sequence[Dict[str, Any]],
         horizontal_lines: Sequence[Optional[List[float]]],
         vertical_lines: Sequence[Optional[List[float]]],
-        points: Any,
+        points: Sequence[Optional[List[Tuple[float, float]]]],
         horizontal_labels: Sequence[Optional[List[str]]],
         vertical_labels: Sequence[Optional[List[str]]],
         point_labels: Sequence[Optional[List[str]]],
@@ -2521,8 +2521,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type horizontal_lines: Sequence[Optional[List[float]]]
         :param vertical_lines: One entry per subplot, each a list of x-values for vertical line annotations, or None.
         :type vertical_lines: Sequence[Optional[List[float]]]
-        :param points: One entry per subplot, each a list of (x, y) coordinate tuples for marker points, or None. Typed loosely because the loop below rebinds this name to the per-subplot entry.
-        :type points: Any
+        :param points: One entry per subplot, each a list of (x, y) coordinate tuples for marker points, or None.
+        :type points: Sequence[Optional[List[Tuple[float, float]]]]
         :param horizontal_labels: One entry per subplot, each a list of labels for the horizontal lines, or None.
         :type horizontal_labels: Sequence[Optional[List[str]]]
         :param vertical_labels: One entry per subplot, each a list of labels for the vertical lines, or None.
@@ -2542,7 +2542,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
         j = 0
-        for i, (event, vlines, hlines, points, vlabels, hlabels, plabels) in enumerate(
+        for i, (event, vlines, hlines, pts, vlabels, hlabels, plabels) in enumerate(
             zip(
                 event_data,
                 vertical_lines,
@@ -2597,8 +2597,8 @@ class MetadataView(MetaView, WalkthroughMixin):
                         color_idx += 1
 
             color_idx = 0
-            if points is not None:
-                for (x, y), label in zip(points, plabels):
+            if pts is not None:
+                for (x, y), label in zip(pts, plabels):
                     if label is None:
                         ax.plot(x, y / 1000, marker="x", color="black", markersize=10)
                     else:

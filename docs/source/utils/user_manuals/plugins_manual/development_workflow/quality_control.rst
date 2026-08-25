@@ -214,6 +214,25 @@ After running:
    - **Auto-fix mode (manual stage)**: fixes code and modifies files
    - **Validation mode (commit & CI)**: checks only, fails on violations
 
+.. note::
+
+   **Which rules are enabled.** On top of Ruff's default rule set,
+   ``pyproject.toml`` selects:
+
+   - ``I`` -- import ordering (isort).
+   - ``B006`` -- a mutable data structure used as an argument default. A ``[]`` or
+     ``{}`` default is built once, when the function is defined, and then shared by
+     every call, so anything that mutates it leaks state between calls. Use ``None``
+     and create the container inside the function.
+   - ``B020`` -- a loop control variable that shadows the iterable it iterates over.
+     It does not break the loop, because the iterator is created before the first
+     assignment, but it makes the original sequence unreachable for the rest of the
+     loop body and forces the parameter to be annotated loosely.
+
+   The other ``flake8-bugbear`` rules are deliberately **not** enabled yet. The
+   measured backlog and the case for adopting them are recorded in
+   ``future_fixes.md``.
+
 
 Skipping Hooks (Advanced Use Only)
 ----------------------------------

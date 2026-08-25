@@ -173,28 +173,32 @@ are not re-raised as open work.
   adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
   the `IntroDialog` entry.
 
-- **Adopt ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the grounds that
-  both run against real code logic and so complement pydoclint's docstring/signature
-  checking for catching silent bugs. Measured on `poriscope/` (2026-08-24): **B = 106,
-  S = 40**.
+- **Adopt the rest of ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the
+  grounds that both run against real code logic and so complement pydoclint's
+  docstring/signature checking for catching silent bugs. `B006` and `B020` are **done**
+  and are now enforced through `extend-select` in `pyproject.toml`; everything below is
+  what is left. Re-measured on `poriscope/` (2026-08-25): **B = 104, S = 54**. `tests/`
+  adds 10 more B hits, one of which is a `B023` closure-over-a-loop-variable - a real
+  bug class, but test code belongs to another developer.
 
   | Rule | Hits | Character |
   | --- | --- | --- |
-  | `B905` zip-without-explicit-strict | 56 | real silent-truncation class; each site needs a `strict=` decision |
-  | `B904` raise-without-from-inside-except | 23 | loses the exception chain; mechanical but touches `raise` statements |
-  | `B007` unused-loop-control-variable | 19 | mostly cosmetic |
-  | `B006` mutable-argument-default | 4 | near-certain bug |
-  | `B010`/`B028`/`B020` | 4 | cosmetic, except `B020` (1) which is a real shadowing bug |
-  | `S608` hardcoded-sql-expression | 25 | worth real scrutiny - user-entered subset filters feed `_build_where_clause` |
+  | `B905` zip-without-explicit-strict | 57 | real silent-truncation class, and now proven so: the `"id"`-never-excluded bug fixed 2026-08-25 was exactly this, a `zip` over two lists allowed to drift out of length. Each site needs its own `strict=` decision. |
+  | `B904` raise-without-from-inside-except | 24 | loses the exception chain; mechanical but touches `raise` statements |
+  | `B007` unused-loop-control-variable | 20 | mostly cosmetic |
+  | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
+  | `B028` no-explicit-stacklevel | 1 | one `warnings.warn` in `MetaWriter.py`; cosmetic |
+  | `S608` hardcoded-sql-expression | 25 | **downgraded.** The database is a local file owned by the user running the app, so there is no privilege boundary for an injection to cross. Settled - see the `SQLitePeakDBLoader` note above. |
+  | `S110` try-except-pass | 20 | silently swallowed exceptions in a GUI app. Was 7 on 2026-08-24, so this one is actively growing. |
   | `S101` assert | 8 | asserts in non-test code |
-  | `S110` try-except-pass | 7 | silently swallowed exceptions in a GUI app |
+  | `S112` try-except-continue | 1 | same character as `S110` |
 
-  This was deliberately kept out of the type-annotation pass, which was scoped to hints
-  and docstrings only, because almost every fix above is a logic change; it is
-  unclaimed rather than blocked. Suggested order when it is picked up: `B006` + `B020`
-  first (5 near-certain bugs), then `S608`, then `S110`. Re-measure before starting -
-  the counts date from 2026-08-24 - and enable the rules only once the backlog they gate
-  is small enough not to need its own baseline.
+  Almost every remaining fix is a logic change, so this is unclaimed rather than
+  blocked. Suggested order now that the two cheap rules are closed: `S110` + `S112`
+  (21 swallowed exceptions, the largest reservoir of real bugs left), then `B905` at the
+  sites where the zipped sequences can genuinely differ in length, then `B904`.
+  Re-measure before starting, and enable each rule only once its own backlog is zero,
+  the way `B006`/`B020` were.
 
   Note this overlaps, but is not the same as, the bandit proposal in the
   community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust

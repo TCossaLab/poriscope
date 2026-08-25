@@ -607,10 +607,12 @@ class ClusteringView(MetaView, WalkthroughMixin):
         clustering_data = self._logscale_and_filter_dataframe(
             clustering_data, log_columns=[c for c, b in zip(columns, logs) if b]
         )
-        exclude_cols = [c for c, b in zip(columns, norm) if not b]
-        exclude_cols.append("id")
+        # "id" is appended to `columns` above but not to `norm`, so zip() truncates
+        # and can never place it in the exclude list. Exclude it explicitly rather
+        # than relying on its int dtype being skipped by _normalize_column_data.
         clustering_data = self._normalize_column_data(
-            clustering_data, exclude_cols=[c for c, b in zip(columns, norm) if not b]
+            clustering_data,
+            exclude_cols=[c for c, b in zip(columns, norm) if not b] + ["id"],
         )
 
         if config["method"] == "HDBSCAN":
@@ -840,18 +842,20 @@ class ClusteringView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     def _normalize_column_data(
-        self, df: pd.DataFrame, exclude_cols: List[str] = []
+        self, df: pd.DataFrame, exclude_cols: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
         Applies MAD-based normalization to float columns in the dataframe.
 
         :param df: Input DataFrame.
         :type df: pd.DataFrame
-        :param exclude_cols: List of columns to exclude from normalization.
-        :type exclude_cols: List[str]
+        :param exclude_cols: Columns to exclude from normalization. None means exclude nothing.
+        :type exclude_cols: Optional[List[str]]
         :return: Normalized DataFrame.
         :rtype: pd.DataFrame
         """
+        if exclude_cols is None:
+            exclude_cols = []
         df = df.copy()  # avoid SettingWithCopyWarning
         datatypes = df.dtypes
         for col, dt in datatypes.items():
