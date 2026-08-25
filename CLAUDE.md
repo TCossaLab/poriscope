@@ -155,6 +155,18 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   under `poriscope.plugins` and asserts each plugin subclass implements all abstract
   methods of its `Meta*`/`BaseDataPlugin` base — this is the guardrail that keeps the
   plugin contract intact; run it after touching any `Meta*` base or plugin signature.
+  Note it compares generic annotations (`List[str]` and friends) by **equality**, using
+  `issubclass()` only when both sides are plain classes — so widening or correcting a
+  base method's annotation breaks every subclass whose override does not match it
+  exactly. Annotate a plugin method by copying the base signature verbatim rather than
+  inferring it from the body.
+- **Never pass test paths in a hand-picked order.** Pytest runs explicitly listed paths
+  in the order given, and inverting natural collection order (e.g.
+  `pytest tests/unit/views tests/unit/plugins`) has reliably segfaulted the interpreter
+  from leaked Qt state. Pass directories, or list paths alphabetically. Relatedly, never
+  pipe a test run through `tail`/`grep` as its only record — a faulthandler dump names
+  the crashing test at the *top* of its output, which is exactly what a tail discards —
+  and never call a run green from a progress line; read the real summary line.
 - `tests/integration/flows/` instantiate real controller/model/view stacks
   "no_gui" (headless) for cross-plugin flows; `tests/e2e/` drive actual Qt widgets
   (`e2e_ux` marker) end-to-end and are excluded from the standard CI run

@@ -7,6 +7,12 @@ context, the decision, the evidence behind it, and what would make it worth revi
 Detail about work that *was* done lives in `changelog.md` and in git history; this file
 is only for the reasoning that would otherwise be lost.
 
+Several entries below refer to "step 3", "step 4", "step 6" or "step 7". Those were the
+numbered stages of the full-codebase type-annotation pass, which ran through August 2026
+and is now complete; the plan they refer to has been pruned from `future_fixes.md` and
+the outcome is summarised in `changelog.md`. The step numbers are kept here only because
+they date the decision.
+
 ---
 
 ## 2026-08-24 - Leave two of the three unguarded `Optional` Qt accessors alone
@@ -42,9 +48,9 @@ point of view. Verified with `reveal_type` against the project mypy: for a metho
 - raises no error, where the same call on the undecorated twin does.
 
 **Why it matters.** `@log(logger=logger)` is applied to **935 methods across 71 files**.
-So the type-annotation pass has made every *body* checkable, but call sites into any
-decorated method are still unchecked. Turning on `disallow_untyped_defs` in step 7 will
-not change that.
+So the type-annotation pass had made every *body* checkable, but call sites into any
+decorated method were still unchecked, and turning on `disallow_untyped_defs` would not
+have changed that. That is why this had to be fixed before the pass could be closed.
 
 **Original decision (2026-08-24).** Not fixed as part of the annotation pass, which was
 scoped to hints and docstrings. Recorded as a prerequisite for getting full value from
@@ -61,10 +67,10 @@ before.
 
 **What it cost, which is the part worth knowing.** Turning it on surfaced **84 call-site
 errors** under a gate that had been reporting **clean**. 32 were annotation defects and
-were fixed in the same commit; **52 were genuine logic defects** and are enumerated in
-`future_fixes.md` under "Blocking step 7". So the pre-commit gate's clean history up to
-this point should not be read as evidence that call sites were ever checked - they were
-not. Treat any pre-`5a215d8` claim of "mypy clean" accordingly.
+were fixed in the same commit; **52 were genuine logic defects**, all since resolved -
+see `changelog.md` for what each of them was. So the pre-commit gate's clean history up
+to this point should not be read as evidence that call sites were ever checked - they
+were not. Treat any pre-`5a215d8` claim of "mypy clean" accordingly.
 
 ---
 
@@ -320,5 +326,7 @@ invalid spelling. Both packages were already at their latest release (`pydoclint
 
 The resolution was therefore to correct the reStructuredText in `walkthrough.py` so Sphinx
 actually renders the signal, and set `check-class-attributes = false` in `pyproject.toml`
-with that rationale recorded inline. A bug report for the maintainer is drafted at
-`pydoclint-issue.md` in the session scratchpad.
+with that rationale recorded inline. **The upstream bug has still not been reported.**
+The draft lived in a session scratchpad that no longer exists; the one-line fix and a
+reproduction are recorded in `future_fixes.md` under "Also queued", which is enough to
+refile it from scratch.

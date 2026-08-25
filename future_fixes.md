@@ -1,121 +1,21 @@
-# Future Fix: Full Codebase Type-Annotation Pass
+# Future Fixes
 
-Context block for a dedicated future session. Paste/point Claude Code at this file to
-resume this work; it is written to be self-contained. Choices made along the way -
-particularly things deliberately *not* done - are recorded in `DECISIONS.md` rather
-than here.
+Queued work and standing policy for the Poriscope codebase. Keep this terse: prune
+items as they land rather than leaving completed-work narrative behind. Reasoning about
+things deliberately *not* done lives in `DECISIONS.md`; what changed lives in
+`changelog.md`.
 
-## Status
+**The full-codebase type-annotation pass is complete (2026-08-26).** Every function
+under `poriscope/` is annotated with no exclusions, `.pydoclint-baseline.txt` is a
+zero-byte file, and `mypy.ini` enforces `disallow_untyped_defs`, `check_untyped_defs`
+and `strict_equality`. All four pre-commit gates are green. The step-by-step plan, the
+batch tables and the retrospective that used to fill this file have been removed now
+that they describe finished work; the narrative is in `changelog.md` and the standing
+rules that came out of it are in `CLAUDE.md` and `DECISIONS.md`. What remains below is
+only what is still open.
 
-**Where this stands (2026-08-26): this pass is COMPLETE.** Every function under
-`poriscope/` is annotated with no exclusions, `.pydoclint-baseline.txt` is empty,
-`mypy.ini` has `disallow_untyped_defs`, `check_untyped_defs` and `strict_equality` all
-`True`, and `ruff`, `mypy`, `pydoclint` and `check-added-large-files` are green across
-all 122 source files. **Steps 1-7 and the `@log` fix are closed.**
+## Still queued
 
-The `@log` fix is what made the last step meaningful. `LogDecorator.log` was erasing the
-signature of all 935 methods it decorates, so the pre-commit gate had been reporting
-clean while checking essentially no call sites. Fixing it surfaced **84 real errors**:
-32 were annotation defects, and the remaining **52 were genuine logic defects or design
-questions**, all now resolved - see "Step 7" below and the corresponding `changelog.md`
-entries.
-
-What remains in this file is the unclaimed work under "Also queued", which was never
-part of this pass.
-
-| Step | Scope | State |
-| --- | --- | --- |
-| 1 | `poriscope/utils/` - the 13 `Meta*`/`BaseDataPlugin`/`LogDecorator` files | Done 2026-08-23 |
-| 2 | `analysistabs/` - 5 tab triads, `*controls.py`, `walkthrough*` (22 files) | Done 2026-08-24 |
-| 3 | `main_*.py`, `DataPlugin*.py`, `settings_window.py`, `help.py`, `views/widgets/*` | Done 2026-08-24 |
-| 3b | Fix pass over the defects step 3 surfaced | Done 2026-08-24 |
-| 4 | Docstring-text cleanup (`DOC105`) in the files step 1 typed | Done 2026-08-25 |
-| 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Resolved 2026-08-25 - all three annotated; logic still off limits |
-| 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Done 2026-08-26 - `files: ^poriscope/`, hook now sees 122 files not 195 |
-| 6b | Fix `@log`/`register_action` signature erasure (`TypeVar` bound to `Callable`) | Done 2026-08-26 - verified with `reveal_type`; surfaced 84 call-site errors |
-| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Done 2026-08-26 - zero new errors; all 52 findings closed first |
-
-The pydoclint half of what used to be step 7 is **done** (2026-08-24).
-`arg-type-hints-in-signature` is now `true` and the baseline was regenerated fresh:
-709 entries down to 216, `DOC108` eliminated. It was split out of step 7 because it was
-never actually blocked - step 6's problem was that the pre-commit `mypy` hook passed
-explicit test paths, and the pydoclint hook was already scoped `files: ^poriscope/`
-(which is exactly the fix step 6 went on to copy).
-`mypy`'s `strict_equality` was turned on at the same time (measured: zero new errors).
-
-Consequence for the remaining batches: a batch now *removes* `DOC106`/`DOC107` lines
-from the baseline instead of adding `DOC108` lines to it. Regenerate the baseline at the
-end of each batch as before; the count should only ever go down.
-
-Steps 1 and 2 are summarised in `changelog.md` (the two "Type annotations for ..."
-entries) and recorded in detail by the `feat(types):` and `fix:` commits on
-`feature/loadbearing_docstrings`. That narrative is deliberately not repeated here.
-
-Both completed steps finished with: every parameter and return annotated (checked by an
-AST scan, not by eye), zero `DOC104`-`DOC107` under
-`pydoclint --arg-type-hints-in-signature=True`, no `# type: ignore` left behind, and a
-green `pytest -m "not e2e and not slow"` plus `test_plugin_compliance.py`. Use the same
-bar for step 3.
-
-### Step 3 - measured scope and batch plan (2026-08-24, re-measured)
-
-**369 functions across 39 files** have at least one unannotated parameter or return,
-once `NanoTrees.py` (45), `PeakFinder.py` (13) and `Basic_PeakFinder.py` (12) are set
-aside per the Exclusions section. (An earlier note said 439 across 42 files; that figure
-counted those three excluded plugins.)
-
-Re-measure at any time with `scratchpad/check_hints.py`, or the equivalent AST walk over
-`poriscope/` - do not trust the numbers below once work has started.
-
-Planned as one family per commit, smallest and most self-contained first:
-
-| # | Batch | Files | Fns |
-| --- | --- | --- | --- |
-| 1 | Leftovers from steps 1-2 - **done** | `utils/{QObjectABCMeta,QWidgetABCMeta,QtHandler,EventWorker,DocstringDecorator,JsonDefaultSerializer,MetaDatabaseWriter}`, `plugins/{SQLiteEventWriter,BesselFilter,WaveletFilter,SQLiteEventLoader}`, `plugins/datareaders/helpers/ABF2Header.py` | 37 |
-| 2 | Line-edit / validator family | `views/{comma_delimited_float_range_edit,float_range_line_edit,integer_range_line_edit}`, `utils/{BaseLineEdit,BaseValidator}`, `views/widgets/validators/numeric_validation` | 44 |
-| 3 | `views/widgets` menus | `icon_menu_widget` (30), `text_menu_widget` (18), `dropdown_selection_widget` (5) | 53 |
-| 4 | `views/widgets` dialogs | `clustering_settings_widget` (20), `dict_dialog_widget` (10), the three subset-filter dialogs, `walkthrough_steps` | 39 |
-| 5 | `views/widgets` remaining | `multiselect_filter` (16), `multiselect` (13), `time_widget` (8), `SelectionTree` (5) | 42 |
-| 6 | Settings + help | `views/settings_window.py` (28), `views/help.py` (7) | 35 |
-| 7 | Data-plugin management | `controllers/DataPluginController.py` (7), `models/DataPluginModel.py` (4) | 11 |
-| 8 | App shell, non-view | `main_app.py` (5), `models/main_model.py` (19), `controllers/main_controller.py` (19) | 43 |
-| 9 | `views/main_view.py` | on its own - the largest single file | 65 |
-
-The per-batch counts above are the plan's original estimates and have drifted; batch 1
-measured 37, not 51. Re-measure before starting each batch.
-
-Batch 1 exists because steps 1 and 2 left small gaps in areas they reported complete:
-`MetaDatabaseWriter.lookahead_generator`, both `Qt*ABCMeta` metaclasses, `QtHandler`,
-`EventWorker`, and a `get_empty_settings: standalone` / `_finalize_initialization: ->
-None` pair repeated across four data plugins. Worth clearing first so the completed-step
-claims are actually true.
-
-## Step 3b - defects surfaced by step 3 - DONE
-
-Closed out across `41adc07`, `7e374db`, `6cf1602` and `0abd08c`. Every item is either
-fixed, deliberately judged to need no action, or moved to the queue below with a reason.
-
-| Item | Outcome |
-| --- | --- |
-| A. Attributes shadowing inherited Qt methods (5) | Renamed to `_result`/`_validator`; `BaseSubsetFilterDialog.layout` deleted as redundant |
-| B. Methods reading attributes that are never assigned | Language/theme setters and `ClusteringSettingsDialog.update_unit_label`/`reset_top_inputs` deleted |
-| C. Unguarded `Optional`-returning Qt accessors | `lineEdit()` bound once where `setEditable(True)` establishes it; the other two judged unreachable, no action |
-| D. Override signature mismatches | `addItem`'s `userData` dropped; `show_walkthrough_intro` made substitutable |
-| E. Mutable default arguments | `source_plugins` defaults to `None`; `class_dict` hoisted to `_JSON_CLASS_NAMES` |
-| F. Silently discarded parameter | Same change as D |
-| G. Cross-codebase type inconsistencies | `app_config` normalised to `str`; `MetaModel.generators` tightened; `time_widget`'s validator renamed; `CommaFloatRangeLineEdit` deleted, which disposed of the `get_values` divergence. **`DictDialog.result`'s three shapes deferred - see below** |
-| H. Lazy imports | All four hoisted; `poriscope/` now has zero function-local imports |
-| I. Dead / unreachable code | All removed |
-| J. Aborting an operation is invisible in the message panel | **Deferred - see below** |
-
-### Still queued from steps 3b and 4
-
-- **`DictDialog.result` holds three shapes**: `(params, name)` on OK, `(None, None)` on
-  Cancel, and the sentinel string `"delete"` on Delete, so callers must `isinstance`-check
-  to tell a deletion from a cancellation. Honestly annotated today. Fixing it properly
-  means a small result type or a sentinel enum plus updating `DataPluginView` and both
-  consumers - a design change of the same character as the `hist_data` item above, not a
-  cleanup.
 - **Aborting any operation produces no message in the panel.** `MetaController`'s
   `handle_kill_worker`/`handle_kill_all_workers` only call `self.logger`, so a user whose
   log level is above INFO gets no confirmation that a stop took effect - for every
@@ -127,7 +27,24 @@ fixed, deliberately judged to need no action, or moved to the queue below with a
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
 
-### Defects in the formerly excluded fitter plugins - flagged, never to be fixed here
+## Exclusions (standing project policy)
+
+Revised 2026-08-25. These three files are no longer excluded wholesale; the exclusion
+now splits by *kind of change*.
+
+- `NanoTrees.py` — likely to be deprecated soon.
+- `Basic_PeakFinder.py` / `PeakFinder.py` — owned by another developer.
+
+**Docstring, signature and type-hint changes: in scope.** All three are now fully
+annotated and report zero pydoclint violations.
+
+**Logic changes: out of scope, unconditionally.** This holds even when annotating
+surfaces a real bug, and several did. Write the honest annotation describing what the
+code does today, mark the defect with a narrow `# type: ignore` and a `NOTE:` at the
+site, record it under "Defects in the formerly excluded fitter plugins" below, and leave
+the fix to the owning developer.
+
+## Defects in the formerly excluded fitter plugins - flagged, never to be fixed here
 
 Policy as of 2026-08-25: `NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` are
 **in scope for docstring, signature and type-hint work but never for logic changes**,
@@ -168,95 +85,7 @@ narrow `# type: ignore` and a `NOTE:` comment at the site.
   `List[Any]` to match what it has always actually produced - but it is worth knowing
   that the parameter name still says "starts" while the payload is per-sublevel records.
 
-### Step 4 - DONE 2026-08-25
-
-Closed across `929cb47` (utils), `b556344` (datareaders) and `75702cf` (the tail).
-The baseline went **184 entries -> 104**, and all 80 in-scope `DOC105` are gone.
-
-Re-measuring first changed the plan, and the numbers written down before were wrong in
-a way worth remembering: of the 184 entries, **99 belonged to the three excluded
-plugins** - including every single `DOC106`, `DOC107` and `DOC203`. The in-scope work
-was never ~107 `DOC105`; it was 80, plus five other entries. What is left in the
-baseline today is those same 99 excluded-plugin entries plus exactly five in-scope ones,
-all five deliberate (see below). That makes step 5 - deciding what to do about
-`NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` - the whole remaining baseline.
-
-**Half the work was the trailing-prose trap, not real disagreements.** Twenty-four of
-the 48 `utils/` violations were docstrings whose `:type:` text already matched the
-signature exactly; pydoclint folds any prose following a field list into the last
-`:type:` it saw, so "params first, description last" reports a spurious `DOC105` against
-whichever parameter happens to be documented last. These were fixed by moving the prose
-above the field list with both parts preserved verbatim. A `sig`-vs-`doc` probe that
-prints the two side by side identifies them instantly: textually identical means the
-trap, not a mismatch.
-
-**The substantive corrections were units, not types.** `MetaReader.load_data` and
-`continuous_read` documented `start`/`length`/`total_length`/`chunk_length` as sample
-indices typed `int`, but every body multiplies them by `self.samplerate` and
-`continuous_read` calls `load_data` with `float(i / self.samplerate)` - they are times in
-seconds. The prose was as wrong as the type. Everything else was mechanical:
-`os.Pathlike` -> `os.PathLike`, `numpy.ndarray` -> the declared `npt.NDArray` forms, the
-numpy-style `", optional"` suffixes dropped for `Optional[...]`, and
-`get_empty_settings`' `globally_available_plugins` realigned across ten files to the
-`Optional[Dict[str, List[str]]]` that `BaseDataPlugin` declares.
-
-`MetaReader._scale_data`'s docstring was also indented sixteen spaces from its second
-line on, which renders as a blockquote; re-indented to eight.
-
-**The five in-scope entries left in the baseline are deliberate**, both recorded in
-`DECISIONS.md`:
-
-- `MetadataView._load_filter` and `ProteinView._load_filter`, `DOC501` + `DOC503` each.
-  The `ValueError` they raise is caught by an `except Exception` in the same function, so
-  documenting it would promise callers an exception they can never see.
-- `IntroDialog`'s `DOC605`. Every correctly-formed alternative measured *worse* (two
-  entries instead of one); the only form pydoclint accepts is the one that keeps
-  malformed reStructuredText.
-
-### Step 7 - DONE 2026-08-26
-
-`mypy.ini` now sets `disallow_untyped_defs = True` and `check_untyped_defs = True`, and
-all four pre-commit gates pass across the 122 source files under `poriscope/`. The flip
-itself produced **zero** new errors: with every function annotated there was nothing for
-`disallow_untyped_defs` to find, and no unchecked bodies left for `check_untyped_defs`.
-
-That was only true because the 52 call-site errors the `@log` fix exposed were resolved
-first. All 52 are closed. In summary, and in the order they mattered:
-
-- **`edit_plugin` crashed on a dismissed dialog and left the dependency graph broken.**
-  `DictDialog` had four return shapes including a bare `None` reachable via Esc or the
-  window close button; `edit_plugin` unpacked it and raised `TypeError` *after* having
-  already unregistered every parent, skipping the restoration every other abort path
-  performs. Fixed by giving `DictDialog.get_result` one shape and reporting deletion
-  through a separate `delete_requested()` accessor instead of a `"delete"` sentinel.
-- **`MainModel.get_plugin_classes` had both arms of its union genuinely live**, unlike
-  `get_channel_length` and `get_available_plugins` before it. Resolved by removing the
-  `None` mode switch rather than the parameter: the metaclass is required, and the one
-  call site that wanted the whole mapping builds it with a comprehension. This is the
-  standing direction for that pattern when no arm is dead.
-- **`BaseDataPlugin.get_raw_settings` was declared `Optional[dict]` and can never return
-  `None`** - six errors from one wrong return type.
-- Missing `None` guards in `edit_plugin` and `validate_and_instantiate_plugin`, an
-  `Optional[int]` `lastrowid` reaching `SQLiteDBWriter`'s row inserts, and assorted
-  annotation defects in `IntraCUSUM`, `ProteinView`, `DataPluginModel` and
-  `DataPluginController`.
-
-All of it is written up in `changelog.md`, including the three breaking changes. Two
-`# type: ignore[arg-type]` markers were added, in `ProteinController` and
-`MetadataController`, where an invariant travels through a signal connection the checker
-cannot follow; both carry a note explaining why, matching the precedent in `ProteinView`.
-
-### Step 6 - what it was (done)
-
-The pre-commit `mypy` hook passed explicit file paths, test files included, which
-bypassed `mypy.ini`'s `exclude = ^tests/` entirely - `exclude` applies to directory
-discovery, not to explicitly listed files. Verified directly: `mypy <a test file>`
-reported "checked 1 source file" and type-checked it despite the exclude. Fixed with
-`files: ^poriscope/` in `.pre-commit-config.yaml`, matching the `pydoclint` hook. (That
-hook also cannot see third-party types at all; `DECISIONS.md` records why closing *that*
-gap is judged not worth doing, and why it does not block the flip.)
-
-## Also queued - found during this pass, not part of it
+## Also queued - found during the type-annotation pass, not part of it
 
 - **Report the `pydoclint` class-attribute bug upstream (not yet filed).** File at
   https://github.com/jsh9/pydoclint/issues - jsh9 maintains both `pydoclint` and
@@ -286,11 +115,12 @@ gap is judged not worth doing, and why it does not block the flip.)
   | `S101` assert | 8 | asserts in non-test code |
   | `S110` try-except-pass | 7 | silently swallowed exceptions in a GUI app |
 
-  **Keep this out of the type-annotation pass.** Almost every fix above is a logic
-  change, and that pass is deliberately hints-and-docstrings only. Suggested order when
-  it is picked up: `B006` + `B020` first (5 near-certain bugs), then `S608`, then
-  `S110`; enable the rules only once the backlog they gate is small enough not to need
-  its own baseline.
+  This was deliberately kept out of the type-annotation pass, which was scoped to hints
+  and docstrings only, because almost every fix above is a logic change; it is
+  unclaimed rather than blocked. Suggested order when it is picked up: `B006` + `B020`
+  first (5 near-certain bugs), then `S608`, then `S110`. Re-measure before starting -
+  the counts date from 2026-08-24 - and enable the rules only once the backlog they gate
+  is small enough not to need its own baseline.
 
   Note this overlaps, but is not the same as, the bandit proposal in the
   community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
@@ -300,162 +130,6 @@ gap is judged not worth doing, and why it does not block the flip.)
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,
   and `(x, y)` tuples from the all-points path. Widened to `List[Any]` with a comment;
   unifying it is a real refactor.
-
-## Goal
-
-Add type hints to every parameter (and return type) of every function/method across
-`poriscope/` so the codebase can adopt a strict, signature-based typing policy end to
-end, instead of the current partial/legacy state.
-
-## Why this matters (background)
-
-Two config knobs currently tolerate untyped code, and they interact:
-
-- `mypy.ini`: `disallow_untyped_defs = False`, `check_untyped_defs = False` — mypy
-  does not require annotations on plugin methods, and (more importantly) does not even
-  type-check the *body* of a function that has zero annotations.
-- `pyproject.toml` `[tool.pydoclint]`: `arg-type-hints-in-signature = false` — pydoclint
-  expects type info to live in the docstring, not the signature, and its `DOC108`
-  check exists specifically to flag functions that *do* have signature type hints
-  under this policy (see `pydoclint/utils/violation.py` and `visitor.py:608-622` in the
-  installed package for the exact trigger condition).
-
-As of the `feature/loadbearing_docstrings` branch's pydoclint baseline cleanup
-(`.pydoclint-baseline.txt`, ~430 remaining lines), the residual backlog is almost
-entirely `DOC108` — i.e. functions that already happen to carry signature type hints,
-which is a "policy nag," not a real defect. There is no way to clear these for real
-(short of stripping existing hints back out, which would be regressive) other than
-flipping `arg-type-hints-in-signature` to `true`. That flip is the actual goal of this
-future pass; this file exists because flipping it is not a small edit — see Scope below.
-
-## What flipping the policy actually requires
-
-`pydoclint/visitor.py` only checks a function at all if it has a non-empty docstring
-(functions with zero docstring are skipped entirely — "we don't check functions
-without docstrings"). But for every function that *does* have a docstring, once
-`arg-type-hints-in-signature = true`:
-
-- `DOC106` fires if a documented, parameterized function has **no** signature type
-  hints at all.
-- `DOC107` fires if it has **some but not all** parameters hinted.
-
-So in practice this pass means adding type hints to essentially every parameter of
-every documented function in `poriscope/` (not just the ~430 currently-flagged spots).
-Once that's done, `mypy.ini`'s `check_untyped_defs = False` / `disallow_untyped_defs =
-False` leniency has nothing left to exempt and becomes a no-op — it can be safely
-flipped to `True` (or removed) at that point, verified by the fact that the test suite
-and `pre-commit run --all-files` still pass identically before and after the flip.
-
-## Method (lessons carried over from the pydoclint baseline cleanup)
-
-This mirrors the process that worked well for the docstring/baseline cleanup on
-`feature/loadbearing_docstrings`:
-
-- Pure type-hint additions (no behavior change) can proceed automatically; anything
-  that looks like it would change runtime behavior should pause for a check-in.
-- Work file-by-file, or hand independent file groups to parallel subagents
-  (`Agent` tool, `general-purpose` type, one self-contained prompt per group) — this
-  scaled well last time across ~60 files.
-- Commit in small batches (e.g. every 5 files) so a rollback is cheap if a batch turns
-  out to have a subtle issue.
-- Update `changelog.md` as you go, but keep entries terse — a "New Dev Tooling"-style
-  consolidated summary at the end is more useful to other developers than a per-file
-  violation list (see the `## Poriscope 1.7` section for the pattern used last time).
-- **Write each file's edits as a `rep(old, new)` script, and dry-run it.** Put the
-  script in a scratchpad, run it once with writes stubbed out so every anchor string is
-  proven to match exactly once, then apply. An anchor that fails the dry run almost
-  always means the docstring differs from what you assumed, which is worth discovering
-  before touching the file. This scaled cleanly across 22 files in step 2.
-- Prepare the next file's script while the current test run is in flight; the suite is
-  the long pole, not the editing.
-
-## Known gotchas to expect (all hit during the pydoclint pass; will likely recur)
-
-- **mypy "annotation-unchecked" cascade**: a function with zero annotations is
-  currently invisible to mypy's body-checking (`check_untyped_defs = False`). Adding
-  *any* annotation to it (even just a return type) flips it to "checked," which can
-  surface pre-existing, previously-invisible type errors unrelated to the annotation
-  you just added. Fix patterns established last time:
-  - If the error is `self.attr = None` being inferred as a `None`-only type, add a
-    proper `Optional[X]` annotation at that attribute's first assignment — this is a
-    pure type-hint fix, safe to apply on sight.
-  - If it's a genuine logic-shaped mismatch, flag it for human review rather than
-    fixing blindly — unless it's provably behavior-neutral (e.g. a `cast()` where the
-    real runtime type is already guaranteed by surrounding code, as was needed once in
-    `MetaReader.load_data`).
-- **`test_plugin_compliance.py` exact-equality trap**: its `_return_type_compatible` /
-  `_param_type_compatible` checks do not understand real generic covariance — for
-  non-"classlike" (generic alias) annotations it falls back to exact equality between
-  a `Meta*` base method's annotation and every subclass override's annotation. Widening
-  or correcting an abstract method's annotation to satisfy mypy will break this test
-  for every subclass whose override doesn't match exactly, and all of them need to be
-  updated to match. Run
-  `pytest tests/unit/plugins/test_plugin_compliance.py` after touching any `Meta*`
-  base signature.
-- **Baseline file race condition**: if multiple concurrent agents/processes run
-  `pydoclint --baseline=.pydoclint-baseline.txt` with auto-regeneration on narrow file
-  subsets, they can corrupt or prune unrelated entries from the shared baseline. Use
-  `--auto-regenerate-baseline=False` for read-only checks during the pass, and only do
-  one authoritative full-tree `--generate-baseline=True` regeneration once all edits
-  for a batch are complete.
-- **pydoclint folds trailing prose into the last `:type:`.** A docstring written
-  "params first, description last" reports a spurious `DOC105` against whichever
-  parameter happens to be documented last. Put the description first. Nine docstrings
-  hit this in step 2.
-- **Recurring defect classes**, all surfaced by adding hints rather than by reading:
-  - *Callback-shape annotations.* `relay_*`-style methods are `global_signal` return
-    callbacks, so the parameter type is whatever the *called* `Meta*` method returns -
-    usually `Optional[str]` - not the `dict` the parameter name suggests. Nine were
-    wrong across three controllers.
-  - *Off-by-one nesting.* `get_plot_features` returns one flat list per event; three
-    call sites declared list-of-lists.
-  - *Channel stringification.* The selection tree hands back display strings while the
-    domain type is `int`. Convert once at the derivation site, not at each consumer, or
-    cache-staleness comparisons silently compare `str` to `int` and always differ. The
-    `exp_and_ch` dicts passed to loader plugins stay strings deliberately -
-    `tuple_builder` stringifies them unquoted either way.
-  - *Attributes first assigned `None`* need an explicit `Optional[...]` at the
-    declaration, or mypy infers `None` and rejects every later assignment.
-- **Two gates, blind in different directions.** `pre-commit run mypy --all-files` is
-  what blocks a commit and matches CI, but it runs in an isolated venv with no project
-  dependencies, so every PySide6/numpy/pandas type is `Any` to it. The project venv's
-  `mypy poriscope` sees real types but is a different version and is not the gate.
-  Neither alone is sufficient; see `DECISIONS.md`.
-- **Never pass test paths in a hand-picked order.** Pytest runs explicitly listed paths
-  in the order given, so `pytest tests/unit/views tests/unit/plugins` inverts natural
-  collection order and reliably segfaults the interpreter. Let pytest collect naturally,
-  or list paths alphabetically. Relatedly, never pipe a test run through `tail`/`grep`
-  as its only record: a faulthandler dump names the crashing test at the *top* of its
-  output, which is exactly what a tail discards.
-
-## Exclusions (standing project policy)
-
-Revised 2026-08-25. These three files are no longer excluded wholesale; the exclusion
-now splits by *kind of change*.
-
-- `NanoTrees.py` — likely to be deprecated soon.
-- `Basic_PeakFinder.py` / `PeakFinder.py` — owned by another developer.
-
-**Docstring, signature and type-hint changes: in scope.** All three are now fully
-annotated and report zero pydoclint violations.
-
-**Logic changes: out of scope, unconditionally.** This holds even when annotating
-surfaces a real bug, and several did. Write the honest annotation describing what the
-code does today, mark the defect with a narrow `# type: ignore` and a `NOTE:` at the
-site, record it under "Defects in the formerly excluded fitter plugins" above, and leave
-the fix to the owning developer.
-
-## Verification checklist before considering this pass done
-
-- `pre-commit run --all-files` clean (ruff + mypy + pydoclint).
-- `pytest -m "not e2e and not slow"` clean (matches CI).
-- `pytest tests/unit/plugins/test_plugin_compliance.py` clean.
-- `pydoclint --baseline=.pydoclint-baseline.txt poriscope` clean with
-  `arg-type-hints-in-signature = true`, baseline regenerated fresh from a clean tree.
-- `mypy poriscope` clean with `disallow_untyped_defs = True` /
-  `check_untyped_defs = True` (or documented exceptions added deliberately, not by
-  default).
-- `changelog.md` updated with a concise summary, not an exhaustive per-file list.
 
 ---
 
