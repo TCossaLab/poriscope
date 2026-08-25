@@ -202,9 +202,7 @@ class DataPluginModel(QObject):
         instance.apply_settings(settings)
 
     @log(logger=logger)
-    def get_plugin_instance(
-        self, metaclass: str, key: str
-    ) -> Optional[BaseDataPlugin]:
+    def get_plugin_instance(self, metaclass: str, key: str) -> Optional[BaseDataPlugin]:
         """
         Get the plugin instance corresponding to the given key.
 
