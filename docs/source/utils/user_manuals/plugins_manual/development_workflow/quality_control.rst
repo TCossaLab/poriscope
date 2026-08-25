@@ -28,7 +28,8 @@ The following tools are used in Poriscope:
 
 - **Black** – automatic Python code formatting
 - **Ruff** – linting and safe automatic fixes
-- **Mypy** – static type checking
+- **Mypy** – static type checking. Every function under ``poriscope/`` must carry
+  parameter and return type hints; see :ref:`type_checking_policy` below
 - **pydoclint** – checks that a docstring's documented parameters, return type, and
   raised exceptions actually match the function's real signature and body (see
   :ref:`docstring_consistency` below)
@@ -54,6 +55,9 @@ run automatically:
 - ``mypy`` – validates static typing
 - ``pydoclint`` – validates that docstrings match real signatures and behavior
 - ``check-added-large-files`` – blocks files larger than 123 KB
+
+``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
+``tests/``. Everything else runs against every tracked file.
 
 These checks **never modify files**.
 
@@ -175,7 +179,18 @@ Run individual validation tools:
 
    pre-commit run ruff
    pre-commit run mypy
+   pre-commit run pydoclint
    pre-commit run check-added-large-files
+
+.. warning::
+
+   Use ``pre-commit run mypy`` rather than a bare ``mypy poriscope``. The hook runs
+   mypy in an isolated environment with a pinned version and no project dependencies,
+   which is exactly what CI does. Running mypy directly from your own virtual
+   environment uses a different version *and* sees the real PySide6/numpy/pandas type
+   stubs, and it will report several hundred additional messages that the gate does
+   not care about. Those are not failures you need to fix — they are a different tool
+   configuration answering a different question. **The hook is the gate.**
 
 Running Auto-fix Hooks Manually
 -------------------------------
@@ -247,11 +262,15 @@ Concretely, for every documented function, ``pydoclint`` checks that:
 
 .. important::
 
-   ``pydoclint`` does **not** require every function to have a docstring, and does
-   **not** require type hints in every function signature — Poriscope's plugin code
-   base has a lot of legacy functions without full type annotations, and that's
-   currently expected. It only holds a docstring accountable *if one already exists*.
-   If you didn't write a docstring, ``pydoclint`` has nothing to check.
+   ``pydoclint`` does **not** require every function to have a docstring. It only
+   holds a docstring accountable *if one already exists* — if you didn't write one,
+   ``pydoclint`` has nothing to check.
+
+   It *does* require that a documented function's signature carry type hints, and
+   that those hints agree with the docstring's ``:type:`` and ``:rtype:`` fields. The
+   signature is the source of truth; where the two disagree, fix the docstring.
+   (Separately, ``mypy`` now requires type hints on **every** function under
+   ``poriscope/``, documented or not — see :ref:`type_checking_policy`.)
 
 Running it locally
 ^^^^^^^^^^^^^^^^^^^
@@ -266,29 +285,62 @@ check just the docstring/signature rules on their own:
 
 .. tip::
 
-   If a result is coded ``DOC108``, don't panic — it means your function's signature
-   already has type hints, even though the project's current docstring policy
-   doesn't strictly require them there. That's a harmless policy nag, not a real
-   defect, and safe to ignore.
+   A ``DOC105`` ("type hints do not match") that makes no sense is usually a
+   formatting problem rather than a real mismatch. ``pydoclint`` folds any prose that
+   trails a ``:type:`` field into that field's value, so a docstring written with the
+   parameter list first and the descriptive paragraph last reports a spurious
+   ``DOC105`` against whichever parameter happens to be documented last. Put the
+   description **first**, then the ``:param:``/``:type:``/``:return:``/``:rtype:``
+   fields, and it goes away.
 
 Why is there a "baseline" file?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When ``pydoclint`` was first introduced, a large amount of existing code already had
-docstring mismatches that predated the tool. Rather than blocking every future commit
-on cleaning up the entire history at once, those pre-existing violations were
-recorded in ``.pydoclint-baseline.txt`` and are allowed to remain for now. Only *new*
-mismatches that you introduce will fail the check.
+When ``pydoclint`` was first introduced, roughly 1,090 pre-existing docstring
+mismatches predated the tool. Rather than blocking every future commit on cleaning up
+the entire history at once, they were recorded in ``.pydoclint-baseline.txt`` and
+allowed to remain while they were worked through.
 
-If your change happens to fix a docstring that was sitting in that baseline, you must
-regenerate it — otherwise the baseline keeps "forgiving" a problem that no longer
-exists in that exact form, which defeats the point:
+.. important::
 
-.. code-block:: bash
+   **That cleanup is finished.** ``.pydoclint-baseline.txt`` is now an empty,
+   zero-byte file, and it should stay that way. There is nothing left to forgive, so
+   every violation the hook reports is a real one in code you touched, and it will
+   fail the commit.
 
-   pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope
+   In particular, **do not** regenerate the baseline to make a failure go away:
 
-Commit the updated ``.pydoclint-baseline.txt`` alongside your fix.
+   .. code-block:: bash
+
+      # Don't do this to silence a failure - fix the docstring instead.
+      pydoclint --generate-baseline=True --baseline=.pydoclint-baseline.txt poriscope
+
+   Re-populating the baseline would silently re-open the door to exactly the
+   mismatches the cleanup closed. Fix the docstring the tool is complaining about.
+
+.. _type_checking_policy:
+
+Type Annotation Policy (mypy)
+------------------------------
+
+Every function under ``poriscope/`` carries parameter and return type hints, with no
+exclusions, and ``mypy.ini`` enforces that:
+
+- ``disallow_untyped_defs = True`` — a function with no annotations is an error rather
+  than being silently skipped. **New code must be annotated.**
+- ``check_untyped_defs = True`` — function bodies are type-checked even where the
+  checker cannot fully resolve their types.
+- ``strict_equality = True`` — catches comparisons between types that can never be
+  equal, such as a display string compared against an integer channel id.
+
+.. note::
+
+   If you are adding a plugin, the simplest and most reliable way to annotate its
+   methods is to **copy the signature from the ``Meta*`` base class verbatim**, rather
+   than inferring types from your implementation. The compliance test in
+   :ref:`plugin_compliance_testing` compares your override against the base, and for
+   generic types such as ``List[str]`` it compares them by *equality* — so a
+   reasonable-looking widening of the base's type will fail it.
 
 .. _plugin_compliance_testing:
 
@@ -367,7 +419,15 @@ then stage the changes.
 This runs ``ruff`` (strict), ``mypy``, ``pydoclint``, and ``check-added-large-files``.
 Nothing here is auto-fixed for you — if ``mypy`` or ``pydoclint`` report a problem,
 you need to edit the code or docstring yourself. See :ref:`docstring_consistency`
-above if a pydoclint failure doesn't make sense.
+above if a pydoclint failure doesn't make sense, and :ref:`type_checking_policy` for
+what mypy expects of new code.
+
+.. note::
+
+   Neither failure can be waived. There is no baseline left for ``pydoclint`` to
+   forgive a new violation with, and the ``mypy`` annotation flags are on, so an
+   unannotated function you add will fail here even though it would once have been
+   skipped.
 
 ☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the plugin
 compliance suite.**
@@ -413,7 +473,10 @@ Summary for New Developers
 - Hooks run automatically on commit
 - GitHub Desktop enforces the same rules
 - Most formatting and lint issues are auto-fixable
-- Mypy and pydoclint issues must be resolved manually
+- Mypy and pydoclint issues must be resolved manually — neither has a baseline or
+  waiver left to fall back on
+- All new code under ``poriscope/`` must carry type hints; see
+  :ref:`type_checking_policy`
 - New or modified plugins must also pass ``test_plugin_compliance.py`` — see
   :ref:`plugin_compliance_testing`
 - Before opening a pull request, work through :ref:`pre_pr_checklist` in full

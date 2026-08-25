@@ -97,6 +97,20 @@ identical outcome.
 obligation that remains is that **the break is called out explicitly in `changelog.md`**,
 because the changelog is what a future plugin author will read.
 
+**When both arms are genuinely live.** `MainModel.get_plugin_classes` was the first case
+where neither branch was dead: `main_controller.py:64` used the no-argument dict-of-dicts
+form and `:405` used `get_plugin_classes("MetaController")[subclass]`. The resolution is
+**to delete the optional-argument arm, not the parameter** - make the argument required so
+the function has one job and one return shape, and let the single call site that wanted the
+aggregate rebuild it with a comprehension. The preference is for functions that do not take
+`None` as a mode switch, not merely for functions that avoid unions.
+
+Check one thing before doing it: whether the call site currently receives a *live
+reference* to a mutable attribute that something else later mutates, since a comprehension
+hands over a fresh outer object instead. For `get_plugin_classes` that was safe -
+`available_plugin_classes` is populated exactly once in `MainModel.__init__` and never
+reassigned or mutated afterwards.
+
 **Revisit if.** A third-party plugin ecosystem actually exists, at which point the
 cost/benefit of narrowing an ABC changes and these become deprecation cycles instead.
 

@@ -7,16 +7,21 @@ than here.
 
 ## Status
 
-**Where this stands (2026-08-26):** every function under `poriscope/` is annotated with
-no exclusions, and `.pydoclint-baseline.txt` is empty. **Steps 1-6 and the `@log` fix are
-closed.** Step 7 is the only thing left, and it is now blocked on a concrete, measured
-list rather than on unknown scope - see "Blocking step 7" below.
+**Where this stands (2026-08-26): this pass is COMPLETE.** Every function under
+`poriscope/` is annotated with no exclusions, `.pydoclint-baseline.txt` is empty,
+`mypy.ini` has `disallow_untyped_defs`, `check_untyped_defs` and `strict_equality` all
+`True`, and `ruff`, `mypy`, `pydoclint` and `check-added-large-files` are green across
+all 122 source files. **Steps 1-7 and the `@log` fix are closed.**
 
-The `@log` fix is what changed the picture. `LogDecorator.log` was erasing the signature
-of all 935 methods it decorates, so the pre-commit gate had been reporting clean while
-checking essentially no call sites. Fixing it surfaced **84 real errors**. Thirty-two
-were annotation defects and are fixed; **52 remain, and every one of them is a genuine
-logic defect or a design question that needs a decision.** They are enumerated below.
+The `@log` fix is what made the last step meaningful. `LogDecorator.log` was erasing the
+signature of all 935 methods it decorates, so the pre-commit gate had been reporting
+clean while checking essentially no call sites. Fixing it surfaced **84 real errors**:
+32 were annotation defects, and the remaining **52 were genuine logic defects or design
+questions**, all now resolved - see "Step 7" below and the corresponding `changelog.md`
+entries.
+
+What remains in this file is the unclaimed work under "Also queued", which was never
+part of this pass.
 
 | Step | Scope | State |
 | --- | --- | --- |
@@ -28,7 +33,7 @@ logic defect or a design question that needs a decision.** They are enumerated b
 | 5 | Decide on `NanoTrees.py`/`Basic_PeakFinder.py`/`PeakFinder.py` (see Exclusions) | Resolved 2026-08-25 - all three annotated; logic still off limits |
 | 6 | Scope the pre-commit `mypy` hook so it stops checking `tests/` as explicit paths | Done 2026-08-26 - `files: ^poriscope/`, hook now sees 122 files not 195 |
 | 6b | Fix `@log`/`register_action` signature erasure (`TypeVar` bound to `Callable`) | Done 2026-08-26 - verified with `reveal_type`; surfaced 84 call-site errors |
-| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Blocked on the 52 findings below |
+| 7 | Flip `disallow_untyped_defs`/`check_untyped_defs`, confirm gates clean, update `CLAUDE.md` | Done 2026-08-26 - zero new errors; all 52 findings closed first |
 
 The pydoclint half of what used to be step 7 is **done** (2026-08-24).
 `arg-type-hints-in-signature` is now `true` and the baseline was regenerated fresh:
@@ -208,75 +213,38 @@ line on, which renders as a blockquote; re-indented to eight.
   entries instead of one); the only form pydoclint accepts is the one that keeps
   malformed reStructuredText.
 
-### Blocking step 7 - the findings the `@log` fix exposed
+### Step 7 - DONE 2026-08-26
 
-All of these are live under `pre-commit run mypy --all-files` today. None is annotation
-noise; each was traced to source. Ordered by how much they matter.
+`mypy.ini` now sets `disallow_untyped_defs = True` and `check_untyped_defs = True`, and
+all four pre-commit gates pass across the 122 source files under `poriscope/`. The flip
+itself produced **zero** new errors: with every function annotated there was nothing for
+`disallow_untyped_defs` to find, and no unchecked bodies left for `check_untyped_defs`.
 
-**1. `DataPluginController.edit_plugin` crashes on a dismissed dialog, and corrupts the
-dependency graph when it does.** (`DataPluginController.py:139` plus the `:168-174`
-indexing errors.) `DictDialog._result` has **four** shapes, not the three its own comment
-lists: `(params, name)` on OK, `(None, None)` on Cancel, `"delete"` on Delete, and a bare
-`None` - its initial value - when the dialog is dismissed with Esc or the window's close
-button, because neither `on_cancel` nor `on_delete` runs on those paths (both buttons are
-plain `QPushButton`s, so `QDialog.reject()` is reached directly). `edit_plugin` tests
-`result == (None, None)` and `result == "delete"` but not bare `None`, so that case falls
-through to `settings, key = result` and raises `TypeError`.
+That was only true because the 52 call-site errors the `@log` fix exposed were resolved
+first. All 52 are closed. In summary, and in the order they mattered:
 
-That is worse than a crash. Lines 112-116 have *already* run `unregister_dependent` on
-every parent by that point, and every other abort path in the method calls
-`_restore_parent_dependent_links` to undo it. A `TypeError` skips restoration, so the
-plugin's parent links stay broken. The two sibling call sites both handle this correctly
-already - `DataPluginController.py:417` guards `if result is None or result[0] is None`
-and `MetadataView.py:2708` guards `if result is None` - so this is an isolated omission,
-not a pattern. Fix: guard `None` before the unpack, on the same path that restores links.
+- **`edit_plugin` crashed on a dismissed dialog and left the dependency graph broken.**
+  `DictDialog` had four return shapes including a bare `None` reachable via Esc or the
+  window close button; `edit_plugin` unpacked it and raised `TypeError` *after* having
+  already unregistered every parent, skipping the restoration every other abort path
+  performs. Fixed by giving `DictDialog.get_result` one shape and reporting deletion
+  through a separate `delete_requested()` accessor instead of a `"delete"` sentinel.
+- **`MainModel.get_plugin_classes` had both arms of its union genuinely live**, unlike
+  `get_channel_length` and `get_available_plugins` before it. Resolved by removing the
+  `None` mode switch rather than the parameter: the metaclass is required, and the one
+  call site that wanted the whole mapping builds it with a comprehension. This is the
+  standing direction for that pattern when no arm is dead.
+- **`BaseDataPlugin.get_raw_settings` was declared `Optional[dict]` and can never return
+  `None`** - six errors from one wrong return type.
+- Missing `None` guards in `edit_plugin` and `validate_and_instantiate_plugin`, an
+  `Optional[int]` `lastrowid` reaching `SQLiteDBWriter`'s row inserts, and assorted
+  annotation defects in `IntraCUSUM`, `ProteinView`, `DataPluginModel` and
+  `DataPluginController`.
 
-**2. `edit_plugin` never `None`-guards its plugin instance.** (18 `union-attr` errors:
-`:112,113,116,127,138,153,160,161,163,166,169,185,195,205,231,237,247`.)
-`get_plugin_instance` is a `dict.get` and is now honestly `Optional[BaseDataPlugin]`.
-`edit_plugin_settings`, the only in-repo caller, does guard with `if plugin:` before
-calling - but the guard lives in the caller, and `edit_plugin` is a public `@Slot`.
-`_restore_parent_dependent_links` in the same file guards its own lookup with
-`if pinstance:`, which is the shape to copy.
-
-**3. `MainModel.get_plugin_classes` is the `get_channel_length` pattern with both arms
-genuinely live.** (`main_controller.py:64` and `:405`.) `:64` uses the no-argument
-dict-of-dicts form; `:405` uses `get_plugin_classes("MetaController")[subclass]`. Per the
-standing rule this gets flagged rather than overloaded, and there is an obvious way to
-retire the second arm: **`MainModel.get_plugin(metaclass, subclass)` already exists and
-does exactly what `:405` needs.** Rewriting that call site to use it leaves only the
-no-argument form, and the parameter can then be dropped exactly as it was for
-`get_available_plugins`. The one behavioural difference to decide on is that `get_plugin`
-logs and returns `None` on a missing key where the current code lets `KeyError` reach the
-surrounding `except Exception`.
-
-**4. Three unguarded `Optional` leaks into non-optional parameters.**
-
-- `ProteinController.py:197` / `MetadataController.py:243` pass `_pending_old_filter_name`
-  (an `Optional[str]`) into `update_filter_name(old_name: str, ...)`. Both files guard the
-  *same* value with `if old_name is not None:` two statements earlier for a different use,
-  so the omission looks like an oversight rather than an invariant.
-- `ProteinView.py:2440`: `sizes = parameters.get("sizes")` at `:2353` has no default, so
-  `None` reaches `_construct_single_event_histogram(sizes: bool = False)`. Its sibling at
-  `:2072` reads `parameters.get("sizes", False)`. Harmless today because `None` and
-  `False` are both falsy, but the inconsistency is the defect.
-- `SQLiteDBWriter.py:282,293`: `event_db_id = self.cursor.lastrowid` is `int | None`, fed
-  to `_insert_sublevels`/`_insert_event_data`, which take `int`.
-
-**5. `DataPluginController.py:383,442,493` and `:74`.** `key` is `Optional[str]` on the
-instantiate path and reaches `get_temp_instance`, `set_key` and `register_plugin`, all of
-which take `str`; `:74` passes `get_raw_settings()`'s `Optional[dict]` into
-`edit_plugin(settings: dict)`. Same class as 4, in the plugin-management path.
-
-**6. `IntraCUSUM.py:148,151`.** `event_metadata["threshold_crossings"] += 1` against a
-dict declared `Dict[str, Union[int, float, str, bool]]`. Accumulating into a local `int`
-and assigning once at the end is the ordinary fix, but it is a body change.
-
-**7. `MetadataView.py:2708-2711`.** Downstream of the same four-shaped `DictDialog`
-result as finding 1. This site *does* guard `None`, so what remains is only the
-unreachable-in-practice `"delete"` arm - the dialog is constructed with
-`show_delete=False`. Cleanest resolution is to give `DictDialog.get_result` a single
-consistent shape rather than four, which would also retire finding 1.
+All of it is written up in `changelog.md`, including the three breaking changes. Two
+`# type: ignore[arg-type]` markers were added, in `ProteinController` and
+`MetadataController`, where an invariant travels through a signal connection the checker
+cannot follow; both carry a note explaining why, matching the precedent in `ProteinView`.
 
 ### Step 6 - what it was (done)
 
