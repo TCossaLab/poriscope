@@ -136,13 +136,14 @@ at the end of this section.
   means widening that ABC to `Optional[...]`, which is a **breaking change to the plugin
   contract** and needs a decision rather than a quiet edit. Note the same latent problem
   exists for any fitter that wants placeholder metadata.
-- **`fit_2_gauss` fits `x` against `data_reshaped`**, where `x` is
-  `np.linspace(min, max, 1000)` and `data_reshaped` has one row per sample. `curve_fit`
-  requires `xdata` and `ydata` to be the same length, so unless the event happens to be
-  exactly 1000 samples this still fails - it is just no longer failing for the arity
-  reason. Fixing it properly means deciding what the function should fit (`bitthresh`
-  fits a histogram via `dgfit`, which is probably the intent). Out of scope for the
-  arity repair that was authorised. The method has no live caller.
+- **`fit_2_gauss` has been deleted** rather than repaired. It had no call sites and
+  could not have worked: beyond the `Gauss` arity bug, it passed a 1000-point linspace
+  as `xdata` against the raw `(N, 1)` sample array as `ydata`, which `curve_fit` rejects
+  unless an event is exactly 1000 samples, and which is not a distribution fit in any
+  case. Deciding what it *should* fit is the double-Gaussian consolidation described
+  below, so deleting the dead implementation is the first step of that work rather than
+  a competing change.
+
 - **`SQLitePeakDBLoader` no longer casts its interpolated SQL values to `int`.** Reviewed
   and **deliberately accepted**: the database is a local file owned by the user running
   the app, so there is no privilege boundary for an injection to cross. Recorded here
