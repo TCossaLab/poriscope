@@ -12,6 +12,9 @@
     * The `if unfolded is not None:` guard was removed while the line above still assigns `None` whenever the `unfolded_level` column is absent, so `baseline - sign * unfolded` raised `TypeError` in exactly that case.
     * Each fix carries a `NOTE (integration):` comment at the site explaining what changed and why.
 
+* **Fixed: event fitting progress never reached 100% when any event was rejected**
+    * `MetaEventFitter.fit_events` yields `fitted / total_events` as its progress fraction, where `fitted` counts only events that complete. Every rejection path popped the event's metadata and `continue`d without adjusting the denominator, so a channel with any rejected event left the progress bar permanently short of complete. The `IndexError` path already decremented `total_events`; the remaining eight rejection paths now do the same, so the fraction closes on exactly 1.0 (with N events, R rejected and F fitted, the denominator ends at `N - R = F = fitted`).
+
 * **Fixed: four e2e tests waited on file existence before asserting on file contents**
     * `tests/e2e/raw_data/test_events_flow_clicks.py::test_commit_events_writes_exact_schema` failed once in a full-suite run with `Missing expected tables: {'columns', 'channels', 'events'}` and an empty table set, while passing in isolation, in its own file, and across all of `tests/e2e`. The cause was the wait condition, not the writer: it waited on `out_db.exists()` and then asserted on the schema. **SQLite creates the database file the moment a connection opens, before any `CREATE TABLE` runs**, so the wait could be satisfied by a zero-table file; under a long run the gap widens and the assertion loses the race.
     * Three sibling sites had the same shape - waiting for a JSON file to appear and then `json.load`-ing it, where a partially written file raises `JSONDecodeError`: two in `test_metadata_events_nav_persistence.py` and one in `test_protein_events_nav_persistence.py`.

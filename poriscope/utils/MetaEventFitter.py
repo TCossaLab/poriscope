@@ -582,6 +582,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
             except Exception as e:
                 self.rejected[channel][str(e)] = (
@@ -592,6 +593,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
 
             if not isinstance(sublevel_starts, Iterable):
@@ -615,6 +617,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
 
             # use the previously discovered change points to generate an arbitrary dict of sublevel metadata
@@ -632,6 +635,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
             except Exception as e:
                 self.rejected[channel][str(e)] = (
@@ -642,6 +646,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
 
             invalid_sublevel_metadata = False
@@ -661,6 +666,7 @@ class MetaEventFitter(BaseDataPlugin):
                     self.sublevel_metadata[channel][index][key] = val
 
             if invalid_sublevel_metadata:
+                total_events -= 1
                 continue
 
             self.sublevel_metadata[channel][index]["event_id"] = np.array(
@@ -695,6 +701,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
             except Exception as e:
                 self.rejected[channel][str(e)] = (
@@ -705,6 +712,7 @@ class MetaEventFitter(BaseDataPlugin):
                 )
                 self.event_metadata[channel].pop(index)
                 self.sublevel_metadata[channel].pop(index)
+                total_events -= 1
                 continue
 
             self.event_metadata[channel][index]["num_sublevels"] = (
