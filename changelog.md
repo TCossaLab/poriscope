@@ -281,6 +281,7 @@
 * **New: End-to-end (E2E) test suite**
     * Added comprehensive E2E/UX coverage for RawData, EventAnalysis, Metadata, Clustering , and Protein tabs
     * Added a shared `tests/synthetic_data` package for reproducible fixtures: synthetic Chimera recordings, synthetic events/metadata SQLite databases (with configurable event lengths and deliberately-rejected events for testing fitter rejection paths), removing reliance on checked-in binary test databases
+    * Registered the `smoke` pytest marker in `pytest.ini`
 
 * **Deprecated Data Plugin: `ABF2Reader`**
     * Renamed to `TCossaLabABFReader` to reduce ambiguity with file types.
@@ -532,6 +533,7 @@
 ### General Fixes and Improvements:
 * Updated tests in `test_main_controller.py`, `test_classic_cusum.py`, `test_no_fitter.py`, and `test_meta_event_finder.py` to match already-landed fixes (RPC dispatcher log-and-return behavior, corrected `ClassicCUSUM` threshold sensitivity, corrected `NoFitter` duration/extreme-value index alignment, and a dead-code precondition fix in `get_event_data_generator`) that had left their expectations stale
 * Fixed placeholder combobox text (`"No Reader"`, `"No Eventfinder"`, `"No Loader"`, `"No Event Database"`, etc.) routinely reaching `global_signal.emit(...)` as if it were a real plugin key, flooding startup/session-restore with failed lookups. Root causes: (1) several `update_X(items)` combobox-population helpers across the `*controls.py` files mutated the *caller's* list in place to insert the placeholder (`items.insert(0, "No X")`), which in `RawDataView.update_available_plugins` leaked the placeholder into a loop that treated it as a genuinely new plugin; (2) `RawDataView`/`EventAnalysisView._handle_other_actions` and `ClusteringView`/`MetadataView`/`ProteinView`'s `update_available_columns`/`request_experiment_structure` used truthy-only checks (`if reader:`) that don't filter out the non-empty placeholder string. Combobox helpers now build a local display list instead of mutating the parameter, and all affected call sites now guard against the specific placeholder value
+* Replaced deprecated `set_constrained_layout(True)` calls with `set_layout_engine('constrained')` across `ClusteringView`, `EventAnalysisView`
 
 ## Poriscope 1.6.1: 2026-06-04
 
