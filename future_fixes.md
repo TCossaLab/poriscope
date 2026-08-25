@@ -183,7 +183,7 @@ are not re-raised as open work.
 
   | Rule | Hits | Character |
   | --- | --- | --- |
-  | `B905` zip-without-explicit-strict | 57 | real silent-truncation class, and now proven so: the `"id"`-never-excluded bug fixed 2026-08-25 was exactly this, a `zip` over two lists allowed to drift out of length. Each site needs its own `strict=` decision. |
+  | `B905` zip-without-explicit-strict | 57 | **Audited 2026-08-25; deliberately not enabled.** 50 sites were in scope (the other 7 are in owner-held fitter files). 43 zip sequences that are built together and need nothing. 3 in `ClusteringView` (`:608`, `:615`, `:693`) rely on the truncation *deliberately* - it is what keeps the appended `"id"` column out of the log-scale and plot-column selections - so `strict=True` there would raise on every clustering run. 3 in `MetadataView` were a real defect and are fixed. The `SQLiteDBWriter` sublevel transpose is guaranteed equal-length upstream by `MetaEventFitter.fit_events`. The rule earned its keep as a one-time audit, not as a gate. |
   | `B904` raise-without-from-inside-except | 24 | loses the exception chain; mechanical but touches `raise` statements |
   | `B007` unused-loop-control-variable | 20 | mostly cosmetic |
   | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
@@ -194,11 +194,10 @@ are not re-raised as open work.
   | `S112` try-except-continue | 1 | same character as `S110` |
 
   Almost every remaining fix is a logic change, so this is unclaimed rather than
-  blocked. Suggested order now that the two cheap rules are closed: `S110` + `S112`
-  (21 swallowed exceptions, the largest reservoir of real bugs left), then `B905` at the
-  sites where the zipped sequences can genuinely differ in length, then `B904`.
-  Re-measure before starting, and enable each rule only once its own backlog is zero,
-  the way `B006`/`B020` were.
+  blocked. `B905` is now audited and closed as a non-gate (see its row above). Next up
+  is `S110` + `S112` - 21 silently swallowed exceptions, the largest remaining reservoir
+  of real bugs - then `B904`. Re-measure before starting, and enable each rule only once
+  its own backlog is zero, the way `B006`/`B020` were.
 
   Note this overlaps, but is not the same as, the bandit proposal in the
   community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
