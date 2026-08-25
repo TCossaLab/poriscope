@@ -14,6 +14,36 @@ that they describe finished work; the narrative is in `changelog.md` and the sta
 rules that came out of it are in `CLAUDE.md` and `DECISIONS.md`. What remains below is
 only what is still open.
 
+## What to pick up next (order revised 2026-08-25)
+
+Two standing constraints reshape the queue below, so read this before working down it
+in file order:
+
+- **Test-writing is owned by another developer.** New pytest suites are out of scope
+  here, which pushes compliance-gate blocks 1 and 7 down the queue indefinitely, and
+  splits block 2 (its validator module is in scope; its discovery-and-assert harness is
+  not). Editing or deleting existing tests as part of a cleanup is fine.
+- **Logic changes need a plan the user approves first.** Read-only investigation and
+  measurement do not.
+
+Ranked, cheapest real value first:
+
+1. **Block 6, the Sphinx docs-render check in CI.** Pure workflow config, no test
+   writing. Highest value-per-effort item in this file - see the block for why.
+2. **The abort-with-no-panel-message bug** in "Still queued" below. The only open item
+   a user would actually notice, and the routing is already worked out.
+3. **The duplicated `QTimer.singleShot`** in "Still queued" - one line.
+4. **Block 2's validator half only**: `validate_settings_schema()` as a real module
+   under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
+   harness that is out of scope.
+5. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
+   Well-motivated: no-nested-functions, no-bare-except and explicit sqlite cleanup were
+   all enforced by hand during the 2026-08-25 lint sweep.
+6. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
+   the per-file ownership this project actually operates under is enforced by nothing.
+
+Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
+
 ## Still queued
 
 - **Aborting any operation produces no message in the panel.** `MetaController`'s
@@ -219,9 +249,16 @@ The context blocks below were designed together, as a set: the goal is a pipelin
 lets a community-contributed data plugin (or, occasionally, a frontend analysis-tab
 plugin family) be verified as safe and correct to merge with a bounded amount of human
 review, instead of relying entirely on a reviewer reading the diff. Each block below is
-independently actionable and can be picked up in its own future session; the suggested
-order is 1 → 2 (cheap, static, highest signal) → 3 (makes 1/2 easy to satisfy from the
-start) → 4/5 (merge-gating infrastructure) → 6/7/8 (rounding out coverage).
+independently actionable and can be picked up in its own future session.
+
+**The set's original order no longer applies.** It was 1 → 2 (cheap, static, highest
+signal) → 3 (makes 1/2 easy to satisfy from the start) → 4/5 (merge-gating
+infrastructure) → 6/7/8 (rounding out coverage). That sequence assumed blocks 1 and 2
+could be built first, and both are pytest suites, which are owned by another developer
+and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone
+with nothing built before them, and they are the order given at the top of this file.
+Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
+from a blank file, so building 3 while they do not exist loses most of its value.
 
 ## 1. Behavioral conformance suite (not just signature compliance)
 
