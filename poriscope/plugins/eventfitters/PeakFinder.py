@@ -287,7 +287,6 @@ class PeakFinder(MetaEventFitter):
 
         return data
 
-
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
     def get_plot_features(self, channel: int, index: int) -> Tuple[
@@ -324,7 +323,7 @@ class PeakFinder(MetaEventFitter):
             # Initializing arrays
             bases: list[float] = []
             peaks: list[tuple[float, float]] = []
-            #ips: list[float] = []
+            # ips: list[float] = []
             vlabel: list[str] = []
             hlabel: list[str] = []
             plabel: list[str] = []
@@ -344,32 +343,45 @@ class PeakFinder(MetaEventFitter):
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline)
-                * t2_std
-                * baseline_stdev
+                - np.sign(baseline) * t2_std * baseline_stdev
             )
             hlabel.append(f"unfolded level {t2_std:+d}σ")
             bases.append(
                 -np.sign(baseline)
                 * self.event_metadata[channel][index]["unfolded_level"]
                 + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline)
-                * t1_std
-                * baseline_stdev
+                - np.sign(baseline) * t1_std * baseline_stdev
             )
             hlabel.append(f"unfolded level {t1_std:+d}σ")
-            
-            if self.event_metadata[channel][index]["sequence"] is not None:
-                if self.event_metadata[channel][index]["translocation_direction"] == "forward":
-                    peaks_filtered.append(self.sublevel_metadata[channel][index]["sublevel_start_times"][1])
-                    vlabel.append(f"Forward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}")
-                elif self.event_metadata[channel][index]["translocation_direction"] == "backward":
-                    peaks_filtered.append(self.sublevel_metadata[channel][index]["sublevel_start_times"][-1])
-                    vlabel.append(f"Backward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}")
 
-                    
+            if self.event_metadata[channel][index]["sequence"] is not None:
+                if (
+                    self.event_metadata[channel][index]["translocation_direction"]
+                    == "forward"
+                ):
+                    peaks_filtered.append(
+                        self.sublevel_metadata[channel][index]["sublevel_start_times"][
+                            1
+                        ]
+                    )
+                    vlabel.append(
+                        f"Forward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}"
+                    )
+                elif (
+                    self.event_metadata[channel][index]["translocation_direction"]
+                    == "backward"
+                ):
+                    peaks_filtered.append(
+                        self.sublevel_metadata[channel][index]["sublevel_start_times"][
+                            -1
+                        ]
+                    )
+                    vlabel.append(
+                        f"Backward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}"
+                    )
+
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
-                
+
                 if self.sublevel_metadata[channel][index]["peak_id"][i] is not None:
                     # ips.append(self.sublevel_metadata[channel][index]['left_ips'][i]) #can be seen in event construct instead
                     # ips.append(self.sublevel_metadata[channel][index]['right_ips'][i])
@@ -401,7 +413,7 @@ class PeakFinder(MetaEventFitter):
                         "Peak #"
                         + str(j)
                         + " Filter: "
-                        + str(self.sublevel_metadata[channel][index]["filtered"][i])                        
+                        + str(self.sublevel_metadata[channel][index]["filtered"][i])
                         + " Class: "
                         + str(self.sublevel_metadata[channel][index]["classified"][i])
                     )
@@ -507,7 +519,7 @@ class PeakFinder(MetaEventFitter):
             varS = 0
             mean = data[0]
 
-            threshold =step_size
+            threshold = step_size
             edges = [0]  # first sublevel starts at the start of the data block
 
             k = 0  # current data point index
@@ -558,7 +570,6 @@ class PeakFinder(MetaEventFitter):
                             edges = np.append(edges, jump)
                             num_states += 1
                             jump_accepted = True
-                        
 
                     if gneg[k] > threshold:  # significant negative jump detected
                         jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
@@ -566,7 +577,6 @@ class PeakFinder(MetaEventFitter):
                             edges = np.append(edges, jump)
                             num_states += 1
                             jump_accepted = True
-                             
 
                     if jump_accepted:
                         anchor = k
@@ -593,7 +603,7 @@ class PeakFinder(MetaEventFitter):
                     for i in range(num_states)
                 ]
 
-                toosmall = ( 
+                toosmall = (
                     np.absolute(np.diff(sublevel_means)) < step_size * baseline_std / 2
                 )
                 for i in range(len(toosmall)):
@@ -604,7 +614,6 @@ class PeakFinder(MetaEventFitter):
                         break
 
         return edges
-
 
     @log(logger=logger)
     @override
@@ -667,23 +676,30 @@ class PeakFinder(MetaEventFitter):
                 "PeakFinder requires that the standard deviation and mean of the local baseline be reported and is unable to calculate it for this event"
             )
 
-        
         # edges=self.redefine_padding(data, samplerate, baseline_std)
         # cusum_padding_before = edges[1]
         # cusum_padding_after = len(data) - edges[-2]
         # print("Finding padding")
         # print(cusum_padding_before, cusum_padding_after)
-        
-        if padding_before is None or padding_after is None or len(data)==padding_before or len(data)==padding_after:
+
+        if (
+            padding_before is None
+            or padding_after is None
+            or len(data) == padding_before
+            or len(data) == padding_after
+        ):
             raise ValueError("No data available for peak detection")
 
-        # Find longest continuous segment above threshold 
+        # Find longest continuous segment above threshold
         # This trims the event to start/end at the longest above-threshold blockage
-        
-        threshold = min(abs(low_threshold), abs(high_threshold),3) * baseline_std
+
+        threshold = min(abs(low_threshold), abs(high_threshold), 3) * baseline_std
         event_data = data[padding_before:-padding_after]
-        above_threshold = np.abs(np.abs(event_data) - np.sign(baseline_mean) * baseline_mean) > threshold
-        
+        above_threshold = (
+            np.abs(np.abs(event_data) - np.sign(baseline_mean) * baseline_mean)
+            > threshold
+        )
+
         if not np.any(above_threshold):
             raise ValueError("No data above threshold found")
 
@@ -700,7 +716,9 @@ class PeakFinder(MetaEventFitter):
         # Check if longest segment meets minimum length requirement
         min_segment_length = 100
         if longest_segment_length < min_segment_length:
-           raise ValueError("No segment above threshold meets minimum length requirement")       
+            raise ValueError(
+                "No segment above threshold meets minimum length requirement"
+            )
 
         # Get the start and end indices of the longest segment (relative to event_data)
         longest_start_idx = segment_starts[longest_segment_idx]
@@ -717,16 +735,17 @@ class PeakFinder(MetaEventFitter):
         padding_after = new_padding_after
         # print(padding_before, padding_after)
 
-
         # Method 2: Signal-based minimum (relative to carrier blockage depth)
         # Calculate the carrier level blockage (median of the trimmed event)
         trimmed_data = data[padding_before:-padding_after]
-        carrier_blockage,_  = self.find_mode_blockage_level(trimmed_data, baseline_mean, baseline_std)
+        carrier_blockage, _ = self.find_mode_blockage_level(
+            trimmed_data, baseline_mean, baseline_std
+        )
         min_segment_length = 100
 
         # as long as at least one segment exists above threshold
         if len(trimmed_data) < min_segment_length:
-            raise ValueError("Too short of a segment above threshold to analyze") 
+            raise ValueError("Too short of a segment above threshold to analyze")
         if carrier_blockage < self.settings["Min Carrier Blockage"]["Value"]:
             raise ValueError("No Carrier Level Found")
 
@@ -740,7 +759,10 @@ class PeakFinder(MetaEventFitter):
         min_prom = max(min_prom_noise, min_prom_signal)
         # Height is driven by the higher threshold setting, then guarded by the
         # carrier level so peaks still sit beyond the local blockage.
-        min_height = max(max(abs(low_threshold), abs(high_threshold)) * baseline_std, carrier_blockage + min_prom)
+        min_height = max(
+            max(abs(low_threshold), abs(high_threshold)) * baseline_std,
+            carrier_blockage + min_prom,
+        )
 
         # Calculate wlen (prominence window) for finding peak bases
         # wlen is calculated as a user-specified percentage of the trimmed event length
@@ -754,7 +776,9 @@ class PeakFinder(MetaEventFitter):
         trimmed_event_length = len(trimmed_data)  # Length in samples
 
         # Get user-specified window length percentage and convert to ratio
-        window_length_percentage = self.settings.get("Window Length Percentage", {}).get("Value", 2.2)
+        window_length_percentage = self.settings.get(
+            "Window Length Percentage", {}
+        ).get("Value", 2.2)
         window_length_ratio = window_length_percentage / 100.0  # Convert % to fraction
 
         # Calculate wlen directly from user setting
@@ -783,7 +807,6 @@ class PeakFinder(MetaEventFitter):
             f"window_percentage={window_length_percentage:.1f}%, "
             f"SNR={snr:.2f}, wlen={wlen} samples ({wlen*dt_us:.2f} us), "
             f"min_dist={min_dist} samples ({min_dist*dt_us:.2f} us), "
-        
         )
 
         """
@@ -885,7 +908,6 @@ class PeakFinder(MetaEventFitter):
             }
         )
 
-
         if len(peaks) > 0:
             edges = [
                 {
@@ -905,7 +927,7 @@ class PeakFinder(MetaEventFitter):
                     if right_ip > left_ip
                     else data[left_ip : left_ip + 1]
                 )
-                max_blockage,_ = self.find_mode_blockage_level(
+                max_blockage, _ = self.find_mode_blockage_level(
                     peak_data_segment,
                     baseline_mean,
                     baseline_std,
@@ -1006,7 +1028,7 @@ class PeakFinder(MetaEventFitter):
         # rise_time = int(1.0e-6 * 10 * samplerate)
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
-        
+
         # Determine sublevel types: "peak" (if edge contains peak) or "event_baseline" (other transitions)
         sublevel_metadata["sublevel_type"] = []
         for i in range(num_states):
@@ -1158,12 +1180,7 @@ class PeakFinder(MetaEventFitter):
         )
         # get normalized peak height (will be calculated in post-processing when unfolded_level is determined)
         sublevel_metadata["normalized_height"] = np.array(
-            [
-                (
-                np.nan
-                )
-                for i in range(num_states)
-            ],
+            [(np.nan) for i in range(num_states)],
             dtype=np.float64,
         )
         # get peak height
@@ -1180,12 +1197,7 @@ class PeakFinder(MetaEventFitter):
         )
         # get normalized peak height
         sublevel_metadata["normalized_height"] = np.array(
-            [
-                (
-                    np.nan
-                )
-                for i in range(num_states)
-            ],
+            [(np.nan) for i in range(num_states)],
             dtype=np.float64,
         )
         # get peak prominence
@@ -1202,12 +1214,7 @@ class PeakFinder(MetaEventFitter):
         )
         # get normalized peak prominence (will be calculated in post-processing when unfolded_level is determined)
         sublevel_metadata["normalized_prominence"] = np.array(
-            [
-                (
-                    np.nan
-                )
-                for i in range(num_states)
-            ],
+            [(np.nan) for i in range(num_states)],
             dtype=np.float64,
         )
 
@@ -1226,15 +1233,9 @@ class PeakFinder(MetaEventFitter):
         )
         # get normalized max blockage (max_blockage / unfolded_level) for peak sublevels
         sublevel_metadata["normalized_blockage"] = np.array(
-            [
-                (
-                    np.nan
-                )
-                for i in range(num_states)
-            ],
+            [(np.nan) for i in range(num_states)],
             dtype=np.float64,
         )
-
 
         # get peak left base
         sublevel_metadata["left_base"] = np.array(
@@ -1316,11 +1317,7 @@ class PeakFinder(MetaEventFitter):
         # get peak prominence-based classification (will be assigned in post-processing)
         sublevel_metadata["classified"] = np.array(
             [
-                (
-                    np.nan
-                    if "peak" in sublevel_starts[i]["type"]
-                    else np.nan
-                )
+                (np.nan if "peak" in sublevel_starts[i]["type"] else np.nan)
                 for i in range(num_states)
             ],
             dtype=np.float64,
@@ -1337,7 +1334,7 @@ class PeakFinder(MetaEventFitter):
                         ]
                     )
                     if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
-                    else  np.std(
+                    else np.std(
                         data[
                             int(sublevel_starts[i + 1]["index"]) : int(
                                 sublevel_starts[i]["index"]
@@ -1413,16 +1410,21 @@ class PeakFinder(MetaEventFitter):
             + sublevel_metadata["sublevel_duration"][-1]
         )
 
-        event_metadata["baseline_stdev"] = (min((
-            sublevel_metadata["sublevel_stdev"][0]
-            * sublevel_metadata["sublevel_duration"][0]
-            + sublevel_metadata["sublevel_stdev"][-1]
-            * sublevel_metadata["sublevel_duration"][-1]
-        ) / (
-            sublevel_metadata["sublevel_duration"][0]
-            + sublevel_metadata["sublevel_duration"][-1]
-        ),sublevel_metadata["sublevel_stdev"][0],sublevel_metadata["sublevel_stdev"][-1]))
-        
+        event_metadata["baseline_stdev"] = min(
+            (
+                sublevel_metadata["sublevel_stdev"][0]
+                * sublevel_metadata["sublevel_duration"][0]
+                + sublevel_metadata["sublevel_stdev"][-1]
+                * sublevel_metadata["sublevel_duration"][-1]
+            )
+            / (
+                sublevel_metadata["sublevel_duration"][0]
+                + sublevel_metadata["sublevel_duration"][-1]
+            ),
+            sublevel_metadata["sublevel_stdev"][0],
+            sublevel_metadata["sublevel_stdev"][-1],
+        )
+
         # Data has already been trimmed to longest segment in _locate_sublevel_transitions
         # sublevel_start_times[1] is after padding_before (which now includes the trim)
         # So we just use the event data between the first and last sublevel
@@ -1458,15 +1460,15 @@ class PeakFinder(MetaEventFitter):
             )
 
         primary_level, _ = self.find_mode_blockage_level(
-                data[
-                    int(
-                        sublevel_metadata["sublevel_start_times"][1] * samplerate * 1e-6
-                    ) : int(
-                        sublevel_metadata["sublevel_start_times"][-1] * samplerate * 1e-6
-                    )
-                ],
-                float(baseline_current),
-                float(baseline_stdev),
+            data[
+                int(
+                    sublevel_metadata["sublevel_start_times"][1] * samplerate * 1e-6
+                ) : int(
+                    sublevel_metadata["sublevel_start_times"][-1] * samplerate * 1e-6
+                )
+            ],
+            float(baseline_current),
+            float(baseline_stdev),
         )
         if primary_level is None:
             raise RuntimeError(
@@ -1481,7 +1483,6 @@ class PeakFinder(MetaEventFitter):
         event_metadata["sequence"] = None  # type: ignore[assignment]
 
         return event_metadata
-
 
     @log(logger=logger)
     @override
@@ -1780,7 +1781,6 @@ class PeakFinder(MetaEventFitter):
 
         all_longest_levels_array = np.array(all_longest_levels)
         all_raw_ecds_array = np.array(all_raw_ecds)
-        
 
         self.logger.info(
             f"Collected {len(all_longest_levels)} events for classification analysis"
@@ -1809,7 +1809,9 @@ class PeakFinder(MetaEventFitter):
             if ch not in self.sublevel_metadata:
                 continue
             for event_index, sublevel_data in self.sublevel_metadata[ch].items():
-                filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+                filtered_values = np.asarray(
+                    sublevel_data.get("filtered", []), dtype=float
+                )
                 classified = sublevel_data.get("classified", [])
                 sequence = "".join(
                     str(int(classified[i]))
@@ -1817,10 +1819,14 @@ class PeakFinder(MetaEventFitter):
                     if not np.isnan(filtered_values[i])
                     and int(filtered_values[i]) == 3
                     and i < len(classified)
-                    and not (isinstance(classified[i], float) and np.isnan(classified[i]))
+                    and not (
+                        isinstance(classified[i], float) and np.isnan(classified[i])
+                    )
                 )
                 if ch in self.event_metadata and event_index in self.event_metadata[ch]:
-                    direction = self.event_metadata[ch][event_index].get("translocation_direction", None)
+                    direction = self.event_metadata[ch][event_index].get(
+                        "translocation_direction", None
+                    )
                     if direction == "backward":
                         sequence = sequence[::-1]
                     self.event_metadata[ch][event_index]["sequence"] = sequence
@@ -1831,7 +1837,6 @@ class PeakFinder(MetaEventFitter):
         self.logger.info(
             "Post-processing analysis completed with automatic folded/unfolded classification."
         )
-        
 
     @log(logger=logger)
     def update_event_metadata_post_processing(
@@ -1907,24 +1912,30 @@ class PeakFinder(MetaEventFitter):
                 prominences = np.array(sublevel_data["prominence"])
                 valid_mask = ~np.isnan(prominences)
                 normalized_prominences = np.full_like(prominences, np.nan)
-                normalized_prominences[valid_mask] = (prominences[valid_mask] / unfolded_level)
+                normalized_prominences[valid_mask] = (
+                    prominences[valid_mask] / unfolded_level
+                )
                 sublevel_data["normalized_prominence"] = normalized_prominences
 
             if (
-                "max_blockage" in sublevel_data 
+                "max_blockage" in sublevel_data
                 and sublevel_data["max_blockage"] is not None
             ):
                 blockages = np.array(sublevel_data["max_blockage"])
                 valid_mask = ~np.isnan(blockages)
                 normalized_blockages = np.full_like(blockages, np.nan)
-                normalized_blockages[valid_mask] = blockages[valid_mask] / unfolded_level
+                normalized_blockages[valid_mask] = (
+                    blockages[valid_mask] / unfolded_level
+                )
                 sublevel_data["normalized_blockage"] = normalized_blockages
 
         # Reclassify peaks using global folded/unfolded levels
         if unfolded_level is not None and folded_level is not None:
             # Get baseline and samplerate for this event
             baseline_mean = event_data.get("baseline_current")
-            baseline_stdev = self.event_metadata[channel][event_index].get("baseline_stdev")
+            baseline_stdev = self.event_metadata[channel][event_index].get(
+                "baseline_stdev"
+            )
 
             if baseline_mean is not None and baseline_stdev is not None:
                 # Get event loader to retrieve samplerate
@@ -2005,7 +2016,7 @@ class PeakFinder(MetaEventFitter):
                     self.logger.debug(
                         f"Channel {channel}, Event {event_index}: Reclassified {len(peak_indices)} peaks, filtered values: {filtered_data}"
                     )
-                    
+
     @log(logger=logger)
     @override
     def report_channel_status(
@@ -2023,7 +2034,7 @@ class PeakFinder(MetaEventFitter):
         :raises RuntimeError: if the channel's peak statistics cannot be assembled
         """
         # Get the base fitting report from parent class
-        
+
         base_report = super().report_channel_status(channel, init)
         # event_total = loader.get_num_events(channel)
         # fitted_total = len(self.event_metadata.get(channel, {}))
@@ -2037,23 +2048,27 @@ class PeakFinder(MetaEventFitter):
         #         base_report += f"  {reason}: {count}\n"
 
         # If initialization or no classification results yet, return base report
-        if init or not hasattr(self, "_classification_results"):              
+        if init or not hasattr(self, "_classification_results"):
             return base_report
 
         # During the final post-processing pass, classification results may be
         # available before the base class flips eventfitting_status[channel].
         # In that case, report the channel as complete instead of incomplete.
         if channel is not None and "fitting incomplete" in base_report:
-            if self._classification_results and "error" not in self._classification_results:
+            if (
+                self._classification_results
+                and "error" not in self._classification_results
+            ):
                 loader = getattr(self, "eventloader", None)
                 if loader is None:
                     raise RuntimeError(
                         "Event loader is not initialized; cannot determine total events"
                     )
-  
 
         # Add classification information to the report
-        classification_report = "\n\nClassification Results:\n\nFolding Classification Results:"
+        classification_report = (
+            "\n\nClassification Results:\n\nFolding Classification Results:"
+        )
 
         if "skipped" in self._classification_results:
             classification_report += (
@@ -2116,10 +2131,14 @@ class PeakFinder(MetaEventFitter):
             if total_peaks > 0:
                 classified_pct = total_classified / total_peaks * 100
                 unclassified_pct = total_unclassified / total_peaks * 100
-                
+
             classification_report += f"\n  Total peaks detected: {total_peaks}"
-            classification_report += f"\n  Filtered peaks: {total_classified} ({classified_pct:.1f}%"
-            classification_report += f"\n  Unfiltered peaks: {total_unclassified} ({unclassified_pct:.1f}%"
+            classification_report += (
+                f"\n  Filtered peaks: {total_classified} ({classified_pct:.1f}%"
+            )
+            classification_report += (
+                f"\n  Unfiltered peaks: {total_unclassified} ({unclassified_pct:.1f}%"
+            )
 
             # Break down by peak type
             if peak_type_counts:
@@ -2161,15 +2180,9 @@ class PeakFinder(MetaEventFitter):
             prominence_stats = self._peak_prominence_classification_results
             classification_report += "\n\nPeak Prominence Classification:"
 
-            total_prominence_peaks = cast(
-                int, prominence_stats.get("total_peaks", 0)
-            )
-            lower_prominence_count = cast(
-                int, prominence_stats.get("lower_count", 0)
-            )
-            higher_prominence_count = cast(
-                int, prominence_stats.get("higher_count", 0)
-            )
+            total_prominence_peaks = cast(int, prominence_stats.get("total_peaks", 0))
+            lower_prominence_count = cast(int, prominence_stats.get("lower_count", 0))
+            higher_prominence_count = cast(int, prominence_stats.get("higher_count", 0))
             n_components = cast(int, prominence_stats.get("n_components", 0))
 
             classification_report += (
@@ -2188,7 +2201,7 @@ class PeakFinder(MetaEventFitter):
                     f" ({lower_prominence_count/total_prominence_peaks:.1%} class 0, "
                     f"{higher_prominence_count/total_prominence_peaks:.1%} class 1)"
                 )
-                
+
             # NOTE (integration): this read the value, converted it with float(),
             # and only then tested `threshold is not None` - a test that can never
             # fire, since float() either returns a float or raises. A missing
@@ -2199,13 +2212,10 @@ class PeakFinder(MetaEventFitter):
             if isinstance(raw_threshold, (int, float)) and not isinstance(
                 raw_threshold, bool
             ):
-                classification_report += (
-                    f"\n  Threshold: {float(raw_threshold):.2f} pA"
-                )
+                classification_report += f"\n  Threshold: {float(raw_threshold):.2f} pA"
 
             centers = prominence_stats.get("centers")
-            
-             
+
             if isinstance(centers, list) and centers:
                 formatted_centers = ", ".join(f"{center:.2f}" for center in centers)
                 classification_report += f"\n  Centers: {formatted_centers} pA"
@@ -2217,7 +2227,9 @@ class PeakFinder(MetaEventFitter):
             td = self._translocation_direction_results
             if "skipped" in td:
                 classification_report += f"\n  Skipped: {td['reason']}"
-                classification_report += "\n  Note: sequences are not dependent on translocation direction"
+                classification_report += (
+                    "\n  Note: sequences are not dependent on translocation direction"
+                )
             else:
                 total_td = cast(int, td["total_events"])
                 fwd = cast(int, td["forward_count"])
@@ -2226,7 +2238,9 @@ class PeakFinder(MetaEventFitter):
                 classification_report += f"\n  Forward: {fwd} ({fwd/total_td:.1%})"
                 classification_report += f"\n  Backward: {bwd} ({bwd/total_td:.1%})"
                 classification_report += f"\n  Lower center : {td['lower_center']:.3f}"
-                classification_report += f"\n  Higher center : {td['higher_center']:.3f}"
+                classification_report += (
+                    f"\n  Higher center : {td['higher_center']:.3f}"
+                )
                 classification_report += f"\n  Threshold: {td['threshold']:.3f}"
         else:
             classification_report += "\n  Not run"
@@ -2245,8 +2259,12 @@ class PeakFinder(MetaEventFitter):
                         unclassified_total += 1
             if total_events > 0:
                 classification_report += "\n\n  Event direction breakdown (all events):"
-                classification_report += f"\n    Forward:      {fwd_total} ({fwd_total/total_events:.1%})"
-                classification_report += f"\n    Backward:     {bwd_total} ({bwd_total/total_events:.1%})"
+                classification_report += (
+                    f"\n    Forward:      {fwd_total} ({fwd_total/total_events:.1%})"
+                )
+                classification_report += (
+                    f"\n    Backward:     {bwd_total} ({bwd_total/total_events:.1%})"
+                )
                 classification_report += f"\n    Unclassified: {unclassified_total} ({unclassified_total/total_events:.1%})"
 
         # Sequence statistics across all channels
@@ -2262,20 +2280,20 @@ class PeakFinder(MetaEventFitter):
 
             if sequence_counts:
                 classification_report += "\n\nSequence Statistics:"
-                classification_report += f"\n  Events with a sequence: {total_with_sequence}"
+                classification_report += (
+                    f"\n  Events with a sequence: {total_with_sequence}"
+                )
                 for seq, count in sorted(sequence_counts.items(), key=lambda x: -x[1]):
                     pct = count / total_with_sequence * 100
                     classification_report += f"\n  '{seq}': {count} ({pct:.1f}%)"
 
-
         return base_report + classification_report
-    
-###################################################################################################################    
-###################################################################################################################    
- 
 
-    #classifiers
-    
+    ###################################################################################################################
+    ###################################################################################################################
+
+    # classifiers
+
     @log(logger=logger)
     def _classify_folded_unfolded(
         self,
@@ -2285,19 +2303,19 @@ class PeakFinder(MetaEventFitter):
         all_raw_ecds_array: np.ndarray,
     ) -> None:
         """
-                Implementation notes:
-                - Assumes carrier-blockage pre-filtering has already been applied to the
-                    provided `all_longest_levels_array` (do not double-filter).
-                - Apply ECD pre-filters
-                - Use `bitthresh` to compute centers/threshold
-                - Apply the same blockage-filter re-run heuristic when ratio is poor
-                - Classify all events and save results + plotting
+        Implementation notes:
+        - Assumes carrier-blockage pre-filtering has already been applied to the
+            provided `all_longest_levels_array` (do not double-filter).
+        - Apply ECD pre-filters
+        - Use `bitthresh` to compute centers/threshold
+        - Apply the same blockage-filter re-run heuristic when ratio is poor
+        - Classify all events and save results + plotting
         """
 
-                # NOTE: blockage-level filtering is assumed to be applied upstream and
-                # therefore is not re-applied here. We only compute an ECD percentile
-                # filter on the provided arrays so decisions are deterministic.
-                # ECD pre-filter
+        # NOTE: blockage-level filtering is assumed to be applied upstream and
+        # therefore is not re-applied here. We only compute an ECD percentile
+        # filter on the provided arrays so decisions are deterministic.
+        # ECD pre-filter
         log_ecd = np.log10(all_raw_ecds_array)
         ecd_5th = np.percentile(log_ecd, 5)
         ecd_95th = np.percentile(log_ecd, 95)
@@ -2306,16 +2324,22 @@ class PeakFinder(MetaEventFitter):
         n_filtered_out = len(all_event_info) - np.sum(ecd_filter_mask)
 
         self.logger.info("ECD-based filtering:")
-        self.logger.info(f"  log10(ECD) range: 5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}")
+        self.logger.info(
+            f"  log10(ECD) range: 5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}"
+        )
         self.logger.info("ECD filtering results:")
         self.logger.info(
             f"  Total filtered out: {n_filtered_out} events ({n_filtered_out/len(all_event_info):.1%})"
         )
-        self.logger.info(f"  Remaining events for classification: {np.sum(ecd_filter_mask)}")
+        self.logger.info(
+            f"  Remaining events for classification: {np.sum(ecd_filter_mask)}"
+        )
 
         filtered_longest_levels = all_longest_levels_array[ecd_filter_mask]
         if len(filtered_longest_levels) < 10:
-            self.logger.warning("Too few events after ECD filtering, using unfiltered data")
+            self.logger.warning(
+                "Too few events after ECD filtering, using unfiltered data"
+            )
             filtered_longest_levels = all_longest_levels_array
             ecd_filter_mask = np.ones(len(all_event_info), dtype=bool)
 
@@ -2333,14 +2357,26 @@ class PeakFinder(MetaEventFitter):
             params_dbg = bt.get("params") if isinstance(bt, dict) else None
             centers_dbg = bt.get("centers") if isinstance(bt, dict) else None
             hist_dbg = bt.get("hist") if isinstance(bt, dict) else None
-            hcnt = hist_dbg[0].tolist()[:5] if hist_dbg is not None and hist_dbg[0] is not None else None
-            hbins = len(hist_dbg[1]) if hist_dbg is not None and hist_dbg[1] is not None else None
-            self.logger.debug(f"folding bitthresh: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_filtered={len(filtered_longest_levels)}")
+            hcnt = (
+                hist_dbg[0].tolist()[:5]
+                if hist_dbg is not None and hist_dbg[0] is not None
+                else None
+            )
+            hbins = (
+                len(hist_dbg[1])
+                if hist_dbg is not None and hist_dbg[1] is not None
+                else None
+            )
+            self.logger.debug(
+                f"folding bitthresh: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_filtered={len(filtered_longest_levels)}"
+            )
         except Exception:
             pass
 
         if not bt or "midpoint" not in bt or bt.get("centers") is None:
-            self.logger.error("bitthresh returned insufficient results for classification")
+            self.logger.error(
+                "bitthresh returned insufficient results for classification"
+            )
             self._classification_results = {"error": "bitthresh insufficient results"}
             self._collect_peak_statistics(channels)
             return
@@ -2354,37 +2390,71 @@ class PeakFinder(MetaEventFitter):
         # center separation compared with the current fit.
         try:
             if centers_bt.size >= 2:
-                span = float(np.nanmax(filtered_longest_levels) - np.nanmin(filtered_longest_levels)) if filtered_longest_levels.size > 0 else 0.0
+                span = (
+                    float(
+                        np.nanmax(filtered_longest_levels)
+                        - np.nanmin(filtered_longest_levels)
+                    )
+                    if filtered_longest_levels.size > 0
+                    else 0.0
+                )
                 sep = float(np.abs(centers_bt[1] - centers_bt[0]))
                 if span > 0 and sep < max(1e-6, 0.05 * span):
-                    self.logger.info("Detected very small separation between fitted centers; trying bitthresh on unfiltered data")
+                    self.logger.info(
+                        "Detected very small separation between fitted centers; trying bitthresh on unfiltered data"
+                    )
                     try:
                         bt_all = self.bitthresh(all_longest_levels_array)
-                        centers_all = np.asarray(bt_all.get("centers"), dtype=float) if bt_all.get("centers") is not None else np.array([])
+                        centers_all = (
+                            np.asarray(bt_all.get("centers"), dtype=float)
+                            if bt_all.get("centers") is not None
+                            else np.array([])
+                        )
                         if centers_all.size >= 2:
                             sidx_all = np.argsort(centers_all)
                             lower_all = float(centers_all[sidx_all[0]])
                             higher_all = float(centers_all[sidx_all[1]])
                             # compare to current fitted centers' ratio to decide if unfiltered results improve separation
                             try:
-                                current_ratio = (float(centers_bt[1]) / float(centers_bt[0])) if (centers_bt is not None and centers_bt.size >= 2 and centers_bt[0] > 0) else 0
+                                current_ratio = (
+                                    (float(centers_bt[1]) / float(centers_bt[0]))
+                                    if (
+                                        centers_bt is not None
+                                        and centers_bt.size >= 2
+                                        and centers_bt[0] > 0
+                                    )
+                                    else 0
+                                )
                             except Exception:
                                 current_ratio = 0
-                            if higher_all > lower_all and (higher_all / lower_all) > current_ratio:
-                                self.logger.info("Using bitthresh results from unfiltered data (improved separation)")
+                            if (
+                                higher_all > lower_all
+                                and (higher_all / lower_all) > current_ratio
+                            ):
+                                self.logger.info(
+                                    "Using bitthresh results from unfiltered data (improved separation)"
+                                )
                                 bt = bt_all
                                 centers_bt = centers_all
                                 lower_center = lower_all
                                 higher_center = higher_all
-                                ratio = higher_center / lower_center if lower_center > 0 else 0
+                                ratio = (
+                                    higher_center / lower_center
+                                    if lower_center > 0
+                                    else 0
+                                )
                                 ratio_fits = 1.7 <= ratio <= 2.3
                     except Exception:
                         pass
         except Exception:
             pass
         if centers_bt.size < 2:
-            self.logger.warning("bitthresh did not find two centers; cannot classify folded/unfolded")
-            self._classification_results = {"error": "Could not find two distinct distributions"}
+            self.logger.warning(
+                "bitthresh did not find two centers; cannot classify folded/unfolded"
+            )
+            self._classification_results = {
+                "error": "Could not find two distinct distributions"
+            }
             self._collect_peak_statistics(channels)
             return
 
@@ -2396,7 +2466,9 @@ class PeakFinder(MetaEventFitter):
 
         # If ratio poor, attempt blockage-filtering re-run (same heuristic as before)
         if not ratio_fits:
-            self.logger.info("Ratio check FAILED - applying blockage-level filtering strategy")
+            self.logger.info(
+                "Ratio check FAILED - applying blockage-level filtering strategy"
+            )
             blockage_25th = np.percentile(filtered_longest_levels, 25)
             re_mask = filtered_longest_levels >= blockage_25th
             re_filtered = filtered_longest_levels[re_mask]
@@ -2410,7 +2482,9 @@ class PeakFinder(MetaEventFitter):
                         higher2 = float(centers2[sidx2[1]])
                         ratio2 = higher2 / lower2 if lower2 > 0 else 0
                         if 1.7 <= ratio2 <= 2.3 or ratio2 < ratio:
-                            self.logger.info("Using blockage-filtered bitthresh results (ratio improved)")
+                            self.logger.info(
+                                "Using blockage-filtered bitthresh results (ratio improved)"
+                            )
                             bt = bt2
                             centers_bt = centers2
                             lower_center = lower2
@@ -2419,9 +2493,11 @@ class PeakFinder(MetaEventFitter):
                             ratio_fits = 1.7 <= ratio2 <= 2.3
                             filtered_longest_levels = re_filtered
                 except Exception:
-                    self.logger.warning("Re-run bitthresh on blockage-filtered data failed; keeping original results")
+                    self.logger.warning(
+                        "Re-run bitthresh on blockage-filtered data failed; keeping original results"
+                    )
 
-        threshold=bt.get("midpoint", (lower_center + higher_center) / 2.0)
+        threshold = bt.get("midpoint", (lower_center + higher_center) / 2.0)
 
         # Classify events
         folded_count = 0
@@ -2440,7 +2516,9 @@ class PeakFinder(MetaEventFitter):
                 event_folded_level = event_primary_level * 2.0
                 unfolded_count += 1
             try:
-                self.update_event_metadata_post_processing(ch, event_index, event_unfolded_level, event_folded_level)
+                self.update_event_metadata_post_processing(
+                    ch, event_index, event_unfolded_level, event_folded_level
+                )
             except Exception as e:
                 self.logger.error(f"Error updating event metadata: {e}")
 
@@ -2462,9 +2540,11 @@ class PeakFinder(MetaEventFitter):
             plot_path = None
             if loader is not None and hasattr(loader, "get_base_file"):
                 base_file = loader.get_base_file()
-                plot_path = base_file.with_name(f"{base_file.stem}_folding_classification.png")
+                plot_path = base_file.with_name(
+                    f"{base_file.stem}_folding_classification.png"
+                )
 
-            matplotlib.use('Agg')
+            matplotlib.use("Agg")
 
             counts, bins = bt.get("hist", (None, None))
             arr_all = np.asarray(all_longest_levels_array)
@@ -2488,13 +2568,34 @@ class PeakFinder(MetaEventFitter):
                         raise ValueError("invalid bins")
                     full_counts, _ = np.histogram(arr_all, bins=bins)
                     centers = (bins[:-1] + bins[1:]) / 2.0
-                    ax.bar(centers, full_counts, width=widths, alpha=0.5, color="gray", label="All Events (incl. outliers)")
+                    ax.bar(
+                        centers,
+                        full_counts,
+                        width=widths,
+                        alpha=0.5,
+                        color="gray",
+                        label="All Events (incl. outliers)",
+                    )
                     hist_bins = bins
                 except Exception:
-                    ax.hist(arr_all, bins=50, density=False, alpha=0.5, color="gray", label="All Events (incl. outliers)")
+                    ax.hist(
+                        arr_all,
+                        bins=50,
+                        density=False,
+                        alpha=0.5,
+                        color="gray",
+                        label="All Events (incl. outliers)",
+                    )
                     hist_bins = None
             else:
-                ax.hist(arr_all, bins=50, density=False, alpha=0.5, color="gray", label="All Events (incl. outliers)")
+                ax.hist(
+                    arr_all,
+                    bins=50,
+                    density=False,
+                    alpha=0.5,
+                    color="gray",
+                    label="All Events (incl. outliers)",
+                )
                 hist_bins = None
 
             # Determine class masks and counts (on filtered/classified data)
@@ -2513,11 +2614,39 @@ class PeakFinder(MetaEventFitter):
                     higher_counts, _ = np.histogram(arr[class_mask], bins=hist_bins)
                     widths = np.diff(hist_bins)
                     centers = (hist_bins[:-1] + hist_bins[1:]) / 2.0
-                    ax.bar(centers, lower_counts, width=widths, alpha=0.6, color="blue", label="Unfolded")
-                    ax.bar(centers, higher_counts, width=widths, alpha=0.6, color="red", label="Folded")
+                    ax.bar(
+                        centers,
+                        lower_counts,
+                        width=widths,
+                        alpha=0.6,
+                        color="blue",
+                        label="Unfolded",
+                    )
+                    ax.bar(
+                        centers,
+                        higher_counts,
+                        width=widths,
+                        alpha=0.6,
+                        color="red",
+                        label="Folded",
+                    )
                 else:
-                    ax.hist(arr[~class_mask], bins=100, density=False, alpha=0.6, color="blue", label="Unfolded")
-                    ax.hist(arr[class_mask], bins=100, density=False, alpha=0.6, color="red", label="Folded")
+                    ax.hist(
+                        arr[~class_mask],
+                        bins=100,
+                        density=False,
+                        alpha=0.6,
+                        color="blue",
+                        label="Unfolded",
+                    )
+                    ax.hist(
+                        arr[class_mask],
+                        bins=100,
+                        density=False,
+                        alpha=0.6,
+                        color="red",
+                        label="Folded",
+                    )
             except Exception:
                 pass
 
@@ -2534,28 +2663,66 @@ class PeakFinder(MetaEventFitter):
                     order = np.argsort(u_params)
                     lower_idx, higher_idx = int(order[0]), int(order[1])
                     # model from fit is in histogram-count units already
-                    model_lower = a_params[lower_idx] * np.exp(-0.5 * ((x_range - u_params[lower_idx]) / w_params[lower_idx]) ** 2)
-                    model_higher = a_params[higher_idx] * np.exp(-0.5 * ((x_range - u_params[higher_idx]) / w_params[higher_idx]) ** 2)
-                    ax.plot(x_range, model_lower, "--", color="blue", label=f"Unfolded fit (mu={u_params[lower_idx]:.3f}, std={w_params[lower_idx]:.3f})")
-                    ax.plot(x_range, model_higher, "--", color="red", label=f"Folded fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})")
+                    model_lower = a_params[lower_idx] * np.exp(
+                        -0.5
+                        * ((x_range - u_params[lower_idx]) / w_params[lower_idx]) ** 2
+                    )
+                    model_higher = a_params[higher_idx] * np.exp(
+                        -0.5
+                        * ((x_range - u_params[higher_idx]) / w_params[higher_idx]) ** 2
+                    )
+                    ax.plot(
+                        x_range,
+                        model_lower,
+                        "--",
+                        color="blue",
+                        label=f"Unfolded fit (mu={u_params[lower_idx]:.3f}, std={w_params[lower_idx]:.3f})",
+                    )
+                    ax.plot(
+                        x_range,
+                        model_higher,
+                        "--",
+                        color="red",
+                        label=f"Folded fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})",
+                    )
                 except Exception:
                     pass
 
             # Vertical threshold line (value shown in info textbox)
-            ax.axvline(threshold, color="black", linestyle="-", linewidth=2, label=f"Threshold: {threshold:.3f} pA")
+            ax.axvline(
+                threshold,
+                color="black",
+                linestyle="-",
+                linewidth=2,
+                label=f"Threshold: {threshold:.3f} pA",
+            )
 
             # Info textbox with counts and threshold type
             try:
-                pct_low = lower_count / total_events_plot if total_events_plot > 0 else 0.0
-                pct_high = higher_count / total_events_plot if total_events_plot > 0 else 0.0
-                pct_outliers = n_outliers / total_events_plot if total_events_plot > 0 else 0.0
+                pct_low = (
+                    lower_count / total_events_plot if total_events_plot > 0 else 0.0
+                )
+                pct_high = (
+                    higher_count / total_events_plot if total_events_plot > 0 else 0.0
+                )
+                pct_outliers = (
+                    n_outliers / total_events_plot if total_events_plot > 0 else 0.0
+                )
                 info_text = (
                     f"Total Events (used for fit): {total_events_plot}\n"
                     f"Unfolded: {lower_count} ({pct_low:.1%})\n"
                     f"Folded: {higher_count} ({pct_high:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
-                ax.text(0.02, 0.98, info_text, transform=ax.transAxes, fontsize=10, verticalalignment="top", bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9))
+                ax.text(
+                    0.02,
+                    0.98,
+                    info_text,
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment="top",
+                    bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9),
+                )
             except Exception:
                 pass
 
@@ -2580,7 +2747,7 @@ class PeakFinder(MetaEventFitter):
 
         The lower prominence population is written as 0 and the higher population
         as 1. If a single population is selected by BIC, all eligible peaks are
-        as 1. 
+        as 1.
         """
         prominence_values: list[float] = []
         prominence_refs: list[tuple[int, int, int]] = []
@@ -2590,19 +2757,29 @@ class PeakFinder(MetaEventFitter):
                 continue
 
             for event_index, sublevel_data in self.sublevel_metadata[ch].items():
-                filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
-                prominences = np.asarray(sublevel_data.get("prominence", []), dtype=float)
+                filtered_values = np.asarray(
+                    sublevel_data.get("filtered", []), dtype=float
+                )
+                prominences = np.asarray(
+                    sublevel_data.get("prominence", []), dtype=float
+                )
                 peak_ids = sublevel_data.get("peak_id", [])
 
-                if "classified" not in sublevel_data or len(sublevel_data["classified"]) != len(peak_ids):
+                if "classified" not in sublevel_data or len(
+                    sublevel_data["classified"]
+                ) != len(peak_ids):
                     self.sublevel_metadata[ch][event_index]["classified"] = np.full(
                         len(peak_ids), np.nan, dtype=np.float64
                     )
 
                 for peak_index, peak_id in enumerate(peak_ids):
-                    if peak_id is None or (isinstance(peak_id, float) and np.isnan(peak_id)):
+                    if peak_id is None or (
+                        isinstance(peak_id, float) and np.isnan(peak_id)
+                    ):
                         continue
-                    if peak_index >= len(filtered_values) or peak_index >= len(prominences):
+                    if peak_index >= len(filtered_values) or peak_index >= len(
+                        prominences
+                    ):
                         continue
 
                     peak_type = filtered_values[peak_index]
@@ -2631,7 +2808,11 @@ class PeakFinder(MetaEventFitter):
             self.logger.error(f"bitthresh failed for prominence classification: {e}")
             return
 
-        centers = np.asarray(bt.get('centers'), dtype=float) if bt.get('centers') is not None else np.array([])
+        centers = (
+            np.asarray(bt.get("centers"), dtype=float)
+            if bt.get("centers") is not None
+            else np.array([])
+        )
         if centers.size < 2:
             # Single population -> mark all as class 1 per previous behavior
             class_labels = np.ones(len(prominence_array), dtype=np.float64)
@@ -2640,18 +2821,24 @@ class PeakFinder(MetaEventFitter):
             # NOTE (integration): bt.get('midpoint') is Optional, so float()
             # raised TypeError whenever bitthresh returned without a midpoint.
             # Checked and raised explicitly instead.
-            midpoint = bt.get('midpoint')
+            midpoint = bt.get("midpoint")
             if midpoint is None:
                 raise RuntimeError(
                     "bitthresh returned no 'midpoint'; prominence classes "
                     "cannot be assigned without a threshold"
                 )
             threshold = float(midpoint)
-            class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(np.float64)
+            class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(
+                np.float64
+            )
 
         # Assign classifications back to sublevel metadata
-        for class_label, (ch, event_index, peak_index) in zip(class_labels, prominence_refs):
-            self.sublevel_metadata[ch][event_index]["classified"][peak_index] = class_label
+        for class_label, (ch, event_index, peak_index) in zip(
+            class_labels, prominence_refs
+        ):
+            self.sublevel_metadata[ch][event_index]["classified"][
+                peak_index
+            ] = class_label
 
         self._peak_prominence_classification_results = {
             "total_peaks": len(prominence_array),
@@ -2667,11 +2854,13 @@ class PeakFinder(MetaEventFitter):
             plot_path = None
             if loader is not None and hasattr(loader, "get_base_file"):
                 base_file = loader.get_base_file()
-                plot_path = base_file.with_name(f"{base_file.stem}_peak_prominence_classification.png")
+                plot_path = base_file.with_name(
+                    f"{base_file.stem}_peak_prominence_classification.png"
+                )
 
-            matplotlib.use('Agg')
+            matplotlib.use("Agg")
 
-            counts, bins = bt.get('hist', (None, None))
+            counts, bins = bt.get("hist", (None, None))
             arr_all = np.asarray(prominence_array, dtype=float)
             arr = arr_all
             fig, ax = plt.subplots(figsize=(12, 6))
@@ -2692,28 +2881,69 @@ class PeakFinder(MetaEventFitter):
                         raise ValueError("invalid bins")
                     full_counts, _ = np.histogram(arr_all, bins=bins)
                     centers = (bins[:-1] + bins[1:]) / 2.0
-                    ax.bar(centers, full_counts, width=widths, alpha=0.5, color='gray', label='All Peaks (incl. outliers)')
+                    ax.bar(
+                        centers,
+                        full_counts,
+                        width=widths,
+                        alpha=0.5,
+                        color="gray",
+                        label="All Peaks (incl. outliers)",
+                    )
                     hist_bins = bins
                 except Exception:
-                    ax.hist(arr_all, bins=100, density=False, alpha=0.5, color='gray', label='All Peaks (incl. outliers)')
+                    ax.hist(
+                        arr_all,
+                        bins=100,
+                        density=False,
+                        alpha=0.5,
+                        color="gray",
+                        label="All Peaks (incl. outliers)",
+                    )
                     hist_bins = None
             else:
-                ax.hist(arr_all, bins=100, density=False, alpha=0.5, color='gray', label='All Peaks (incl. outliers)')
+                ax.hist(
+                    arr_all,
+                    bins=100,
+                    density=False,
+                    alpha=0.5,
+                    color="gray",
+                    label="All Peaks (incl. outliers)",
+                )
                 hist_bins = None
 
             # Overlay fitted Gaussians and per-class histograms
-            params = bt.get('params')
+            params = bt.get("params")
             x_range = np.linspace(arr.min(), arr.max(), 1000)
 
-            lower_count = int(np.sum(class_labels == 0)) if 'class_labels' in locals() else int(np.sum(np.asarray(arr) < threshold)) if threshold is not None else 0
-            higher_count = int(np.sum(class_labels == 1)) if 'class_labels' in locals() else int(np.sum(np.asarray(arr) >= threshold)) if threshold is not None else 0
+            lower_count = (
+                int(np.sum(class_labels == 0))
+                if "class_labels" in locals()
+                else (
+                    int(np.sum(np.asarray(arr) < threshold))
+                    if threshold is not None
+                    else 0
+                )
+            )
+            higher_count = (
+                int(np.sum(class_labels == 1))
+                if "class_labels" in locals()
+                else (
+                    int(np.sum(np.asarray(arr) >= threshold))
+                    if threshold is not None
+                    else 0
+                )
+            )
             total_peaks = len(arr)
             n_outliers = int(max(0, arr_all.size - arr.size))
             pct_outliers = n_outliers / arr_all.size if arr_all.size > 0 else 0.0
 
             # Plot class histograms using the same bins when available
             params = bt.get("params")
-            x_range = np.linspace(np.nanmin(arr), np.nanmax(arr), 1000) if arr.size > 0 else np.linspace(0, 1, 1000)
+            x_range = (
+                np.linspace(np.nanmin(arr), np.nanmax(arr), 1000)
+                if arr.size > 0
+                else np.linspace(0, 1, 1000)
+            )
             if params is not None:
                 try:
                     a1, a2, u1, u2, w1, w2 = params
@@ -2724,14 +2954,32 @@ class PeakFinder(MetaEventFitter):
                     order = np.argsort(u_params)
                     lower_idx, higher_idx = int(order[0]), int(order[1])
                     # model from fit is in histogram-count units already
-                    model_lower = a_params[lower_idx] * np.exp(-0.5 * ((x_range - u_params[lower_idx]) / w_params[lower_idx]) ** 2)
-                    model_higher = a_params[higher_idx] * np.exp(-0.5 * ((x_range - u_params[higher_idx]) / w_params[higher_idx]) ** 2)
-                    ax.plot(x_range, model_lower, "--", color="blue", label=f"Lower prominence fit (mu={u_params[lower_idx]:.3f}, std={w_params[lower_idx]:.3f})")
-                    ax.plot(x_range, model_higher, "--", color="red", label=f"Higher prominence fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})")
+                    model_lower = a_params[lower_idx] * np.exp(
+                        -0.5
+                        * ((x_range - u_params[lower_idx]) / w_params[lower_idx]) ** 2
+                    )
+                    model_higher = a_params[higher_idx] * np.exp(
+                        -0.5
+                        * ((x_range - u_params[higher_idx]) / w_params[higher_idx]) ** 2
+                    )
+                    ax.plot(
+                        x_range,
+                        model_lower,
+                        "--",
+                        color="blue",
+                        label=f"Lower prominence fit (mu={u_params[lower_idx]:.3f}, std={w_params[lower_idx]:.3f})",
+                    )
+                    ax.plot(
+                        x_range,
+                        model_higher,
+                        "--",
+                        color="red",
+                        label=f"Higher prominence fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})",
+                    )
                 except Exception:
                     pass
-                
-            if 'class_labels' in locals() and class_labels is not None:
+
+            if "class_labels" in locals() and class_labels is not None:
                 lower_mask = class_labels == 0
                 higher_mask = class_labels == 1
                 if hist_bins is not None:
@@ -2739,16 +2987,49 @@ class PeakFinder(MetaEventFitter):
                     higher_counts, _ = np.histogram(arr[higher_mask], bins=hist_bins)
                     widths = np.diff(hist_bins)
                     centers = (hist_bins[:-1] + hist_bins[1:]) / 2.0
-                    ax.bar(centers, lower_counts, width=widths, alpha=0.6, color='blue', label='Lower prominence')
-                    ax.bar(centers, higher_counts, width=widths, alpha=0.6, color='red', label='Higher prominence')
+                    ax.bar(
+                        centers,
+                        lower_counts,
+                        width=widths,
+                        alpha=0.6,
+                        color="blue",
+                        label="Lower prominence",
+                    )
+                    ax.bar(
+                        centers,
+                        higher_counts,
+                        width=widths,
+                        alpha=0.6,
+                        color="red",
+                        label="Higher prominence",
+                    )
                 else:
-                    ax.hist(arr[lower_mask], bins=100, density=False, alpha=0.6, color='blue', label='Lower prominence')
-                    ax.hist(arr[higher_mask], bins=100, density=False, alpha=0.6, color='red', label='Higher prominence')
-
+                    ax.hist(
+                        arr[lower_mask],
+                        bins=100,
+                        density=False,
+                        alpha=0.6,
+                        color="blue",
+                        label="Lower prominence",
+                    )
+                    ax.hist(
+                        arr[higher_mask],
+                        bins=100,
+                        density=False,
+                        alpha=0.6,
+                        color="red",
+                        label="Higher prominence",
+                    )
 
             # Vertical threshold line
             if threshold is not None:
-                ax.axvline(threshold, color='black', linestyle='-', linewidth=2, label=f'Threshold: {threshold:.3f} pA')
+                ax.axvline(
+                    threshold,
+                    color="black",
+                    linestyle="-",
+                    linewidth=2,
+                    label=f"Threshold: {threshold:.3f} pA",
+                )
 
             # Info textbox with counts and threshold type
             try:
@@ -2761,24 +3042,33 @@ class PeakFinder(MetaEventFitter):
                     f"Class 1: {higher_count} ({pct_high:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
-                ax.text(0.02, 0.98, info_text, transform=ax.transAxes, fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
+                ax.text(
+                    0.02,
+                    0.98,
+                    info_text,
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment="top",
+                    bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9),
+                )
             except Exception:
                 pass
 
             # Outlier info shown in textbox; do not add legend entry
 
-            ax.set_xlabel('Peak Prominence (pA)')
-            ax.set_ylabel('Counts')
-            ax.set_title('Peak Prominence Classification')
+            ax.set_xlabel("Peak Prominence (pA)")
+            ax.set_ylabel("Counts")
+            ax.set_title("Peak Prominence Classification")
             ax.legend()
             plt.tight_layout()
             if plot_path is not None:
-                plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-                self.logger.info(f"Peak prominence classification plot saved to {plot_path}")
+                plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+                self.logger.info(
+                    f"Peak prominence classification plot saved to {plot_path}"
+                )
             plt.close(fig)
         except Exception as e:
             self.logger.error(f"Error saving peak prominence plot: {e}")
-
 
     @log(logger=logger)
     def _classify_translocation_direction(self, channels: list[int]) -> None:
@@ -2797,14 +3087,22 @@ class PeakFinder(MetaEventFitter):
                 continue
             for event_index, sublevel_data in self.sublevel_metadata[ch].items():
                 # Load per-event arrays
-                filtered_arr = np.asarray(sublevel_data.get("filtered", []), dtype=float)
-                csum = np.asarray(sublevel_data.get("sublevel_cumulative_ecd", []), dtype=float)
+                filtered_arr = np.asarray(
+                    sublevel_data.get("filtered", []), dtype=float
+                )
+                csum = np.asarray(
+                    sublevel_data.get("sublevel_cumulative_ecd", []), dtype=float
+                )
 
                 # Fall back to raw ECDs if cumulative not present
                 if csum.size == 0:
-                    raw = np.asarray(sublevel_data.get("sublevel_raw_ecd", []), dtype=float)
+                    raw = np.asarray(
+                        sublevel_data.get("sublevel_raw_ecd", []), dtype=float
+                    )
                     if raw.size == 0:
-                        self.logger.debug(f"Ch{ch} Event{event_index}: Skipped - missing ECD data")
+                        self.logger.debug(
+                            f"Ch{ch} Event{event_index}: Skipped - missing ECD data"
+                        )
                         continue
                     csum = np.cumsum(raw)
 
@@ -2815,7 +3113,9 @@ class PeakFinder(MetaEventFitter):
                     # No filtered labels to use
                     continue
 
-                type3_indices = np.where((~np.isnan(filtered_arr)) & (filtered_arr == 3))[0]
+                type3_indices = np.where(
+                    (~np.isnan(filtered_arr)) & (filtered_arr == 3)
+                )[0]
                 if type3_indices.size == 0:
                     # No type-3 peaks in this event
                     continue
@@ -2831,8 +3131,14 @@ class PeakFinder(MetaEventFitter):
                     continue
 
                 # Compute ECD before the first type-3 peak and after the last type-3 peak
-                ecd_before = float(csum[first_type3_idx - 1]) if first_type3_idx > 0 else 0.0
-                ecd_after = float(csum[-1] - csum[last_type3_idx]) if last_type3_idx < (csum.size - 1) else 0.0
+                ecd_before = (
+                    float(csum[first_type3_idx - 1]) if first_type3_idx > 0 else 0.0
+                )
+                ecd_after = (
+                    float(csum[-1] - csum[last_type3_idx])
+                    if last_type3_idx < (csum.size - 1)
+                    else 0.0
+                )
 
                 if ecd_before <= 0 or ecd_after <= 0:
                     self.logger.debug(
@@ -2844,8 +3150,13 @@ class PeakFinder(MetaEventFitter):
                 log_ecds.append(np.log10(ecd_before / ecd_after))
 
         if len(log_ecds) == 0:
-            self.logger.warning("No events available for translocation direction classification")
-            self._translocation_direction_results = {"skipped": True, "reason": "no data"}
+            self.logger.warning(
+                "No events available for translocation direction classification"
+            )
+            self._translocation_direction_results = {
+                "skipped": True,
+                "reason": "no data",
+            }
             return
 
         log_ecds_arr = np.asarray(log_ecds, dtype=float)
@@ -2857,8 +3168,13 @@ class PeakFinder(MetaEventFitter):
             mask = (log_ecds_arr >= p5) & (log_ecds_arr <= p95)
             if np.sum(mask) < 2:
                 # not enough data after filtering
-                self.logger.warning("Translocation direction: insufficient events after ECD percentile filtering")
-                self._translocation_direction_results = {"skipped": True, "reason": "insufficient events after ECD filtering"}
+                self.logger.warning(
+                    "Translocation direction: insufficient events after ECD percentile filtering"
+                )
+                self._translocation_direction_results = {
+                    "skipped": True,
+                    "reason": "insufficient events after ECD filtering",
+                }
                 return
             filtered_log_ecds = log_ecds_arr[mask]
             filtered_refs = [event_refs[i] for i, m in enumerate(mask) if m]
@@ -2870,14 +3186,26 @@ class PeakFinder(MetaEventFitter):
             bt = self.bitthresh(filtered_log_ecds)
         except Exception as e:
             self.logger.error(f"bitthresh failed for translocation direction: {e}")
-            self._translocation_direction_results = {"skipped": True, "reason": "bitthresh failure"}
+            self._translocation_direction_results = {
+                "skipped": True,
+                "reason": "bitthresh failure",
+            }
             return
 
-        centers = np.asarray(bt.get("centers"), dtype=float) if bt.get("centers") is not None else np.array([])
+        centers = (
+            np.asarray(bt.get("centers"), dtype=float)
+            if bt.get("centers") is not None
+            else np.array([])
+        )
         if centers.size < 2:
             # Single population -> cannot reliably classify
-            self.logger.warning("bitthresh did not find two centers for translocation direction")
-            self._translocation_direction_results = {"skipped": True, "reason": "insufficient centers"}
+            self.logger.warning(
+                "bitthresh did not find two centers for translocation direction"
+            )
+            self._translocation_direction_results = {
+                "skipped": True,
+                "reason": "insufficient centers",
+            }
             return
 
         sorted_indices = np.argsort(centers)
@@ -2902,7 +3230,9 @@ class PeakFinder(MetaEventFitter):
         for label, (ch, event_index) in zip(class_labels, filtered_refs):
             direction = "forward" if int(label) == 1 else "backward"
             if ch in self.event_metadata and event_index in self.event_metadata[ch]:
-                self.event_metadata[ch][event_index]["translocation_direction"] = direction
+                self.event_metadata[ch][event_index][
+                    "translocation_direction"
+                ] = direction
 
         self.logger.info(
             f"Forward: {forward_count} ({forward_count/len(filtered_refs):.1%}), "
@@ -2925,7 +3255,9 @@ class PeakFinder(MetaEventFitter):
             plot_path = None
             if loader is not None and hasattr(loader, "get_base_file"):
                 base_file = loader.get_base_file()
-                plot_path = base_file.with_name(f"{base_file.stem}_translocation_direction_classification.png")
+                plot_path = base_file.with_name(
+                    f"{base_file.stem}_translocation_direction_classification.png"
+                )
 
             matplotlib.use("Agg")
 
@@ -2942,7 +3274,6 @@ class PeakFinder(MetaEventFitter):
             except Exception:
                 pass
 
-
             # Overall histogram (plot full data including outliers)
             hist_bins = None
             if counts is not None and bins is not None and np.sum(counts) > 0:
@@ -2952,13 +3283,34 @@ class PeakFinder(MetaEventFitter):
                         raise ValueError("invalid bins")
                     full_counts, _ = np.histogram(arr_all, bins=bins)
                     centers = (bins[:-1] + bins[1:]) / 2.0
-                    ax.bar(centers, full_counts, width=widths, alpha=0.5, color="gray", label="All Events (incl. outliers)")
+                    ax.bar(
+                        centers,
+                        full_counts,
+                        width=widths,
+                        alpha=0.5,
+                        color="gray",
+                        label="All Events (incl. outliers)",
+                    )
                     hist_bins = bins
                 except Exception:
-                    ax.hist(arr_all, bins=100, density=False, alpha=0.5, color="gray", label="All Events (incl. outliers)")
+                    ax.hist(
+                        arr_all,
+                        bins=100,
+                        density=False,
+                        alpha=0.5,
+                        color="gray",
+                        label="All Events (incl. outliers)",
+                    )
                     hist_bins = None
             else:
-                ax.hist(arr_all, bins=100, density=False, alpha=0.5, color="gray", label="All Events (incl. outliers)")
+                ax.hist(
+                    arr_all,
+                    bins=100,
+                    density=False,
+                    alpha=0.5,
+                    color="gray",
+                    label="All Events (incl. outliers)",
+                )
                 hist_bins = None
 
             # Per-class masks and counts (use filtered array so counts align with bt)
@@ -2976,15 +3328,47 @@ class PeakFinder(MetaEventFitter):
                     higher_counts, _ = np.histogram(arr[class_mask], bins=hist_bins)
                     widths = np.diff(hist_bins)
                     centers = (hist_bins[:-1] + hist_bins[1:]) / 2.0
-                    ax.bar(centers, higher_counts, width=widths, alpha=0.6, color="red", label="Forward")
-                    ax.bar(centers, lower_counts, width=widths, alpha=0.6, color="blue", label="Backward")
+                    ax.bar(
+                        centers,
+                        higher_counts,
+                        width=widths,
+                        alpha=0.6,
+                        color="red",
+                        label="Forward",
+                    )
+                    ax.bar(
+                        centers,
+                        lower_counts,
+                        width=widths,
+                        alpha=0.6,
+                        color="blue",
+                        label="Backward",
+                    )
                 else:
-                    ax.hist(arr[class_mask], bins=100, density=False, alpha=0.6, color="red", label="Forward")
-                    ax.hist(arr[~class_mask], bins=100, density=False, alpha=0.6, color="blue", label="Backward")
+                    ax.hist(
+                        arr[class_mask],
+                        bins=100,
+                        density=False,
+                        alpha=0.6,
+                        color="red",
+                        label="Forward",
+                    )
+                    ax.hist(
+                        arr[~class_mask],
+                        bins=100,
+                        density=False,
+                        alpha=0.6,
+                        color="blue",
+                        label="Backward",
+                    )
             except Exception:
                 pass
 
-            x_range = np.linspace(np.nanmin(arr), np.nanmax(arr), 1000) if arr.size > 0 else np.linspace(0, 1, 1000)
+            x_range = (
+                np.linspace(np.nanmin(arr), np.nanmax(arr), 1000)
+                if arr.size > 0
+                else np.linspace(0, 1, 1000)
+            )
             # Overlay fitted gaussians when fit params are sensible (dashed)
             params = bt.get("params")
             if params is not None:
@@ -2993,35 +3377,74 @@ class PeakFinder(MetaEventFitter):
                     u_params = np.array([u1, u2], dtype=float)
                     w_params = np.array([w1, w2], dtype=float)
                     a_params = np.array([a1, a2], dtype=float)
-                    if np.any(np.isnan(u_params)) or np.any(np.isnan(w_params)) or np.any(np.isnan(a_params)):
+                    if (
+                        np.any(np.isnan(u_params))
+                        or np.any(np.isnan(w_params))
+                        or np.any(np.isnan(a_params))
+                    ):
                         raise ValueError("invalid gaussian params")
                     if np.any(w_params <= 0):
                         raise ValueError("non-positive gaussian std")
                     order = np.argsort(u_params)
                     lower_idx, higher_idx = int(order[0]), int(order[1])
                     # model from fit is in histogram-count units already
-                    model_lower = a_params[lower_idx] * np.exp(-0.5 * ((x_range - u_params[lower_idx]) / w_params[lower_idx]) ** 2)
-                    model_higher = a_params[higher_idx] * np.exp(-0.5 * ((x_range - u_params[higher_idx]) / w_params[higher_idx]) ** 2)
-                    if not (np.any(model_lower < -1e-12) or np.any(model_higher < -1e-12)):
-                        ax.plot(x_range, model_lower, "--", color="blue", label=f"Backward fit (mu={u_params[lower_idx]:.3f}, std={w_params[lower_idx]:.3f})")
-                        ax.plot(x_range, model_higher, "--", color="red", label=f"Forward fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})")
+                    model_lower = a_params[lower_idx] * np.exp(
+                        -0.5
+                        * ((x_range - u_params[lower_idx]) / w_params[lower_idx]) ** 2
+                    )
+                    model_higher = a_params[higher_idx] * np.exp(
+                        -0.5
+                        * ((x_range - u_params[higher_idx]) / w_params[higher_idx]) ** 2
+                    )
+                    if not (
+                        np.any(model_lower < -1e-12) or np.any(model_higher < -1e-12)
+                    ):
+                        ax.plot(
+                            x_range,
+                            model_lower,
+                            "--",
+                            color="blue",
+                            label=f"Backward fit (mu={u_params[lower_idx]:.3f}, std={w_params[lower_idx]:.3f})",
+                        )
+                        ax.plot(
+                            x_range,
+                            model_higher,
+                            "--",
+                            color="red",
+                            label=f"Forward fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})",
+                        )
                 except Exception:
-                    self.logger.debug("Could not build gaussian overlay for translocation direction", exc_info=True)
-            
-            #Vertical threshold line (not added to legend; value shown in info textbox)
+                    self.logger.debug(
+                        "Could not build gaussian overlay for translocation direction",
+                        exc_info=True,
+                    )
+
+            # Vertical threshold line (not added to legend; value shown in info textbox)
             ax.axvline(threshold, color="black", linestyle="-", linewidth=2)
 
             # Info textbox (include outlier counts)
             try:
-                pct_fwd = forward_count / total_events_plot if total_events_plot > 0 else 0.0
-                pct_bwd = backward_count / total_events_plot if total_events_plot > 0 else 0.0
+                pct_fwd = (
+                    forward_count / total_events_plot if total_events_plot > 0 else 0.0
+                )
+                pct_bwd = (
+                    backward_count / total_events_plot if total_events_plot > 0 else 0.0
+                )
                 info_text = (
                     f"Total Events (used for fit): {total_events_plot}\n"
                     f"Forward: {forward_count} ({pct_fwd:.1%})\n"
                     f"Backward: {backward_count} ({pct_bwd:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
-                ax.text(0.02, 0.98, info_text, transform=ax.transAxes, fontsize=10, verticalalignment="top", bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9))
+                ax.text(
+                    0.02,
+                    0.98,
+                    info_text,
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment="top",
+                    bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9),
+                )
             except Exception:
                 pass
 
@@ -3037,7 +3460,6 @@ class PeakFinder(MetaEventFitter):
             plt.close(fig)
         except Exception as e:
             self.logger.error(f"Error saving translocation direction plot: {e}")
-
 
     @log(logger=logger)
     def _collect_peak_statistics(self, channels: List[int]) -> None:
@@ -3072,7 +3494,9 @@ class PeakFinder(MetaEventFitter):
                 # Count peak types using the post-filtered labels stored in 'filtered'
                 # 'peak_id' marks peak positions (1..N) while 'filtered' contains
                 # the assigned type for each sublevel (NaN for non-peaks).
-                filtered_arr = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+                filtered_arr = np.asarray(
+                    sublevel_data.get("filtered", []), dtype=float
+                )
                 # Mask of positions that are peaks
                 peak_mask = ~np.isnan(peak_ids)
                 n_peaks_in_event = int(np.sum(peak_mask))
@@ -3090,13 +3514,17 @@ class PeakFinder(MetaEventFitter):
                             peak_type_counts[-1] = peak_type_counts.get(-1, 0) + 1
                         else:
                             label_int = int(label)
-                            peak_type_counts[label_int] = peak_type_counts.get(label_int, 0) + 1
+                            peak_type_counts[label_int] = (
+                                peak_type_counts.get(label_int, 0) + 1
+                            )
                     except Exception:
                         # fallback: increment rejected count
                         peak_type_counts[-1] = peak_type_counts.get(-1, 0) + 1
 
                 # Count classified vs unclassified only across peak positions
-                classified_arr = np.asarray(sublevel_data.get("classified", []), dtype=float)
+                classified_arr = np.asarray(
+                    sublevel_data.get("classified", []), dtype=float
+                )
                 if classified_arr.size > 0:
                     classified_peaks = classified_arr[peak_mask]
                     n_classified = int(np.sum(~np.isnan(classified_peaks)))
@@ -3122,11 +3550,15 @@ class PeakFinder(MetaEventFitter):
         try:
             loader = getattr(self, "eventloader", None)
             if loader is None:
-                self.logger.warning("No event loader available; skipping classification report save")
+                self.logger.warning(
+                    "No event loader available; skipping classification report save"
+                )
                 return
 
             base_file = loader.get_base_file()
-            report_path = base_file.with_name(f"{base_file.stem}_classification_report.txt")
+            report_path = base_file.with_name(
+                f"{base_file.stem}_classification_report.txt"
+            )
 
             # Get the classification report from report_channel_status
             report_text = self.report_channel_status(channel=None, init=False)
@@ -3137,7 +3569,10 @@ class PeakFinder(MetaEventFitter):
                 for key, setting_dict in sorted(self.settings.items()):
                     if key.lower() == "metaeventloader":
                         # Save the path of the event loader object
-                        if hasattr(self, "eventloader") and self.eventloader is not None:
+                        if (
+                            hasattr(self, "eventloader")
+                            and self.eventloader is not None
+                        ):
                             if hasattr(self.eventloader, "get_base_file"):
                                 base_file = self.eventloader.get_base_file()
                                 settings_section += f"{key}: {base_file}\n"
@@ -3152,18 +3587,24 @@ class PeakFinder(MetaEventFitter):
                 settings_section += "No settings available\n"
 
             # Add header and footer with settings
-            header = "=" * 80 + "\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis\n" + "=" * 80 + "\n"
+            header = (
+                "=" * 80
+                + "\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis\n"
+                + "=" * 80
+                + "\n"
+            )
             footer = "\n" + "=" * 80
             report_text = header + report_text.lstrip() + settings_section + footer
 
             # Write report to file with UTF-8 encoding
-            with open(report_path, 'w', encoding='utf-8') as f:
+            with open(report_path, "w", encoding="utf-8") as f:
                 f.write(report_text)
 
             self.logger.info(f"Classification report saved to {report_path}")
         except Exception as e:
-            self.logger.error(f"Error saving classification report: {e!s}", exc_info=True)
-
+            self.logger.error(
+                f"Error saving classification report: {e!s}", exc_info=True
+            )
 
     @log(logger=logger)
     def bitthresh(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
@@ -3185,9 +3626,9 @@ class PeakFinder(MetaEventFitter):
         :raises ValueError: if there are fewer than three data points, if no peaks are found in the histogram, or if two distinct centers cannot be determined
         :raises RuntimeError: if the two-Gaussian fit produces invalid parameters
         """
-        s_bins=None
-        bin_width=None
-        
+        s_bins = None
+        bin_width = None
+
         arr = np.asarray(data, dtype=float).ravel()
         if arr.size < 3:
             raise ValueError("bitthresh: need at least 3 data points")
@@ -3222,26 +3663,28 @@ class PeakFinder(MetaEventFitter):
                 # allow much smaller secondary peaks (1% of max) with a small absolute floor
                 prom = max(np.nanmax(y) * 0.01, 0.1)
                 # set a minimum distance between peaks
-                dist = max(1.5*np.where(y==prom)[0], 1.0)
-                peaks, properties = find_peaks(y,distance=dist, prominence=prom)
+                dist = max(1.5 * np.where(y == prom)[0], 1.0)
+                peaks, properties = find_peaks(y, distance=dist, prominence=prom)
             except Exception:
                 peaks, properties = find_peaks(y)
         if len(peaks) == 0:
             raise ValueError("bitthresh: no peaks found in histogram")
 
         # Build peaks DataFrame
-        df_peaks = pd.DataFrame({
-            'peaks': peaks,
-            'prominences': properties.get('prominences', np.zeros(len(peaks))),
-            'heights': properties.get('peak_heights', y[peaks]),
-            'widths': properties.get('widths', np.ones(len(peaks))),
-        })
-        df_peaks = df_peaks.sort_values('prominences', ascending=False)
+        df_peaks = pd.DataFrame(
+            {
+                "peaks": peaks,
+                "prominences": properties.get("prominences", np.zeros(len(peaks))),
+                "heights": properties.get("peak_heights", y[peaks]),
+                "widths": properties.get("widths", np.ones(len(peaks))),
+            }
+        )
+        df_peaks = df_peaks.sort_values("prominences", ascending=False)
         best = df_peaks.iloc[0]
 
         scale = x[1] - x[0] if len(x) > 1 else 1.0
-        s_width = scale * best['widths']
-        loc = float(x[int(best['peaks'])])
+        s_width = scale * best["widths"]
+        loc = float(x[int(best["peaks"])])
 
         # Two-Gaussian fit to histogram
         def dgfit(
@@ -3273,22 +3716,24 @@ class PeakFinder(MetaEventFitter):
             :return: the summed Gaussians evaluated at xx
             :rtype: npt.NDArray[np.float64]
             """
-            return a1 * np.exp(-0.5 * ((xx - u1) / w1) ** 2) + a2 * np.exp(-0.5 * ((xx - u2) / w2) ** 2)
+            return a1 * np.exp(-0.5 * ((xx - u1) / w1) ** 2) + a2 * np.exp(
+                -0.5 * ((xx - u2) / w2) ** 2
+            )
 
         # Initial guesses: prefer using the two largest histogram peaks (more robust)
         try:
             # pick two highest peaks by observed peak heights
             if len(df_peaks) >= 2:
-                top_two = df_peaks.sort_values('heights', ascending=False).iloc[:2]
-                p1 = int(top_two['peaks'].iloc[0])
-                p2 = int(top_two['peaks'].iloc[1])
+                top_two = df_peaks.sort_values("heights", ascending=False).iloc[:2]
+                p1 = int(top_two["peaks"].iloc[0])
+                p2 = int(top_two["peaks"].iloc[1])
                 u1i = float(x[p1])
                 u2i = float(x[p2])
                 a1i = float(y[p1]) if y[p1] > 0 else max(y.max(), 1.0)
                 a2i = float(y[p2]) if y[p2] > 0 else a1i / 2.0
                 # widths reported by find_peaks are in bin units; convert to x-space
-                w1i = max(float(top_two['widths'].iloc[0]) * scale / 2.0, 1e-3)
-                w2i = max(float(top_two['widths'].iloc[1]) * scale / 2.0, 1e-3)
+                w1i = max(float(top_two["widths"].iloc[0]) * scale / 2.0, 1e-3)
+                w2i = max(float(top_two["widths"].iloc[1]) * scale / 2.0, 1e-3)
             else:
                 # fallback single-peak heuristic
                 a1i = max(y.max(), 1.0)
@@ -3314,7 +3759,14 @@ class PeakFinder(MetaEventFitter):
                 u2i = u1i + max(1e-3, (xmax - xmin) * 1e-3)
 
             lower_bounds = [0.0, 0.0, xmin, xmin, 1e-6, 1e-6]
-            upper_bounds = [np.inf, np.inf, xmax, xmax, np.ptp(x) if np.ptp(x) > 0 else 1.0, np.ptp(x) * 2 if np.ptp(x) > 0 else 2.0]
+            upper_bounds = [
+                np.inf,
+                np.inf,
+                xmax,
+                xmax,
+                np.ptp(x) if np.ptp(x) > 0 else 1.0,
+                np.ptp(x) * 2 if np.ptp(x) > 0 else 2.0,
+            ]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", OptimizeWarning)
                 popt, pcov = curve_fit(
@@ -3327,7 +3779,14 @@ class PeakFinder(MetaEventFitter):
                 )
             a1, a2, u1, u2, w1, w2 = popt
             # basic sanity checks: widths must be positive
-            if not (np.isfinite(w1) and np.isfinite(w2) and w1 > 0 and w2 > 0 and np.isfinite(a1) and np.isfinite(a2)):
+            if not (
+                np.isfinite(w1)
+                and np.isfinite(w2)
+                and w1 > 0
+                and w2 > 0
+                and np.isfinite(a1)
+                and np.isfinite(a2)
+            ):
                 raise RuntimeError("bitthresh: fit produced invalid parameters")
             midpoint = float((u1 + u2) / 2.0)
             centers = np.array([u1, u2], dtype=float)
@@ -3344,12 +3803,12 @@ class PeakFinder(MetaEventFitter):
                 raise ValueError("bitthresh: unable to determine two centers")
 
         return {
-            'midpoint': midpoint,
-            'centers': centers,
-            'hist': (counts, bin_edges),
-            'params': params,
+            "midpoint": midpoint,
+            "centers": centers,
+            "hist": (counts, bin_edges),
+            "params": params,
         }
-    
+
     @log(logger=logger)
     def classify_1d_distribution(
         self,
@@ -3377,8 +3836,8 @@ class PeakFinder(MetaEventFitter):
 
         if return_centers:
             return labels, centers, gmm
-        return labels   
-    
+        return labels
+
     @log(logger=logger)
     def classify_2d_distribution(
         self,
@@ -3408,7 +3867,6 @@ class PeakFinder(MetaEventFitter):
             return labels, centers, gmm
         return labels
 
-    
     @log(logger=logger)
     def filter_peaks(
         self,
@@ -3528,18 +3986,31 @@ class PeakFinder(MetaEventFitter):
                 # print(f"[debug] event_id={event_id}, peak {i}: left_base={left_base}, right_base={right_base}, filtered_before={filtered[i]}")
 
                 # Type 0: both bases are below the lower carrier threshold.
-                if left_base <= type0_thresh and right_base <= type0_thresh :
+                if left_base <= type0_thresh and right_base <= type0_thresh:
                     filtered[i] = 0
                 # Type -1: both bases above the upper type-2 cutoff (noise)
-                elif left_base >= type2_thresh + unfolded_level and right_base >= type2_thresh + unfolded_level:
+                elif (
+                    left_base >= type2_thresh + unfolded_level
+                    and right_base >= type2_thresh + unfolded_level
+                ):
                     filtered[i] = -1
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned -1 (both bases >= type2_upper)")
                 # Type 2: both bases within the type-2 band around 2*unfolded_level
-                elif left_base >= type2_thresh and right_base >= type2_thresh and left_base <= type2_thresh + unfolded_level and right_base <=  type2_thresh + unfolded_level:
+                elif (
+                    left_base >= type2_thresh
+                    and right_base >= type2_thresh
+                    and left_base <= type2_thresh + unfolded_level
+                    and right_base <= type2_thresh + unfolded_level
+                ):
                     filtered[i] = 2
                 #    print(f"[debug] event_id={event_id}, peak {i} assigned 2 (both bases in type2 band)")
                 # Type 1: both bases within the type-1 band around unfolded_level
-                elif left_base >= type1_thresh and right_base >= type1_thresh and left_base <= type2_thresh and right_base <= type2_thresh:
+                elif (
+                    left_base >= type1_thresh
+                    and right_base >= type1_thresh
+                    and left_base <= type2_thresh
+                    and right_base <= type2_thresh
+                ):
                     filtered[i] = 1
                     # print(f"[debug] event_id={event_id}, peak {i} assigned 1 (both bases in type1 band)")
                 else:
@@ -3564,7 +4035,9 @@ class PeakFinder(MetaEventFitter):
                 f"max_distance={max_distance} samples"
             )
             min_group_size = num_peaks
-            prom_indices = np.argsort(properties["prominences"])[::-1]  # all sorted by prominence
+            prom_indices = np.argsort(properties["prominences"])[
+                ::-1
+            ]  # all sorted by prominence
             best_cluster = []
             best_prom_sum = 0
 
@@ -3572,7 +4045,9 @@ class PeakFinder(MetaEventFitter):
                 label_idxs = [i for i in prom_indices if filtered[i] == label]
                 if not label_idxs:
                     continue
-                label_idxs = label_idxs[:num_peaks] # only consider the top N most prominent peaks for clustering 
+                label_idxs = label_idxs[
+                    :num_peaks
+                ]  # only consider the top N most prominent peaks for clustering
                 sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
 
                 # Find clusters where consecutive peaks (temporally, not prominence wise) are within max_distance
@@ -3584,26 +4059,29 @@ class PeakFinder(MetaEventFitter):
                         # Check distance between consecutive peaks in the group
                         prev_peak_idx = group[-1]
                         curr_peak_idx = sorted_idxs[j]
-                        distance = abs(properties["peak_loc"][curr_peak_idx] - properties["peak_loc"][prev_peak_idx])
+                        distance = abs(
+                            properties["peak_loc"][curr_peak_idx]
+                            - properties["peak_loc"][prev_peak_idx]
+                        )
 
                         if distance <= max_distance:
                             group.append(curr_peak_idx)
                         else:
                             # Stop when we find a gap larger than max_distance
                             break
-                    
+
                     group = group[:num_peaks]
-                    
+
                     # Check if this group is large enough and has higher total prominence
                     if len(group) >= min_group_size:
                         prom_sum = sum(properties["prominences"][idx] for idx in group)
-                        
+
                         if prom_sum > best_prom_sum:
                             best_cluster = group
                             best_prom_sum = prom_sum
 
-                        break # only break if a valid cluster was found
-                    
+                        break  # only break if a valid cluster was found
+
                 # Recheck adjacency inside best_cluster before labeling
                 validated_cluster = []
                 best_cluster_sorted = sorted(best_cluster, key=lambda idx: peaks[idx])
@@ -3614,7 +4092,9 @@ class PeakFinder(MetaEventFitter):
                         continue
 
                     prev_idx = validated_cluster[-1]
-                    distance = abs(properties["peak_loc"][idx] - properties["peak_loc"][prev_idx])
+                    distance = abs(
+                        properties["peak_loc"][idx] - properties["peak_loc"][prev_idx]
+                    )
 
                     if distance <= max_distance:
                         validated_cluster.append(idx)
@@ -3626,32 +4106,39 @@ class PeakFinder(MetaEventFitter):
                 for idx in validated_cluster:
                     filtered[idx] = 3
 
-
             # Persist filtered labels back to properties
             properties["filtered"] = list(filtered.tolist())
 
         # SINGLE PEAK CARRIER
         if self.settings["Event Type"]["Value"] == "Single Peak":
-            
+
             unfolded_lower_bound = (
                 # NOTE: baseline_std is Optional under the MetaEventFitter contract and is used here without a guard. Flagged, not fixed - the logic in this plugin belongs to its owner.
-                (unfolded_level + t1_std * baseline_std) if unfolded_level is not None else 0
+                (unfolded_level + t1_std * baseline_std)
+                if unfolded_level is not None
+                else 0
             )
             unfolded_upper_bound = (
-                (unfolded_level + t2_std * baseline_std) if unfolded_level is not None else 0
+                (unfolded_level + t2_std * baseline_std)
+                if unfolded_level is not None
+                else 0
             )
 
             folded_lower_bound = (
-                (folded_level - t1_std * baseline_std) if folded_level is not None else 0
+                (folded_level - t1_std * baseline_std)
+                if folded_level is not None
+                else 0
             )
             folded_upper_bound = (
-                (folded_level + t2_std * baseline_std) if folded_level is not None else 0
+                (folded_level + t2_std * baseline_std)
+                if folded_level is not None
+                else 0
             )
 
             classified_peaks = []
             for i in range(len(peaks)):
-                left_base = properties["left_bases"][i]+ np.sign(baseline) * baseline
-                right_base = properties["right_bases"][i]+ np.sign(baseline) * baseline
+                left_base = properties["left_bases"][i] + np.sign(baseline) * baseline
+                right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
                 prom = properties["prominences"][i]
                 height = properties["peak_heights"][i]
 
@@ -3721,7 +4208,7 @@ class PeakFinder(MetaEventFitter):
         )
 
         return properties
-    
+
     # utility functions
 
     @log(logger=logger)
@@ -3784,14 +4271,16 @@ class PeakFinder(MetaEventFitter):
         if bin_width > 0 and max_val > min_val:
             # Safe arange only when bin_width is positive
             try:
-                bins = np.arange(min_val - bin_width / 2.0, max_val + bin_width, bin_width)
+                bins = np.arange(
+                    min_val - bin_width / 2.0, max_val + bin_width, bin_width
+                )
                 if bins.size < 2:
                     # Fallback
-                    bins = 'auto'
+                    bins = "auto"
             except Exception:
-                bins = 'auto'
+                bins = "auto"
         else:
-            bins = 'auto'
+            bins = "auto"
 
         # Get histogram counts and bin centers
         counts, bin_edges = np.histogram(arr, bins=bins)
@@ -3810,7 +4299,6 @@ class PeakFinder(MetaEventFitter):
         )
 
         return primary_level, secondary_level
-
 
     @log(logger=logger)
     def enumerate_peaks(

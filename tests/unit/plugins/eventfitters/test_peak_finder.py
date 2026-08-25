@@ -42,13 +42,13 @@ def _make_pf(**setting_overrides):
     pf.logger = PeakFinder.logger
     pf.settings = {
         "Event Type": {"Value": "Unspecified"},
-        #"Min Height": {"Value": 500.0},
-        #"Min Prominence": {"Value": 100.0},
-        #"Relative Height": {"Value": 0.5},
+        # "Min Height": {"Value": 500.0},
+        # "Min Prominence": {"Value": 100.0},
+        # "Relative Height": {"Value": 0.5},
         "Window Length": {"Value": 25.0},
         "Width": {"Value": 0.0},
-        #"Min Distance": {"Value": 1.0},
-        #"Max Unfolded": {"Value": 750.0},
+        # "Min Distance": {"Value": 1.0},
+        # "Max Unfolded": {"Value": 750.0},
         "Lower Filter Threshold": {"Value": -3},
         "Higher Filter Threshold": {"Value": 3},
         "Number of peaks": {"Value": 1},
@@ -149,9 +149,7 @@ class TestFindModeBlockageLevel(unittest.TestCase):
 
     def test_returns_float(self):
         data = np.concatenate([np.ones(50) * 100.0, np.ones(50) * 300.0])
-        primary, secondary = self.pf.find_mode_blockage_level(
-            data, 100.0, 10.0
-        )
+        primary, secondary = self.pf.find_mode_blockage_level(data, 100.0, 10.0)
         self.assertIsInstance(primary, float)
 
     def test_within_max_unfolded(self):
@@ -269,7 +267,9 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         # unfolded=200, std=10, baseline=100 → type1_thresh=170, type2_thresh=230
         # effective_base = 100 + 100 = 200, which is in [170, 230] → type 1
         props = self._props([100.0], [100.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
+        result = pf.filter_peaks(
+            np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
         self.assertEqual(result["filtered"][0], 1)
 
     def test_type2_classification(self):
@@ -277,7 +277,9 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         # effective_base = 240 + 100 = 340, in [230, 430] → type 2
         props = self._props([240.0], [240.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
+        result = pf.filter_peaks(
+            np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
         self.assertEqual(result["filtered"][0], 2)
 
     def test_type_minus1_classification(self):
@@ -285,14 +287,18 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 1})
         # effective_base = 450 + 100 = 550, above type2_upper=430 → type -1
         props = self._props([450.0], [450.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
+        result = pf.filter_peaks(
+            np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
         self.assertEqual(result["filtered"][0], -1)
 
     def test_no_cluster_below_min_group_size(self):
         """Only 1 type-2 peak when num_peaks=2 → not enough for a cluster."""
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
         props = self._props([195.0], [195.0], [300.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
+        result = pf.filter_peaks(
+            np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
         self.assertEqual(result["filtered"][0], 2)
 
     def test_custom_threshold_settings_change_classification(self):
@@ -306,7 +312,9 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             }
         )
         props = self._props([215.0], [225.0], [300.0])
-        result = pf.filter_peaks(np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
+        result = pf.filter_peaks(
+            np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
         self.assertEqual(result["filtered"][0], 2)
 
     def test_empty_peaks_no_crash(self):
@@ -319,7 +327,9 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             "right_bases": [],
             "peak_heights": np.array([]),
         }
-        result = pf.filter_peaks(np.array([]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0)
+        result = pf.filter_peaks(
+            np.array([]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
         self.assertEqual(result["filtered"], [])
 
 

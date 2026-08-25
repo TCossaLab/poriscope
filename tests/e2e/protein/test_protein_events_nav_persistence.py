@@ -439,7 +439,9 @@ def test_protein_events_nav_and_filters(
     # NOTE: wait for parseable JSON, not for the file. The file appears when the
     # writer opens it, before the final byte lands, so waiting on .exists()
     # raced the json.load() below.
-    qtbot.waitUntil(lambda: json_file_ready(filters_json_path), timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: json_file_ready(filters_json_path), timeout=QT_WAIT_TIMEOUT_MS
+    )
     with open(filters_json_path) as f:
         saved_json = json.load(f)
     assert saved_json == {filter_name: original_text}, (
