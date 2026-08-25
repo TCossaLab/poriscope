@@ -1,0 +1,55 @@
+#!/bin/sh
+#
+# Git post-merge hook shim.
+#
+# Git runs hooks through its bundled POSIX shell on every platform, including
+# Windows, and that shell honours the script's shebang. The hook logic lives in
+# post-merge.py, whose shebang is "#!/usr/bin/env python3" - correct on Linux and
+# macOS, but broken on Windows, where "python3" resolves to the Microsoft Store
+# stub. That stub is a real file on PATH, so it satisfies "command -v", but
+# running it prints "Python was not found" and exits non-zero. The result was a
+# post-merge hook that failed silently on every Windows merge: the autodoc
+# pipeline, the requirements refresh and the wavelet DLL build all quietly did
+# not run.
+#
+# This shim is therefore installed as the hook instead, and it picks an
+# interpreter by *executing* each candidate rather than by looking it up on PATH,
+# which is the only check that distinguishes a working Python from the stub.
+#
+# Keep the real logic in post-merge.py; this file should stay a launcher.
+
+set -e
+
+repo_root=$(git rev-parse --show-toplevel) || {
+    echo "post-merge hook: not inside a git repository; skipping." >&2
+    exit 0
+}
+
+hook_script="$repo_root/scripts/hooks/post-merge.py"
+
+if [ ! -f "$hook_script" ]; then
+    echo "post-merge hook: $hook_script not found; skipping." >&2
+    exit 0
+fi
+
+# Probe candidates by running them. "python3" and "python" may both exist on
+# Windows while only one of them works, and "py -3" is the launcher that ships
+# with python.org installs.
+for candidate in python3 python; do
+    if "$candidate" -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+        exec "$candidate" "$hook_script" "$@"
+    fi
+done
+
+if py -3 -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+    exec py -3 "$hook_script" "$@"
+fi
+
+# A post-merge hook cannot undo the merge, so this is a warning rather than a
+# failure - but it must be loud, because being silent is what made the original
+# breakage survive unnoticed.
+echo "post-merge hook: no working Python interpreter found." >&2
+echo "  Tried: python3, python, py -3" >&2
+echo "  Skipped: autodoc regeneration, requirements refresh, wavelet DLL build." >&2
+echo "  Run 'python scripts/hooks/post-merge.py' by hand to catch up." >&2
+exit 0

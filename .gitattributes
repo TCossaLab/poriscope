@@ -1,0 +1,10 @@
+# Git hooks and shell scripts must keep LF endings.
+#
+# Git runs hooks through its bundled POSIX shell even on Windows. With
+# core.autocrlf=true - the default for Git for Windows - a checked-out shell
+# script gets CRLF endings, and the shell then fails to parse its own shebang
+# with "bad interpreter: /bin/sh^M". Pinning these paths to LF keeps the
+# post-merge hook working on a fresh clone regardless of the user's autocrlf
+# setting.
+scripts/hooks/post-merge text eol=lf
+*.sh text eol=lf
