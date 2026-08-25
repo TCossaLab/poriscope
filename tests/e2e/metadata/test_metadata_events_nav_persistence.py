@@ -479,7 +479,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # NOTE: wait for parseable JSON, not for the file. The file appears when the
     # writer opens it, before the final byte lands, so waiting on .exists()
     # raced the json.load() below.
-    qtbot.waitUntil(lambda: json_file_ready(filters_json_path), timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: json_file_ready(filters_json_path), timeout=QT_WAIT_TIMEOUT_MS
+    )
     with open(filters_json_path) as f:
         saved_json = json.load(f)
     print(f"[DEBUG] Saved JSON contents: {saved_json}")
@@ -608,7 +610,9 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # NOTE: wait for parseable JSON, not for the file. The file appears when the
     # writer opens it, before the final byte lands, so waiting on .exists()
     # raced the json.load() below.
-    qtbot.waitUntil(lambda: json_file_ready(plot_config_json_path), timeout=QT_WAIT_TIMEOUT_MS)
+    qtbot.waitUntil(
+        lambda: json_file_ready(plot_config_json_path), timeout=QT_WAIT_TIMEOUT_MS
+    )
     print(f"[DEBUG] Plot config saved to {plot_config_json_path}")
 
     QTest.mouseClick(controls.reset_button, Qt.MouseButton.LeftButton)
