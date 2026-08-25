@@ -24,8 +24,18 @@
 # Alejandra Carolina González González
 
 
-from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPen
+from typing import Callable, List, Optional, Sequence, Tuple, Union
+
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QMoveEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+    QPen,
+)
 from PySide6.QtWidgets import QDialog, QFrame, QLabel, QPushButton, QWidget
 
 """
@@ -43,15 +53,22 @@ class IntroDialog(QDialog):
     """
     Welcome dialog to start the Poriscope walkthrough tutorial.
 
+    .. attribute:: start_walkthrough
+        :type: Signal
+
+        Signal emitted when the user starts the walkthrough.
+
     :param parent: Parent widget, typically the main window.
-    :type parent: QWidget
+    :type parent: Optional[QWidget]
     :param current_step: Identifier for the current step (used to customize intro).
     :type current_step: str
     """
 
     start_walkthrough = Signal()
 
-    def __init__(self, parent=None, current_step="MainView"):
+    def __init__(
+        self, parent: Optional[QWidget] = None, current_step: str = "MainView"
+    ) -> None:
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -124,7 +141,7 @@ class IntroDialog(QDialog):
         )
         self.start_button.clicked.connect(self.emit_start)
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QPaintEvent) -> None:
         """
         Paint a semi-transparent dark background behind the intro dialog.
 
@@ -137,7 +154,7 @@ class IntroDialog(QDialog):
         painter.setPen(Qt.NoPen)
         painter.drawRect(self.rect())
 
-    def emit_start(self):
+    def emit_start(self) -> None:
         """
         Emit the signal to start the walkthrough and close the dialog.
         """
@@ -153,30 +170,30 @@ class Overlay(QWidget):
     :type parent: QWidget
     """
 
-    def __init__(self, parent):
+    def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WA_NoSystemBackground)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.target_widgets = []
+        self.target_widgets: Sequence[QWidget] = []
 
         parent.installEventFilter(self)
         self.setGeometry(parent.rect())
 
-    def highlight(self, widgets):
+    def highlight(self, widgets: Union[QWidget, Sequence[QWidget]]) -> None:
         """
         Set the target widgets to be highlighted by the overlay.
 
-        :param widgets: A widget or list of widgets to highlight.
-        :type widgets: QWidget | list[QWidget]
+        :param widgets: A widget or sequence of widgets to highlight.
+        :type widgets: Union[QWidget, Sequence[QWidget]]
         """
         if not isinstance(widgets, (list, tuple)):
             widgets = [widgets]
         self.target_widgets = widgets
         self.update()
 
-    def eventFilter(self, watched, event):
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """
         Update overlay geometry if the parent is resized or moved.
 
@@ -192,7 +209,7 @@ class Overlay(QWidget):
             self.update()
         return super().eventFilter(watched, event)
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QPaintEvent) -> None:
         """
         Paint the dimmed background and highlight outlines around target widgets.
 
@@ -232,14 +249,19 @@ class StepDialog(QDialog):
 
     done_signal = Signal()
 
-    def __init__(self, parent, steps, overlay):
+    def __init__(
+        self,
+        parent: QWidget,
+        steps: List[Tuple[str, str, Union[QWidget, List[QWidget]]]],
+        overlay: "Overlay",
+    ) -> None:
         """
         Initialize the step-by-step tutorial dialog.
 
         :param parent: Parent widget.
         :type parent: QWidget
-        :param steps: List of (title, message, widget) tuples representing each step.
-        :type steps: list[tuple[str, str, QWidget]]
+        :param steps: List of (title, message, widget) tuples representing each step. The third element may be a single widget or a list of widgets to highlight together.
+        :type steps: List[Tuple[str, str, Union[QWidget, List[QWidget]]]]
         :param overlay: Overlay widget to highlight target areas.
         :type overlay: Overlay
         """
@@ -250,9 +272,14 @@ class StepDialog(QDialog):
         self.steps = steps
         self.overlay = overlay
         self.current = 0
-        self.target_widget = None
-        self._last_pos = None
+        self.target_widget: Optional[Union[QWidget, List[QWidget]]] = None
+        self._last_pos: Optional[QPoint] = None
         self._was_completed = False
+        # Optional hook invoked on every move; WalkthroughMixin uses it to keep
+        # the dialog positioned next to the widget being highlighted. Left None
+        # here so the move events Qt delivers during construction and show()
+        # are no-ops until an owner opts in.
+        self.on_move: Optional[Callable[[QMoveEvent], None]] = None
 
         palette = self.palette()
         bg_color = palette.color(QPalette.Window)
@@ -337,7 +364,18 @@ class StepDialog(QDialog):
 
         self.update_step()
 
-    def _reposition_now(self):
+    def moveEvent(self, event: QMoveEvent) -> None:
+        """
+        Run the default handling, then notify the ``on_move`` hook if one is set.
+
+        :param event: The move event.
+        :type event: QMoveEvent
+        """
+        super().moveEvent(event)
+        if self.on_move is not None:
+            self.on_move(event)
+
+    def _reposition_now(self) -> None:
         widgets = self.target_widget
         if not widgets:
             return
@@ -360,13 +398,13 @@ class StepDialog(QDialog):
         if not self.isVisible():
             self.setVisible(True)
 
-    def reposition(self):
+    def reposition(self) -> None:
         """
         Recalculate the dialog position and move it near the target widget.
         """
         self._reposition_now()
 
-    def update_step(self):
+    def update_step(self) -> None:
         """
         Update the dialog to reflect the current tutorial step.
         """
@@ -385,10 +423,10 @@ class StepDialog(QDialog):
         self.setVisible(False)
         QTimer.singleShot(0, self._reposition_and_show)
 
-    def _reposition_and_show(self):
+    def _reposition_and_show(self) -> None:
         self._reposition_now()
 
-    def next_step(self):
+    def next_step(self) -> None:
         """
         Advance to the next step. Closes the dialog if it's the last step.
         """
@@ -403,7 +441,7 @@ class StepDialog(QDialog):
             self.done_signal.emit()
             self.close()
 
-    def prev_step(self):
+    def prev_step(self) -> None:
         """
         Go back to the previous step.
         """
@@ -411,7 +449,7 @@ class StepDialog(QDialog):
             self.current -= 1
             self.update_step()
 
-    def force_close(self):
+    def force_close(self) -> None:
         """
         Forcefully close the walkthrough and clean up overlay.
         """
@@ -422,24 +460,32 @@ class StepDialog(QDialog):
         self.close()
 
 
-def start_walkthrough(parent, steps):
+def start_walkthrough(
+    parent: QWidget, steps: List[Tuple[str, str, Union[QWidget, List[QWidget]]]]
+) -> QDialog:
     """
     Launch the StepDialog walkthrough with a given list of steps.
 
     :param parent: The parent widget to attach the walkthrough to.
     :type parent: QWidget
-    :param steps: List of (title, message, widget) tuples describing the steps.
-    :type steps: list[tuple[str, str, QWidget]]
-    :return: The initialized StepDialog instance.
-    :rtype: StepDialog
+    :param steps: List of (title, message, widget) tuples describing the steps. The third element may be a single widget or a list of widgets to highlight together.
+    :type steps: List[Tuple[str, str, Union[QWidget, List[QWidget]]]]
+    :return: The initialized StepDialog instance, or a fallback QDialog if
+        initialization fails.
+    :rtype: QDialog
     """
-    overlay = None
+    overlay: Optional[Overlay] = None
 
     try:
         overlay = Overlay(parent)
         overlay.show()
     except Exception:
         overlay = None
+
+    if overlay is None:
+        # StepDialog requires an overlay; without one it would fail on its
+        # first update_step(), so fall back here rather than constructing it.
+        return QDialog(parent)  # Fallback dialog to avoid returning None
 
     try:
         dialog = StepDialog(parent, steps, overlay)

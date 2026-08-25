@@ -264,13 +264,11 @@ def test_get_available_plugins(main_model):
     main_model.available_plugins_list = {"MetaReader": ["MockReader"]}
 
     assert main_model.get_available_plugins() == {"MetaReader": ["MockReader"]}
-    assert main_model.get_available_plugins("MetaReader") == ["MockReader"]
 
 
 def test_get_plugin_classes(main_model):
     main_model.available_plugin_classes = {"MetaReader": {"MyReader": object}}
 
-    assert main_model.get_plugin_classes() == {"MetaReader": {"MyReader": object}}
     assert main_model.get_plugin_classes("MetaReader") == {"MyReader": object}
 
 

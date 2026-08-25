@@ -29,7 +29,7 @@ import traceback
 import warnings
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -58,7 +58,7 @@ class MetaWriter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None):
+    def __init__(self, settings: Optional[dict] = None) -> None:
         """
         Initialize and set up output environment, save metadata for subclasses.
         """
@@ -74,24 +74,24 @@ class MetaWriter(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.commit_events`), and so should be used to ensure atomic write operations if possible.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -100,16 +100,9 @@ class MetaWriter(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Mapping[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -146,6 +139,14 @@ class MetaWriter(BaseDataPlugin):
             return settings
 
         which will ensure that your have the 4 keys specified above, as well as two additional keys, ``MetaReader`` and ``Output File``. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :raises KeyError: if no :ref:`MetaEventFinder` has been instantiated and standalone is False
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         eventfinder_options = None
         if globally_available_plugins:
@@ -175,26 +176,27 @@ class MetaWriter(BaseDataPlugin):
 
         :param channel: the index of the channel to commit
         :type channel: int
-
-        :return: the progress of the interator, normalized to [0,1]
-        :rtype: float
+        :yield: the progress of the interator, normalized to [0,1]
+        :ytype: float
         """
         yield from self._commit_events(channel)
 
     @log(logger=logger)
-    def force_serial_channel_operations(self):
+    def force_serial_channel_operations(self) -> bool:
         """
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
         By default, writer plugins are assumed to not be threadsafe and will run in serial mode when called from the poriscope GUI. If you want to change this, you must also ensure that the parent eventfinder object is threadsafe for pulling data from it. You can play it safe by calling ``self.eventfinder.force_serial_channel_operations()``, but it is possible that an eventfinder is not threadsafe for eventfinding but may be for pulling the events found for writing.
+
+        :return: True if only one channel can run at a time, False otherwise
+        :rtype: bool
         """
         return True
 
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -265,10 +267,12 @@ class MetaWriter(BaseDataPlugin):
         last_call: Optional[bool] = False,
     ) -> bool:
         """
+        **Purpose**: Append a single event data and metadata to the database of event data.
 
+        Given a series of metadata about the event to be written, write it to the database file (append to an existing databse in the case of atomic operations). Return True if that operation succeeds. If the write operation fails, Raise an exception for handling in the caller. Note that raising on a write failure will not cause a crash - poriscope will continue trying to write subsequent events and store the string associated with the raised error as reason for that write failure for downstream reporting.
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.number]
         :param channel: Int indicating the channel from which it was acquired.
         :type channel: int
         :param index: event index
@@ -289,75 +293,71 @@ class MetaWriter(BaseDataPlugin):
         :type baseline_std: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
-        :param batch_size: Number of events to batch before insert, default 100.
-        :type batch_size: int
+        :param abort: True if an abort request was issued in the caller, perform cleanup as needed, default False.
+        :type abort: Optional[bool]
         :param last_call: If True, flush the remaining batch, default False.
-        :type last_call: bool
-
+        :type last_call: Optional[bool]
         :return: success of the write operation.
         :rtype: bool
-
-        **Purpose**: Append a single event data and metadata to the database of event data.
-
-        Given a series of metadata about the event to be written, write it to the database file (append to an existing databse in the case of atomic operations). Return True if that operation succeeds. If the write operation fails, Raise an exception for handling in the caller. Note that raising on a write failure will not cause a crash - poriscope will continue trying to write subsequent events and store the string associated with the raised error as reason for that write failure for downstream reporting.
         """
         pass
 
     @abstractmethod
     def _set_output_dtype(self) -> str:
         """
-        :return: A string representing a :mod:`numpy` dtype
-        :rtype: str
-
         **Purpose**: Set the datatype of the data to be saved for each event.
 
         This function returns a string encoding a numpy datatype that tells the writer in what format the data should be stored in the database. If the output dtype exactly matches the intput dtype, the plugin will attempt to store raw data without any precision loss. In the case of a mismatch, it is not possible for poriscope to guarantee that there is no loss of precision between the input and output operation. If there is any dount, we suggest that use of double precision floating point numbers (``"<f8"``) will not incur any meaningful loss of precision in the vast majority of operations regardless of input type.
+
+        :return: A string representing a :mod:`numpy` dtype
+        :rtype: str
         """
         pass
 
     @abstractmethod
-    def _initialize_database(self, channel: int):
+    def _initialize_database(self, channel: int) -> None:
         """
-        :param channel: the channel for which to initialize the database
-        :type channel: int
-
         **Purpose**: Initialize a database for subsequent write operations.
 
         This function is called at the start of a write operation and is used to do anything you need to do in order to open the output file for writing. You are responsible for checking whether such an operation is needed (for example, by setting an appropriate flag to avoid duplicate innitialization). Note that this operation will be called for each channel and you must ensure that any initializations operations are threadsafe if you are not forcing serial channel operations (see :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations`).
 
         We strongly encourage atomic operations by ensuring that any file handles opened in this function are later closed in :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.close_resources` which will be called at the end of any batch write operation.
+
+        :param channel: the channel for which to initialize the database
+        :type channel: int
         """
         pass
 
     @abstractmethod
     def _write_channel_metadata(self, channel: int) -> None:
         """
-        :param channel: int indicating which output to flush
-        :type channel: int
-
         **Purpose**: Save any metadata required at the level of channels (for example, samplerate).
 
         Given a channel index, write any required metadata for that channel. Typically this is done once per channel on the first related write operation. Remember to close any file handles used either in this function or :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.close_resources` depending on whether you need to keep those resources open for the event writing step that follows.
 
+        :param channel: int indicating which output to flush
+        :type channel: int
         """
         pass
 
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     @log(logger=logger)
-    def _commit_events(self, channel: int) -> Generator[float, None, None]:
+    def _commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file
 
         :param channel: the index of the channel to commit
         :type channel: int
-
-        :return: the progress of the interator, normalized to [0,1]
-        :rtype: float
+        :raises Exception: if writing channel metadata fails unexpectedly, or if an unrecoverable error occurs while iterating events
+        :yield: the progress of the interator, normalized to [0,1]
+        :ytype: float
         """
 
-        def lookahead_generator(gen):
+        def lookahead_generator(
+            gen: Generator[Any, None, None],
+        ) -> Generator[Tuple[Any, bool], None, None]:
             try:
                 current = next(gen)
             except StopIteration:
@@ -465,7 +465,7 @@ class MetaWriter(BaseDataPlugin):
                     except StopIteration:
                         break
                     index += 1
-            except:
+            except Exception:
                 raise
             finally:
                 if abort is True:
@@ -479,7 +479,7 @@ class MetaWriter(BaseDataPlugin):
         """
         Validate that the filter_params dict contains correct data types
 
-        param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
@@ -495,11 +495,11 @@ class MetaWriter(BaseDataPlugin):
     @log(logger=logger)
     def _rescale_data_to_adc(
         self,
-        data: np.ndarray,
+        data: npt.NDArray[np.number],
         scale: Optional[float] = None,
         offset: Optional[float] = None,
         raw_data: bool = False,
-        dtype: type = np.int16,
+        dtype: npt.DTypeLike = np.int16,
         adc_min: int = np.iinfo(np.int16).min,
         adc_max: int = np.iinfo(np.int16).max,
     ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
@@ -509,22 +509,23 @@ class MetaWriter(BaseDataPlugin):
         For other adc code types or encoding schemes, this function should be overridden. Default to Chimera-style conversion.
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.number]
         :param scale: Float indicating scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: float, optional
+        :type scale: Optional[float]
         :param offset: Float indicating offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: float, optional
+        :type offset: Optional[float]
         :param raw_data: Boolean, True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
         :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: type, optional
+        :type dtype: npt.DTypeLike
         :param adc_min: Integer encoding the minimum adc code for the adc conversion.
         :type adc_min: int
         :param adc_max: Integer encoding the maximum adc code for the adc conversion.
         :type adc_max: int
-
+        :raises ValueError: If scale cannot be computed from the data.
+        :raises IOError: If raw_data is True but scale or offset is not provided.
         :return: Tuple containing rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[numpy.ndarray, Optional[float], Optional[float]]
+        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
         """
         if not raw_data:
             if scale is not None and offset is not None:
@@ -561,7 +562,7 @@ class MetaWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         **Purpose:** Perform generic class construction operations after settings are applied. This function is called at the end of the :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.apply_settings` function to perform additional initialization specific to the algorithm being implemented.
 

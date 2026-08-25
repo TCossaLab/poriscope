@@ -29,7 +29,7 @@ import logging
 import os
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -40,12 +40,15 @@ from poriscope.utils.LogDecorator import log
 
 class MetaReader(BaseDataPlugin):
     """
-    :ref:`MetaReader` is the base class for all things related to reading raw nanopore timeseries datafiles. It handles mapping groups of files that belong in the same experiment, separating them by channel in the case of multichannel experimental operations, and time-ordering files within a channel when many data files are written as part of a single experiment. Subsequently, it provides a common API through which to interact with that data, effectively standardizing data reading operations regardless of the source. Given the number of different file formats commonly in use in the nanopore field, this plugin will likely always have the largest number of subclasses.
+    This class, :ref:`MetaReader`, is the base class for all things related to reading raw nanopore timeseries datafiles. It handles mapping groups of files that belong in the same experiment, separating them by channel in the case of multichannel experimental operations, and time-ordering files within a channel when many data files are written as part of a single experiment. Subsequently, it provides a common API through which to interact with that data, effectively standardizing data reading operations regardless of the source. Given the number of different file formats commonly in use in the nanopore field, this plugin will likely always have the largest number of subclasses.
 
     What you get by inheriting from MetaReader
     ------------------------------------------
 
     Regardless of the details of how your data is actually stored, :ref:`MetaReader` will provide a common and intuitive API with which to interact with it, stitching together all the files in your dataset to work seamlessly together as a single dataset. Datasets are broken down by channel ID and time, allowing slicing into data that might be spread across multiple files as though it were a single contiguous memory structure. Data can be retrieved either on an ad-hoc basis, or as a continuous generator that allows you to iterate through on demand. Metadata like sampling rate, the length of data available in each channel, etc., can be retrieved through the API directly.
+
+    Attributes:
+        logger (logging.Logger): Logger instance for logging messages.
     """
 
     logger = logging.getLogger(__name__)
@@ -54,18 +57,18 @@ class MetaReader(BaseDataPlugin):
         """
         Initialize the MetaReader instance.
 
-        :raises FileNotFoundError: If the specified data file does not exist.
-
         Initialize instance attributes based on provided parameters and perform initialization tasks such as mapping data files, loading configurations, and setting sample rate.
 
         :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
-        :type settings: dict
+        :type settings: Optional[dict]
         """
         super().__init__(settings)
 
     # Public API, probably usable as-is in most cases
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -108,12 +111,12 @@ class MetaReader(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. If channel is not None, handle only that channel, else close all of them. If no such operation is needed, it suffices to ``pass``. Note that readers that operate based on memmaps need not explicitly close those memmaps, as they will be handled by the garbage collector, but it does no harm to do so. Any open file handles should be closed explicitly if not closed at  the end of read operations.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -121,12 +124,12 @@ class MetaReader(BaseDataPlugin):
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit.
-        :param channel: channel ID
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If reading through a channel does not create any persistent state changes in your plugin, you can simply ``pass`` this function.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
         """
         pass
 
@@ -137,24 +140,25 @@ class MetaReader(BaseDataPlugin):
         """
         Return raw data starting from index start and of length samples and rescale it to pA
 
-        :param start: Starting index of data to load.
-        :type start: int
-        :param length: Number of samples to load.
-        :type length: int
+        :param start: Start time of the data to load, in seconds.
+        :type start: float
+        :param length: Length of data to load, in seconds.
+        :type length: float
         :param channel: Channel number from which to load data.
         :type channel: int
         :param raw_data: Decide whether to rescale data or return raw adc codes
         :type raw_data: bool
 
         :return: Converted and rescaled data.
-        :rtype: numpy.ndarray
+        :rtype: npt.NDArray[np.float64]
 
-        :raises ValueError: If start or end indices are out of bounds
+        :raises ValueError: If start or end indices are out of bounds, or if channel, start, or length cannot be coerced to int
+        :raises IndexError: If the data map or configuration for the requested channel is not available in the reader
         """
         try:
             channel = int(channel)
-            start = int(start * self.samplerate)
-            length = int(length * self.samplerate)
+            start_sample = int(start * self.samplerate)
+            length_samples = int(length * self.samplerate)
         except ValueError:
             raise ValueError(
                 "channel, start, and length must all a type that can be coerced to int"
@@ -176,8 +180,8 @@ class MetaReader(BaseDataPlugin):
         samplerate = self.samplerate
         total_samples = self.total_channel_samples[channel]
         file_start_index = self.file_start_indices[channel]
-        start_index = start
-        end_index = start + length
+        start_index = start_sample
+        end_index = start_sample + length_samples
 
         if start_index > total_samples:
             start_index = total_samples
@@ -233,8 +237,12 @@ class MetaReader(BaseDataPlugin):
             data = np.concatenate((data, tempdata))
 
         if raw_data:
+            # data is always unpacked from the (array, scale, offset) tuple returned
+            # by _convert_data(..., raw_data=True) above before reaching this point;
+            # mypy can't track that narrowing through the branching/loop above, so
+            # tell it explicitly rather than restructure working logic.
             return (
-                data.astype(self.get_raw_dtype()),
+                cast(np.ndarray, data).astype(self.get_raw_dtype()),
                 scale,
                 offset,
             )  # assumes constant scale and offset between files
@@ -245,15 +253,9 @@ class MetaReader(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Optional[Mapping[str, List[str]]]
-        :param standalone: True if this is outside the context of a GUI, False otherwise, Default False.
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaReader` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -299,27 +301,27 @@ class MetaReader(BaseDataPlugin):
 
         which will ensure that your have key specified above, as well as an additional key, ``Input File``, as required by readers. You can learn more about formatting input file option strings in the `PySide6 module documentation <https://doc.qt.io/qt-6/qfiledialog.html#getOpenFileName>`_.  In the case of multiple file types, supply the relevant strings as a comma-separated list in the "Options" key; poriscope will handle formatting it for :mod:`PySide6`.
 
-
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: True if this is outside the context of a GUI, False otherwise, Default False.
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings: Dict[str, Dict[str, Any]] = {"Input File": {"Type": str}}
         return settings
 
     @log(logger=logger)
-    def get_channel_length(
-        self, channel: Optional[int] = None
-    ) -> int | Dict[int, int]:  # Changed return type hint
+    def get_channel_length(self, channel: int) -> int:
         """
-        Return the number of samples in a channel, or a dict of all of them if no channel is provided.
+        Return the number of samples in a channel.
 
         :param channel: Channel number to get length for.
-        :type channel: Optional[int]
-        :return: Number of samples in the specified channel, or a dict of all channel lengths.
-        :rtype: Union[int, Dict[int, int]]
+        :type channel: int
+        :return: Number of samples in the specified channel.
+        :rtype: int
         """
-        if channel is not None:
-            return self.total_channel_samples[channel]
-        else:
-            return self.total_channel_samples  # Changed return value
+        return self.total_channel_samples[channel]
 
     @log(logger=logger)
     def get_samplerate(self) -> float:
@@ -339,44 +341,48 @@ class MetaReader(BaseDataPlugin):
         channel: int = 0,
         chunk_length: float = 0,
         raw_data: bool = False,
-    ) -> npt.NDArray[np.float64]:
+    ) -> Generator[
+        Union[npt.NDArray[np.float64], Tuple[npt.NDArray[np.float64], float, float]],
+        None,
+        None,
+    ]:
         """
         Read data in chunks and return it as a generator.
 
-        :param start: Starting index in the timeseries data (default is 0).
-        :type start: int
-        :param total_length: Ending index in the timeseries data (default is 0, meaning end of data).
-        :type total_length: int
+        :param start: Start time in the timeseries data, in seconds (default is 0).
+        :type start: float
+        :param total_length: Length of data to read, in seconds (default is 0, meaning to the end of the data).
+        :type total_length: float
         :param channel: channel index to analyze.
         :type channel: int
-        :param chunk_length: Size of data chunks to process at a time (default is 0, auto-determined).
-        :type chunk_length: int
+        :param chunk_length: Length of the data chunks to process at a time, in seconds (default is 0, auto-determined).
+        :type chunk_length: float
         :param raw_data: Decide whether to rescale data or return raw adc codes
         :type raw_data: bool
-        :return: Generator yielding data chunks.
-        :rtype: numpy.ndarray
+        :yield: successive chunks of data, or tuples of (data, scale, offset) if raw_data is True.
+        :ytype: Union[npt.NDArray[np.float64], Tuple[npt.NDArray[np.float64], float, float]]
         """
-        i = int(start * self.samplerate)
-        start = int(start * self.samplerate)
-        total_length = int(total_length * self.samplerate)
-        chunk_length = int(chunk_length * self.samplerate)
+        start_sample = int(start * self.samplerate)
+        total_length_samples = int(total_length * self.samplerate)
+        chunk_length_samples = int(chunk_length * self.samplerate)
+        i = start_sample
         channel = int(channel)
         channel_length = self.get_channel_length(channel)
-        if chunk_length == 0:
-            chunk_length = int(
+        if chunk_length_samples == 0:
+            chunk_length_samples = int(
                 np.minimum(self.get_samplerate(), self.get_channel_length(channel))
             )
-        if total_length == 0:
-            total_length = channel_length - start
-        last_sample = np.minimum(channel_length, start + total_length)
+        if total_length_samples == 0:
+            total_length_samples = channel_length - start_sample
+        last_sample = np.minimum(channel_length, start_sample + total_length_samples)
         scale = None
         offset = None
         while i < last_sample:
-            samples_to_load = np.minimum(chunk_length, last_sample - i)
+            samples_to_load = np.minimum(chunk_length_samples, last_sample - i)
 
             if (
-                samples_to_load == chunk_length
-                and last_sample - (i + chunk_length) < chunk_length / 2
+                samples_to_load == chunk_length_samples
+                and last_sample - (i + chunk_length_samples) < chunk_length_samples / 2
             ):  # if we are near the end, just load it to avoid small offset errors
                 samples_to_load = last_sample - i
 
@@ -417,12 +423,12 @@ class MetaReader(BaseDataPlugin):
         return self.name_stub
 
     @log(logger=logger)
-    def get_raw_dtype(self) -> None:
+    def get_raw_dtype(self) -> np.dtype:
         """
         Return the data type for the raw data in files of this type
 
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
+        :return: the dtype of the raw data on disk for this reader
+        :rtype: np.dtype
         """
         return self.dtype
 
@@ -439,12 +445,12 @@ class MetaReader(BaseDataPlugin):
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
         By default this simply returns ``False``, meaning that it is acceptable and thread-safe to run operations on different channels in different threads on this plugin. If such operation is not thread-safe, this function should be overridden to simply return ``True``. Most readers are thread-safe since reading from a file on disk is usually so, and therefore no override is necessary.
+
+        :return: True if only one channel can run at a time, False otherwise
+        :rtype: bool
         """
         return False
 
@@ -455,7 +461,7 @@ class MetaReader(BaseDataPlugin):
         Check that the file(s) being opened are of the correct type, and raise IOError if not
 
         :param filename: the path to one of the files to be opened
-        :type filename: os.Pathlike
+        :type filename: os.PathLike
         :raises IOError: If the wrong type is file is fed to the plugin
         """
         pass
@@ -463,9 +469,6 @@ class MetaReader(BaseDataPlugin):
     @abstractmethod
     def _set_file_extension(self) -> str:
         """
-        :return: the file extension
-        :rtype: str
-
         **Purpose:** Set the file extension for the file type this reader plugin handles.
 
         This is a simple function that allows you to set the file extension (including the leading dot) of the file type that this reader plugin will read. It is used by downstream functions while mapping your data to assist in identifying files. It should be a single line:
@@ -475,21 +478,15 @@ class MetaReader(BaseDataPlugin):
             return ".ext"
 
         If you need to refer to this value again, you can access it via the class variable ``self.file_extension``.
+
+        :return: the file extension
+        :rtype: str
         """
         pass
 
     @abstractmethod
-    def _map_data(
-        self, datafiles: List[os.PathLike], configs: List[dict]
-    ) -> List[npt.NDArray[Any]]:
+    def _map_data(self, datafiles: List[str], configs: List[dict]) -> List[np.ndarray]:
         """
-        :param datafiles: List of data files to map.
-        :type datafiles: List[os.PathLike]
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-        :return: List of memmaps or numpy arrays mapped from data files.
-        :rtype: List[numpy.ndarray]
-
         **Purpose:** Map the provided data files into an accessible format, preferably memory-mapped views.
 
         Using all the information provided in the implementations so far, in this function, you are asked to map the list of files provided in ``datafiles``, according to information given in ``configs``. You can assume that the lists are of equal length and that the config file at a given index corresponds to the data file at the same index. You must return a list of views into those files. We strongly encourage the use of :py:class:`~numpy.memmap` where possible, in which case you may return a list of such memmaps with length equal to the input list of filenames.
@@ -497,6 +494,13 @@ class MetaReader(BaseDataPlugin):
         .. warning::
 
             This function expects that the elements of the returned list can be indexed and sliced into like NumPy arrays, hence the suggestion to use memmaps, which avoid the need to actually load raw data into RAM before it is needed. In cases where memmap is not an option, you must still return NumPy array for each file, which may involve significant memory consumption. If this is impractical, it is possible to override this function to return, for example, a list of file handles instead, with the caveat that this will in turn require that you completely override :py:meth:`~poriscope.utils.MetaReader.MetaReader.load_data` as well to properly handle your file access method manually.
+
+        :param datafiles: List of data files to map.
+        :type datafiles: List[str]
+        :param configs: List of configuration dictionaries corresponding to data files.
+        :type configs: List[dict]
+        :return: List of memmaps or numpy arrays mapped from data files.
+        :rtype: List[np.ndarray]
         """
         pass
 
@@ -504,12 +508,6 @@ class MetaReader(BaseDataPlugin):
     def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
         """
         Set the data type for the raw data in files of this type
-
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
-        :rtype: np.dtype
 
         **Purpose:** Inform Poriscope what NumPy datatype to expect for raw data on disk.
 
@@ -520,24 +518,19 @@ class MetaReader(BaseDataPlugin):
             return np.uint16
 
         If you need to refer to this value again, you can access it via the class variable ``self.dtype``. For more details on NumPy dtypes, refer to the `NumPy documentation on dtypes <https://numpy.org/doc/stable/reference/arrays.dtypes.html>`_.
+
+        :param configs: List of configuration dictionaries corresponding to data files.
+        :type configs: List[dict]
+        :return: the dtype of the raw data in your data files
+        :rtype: np.dtype
         """
         pass
 
     @abstractmethod
     def _convert_data(
         self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
-    ) -> npt.NDArray[np.float64]:
+    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
         """
-        :param data: Data to convert.
-        :type data: numpy.ndarray
-        :param config: Configuration dictionary for data conversion.
-        :type config: dict
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-
-        :return: Converted data, and scale and offset if and only if raw_data is True
-        :rtype: Union[Tuple[np.ndarray, float, float], np.ndarray]
-
         **Purpose:** Convert raw data from disk format to a usable numerical format.
 
         Given a numpy array of raw data extracted from one of the :py:class:`~numpy.memmap` instances you defined in the previous function along with its associated ``config`` dict, provide a means to turn this raw data into a numpy array of `~numpy.float64` double precision floats. For this purpose, if convenient, you can use the :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._scale_data` function, which will apply bitmasks, multiply data by a scaling factor, and add an offset, like so:
@@ -572,6 +565,15 @@ class MetaReader(BaseDataPlugin):
                     return data, scale, offset
             else:
                     return data
+
+        :param data: Data to convert.
+        :type data: npt.NDArray[np.int16]
+        :param config: Configuration dictionary for data conversion.
+        :type config: dict
+        :param raw_data: Decide whether to rescale data or return raw adc codes
+        :type raw_data: bool
+        :return: Converted data, and scale and offset if and only if raw_data is True
+        :rtype: Union[Tuple[np.ndarray, float, float], np.ndarray]
         """
         pass
 
@@ -580,6 +582,7 @@ class MetaReader(BaseDataPlugin):
         """
         Set the sampling rate for the reader.
 
+        :raises ValueError: If the channels in the dataset do not all share the same samplerate, or if no samplerate could be determined.
         :return: the sampling rate that is applicable to the reader
         :rtype: float
         """
@@ -658,65 +661,58 @@ class MetaReader(BaseDataPlugin):
         self.samplerate = self._set_sample_rate()
 
     @abstractmethod
-    def _get_configs(self, datafiles: List[os.PathLike]) -> List[dict]:
+    def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
-        :param datafiles: List of data files for which to load configurations.
-        :type datafiles: List[os.PathLike]
-        :return: List of configuration dictionaries.
-        :rtype: List[dict]
-
         **Purpose:** Extract configuration metadata from dataset files.
 
         Given a list of filenames corresponding to the data files, construct a list of dictionaries containing any required configurations for use downstream. Your config dictionaries must have at a minimum the key `'samplerate'` in them, and the list of configs must correspond one-to-one to the provided list of data files. All files in a dataset must have the same samplerate. Your reader will use these configs to map the data on disk, so you could include information like endianness, raw data type, details of any columns within the data, etc. Aside from the required samplerate key, this can be anything.
+
+        :param datafiles: List of data files for which to load configurations.
+        :type datafiles: List[str]
+        :return: List of configuration dictionaries.
+        :rtype: List[dict]
         """
         pass
 
     @abstractmethod
-    def _get_file_time_stamps(
-        self, file_names: List[os.PathLike], configs: List[dict]
-    ) -> List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]:
+    def _get_file_time_stamps(self, file_names: List[str], configs: List[dict]) -> Any:
         """
-        :param file_names: List of file names to get time stamps for.
-        :type file_names: List[os.PathLike]
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-        :return: List of serialization keys for timestamps in almost any format.
-        :rtype: List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]
-
         **Purpose:** Extract time stamps for sorting files chronologically within a channel.
 
         Given a list of all the files in the experiment and the list of config dictionaries you defined above, extract a corresponding list of timestamps. These timestamps will be used to time-order the mapped data within each channel. The list must have the same length as both input lists and must be of a type that can be sorted into the desired time-ordering using the builtin :py:meth:`~list.sort()` method.
+
+        :param file_names: List of file names to get time stamps for.
+        :type file_names: List[str]
+        :param configs: List of configuration dictionaries corresponding to data files.
+        :type configs: List[dict]
+        :return: List of serialization keys for timestamps in almost any format
+            (e.g. ``str``, ``int``, ``float``, ``datetime.datetime``, ``datetime.date``,
+            or ``np.datetime64``); the concrete element type is defined by the subclass.
+        :rtype: Any
         """
         pass
 
     @abstractmethod
     def _get_file_channel_stamps(
-        self, file_names: List[os.PathLike], configs: List[dict]
+        self, file_names: List[str], configs: List[dict]
     ) -> List[int]:
         """
-        :param file_names: List of file names to get channel stamps for.
-        :type file_names: List[os.PathLike]
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-        :return: List of serialization keys for channels
-        :rtype: List[int]
-
         **Purpose:** Extract channel identifiers for grouping files by channel.
 
         Given a list of all the files in the experiment and the list of config dictionaries you defined above, extract a corresponding list of channel identifiers as integers. These channel indices will be used to group the mapped data by channel. The list must have the same length as both input lists and must be a list of integers.
 
-
+        :param file_names: List of file names to get channel stamps for.
+        :type file_names: List[str]
+        :param configs: List of configuration dictionaries corresponding to data files.
+        :type configs: List[dict]
+        :return: List of serialization keys for channels
+        :rtype: List[int]
         """
         pass
 
     @abstractmethod
     def _get_file_pattern(self, file_name: str) -> str:
         """
-        :param file_name: File name to get the base pattern for.
-        :type file_name: os.PathLike
-        :return: Base pattern for matching other files.
-        :rtype: str
-
         **Purpose:** Extract a `glob` pattern from an input filename to match all dataset files.
 
         When you instantiate a reader plugin, you provide a single filename as input. However, in some cases, a dataset might comprise many files. This function requires you to extract a pattern from the given filename that can be used by ``glob`` to match all files belonging to your dataset.
@@ -747,16 +743,23 @@ class MetaReader(BaseDataPlugin):
         Poriscope will use this file pattern to search the folder of the input file for other files that match the pattern. It will not search outside of that folder.
 
         For more information on ``glob`` patterns, refer to the `glob module documentation <https://docs.python.org/3/library/glob.html>`_.
+
+        :param file_name: File name to get the base pattern for.
+        :type file_name: str
+        :return: Base pattern for matching other files.
+        :rtype: str
         """
         pass
 
     @log(logger=logger)
-    def _get_file_names(self, folder, pattern) -> List[str]:
+    def _get_file_names(
+        self, folder: Union[str, os.PathLike], pattern: str
+    ) -> List[str]:
         """
         Get a list of file names with data to map
 
         :param folder: File name to get the base pattern for.
-        :type folder: os.PathLike
+        :type folder: Union[str, os.PathLike]
         :param pattern: pattern to match
         :type pattern: str
 
@@ -769,14 +772,11 @@ class MetaReader(BaseDataPlugin):
     def _sort_objects_by_channel_and_time(
         self,
         objects: List[Any],
-        channel_numbers: List[Any],
+        channel_numbers: List[int],
         timestamps: List[
             Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]
         ],
-    ) -> Dict[
-        int,
-        List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]],
-    ]:
+    ) -> Dict[int, List[Any]]:
         """
         Sort a list of objects into a dictionary of lists, indexed by channel number.
         The objects within each channel's list are sorted by timestamp.
@@ -789,7 +789,7 @@ class MetaReader(BaseDataPlugin):
         :type timestamps: List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]
         :return: Dictionary where keys are channel numbers and values are lists of objects,
                         sorted by timestamp.
-        :rtype: Dict[int, List[Union[str, int, float, datetime.datetime, datetime.date, np.datetime64]]
+        :rtype: Dict[int, List[Any]]
         :raises ValueError: If the input lists have inconsistent lengths.
         """
         if len(objects) != len(channel_numbers) or len(objects) != len(timestamps):
@@ -830,24 +830,25 @@ class MetaReader(BaseDataPlugin):
     ) -> npt.NDArray[Any]:
         """
         Apply scaling and masking operations to data as needed.
-                Default behavior assumes data is already scaled and does nothing.
+        Default behavior assumes data is already scaled and does nothing.
 
-                :param data: Data to scale.
-                :type data: numpy.ndarray
-                :param copy: Whether to create a copy of the data, defaults to True.
-                :type copy: bool, optional
-                :param bitmask: Bitmask to apply to data, defaults to None.
-                :type bitmask: Optional[np.uint64], optional
-                :param dtype: Desired data type after scaling, defaults to None.
-                :type dtype: Optional[str], optional
-                :param scale: Scaling factor, defaults to None.
-                :type scale: Optional[float], optional
-                :param offset: Offset to add to scaled data, defaults to None.
-                :type offset: Optional[float], optional
-                :param raw_data: is the data to be returned as the original type?
-                :type raw_data: Optional[bool]
-                :return: Scaled data.
-                :rtype: numpy.NDArray[Any]
+        :param data: Data to scale.
+        :type data: npt.NDArray[Any]
+        :param copy: Whether to create a copy of the data, defaults to True.
+        :type copy: Optional[bool]
+        :param bitmask: Bitmask to apply to data, defaults to None.
+        :type bitmask: Optional[np.uint64]
+        :param dtype: Desired data type after scaling, defaults to None.
+        :type dtype: Optional[str]
+        :param scale: Scaling factor, defaults to None.
+        :type scale: Optional[float]
+        :param offset: Offset to add to scaled data, defaults to None.
+        :type offset: Optional[float]
+        :param raw_data: is the data to be returned as the original type?
+        :type raw_data: Optional[bool]
+        :raises ValueError: If raw_data is True but no dtype is specified.
+        :return: Scaled data.
+        :rtype: npt.NDArray[Any]
         """
         if bitmask == 0:
             bitmask = None
@@ -899,7 +900,7 @@ class MetaReader(BaseDataPlugin):
         the dictionary output from _sort_objects_by_channel_and_time.
 
         :param datamaps: Dictionary of data maps, where keys are channel numbers.
-        :type datamaps: Dict[int, List[numpy.ndarray]]
+        :type datamaps: Dict[int, List[npt.NDArray[np.float64]]]
         :return: Dictionary of starting indices, keyed by channel number.
         :rtype: Dict[int, List[int]]
         """
@@ -927,7 +928,7 @@ class MetaReader(BaseDataPlugin):
         Populate a dictionary of the number of datapoints in each channel.
 
         :param datamaps: Dictionary of data maps, keyed by channel number.
-        :type datamaps: Dict[int, List[numpy.ndarray]]
+        :type datamaps: Dict[int, List[npt.NDArray[np.float64]]]
         :param file_start_indices: Dictionary of starting indices for each file in each channel, keyed by channel number.
         :type file_start_indices: Dict[int, List[int]]
         :return: Dictionary of total channel samples, keyed by channel number.
@@ -955,7 +956,7 @@ class MetaReader(BaseDataPlugin):
         Check that the file(s) being opened are of the correct type, and raise IOError if not
 
         :param filename: the path to one of the files to be opened
-        :type filename: os.Pathlike
+        :type filename: os.PathLike
         :raises IOError: If the wrong type is file is fed to the plugin
         """
         _, ext = os.path.splitext(filename)

@@ -25,8 +25,10 @@
 
 
 import logging
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 from fast_histogram import histogram1d
 from typing_extensions import override
 
@@ -51,7 +53,11 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -70,11 +76,11 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Min Baseline"] = {"Type": float, "Value": None, "Units": "pA"}
@@ -83,7 +89,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
 
     @log(logger=logger)
     @override
-    def _validate_settings(self, settings):
+    def _validate_settings(self, settings: dict) -> None:
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
@@ -99,7 +105,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
 
     @log(logger=logger)
     @override
-    def _get_baseline_stats(self, data):
+    def _get_baseline_stats(self, data: npt.NDArray[np.float64]) -> tuple[float, float]:
         """
         Get the local mean and standard deviation for a chunk of data.
 
@@ -108,6 +114,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         :type data: npt.NDArray[np.float64]
         :return: Tuple of mean and standard deviation.
         :rtype: tuple[float, float]
+        :raises ValueError: if no data is found within the configured baseline range, if a baseline histogram width cannot be estimated, or if the fitted baseline falls outside the configured Min/Max Baseline bounds
         """
         top = self.settings["Max Baseline"]["Value"]
         bottom = self.settings["Min Baseline"]["Value"]

@@ -27,9 +27,11 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Dict, List, Literal, Set
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
     NavigationToolbar2QT as NavigationToolbar,
@@ -37,10 +39,12 @@ from matplotlib.backends.backend_qt5agg import (
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLayout,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -85,17 +89,17 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     load_actions_from_json = Signal(str)  # filename
     lock = threading.Lock()
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize the MetaTab with a blank plot canvas and a space for controls.
         """
         super().__init__()
         self.available_plugins: Dict[str, List[str]] = {}
-        self.progress_bars = {}
+        self.progress_bars: Dict[str, Dict[str, Any]] = {}
         self._init()
         self._setup_ui()
-        self.plot_data = None
-        self.threads = []
+        self.plot_data: Optional[Any] = None
+        self.threads: List[Any] = []
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().setSpacing(0)
 
@@ -113,20 +117,22 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         pass
 
     @log(logger=logger)
-    def set_available_subclasses(self, available_subclasses):
+    def set_available_subclasses(
+        self, available_subclasses: Optional[Mapping[str, List[str]]]
+    ) -> None:
         self.available_subclasses = available_subclasses
 
     @log(logger=logger)
-    def update_plot_data(self, data):
+    def update_plot_data(self, data: Optional[Any]) -> None:
         self.plot_data = data
 
     @log(logger=logger)
-    def _clear_cache(self):
-        self.data_cache = []
-        self.data_cache_labels = []
+    def _clear_cache(self) -> None:
+        self.data_cache: List[Any] = []
+        self.data_cache_labels: List[str] = []
 
     @log(logger=logger)
-    def _factors(self, n):
+    def _factors(self, n: int) -> Tuple[int, int]:
         """
         Find the closest pair of factors for a given number to approximate a square layout.
 
@@ -147,12 +153,13 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         return min_diff_pair
 
     @log(logger=logger)
-    def _update_cache(self, *data_label_pairs):
+    def _update_cache(self, *data_label_pairs: Sequence[Any]) -> None:
         """
         Update the cache with an arbitrary number of (data, label) pairs.
 
-        :param data_label_pairs: Tuple(s) of (data, label)
-        :type data_label_pairs: Tuple[npt.NDArray[Any], str]
+        :param \\*data_label_pairs: Tuple(s) of (data, label)
+        :type \\*data_label_pairs: Sequence[Any]
+        :raises ValueError: If any argument is not a tuple or list of 1 or 2 elements.
         """
         for pair in data_label_pairs:
             if not isinstance(pair, (tuple, list)) or len(pair) not in [1, 2]:
@@ -166,7 +173,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             self.data_cache_labels.append(label or "")
 
     @log(logger=logger)
-    def _commit_cache(self):
+    def _commit_cache(self) -> None:
         if len(self.data_cache) != len(self.data_cache_labels):
             self.logger.warning(
                 "Unable to cache data due to label and data mismatch, exported plot data may be incomplete or missing"
@@ -175,7 +182,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             self.cache_plot_data.emit(self.data_cache, self.data_cache_labels)
 
     @log(logger=logger)
-    def _set_custom_display_area(self, layout) -> None:
+    def _set_custom_display_area(self, layout: QLayout) -> None:
         self._setup_canvas()  # Ensure canvas is set up here
 
         # Create a display layout and add the canvas to it
@@ -197,17 +204,17 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         layout.addWidget(display_container, stretch=4)  # Adjusted stretch factor
 
     @abstractmethod
-    def _set_control_area(self, layout) -> None:
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Create and set up the control area for user interaction elements.
 
-        :param layout: The main layout to which the control area will be added.
-        :type layout: Union[PySide6.QtWidgets.QVBoxLayout, PySide6.QtWidgets.QHBoxLayout, PySide6.QtWidgets.QGridLayout]
+        :param layout: The main layout to which the control area will be added. A box layout specifically, since implementations nest a sub-layout with addLayout().
+        :type layout: QBoxLayout
         """
         pass
 
     @log(logger=logger)
-    def _setup_canvas(self, num_channels=1):
+    def _setup_canvas(self, num_channels: int = 1) -> None:
         """
         Set up the canvas with a given number of subplots corresponding to the number of channels.
         """
@@ -227,7 +234,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
 
     @log(logger=logger)
-    def _set_progress_area(self, layout):
+    def _set_progress_area(self, layout: QLayout) -> None:
         """
         Initialize the area for progress bars within the control area.
         """
@@ -248,18 +255,18 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         )
 
     @log(logger=logger)
-    def set_column_exists(self, exists_in_table):
+    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
         """
         Sets the status indicating if cluster columns already exist.
 
         :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: str or None
+        :type exists_in_table: Optional[str]
         """
         self.column_table = exists_in_table
 
     @log(logger=logger)
     @Slot(float, str)
-    def update_progressbar(self, value, identifier):
+    def update_progressbar(self, value: float, identifier: str) -> None:
         """
         Update a specific progress bar's value or create it if it doesn't exist.
         """
@@ -333,10 +340,14 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             progress_bar.setValue(value)
 
     @log(logger=logger)
-    def update_actions_from_json(self, actions):
+    def update_actions_from_json(self, actions: Dict[str, Dict[str, Any]]) -> None:
         for _, val in actions.items():
             function = val.get("function")
-            function = getattr(self, function, None)
+            # Pre-existing gap: if a stored action dict is missing the "function"
+            # key, `function` is None here and getattr() would raise TypeError at
+            # runtime; not fixed as part of a pure type-hint pass, flagged for
+            # human review.
+            function = getattr(self, function, None)  # type: ignore[arg-type]
             if function:
                 if callable(function):
                     args = val.get("args")
@@ -344,7 +355,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
                     function(*args, **kwargs)
 
     @log(logger=logger)
-    def _save_actions_to_json(self):
+    def _save_actions_to_json(self) -> None:
         options = QFileDialog.Options()
         filename, _ = QFileDialog.getSaveFileName(
             self, "Save File", "", "JSON Files (*.json)", options=options
@@ -353,7 +364,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             self.save_tab_action_history.emit(filename)
 
     @log(logger=logger)
-    def _load_actions_from_json(self):
+    def _load_actions_from_json(self) -> None:
         options = QFileDialog.Options()
         filename, _ = QFileDialog.getOpenFileName(
             self, "Open File", "", "JSON Files (*.json)", options=options
@@ -362,16 +373,15 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             self.load_actions_from_json.emit(filename)
 
     @log(logger=logger)
-    def handle_edit_triggered(self, metaclass, key):
+    def handle_edit_triggered(self, metaclass: str, key: str) -> None:
         """
         Emit a signal to trigger the saving process for a data plugin, passing the appropriate
         arguments to handle editing plugin settings.
 
-        :param key: the identifier of the plugin to be edited
-        :type key: str
         :param metaclass: The class type of the plugin
         :type metaclass: str
-
+        :param key: the identifier of the plugin to be edited
+        :type key: str
         """
         self.logger.info(
             f"RawDataView: Settings edit request emitted for metaclass: {metaclass}, plugin: {key}"
@@ -387,14 +397,20 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         )
 
     @log(logger=logger)
-    def handle_add_triggered(self, metaclass: str):
+    def handle_add_triggered(self, metaclass: str) -> None:
         """
         Trigger addition of a new plugin by prompting for a subclass.
 
         :param metaclass: The type of plugin to add (e.g., 'MetaReader')
+        :type metaclass: str
         """
 
-        subclasses = self.available_subclasses.get(metaclass, [])
+        # Pre-existing gap: available_subclasses is Optional (set via
+        # set_available_subclasses, which accepts None) but is used here without a
+        # None-guard; in practice it is always populated before a user can trigger
+        # this action, but that is not statically guaranteed. Not fixed as part of
+        # a pure type-hint pass, flagged for human review.
+        subclasses = self.available_subclasses.get(metaclass, [])  # type: ignore[union-attr]
         if not subclasses:
             QMessageBox.warning(
                 self, "No Subclasses", f"No subclasses available for {metaclass}."
@@ -418,15 +434,14 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             self.create_plugin.emit(metaclass, subclass)
 
     @log(logger=logger)
-    def handle_delete_triggered(self, metaclass, key):
+    def handle_delete_triggered(self, metaclass: str, key: str) -> None:
         """
         Emit a signal to trigger the delete process for a data plugin, passing the identifier.
 
-        :param key: the identifier of the plugin to be deleted
-        :type key: str
         :param metaclass: The class type of the plugin
         :type metaclass: str
-
+        :param key: the identifier of the plugin to be deleted
+        :type key: str
         """
         self.logger.info(
             f"Delete request emitted for metaclass: {metaclass}, plugin: {key}"
@@ -442,7 +457,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         )
 
     @log(logger=logger)
-    def remove_progress_bar(self, identifier):
+    def remove_progress_bar(self, identifier: str) -> None:
         """
         Remove a specific progress bar and its components when a task is complete.
         """
@@ -459,7 +474,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
                     self.progress_bar_container.hide()
 
     @log(logger=logger)
-    def handle_kill_button(self, identifier):
+    def handle_kill_button(self, identifier: str) -> None:
         """
         Handle the kill button click event for individual workers.
         """
@@ -472,7 +487,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.kill_worker.emit(controller_name, identifier)
 
     @log(logger=logger)
-    def handle_kill_all(self):
+    def handle_kill_all(self) -> None:
         """
         Handle the 'Kill All' button click event.
         """
@@ -491,7 +506,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
         :param available_plugins: Dict of lists keyed by MetaClass, listing the identifiers of all
                                   instantiated plugins throughout the app.
-        :type available_plugins: Dict[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         self.logger.info(f"View updated: {available_plugins}")
         self.available_plugins = available_plugins
@@ -532,13 +547,14 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
     @log(logger=logger)
     def _parse_event_indices(
-        self, indices: str, allow_floats: Literal[True]
+        self, indices: str, allow_floats: bool
     ) -> list[tuple[float, float]]:
         """
         Parse '7-10,12' → [(7,10), (12,12)]
-        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)]
+        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
+        otherwise every bound is parsed with int().
         """
-        result = []
+        result: list[tuple[float, float]] = []
         caster = float if allow_floats else int
 
         for segment in indices.split(","):
@@ -560,10 +576,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
     @log(logger=logger)
     def _shift_ranges(
-        self, ranges: list[tuple[int, int]], direction: str, offset: int
-    ) -> list[tuple[int, int]]:
+        self, ranges: Sequence[tuple[float, float]], direction: str, offset: float
+    ) -> list[tuple[float, float]]:
         """Shift each tuple range left or right."""
-        shifted = []
+        shifted: list[tuple[float, float]] = []
         for start, end in ranges:
             if start == end:  # Sigle index
                 val = start + offset if direction == "right" else start - offset
@@ -583,9 +599,11 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         return shifted
 
     @log(logger=logger)
-    def _merge_ranges(self, ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    def _merge_ranges(
+        self, ranges: Sequence[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
         """Merge overlapping or contiguous ranges."""
-        merged: list[tuple[int, int]] = []
+        merged: list[tuple[float, float]] = []
         for start, end in sorted(ranges):
             if not merged or merged[-1][1] < start - 1:
                 merged.append((start, end))
@@ -595,7 +613,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         return merged
 
     @log(logger=logger)
-    def _format_ranges(self, ranges: list[tuple[int, int]]) -> str:
+    def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
         """Format list of tuples into '8-11,13'"""
         return ",".join(
             f"{start}-{end}" if start != end else str(start) for start, end in ranges
@@ -630,12 +648,12 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     # private API, should generally be left alone by subclasses
 
     @log(logger=logger)
-    def _set_display_area_base(self, layout) -> None:
+    def _set_display_area_base(self, layout: QLayout) -> None:
         """
         Create and set up the display area for the plot canvas.
 
         :param layout: The main layout to which the display area will be added.
-        :type layout: Union[PySide6.QtWidgets.QVBoxLayout, PySide6.QtWidgets.QHBoxLayout, PySide6.QtWidgets.QGridLayout]
+        :type layout: QLayout
         """
         self.dataDisplayArea = QWidget(self)
         self.dataDisplayArea.setStyleSheet(
@@ -670,7 +688,9 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         mainLayout.setStretch(1, 1)  # Decrease stretch factor for control area
 
     @log(logger=logger)
-    def _logscale_and_filter_multiple_columns(self, *data, log_flags=None):
+    def _logscale_and_filter_multiple_columns(
+        self, *data: npt.NDArray[Any], log_flags: Optional[Sequence[bool]] = None
+    ) -> Tuple[npt.NDArray[Any], ...]:
         """
         Filters multiple data columns for NaN values and applies logarithmic scaling.
 
@@ -683,11 +703,13 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         non-positive values after rectification. This filtering is applied
         sequentially, meaning filtering based on one column affects all others.
 
-        :param data: A variable number of 1D NumPy arrays representing the data columns.
-        :type data: npt.NDArray
-        :param log_flags: (list or tuple, optional): A list or tuple of booleans, one for each data array. If True, the corresponding array, will be log-scaled. If None, no log scaling is applied. Defaults to None.
-        :type log_flags: Union[List[bool],Tuple[bool]]
-        :return: Tuple[Optional[npt.NDArray]]: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
+        :param \\*data: A variable number of 1D NumPy arrays representing the data columns.
+        :type \\*data: npt.NDArray[Any]
+        :param log_flags: A sequence of booleans, one for each data array. If True, the corresponding array will be log-scaled. If None, no log scaling is applied. Defaults to None.
+        :type log_flags: Optional[Sequence[bool]]
+        :raises ValueError: If log_flags is provided but is not a list or tuple with the same length as the number of data arguments.
+        :return: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
+        :rtype: Tuple[npt.NDArray[Any], ...]
         """
         if not data:
             return ()
@@ -759,7 +781,9 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
 
         return tuple(current_data)
 
-    def _logscale_and_filter_dataframe(self, df, log_columns=None):
+    def _logscale_and_filter_dataframe(
+        self, df: pd.DataFrame, log_columns: Optional[List[str]] = None
+    ) -> pd.DataFrame:
         """
         Filters a DataFrame for NaN values and applies logarithmic scaling to specified columns, returning a new DataFrame; the input is not modified.
 

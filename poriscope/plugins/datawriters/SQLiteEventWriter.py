@@ -26,9 +26,10 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -46,15 +47,15 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         called at the start of base class initialization
         """
-        self.conn = None
-        self.cursor = None
+        self.conn: Optional[sqlite3.Connection] = None
+        self.cursor: Optional[sqlite3.Cursor] = None
 
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided paramters and intialize any internal structures needed
         Should Raise if initialization fails.
@@ -64,16 +65,20 @@ class SQLiteEventWriter(MetaWriter):
         """
         self.eventfinder = self.settings["MetaEventFinder"]["Value"]
         self.samplerate = self.eventfinder.get_samplerate()
-        self.channel_db_id = {}
+        self.channel_db_id: Dict[int, Any] = {}
 
     @log(logger=logger)
     @override
-    def _initialize_database(self, channel: int):
+    def _initialize_database(self, channel: int) -> None:
         """
         Open a database or file handle for writing events - this function will be called from every channel in the reader
 
         :param channel: the channel for which to initialize the database
         :type channel: int
+        :raises ValueError: if the output file path is not set in settings
+        :raises RuntimeError: if database initialization fails at the SQL level
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs during initialization
         """
         table_creation_queries = [
             """
@@ -178,7 +183,11 @@ class SQLiteEventWriter(MetaWriter):
                 conn.close()
 
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -197,7 +206,7 @@ class SQLiteEventWriter(MetaWriter):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
@@ -228,6 +237,8 @@ class SQLiteEventWriter(MetaWriter):
         :param channel: channel ID. Note that `channel=None` does not reset all
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
         :type channel: Optional[int]
+        :raises ValueError: if settings have not been initialized or the output
+            file path is not set in settings
         """
         conn: Optional[sqlite3.Connection] = None
         cursor: Optional[sqlite3.Cursor] = None
@@ -275,12 +286,12 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Do whatever needs doing to gracefully shut down on app exit
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         if self.cursor:
             try:
@@ -300,7 +311,7 @@ class SQLiteEventWriter(MetaWriter):
             self.conn = None
 
     @log(logger=logger)
-    def get_output_file_name(self):
+    def get_output_file_name(self) -> Path:
         """
         get the name of the output file
         """
@@ -316,6 +327,9 @@ class SQLiteEventWriter(MetaWriter):
 
         :param channel: int indicating which output to flush
         :type channel: int
+        :raises ValueError: if settings are not initialized or required settings are missing
+        :raises RuntimeError: if the channel's database ID cannot be determined after insertion
+        :raises sqlite3.Error: if a database operation fails
         """
         conn: Optional[sqlite3.Connection] = None
         cursor: Optional[sqlite3.Cursor] = None
@@ -409,25 +423,25 @@ class SQLiteEventWriter(MetaWriter):
     @override
     def _write_data(
         self,
-        data,
-        channel,
-        index,
-        scale=None,
-        offset=None,
-        start_sample=0,
-        padding_before=0,
-        padding_after=None,
-        baseline_mean=None,
-        baseline_std=None,
-        raw_data=False,
-        abort=False,
-        last_call=False,
-    ):
+        data: npt.NDArray[np.number],
+        channel: int,
+        index: int,
+        scale: Optional[float] = None,
+        offset: Optional[float] = None,
+        start_sample: Optional[int] = 0,
+        padding_before: Optional[int] = 0,
+        padding_after: Optional[int] = None,
+        baseline_mean: Optional[float] = None,
+        baseline_std: Optional[float] = None,
+        raw_data: bool = False,
+        abort: Optional[bool] = False,
+        last_call: Optional[bool] = False,
+    ) -> bool:
         """
         Append data and metadata to the active file handle.
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.number]
         :param channel: Int indicating the channel from which it was acquired.
         :type channel: int
         :param index: event index
@@ -448,11 +462,16 @@ class SQLiteEventWriter(MetaWriter):
         :type baseline_std: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
+        :param abort: If True, roll back and close the active connection without writing, default False.
+        :type abort: Optional[bool]
         :param last_call: If True, close the shared connection after this write, default False.
-        :type last_call: bool
+        :type last_call: Optional[bool]
 
         :return: success of the write operation.
         :rtype: bool
+        :raises ValueError: if a database connection cannot be opened, or if start_sample, padding_before, or padding_after is None
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs during the write
         """
         if abort is True:
             if self.conn:
@@ -465,6 +484,11 @@ class SQLiteEventWriter(MetaWriter):
                 self.conn.close()
                 self.conn = None
             return False
+
+        if start_sample is None or padding_before is None or padding_after is None:
+            raise ValueError(
+                f"start_sample, padding_before, and padding_after must all be provided to write an event (got start_sample={start_sample}, padding_before={padding_before}, padding_after={padding_after})"
+            )
 
         try:
             success = False
@@ -528,7 +552,7 @@ class SQLiteEventWriter(MetaWriter):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
+        :raises KeyError: If the settings dict does not contain the correct information.
         """
         if "MetaEventFinder" not in settings.keys():
             raise KeyError(
@@ -539,34 +563,34 @@ class SQLiteEventWriter(MetaWriter):
     @log(logger=logger)
     def _rescale_data_to_adc(
         self,
-        data,
-        scale=None,
-        offset=None,
-        raw_data=False,
-        dtype="u2",
-        adc_min=np.iinfo(np.int16).min,
-        adc_max=np.iinfo(np.int16).max,
-    ):
+        data: npt.NDArray[np.number],
+        scale: Optional[float] = None,
+        offset: Optional[float] = None,
+        raw_data: bool = False,
+        dtype: npt.DTypeLike = np.uint16,
+        adc_min: int = np.iinfo(np.int16).min,
+        adc_max: int = np.iinfo(np.int16).max,
+    ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
         """
         Not used by this writer
 
         :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.number]
         :param scale: Scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: float, optional
+        :type scale: Optional[float]
         :param offset: Offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: float, optional
+        :type offset: Optional[float]
         :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
         :type raw_data: bool
-        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: type, optional
+        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit unsigned int.
+        :type dtype: npt.DTypeLike
         :param adc_min: Integer encoding the minimum adc code for the adc conversion.
         :type adc_min: int
         :param adc_max: Integer encoding the maximum adc code for the adc conversion.
         :type adc_max: int
 
         :return: Rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[numpy.ndarray, Optional[float], Optional[float]]
+        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
         """
         return data, scale, offset
 

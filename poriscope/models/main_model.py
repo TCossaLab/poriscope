@@ -32,6 +32,7 @@ import logging
 import os
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
@@ -50,6 +51,15 @@ from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
 
+#: Maps the class names written into session JSON back to real types.
+_JSON_CLASS_NAMES: Mapping[str, Any] = {
+    "str": str,
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "null": None,
+}
+
 
 class MainModel(QObject):
     """
@@ -62,11 +72,12 @@ class MainModel(QObject):
     fileLoaded = Signal(object)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, app_config):
+    def __init__(self, app_config: Dict[str, Any]) -> None:
         """
         Initializes the MainModel with the given app configuration.
-        Args:
-            app_config (dict): The application's configuration settings.
+
+        :param app_config: The application's configuration settings.
+        :type app_config: Dict[str, Any]
         """
         super().__init__()
         self.app_config = app_config
@@ -80,7 +91,7 @@ class MainModel(QObject):
         )
 
     @log(logger=logger)
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """
         Truncate the app's log file (flushing any buffered log data first).
         """
@@ -104,7 +115,12 @@ class MainModel(QObject):
                 break
 
     @log(logger=logger)
-    def load_plugin(self, plugin_key, folder, allowed_base_classes):
+    def load_plugin(
+        self,
+        plugin_key: str,
+        folder: Union[str, Path],
+        allowed_base_classes: Tuple[type, ...],
+    ) -> Optional[type]:
         """
         Dynamically loads a plugin, ensuring it is a subclass of a supported abstract class.
 
@@ -163,7 +179,9 @@ class MainModel(QObject):
             return None
 
     @log(logger=logger)
-    def populate_available_plugins(self):
+    def populate_available_plugins(
+        self,
+    ) -> Tuple[Dict[str, Dict[str, type]], Dict[str, List[str]]]:
         """
         Get a dict of available plugin names, keyed by base class.
         Each entry in the dict is a list of plugin class names.
@@ -183,8 +201,12 @@ class MainModel(QObject):
             "MetaModel": MetaModel,
         }
 
-        available_plugin_classes = {k: {} for k in allowed_base_classes}
-        available_plugins_list = {k: [] for k in allowed_base_classes}
+        available_plugin_classes: Dict[str, Dict[str, type]] = {
+            k: {} for k in allowed_base_classes
+        }
+        available_plugins_list: Dict[str, List[str]] = {
+            k: [] for k in allowed_base_classes
+        }
 
         plugin_dirs_to_search = [
             self.plugin_path,
@@ -232,35 +254,32 @@ class MainModel(QObject):
                             metaclass = key
                             break
 
-                    if metaclass:
+                    # plugin_class is necessarily non-None whenever metaclass was
+                    # set above; the explicit check is what lets mypy see that.
+                    if metaclass and plugin_class is not None:
                         available_plugin_classes[metaclass][subclass] = plugin_class
                         available_plugins_list[metaclass].append(subclass)
 
         return available_plugin_classes, available_plugins_list
 
     @log(logger=logger)
-    def get_available_plugins(self, metaclass=None):
-        if metaclass:
-            return self.available_plugins_list[metaclass]
-        else:
-            return self.available_plugins_list
+    def get_available_plugins(self) -> Dict[str, List[str]]:
+        return self.available_plugins_list
 
     @log(logger=logger)
-    def get_plugin_classes(self, metaclass=None):
-        if metaclass:
-            return self.available_plugin_classes[metaclass]
-        else:
-            return self.available_plugin_classes
+    def get_plugin_classes(self, metaclass: str) -> Dict[str, type]:
+        return self.available_plugin_classes[metaclass]
 
     @log(logger=logger)
-    def get_plugin(self, metaclass, subclass):
+    def get_plugin(self, metaclass: str, subclass: str) -> Optional[type]:
         try:
             return self.available_plugin_classes[metaclass][subclass]
         except KeyError:
             self.logger.error(f"unable to load class {metaclass} {subclass}")
+            return None
 
     @log(logger=logger)
-    def get_plugin_data(self, plugin_key):
+    def get_plugin_data(self, plugin_key: str) -> Dict[str, Any]:
         """
         Fetches plugin data from the local application data JSON file.
 
@@ -286,7 +305,11 @@ class MainModel(QObject):
             return {}
 
     @log(logger=logger)
-    def save_session(self, plugin_history, save_file=None):
+    def save_session(
+        self,
+        plugin_history: Dict[str, Any],
+        save_file: Optional[Union[str, Path]] = None,
+    ) -> None:
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
         if save_file is None:
@@ -295,7 +318,11 @@ class MainModel(QObject):
             json.dump(json_dump, jf, indent=4)
 
     @log(logger=logger)
-    def save_tab_actions(self, plugin_history, save_file=None):
+    def save_tab_actions(
+        self,
+        plugin_history: Dict[str, Any],
+        save_file: Optional[Union[str, Path]] = None,
+    ) -> None:
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
         if save_file is None:
@@ -304,7 +331,9 @@ class MainModel(QObject):
             json.dump(json_dump, jf, indent=4)
 
     @log(logger=logger)
-    def load_session(self, file_name=None):
+    def load_session(
+        self, file_name: Optional[Union[str, Path]] = None
+    ) -> Optional[Dict[str, Any]]:
         if not file_name:
             file_name = Path(self.session_path, "plugin_history.json")
         try:
@@ -320,7 +349,7 @@ class MainModel(QObject):
             return plugin_history
 
     @log(logger=logger)
-    def replace_classes_with_class_names(self, d):
+    def replace_classes_with_class_names(self, d: Any) -> None:
         if isinstance(d, dict):
             for key, value in d.items():
                 if isinstance(value, dict):
@@ -337,9 +366,9 @@ class MainModel(QObject):
     @log(logger=logger)
     def replace_class_names_with_classes(
         self,
-        d,
-        class_dict={"str": str, "int": int, "float": float, "bool": bool, "null": None},
-    ):
+        d: Any,
+        class_dict: Mapping[str, Any] = _JSON_CLASS_NAMES,
+    ) -> None:
         if isinstance(d, dict):
             for key, value in d.items():
                 if isinstance(value, dict):
@@ -358,11 +387,11 @@ class MainModel(QObject):
                         d[i] = class_dict[d[i]]
 
     @log(logger=logger)
-    def get_app_config(self, key):
+    def get_app_config(self, key: str) -> Any:
         return self.app_config.get(key)
 
     @log(logger=logger)
-    def update_app_config(self, key, val):
+    def update_app_config(self, key: str, val: Any) -> None:
         self.app_config[key] = val
         config_file_path = Path(self.config_path, "config.json")
         try:
@@ -374,20 +403,20 @@ class MainModel(QObject):
             )
 
     @log(logger=logger)
-    def get_data_server_location(self):
+    def get_data_server_location(self) -> str:
         return self.get_app_config("Parent Folder")
 
     @log(logger=logger)
-    def get_user_plugin_location(self):
+    def get_user_plugin_location(self) -> str:
         return self.get_app_config("User Plugin Folder")
 
     @log(logger=logger)
-    def get_logging_level(self):
+    def get_logging_level(self) -> int:
         return self.get_app_config("Log Level")
 
     @log(logger=logger)
     @Slot(int)
-    def update_logging_level(self, level):
+    def update_logging_level(self, level: int) -> None:
         logger = logging.getLogger()
         logger.setLevel(level)
         for handler in logger.handlers:

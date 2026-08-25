@@ -27,8 +27,10 @@ import logging
 import os
 import re
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
@@ -48,7 +50,7 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         called at the start of base class initialization
         """
@@ -56,23 +58,23 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
@@ -84,7 +86,6 @@ class TCossaLabABFReader(MetaReader):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
         """
         pass
 
@@ -95,14 +96,13 @@ class TCossaLabABFReader(MetaReader):
         Check that the file(s) being opened are of the correct type, and raise IOError if not
 
         :param filename: the path to one of the files to be opened
-        :type filename: os.Pathlike
-        :raises IOError: If the wrong type is file is fed to the plugin
+        :type filename: os.PathLike
         """
         pass
 
     @log(logger=logger)
     @override
-    def _set_file_extension(self):
+    def _set_file_extension(self) -> str:
         """
         Set the expected file extension for files read using this reader subclass
         """
@@ -110,18 +110,18 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _map_data(self, datafiles, configs):
+    def _map_data(self, datafiles: List[str], configs: List[dict]) -> List[np.ndarray]:
         """
         Map data files into a set of memmaps or similarly define a way to access the raw data on disk.
         Returns a list of memmaps corresponding to each datafile/configfile pair.
 
         :param datafiles: List of data file paths.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
         :return: List of memmaps containing raw data.
-        :rtype: List[numpy.ndarray]
+        :rtype: List[np.ndarray]
 
         :raises FileNotFoundError: If at least one of the input raw data files is missing or renamed.
         :raises OSError: If the file indicated is inaccessible.
@@ -150,17 +150,19 @@ class TCossaLabABFReader(MetaReader):
     # private API, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
     @override
-    def _get_file_time_stamps(self, file_names, configs):
+    def _get_file_time_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
         :return: List of timestamps parsed from configuration.
-        :rtype: List[datetime]
+        :rtype: List[int]
 
         :raises ValueError: If the filename does not match the expected pattern
         """
@@ -180,12 +182,14 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_channel_stamps(self, file_names, configs):
+    def _get_file_channel_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
@@ -210,12 +214,12 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_file_pattern(self, file_name):
+    def _get_file_pattern(self, file_name: str) -> str:
         """
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
         :param file_name: File path.
-        :type file_name: os.PathLike
+        :type file_name: str
 
         :return: Base name for matching other files.
         :rtype: str
@@ -233,14 +237,16 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _convert_data(self, data, config, raw_data=False):
+    def _convert_data(
+        self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
+    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
         """
         Scale or otherwise transform and return requested data.
         Applies the per-channel telegraph-derived scale recovered from the ABF2 header to convert raw ADC codes to pA.
         if raw_data is true, return also scale and offset
 
         :param data: Data to convert.
-        :type data: numpy.ndarray
+        :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
         :param raw_data: Decide whether to rescale data or return raw adc codes
@@ -266,13 +272,13 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _get_configs(self, datafiles):
+    def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
         Default behavior assumes there are no config files needed.
 
         :param datafiles: List of data file paths.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :return: List of configuration dictionaries.
         :rtype: List[dict]
 
@@ -319,7 +325,7 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _set_raw_dtype(self, configs):
+    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
         """
         Set the data type for the raw data in files of this type
 
@@ -334,7 +340,11 @@ class TCossaLabABFReader(MetaReader):
     # public API
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -362,9 +372,11 @@ class TCossaLabABFReader(MetaReader):
         These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Input File"]["Options"] = ["ABF2 Files (*.abf)"]

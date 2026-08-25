@@ -26,22 +26,34 @@
 import functools
 import inspect
 import logging
+from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast, overload
 
 from PySide6.QtCore import Signal
 
+# Bound to the decorated callable so that these decorators hand back the *same*
+# type they were given. Declaring them ``-> Callable`` instead erases the
+# signature of every method they wrap, leaving all call sites into it unchecked.
+F = TypeVar("F", bound=Callable[..., Any])
 
-def log(_func=None, *, logger, debug_only=False):
+
+@overload
+def log(_func: F, *, logger: logging.Logger, debug_only: bool = False) -> F: ...
+
+
+@overload
+def log(
+    _func: None = None, *, logger: logging.Logger, debug_only: bool = False
+) -> Callable[[F], F]: ...
+
+
+def log(
+    _func: Optional[F] = None,
+    *,
+    logger: logging.Logger,
+    debug_only: bool = False,
+) -> Union[F, Callable[[F], F]]:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
-
-    :param _func: The function to be decorated. If None, the decorator is returned.
-    :type _func: callable, optional
-    :param logger: The logger instance used for logging.
-    :type logger: logging.Logger
-    :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
-    :type debug_only: bool
-    :return: The decorated function or the decorator itself.
-    :rtype: callable
 
     The decorator logs:
     - Entry into the function with the function name.
@@ -80,10 +92,18 @@ def log(_func=None, *, logger, debug_only=False):
       def my_function(self, ...):
           self.logger.info('This message is informational')
 
+    :param _func: The function to be decorated. If None, the decorator is returned.
+    :type _func: Optional[F]
+    :param logger: The logger instance used for logging.
+    :type logger: logging.Logger
+    :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
+    :type debug_only: bool
+    :return: The decorated function or the decorator itself.
+    :rtype: Union[F, Callable[[F], F]]
     """
 
-    def decorator_log(func):
-        def log_call(args, kwargs):
+    def decorator_log(func: F) -> F:
+        def log_call(args: tuple, kwargs: dict) -> str:
             name = getattr(func, "__name__", "?")
             try:
                 self = args[0]
@@ -104,7 +124,7 @@ def log(_func=None, *, logger, debug_only=False):
                     setattr(logger.root, "ignore_exceptions", True)
             return name
 
-        def log_return(name, result):
+        def log_return(name: str, result: Any) -> None:
             try:
                 if logger.root.level == logging.DEBUG:
                     logger.debug(f"{name} returned ({result})")
@@ -125,22 +145,24 @@ def log(_func=None, *, logger, debug_only=False):
             # `yield from`, which transparently forwards send()/throw()/close()
             # to it and lets exceptions raised during iteration propagate here.
             @functools.wraps(func)
-            def generator_wrapper(*args, **kwargs):
+            def generator_wrapper(
+                *args: Any, **kwargs: Any
+            ) -> Generator[Any, Any, Any]:
                 name = log_call(args, kwargs)
                 result = yield from func(*args, **kwargs)
                 log_return(name, result)
                 return result
 
-            return generator_wrapper
+            return cast(F, generator_wrapper)
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             name = log_call(args, kwargs)
             result = func(*args, **kwargs)
             log_return(name, result)
             return result
 
-        return wrapper
+        return cast(F, wrapper)
 
     if _func is None:
         return decorator_log
@@ -148,12 +170,12 @@ def log(_func=None, *, logger, debug_only=False):
         return decorator_log(_func)
 
 
-def register_action():
-    def decorator(func):
+def register_action() -> Callable[[F], F]:
+    def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(
-            self, *args, **kwargs
-        ):  # self is the first argument for instance methods
+            self: Any, *args: Any, **kwargs: Any
+        ) -> Any:  # self is the first argument for instance methods
             result = func(self, *args, **kwargs)
 
             signal_attr = getattr(self, "update_tab_action_history", None)
@@ -165,6 +187,6 @@ def register_action():
                     self.logger.info(f"Unable to log tab action: {str(e)}")
             return result
 
-        return wrapper
+        return cast(F, wrapper)
 
     return decorator

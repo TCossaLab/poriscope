@@ -25,6 +25,7 @@
 
 
 import logging
+from typing import Any, Dict, List, Optional, Sequence
 
 from PySide6.QtCore import (
     QCoreApplication,
@@ -70,16 +71,16 @@ class MetadataControls(QWidget):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.logger.info("Initializing MetadataControls")
         self.setupUi()
         self.connect_signals()
         self.logger.info("MetadataControls initialized")
         self.validate_inputs()
-        self.active_popups = {}
+        self.active_popups: Dict[QComboBox, Any] = {}
 
-    def setupUi(self):
+    def setupUi(self) -> None:
         self.logger.info("Setting up UI")
         self.setObjectName("Form")
         self.resize(663, 295)
@@ -209,7 +210,7 @@ class MetadataControls(QWidget):
         group_layout.addLayout(bottom_row_layout, 1, 0)
 
         # --- Force same width after layout settles using QTimer ---
-        def match_widths():
+        def match_widths() -> None:
             # Ensure layout has calculated widths
             self.plot_type_comboBox.ensurePolished()
             self.plot_type_comboBox.updateGeometry()
@@ -603,7 +604,7 @@ class MetadataControls(QWidget):
         self.retranslateUi()
         self.logger.info("UI setup complete")
 
-    def _on_sizes_checkbox_toggled(self, checked):
+    def _on_sizes_checkbox_toggled(self, checked: bool) -> None:
         if checked:
             self.bins_lineEdit.setValidator(self.float_validator)
             self.bins_lineEdit.setPlaceholderText("e.g. 1.2, 3.5, 4.0")
@@ -612,12 +613,14 @@ class MetadataControls(QWidget):
             self.bins_lineEdit.setPlaceholderText("e.g. 10 or 5,10,15")
 
     # QWidgets
-    def create_comboBox(self, parent):
+    def create_comboBox(self, parent: QWidget) -> QComboBox:
         comboBox = QComboBox(parent)
         comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return comboBox
 
-    def createButton(self, parent, text, bold=False):
+    def createButton(
+        self, parent: QWidget, text: str, bold: bool = False
+    ) -> QPushButton:
         button = QPushButton(parent)
         font = QFont()
         font.setBold(bold)
@@ -629,7 +632,7 @@ class MetadataControls(QWidget):
         button.setStyleSheet("")  # Resetting to default style
         return button
 
-    def createLabel(self, parent, pointSize, text):
+    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
         label = QLabel(parent)
         font = QFont()
         font.setPointSize(pointSize - 6)
@@ -638,7 +641,9 @@ class MetadataControls(QWidget):
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return label
 
-    def create_info_button(self, parent, comboBox, info_text, metaclass):
+    def create_info_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates an info button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("pencil-square.svg"))
@@ -666,7 +671,9 @@ class MetadataControls(QWidget):
         )
         return button
 
-    def create_add_button(self, parent, comboBox, add_text, metaclass):
+    def create_add_button(
+        self, parent: QWidget, comboBox: QComboBox, add_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates an add button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("plus-square.svg"))
@@ -682,7 +689,9 @@ class MetadataControls(QWidget):
         button.setEnabled(True)
         return button
 
-    def create_delete_button(self, parent, comboBox, info_text, metaclass):
+    def create_delete_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates a delete button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("trash.svg"))
@@ -710,7 +719,9 @@ class MetadataControls(QWidget):
         )
         return button
 
-    def create_filter_info_button(self, parent, comboBox, tooltip):
+    def create_filter_info_button(
+        self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
+    ) -> QToolButton:
         button = QToolButton(parent)
         button.setIcon(get_icon("pencil-square.svg"))
         button.setIconSize(QSize(16, 16))
@@ -721,7 +732,9 @@ class MetadataControls(QWidget):
         button.setToolTip(tooltip)
         return button
 
-    def create_add_filter_button(self, parent, comboBox, tooltip):
+    def create_add_filter_button(
+        self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
+    ) -> QToolButton:
         button = QToolButton(parent)
         button.setIcon(get_icon("plus-square.svg"))
         button.setIconSize(QSize(16, 16))
@@ -732,7 +745,9 @@ class MetadataControls(QWidget):
         button.setToolTip(tooltip)
         return button
 
-    def create_filter_delete_button(self, parent, comboBox, tooltip):
+    def create_filter_delete_button(
+        self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
+    ) -> QToolButton:
         button = QToolButton(parent)
         button.setIcon(get_icon("trash.svg"))
         button.setIconSize(QSize(16, 16))
@@ -743,21 +758,21 @@ class MetadataControls(QWidget):
         button.setToolTip(tooltip)
         return button
 
-    def show_filter_info_dialog_single(self, name: str):
+    def show_filter_info_dialog_single(self, name: str) -> None:
         loader = self.db_loader_comboBox.currentText()
         self.edit_filter_requested.emit(name, loader)
 
-    def delete_filter_by_name(self, name: str):
+    def delete_filter_by_name(self, name: str) -> None:
         self.delete_filter_requested.emit(name)
 
-    def retranslateUi(self):
+    def retranslateUi(self) -> None:
         pass
         # self.setWindowTitle(QCoreApplication.translate("Form", "Form", None))
         # self.db_loader_comboBox.tCurrentText("")
 
     # QWidget status
     @log(logger=logger)
-    def _plot_type_changed(self, index):
+    def _plot_type_changed(self, index: int) -> None:
         current_text = self.plot_type_comboBox.currentText()
         if current_text == "Heatmap" or current_text == "Scatterplot":
             self.x_axis_comboBox.setEnabled(True)
@@ -813,9 +828,12 @@ class MetadataControls(QWidget):
         self.actionTriggered.emit("MetadataView", "plot_type_changed", (parameters,))
 
     @log(logger=logger)
-    def update_axes(self, axes):
+    def update_axes(self, axes: List[str]) -> None:
         """
         Updates the axes displayed in the comboBoxes for the available plotting axes.
+
+        :param axes: Column names available for selection on the X/Y/Z axes.
+        :type axes: List[str]
         """
         current_x = self.x_axis_comboBox.currentText()
         current_y = self.y_axis_comboBox.currentText()
@@ -853,12 +871,12 @@ class MetadataControls(QWidget):
         elif axes:
             self.z_axis_comboBox.setCurrentIndex(0)
 
-    def update_units(self, comboBox, units_label):
+    def update_units(self, comboBox: QComboBox, units_label: QLabel) -> None:
         """Update units based on the selected column in the comboBox and emit an update signal."""
         parameters = self.collect_parameters()
         self.actionTriggered.emit("MetadataView", "columns_updated", (parameters,))
 
-    def update_column_units_label(self, units, axis):
+    def update_column_units_label(self, units: Optional[str], axis: str) -> None:
         if units is None or units == "":
             units = " "
         if axis == "x_axis":
@@ -870,7 +888,7 @@ class MetadataControls(QWidget):
         else:
             pass
 
-    def toggle_info_button(self, button, comboBox):
+    def toggle_info_button(self, button: QToolButton, comboBox: QComboBox) -> None:
         """Enables or disables the info button based on the comboBox selection and item count."""
         button.setEnabled(
             comboBox.count() > 0
@@ -878,33 +896,33 @@ class MetadataControls(QWidget):
             and not self.is_placeholder_item(comboBox)
         )
 
-    def is_placeholder_item(self, comboBox):
+    def is_placeholder_item(self, comboBox: QComboBox) -> bool:
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
         return comboBox.currentText() in ["No Event Database"]
 
-    def show_plugin_edit_manager(self, comboBox, metaclass):
+    def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """Displays the plugin manager with details for the selected item from the combobox."""
         key = comboBox.currentText()
         self.edit_processed.emit(metaclass, key)
 
-    def show_plugin_add_manager(self, comboBox, metaclass):
+    def show_plugin_add_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """Displays the plugin manager with details for the selected item from the combobox."""
 
         self.add_processed.emit(metaclass)
 
-    def delete_plugin(self, comboBox, metaclass):
+    def delete_plugin(self, comboBox: QComboBox, metaclass: str) -> None:
         """Deletes the plugin corresponding tot he current ComboBox selection"""
 
         key = comboBox.currentText()
         self.delete_processed.emit(metaclass, key)
 
-    def clear_popup_reference(self, comboBox):
+    def clear_popup_reference(self, comboBox: QComboBox) -> None:
         """Clears the reference to the popup when it is closed."""
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
     # Signals Connection
-    def connect_signals(self):
+    def connect_signals(self) -> None:
         """Connects signals to corresponding methods."""
         self.load_button.clicked.connect(lambda: self.on_button_clicked("load"))
         self.selection_tree_button.clicked.connect(
@@ -964,11 +982,11 @@ class MetadataControls(QWidget):
 
     # Data Validation
 
-    def collect_parameters(self):
+    def collect_parameters(self) -> Dict[str, Any]:
         self.logger.info("Collecting parameters")
 
         # Initialize with default values to handle possible None values
-        parameters = {}
+        parameters: Dict[str, Any] = {}
         try:
             # event_id: use value from field if non-empty, else default to 0
             event_id_text = self.event_id_lineEdit.text().strip()
@@ -1024,10 +1042,10 @@ class MetadataControls(QWidget):
         self.logger.debug(f"Collected parameters: {parameters}")
         return parameters
 
-    def get_selected_filter_names(self):
+    def get_selected_filter_names(self) -> List[str]:
         return self.filter_comboBox.getSelectedItems()
 
-    def on_loader_changed(self):
+    def on_loader_changed(self) -> None:
         """Handles parameter changes and emits an action signal."""
         parameters = self.collect_parameters()
         self.logger.debug(
@@ -1035,7 +1053,7 @@ class MetadataControls(QWidget):
         )
         self.actionTriggered.emit("MetadataView", "loader_changed", (parameters,))
 
-    def validate_inputs(self):
+    def validate_inputs(self) -> None:
         """Validates input fields and enables/disables buttons accordingly."""
         # Gather inputs
         db_loader = self.db_loader_comboBox.currentText()
@@ -1142,7 +1160,7 @@ class MetadataControls(QWidget):
         self.load_filter_button.setEnabled(db_loader_loaded)
 
     # Actions
-    def on_button_clicked(self, button_type):
+    def on_button_clicked(self, button_type: str) -> None:
         """Handles button clicks and emits appropriate signals."""
         parameters = self.collect_parameters()
         self.logger.debug(
@@ -1194,7 +1212,9 @@ class MetadataControls(QWidget):
             "load_filter": self.load_filter_button,
         }
 
-        button_mapping.get(button_type, lambda: None).setChecked(False)
+        button = button_mapping.get(button_type)
+        if button is not None:
+            button.setChecked(False)
 
     def update_loaders(self, loaders: list[str]) -> None:
         self.logger.info(f"Updating loaders: {loaders}")
@@ -1224,7 +1244,7 @@ class MetadataControls(QWidget):
         self.event_id_lineEdit.blockSignals(False)
         self.validate_inputs()
 
-    def update_filters(self, filters):
+    def update_filters(self, filters: Sequence[Any]) -> None:
         self.logger.info(f"Updating channels to {filters}")
 
         # Store the current selection(s)

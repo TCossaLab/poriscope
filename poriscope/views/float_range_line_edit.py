@@ -27,6 +27,7 @@
 import logging
 import re
 import sys
+from typing import Any, List, Optional, Tuple
 
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
@@ -43,17 +44,19 @@ logging.basicConfig(
 class FloatRangeValidator(BaseValidator):
     logger = logging.getLogger(__name__)
 
-    def has_forbidden_characters(self, input):
+    def has_forbidden_characters(self, input: str) -> Optional[re.Match]:
         """Check for forbidden characters specific to float ranges (commas are forbidden)."""
         return re.search(r"[^0-9.\-]", input)  # Allow only digits, dots, and hyphens
 
-    def _validate_intermediate(self, input, pos):
+    def _validate_intermediate(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Intermediate validation logic for float ranges, allowing incomplete inputs."""
         if input.endswith("-") or input.endswith(",") or input.endswith("."):
             return QValidator.Intermediate, input, pos
         return QValidator.Acceptable, input, pos
 
-    def _validate_final(self, input):
+    def _validate_final(self, input: str) -> Tuple[QValidator.State, str, int]:
         """Final validation logic for float ranges, enforcing correct format."""
         if input.endswith(",") or input.endswith("-") or input.endswith("."):
             return QValidator.Invalid, input, len(input)
@@ -88,14 +91,14 @@ class FloatRangeValidator(BaseValidator):
 class FloatRangeLineEdit(BaseLineEdit):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._used_floats = False
 
-    def create_validator(self):
+    def create_validator(self) -> FloatRangeValidator:
         return FloatRangeValidator(self)
 
-    def get_values(self):
+    def get_values(self) -> List[float]:
         """Parse and return a list of floats covering the defined ranges."""
         text = self.text()
         result = set()
@@ -127,18 +130,10 @@ class FloatRangeLineEdit(BaseLineEdit):
 
         return sorted(result)
 
-    def get_values_with_type_info(self):
-        """
-        Returns a tuple of (parsed values, used_floats flag).
-        Example: ([1.0, 1.1, 1.2], True)
-        """
-        values = self.get_values()
-        return values, self._used_floats
-
     def used_floats(self) -> bool:
         return self._used_floats
 
-    def get_start(self):
+    def get_start(self) -> Optional[float]:
         """Extracts and returns the starting float of the first valid range or number."""
         text = self.text().strip()
         if not text:
@@ -164,7 +159,7 @@ class FloatRangeLineEdit(BaseLineEdit):
 
         return None
 
-    def get_duration(self):
+    def get_duration(self) -> Optional[float]:
         """Calculates and returns the duration of the first valid range."""
         text = self.text().strip()
         if not text:
@@ -178,7 +173,7 @@ class FloatRangeLineEdit(BaseLineEdit):
                 pass
         return None
 
-    def set_range(self, start: float, duration: float):
+    def set_range(self, start: float, duration: float) -> None:
         """
         Sets the displayed text to a formatted range like '1.0-4.0' or '1-4' depending on whether
         the values are whole numbers.

@@ -27,7 +27,7 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -53,17 +53,19 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize the MetaModel
 
-        :param kwargs: Additional parameters to set as attributes on the instance
-        :type kwargs: dict
+        :param \\**kwargs: Additional parameters to set as attributes on the instance
+        :type \\**kwargs: Any
         """
 
         self.available_plugins: Dict[str, List[str]] = {}
         self.reporter_metaclasses: Dict[str, str] = {}
-        self.generators: Dict[str, Dict[int, Generator]] = {}
+        self.generators: Dict[
+            str, Dict[int, Generator[float, Optional[bool], None]]
+        ] = {}
         self.threads: Dict[str, Dict[int, WorkerThread]] = (
             {}
         )  # Holds worker objects per key/channel
@@ -103,7 +105,13 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     # public API, must be implemented by sublcasses
 
     @log(logger=logger)
-    def set_generator(self, generator, channel, key, metaclass):
+    def set_generator(
+        self,
+        generator: Generator[float, Optional[bool], None],
+        channel: int,
+        key: str,
+        metaclass: str,
+    ) -> None:
         """Add generator and set it to be run by a QThread."""
         if key not in self.thread_running.keys():
             self.thread_running[key] = {}
@@ -115,7 +123,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             self.generators[key][channel] = generator
 
     @log(logger=logger)
-    def run_generators(self, key):
+    def run_generators(self, key: str) -> None:
         metaclass = self.reporter_metaclasses[key]
         for channel, generator in self.generators[key].items():
             thread_running = self.thread_running[key].get(channel)
@@ -156,7 +164,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(int, str)
-    def reset_lock(self, channel, key):
+    def reset_lock(self, channel: int, key: str) -> None:
         self.thread_running[key][channel] = False
         try:
             self.generators[key].pop(channel)
@@ -164,14 +172,16 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             pass
 
     @log(logger=logger)
-    def set_force_serial_channel_operations(self, serial_ops, key, channel):
+    def set_force_serial_channel_operations(
+        self, serial_ops: bool, key: str, channel: int
+    ) -> None:
         if key not in self.serial_ops.keys():
             self.serial_ops[key] = {}
         self.serial_ops[key][channel] = serial_ops
 
     @log(logger=logger)
     @Slot(int, str)
-    def generate_report(self, channel, key):
+    def generate_report(self, channel: int, key: str) -> None:
         metaclass = self.reporter_metaclasses[key]
         report_channel_status_args = (channel,)
         ret_args = (key,)
@@ -185,24 +195,24 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         )
 
     @log(logger=logger)
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up to date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
+        :type available_plugins: Dict[str, List[str]]
         """
         self.logger.info(f"Model updated: {available_plugins}")
         self.available_plugins = available_plugins
 
     @log(logger=logger)
     @Slot(list, list)
-    def cache_plot_data(self, data, labels):
+    def cache_plot_data(self, data: List[np.ndarray], labels: List[str]) -> None:
         self.cache_data = data
         self.cache_labels = labels
 
     @log(logger=logger)
-    def format_cache_data(self):
+    def format_cache_data(self) -> Optional[pd.DataFrame]:
         if self.cache_data and self.cache_labels:
             max_length = max([len(arr) for arr in self.cache_data])
             # Convert arrays to float type first to allow np.nan
@@ -218,9 +228,15 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             )
             df = pd.DataFrame(padded_data.T, columns=self.cache_labels)
             return df
+        return None
 
     @log(logger=logger)
-    def stop_workers(self, key=None, channel=None, exiting=False):
+    def stop_workers(
+        self,
+        key: Optional[str] = None,
+        channel: Optional[int] = None,
+        exiting: bool = False,
+    ) -> None:
         """Stop workers based on specified key and/or channel."""
         if key is None:
             # If no key is provided, stop workers for all keys
@@ -271,7 +287,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(float, str)
-    def emit_progress_update(self, progress, identifier):
+    def emit_progress_update(self, progress: float, identifier: str) -> None:
         """
         Emit the progress update signal
         """

@@ -40,12 +40,15 @@ from poriscope.utils.MetaReader import MetaReader
 @inherit_docstrings
 class MetaEventFinder(BaseDataPlugin):
     """
-    :ref:`MetaEventFinder` is the base class for finding events within your nanopore data and represents the first analysis and transformation step. :ref:`MetaEventFinder` depends on and is linked at instantiation to a :ref:`MetaReader` subclass instance that serves as its source of nanopore data, meaning that creating and using one of these plugins requires that you first instantiate a reader. :ref:`MetaEventFinder` can in turn be the child object of :ref:`MetaWriter` subclass isntance for downstream saving of the data found by a instance of a subclass of :ref:`MetaEventFinder`.
+    This class, :ref:`MetaEventFinder`, is the base class for finding events within your nanopore data and represents the first analysis and transformation step. :ref:`MetaEventFinder` depends on and is linked at instantiation to a :ref:`MetaReader` subclass instance that serves as its source of nanopore data, meaning that creating and using one of these plugins requires that you first instantiate a reader. :ref:`MetaEventFinder` can in turn be the child object of :ref:`MetaWriter` subclass isntance for downstream saving of the data found by a instance of a subclass of :ref:`MetaEventFinder`.
 
     What you get by inheriting from MetaEventFinder
     -----------------------------------------------
 
     :ref:`MetaEventFinder` provides a common and intuitive API through which to identify segments of a nanopore timeseries that represent events (whatever that means for you) and flag them for writing to disk, excluding the uninteresting parts. In practice, this means that the size of nanopore data can be reduced by up to 1000x by keeping only the segments that matter. This operation is a precursor to downstream analysis, which operates only on the data segments flagged by subclasses of this base class.
+
+    Attributes:
+        logger (logging.Logger): Logger instance for logging messages.
     """
 
     logger = logging.getLogger(__name__)
@@ -72,18 +75,20 @@ class MetaEventFinder(BaseDataPlugin):
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-
         **Purpose:** Clean up any open file handles or memory.
 
         This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``.
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         pass
 
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
-    def report_channel_status(self, channel: Optional[int] = None, init=False) -> str:
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
         """
         Return a string detailing any pertinent information about the status of analysis conducted on a given channel
 
@@ -126,12 +131,13 @@ class MetaEventFinder(BaseDataPlugin):
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
-        :return: True if only one channel can run at a time, False otherwise
-        :rtype: bool
-
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
         By default, eventfinder plugins defer to the thread safety of their child :ref:`MetaReader` instance. If any operation in your event finder is not thread-safe independent of the child reader object, this function should be overridden to simply return ``True``. Most event finders are thread-safe since reading from a file on disk is usually so, and therefore no override is necessary. Take care to verify that the :ref:`MetaReader`: subclass instance on which this object depends is also threadsafe by calling ``self.reader.force_serial_channel_operations()`` to check.
+
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
+        :return: True if only one channel can run at a time, False otherwise
+        :rtype: bool
         """
         serial = False
         if self.reader is not None:
@@ -150,9 +156,6 @@ class MetaEventFinder(BaseDataPlugin):
     @log(logger=logger)
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-
         **Purpose:** Reset the state of a specific channel for a new operation or run, or all of them if no channel is specified.
 
         :ref:`MetaEventFinder` already has an implementation of this function, but you may override it is you need to do further resetting beyond what is included in :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder.reset_channel` already.
@@ -160,6 +163,9 @@ class MetaEventFinder(BaseDataPlugin):
         .. warning::
 
             This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super().reset_channel(channel)`` **before** any additional code that you add and it is on you to ensure that your additional code does not conflict with the implementation in :ref:`MetaEventFinder`.
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         if channel is not None:
             self.event_starts[channel] = []
@@ -190,6 +196,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         Return the samplerate of the associated reader object.
 
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :return: the samplerate of the associated reader object
         :rtype: float
         """
@@ -205,6 +212,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         Get the base name of the experiment being analyzed
 
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :return: name of the experiment being analyzed
         :rtype: str
         """
@@ -228,10 +236,17 @@ class MetaEventFinder(BaseDataPlugin):
         Yields progress for each chunk processed.
 
         :param channel: The channel to process.
+        :type channel: int
         :param ranges: List of (start, end) tuples in seconds.
+        :type ranges: List[Tuple[float, float]]
         :param chunk_length: Length of each chunk in seconds.
+        :type chunk_length: float
         :param data_filter: Optional callable filter to apply to each chunk.
-        :return: Generator yielding fractional progress (0.0–1.0)
+        :type data_filter: Optional[Callable]
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
+        :raises RuntimeError: If the requested channel is invalid, or if a mismatched number of event starts and ends is detected.
+        :yield: fractional progress (0.0-1.0)
+        :ytype: float
         """
         if self.reader is None:
             raise AttributeError(
@@ -370,8 +385,20 @@ class MetaEventFinder(BaseDataPlugin):
         If silent flag is set, run through without yielding progress reports on the first call to next(). Once StopIteration is reached, internal
         lists of event starts and ends will be populated as entries in a dict keyed by channel index.
 
-        :return: Yield completion fraction on each iteration.
-        :rtype: Generator[float, Optional[bool], None]
+        :param channel: the channel to process
+        :type channel: int
+        :param start: start time in seconds
+        :type start: float
+        :param end: end time in seconds
+        :type end: float
+        :param chunk_length: length of each processing chunk in seconds
+        :type chunk_length: float
+        :param data_filter: Optional callable filter to apply to each chunk.
+        :type data_filter: Optional[Callable]
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
+        :raises RuntimeError: If start is negative or the requested channel is invalid.
+        :yield: completion fraction on each iteration
+        :ytype: float
         """
 
         if start < 0:
@@ -592,7 +619,7 @@ class MetaEventFinder(BaseDataPlugin):
         event_starts: List[int],
         event_ends: List[int],
         last_end: int,
-        last_duration: int,
+        last_duration: Optional[int],
         samplerate: float,
         last_call: bool = False,
         last_sample: int = 0,
@@ -605,16 +632,18 @@ class MetaEventFinder(BaseDataPlugin):
         :param event_ends: List of start indices of events in a chunk of data, referenced from the start of the file. May contain events which are later rejected.
         :type event_ends: List[int]
         :param last_end: index of the end of the last event detected in the previous chunk
-        :type last-end: int
+        :type last_end: int
+        :param last_duration: the duration, in samples, of the last event detected in the previous chunk, or None if there was none
+        :type last_duration: Optional[int]
         :param samplerate: Sampling rate for the reader in question
         :type samplerate: float
         :param last_call: is this the last time the function will be called?
         :type last_call: bool
         :param last_sample: what is the value of the last data index in the channel? Can be 0 if last_call is False.
         :type last_sample: int
-
+        :raises RuntimeError: If the event start and end lists cannot be matched up for this chunk.
         :return: a list of padding before values and padding after values that do not conflict with neightbouring events, whether good or bad. Also an int for the amount of padding to add to the trailing end of events already saved, or None oif this is not necessary, and the value of the last evnet end
-        :type: Tuple[List[int], List[int], int]
+        :rtype: Tuple[List[int], List[int], int, int]
         """
         padding_before = []
         padding_after = []
@@ -665,7 +694,9 @@ class MetaEventFinder(BaseDataPlugin):
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
         raw_data: bool = False,
-    ) -> Generator[npt.NDArray[np.float64], None, None]:
+    ) -> Generator[
+        Optional[Dict[str, Union[npt.NDArray[np.float64], float]]], None, None
+    ]:
         """
         Set up a generator that yields the data and metadata dict for each event found in the given channel, in order, via repeated calls to :meth:`get_single_event_data`.
 
@@ -677,12 +708,10 @@ class MetaEventFinder(BaseDataPlugin):
         :type rectify: bool
         :param raw_data: return raw adc codes on True, pA values on False
         :type raw_data: bool
-
         :raises KeyError: If the channel does not exist.
         :raises ValueError: If events have not been found, or event finding has not finished, for this channel.
-
-        :return: A Generator that yields, for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`.
-        :rtype: Generator[Dict[str, Union[npt.NDArray[np.float64], float]], None, None]
+        :yield: for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`, or None if the event index is out of bounds.
+        :ytype: Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]
         """
         if (
             self.event_starts.get(channel) is None
@@ -708,9 +737,13 @@ class MetaEventFinder(BaseDataPlugin):
                 )
 
     @log(logger=logger)
-    def get_channels(self):
+    def get_channels(self) -> List[int]:
         """
         get the number of available channels in the reader
+
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
+        :return: the channel identifiers available in the associated reader
+        :rtype: List[int]
         """
         if self.reader is None:
             raise AttributeError("Reader has not been initialized.")
@@ -722,8 +755,8 @@ class MetaEventFinder(BaseDataPlugin):
         channel: int,
         index: int,
         data_filter: Optional[Callable] = None,
-        rectify: Optional[bool] = False,
-        raw_data: Optional[bool] = False,
+        rectify: bool = False,
+        raw_data: bool = False,
     ) -> Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]:
         """
         Return a dictionary of data and metadata for the requested event
@@ -735,14 +768,12 @@ class MetaEventFinder(BaseDataPlugin):
         :param data_filter: a function that is called to preprocess the data before it is returned
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
-        :type rectify: Optional[bool]
+        :type rectify: bool
         :param raw_data: return raw adc codes on True, pA values on False
-        :type raw_data: Optional[bool]
-
-
+        :type raw_data: bool
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :raises KeyError: If the channel does not exist
         :raises ValueError: if no events have been found in the channel
-
         :return: A dictionary of data and metadata for the specified event, or None if index is out of bounds
         :rtype: Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]
         """
@@ -822,6 +853,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         return the raw data type of the associated reader
 
+        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :return: the raw data type of the associated reader
         :rtype: object
         """
@@ -849,7 +881,7 @@ class MetaEventFinder(BaseDataPlugin):
             return 0
 
     @log(logger=logger)
-    def get_eventfinding_status(self, channel: int) -> int:
+    def get_eventfinding_status(self, channel: int) -> bool:
         """
         Check whether the eventfinder has finished processing a given channel yet
 
@@ -885,6 +917,10 @@ class MetaEventFinder(BaseDataPlugin):
         first_chunk: bool = False,
     ) -> Tuple[List[int], List[int], bool]:
         """
+        This is the core of the event finder. You will be given a segment of data as well as a series of related arguments, and you must write a function that flags the start and end times of all events in that data chunk. Bear in mind that events might straddle more than one event chunk. The ``entrey_state`` argument encodes whether or not the previous data chunk ended inside an event, and the ``first_chunk`` argument encodes whether this is the first call to this function. You are also given the mean and standard deviation of the chunk as determined by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._get_baseline_stats` as an input.
+
+        Your function must return two lists and a boolean: integers representing the start times and end times of all events flagged in that chunk, and a bollean  flag inficating whether nor not the chunk ended partway through an  evnet. These lists can be different lengths, since as noted previously, your chunk could have events that straddle the start, end, or both, of the chunk.You are responsible only for flagging the start and end of events that are present in the given data chunk; the base class will handle stitching them all together.
+
         :param data: Chunk of timeseries data to analyze. Assume it is rectified so that a blockage will always represent a reduction in absolute value.
         :type data: npt.NDArray[np.float64]
         :param mean: Mean of the baseline on the given chunk. Must be positive.
@@ -899,20 +935,21 @@ class MetaEventFinder(BaseDataPlugin):
         :type first_chunk: bool
         :raises ValueError: If event_params are invalid.
         :return: Lists of event start and end indices, and boolean entry state.
-        :rtype: tuple[List[int], List[int],bool]
-
-
-        This is the core of the event finder. You will be given a segment of data as well as a series of related arguments, and you must write a function that flags the start and end times of all events in that data chunk. Bear in mind that events might straddle more than one event chunk. The ``entrey_state`` argument encodes whether or not the previous data chunk ended inside an event, and the ``first_chunk`` argument encodes whether this is the first call to this function. You are also given the mean and standard deviation of the chunk as determined by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._get_baseline_stats` as an input.
-
-        Your function must return two lists and a boolean: integers representing the start times and end times of all events flagged in that chunk, and a bollean  flag inficating whether nor not the chunk ended partway through an  evnet. These lists can be different lengths, since as noted previously, your chunk could have events that straddle the start, end, or both, of the chunk.You are responsible only for flagging the start and end of events that are present in the given data chunk; the base class will handle stitching them all together.
+        :rtype: Tuple[List[int], List[int], bool]
         """
         pass
 
     @abstractmethod
     def _filter_events(
-        self, event_starts: List[int], event_ends: List[int], channel: int, last_end=0
+        self,
+        event_starts: List[int],
+        event_ends: List[int],
+        channel: int,
+        last_end: int = 0,
     ) -> Tuple[List[int], List[str]]:
         """
+        Given the lists of event start and event ends calculated by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._find_events_in_chunk`, select which ones to reject. For this, you may assume that poriscope has corrected for events that straddle the start of the chink, but not the end, which is to say that ``event_starts[0] < event_ends[0]`` will be ``True``, but it is possible that ``event_start`` will have an additional trailing entry that you should not attempt to reject. You must return a list of indices (N.B, not the actual values in ``event_starts`` or ``event_ends``) to reject, and an equal-length list of strings that provide a reason for rejection (be very terse).
+
         :param event_starts: a list of starting data indices for events. You may assume that event_starts[0] < event_ends[0]. It is possible that there will be one more entry in this list than in event_ends.
         :type event_starts: List[int]
         :param event_ends: a list of ending data indices for events. You may assume that event_starts[0] < event_ends[0]
@@ -923,8 +960,6 @@ class MetaEventFinder(BaseDataPlugin):
         :type last_end: int
         :return:  A list of indices to reject from the given list of event starts and ends, and a list of reason for rejection
         :rtype: Tuple[List[int], List[str]]
-
-        Given the lists of event start and event ends calculated by your implementation of :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._find_events_in_chunk`, select which ones to reject. For this, you may assume that poriscope has corrected for events that straddle the start of the chink, but not the end, which is to say that ``event_starts[0] < event_ends[0]`` will be ``True``, but it is possible that ``event_start`` will have an additional trailing entry that you should not attempt to reject. You must return a list of indices (N.B, not the actual values in ``event_starts`` or ``event_ends``) to reject, and an equal-length list of strings that provide a reason for rejection (be very terse).
         """
         pass
 
@@ -941,14 +976,13 @@ class MetaEventFinder(BaseDataPlugin):
 
     @abstractmethod
     def _get_baseline_stats(self, data: npt.NDArray[np.float64]) -> tuple[float, float]:
-        """ "
+        """
+        This function must calculate and return the mean and standard deviation of the baseline for the given chunk of data, excluding any events present in the chunk. These values are used downstream to determine where the baseline deviates from the open pore current. By default, :ref:`MetaEventFinder` assumes a Gaussian distribution of baseline noise. You may assume that the data is rectified.
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
         :return: Tuple of mean, and standard deviation the baseline.
         :rtype: tuple[float, float]
-
-        This function must calculate and return the mean and standard deviation of the baseline for the given chunk of data, excluding any events present in the chunk. These values are used downstream to determine where the baseline deviates from the open pore current. By default, :ref:`MetaEventFinder` assumes a Gaussian distribution of baseline noise. You may assume that the data is rectified.
         """
         pass
 
@@ -957,16 +991,9 @@ class MetaEventFinder(BaseDataPlugin):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
+        standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -1005,6 +1032,14 @@ class MetaEventFinder(BaseDataPlugin):
             return settings
 
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :raises KeyError: If standalone is False and no :ref:`MetaReader` instance is available to depend on.
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         reader_options = None
         if globally_available_plugins:
@@ -1048,7 +1083,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         Validate that the filter_params dict contains correct data types
 
-        param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
+        :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
@@ -1063,7 +1098,9 @@ class MetaEventFinder(BaseDataPlugin):
 
     # Utility functions, specific to subclasses as needed
 
-    def _merge_overlapping_ranges(self, ranges):
+    def _merge_overlapping_ranges(
+        self, ranges: List[Tuple[float, float]]
+    ) -> List[Tuple[float, float]]:
         """
         Merge a list of overlapping or adjacent (start, end) ranges into non-overlapping intervals.
 
@@ -1071,9 +1108,9 @@ class MetaEventFinder(BaseDataPlugin):
         Overlapping or adjacent ranges are merged into a single continuous interval.
 
         :param ranges: List of (start, end) tuples representing numeric ranges.
-        :type ranges: list[tuple[float, float]]
+        :type ranges: List[Tuple[float, float]]
         :return: List of merged non-overlapping (start, end) tuples.
-        :rtype: list[tuple[float, float]]
+        :rtype: List[Tuple[float, float]]
         """
         # Filter out any invalid or malformed ranges
         valid_ranges = [(start, end) for start, end in ranges if start < end]

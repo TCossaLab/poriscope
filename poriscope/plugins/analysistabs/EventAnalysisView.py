@@ -28,19 +28,22 @@
 import logging
 import os
 import warnings
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
 from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
 )
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
@@ -56,14 +59,14 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._init()
         self._init_walkthrough()
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         """
         Initialize the EventAnalysisView. Called after constructor.
         Used to set up internal variables or state as needed.
@@ -71,7 +74,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         pass
 
     @log(logger=logger)
-    def update_plot(self):
+    def update_plot(self) -> None:
         """
         Update the main plot with the latest data and features.
         This method should be called after data and parameters are updated.
@@ -80,7 +83,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _reset_actions(self, axis_type="2d"):
+    def _reset_actions(self, axis_type: str = "2d") -> None:
         """
         Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
 
@@ -91,12 +94,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @override
-    def _set_control_area(self, layout):
+    def _set_control_area(self, layout: QBoxLayout) -> None:
         """
         Set up the control area with widgets for user interaction.
 
         :param layout: Layout to which the controls will be added.
-        :type layout: QVBoxLayout or QHBoxLayout
+        :type layout: QBoxLayout
         """
         self.eventAnalysisControls = EventAnalysisControls()
         self.eventAnalysisControls.actionTriggered.connect(self.handle_parameter_change)
@@ -116,7 +119,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def _factors(self, n):
+    def _factors(self, n: int) -> Tuple[int, int]:
         """
         Compute a pair of factors of n that are closest to each other.
         Useful for determining subplot grid dimensions.
@@ -124,7 +127,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :param n: Integer to factor.
         :type n: int
         :return: Tuple of two integers whose product is close to n and have minimal difference.
-        :rtype: tuple
+        :rtype: Tuple[int, int]
         """
         diff = n
         min_diff_pair = (1, n)
@@ -138,7 +141,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         return min_diff_pair
 
     @log(logger=logger)
-    def get_save_filename(self):
+    def get_save_filename(self) -> str:
         """
         Open a file dialog to let the user select a filename for saving a CSV file.
 
@@ -154,13 +157,13 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         return file_name
 
     @log(logger=logger)
-    def update_plot_data(self, data=None):
+    def update_plot_data(self, data: Optional[Any] = None) -> None:
         """
         Update internal storage of plot data.
         Can be used by signal handlers receiving data.
 
         :param data: The data to be stored, can be a dict or array.
-        :type data: any
+        :type data: Optional[Any]
         """
         self.logger.debug(f"Received data for plotting: {data}")
         if isinstance(data, dict):
@@ -171,22 +174,28 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def update_plot_features(
         self,
-        vertical=None,
-        horizontal=None,
-        points=None,
-        vlabels=None,
-        hlabels=None,
-        plabels=None,
-    ):
+        vertical: Optional[List[float]] = None,
+        horizontal: Optional[List[float]] = None,
+        points: Optional[List[Tuple[float, float]]] = None,
+        vlabels: Optional[List[str]] = None,
+        hlabels: Optional[List[str]] = None,
+        plabels: Optional[List[str]] = None,
+    ) -> None:
         """
         Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
 
         :param vertical: List of vertical line positions.
+        :type vertical: Optional[List[float]]
         :param horizontal: List of horizontal line positions.
+        :type horizontal: Optional[List[float]]
         :param points: List of (x, y) point coordinates.
+        :type points: Optional[List[Tuple[float, float]]]
         :param vlabels: Labels for vertical lines.
+        :type vlabels: Optional[List[str]]
         :param hlabels: Labels for horizontal lines.
+        :type hlabels: Optional[List[str]]
         :param plabels: Labels for points.
+        :type plabels: Optional[List[str]]
         """
         self.vertical = vertical
         self.horizontal = horizontal
@@ -196,7 +205,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         self.plabels = plabels
 
     @log(logger=logger)
-    def update_plot_samplerate(self, samplerate):
+    def update_plot_samplerate(self, samplerate: float) -> None:
         """
         Update the sampling rate used to convert time units in plots.
 
@@ -213,7 +222,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up-to-date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: Mapping[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         super().update_available_plugins(available_plugins)
 
@@ -256,7 +265,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     @log(logger=logger)
     @Slot(str, str, tuple)
-    def handle_parameter_change(self, submodel_name, action_name, args):
+    def handle_parameter_change(
+        self, submodel_name: str, action_name: str, args: tuple
+    ) -> None:
         """
         Handle changes triggered by UI controls such as updates to axis selection or filters.
 
@@ -285,8 +296,17 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters, direction):
-        """Shift ranges in the GUI and update plot and input if valid."""
+    def _shift_range_and_update_plot(
+        self, parameters: Dict[str, Any], direction: str
+    ) -> None:
+        """
+        Shift ranges in the GUI and update plot and input if valid.
+
+        :param parameters: Parameter dictionary collected from the control widgets.
+        :type parameters: Dict[str, Any]
+        :param direction: Either 'left' or 'right'.
+        :type direction: str
+        """
 
         try:
             loader, eventfitter, data_filter, channels, _ = (
@@ -345,12 +365,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
     # Trigger the updated plot
     @log(logger=logger)
-    def _handle_plot_events(self, parameters):
+    def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         try:
             loader, eventfitter, data_filter, channels, events = (
@@ -384,7 +404,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             # get the data filter to use
             try:
                 data_filter_args = ()
-                self.data_filter = None
+                self.data_filter: Optional[Callable] = None
                 if data_filter != "No Filter":
                     self.global_signal.emit(
                         "MetaFilter",
@@ -420,13 +440,15 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             try:
                 # Load data and update plot
                 data_list: List[npt.NDArray[np.float64]] = []
-                label_list: List[Optional[str]] = []
-                vertical_lines: List[Optional[float]] = []
-                vertical_labels: List[Optional[str]] = []
-                horizontal_lines: List[Optional[float]] = []
-                horizontal_labels: List[Optional[str]] = []
-                points: List[Optional[Tuple[float, float]]] = []
-                plabels: List[Optional[str]] = []
+                label_list: List[str] = []
+                # One entry per subplot; each entry is the whole feature list for
+                # that subplot, or None when the fitter supplied no features.
+                vertical_lines: List[Optional[List[float]]] = []
+                vertical_labels: List[Optional[List[str]]] = []
+                horizontal_lines: List[Optional[List[float]]] = []
+                horizontal_labels: List[Optional[List[str]]] = []
+                points: List[Optional[List[Tuple[float, float]]]] = []
+                plabels: List[Optional[List[str]]] = []
                 num_events = 0
                 for event in events[:]:  # to allow removal if needed
                     try:
@@ -586,7 +608,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 self.logger.error(f"Unable to plot event data: {e}")
 
     @log(logger=logger)
-    def set_eventfitting_status(self, status):
+    def set_eventfitting_status(self, status: bool) -> None:
         """
         Set the internal event fitting status.
 
@@ -596,15 +618,13 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         self.eventfitting_status = status
 
     @log(logger=logger)
-    def validate_single_channel(self, channels):
+    def validate_single_channel(self, channels: Sequence[int]) -> None:
         """
         Ensure only one channel is selected.
 
-        Args:
-            channels (list): List of selected channel indices.
-
-        Raises:
-            ValueError: If more than one channel is selected.
+        :param channels: List of selected channel indices.
+        :type channels: Sequence[int]
+        :raises ValueError: If more than one channel is selected.
         """
         if len(channels) > 1:
             raise ValueError(
@@ -612,14 +632,14 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def _start_writer(self, writer, channels):
+    def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
         """
         Start the process of writing committed events to the database for the given channels.
 
         :param writer: Identifier of the database writer plugin.
         :type writer: str
-        :param channels: List of channel indices for which to write events.
-        :type channels: list[int]
+        :param channels: Channel index, or list of channel indices, for which to write events.
+        :type channels: Union[int, List[int]]
         """
         if not isinstance(channels, list):
             channels = [channels]
@@ -644,7 +664,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.run_generators.emit(writer)
 
     @log(logger=logger)
-    def set_num_events_allowed(self, num_events):
+    def set_num_events_allowed(self, num_events: int) -> None:
         """
         Set the maximum number of events allowed to be plotted.
 
@@ -656,17 +676,17 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def _update_event_plot(
         self,
-        event_data,
-        labels,
-        num_events,
-        vertical_lines,
-        horizontal_lines,
-        points,
-        vlabels,
-        hlabels,
-        plabels,
-        use_raw=False,
-    ):
+        event_data: Sequence[npt.NDArray[np.float64]],
+        labels: Sequence[str],
+        num_events: int,
+        vertical_lines: Sequence[Optional[List[float]]],
+        horizontal_lines: Sequence[Optional[List[float]]],
+        points: Sequence[Optional[List[Tuple[float, float]]]],
+        vlabels: Sequence[Optional[Sequence[Optional[str]]]],
+        hlabels: Sequence[Optional[Sequence[Optional[str]]]],
+        plabels: Sequence[Optional[Sequence[Optional[str]]]],
+        use_raw: bool = False,
+    ) -> None:
         """
         Update the event plot with raw data, annotations, and formatting.
 
@@ -674,23 +694,27 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         and optionally overlays vertical/horizontal lines and annotated points.
 
         :param event_data: List of 1D arrays containing current traces for each event.
-        :type event_data: list[np.ndarray]
+        :type event_data: Sequence[npt.NDArray[np.float64]]
         :param labels: List of strings for each subplot's title.
-        :type labels: list[str]
+        :type labels: Sequence[str]
         :param num_events: Total number of events to plot (i.e., number of subplots).
         :type num_events: int
         :param vertical_lines: List of lists of x-values for vertical line annotations per subplot.
-        :type vertical_lines: list[list[float] or None]
+        :type vertical_lines: Sequence[Optional[List[float]]]
         :param horizontal_lines: List of lists of y-values for horizontal line annotations per subplot.
-        :type horizontal_lines: list[list[float] or None]
+        :type horizontal_lines: Sequence[Optional[List[float]]]
         :param points: List of lists of (x, y) coordinate tuples for marker points per subplot.
-        :type points: list[list[tuple[float, float]] or None]
-        :param vlabels: List of lists of labels for vertical lines.
-        :type vlabels: list[list[str or None]]
-        :param hlabels: List of lists of labels for horizontal lines.
-        :type hlabels: list[list[str or None]]
-        :param plabels: List of lists of labels for points.
-        :type plabels: list[list[str or None]]
+        :type points: Sequence[Optional[List[Tuple[float, float]]]]
+        :param vlabels: One entry per subplot, each a list of labels for that subplot's vertical lines, or None if the fitter supplied no labels. Individual labels may also be None.
+        :type vlabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param hlabels: One entry per subplot, each a list of labels for that subplot's horizontal lines, or None if the fitter supplied no labels. Individual labels may also be None.
+        :type hlabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param plabels: One entry per subplot, each a list of labels for that subplot's points, or None if the fitter supplied no labels. Individual labels may also be None.
+        :type plabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param use_raw: Whether to plot/cache the raw (unfiltered) trace entries in event_data
+            (labeled "Raw") alongside the filtered/fit ones. Entries so labeled are skipped
+            entirely when this is False, regardless of whether the caller included them.
+        :type use_raw: bool
         :return: None
         :rtype: None
         """
@@ -711,6 +735,10 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
 
         j = 0
         for i, (data, label) in enumerate(zip(event_data, labels)):
+            if "Raw" in label and not use_raw:
+                # Bypass the raw (unfiltered) trace entirely when not requested,
+                # instead of relying on the caller to have omitted it.
+                continue
             if "Data" in label:
                 features_plotted = False
                 ax = self.figure.add_subplot(
@@ -755,12 +783,19 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 vertical_labels = vlabels[j - 1]
                 color_idx = 0
                 if verticals is not None:
-                    for line, label in zip(verticals, vertical_labels):
-                        if label is None:
+                    # A fitter may supply features with no labels at all; the
+                    # branch below already renders those unlabeled, so stand in
+                    # a matching run of Nones rather than zipping against None.
+                    if vertical_labels is None:
+                        vertical_labels = [None] * len(verticals)
+                    for line, line_label in zip(verticals, vertical_labels):
+                        if line_label is None:
                             ax.axvline(x=line, color="black", linestyle="--")
                         else:
                             color = colors_no_black[color_idx % len(colors_no_black)]
-                            ax.axvline(x=line, linestyle="--", color=color, label=label)
+                            ax.axvline(
+                                x=line, linestyle="--", color=color, label=line_label
+                            )
                             color_idx += 1
 
                 # --- Horizontal lines ---
@@ -768,13 +803,21 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 horizontal_labels = hlabels[j - 1]
                 color_idx = 0
                 if horizontals is not None:
-                    for line, label in zip(horizontals, horizontal_labels):
-                        if label is None:
+                    # A fitter may supply features with no labels at all; the
+                    # branch below already renders those unlabeled, so stand in
+                    # a matching run of Nones rather than zipping against None.
+                    if horizontal_labels is None:
+                        horizontal_labels = [None] * len(horizontals)
+                    for line, line_label in zip(horizontals, horizontal_labels):
+                        if line_label is None:
                             ax.axhline(y=line / 1000, color="black", linestyle="--")
                         else:
                             color = colors_no_black[color_idx % len(colors_no_black)]
                             ax.axhline(
-                                y=line / 1000, linestyle="--", color=color, label=label
+                                y=line / 1000,
+                                linestyle="--",
+                                color=color,
+                                label=line_label,
                             )
                             color_idx += 1
 
@@ -783,8 +826,13 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 pt_labels = plabels[j - 1]
                 color_idx = 0
                 if pts is not None:
-                    for (x, y), label in zip(pts, pt_labels):
-                        if label is None:
+                    # A fitter may supply features with no labels at all; the
+                    # branch below already renders those unlabeled, so stand in
+                    # a matching run of Nones rather than zipping against None.
+                    if pt_labels is None:
+                        pt_labels = [None] * len(pts)
+                    for (x, y), point_label in zip(pts, pt_labels):
+                        if point_label is None:
                             ax.plot(
                                 x, y / 1000, marker="x", color="black", markersize=10
                             )
@@ -795,7 +843,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                                 y / 1000,
                                 marker="x",
                                 linestyle="None",
-                                label=label,
+                                label=point_label,
                                 color=color,
                                 markersize=10,
                             )
@@ -834,12 +882,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def _handle_fit_events(self, parameters):
+    def _handle_fit_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle the fitting of events using the selected event fitter and data filter.
 
         :param parameters: Dictionary of parameters from the GUI controls.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         try:
             eventfitter, data_filter, channels = self._extract_event_fit_parameters(
@@ -852,12 +900,12 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self._start_eventfitter(eventfitter, data_filter, channels)
 
     @log(logger=logger)
-    def _handle_commit_events(self, parameters):
+    def _handle_commit_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle commit actions by triggering the selected writer to store events.
 
         :param parameters: Dictionary containing selected writer and channel info.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         try:
             writer, channels = self._extract_commit_event_parameters(parameters)
@@ -869,7 +917,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self._start_writer(writer, channels)
 
     @log(logger=logger)
-    def _start_eventfitter(self, eventfitter, data_filter, channels):
+    def _start_eventfitter(
+        self, eventfitter: str, data_filter: str, channels: Union[int, List[int]]
+    ) -> None:
         """
         Start the event fitting process for the selected channel(s) using the given fitter and filter.
 
@@ -877,8 +927,8 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type eventfitter: str
         :param data_filter: Identifier of the filter plugin to apply to the data.
         :type data_filter: str
-        :param channels: List of integer channel indices.
-        :type channels: list[int]
+        :param channels: Channel index, or list of integer channel indices.
+        :type channels: Union[int, List[int]]
         """
         if not isinstance(channels, list):
             channels = [channels]
@@ -940,15 +990,18 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.run_generators.emit(eventfitter)
 
     @log(logger=logger)
-    def _extract_plot_event_parameters(self, parameters):
+    def _extract_plot_event_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[
+        Optional[str], Optional[str], Optional[str], List[int], Optional[List[int]]
+    ]:
         """
         Extract event plotting parameters from input.
 
-        Args:
-            parameters (dict): Input parameter dictionary.
-
-        Returns:
-            tuple: (loader, eventfitter, data_filter, channels, events)
+        :param parameters: Input parameter dictionary.
+        :type parameters: Dict[str, Any]
+        :return: (loader, eventfitter, data_filter, channels, events)
+        :rtype: Tuple[Optional[str], Optional[str], Optional[str], List[int], Optional[List[int]]]
         """
         loader = parameters.get("loader")
         eventfitter = parameters.get("eventfitter")
@@ -958,15 +1011,16 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         return loader, eventfitter, data_filter, channels, events
 
     @log(logger=logger)
-    def _extract_event_fit_parameters(self, parameters):
+    def _extract_event_fit_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[Optional[str], Optional[str], List[int]]:
         """
         Extract parameters used for event finding.
 
-        Args:
-            parameters (dict): Dictionary of parameters.
-
-        Returns:
-            tuple: (eventiftter, data_filter, channels)
+        :param parameters: Dictionary of parameters.
+        :type parameters: Dict[str, Any]
+        :return: (eventfitter, data_filter, channels)
+        :rtype: Tuple[Optional[str], Optional[str], List[int]]
         """
         eventfitter = parameters.get("eventfitter")
         data_filter = parameters.get("filter")
@@ -974,15 +1028,16 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         return eventfitter, data_filter, channels
 
     @log(logger=logger)
-    def _extract_commit_event_parameters(self, parameters):
+    def _extract_commit_event_parameters(
+        self, parameters: Dict[str, Any]
+    ) -> Tuple[Optional[str], List[int]]:
         """
         Extract writer and channels from parameters.
 
-        Args:
-            parameters (dict): Input dictionary.
-
-        Returns:
-            tuple: (writer, channels)
+        :param parameters: Input dictionary.
+        :type parameters: Dict[str, Any]
+        :return: (writer, channels)
+        :rtype: Tuple[Optional[str], List[int]]
         """
         writer = parameters.get("writer")
         channels = [int(ch) for ch in parameters["channel"]]
@@ -999,25 +1054,27 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         self.data_filter = data_filter
 
     @log(logger=logger)
-    def update_channels(self, channels):
+    def update_channels(self, channels: List[int]) -> None:
         """
         Update the channel list in the event analysis control widget.
 
         :param channels: List of available channel indices.
-        :type channels: list[int]
+        :type channels: List[int]
         """
         self.eventAnalysisControls.update_channels(channels)
         self.logger.info("Updated channels in EventAnalysisTab")
 
     @log(logger=logger)
-    def _handle_other_actions(self, action_name, parameters):
+    def _handle_other_actions(
+        self, action_name: str, parameters: Dict[str, Any]
+    ) -> None:
         """
         Handle non-standard or plugin-specific actions that do not fall into predefined handlers.
 
         :param action_name: Action identifier.
         :type action_name: str
         :param parameters: Dictionary of parameters for the action.
-        :type parameters: dict
+        :type parameters: Dict[str, Any]
         """
         loader = parameters.get("loader")
         if loader and loader != "No Loader":
@@ -1025,7 +1082,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                 "MetaEventLoader", loader, "get_channels", (), "update_channels", ()
             )
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [
             (
                 "Event Analysis Tab",
@@ -1110,5 +1167,5 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             ),
         ]
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return "EventAnalysisView"

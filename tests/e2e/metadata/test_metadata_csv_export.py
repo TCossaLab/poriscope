@@ -21,8 +21,9 @@ Key behaviors this test relies on:
   several consecutive polls), not just "any file appears" - otherwise a
   still-finishing export can look like the cancel path incorrectly
   created files.
-- dlg.result is a DictDialog instance attribute (a tuple), not QDialog's
-  built-in .result() method.
+- DictDialog holds its outcome in the private attribute dlg._result (a
+  tuple), read through get_result(). It was formerly dlg.result, which
+  shadowed QDialog's built-in .result() method.
 - Requires the None-check in _export_csv_subset (dialog.get_result()
   returns None on Cancel; the unguarded "result, name = result" unpack
   crashes without it).

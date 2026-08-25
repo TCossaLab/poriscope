@@ -24,9 +24,10 @@
 # Nada Kerrouri
 
 import logging
-from typing import List, Mapping, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
+import numpy.typing as npt
 from scipy.signal import find_peaks
 from typing_extensions import override
 
@@ -51,17 +52,10 @@ class Basic_PeakFinder(MetaEventFitter):
     @override
     def get_empty_settings(
         self,
-        globally_available_plugins=None,
-        standalone=False,
-    ):
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Mapping[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -100,6 +94,13 @@ class Basic_PeakFinder(MetaEventFitter):
             return settings
 
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
 
@@ -144,7 +145,7 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
         """
@@ -152,7 +153,9 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def construct_fitted_event(self, channel, index):
+    def construct_fitted_event(
+        self, channel: int, index: int
+    ) -> Optional[npt.NDArray[np.float64]]:
         """
         Construct an array of data corresponding to the peaks for the specified event
 
@@ -286,7 +289,6 @@ class Basic_PeakFinder(MetaEventFitter):
         :return: a list of x locations to plot vertical lines and a list of y locations to plot horizontal lines, list of tuples to plot little x's, labels for the vertical lines, labels for the horizontal lines, labels for x's. Must be lists of equal length, or None
         :rtype: Tuple[Optional[List[float]], Optional[List[float]], Optional[List[Tuple[float, float]]], Optional[List[str]], Optional[List[str]], Optional[List[str]]]
 
-        :raises RuntimeError: if fitting is not complete yet
         """
 
         if self.sublevel_metadata == {} or not self.eventfitting_status.get(channel):
@@ -390,13 +392,13 @@ class Basic_PeakFinder(MetaEventFitter):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
-    ):
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+    ) -> Optional[List[Any]]:
         """
         Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
         Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
@@ -417,10 +419,9 @@ class Basic_PeakFinder(MetaEventFitter):
 
 
         :return: a list of integers corresponding to sublevel transitions
-        :rtype: List[int]
+        :rtype: Optional[List[Any]]
 
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
-        :raises AttributeError: if the fitting method cannot operate without provision of specific padding and baseline metadata and cannot rescue itself. This will cause a stop to processing of the dataset.
         """
         dt_us = 1.0 / samplerate * 1e6
 
@@ -673,8 +674,13 @@ class Basic_PeakFinder(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_sublevel_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_starts
-    ):
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_starts: List[Any],
+    ) -> Dict[str, npt.NDArray[Numeric]]:
         """
         Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
 
@@ -687,12 +693,12 @@ class Basic_PeakFinder(MetaEventFitter):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
-        :type sublevel_starts: List[Dict[str, Any]]
+        :type sublevel_starts: List[Any]
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
-        :rtype: Mapping[str, npt.NDArray[Numeric]]
+        :rtype: Dict[str, npt.NDArray[Numeric]]
         """
-        sublevel_metadata = {}
+        sublevel_metadata: Dict[str, Any] = {}
 
         # Filter out non-peak edges to get actual sublevel boundaries
         num_states = (
@@ -1012,8 +1018,13 @@ class Basic_PeakFinder(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_event_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-    ):
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_metadata: Dict[str, List[Numeric]],
+    ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
 
@@ -1026,12 +1037,12 @@ class Basic_PeakFinder(MetaEventFitter):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_metadata: the dict of sublevel metadata built by self._populate_sublevel_metadata()
-        :type sublevel_metadata: Mapping[str, List[Numeric]]
+        :type sublevel_metadata: Dict[str, List[Numeric]]
 
         :return: a dict of event metadata values
-        :rtype: Mapping[str, float]
+        :rtype: Dict[str, Union[int, float, str, bool]]
         """
-        event_metadata = {}
+        event_metadata: Dict[str, Union[int, float, str, bool]] = {}
 
         # peak_id can include None for non-peak sublevels; ignore non-numeric entries.
         peak_ids = [
@@ -1050,7 +1061,10 @@ class Basic_PeakFinder(MetaEventFitter):
         event_metadata["max_deviation"] = np.max(
             [sublevel_metadata["sublevel_max_deviation"][1:-1]]
         )
-        event_metadata["baseline_current"] = baseline_mean
+        # NOTE: baseline_mean/baseline_std are Optional[float], so None can reach
+        # the event metadata dict, which the base contract declares as
+        # Union[int, float, str, bool]. Flagged, not fixed.
+        event_metadata["baseline_current"] = baseline_mean  # type: ignore[assignment]
         event_metadata["unfolded_level"] = self.find_mode_blockage_level(
             data[
                 int(
@@ -1059,10 +1073,13 @@ class Basic_PeakFinder(MetaEventFitter):
                     sublevel_metadata["sublevel_start_times"][-1] * samplerate * 1e-6
                 )
             ],
-            event_metadata["baseline_current"],
+            # NOTE: the event metadata dict is declared Union[int, float, str, bool]
+            # by the base contract, so this reads back wider than the Optional[float]
+            # find_mode_blockage_level accepts. Flagged, not fixed.
+            event_metadata["baseline_current"],  # type: ignore[arg-type]
             baseline_std,
         )
-        event_metadata["baseline_std"] = baseline_std
+        event_metadata["baseline_std"] = baseline_std  # type: ignore[assignment]
 
         return event_metadata
 
@@ -1083,22 +1100,23 @@ class Basic_PeakFinder(MetaEventFitter):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
         """
         pass
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_types(self):
+    def _define_event_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_event_metadata()
         All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
-        metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
+        metadata_types: Dict[str, Type[Union[int, float, str, bool]]] = {
             "number_peaks": int,
             "duration": float,
             "raw_ecd": float,
@@ -1112,7 +1130,9 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_sublevel_metadata_types(self):
+    def _define_sublevel_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_sublevel_metadata()
@@ -1120,9 +1140,9 @@ class Basic_PeakFinder(MetaEventFitter):
         it should not include the list element
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
-        metadata_types: Mapping[str, Type[Union[int, float, str, bool]]] = {
+        metadata_types: Dict[str, Type[Union[int, float, str, bool]]] = {
             "sublevel_current": float,
             "sublevel_duration": float,
             "sublevel_start_times": float,
@@ -1153,16 +1173,16 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_units(self):
+    def _define_event_metadata_units(self) -> Dict[str, Optional[str]]:
         """
         Build a dict of metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_event_metadata()
         All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Optional[str]]
         """
-        metadata_units = {}
+        metadata_units: Dict[str, Optional[str]] = {}
 
         metadata_units["number_peaks"] = " "
         metadata_units["duration"] = "μs"
@@ -1176,16 +1196,16 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_sublevel_metadata_units(self):
+    def _define_sublevel_metadata_units(self) -> Dict[str, Optional[str]]:
         """
         Build a dict of sublevel metadata units , or None if unitless. Keys must match columns defined in _populate_sublevel_metadata()
         All of this metadata must be populated during fitting.
         it should not include the list element
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Mapping[str, Optional[str]]
+        :rtype: Dict[str, Optional[str]]
         """
-        metadata_units = {}
+        metadata_units: Dict[str, Optional[str]] = {}
 
         metadata_units["sublevel_current"] = "pA"
         metadata_units["sublevel_duration"] = "us"
@@ -1218,21 +1238,19 @@ class Basic_PeakFinder(MetaEventFitter):
     @log(logger=logger)
     def find_mode_blockage_level(
         self,
-        data,
-        baseline_mean,
-        baseline_std,
-    ):
+        data: Optional[npt.NDArray[np.float64]],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+    ) -> float:
         """
         Estimate the level of unfolded blockage based on data distribution.
 
         :param data: Array of current values or similar signal to analyze.
-        :type data: numpy.ndarray
+        :type data: Optional[npt.NDArray[np.float64]]
         :param baseline_mean: Mean value of the baseline level.
-        :type baseline_mean: float
+        :type baseline_mean: Optional[float]
         :param baseline_std: Standard deviation of the baseline level.
-        :type baseline_std: float
-        :param is_carrier: Flag indicating if the data represents a carrier signal.
-        :type is_carrier: bool
+        :type baseline_std: Optional[float]
         :return: Estimated unfolded blockage level.
         :rtype: float
         """
@@ -1266,7 +1284,10 @@ class Basic_PeakFinder(MetaEventFitter):
 
         if data_max <= data_min:
             # Degenerate range
-            level = abs(data_min - baseline_mean)
+            # NOTE: this function guards `data` and `baseline_std` against None
+            # but not `baseline_mean`, which is equally Optional. Flagged, not
+            # fixed - the logic in this plugin belongs to its owner.
+            level = abs(data_min - baseline_mean)  # type: ignore[operator]
             return level
 
         nbins = max(10, int(np.ceil((data_max - data_min) / bin_width)))
@@ -1277,18 +1298,23 @@ class Basic_PeakFinder(MetaEventFitter):
         return level
 
     @log(logger=logger)
-    def enumerate_peaks(self, sublevel_starts, num_states, sublevel_types=None):
+    def enumerate_peaks(
+        self,
+        sublevel_starts: List[Dict[str, Any]],
+        num_states: int,
+        sublevel_types: Optional[List[str]] = None,
+    ) -> List[Optional[int]]:
         """
         Assign unique peak IDs to sublevels labeled as 'peak'.
 
         :param sublevel_starts: List of dictionaries describing sublevels, each with a 'type' key.
-        :type sublevel_starts: list[dict]
+        :type sublevel_starts: List[Dict[str, Any]]
         :param num_states: Total number of sublevels to process.
         :type num_states: int
         :param sublevel_types: List of sublevel types ('peak' or 'event_baseline'). If None, falls back to edge type checking.
-        :type sublevel_types: Optional[list[str]]
+        :type sublevel_types: Optional[List[str]]
         :return: List of peak IDs or None for non-peak sublevels.
-        :rtype: list[Optional[int]]
+        :rtype: List[Optional[int]]
         """
         j = 1
         id: List[Optional[int]] = []

@@ -35,6 +35,7 @@ dev = [
     "black==25.1.0",
     "ruff==0.12.11",
     "mypy==1.9.0",
+    "pydoclint==0.9.1",
     "pytest==8.4.1",
     "pytest-mock==3.14.1",
     "pytest-qt==4.5.0",
@@ -74,3 +75,27 @@ extend-select = ["I"]
 known-first-party = ["poriscope", "tests"]
 known-third-party = ["PySide6", "matplotlib", "pytest", "numpy", "pandas"]
 combine-as-imports = true
+
+[tool.pydoclint]
+style = "sphinx"
+# Signature type hints are the source of truth for parameter and return
+# types; ":type:"/":rtype:" in the docstring must agree with them. An earlier
+# revision set this to false on the premise that most plugin methods omit
+# signature hints - an AST scan disproved that (the large majority carry at
+# least one hint), and the false setting turned 663 of the baseline's 709
+# entries into DOC108 "you have hints but policy says you shouldn't" noise
+# that masked nothing and fixed nothing. See future_fixes.md's
+# type-annotation pass for the work that closes the remaining DOC106/DOC107.
+arg-type-hints-in-signature = true
+# Every __init__ in this codebase has its own docstring separate from the
+# class docstring; that's an established convention here, not a violation.
+allow-init-docstring = true
+# Class-attribute checking cannot work under sphinx style with the parser
+# pydoclint 0.9.1 ships. It reads docstring_parser_fork's `.attrs`, and in
+# REST/sphinx mode that list is only ever populated by a malformed
+# ".. attribute :: name" (note the space, which makes it a field rather than a
+# directive). The correct directive and every canonical field form - `:ivar:`,
+# `:cvar:`, `:var:` - all yield nothing, so the check can only ever fire against
+# docstrings that are wrong. Both packages are already at their latest release.
+check-class-attributes = false
+exclude = "^tests/"

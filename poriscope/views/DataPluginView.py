@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import List
+from typing import List, Optional, Tuple
 
 from PySide6.QtWidgets import QWidget
 
@@ -44,8 +44,6 @@ class DataPluginView(QWidget):
     def __init__(self) -> None:
         """
         Initialize the plugin view.
-
-        :param kwargs: Additional keyword arguments.
         """
         super().__init__()
 
@@ -59,7 +57,7 @@ class DataPluginView(QWidget):
         show_delete: bool = False,
         editable_source_plugins: bool = False,
         source_plugins: List[str] = [],
-    ) -> tuple[dict, str]:
+    ) -> Tuple[Optional[dict], Optional[str], bool]:
         """
         Prompt the user to specify a reader plugin to use to open the given file.
         Return the updated user settings and the plugin key.
@@ -68,12 +66,20 @@ class DataPluginView(QWidget):
         :type user_settings: dict
         :param name: The name of the settings dialog.
         :type name: str
+        :param data_server: The data server to use for source plugin lookups.
+        :type data_server: str
         :param editable: allow editing of the plugin key? Default True
         :type editable: bool
         :param show_delete: allow deleting the plugin? Default False
         :type show_delete: bool
-        :return: A tuple containing the updated user settings and the plugin key.
-        :rtype: tuple
+        :param editable_source_plugins: allow editing of the source plugins list? Default False
+        :type editable_source_plugins: bool
+        :param source_plugins: List of available source plugin keys. Default empty list
+        :type source_plugins: List[str]
+        :return: The updated user settings and plugin key, followed by a flag
+                 that is True if deletion was requested. The settings and key are
+                 both ``None`` if the dialog was cancelled or dismissed.
+        :rtype: Tuple[Optional[dict], Optional[str], bool]
         """
         dialog = DictDialog(
             user_settings,
@@ -86,4 +92,5 @@ class DataPluginView(QWidget):
             source_plugins=source_plugins,
         )
         dialog.exec()
-        return dialog.get_result()
+        plugin_settings, plugin_key = dialog.get_result()
+        return plugin_settings, plugin_key, dialog.delete_requested()

@@ -26,6 +26,7 @@
 
 
 import logging
+from typing import Any, Callable, List, Optional, Tuple
 
 from PySide6.QtCore import Slot
 from typing_extensions import override
@@ -49,13 +50,13 @@ class EventAnalysisController(MetaController):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         self.view = EventAnalysisView()
         self.model = EventAnalysisModel()
 
     @log(logger=logger)
     @override
-    def _setup_connections(self):
+    def _setup_connections(self) -> None:
         pass
 
     @log(logger=logger)
@@ -74,7 +75,7 @@ class EventAnalysisController(MetaController):
         self.view.update_available_plugins(available_plugins)
 
     @log(logger=logger)
-    def set_event_filter(self, data_filter):
+    def set_event_filter(self, data_filter: Callable) -> None:
         """
         Set the callable function used to filter event data.
 
@@ -84,7 +85,7 @@ class EventAnalysisController(MetaController):
         self.view.set_data_filter_function(data_filter)
 
     @log(logger=logger)
-    def set_eventfitting_status(self, status):
+    def set_eventfitting_status(self, status: bool) -> None:
         """
         Set the current status of the event fitting process in the view.
 
@@ -94,42 +95,42 @@ class EventAnalysisController(MetaController):
         self.view.set_eventfitting_status(status)
 
     @log(logger=logger)
-    def update_plot_data(self, data=None):
+    def update_plot_data(self, data: Optional[Any] = None) -> None:
         """
         Update the view with new plot data.
 
         :param data: Optional data to be plotted (e.g., event traces or fitted results).
-        :type data: Any or None
+        :type data: Optional[Any]
         """
         self.view.update_plot_data(data)
 
     @log(logger=logger)
     def update_features(
         self,
-        vertical=None,
-        horizontal=None,
-        points=None,
-        vlabels=None,
-        hlabels=None,
-        plabels=None,
-    ):
+        vertical: Optional[List[float]] = None,
+        horizontal: Optional[List[float]] = None,
+        points: Optional[List[Tuple[float, float]]] = None,
+        vlabels: Optional[List[str]] = None,
+        hlabels: Optional[List[str]] = None,
+        plabels: Optional[List[str]] = None,
+    ) -> None:
         """
         Update the plot with visual annotations including vertical lines, horizontal lines, and point markers.
 
         Validates that each visual feature has a corresponding label (or explicit None) if labels are provided.
 
-        :param vertical: List of vertical line positions for each subplot.
-        :type vertical: list[list[float]] or None
-        :param horizontal: List of horizontal line positions for each subplot.
-        :type horizontal: list[list[float]] or None
-        :param points: List of (x, y) point coordinates for each subplot.
-        :type points: list[list[tuple[float, float]]] or None
-        :param vlabels: List of labels for vertical lines.
-        :type vlabels: list[list[str or None]] or None
-        :param hlabels: List of labels for horizontal lines.
-        :type hlabels: list[list[str or None]] or None
-        :param plabels: List of labels for point markers.
-        :type plabels: list[list[str or None]] or None
+        :param vertical: Vertical line positions for the event being plotted.
+        :type vertical: Optional[List[float]]
+        :param horizontal: Horizontal line positions for the event being plotted.
+        :type horizontal: Optional[List[float]]
+        :param points: (x, y) point coordinates for the event being plotted.
+        :type points: Optional[List[Tuple[float, float]]]
+        :param vlabels: Labels for the vertical lines.
+        :type vlabels: Optional[List[str]]
+        :param hlabels: Labels for the horizontal lines.
+        :type hlabels: Optional[List[str]]
+        :param plabels: Labels for the point markers.
+        :type plabels: Optional[List[str]]
         :raises ValueError: If a label list is provided and its length does not match the corresponding feature list.
         """
         if (
@@ -157,7 +158,7 @@ class EventAnalysisController(MetaController):
         )
 
     @log(logger=logger)
-    def update_plot_samplerate(self, samplerate):
+    def update_plot_samplerate(self, samplerate: float) -> None:
         """
         Set the sampling rate to be used for time axis conversion in the plot.
 
@@ -168,7 +169,7 @@ class EventAnalysisController(MetaController):
 
     @log(logger=logger)
     @Slot(list)
-    def update_channels(self, channels):
+    def update_channels(self, channels: List[int]) -> None:
         """
         Update the view with the current number of channels available or selected.
 
@@ -178,7 +179,7 @@ class EventAnalysisController(MetaController):
         self.view.update_channels(channels)
 
     @log(logger=logger)
-    def set_num_events_allowed(self, num_events):
+    def set_num_events_allowed(self, num_events: int) -> None:
         """
         Set the maximum number of events allowed for processing or display.
 
@@ -188,7 +189,7 @@ class EventAnalysisController(MetaController):
         self.view.set_num_events_allowed(num_events)
 
     @log(logger=logger)
-    def relay_eventfitting_status(self, status):
+    def relay_eventfitting_status(self, status: bool) -> None:
         """
         Relay event fitting status to the view.
 

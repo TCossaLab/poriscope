@@ -341,6 +341,7 @@ class TestMergeClusters:
         view.logs = [False, False]
         view.normalized = [False, False]
         view.units = {"duration": "ms", "current": "pA"}
+        view.plot_units = ["ms", "pA"]
         view.plot = [True, True]
 
     def test_no_cluster_data_returns_early(self, view):

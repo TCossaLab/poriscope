@@ -26,7 +26,7 @@
 
 import logging
 import re
-from typing import Set
+from typing import List, Optional, Set, Tuple
 
 from PySide6.QtGui import QValidator
 
@@ -37,10 +37,12 @@ from poriscope.utils.BaseValidator import BaseValidator
 class RangeValidator(BaseValidator):
     logger = logging.getLogger(__name__)
 
-    def has_forbidden_characters(self, input):
+    def has_forbidden_characters(self, input: str) -> Optional[re.Match]:
         return re.search(r"[^0-9,\-]", input)
 
-    def _validate_intermediate(self, input, pos):
+    def _validate_intermediate(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Intermediate validation logic for integer ranges."""
         self.logger.debug(f"Intermediate validation for input: {input}")
 
@@ -109,7 +111,7 @@ class RangeValidator(BaseValidator):
         )
         return QValidator.Acceptable, input, len(input)
 
-    def _validate_final(self, input):
+    def _validate_final(self, input: str) -> Tuple[QValidator.State, str, int]:
         """Final validation for integer ranges."""
         self.logger.debug(f"Final validation for input: {input}")
 
@@ -160,11 +162,11 @@ class RangeValidator(BaseValidator):
 class IntegerRangeLineEdit(BaseLineEdit):
     logger = logging.getLogger(__name__)
 
-    def create_validator(self):
+    def create_validator(self) -> RangeValidator:
         """Create the range validator for integer ranges."""
         return RangeValidator(self)
 
-    def get_values(self):
+    def get_values(self) -> List[int]:
         """Parse the text and return a sorted list of integers."""
         text = self.text()
         result: Set[int] = set()
@@ -195,7 +197,7 @@ class IntegerRangeLineEdit(BaseLineEdit):
                     self.logger.debug(f"Invalid integer in segment: '{segment}'")
         return sorted(result)
 
-    def set_range(self, value: str):
+    def set_range(self, value: str) -> None:
         """
         Sets the input text for the line edit and triggers any connected signals or validation.
         """

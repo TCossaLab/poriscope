@@ -25,9 +25,11 @@
 
 
 import logging
+from typing import Optional, Tuple, Union
 
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QDoubleValidator, QIntValidator, QValidator
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QLineEdit, QWidget
 
 from poriscope.utils.LogDecorator import log
 
@@ -35,54 +37,64 @@ from poriscope.utils.LogDecorator import log
 class NumericLineEdit(QLineEdit):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.validator = None
+        self._validator: Optional[QValidator] = None
 
     @log(logger=logger)
-    def setRange(self, min_val, max_val, valtype):
+    def setRange(
+        self,
+        min_val: Optional[Union[int, float]],
+        max_val: Optional[Union[int, float]],
+        valtype: type,
+    ) -> None:
         min_val = valtype(min_val) if min_val is not None else None
         max_val = valtype(max_val) if max_val is not None else None
         if valtype is int:
             # Use the custom validator for integers
-            self.validator = CustomIntValidator(min_val, max_val, self)
+            self._validator = CustomIntValidator(min_val, max_val, self)
         elif valtype is float:
             # Use the QDoubleValidator for floating-point numbers
-            self.validator = QDoubleValidator(self)
+            self._validator = QDoubleValidator(self)
             if min_val is not None:
-                self.validator.setBottom(min_val)
+                self._validator.setBottom(min_val)
             if max_val is not None:
-                self.validator.setTop(max_val)
+                self._validator.setTop(max_val)
         else:
             raise TypeError("Invalid min/max value types")
 
-        self.setValidator(self.validator)
+        self.setValidator(self._validator)
 
-    def isValid(self):
+    def isValid(self) -> bool:
         if self.text() == "":
             return False
-        if self.validator is not None:
-            state, _, _ = self.validator.validate(self.text(), 0)
+        if self._validator is not None:
+            state, _, _ = self._validator.validate(self.text(), 0)
         else:
             raise AttributeError("Validator is not set in numeric_validation;")
         return state == QValidator.Acceptable
 
-    def currentText(self):
-        if isinstance(self.validator, QIntValidator):
+    def currentText(self) -> Union[int, float, str]:
+        if isinstance(self._validator, QIntValidator):
             return int(self.text())
-        elif isinstance(self.validator, QDoubleValidator):
+        elif isinstance(self._validator, QDoubleValidator):
             return float(self.text())
         else:
             return self.text()
 
 
 class CustomIntValidator(QValidator):
-    def __init__(self, min_val=None, max_val=None, parent=None):
+    def __init__(
+        self,
+        min_val: Optional[int] = None,
+        max_val: Optional[int] = None,
+        parent: Optional[QObject] = None,
+    ) -> None:
         super().__init__(parent)
         self.min_val = min_val
         self.max_val = max_val
 
-    def validate(self, input_text, pos):
+    def validate(self, input_text: str, pos: int) -> Tuple[QValidator.State, str, int]:
         if input_text == "":
             return QValidator.Intermediate, input_text, pos
 

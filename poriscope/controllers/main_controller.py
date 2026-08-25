@@ -27,12 +27,14 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
+from poriscope.models.main_model import MainModel
 from poriscope.utils.LogDecorator import log
+from poriscope.views.main_view import MainView
 
 
 class MainController(QObject):
@@ -42,24 +44,28 @@ class MainController(QObject):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, main_model, main_view):
+    def __init__(self, main_model: MainModel, main_view: MainView) -> None:
         super().__init__()
         self.main_model = main_model
         self.main_view = main_view
         self.config_path = Path(Path(__file__).resolve().parent, "..", "configs")
 
         # analysis tab managers
-        self.analysis_tabs = (
+        self.analysis_tabs: Dict[str, Any] = (
             {}
         )  # a dict keyed by subclass of controllers for analysis tabs, with the instance of that tab
 
         # data plugin managers
-        self.data_plugins = (
+        self.data_plugins: Dict[str, List[str]] = (
             {}
         )  # a dict keyed by metaclass with lists of keys for instances of subclasses of that metaclass
 
+        # keyed by metaclass, same key set as available_plugin_classes
         self.data_plugin_controller = DataPluginController(
-            self.main_model.get_plugin_classes(),
+            {
+                metaclass: self.main_model.get_plugin_classes(metaclass)
+                for metaclass in self.main_model.get_available_plugins()
+            },
             self.main_model.get_data_server_location(),
         )
 
@@ -74,7 +80,7 @@ class MainController(QObject):
         self.setup_connections()
 
     @log(logger=logger)
-    def setup_connections(self):
+    def setup_connections(self) -> None:
         # data plugin signal connections
 
         self.main_view.instantiate_plugin.connect(
@@ -116,7 +122,7 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot()
-    def handle_about_to_quit(self):
+    def handle_about_to_quit(self) -> None:
         for key, val in self.analysis_tabs.items():
             if val:
                 val.handle_kill_all_workers(key, exiting=True)
@@ -124,31 +130,31 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot()
-    def send_curent_data_server(self):
+    def send_curent_data_server(self) -> None:
         data_server = self.main_model.get_app_config("Parent Folder")
         self.main_view.set_data_server(data_server)
 
     @log(logger=logger)
     @Slot()
-    def send_curent_user_plugin_location(self):
+    def send_curent_user_plugin_location(self) -> None:
         data_server = self.main_model.get_app_config("User Plugin Folder")
         self.main_view.set_user_plugin_location(data_server)
 
     @log(logger=logger)
     @Slot()
-    def send_curent_logging_level(self):
+    def send_curent_logging_level(self) -> None:
         level = self.main_model.get_logging_level()
         self.main_view.set_logging_level(level)
 
     @log(logger=logger)
     @Slot(str)
-    def update_data_server_location(self, data_server):
+    def update_data_server_location(self, data_server: str) -> None:
         self.main_model.update_app_config("Parent Folder", data_server)
         self.data_plugin_controller.update_data_server_location(data_server)
 
     @log(logger=logger)
     @Slot(str)
-    def update_user_plugin_location(self, user_plugin_loc):
+    def update_user_plugin_location(self, user_plugin_loc: str) -> None:
         self.main_model.update_app_config("User Plugin Folder", user_plugin_loc)
         plugin_path = Path(user_plugin_loc).resolve()
         parent_path = plugin_path.parent
@@ -157,12 +163,14 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot(str, str, object)
-    def get_plugin_instance(self, metaclass, key, callback):
+    def get_plugin_instance(
+        self, metaclass: str, key: str, callback: Callable[[object], None]
+    ) -> None:
         callback(self.data_plugin_controller.get_plugin_instance(metaclass, key))
 
     @log(logger=logger)
     @Slot(str, str)
-    def get_settings_from_history(self, metaclass, subclass):
+    def get_settings_from_history(self, metaclass: str, subclass: str) -> None:
         for key, val in self.plugin_history.items():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
                 self.data_plugin_controller.set_settings(val.get("settings"))
@@ -328,7 +336,9 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot(str, list)
-    def update_available_plugins(self, metaclass, available_plugins):
+    def update_available_plugins(
+        self, metaclass: str, available_plugins: List[str]
+    ) -> None:
         self.logger.debug(
             f"Available {metaclass} plugins updates to {available_plugins}"
         )
@@ -339,7 +349,9 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot(dict, str)
-    def update_plugin_history(self, history, delete_key):
+    def update_plugin_history(
+        self, history: Optional[Dict[str, Any]], delete_key: Optional[str]
+    ) -> None:
         if history and not delete_key:
             if history:
                 self.plugin_history[history.pop("key")] = history
@@ -356,20 +368,22 @@ class MainController(QObject):
         self.main_model.save_session(self.plugin_history)
 
     @Slot(str, str, str)
-    def handle_plugin_state_changed(self, metaclass, plugin_key, reason):
+    def handle_plugin_state_changed(
+        self, metaclass: str, plugin_key: str, reason: str
+    ) -> None:
         for key, val in self.analysis_tabs.items():
             if val:
                 val.view.notify_plugin_state_changed(metaclass, plugin_key, reason)
 
     @log(logger=logger)
     @Slot(str, object)
-    def update_tab_action_history(self, key, history):
+    def update_tab_action_history(self, key: str, history: Any) -> None:
         self.tab_action_history[key] = history
         self.main_model.save_tab_actions(self.tab_action_history)
 
     @log(logger=logger)
     @Slot(str)
-    def instantiate_analysis_tab(self, subclass):
+    def instantiate_analysis_tab(self, subclass: str) -> None:
         """
         Instantiate a new analysis-tab controller of the given subclass and wire it into the app
         (add its page, connect its signals, register it in plugin history), or reuse the existing
@@ -438,17 +452,19 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot(str)
-    def save_session(self, save_file=None):
+    def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
         self.main_model.save_session(self.plugin_history, save_file)
 
     @log(logger=logger)
     @Slot(object, str)
-    def save_tab_action_history(self, history, save_file=None):
+    def save_tab_action_history(
+        self, history: Any, save_file: Optional[Union[str, Path]] = None
+    ) -> None:
         self.main_model.save_tab_actions(history, save_file)
 
     @log(logger=logger)
     @Slot(str)
-    def load_session(self, file_name=None):
+    def load_session(self, file_name: Optional[Union[str, Path]] = None) -> None:
         self.logger.debug(f"Loading session from file {file_name}")
         plugin_history = self.main_model.load_session(file_name)
         if plugin_history is not None:
@@ -483,7 +499,7 @@ class MainController(QObject):
 
     @log(logger=logger)
     @Slot()
-    def send_analysis_tabs(self):
+    def send_analysis_tabs(self) -> None:
         """Send the list of instantiated analysis tabs to MainView."""
         self.logger.debug("Sending instantiated analysis tabs to MainView.")
 

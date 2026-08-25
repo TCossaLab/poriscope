@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+from typing import Any, Dict, Optional
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from poriscope.utils.LogDecorator import log
@@ -43,16 +45,21 @@ class PluginManager(QDialog):
     save_requested = Signal(str, dict)  # Emit new name and updated settings
     delete_requested = Signal(str)  # Emit plugin name to delete
 
-    def __init__(self, plugin_name, plugin_data=None, parent=None):
+    def __init__(
+        self,
+        plugin_name: str,
+        plugin_data: Optional[Dict[str, Any]] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         if not isinstance(plugin_name, str):
             raise ValueError("plugin_name must be a string")
         self.plugin_name = plugin_name
-        self.plugin_data = plugin_data or {}
+        self.plugin_data: Dict[str, Any] = plugin_data or {}
         self.setup_ui()
 
     @log(logger=logger)
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         self.setWindowTitle("Plugin Manager")
         self.setFixedSize(400, 300)
 
@@ -71,7 +78,7 @@ class PluginManager(QDialog):
         # self.delete_button.clicked.connect(self.emit_delete)
 
     @log(logger=logger)
-    def emit_save(self):
+    def emit_save(self) -> None:
         new_settings = {"name": self.line_name.text()}  # Collect settings as necessary
         self.logger.info("PluginManagerPopup: Saving sent")
         self.save_requested.emit(self.plugin_name, new_settings)

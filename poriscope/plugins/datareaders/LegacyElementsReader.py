@@ -25,6 +25,7 @@
 
 import logging
 import re
+from typing import List
 
 import numpy as np
 from typing_extensions import override
@@ -47,17 +48,19 @@ class LegacyElementsReader(TCossaLabABFReader):
     # private API, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
     @override
-    def _get_file_time_stamps(self, file_names, configs):
+    def _get_file_time_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
         :return: List of timestamps parsed from configuration.
-        :rtype: List[datetime]
+        :rtype: List[int]
 
         :raises ValueError: If the filename does not match the expected pattern
         """
@@ -77,30 +80,30 @@ class LegacyElementsReader(TCossaLabABFReader):
 
     @log(logger=logger)
     @override
-    def _get_file_channel_stamps(self, file_names, configs):
+    def _get_file_channel_stamps(
+        self, file_names: List[str], configs: List[dict]
+    ) -> List[int]:
         """
         Get a list of serialization keys used to sort the list of files associated to the experiment.
 
         :param file_names: List of file paths.
-        :type file_names: List[os.PathLike]
+        :type file_names: List[str]
         :param configs: List of configuration dictionaries.
         :type configs: List[dict]
 
         :return: List of channel numbers parsed from configuration.
         :rtype: List[int]
-
-        :raises ValueError: If the filename does not match the expected pattern
         """
         return [0]
 
     @log(logger=logger)
     @override
-    def _get_file_pattern(self, file_name):
+    def _get_file_pattern(self, file_name: str) -> str:
         """
         Get the base name for matching other files to the same dataset as the initial one provided to the constructor.
 
         :param file_name: File path.
-        :type file_name: os.PathLike
+        :type file_name: str
 
         :return: Base name for matching other files.
         :rtype: str
@@ -118,13 +121,13 @@ class LegacyElementsReader(TCossaLabABFReader):
 
     @log(logger=logger)
     @override
-    def _get_configs(self, datafiles):
+    def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
         Default behavior assumes there are no config files needed.
 
         :param datafiles: List of data file paths.
-        :type datafiles: List[os.PathLike]
+        :type datafiles: List[str]
         :return: List of configuration dictionaries.
         :rtype: List[dict]
 

@@ -25,6 +25,7 @@
 
 
 import logging
+from typing import Collection, Optional
 
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 
@@ -44,25 +46,30 @@ class BaseSubsetFilterDialog(QDialog):
     logger = logging.getLogger(__name__)
 
     def __init__(
-        self, parent, title, existing_names, default_name="", default_filter=""
-    ):
+        self,
+        parent: Optional[QWidget],
+        title: str,
+        existing_names: Collection[str],
+        default_name: str = "",
+        default_filter: str = "",
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.existing_names = existing_names
-        self.name = None
-        self.filter_text = None
-        self.is_raw = False
+        self.name: Optional[str] = None
+        self.filter_text: Optional[str] = None
+        self.is_raw: bool = False
         self.default_name = default_name
         self.default_filter = default_filter
 
         self._init_ui()
 
-    def _init_ui(self):
-        self.layout = QVBoxLayout(self)
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
 
         self.name_input = QLineEdit(self.default_name)
-        self.layout.addWidget(QLabel("Subset:"))
-        self.layout.addWidget(self.name_input)
+        layout.addWidget(QLabel("Subset:"))
+        layout.addWidget(self.name_input)
 
         # Mode selection: Assisted builds the query automatically,
         # Raw SQL passes the filter text directly to the database
@@ -77,7 +84,7 @@ class BaseSubsetFilterDialog(QDialog):
 
         mode_layout.addWidget(self.assisted_radio)
         mode_layout.addWidget(self.raw_radio)
-        self.layout.addLayout(mode_layout)
+        layout.addLayout(mode_layout)
 
         # Pre-select mode based on existing suffix when editing,
         # and lock the radio buttons so mode cannot be changed after creation
@@ -92,17 +99,17 @@ class BaseSubsetFilterDialog(QDialog):
 
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)
-        self.layout.addWidget(QLabel("Filter:"))
-        self.layout.addWidget(self.filter_input)
+        layout.addWidget(QLabel("Filter:"))
+        layout.addWidget(self.filter_input)
 
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        self.layout.addWidget(self.button_box)
+        layout.addWidget(self.button_box)
         self.button_box.accepted.connect(self.try_accept)
         self.button_box.rejected.connect(self.reject)
 
-    def try_accept(self):
+    def try_accept(self) -> None:
         name = self.name_input.text().strip()
         if not name:
             QMessageBox.warning(

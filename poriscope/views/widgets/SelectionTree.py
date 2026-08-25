@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 
 
 class SelectionTree(QWidget):
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
 
         self.tree = QTreeWidget()
@@ -73,7 +73,7 @@ class SelectionTree(QWidget):
         structure: dict[str, list[str]],
         loader_name: str,
         selected: Optional[dict[str, list[str]]] = None,
-    ):
+    ) -> None:
         # Use provided selection or default to cached or full select
         if selected is not None:
             selected_items = selected
@@ -119,7 +119,7 @@ class SelectionTree(QWidget):
 
         self.update_select_all_button()
 
-    def on_item_changed(self, item, column):
+    def on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         self.tree.blockSignals(True)
 
         if item.childCount() > 0:
@@ -143,7 +143,7 @@ class SelectionTree(QWidget):
         self.tree.blockSignals(False)
         self.update_select_all_button()
 
-    def on_select_all_toggled(self, checked: bool):
+    def on_select_all_toggled(self, checked: bool) -> None:
         self.tree.blockSignals(True)
         state = Qt.Checked if checked else Qt.Unchecked
 
@@ -156,7 +156,7 @@ class SelectionTree(QWidget):
         self.tree.blockSignals(False)
         self.update_select_all_button()
 
-    def update_select_all_button(self):
+    def update_select_all_button(self) -> None:
         total = 0
         checked = 0
         for i in range(self.tree.topLevelItemCount()):

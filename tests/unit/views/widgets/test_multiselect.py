@@ -19,10 +19,11 @@ its sibling's test suite:
   addItems() leaves every item selected immediately -- the "Select All"
   button reads "Deselect All" / isChecked() True right after items are
   added, not "Select All" / unchecked the way the filter widget starts.
-* addItem()'s userData parameter is accepted but never stored (no
-  item.setData(Qt.UserRole, ...) call in the source) -- unlike the filter
-  widget, which does store it. Documented here as a real difference in
-  currently-observed behavior, not asserted as correct or incorrect.
+* addItem() takes only the item text. It used to accept a userData
+  argument and silently discard it, which was removed. Note the filter
+  widget does call item.setData(Qt.UserRole, ...), but it stores the item
+  *name* there, not a caller-supplied payload -- neither class has ever
+  stored userData.
 """
 
 import sys
@@ -39,6 +40,23 @@ app = QApplication.instance() or QApplication(sys.argv)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def dispose(widget) -> None:
+    """
+    Tear a widget down through the event loop.
+
+    ``QWidget.destroy()`` only releases the native window - the C++ object
+    survives until Shiboken collects the Python wrapper, at an arbitrary
+    later point in the run. A widget disposed of that way can leave posted
+    events behind that fault the interpreter the next time *any* test spins
+    the event loop, which is how this file used to segfault
+    ``test_walkthrough_mixin.py`` several hundred tests later.
+    ``deleteLater()`` plus a drained loop deletes it while Qt can still clean
+    up after it.
+    """
+    widget.deleteLater()
+    app.processEvents()
 
 
 def make_combo() -> MultiSelectComboBox:
@@ -72,7 +90,7 @@ class TestAddItems(unittest.TestCase):
         self.c = make_combo()
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_add_single_item_creates_row(self):
         self.c.addItem("0")
@@ -84,10 +102,13 @@ class TestAddItems(unittest.TestCase):
         self.c.addItem("0")
         self.assertEqual(self.c.listWidget.item(0).checkState(), Qt.CheckState.Checked)
 
-    def test_add_item_user_data_is_not_stored(self):
-        """Confirmed real behavior: userData is accepted but silently
-        discarded -- item.data(Qt.UserRole) is never set on this class."""
-        self.c.addItem("0", userData="some_payload")
+    def test_add_item_rejects_user_data(self):
+        """addItem used to accept userData and silently discard it. The
+        parameter was removed so that a caller relying on it fails loudly
+        instead; item.data(Qt.UserRole) is still never set on this class."""
+        with self.assertRaises(TypeError):
+            self.c.addItem("0", userData="some_payload")
+        self.c.addItem("0")
         self.assertIsNone(self.c.listWidget.item(0).data(Qt.UserRole))
 
     def test_add_items_populates_all(self):
@@ -122,7 +143,7 @@ class TestGetSelectedItems(unittest.TestCase):
         self.c.addItems(["0", "1", "2"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_all_selected_immediately_after_add(self):
         # Items default to checked, so nothing needs to be selected first.
@@ -155,7 +176,7 @@ class TestSelectItem(unittest.TestCase):
         check_all_items(self.c, False)  # start from a known, empty state
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_select_by_name(self):
         self.c.selectItem("1")
@@ -217,7 +238,7 @@ class TestHandleItemChanged(unittest.TestCase):
         check_all_items(self.c, False)  # start from a known, empty state
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_line_edit_empty_when_nothing_selected(self):
         self.assertEqual(self.c.lineEdit().text(), "")
@@ -260,7 +281,7 @@ class TestSelectAllButton(unittest.TestCase):
         self.c = make_combo()
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_state_after_add_items_is_all_selected(self):
         """Confirmed real behavior: since addItem() defaults to checked,
@@ -336,7 +357,7 @@ class TestRefreshDisplayText(unittest.TestCase):
         check_all_items(self.c, False)
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_refresh_reflects_current_state(self):
         set_checked(self.c, 0, True)
@@ -361,7 +382,7 @@ class TestPopup(unittest.TestCase):
         self.c.addItems(["0", "1"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_container_hidden_initially(self):
         self.assertFalse(self.c.containerWidget.isVisible())

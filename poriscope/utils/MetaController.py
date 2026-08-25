@@ -29,7 +29,7 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Mapping, Optional
+from typing import Any, Generator, List, Mapping, Optional
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -57,14 +57,18 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     create_plugin = Signal(str, str)  # metaclass, subclass
     logger = logging.getLogger(__name__)
 
-    def __init__(self, available_subclasses=None, **kwargs) -> None:
+    def __init__(
+        self,
+        available_subclasses: Optional[Mapping[str, List[str]]] = None,
+        **kwargs: Any,
+    ) -> None:
         """
         Initialize the MetaController, along with its MetaView and MetaModel (built by the subclass's `_init()`).
 
         :param available_subclasses: mapping of available plugin subclasses, passed through to the view
-        :type available_subclasses: Optional[dict]
-        :param kwargs: Additional parameters to set as attributes on the instance
-        :type kwargs: dict
+        :type available_subclasses: Optional[Mapping[str, List[str]]]
+        :param \\**kwargs: Additional parameters to set as attributes on the instance
+        :type \\**kwargs: Any
         """
 
         super().__init__()
@@ -115,21 +119,23 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str, str)
-    def _relay_create_plugin(self, metaclass, subclass):
+    def _relay_create_plugin(self, metaclass: str, subclass: str) -> None:
         self.create_plugin.emit(metaclass, subclass)
 
     @log(logger=logger)
-    def update_plot_data(self, data):
+    def update_plot_data(self, data: Optional[Any]) -> None:
         """
         Update the view with new plot data.
 
         :param data: Optional data to be plotted (e.g., event traces or fitted results).
-        :type data: Any or None
+        :type data: Optional[Any]
         """
         self.view.update_plot_data(data)
 
     @log(logger=logger)
-    def set_force_serial_channel_operations(self, serial_ops, key, channel):
+    def set_force_serial_channel_operations(
+        self, serial_ops: bool, key: str, channel: int
+    ) -> None:
         """
         Set a flag to enforce serial execution for specific channel operations.
 
@@ -146,7 +152,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot()
-    def export_plot_data(self):
+    def export_plot_data(self) -> None:
         """
         Export the currently cached plot data to a CSV file.
 
@@ -182,13 +188,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str)
-    def load_actions_from_json(self, filename):
+    def load_actions_from_json(self, filename: str) -> None:
         """
         Load and apply tab actions from a JSON file.
 
         :param filename: Path to the JSON file containing saved actions.
         :type filename: str
-        :return: None
         """
         try:
             with open(filename, "r") as json_file:
@@ -201,7 +206,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.view.update_actions_from_json(actions)
 
     @log(logger=logger)
-    def display_write_status(self, status):
+    def display_write_status(self, status: bool) -> None:
         """
         Emit a message indicating whether data was successfully written.
 
@@ -218,7 +223,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             )
 
     @log(logger=logger)
-    def check_column_exists(self, table_name):
+    def check_column_exists(self, table_name: str) -> None:
         """
         Notify the view to check if a cluster column exists in the given table.
 
@@ -229,7 +234,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str)
-    def relay_add_text_to_display(self, text, source):
+    def relay_add_text_to_display(self, text: str, source: str) -> None:
         """
         Relay text from model or view to be displayed in the main text display widget
         """
@@ -237,9 +242,16 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str, int)
-    def handle_kill_worker(self, subclass, identifier):
+    def handle_kill_worker(self, subclass: str, identifier: str) -> None:
         """
         Kill the selected worker if it is running.
+
+        Note: the ``@Slot(str, int)`` decorator's declared second-argument type
+        (``int``) does not match the ``str`` value actually delivered by
+        ``MetaView.kill_worker`` (``Signal(str, str)``) or the ``"key/channel"``
+        string parsing performed below; this is a pre-existing mismatch and is
+        left as-is here since fixing it is a behavior change, not a type-hint
+        change.
         """
         self.logger.debug(
             f"Called handle_kill_worker with subclass='{subclass}', self class='{self.__class__.__name__}', identifier={identifier}"
@@ -247,8 +259,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         # Extract key and channel from identifier
         try:
-            key, channel = identifier.split("/")  # Extract key and channel
-            channel = int(channel)  # Convert channel to integer
+            key, channel_str = identifier.split("/")  # Extract key and channel
+            channel = int(channel_str)  # Convert channel to integer
         except ValueError:
             self.logger.error(
                 f"Invalid identifier format: {identifier}. Expected format 'key/channel'."
@@ -284,12 +296,18 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             )
 
     @log(logger=logger)
-    def set_generator(self, generator, channel, key, metaclass):
+    def set_generator(
+        self,
+        generator: Generator[float, Optional[bool], None],
+        channel: int,
+        key: str,
+        metaclass: str,
+    ) -> None:
         """
         Assign a generator to the model for asynchronous event processing.
 
         :param generator: Generator object for producing event data.
-        :type generator: Generator
+        :type generator: Generator[float, Optional[bool], None]
         :param channel: Target channel number.
         :type channel: int
         :param key: Identifier key for the data stream.
@@ -301,7 +319,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str)
-    def handle_kill_all_workers(self, subclass, exiting=False):
+    def handle_kill_all_workers(self, subclass: str, exiting: bool = False) -> None:
         """
         Kill all running workers.
         """
@@ -334,10 +352,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :type subclass_key: str
         :param call_function: A string matching the signature of a callable in the plugin identified by metaclass and subclass. This function should be a public API member of another subclass that has already been instantiated.
         :type call_function: str
-        :param return_function: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function: Optional[str]
         :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: str
+        :type call_args: tuple
+        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
+        :type return_function_name: Optional[str]
         :param ret_args: A tuple that will be appended to the return value of the call_function
         :type ret_args: tuple
         """
@@ -396,10 +414,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :type subclass_key: str
         :param call_function: A string matching the signature of a callable in the data plugin controller. (NOT in the data plugin itself).
         :type call_function: str
-        :param return_function: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function: Optional[str]
         :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: str
+        :type call_args: tuple
+        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
+        :type return_function_name: Optional[str]
         :param ret_args: A tuple that will be appended to the return value of the call_function
         :type ret_args: tuple
         """
@@ -450,7 +468,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(str)
-    def save_tab_actions(self, save_file: Optional[str] = None):
+    def save_tab_actions(self, save_file: Optional[str] = None) -> None:
         """
         Emit a signal to save the current tab action history to the specified file.
 
@@ -461,7 +479,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(object, bool)
-    def update_tab_actions(self, history: Optional[dict] = None, undo=False):
+    def update_tab_actions(
+        self, history: Optional[dict] = None, undo: bool = False
+    ) -> None:
         """
         Update or undo the current tab action history, and emit the updated state.
 
@@ -501,7 +521,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         )
 
     @log(logger=logger)
-    def ignore(self):
+    def ignore(self) -> None:
         """
         Placeholder method that does nothing. Can be overridden if needed.
         """

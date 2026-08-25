@@ -25,6 +25,7 @@
 
 
 import logging
+from typing import Any, Dict, Optional, Sequence
 
 from PySide6.QtCore import QCoreApplication, QSize, Signal
 from PySide6.QtGui import QFont
@@ -57,11 +58,14 @@ class ClusteringControls(QWidget):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         """
         Initialize the ClusteringControls widget.
 
         Sets up the UI, connects signals, and performs initial input validation.
+
+        :param parent: Parent widget that owns these controls.
+        :type parent: Optional[QWidget]
         """
         super().__init__(parent)
         self.logger.info("Initializing ClusteringControls")
@@ -70,9 +74,9 @@ class ClusteringControls(QWidget):
         self.logger.info("ClusteringControls initialized")
         self.validate_inputs()
         self.max_range_size = 16
-        self.active_popups = {}
+        self.active_popups: Dict[QComboBox, Any] = {}
 
-    def setupUi(self):
+    def setupUi(self) -> None:
         self.logger.info("Setting up UI")
         self.setObjectName("Form")
         self.resize(663, 295)
@@ -181,12 +185,14 @@ class ClusteringControls(QWidget):
         self.logger.info("UI setup complete")
 
     # QWidgets
-    def create_comboBox(self, parent):
+    def create_comboBox(self, parent: QWidget) -> QComboBox:
         comboBox = QComboBox(parent)
         comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return comboBox
 
-    def createButton(self, parent, text, bold=False):
+    def createButton(
+        self, parent: QWidget, text: str, bold: bool = False
+    ) -> QPushButton:
         button = QPushButton(parent)
         font = QFont()
         font.setBold(bold)
@@ -198,7 +204,7 @@ class ClusteringControls(QWidget):
         button.setStyleSheet("")  # Resetting to default style
         return button
 
-    def createLabel(self, parent, pointSize, text):
+    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
         label = QLabel(parent)
         font = QFont()
         font.setPointSize(pointSize - 6)
@@ -207,7 +213,9 @@ class ClusteringControls(QWidget):
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return label
 
-    def create_info_button(self, parent, comboBox, info_text, metaclass):
+    def create_info_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates an info button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("pencil-square.svg"))
@@ -235,7 +243,9 @@ class ClusteringControls(QWidget):
         )
         return button
 
-    def create_add_button(self, parent, comboBox, add_text, metaclass):
+    def create_add_button(
+        self, parent: QWidget, comboBox: QComboBox, add_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates an add button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("plus-square.svg"))
@@ -251,7 +261,9 @@ class ClusteringControls(QWidget):
         button.setEnabled(True)
         return button
 
-    def create_delete_button(self, parent, comboBox, info_text, metaclass):
+    def create_delete_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
         """Creates a delete button linked to the corresponding combobox."""
         button = QToolButton(parent)
         button.setIcon(get_icon("trash.svg"))
@@ -279,7 +291,7 @@ class ClusteringControls(QWidget):
         )
         return button
 
-    def retranslateUi(self):
+    def retranslateUi(self) -> None:
         """
         Update translated UI strings.
 
@@ -291,12 +303,12 @@ class ClusteringControls(QWidget):
 
     # QWidget status
 
-    def update_units(self, comboBox, units_label):
+    def update_units(self, comboBox: QComboBox, units_label: QLabel) -> None:
         """Update units based on the selected column in the comboBox and emit an update signal."""
         parameters = self.collect_parameters()
         self.actionTriggered.emit("ClusteringView", "columns_updated", (parameters,))
 
-    def toggle_info_button(self, button, comboBox):
+    def toggle_info_button(self, button: QToolButton, comboBox: QComboBox) -> None:
         """Enables or disables the info button based on the comboBox selection and item count."""
         button.setEnabled(
             comboBox.count() > 0
@@ -304,33 +316,33 @@ class ClusteringControls(QWidget):
             and not self.is_placeholder_item(comboBox)
         )
 
-    def is_placeholder_item(self, comboBox):
+    def is_placeholder_item(self, comboBox: QComboBox) -> bool:
         """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
         return comboBox.currentText() in ["No Event Database"]
 
-    def show_plugin_edit_manager(self, comboBox, metaclass):
+    def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """Displays the plugin manager with details for the selected item from the combobox."""
         key = comboBox.currentText()
         self.edit_processed.emit(metaclass, key)
 
-    def show_plugin_add_manager(self, comboBox, metaclass):
+    def show_plugin_add_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """Displays the plugin manager with details for the selected item from the combobox."""
 
         self.add_processed.emit(metaclass)
 
-    def delete_plugin(self, comboBox, metaclass):
+    def delete_plugin(self, comboBox: QComboBox, metaclass: str) -> None:
         """Deletes the plugin corresponding tot he current ComboBox selection"""
 
         key = comboBox.currentText()
         self.delete_processed.emit(metaclass, key)
 
-    def clear_popup_reference(self, comboBox):
+    def clear_popup_reference(self, comboBox: QComboBox) -> None:
         """Clears the reference to the popup when it is closed."""
         if comboBox in self.active_popups:
             self.active_popups.pop(comboBox)
 
     # Signals Connection
-    def connect_signals(self):
+    def connect_signals(self) -> None:
         """Connects signals to corresponding methods."""
         # Core action buttons
         self.cluster_settings_button.clicked.connect(
@@ -351,7 +363,7 @@ class ClusteringControls(QWidget):
 
     # Data Validation
 
-    def collect_parameters(self):
+    def collect_parameters(self) -> dict:
         """
         Collect current input values from the UI widgets.
 
@@ -363,7 +375,7 @@ class ClusteringControls(QWidget):
         """
         self.logger.info("Collecting parameters")
         # Initialize with default values to handle possible None values
-        parameters = {}
+        parameters: Dict[str, Optional[str]] = {}
         try:
             parameters = {
                 "db_loader": self.db_loader_comboBox.currentText()
@@ -377,7 +389,7 @@ class ClusteringControls(QWidget):
         self.logger.debug(f"Collected parameters: {parameters}")
         return parameters
 
-    def on_loader_changed(self):
+    def on_loader_changed(self) -> None:
         """Handles parameter changes and emits an action signal."""
         parameters = self.collect_parameters()
         self.logger.debug(
@@ -385,7 +397,7 @@ class ClusteringControls(QWidget):
         )
         self.actionTriggered.emit("ClusteringView", "loader_changed", (parameters,))
 
-    def on_label_changed(self):
+    def on_label_changed(self) -> None:
         """
         Handle changes in either the X or Y label combo box.
 
@@ -394,7 +406,7 @@ class ClusteringControls(QWidget):
         """
         pass
 
-    def validate_inputs(self):
+    def validate_inputs(self) -> None:
         """Validates input fields and enables/disables buttons accordingly."""
         is_merge_valid = True
         is_commit_valid = True
@@ -425,7 +437,7 @@ class ClusteringControls(QWidget):
         self.commit_button.setEnabled(is_commit_valid)
 
     # Actions
-    def on_button_clicked(self, button_type):
+    def on_button_clicked(self, button_type: str) -> None:
         """Handles button clicks and emits appropriate signals."""
         parameters = self.collect_parameters()
         self.logger.debug(
@@ -481,7 +493,7 @@ class ClusteringControls(QWidget):
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
 
-    def update_labels(self):
+    def update_labels(self) -> None:
         """
         Update both X and Y label combo boxes.
 
@@ -490,21 +502,21 @@ class ClusteringControls(QWidget):
         """
         pass
 
-    def update_clusters(self, clusters):
+    def update_clusters(self, clusters: Sequence[Any]) -> None:
         """
         Update the X and Y label combo boxes with the provided cluster labels.
 
-        :param clusters: A list of cluster identifiers to populate the combo boxes.
-        :type clusters: list[str]
+        :param clusters: A sequence of cluster identifiers to populate the combo boxes. Values are stringified before display, so any type is accepted.
+        :type clusters: Sequence[Any]
         """
 
-        clusters = [str(c) for c in clusters]
+        cluster_names = [str(c) for c in clusters]
         self.label_x_comboBox.clear()
-        self.label_x_comboBox.addItems(clusters)
+        self.label_x_comboBox.addItems(cluster_names)
         self.label_y_comboBox.clear()
-        self.label_y_comboBox.addItems(clusters)
+        self.label_y_comboBox.addItems(cluster_names)
 
-    def get_current_loader(self):
+    def get_current_loader(self) -> Optional[str]:
         """Return the currently selected DB loader key, or None if unset."""
         text = self.db_loader_comboBox.currentText()
         return text if text and text != "No Event Database" else None

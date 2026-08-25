@@ -36,7 +36,7 @@ import logging
 import os
 import re
 import sys  ### FIX: Imported sys to check the operating system
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QWidget,
 )
 
 from poriscope.utils.LogDecorator import log
@@ -59,24 +60,35 @@ class DictDialog(QDialog):
 
     def __init__(
         self,
-        params,
-        name,
-        title="",
-        data_server="",
-        editable=True,
-        show_delete=False,
-        editable_source_plugins=True,
-        source_plugins=[],
-        parent=None,
-    ):
+        params: dict,
+        name: str,
+        title: str = "",
+        data_server: str = "",
+        editable: bool = True,
+        show_delete: bool = False,
+        editable_source_plugins: bool = True,
+        source_plugins: Optional[list] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         """
         :param params: Plugin parameters to edit.
+        :type params: dict
         :param name: Name of the plugin.
+        :type name: str
         :param title: Dialog title.
+        :type title: str
         :param data_server: Base path for folder/file selection.
+        :type data_server: str
         :param editable: If True, allow editing of the plugin name.
+        :type editable: bool
         :param show_delete: If True, show the Delete button (used for edit settings).
+        :type show_delete: bool
+        :param editable_source_plugins: If True, allow editing of the source plugins list.
+        :type editable_source_plugins: bool
+        :param source_plugins: List of available source plugin keys.
+        :type source_plugins: Optional[list]
         :param parent: Parent widget.
+        :type parent: Optional[QWidget]
         """
         super().__init__(parent)
         self.title = title
@@ -85,17 +97,22 @@ class DictDialog(QDialog):
         self.editable = editable
         self.params = params
         self.show_delete = show_delete
-        self.result = None
-        self.source_plugins = source_plugins
+        # one shape: (params, name) on OK, (None, None) on cancel, on delete,
+        # and on dismissal via Esc or the window close button, neither of which
+        # runs a button handler. Delete is reported separately by
+        # _delete_requested rather than by a sentinel value in _result.
+        self._result: Tuple[Optional[dict], Optional[str]] = (None, None)
+        self._delete_requested: bool = False
+        self.source_plugins = source_plugins if source_plugins is not None else []
         self.editable_source_plugins = editable_source_plugins
         self.init_ui(params, name)
 
     @log(logger=logger)
-    def init_ui(self, params, name):
+    def init_ui(self, params: dict, name: str) -> None:
         layout = QGridLayout(self)
-        labels = {}
-        self.entrywidgets = {}
-        self.unitwidgets = {}
+        labels: Dict[str, QLabel] = {}
+        self.entrywidgets: Dict[str, Any] = {}
+        self.unitwidgets: Dict[str, Any] = {}
         self.ok_button = QPushButton("OK", self)
         self.ok_button.setEnabled(False)  # Initially disable the OK button
         cancel_button = QPushButton("Cancel", self)
@@ -191,9 +208,9 @@ class DictDialog(QDialog):
                     self.entrywidgets[key] = QCheckBox()
                     self.entrywidgets[key].setChecked(val.get("Value"))
                 else:
-                    print(key, val)
                     raise ValueError(
-                        f"Unsupported value type for plugin settings: {val.get('Type')}"
+                        f"Unsupported value type for plugin setting {key!r}: "
+                        f"{val.get('Type')} (value {val.get('Value')!r})"
                     )
 
             if key not in ["Input File", "Output File", "Folder"]:
@@ -231,7 +248,7 @@ class DictDialog(QDialog):
         self,
         starting_file_path: Optional[str] = None,
         file_types: str = "All Files (*)",
-    ):
+    ) -> None:
         """
         Get the name of the file to be opened as the basis for a raw data set.
 
@@ -239,15 +256,13 @@ class DictDialog(QDialog):
         :type starting_file_path: Optional[str]
         :param file_types: The types of files to filter, defaults to "All Files (*)".
         :type file_types: str
-        :return: The selected file path.
-        :rtype: str
         :raises Exception: If there is an error determining the file path location.
         """
         loc = ""
         if starting_file_path is not None:
             try:
                 loc = os.path.dirname(starting_file_path)
-            except:
+            except Exception:
                 raise
 
         options = QFileDialog.Options()
@@ -268,7 +283,7 @@ class DictDialog(QDialog):
         self,
         starting_file_path: Optional[str] = None,
         file_types: str = "All Files (*)",
-    ):
+    ) -> None:
         """
         Get the name of the file to save to.
 
@@ -276,15 +291,13 @@ class DictDialog(QDialog):
         :type starting_file_path: Optional[str]
         :param file_types: The types of files to filter, defaults to "All Files (*)".
         :type file_types: str
-        :return: The selected file path for saving.
-        :rtype: str
         :raises Exception: If there is an error determining the file path location.
         """
         loc = ""
         if starting_file_path is not None:
             try:
                 loc = os.path.dirname(starting_file_path)
-            except:
+            except Exception:
                 raise
 
         options = QFileDialog.Options()
@@ -307,16 +320,12 @@ class DictDialog(QDialog):
             self.check_validity()
 
     @log(logger=logger)
-    def get_folder(self, starting_path: Optional[str] = None):
+    def get_folder(self, starting_path: Optional[str] = None) -> None:
         """
         Get the name of the output folder to save to
 
-        :param starting_file_path: The starting file path, defaults to None.
-        :type starting_file_path: Optional[str]
-
-        :return: The selected file path for saving.
-        :rtype: str
-        :raises Exception: If there is an error determining the file path location.
+        :param starting_path: The starting file path, defaults to None.
+        :type starting_path: Optional[str]
         """
         loc = starting_path if starting_path else ""
 
@@ -335,7 +344,7 @@ class DictDialog(QDialog):
             self.unitwidgets["Folder"].setChecked(True)
             self.check_validity()
 
-    def check_validity(self):
+    def check_validity(self) -> None:
         all_valid = True
         for key, widget in self.entrywidgets.items():
             if isinstance(widget, NumericLineEdit):
@@ -356,7 +365,7 @@ class DictDialog(QDialog):
         self.ok_button.setEnabled(all_valid)
 
     @log(logger=logger)
-    def on_ok(self):
+    def on_ok(self) -> None:
         for key, val in self.params.items():
             if key not in ["Input File", "Output File", "Folder"]:
                 try:
@@ -373,20 +382,30 @@ class DictDialog(QDialog):
                             self.entrywidgets[key].text()
                         )
 
-        self.result = (self.params, self.name_entry.text())
+        self._result = (self.params, self.name_entry.text())
         self.accept()
 
     @log(logger=logger)
-    def on_cancel(self):
-        self.result = (None, None)
+    def on_cancel(self) -> None:
+        self._result = (None, None)
         self.reject()
 
     @log(logger=logger)
-    def on_delete(self):
+    def on_delete(self) -> None:
         """Handle Delete button click."""
-        self.result = "delete"  # Mark delete request
+        self._delete_requested = True  # Mark delete request
         self.reject()  # Close dialog
 
     @log(logger=logger)
-    def get_result(self):
-        return self.result
+    def get_result(self) -> Tuple[Optional[dict], Optional[str]]:
+        return self._result
+
+    @log(logger=logger)
+    def delete_requested(self) -> bool:
+        """
+        Report whether the user asked to delete the plugin rather than edit it.
+
+        :return: True if the Delete button was clicked, False otherwise.
+        :rtype: bool
+        """
+        return self._delete_requested

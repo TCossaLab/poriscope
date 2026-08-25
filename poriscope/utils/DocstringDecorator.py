@@ -23,8 +23,10 @@
 # Contributors:
 # Kyle Briggs
 
+from typing import Any, Type
 
-def inherit_docstrings(cls):
+
+def inherit_docstrings(cls: Type[Any]) -> Type[Any]:
     """Class decorator: copy docstrings from base classes if missing.
 
     If a method has no docstring, this searches the MRO (excluding self)

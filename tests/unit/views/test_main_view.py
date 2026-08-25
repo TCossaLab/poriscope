@@ -289,8 +289,9 @@ def test_on_help_button_click_opens_help_window(mocker, main_view):
     """
     Test that clicking the help button opens the HelpCentre window.
     """
-    # Patch HelpCentre used in main_view
-    mock_help = mocker.patch("poriscope.views.help.HelpCentre")
+    # main_view imports HelpCentre at module level, so patch the name where
+    # it is looked up, not where it is defined
+    mock_help = mocker.patch("poriscope.views.main_view.HelpCentre")
 
     main_view.on_help_button_click()
 

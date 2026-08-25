@@ -28,7 +28,7 @@ import logging
 from collections.abc import Sequence
 from enum import IntEnum
 from types import SimpleNamespace
-from typing import Any, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,17 +57,17 @@ class SingleSublevel:
 
     def __init__(
         self, start: int, end: Optional[int] = None, height: Optional[float] = None
-    ):
+    ) -> None:
         # end is not included
         self.start: int = start
         self.end: int = end  # type: ignore
         self.height: float = height  # type: ignore
 
-    def update(self, end: int, height: float):
+    def update(self, end: int, height: float) -> None:
         self.end = end
         self.height = height
 
-    def fetchData(self, event: Sequence, d: bool = False):
+    def fetchData(self, event: Sequence, d: bool = False) -> Sequence:
         if d:
             plt.plot(event)
             plt.axvline(self.start + 22)
@@ -79,10 +79,10 @@ class SingleSublevel:
     def width(self) -> int:
         return self.end - self.start
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"<{self.start} {self.end} {self.height}>"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.__str__()
 
 
@@ -109,46 +109,48 @@ class HackyList(list):
 
 
 class Sublevels:
-    def __init__(self):
-        self.sublevels = []
+    def __init__(self) -> None:
+        self.sublevels: List[SingleSublevel] = []
 
-    def __str__(self):
+    def __str__(self) -> str:
         res = ""
         for sublevel in self.sublevels:
             res += str(sublevel)
         return res
 
-    def insert(self, sublevel):
+    def insert(self, sublevel: SingleSublevel) -> None:
         self.sublevels.append(sublevel)
 
-    def combinedRegion(self, i):
+    def combinedRegion(self, i: int) -> Tuple[int, int]:
         # Combined region of i and i+1
         return self.sublevels[i].start, self.sublevels[i + 1].end
 
-    def merge(self, i, height):
+    def merge(self, i: int, height: float) -> None:
         # merge i and i+1 | delete i+1
         self.sublevels[i].update(self.sublevels[i + 1].end, height)
         self.sublevels.pop(i + 1)
 
     @property
-    def size(self):
+    def size(self) -> int:
         return sum(i.width for i in self.sublevels)
 
     @property
-    def edges(self):
+    def edges(self) -> List[int]:
         return [0] + [i.end for i in self.sublevels]
 
     @property
-    def heights(self):
+    def heights(self) -> List[float]:
         return [i.height for i in self.sublevels]
 
-    def denormalize(self, baseline_mean_original, baseline_std_original):
+    def denormalize(
+        self, baseline_mean_original: float, baseline_std_original: float
+    ) -> None:
         for sublevel in self.sublevels:
             sublevel.height = (
                 sublevel.height * baseline_std_original
             ) + baseline_mean_original
 
-    def filterEmptySublevels(self):
+    def filterEmptySublevels(self) -> None:
         i = 0
         while i < len(self.sublevels):
             if self.sublevels[i].width <= 0:
@@ -165,7 +167,9 @@ class Sublevels:
         return edges
 
 
-def extractContiniousRegions(data: Union[Sequence, NDArray]):
+def extractContiniousRegions(
+    data: Union[Sequence, NDArray],
+) -> Tuple[List[int], List[Any]]:
     """
     data: numpy array or list
     returns: widths(list), height(list)
@@ -196,8 +200,10 @@ def extractContiniousRegions(data: Union[Sequence, NDArray]):
 
 
 def _check_one_sided_percent_parity(
-    sublevel_segment, sublevel_height, oneSidedPercentParity
-):
+    sublevel_segment: NDArray,
+    sublevel_height: float,
+    oneSidedPercentParity: float,
+) -> Tuple[bool, Any]:
     positive_count = np.sum((sublevel_segment - sublevel_height) > 0)
     negative_count = len(sublevel_segment) - positive_count
     positive_count /= len(sublevel_segment)
@@ -210,7 +216,7 @@ def _check_one_sided_percent_parity(
 
 
 def BigConfidenceBooster(
-    data,
+    data: NDArray,
     sublevels: Sublevels,
     minDataPointsToBeBoosted: int,
     oneSidedPercentParity: float,  # 0->1
@@ -238,12 +244,12 @@ def BigConfidenceBooster(
 
 
 def exceptional_height_refresh(
-    settings,
-    event,
-    sublevels,
-    exceptionalHeightBaseMaxDiffForHeightRefresh,
-    heightFunction,
-):
+    settings: dict,
+    event: Any,
+    sublevels: Sublevels,
+    exceptionalHeightBaseMaxDiffForHeightRefresh: float,
+    heightFunction: Callable[..., float],
+) -> Sublevels:
     # ToDo: Unfinished (exceptionalHeightBaseMaxDiffForHeightRefresh is boundless)
     for i in range(len(sublevels.sublevels) - 1):
         s = event["raw"][sublevels.sublevels[i].start : sublevels.sublevels[i].end]
@@ -258,7 +264,10 @@ def exceptional_height_refresh(
 
 
 def normalHeightRefresh(
-    settings, sublevels: Sublevels, raw, heightFunction
+    settings: dict,
+    sublevels: Sublevels,
+    raw: NDArray,
+    heightFunction: Callable[..., float],
 ) -> Sublevels:
     previousHeight = None
     for sublevel in sublevels.sublevels:
@@ -273,14 +282,14 @@ def _check_exceptional_sublevel(
     sublevel: SingleSublevel,
     i: int,
     sublevels: Sublevels,
-    minDataPointsToBeSubLevel,
-    exceptionalPeak_MinHeightStdAboveAndBelow,
-    exceptionalPeak_WidthLowerBound,
-    exceptionalPeak_BaseDifferenceStdAtleast,
-    exceptionalSlope_MinHeightStdOfMinDiff,
-    exceptionalSlope_WidthLowerBound,
-    baseline_mean,
-    baseline_std,
+    minDataPointsToBeSubLevel: int,
+    exceptionalPeak_MinHeightStdAboveAndBelow: float,
+    exceptionalPeak_WidthLowerBound: float,
+    exceptionalPeak_BaseDifferenceStdAtleast: float,
+    exceptionalSlope_MinHeightStdOfMinDiff: float,
+    exceptionalSlope_WidthLowerBound: float,
+    baseline_mean: float,
+    baseline_std: float,
 ) -> bool:
     """
     Return True if the sublevel is exceptional
@@ -340,7 +349,7 @@ def _check_exceptional_sublevel(
     return False
 
 
-def debug_plot_sublevels(sublevels: Sublevels, data, name):
+def debug_plot_sublevels(sublevels: Sublevels, data: Sequence, name: str) -> None:
     print(name)
     plt.scatter(range(len(data)), data, s=0.1)
     print(sublevels.sublevels)
@@ -370,15 +379,12 @@ class NanoTrees(MetaEventFitter):
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -417,6 +423,13 @@ class NanoTrees(MetaEventFitter):
             return settings
 
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Smallest Significant Sublevel"] = {
@@ -435,18 +448,20 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: int | None = None) -> None:
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
-    def construct_fitted_event(self, channel, index):
+    def construct_fitted_event(
+        self, channel: int, index: int
+    ) -> Optional[NDArray[np.float64]]:
         """
         Construct an array of data corresponding to the fit for the specified event
 
@@ -455,7 +470,9 @@ class NanoTrees(MetaEventFitter):
         :param index: the index of the target event
         :type index: int
 
-        :raises RuntimeError: if fitting is not complete yet
+        :return: numpy array of fitted data for the event, or None if fitting is not complete or the event was rejected
+        :rtype: Optional[NDArray[np.float64]]
+        :raises AttributeError: if this instance is not linked to a MetaEventLoader
         """
         if (
             not self.sublevel_metadata
@@ -528,7 +545,7 @@ class NanoTrees(MetaEventFitter):
         ...
 
     def _set_automation_hyperparameters(
-        self, smallestSignificantSublevelStd, rise_time
+        self, smallestSignificantSublevelStd: float, rise_time: int
     ) -> dict:
         """
         automate setting most hyperparamters for the fit based on multiples of a few more elements
@@ -564,11 +581,21 @@ class NanoTrees(MetaEventFitter):
         settings["shortSublevelDefinition"] = p4_minDataPointsToBeSubLevel // 2
         return settings
 
-    def _DNA(self, data: NDArray, padding_before, padding_after, baseline_mean):
+    def _DNA(
+        self,
+        data: NDArray,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+    ) -> Tuple[List[Any], List[Any]]:
         """
         Function stands for Do Not Assume, and serves to calculate widths and height of sublevels without making any assumptions about the shape of the rise time
         """
-        padding = np.hstack((data[:padding_before], data[-padding_after:]))
+        # NOTE: padding_before/padding_after are Optional[int] per the
+        # MetaEventFitter contract and are used here unguarded, so an event
+        # loader that supplies neither raises TypeError. Flagged, not fixed -
+        # the logic in this plugin belongs to its owner.
+        padding = np.hstack((data[:padding_before], data[-padding_after:]))  # type: ignore[operator]
         widths, heights = extractContiniousRegions(padding)
         assert len(widths) == len(heights)
         assert sum(widths) == len(padding)
@@ -623,20 +650,20 @@ class NanoTrees(MetaEventFitter):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
-    ):
+        data: NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+    ) -> Optional[List[Any]]:
         """
         Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
         Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
         Raising an an acceptable handler.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
-        :type data: npt.NDArray[np.float64]
+        :type data: NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
         :param padding_before: the number of data points before the estimated start of the event in the chunk
@@ -649,10 +676,8 @@ class NanoTrees(MetaEventFitter):
         :type baseline_std: Optional[float]
 
         :return: a list of integers corresponding to sublevel transitions
-        :rtype: List[int]
+        :rtype: Optional[List[Any]]
 
-        :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
-        :raises AttributeError: if the fitting method cannot operate without provision of specific padding and baseline metadata and cannot rescue itself. This will cause a stop to processing of the dataset.
         """
         baseline_std = np.std(data[:padding_before])
         baseline_mean = np.mean(data[:padding_before])
@@ -694,7 +719,11 @@ class NanoTrees(MetaEventFitter):
         return final_sublevels.embeded
 
     def _ml_automation(
-        self, data: NDArray, searchStart: int = 3, searchEnd: int = 20, DEBUG=False
+        self,
+        data: NDArray,
+        searchStart: int = 3,
+        searchEnd: int = 20,
+        DEBUG: bool = False,
     ) -> NDArray:
         """
         automatically estimate parameters needed for optimizing the fit sensitivity
@@ -729,7 +758,7 @@ class NanoTrees(MetaEventFitter):
         y = regressor.predict(X)
         return y
 
-    def __pass1(self, settings, data, DEBUG=False) -> NDArray:
+    def __pass1(self, settings: dict, data: NDArray, DEBUG: bool = False) -> NDArray:
         """
         Approximate level breakdown using Adaboost to overfit the event
         """
@@ -746,7 +775,7 @@ class NanoTrees(MetaEventFitter):
         y = regressor.predict(X)
         return y
 
-    def __pass2(self, settings, data, DEBUG=False) -> NDArray:
+    def __pass2(self, settings: dict, data: NDArray, DEBUG: bool = False) -> NDArray:
         """
         Refine the estimate from pass1 using decision trees; still overfit intentionally
         """
@@ -759,7 +788,7 @@ class NanoTrees(MetaEventFitter):
         y = regressor.predict(X)
         return y
 
-    def _pass3(self, settings, data, DEBUG=False) -> Sublevels:
+    def _pass3(self, settings: dict, data: NDArray, DEBUG: bool = False) -> Sublevels:
         """
         Merge Similar Heights with Iterative Height Updates
         """
@@ -848,7 +877,13 @@ class NanoTrees(MetaEventFitter):
         assert len(data) == sum(_.width for _ in sublevels.sublevels)
         return sublevels
 
-    def _pass4(self, settings, sublevels: Sublevels, raw, DEBUG=False) -> Sublevels:
+    def _pass4(
+        self,
+        settings: dict,
+        sublevels: Sublevels,
+        raw: NDArray,
+        DEBUG: bool = False,
+    ) -> Sublevels:
         """
         Split Sublevels with Small Widths with Exceptional Small but Tall Sublevels
         """
@@ -945,7 +980,13 @@ class NanoTrees(MetaEventFitter):
                 break
         return sublevels
 
-    def _pass5(self, settings, sublevels: Sublevels, raw, DEBUG=False) -> Sublevels:
+    def _pass5(
+        self,
+        settings: dict,
+        sublevels: Sublevels,
+        raw: NDArray,
+        DEBUG: bool = False,
+    ) -> Sublevels:
         """
         Repeat Merge Similar Heights
         """
@@ -975,7 +1016,13 @@ class NanoTrees(MetaEventFitter):
         sublevels = normalHeightRefresh(settings, sublevels, raw, self.l50_max_height)
         return sublevels
 
-    def _pass6(self, settings, sublevels: Sublevels, raw, DEBUG=False) -> Sublevels:
+    def _pass6(
+        self,
+        settings: dict,
+        sublevels: Sublevels,
+        raw: NDArray,
+        DEBUG: bool = False,
+    ) -> Sublevels:
         """
         # Clear Baseline in case there are noisy sublevel transitions flagged in the baseline
         """
@@ -1083,7 +1130,13 @@ class NanoTrees(MetaEventFitter):
     #     )  # Right baseline
     #     return new_sublevels
 
-    def _pass7(self, settings, sublevels: Sublevels, raw, DEBUG=False) -> Sublevels:
+    def _pass7(
+        self,
+        settings: dict,
+        sublevels: Sublevels,
+        raw: NDArray,
+        DEBUG: bool = False,
+    ) -> Sublevels:
         """
         # Backtrack (Crude Implementation: Faster) to refine the estimate of sublevel changepoints
         """
@@ -1111,7 +1164,11 @@ class NanoTrees(MetaEventFitter):
         return sublevels
 
     def _slope_height_adjust(
-        self, settings, sublevels: Sublevels, raw, DEBUG=False
+        self,
+        settings: dict,
+        sublevels: Sublevels,
+        raw: NDArray,
+        DEBUG: bool = False,
     ) -> Sublevels:
         """
         adjust the height estimate for slope-type sublevels
@@ -1128,7 +1185,12 @@ class NanoTrees(MetaEventFitter):
                 sublevel.height = self.l50_max_height(settings, sublevel.fetchData(raw))
         return sublevels
 
-    def l50_max_height(self, settings, sublevel, previousHeight=None) -> float:
+    def l50_max_height(
+        self,
+        settings: dict,
+        sublevel: NDArray,
+        previousHeight: Optional[float] = None,
+    ) -> float:
         """
         # Height Function used to estimate the current level within short sublevels
         """
@@ -1143,7 +1205,7 @@ class NanoTrees(MetaEventFitter):
         else:
             return np.mean(sublevel[len(sublevel) // 2 :])
 
-    def get_skip_region(self, data, quantile=0.95):
+    def get_skip_region(self, data: NDArray, quantile: float = 0.95) -> int:
         """
         estimate region to skip when averaging from the system rise time
         """
@@ -1156,7 +1218,7 @@ class NanoTrees(MetaEventFitter):
         rise_time = int(rise_time)
         return rise_time
 
-    def get_rise_time(self, data):
+    def get_rise_time(self, data: NDArray) -> int:
         """
         estimte the system rise time
         """
@@ -1167,14 +1229,19 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _populate_sublevel_metadata(  # type: ignore
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_starts
-    ):
+    def _populate_sublevel_metadata(
+        self,
+        data: NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_starts: List[Any],
+    ) -> Dict[str, NDArray[Numeric]]:
         """
         Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
 
         :param data: an array of data from which to extract the locations of sublevel transitions
-        :type data: npt.NDArray[np.float64]
+        :type data: NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
         :param baseline_mean: the local mean value of the baseline current
@@ -1182,10 +1249,10 @@ class NanoTrees(MetaEventFitter):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
-        :type sublevel_starts: HackyList
+        :type sublevel_starts: List[Any]
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
-        :rtype: Dict[str, npt.NDArray[Numeric]]
+        :rtype: Dict[str, NDArray[Numeric]]
         """
         sublevel_metadata = {}
         rise_time = self.get_skip_region(data, 0.95)
@@ -1196,14 +1263,18 @@ class NanoTrees(MetaEventFitter):
         # ToDo: int(sublevel_starts[i]+rise_time):int(sublevel_starts[i+1]) Can return an empty slice if rise time extends too long. Needs better rejection handling logic.
         # average the current over the sublevel, ignoring the rise time
         sublevel_metadata["sublevel_current"] = np.array(
-            sublevel_starts.self.sublevels.heights
+            # NOTE: _locate_sublevel_transitions returns a HackyList, a list
+            # subclass that carries the Sublevels object on a `.self` attribute (see
+            # its docstring). The MetaEventFitter contract types this parameter as a
+            # plain list, so every read of that attribute is invisible to mypy.
+            sublevel_starts.self.sublevels.heights  # type: ignore[attr-defined]
         )  # detect current levels during detected sub-events
 
         # get the standard deviation over the sublevel, ignoring the rise time
         sublevel_metadata["sublevel_stdev"] = np.array(
             [
                 np.nanstd(i.fetchData(data, d=False)[rise_time:])
-                for i in sublevel_starts.self.sublevels.sublevels
+                for i in sublevel_starts.self.sublevels.sublevels  # type: ignore[attr-defined]
             ]
         )
         # print(sublevel_metadata["sublevel_stdev"])
@@ -1220,20 +1291,20 @@ class NanoTrees(MetaEventFitter):
         sublevel_metadata["sublevel_duration"] = np.array(
             [
                 (i.end - i.start) * dt_us
-                for i in sublevel_starts.self.sublevels.sublevels
+                for i in sublevel_starts.self.sublevels.sublevels  # type: ignore[attr-defined]
             ],
             dtype=np.float64,
         )
 
         # get sublevel start times
         sublevel_metadata["sublevel_start_times"] = np.array(
-            [i.start * dt_us for i in sublevel_starts.self.sublevels.sublevels],
+            [i.start * dt_us for i in sublevel_starts.self.sublevels.sublevels],  # type: ignore[attr-defined]
             dtype=np.float64,
         )
 
         # get sublevel end times
         sublevel_metadata["sublevel_end_times"] = np.array(
-            [i.end * dt_us for i in sublevel_starts.self.sublevels.sublevels],
+            [i.end * dt_us for i in sublevel_starts.self.sublevels.sublevels],  # type: ignore[attr-defined]
             dtype=np.float64,
         )
 
@@ -1241,7 +1312,7 @@ class NanoTrees(MetaEventFitter):
         sublevel_metadata["sublevel_max_deviation"] = np.array(
             [
                 np.max(np.absolute(i.fetchData(data) - event_baseline))
-                for i in sublevel_starts.self.sublevels.sublevels
+                for i in sublevel_starts.self.sublevels.sublevels  # type: ignore[attr-defined]
             ],
             dtype=np.float64,
         )
@@ -1255,7 +1326,7 @@ class NanoTrees(MetaEventFitter):
                     * aC_pC
                     * (event_baseline - np.array(i.fetchData(data)[rise_time:]))
                 )
-                for i in sublevel_starts.self.sublevels.sublevels
+                for i in sublevel_starts.self.sublevels.sublevels  # type: ignore[attr-defined]
             ],
             dtype=np.float64,
         )
@@ -1272,13 +1343,18 @@ class NanoTrees(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_event_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-    ):
+        self,
+        data: NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_metadata: Dict[str, List[Numeric]],
+    ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
-        :type data: npt.NDArray[np.float64]
+        :type data: NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
         :param baseline_mean: the local mean value of the baseline current
@@ -1289,7 +1365,7 @@ class NanoTrees(MetaEventFitter):
         :type sublevel_metadata: Dict[str, List[Numeric]]
 
         :return: a dict of event metadata values
-        :rtype: Dict[str, float]
+        :rtype: Dict[str, Union[int, float, str, bool]]
         """
         event_metadata = {}
         event_metadata["duration"] = np.sum(
@@ -1330,16 +1406,18 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_types(self):
+    def _define_event_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_event_metadata()
         All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
-        metadata_types = {}
+        metadata_types: Dict[str, Type[Union[int, float, str, bool]]] = {}
         metadata_types["duration"] = float
         metadata_types["fitted_ecd"] = float
         metadata_types["raw_ecd"] = float
@@ -1353,7 +1431,9 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_sublevel_metadata_types(self):
+    def _define_sublevel_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_sublevel_metadata()
@@ -1361,9 +1441,9 @@ class NanoTrees(MetaEventFitter):
         it should not include the list element
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
-        metadata_types = {}
+        metadata_types: Dict[str, Type[Union[int, float, str, bool]]] = {}
         metadata_types["sublevel_current"] = float
         metadata_types["sublevel_stdev"] = float
         metadata_types["sublevel_blockage"] = float
@@ -1377,16 +1457,16 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_units(self):
+    def _define_event_metadata_units(self) -> Dict[str, Optional[str]]:
         """
         Build a dict of metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_event_metadata()
         All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Optional[str]]
         """
-        metadata_units = {}
+        metadata_units: Dict[str, Optional[str]] = {}
         metadata_units["duration"] = "us"
         metadata_units["fitted_ecd"] = "pC"
         metadata_units["raw_ecd"] = "pC"
@@ -1400,7 +1480,7 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_sublevel_metadata_units(self):
+    def _define_sublevel_metadata_units(self) -> Dict[str, Optional[str]]:
         """
         Build a dict of sublevel metadata units , or None if unitless. Keys must match columns defined in _populate_sublevel_metadata()
         All of this metadata must be populated during fitting.
@@ -1409,7 +1489,7 @@ class NanoTrees(MetaEventFitter):
         :return: a dict of metadata keys and associated base dtypes
         :rtype: Dict[str, Optional[str]]
         """
-        metadata_units = {}
+        metadata_units: Dict[str, Optional[str]] = {}
         metadata_units["sublevel_current"] = "pA"
         metadata_units["sublevel_stdev"] = "pA"
         metadata_units["sublevel_blockage"] = "pA"
@@ -1429,6 +1509,5 @@ class NanoTrees(MetaEventFitter):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
         """
         pass

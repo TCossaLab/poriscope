@@ -26,7 +26,7 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Generator, List, Optional, Tuple, cast
+from typing import Any, Dict, Generator, List, Optional, Tuple, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -52,12 +52,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     # public API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
-    def get_llm_prompt(self):
+    def get_llm_prompt(self) -> Optional[str]:
         """
         Return a prompt that will tell the LLM the structure of the database to be queried
 
-        :return: a prompt that gives an LLM context for the database and  how to query it
-        :rtype: str
+        :return: a prompt that gives an LLM context for the database and how to query it, or None on failure
+        :rtype: Optional[str]
         """
         conn = None
         cursor = None
@@ -138,12 +138,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         # database connection is not persistent between calls so no action needed here closing
         pass
@@ -231,7 +231,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def get_event_counts_by_experiment_and_channel(self, experiment=None, channel=None):
+    def get_event_counts_by_experiment_and_channel(
+        self, experiment: Optional[str] = None, channel: Optional[int] = None
+    ) -> Optional[int]:
         """
         Return the number of events in the database matching the experiment name and channel name.
         If no channel name is provided, count across all channels for that experiment.
@@ -242,8 +244,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param channel: The index of the channel
         :type channel: Optional[int]
 
-        :return: event count matching the conditions
-        :rtype: int
+        :return: event count matching the conditions, or None on failure
+        :rtype: Optional[int]
         """
         conn = None
         cursor = None
@@ -330,12 +332,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     @override
     def get_column_type(self, column_name: str) -> Optional[str]:
         """
+        Retrieve the datatype associated with a specific column name or None on failure
+
         :param column_name: The name of the column.
         :type column_name: str
         :return: The datatype of the column.
         :rtype: Optional[str]
-
-        **Purpose:** Retrieve the datatype associated with a specific column name or None on failure
         """
         conn = None
         cursor = None
@@ -452,13 +454,13 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     @override
     def get_table_by_column(self, column: str) -> Optional[str]:
         """
+        Retrieve the name of the table in which the given column is found, or None on failure
+
         :param column: The name of the column.
         :type column: str
 
-        :return: List of table names.
-        :rtype: List[str]
-
-        **Purpose:** Retrieve the names of the table in which the given column is found, or None on failure
+        :return: The name of the table containing the column, or None on failure.
+        :rtype: Optional[str]
         """
         conn = None
         cursor = None
@@ -529,6 +531,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
         :return: True if the operation succeeded, False otherwise
         :rtype: bool
+        :raises sqlite3.Error: if a database operation fails
+        :raises ValueError: if a value error occurs while running the queries
+        :raises Exception: if an unexpected error occurs while running the queries
         """
         conn = None
         cursor = None
@@ -592,7 +597,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype: bool
 
         :raises ValueError: If the DataFrame does not contain an 'id' column or if the specified table does not exist.
-        :raises IOError: If any write-related error occurs
+        :raises sqlite3.Error: If a database operation fails
+        :raises Exception: If an unexpected error occurs while adding the columns
         """
 
         if "id" not in df.columns:
@@ -708,6 +714,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :type channel: int
         :return: sampling rate for the specific expreiment-channel combination, or None on failure
         :rtype: Optional[float]
+        :raises ValueError: if no samplerate could be found for the given experiment and channel
         """
         conn = None
         cursor = None
@@ -741,7 +748,11 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -769,7 +780,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
         :rtype: Dict[str, Dict[str, Any]]
         """
@@ -850,8 +863,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param query: query to  run on the database
         :type query: str
 
-        :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
-        :rtype: Generator[pd.DataFrame, None, None]
+        :return: None. This is a generator that yields one row at a time in the form
+            of a single-line pd.DataFrame; it returns None once exhausted or on failure.
+        :rtype: None
         """
         conn = None
         cursor = None
@@ -877,7 +891,22 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _load_event_data(self, query):
+    def _load_event_data(self, query: str) -> Generator[
+        Tuple[
+            int,
+            int,
+            int,
+            int,
+            float,
+            int,
+            int,
+            npt.NDArray[np.float64],
+            npt.NDArray[np.float64],
+            npt.NDArray[np.float64],
+        ],
+        bool,
+        None,
+    ]:
         """
         Load data and return a generator that gives a one-row dataframe corresponding one row returned by query
         Make sure you exhaust or explicitly abort the generator, or else connections will remain open
@@ -888,8 +917,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
 
-        :return: a generator that returns primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, samplerate, and three numpy arrays with raw event data, filtered event data, and fitted event data
-        :rtype: Generator[Dict[str,Union[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]], bool, None]
+        :return: a generator that yields tuples of (primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, raw event data, filtered event data, and fitted event data), and accepts an abort boolean sent back via generator.send()
+        :rtype: Generator[Tuple[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]], bool, None]
         """
         conn = None
         cursor = None
@@ -960,7 +989,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided paramters and intialize any internal structures needed
         Should Raise if initialization fails.
@@ -1046,7 +1075,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         Maps pandas dtype to SQLite data type.
 
         :param dtype: The pandas dtype
-        :type dtype: str
+        :type dtype: np.dtype
 
         :return: The corresponding SQLite data type as a string.
         :rtype: str

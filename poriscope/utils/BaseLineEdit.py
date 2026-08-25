@@ -24,10 +24,11 @@
 # Alejandra Carolina González González
 
 import logging
+from typing import Optional
 
-from PySide6.QtCore import QEvent
-from PySide6.QtGui import QValidator
-from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtGui import QFocusEvent, QValidator
+from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox, QWidget
 
 # Configure logging
 logging.basicConfig(
@@ -39,7 +40,7 @@ class BaseLineEdit(QLineEdit):
     suspend_validation = False  # Control flag to suspend validation
     app_closing = False  # Flag to check if the application is closing
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         QApplication.instance().installEventFilter(self)  # Install global event filter
         QApplication.instance().aboutToQuit.connect(
@@ -56,11 +57,11 @@ class BaseLineEdit(QLineEdit):
             )
             raise ValueError("Failed to initialize validator for BaseLineEdit.")
 
-    def create_validator(self):
+    def create_validator(self) -> Optional[QValidator]:
         """Subclasses must override this method to return the appropriate validator."""
         pass
 
-    def isValid(self):
+    def isValid(self) -> bool:
         """Validates the current text of the line edit using the attached validator."""
         if BaseLineEdit.suspend_validation or BaseLineEdit.app_closing:
             return True
@@ -73,7 +74,7 @@ class BaseLineEdit(QLineEdit):
             return state == QValidator.Acceptable
         return False
 
-    def focusOutEvent(self, event):
+    def focusOutEvent(self, event: QFocusEvent) -> None:
         """Handles the focus-out event to perform validation."""
         if BaseLineEdit.app_closing:
             # Do not process any focusOut events if the app is closing
@@ -88,7 +89,7 @@ class BaseLineEdit(QLineEdit):
             self.setToolTip("")  # Clear tooltip
             super().focusOutEvent(event)
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """Filter out focus-out events caused by QMessageBox to avoid validation issues."""
         if isinstance(obj, QMessageBox) and event.type() == QEvent.Show:
             BaseLineEdit.suspend_validation = True  # Suspend validation
@@ -96,6 +97,6 @@ class BaseLineEdit(QLineEdit):
             BaseLineEdit.suspend_validation = False  # Resume validation
         return super().eventFilter(obj, event)
 
-    def on_app_about_to_quit(self):
+    def on_app_about_to_quit(self) -> None:
         """Handle the application's about to quit signal."""
         BaseLineEdit.app_closing = True  # Set the flag indicating the app is closing

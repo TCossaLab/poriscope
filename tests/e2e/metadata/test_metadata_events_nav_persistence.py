@@ -53,7 +53,7 @@ from PySide6.QtTest import QTest
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
-from tests.e2e._helpers import open_menu_hybrid
+from tests.e2e._helpers import json_file_ready, open_menu_hybrid
 
 # tests/e2e/metadata/this_file.py -> parents[3] == repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -476,7 +476,10 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     # --- Save Filter ---
     _dialog_purpose["value"] = "filters"
     QTest.mouseClick(controls.save_filter_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: filters_json_path.exists(), timeout=QT_WAIT_TIMEOUT_MS)
+    # NOTE: wait for parseable JSON, not for the file. The file appears when the
+    # writer opens it, before the final byte lands, so waiting on .exists()
+    # raced the json.load() below.
+    qtbot.waitUntil(lambda: json_file_ready(filters_json_path), timeout=QT_WAIT_TIMEOUT_MS)
     with open(filters_json_path) as f:
         saved_json = json.load(f)
     print(f"[DEBUG] Saved JSON contents: {saved_json}")
@@ -602,7 +605,10 @@ def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
     _dialog_purpose["value"] = "plot_config"
     QtCore.QTimer.singleShot(0, _generic_dialog_dismiss)
     QTest.mouseClick(controls.save_plot_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: plot_config_json_path.exists(), timeout=QT_WAIT_TIMEOUT_MS)
+    # NOTE: wait for parseable JSON, not for the file. The file appears when the
+    # writer opens it, before the final byte lands, so waiting on .exists()
+    # raced the json.load() below.
+    qtbot.waitUntil(lambda: json_file_ready(plot_config_json_path), timeout=QT_WAIT_TIMEOUT_MS)
     print(f"[DEBUG] Plot config saved to {plot_config_json_path}")
 
     QTest.mouseClick(controls.reset_button, Qt.MouseButton.LeftButton)

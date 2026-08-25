@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
+from typing import Optional
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtWidgets import QMessageBox
@@ -35,7 +36,7 @@ class MessageBoxEmitter(QObject):
 
 
 class QtHandler(logging.Handler):
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__()
         # Create an instance of the internal QObject to handle signal emissions
         self.emitter = MessageBoxEmitter()
@@ -43,12 +44,12 @@ class QtHandler(logging.Handler):
         self.emitter.emit_message.connect(self.show_message_box, Qt.QueuedConnection)
         self._dialog_open = False
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         # Emit the signal with the log record
         self.emitter.emit_message.emit(record)
 
     @Slot(object)
-    def show_message_box(self, record):
+    def show_message_box(self, record: logging.LogRecord) -> None:
         # A modal QMessageBox runs its own nested event loop, during which
         # further queued log records can still be delivered here; skip them
         # instead of stacking additional modal dialogs on top of each other.
