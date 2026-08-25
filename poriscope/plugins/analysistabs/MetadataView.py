@@ -1638,7 +1638,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 except Exception as e:
                     raise ValueError(
                         f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    )
+                    ) from e
         else:
             bins = 100
 

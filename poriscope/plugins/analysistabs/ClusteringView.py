@@ -629,8 +629,10 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 cluster_selection_epsilon = float(
                     config["method_params"]["HDBSCAN_Sensitivity_input"]
                 )
-            except ValueError:
-                raise ValueError("Did you forget to fill in clustering parameters?")
+            except ValueError as e:
+                raise ValueError(
+                    "Did you forget to fill in clustering parameters?"
+                ) from e
             labels, probs = self._update_clusters_hdbscan(
                 clustering_data,
                 min_cluster_size=min_cluster_size,
@@ -644,8 +646,10 @@ class ClusteringView(MetaView, WalkthroughMixin):
                         "Gaussian Mixtures_Number_of_Clusters_input"
                     ]
                 )
-            except ValueError:
-                raise ValueError("Did you forget to fill in clustering parameters?")
+            except ValueError as e:
+                raise ValueError(
+                    "Did you forget to fill in clustering parameters?"
+                ) from e
             columns_except_id = clustering_data.columns[clustering_data.columns != "id"]
             clusterer = GaussianMixture(n_components=n_components, n_init=100)
             labels = clusterer.fit_predict(clustering_data[columns_except_id])

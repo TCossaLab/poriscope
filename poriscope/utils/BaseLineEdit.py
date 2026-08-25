@@ -51,11 +51,11 @@ class BaseLineEdit(QLineEdit):
             validator = self.create_validator()
             if validator:
                 self.setValidator(validator)
-        except Exception:
+        except Exception as e:
             QMessageBox.critical(
                 self, "Error", "Failed to initialize validator for BaseLineEdit."
             )
-            raise ValueError("Failed to initialize validator for BaseLineEdit.")
+            raise ValueError("Failed to initialize validator for BaseLineEdit.") from e
 
     def create_validator(self) -> Optional[QValidator]:
         """Subclasses must override this method to return the appropriate validator."""

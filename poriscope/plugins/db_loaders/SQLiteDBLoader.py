@@ -650,10 +650,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                         "INSERT INTO columns (name, table_name, units) VALUES (?, ?, ?);",
                         (col, table_name, unit),
                     )  # Assuming no units info
-                except sqlite3.IntegrityError:
+                except sqlite3.IntegrityError as e:
                     raise ValueError(
                         f"Column '{col}' already exists in the 'columns' table."
-                    )
+                    ) from e
 
             set_clause = ", ".join([f"{col} = ?" for col in new_cols])
             sql_update = f"UPDATE {table_name} SET {set_clause} WHERE id = ?"

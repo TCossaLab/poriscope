@@ -835,7 +835,7 @@ class MetaEventFitter(BaseDataPlugin):
             )
             raise RuntimeError(
                 f"Missing event data for channel {channel}, index {index}"
-            )
+            ) from e
 
     @log(logger=logger)
     def get_eventfitting_status(self, channel: int) -> bool:

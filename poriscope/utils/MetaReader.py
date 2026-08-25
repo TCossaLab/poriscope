@@ -159,24 +159,24 @@ class MetaReader(BaseDataPlugin):
             channel = int(channel)
             start_sample = int(start * self.samplerate)
             length_samples = int(length * self.samplerate)
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
-                "channel, start, and length must all a type that can be coerced to int"
-            )
+                "channel, start, and length must all be a type that can be coerced to int"
+            ) from e
         try:
             datamaps = self.datamaps[channel]
-        except KeyError:  # Changed from IndexError to KeyError
+        except KeyError as e:  # Changed from IndexError to KeyError
             raise IndexError(
                 "Data map for channel index {0} not available in reader".format(channel)
-            )
+            ) from e
         try:
             configs = self.configs[channel]
-        except KeyError:  # Changed from IndexError to KeyError
+        except KeyError as e:  # Changed from IndexError to KeyError
             raise IndexError(
                 "Configuration data for channel index {0} not available in reader".format(
                     channel
                 )
-            )
+            ) from e
         samplerate = self.samplerate
         total_samples = self.total_channel_samples[channel]
         file_start_index = self.file_start_indices[channel]

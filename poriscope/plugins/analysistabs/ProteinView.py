@@ -1130,7 +1130,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 except Exception as e:
                     raise ValueError(
                         f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    )
+                    ) from e
         else:
             bins = 100
 
@@ -1231,7 +1231,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                 except Exception as e:
                     raise ValueError(
                         f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    )
+                    ) from e
         else:
             # Freedman-Diaconis: bin width scales with the event's own IQR and
             # sample count, so shorter/longer events (typical for proteins,

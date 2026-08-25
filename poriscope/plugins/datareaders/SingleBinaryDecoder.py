@@ -160,14 +160,14 @@ class SingleBinaryDecoder(MetaReader):
 
         try:
             memmaps = np.memmap(Path(datafiles[0]), dtype=fmt, offset=offset, mode="r")
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             raise FileNotFoundError(
                 "File Not Found : At least one of the input raw data files is missing or renamed"
-            )
-        except OSError:
+            ) from e
+        except OSError as e:
             raise OSError(
                 "Invalid Argument or Sync Issue : The file indicated is inaccessible. If it is on a remote network location or external media, move it to the local hard drive and try again"
-            )
+            ) from e
         for channel in range(len(datafiles)):
             datamaps.append(memmaps[f"data_{channel}"])
         return datamaps

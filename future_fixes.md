@@ -184,7 +184,7 @@ are not re-raised as open work.
   | Rule | Hits | Character |
   | --- | --- | --- |
   | `B905` zip-without-explicit-strict | 54 | **Audited and closed 2026-08-25; deliberately not enabled as a gate.** 50 sites were in scope (the other 7 are in owner-held fitter files); 43 zipped sequences that are built together and need nothing. The 4 that mattered are fixed: 3 in `MetadataView` were silently dropping plot features that had no label, and `ClusteringView` no longer mutates `columns`, so its two zips now assert their alignment with `strict=True` rather than depending on truncation to hide the appended `"id"`. `SQLiteDBWriter`'s sublevel transpose was verified equal-length upstream and now says so with `strict=True`. Not enabled because the 54 remaining sites would each need their own `strict=` decision, and at least one - the list-against-generator zip in `MetaDatabaseLoader` CSV export - cannot be proven equal-length in advance. The rule earned its keep as a one-time audit. |
-  | `B904` raise-without-from-inside-except | 24 | loses the exception chain; mechanical but touches `raise` statements |
+  | `B904` raise-without-from-inside-except | 1 | **Done 2026-08-25; not enabled as a gate.** All 23 in-scope sites now chain with `from e`; the one remaining is in `PeakFinder.py` (owner-held), so enabling the rule would need a `per-file-ignores` entry that hides a real check rather than satisfying it. Worth recording that this was not purely cosmetic: the 12 data-reader sites were discarding the name of the missing file, leaving the user with "at least one of the input raw data files is missing" and no way to tell which. |
   | `B007` unused-loop-control-variable | 20 | mostly cosmetic |
   | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
   | `B028` no-explicit-stacklevel | 1 | one `warnings.warn` in `MetaWriter.py`; cosmetic |
@@ -194,10 +194,11 @@ are not re-raised as open work.
   | `S112` try-except-continue | 1 | the single site is in `PeakFinder.py` (`_classify_folded_unfolded`, a bare `continue` on an array index); see the `S110` row. |
 
   Almost every remaining fix is a logic change, so this is unclaimed rather than
-  blocked. `B905`, `S110` and `S112` are all now audited and closed as non-gates (see
-  their rows above); what they surfaced in our own code is fixed, and what remains sits
-  in owner-held files. Next up is `B904`, then `S101`. Re-measure before starting, and
-  enable each rule only once its own backlog is zero, the way `B006`/`B020` were.
+  blocked. `B905`, `S110`, `S112` and `B904` are all now closed (see their rows above):
+  what each surfaced in our own code is fixed, and every site that remains sits in an
+  owner-held file - which is also why none of the four is enabled as a gate. Next up is
+  `S101`, 8 asserts in non-test code. Re-measure before starting, and enable each rule
+  only once its own backlog is zero, the way `B006`/`B020` were.
 
   Note this overlaps, but is not the same as, the bandit proposal in the
   community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
