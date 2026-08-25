@@ -85,6 +85,46 @@ narrow `# type: ignore` and a `NOTE:` comment at the site.
   `List[Any]` to match what it has always actually produced - but it is worth knowing
   that the parameter name still says "starts" while the payload is per-sublevel records.
 
+## Open against the PeakFinder integration (2026-08-26)
+
+Found while merging `feature_Peakfinder_classifier` into the docstring/type work. Her
+logic was kept as-is per the standing rule; everything here is marked at the site with a
+`NOTE:` and, where mypy required it, a narrow `# type: ignore`.
+
+- **`test_cluster_of_type1_labeled_type3` fails, and it is not a stale fixture.** It calls
+  the new eight-argument `filter_peaks` correctly and asserts that two nearby type-2 peaks
+  are both relabelled type 3; the code returns something else. Her test and her code
+  disagree about what the clustering is supposed to do, so the assertion was left alone
+  rather than rewritten to match observed behaviour. **This is the one known failing test
+  on the integration branch.** To be resolved with the owning developer.
+- **`fit_2_gauss` can never succeed.** Its nested `Gauss` takes four parameters
+  (`x, Amplitude, mean, stdev`) but is called with five in both places inside `Gauss_2`,
+  so every call raises `TypeError`. The `curve_fit` call is wrapped in a bare
+  `except Exception`, which swallows it and takes the `popt is None` path, so the failure
+  is silent. The method also has two `return` statements of different arity - three values
+  on the failure path, two on the success path - which is why it is annotated
+  `Tuple[Any, ...]`.
+- **`find_mode_blockage_level` still uses `baseline_mean` unguarded.** The rewrite changed
+  the signature (three parameters, not five) and the return (a tuple of two Optional
+  levels), and tolerates a `None` `baseline_std` via try/except, but `baseline_mean` is
+  equally Optional and is used directly in `np.abs(bin_centers[...] - baseline_mean)`.
+  This is the same defect previously recorded against the old implementation.
+- **`redefine_padding` divides by `2 * baseline_std` with no `None` check.** It has no live
+  caller today - its only call site is commented out - so this is latent.
+- **`filter_peaks` multiplies its thresholds by a possibly-`None` `baseline_std`** at four
+  adjacent lines.
+- **`_populate_event_metadata` writes `None` into the event metadata dict** at five sites,
+  whose value type the `MetaEventFitter` contract declares `Union[int, float, str, bool]`.
+- **`SQLitePeakDBLoader` no longer casts its interpolated SQL values to `int`.** Reviewed
+  and **deliberately accepted**: the database is a local file owned by the user running the
+  app, so there is no privilege boundary for an injection to cross. Recorded here only so
+  the same finding is not re-raised. Note this also downgrades the `S608` item in the
+  bandit proposal above, which described these sites as "worth real scrutiny".
+- **Three nested function definitions** were introduced: `Gauss` and `Gauss_2` inside
+  `fit_2_gauss`, and `dgfit` inside `bitthresh`. `CLAUDE.md` forbids nested functions but
+  nothing enforces it (that is block 8 below). They were annotated in place rather than
+  hoisted, since hoisting is a logic change.
+
 ## Also queued - found during the type-annotation pass, not part of it
 
 - **Report the `pydoclint` class-attribute bug upstream (not yet filed).** File at

@@ -1,5 +1,20 @@
 ## Poriscope 1.7: In Progress
 
+* **Integration: the PeakFinder classifier work merged against the docstring/type pass**
+    * `feature_Peakfinder_classifier` (32 commits, ~2,840 new lines in `PeakFinder.py` plus changes to `SQLitePeakDBLoader`) was reconciled with the completed type-annotation pass on an integration branch rather than by merging each into `develop` in turn, so `develop` is never left in a gate-red state between the two merges. Both branches shared a merge base, and `develop` was merged in first and verified (1,575 passed, 2 skipped) before the classifier work was layered on.
+    * Only one file conflicted: `PeakFinder.py`, in 11 hunks. Resolution rule was that **her logic wins unconditionally**, with the annotations and docstrings re-applied on top - the two import hunks were unioned, and three hunks that were annotation-style only (`Mapping` vs `Dict`, `list[dict]` vs `List[Dict[str, Any]]`) kept the typing-style spellings, which is required rather than preferred: `test_plugin_compliance.py` compares base and override annotations by equality, so `get_plot_features` and `_define_*_metadata_types` have to match `MetaEventFitter` verbatim.
+    * The new classifier code was brought up to the current gates: nine functions annotated (including the three nested helpers `Gauss`, `Gauss_2` and `dgfit`), 46 pydoclint violations cleared, and her PEP 604 annotations aligned with the docstrings they contradicted. All four pre-commit gates pass.
+    * **`filter_peaks` and `redefine_padding` had no docstring at all** - in `filter_peaks` the text existed but sat *below* four statements, making it a no-op string expression rather than a docstring. That was what `test_plugin_compliance.py` was reporting; both are fixed and compliance passes.
+
+* **Fixed: three regressions in `SQLitePeakDBLoader.get_plot_features`**
+    * The `except` handler around query construction had lost its `return`, so a failure there fell through to `validate_filter_query(query)` with `query` unbound - a `NameError` rather than the clean "no features to plot" result callers expect.
+    * The `result is None` half of the empty-result guard had been dropped. `query_database_directly` returns `None` when a query yields nothing, and `len(None)` raises `TypeError`.
+    * The `if unfolded is not None:` guard was removed while the line above still assigns `None` whenever the `unfolded_level` column is absent, so `baseline - sign * unfolded` raised `TypeError` in exactly that case.
+    * Each fix carries a `NOTE (integration):` comment at the site explaining what changed and why.
+
+* **Fixed: stale fixtures in `test_peak_finder.py`**
+    * The event-metadata key `baseline_std` was renamed `baseline_stdev` and `longest_blockage_level` was replaced by `primary_level`, but the fixtures were never updated. Eight of the failures presented as `TypeError: object of type 'NoneType' has no len()` rather than a missing key, because `get_plot_features` catches the `KeyError` and converts it into an all-`None` return. Fixtures also gained the `sequence` and `translocation_direction` keys the method now reads, and the "Some" gauge-count expectation was corrected from 2 to 4.
+
 * **New Dev Tooling: `pydoclint`**
     * Added as a blocking pre-commit/CI check that a docstring's documented parameters, return type, and raised exceptions match the real function signature/body. See `[tool.pydoclint]` in `pyproject.toml` for the config. This was originally adopted with `arg-type-hints-in-signature = false`; that setting has since been corrected to `true` (see "Corrected: pydoclint now treats signature type hints as the source of truth" below).
     * Run it yourself with `pydoclint --baseline=.pydoclint-baseline.txt poriscope` (pre-commit already runs it on staged files).
