@@ -826,7 +826,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                 if getattr(cb, "ax", None) is not None and cb.ax.figure is self.figure:
                     cb.remove()
             except Exception:
-                pass
+                # Cosmetic only - the stale colorbar is dropped either way by the
+                # reset below. Logged so a plot that looks wrong leaves a trace.
+                self.logger.debug(
+                    "Could not remove the previous heatmap colorbar", exc_info=True
+                )
             self._heatmap_colorbar = None
 
         self._heatmap_colorbar = self.figure.colorbar(im, ax=ax, ticks=ticks)

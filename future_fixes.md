@@ -189,15 +189,15 @@ are not re-raised as open work.
   | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
   | `B028` no-explicit-stacklevel | 1 | one `warnings.warn` in `MetaWriter.py`; cosmetic |
   | `S608` hardcoded-sql-expression | 25 | **downgraded.** The database is a local file owned by the user running the app, so there is no privilege boundary for an injection to cross. Settled - see the `SQLitePeakDBLoader` note above. |
-  | `S110` try-except-pass | 20 | silently swallowed exceptions in a GUI app. Was 7 on 2026-08-24, so this one is actively growing. |
+  | `S110` try-except-pass | 13 | **Triaged 2026-08-25; all 13 remaining are in `PeakFinder.py`.** The 6 that were in our own code are fixed: two `set.remove()` handlers became `set.discard()`, one settings-value type test narrowed to `except AttributeError`, and three cosmetic `tight_layout` handlers now log at debug. Enabling the rule would need either the owner to fix hers or a `per-file-ignores` entry for `PeakFinder.py` - the latter hides a real check rather than satisfying it, so it is not proposed. |
   | `S101` assert | 8 | asserts in non-test code |
-  | `S112` try-except-continue | 1 | same character as `S110` |
+  | `S112` try-except-continue | 1 | the single site is in `PeakFinder.py` (`_classify_folded_unfolded`, a bare `continue` on an array index); see the `S110` row. |
 
   Almost every remaining fix is a logic change, so this is unclaimed rather than
-  blocked. `B905` is now audited and closed as a non-gate (see its row above). Next up
-  is `S110` + `S112` - 21 silently swallowed exceptions, the largest remaining reservoir
-  of real bugs - then `B904`. Re-measure before starting, and enable each rule only once
-  its own backlog is zero, the way `B006`/`B020` were.
+  blocked. `B905`, `S110` and `S112` are all now audited and closed as non-gates (see
+  their rows above); what they surfaced in our own code is fixed, and what remains sits
+  in owner-held files. Next up is `B904`, then `S101`. Re-measure before starting, and
+  enable each rule only once its own backlog is zero, the way `B006`/`B020` were.
 
   Note this overlaps, but is not the same as, the bandit proposal in the
   community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
