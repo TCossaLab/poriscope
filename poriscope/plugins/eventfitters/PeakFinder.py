@@ -2364,7 +2364,7 @@ class PeakFinder(MetaEventFitter):
             self.logger.debug(
                 f"folding bitthresh: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_filtered={len(filtered_longest_levels)}"
             )
-        except Exception:
+        except (TypeError, IndexError, KeyError, AttributeError):
             pass
 
         if not bt or "midpoint" not in bt or bt.get("centers") is None:
@@ -2438,10 +2438,20 @@ class PeakFinder(MetaEventFitter):
                                     else 0
                                 )
                                 ratio_fits = 1.7 <= ratio <= 2.3
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as e:
+                        self.logger.warning(
+                            "folded/unfolded classification: re-running "
+                            "bitthresh on the unfiltered dataset failed; "
+                            f"keeping the original fitted centers: {e}",
+                            exc_info=True,
+                        )
+        except Exception as e:
+            self.logger.warning(
+                "folded/unfolded classification: the fitted-center separation "
+                "sanity check failed; proceeding with the original centers "
+                f"as-is: {e}",
+                exc_info=True,
+            )
         if centers_bt.size < 2:
             self.logger.warning(
                 "bitthresh did not find two centers; cannot classify folded/unfolded"
@@ -2494,13 +2504,31 @@ class PeakFinder(MetaEventFitter):
         threshold = bt.get("midpoint", (lower_center + higher_center) / 2.0)
 
         # Classify events
+        # NOTE (S112 fix): `all_event_info` and `all_longest_levels_array` are
+        # always built together, index-for-index, by the sole caller
+        # (`_post_process_events`), so this lookup cannot legitimately go out of
+        # range. The previous `except Exception: continue` silently dropped the
+        # event from `folded_count`/`unfolded_count` (and skipped
+        # `update_event_metadata_post_processing` for it) with no log line,
+        # which let `_classification_results["total_events"]`
+        # (== len(all_event_info)) silently stop reconciling with
+        # folded_count + unfolded_count. Replaced with an explicit length
+        # check, logged once, so a mismatch surfaces instead of quietly
+        # eating an event.
+        n_events = min(len(all_event_info), int(all_longest_levels_array.size))
+        if n_events != len(all_event_info):
+            self.logger.warning(
+                f"_classify_folded_unfolded: all_event_info has "
+                f"{len(all_event_info)} entries but all_longest_levels_array "
+                f"has {all_longest_levels_array.size}; truncating to "
+                f"{n_events} events to avoid an out-of-range lookup. This "
+                "indicates a caller bug."
+            )
         folded_count = 0
         unfolded_count = 0
-        for i, (ch, event_index) in enumerate(all_event_info):
-            try:
-                event_primary_level = all_longest_levels_array[i]
-            except Exception:
-                continue
+        for i in range(n_events):
+            ch, event_index = all_event_info[i]
+            event_primary_level = all_longest_levels_array[i]
             if event_primary_level >= threshold:
                 event_folded_level = event_primary_level
                 event_unfolded_level = event_primary_level / 2.0
@@ -2546,11 +2574,7 @@ class PeakFinder(MetaEventFitter):
             fig, ax = plt.subplots(figsize=(12, 6))
 
             # Ensure non-zero dynamic range to avoid histogram normalization warnings
-            try:
-                if np.nanmax(arr) - np.nanmin(arr) <= 0:
-                    arr = arr + np.linspace(-1e-9, 1e-9, arr.size)
-            except Exception:
-                pass
+            arr = self._jitter_degenerate_array(arr)
 
             # Plot overall histogram using full data (including outliers)
             hist_bins = None
@@ -2641,13 +2665,24 @@ class PeakFinder(MetaEventFitter):
                         color="red",
                         label="Folded",
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(
+                    "folded/unfolded classification: failed to draw the "
+                    f"per-class histogram overlay: {e}",
+                    exc_info=True,
+                )
 
             # Overlay clusters if parameters available (label with gauss params)
             params = bt.get("params")
             x_range = np.linspace(arr.min(), arr.max(), 1000)
-            if params is not None:
+            if params is not None and len(params) != 6:
+                self.logger.warning(
+                    "folded/unfolded classification: bitthresh returned "
+                    f"'params' with {len(params)} values, expected 6 (a1, a2, "
+                    "u1, u2, w1, w2); skipping the fitted-Gaussian overlay for "
+                    "this plot."
+                )
+            elif params is not None:
                 try:
                     a1, a2, u1, u2, w1, w2 = params
                     # Order fitted components by mean (lower -> higher)
@@ -2679,8 +2714,12 @@ class PeakFinder(MetaEventFitter):
                         color="red",
                         label=f"Folded fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})",
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(
+                        "folded/unfolded classification: failed to draw the "
+                        f"fitted-Gaussian overlay: {e}",
+                        exc_info=True,
+                    )
 
             # Vertical threshold line (value shown in info textbox)
             ax.axvline(
@@ -2717,8 +2756,12 @@ class PeakFinder(MetaEventFitter):
                     verticalalignment="top",
                     bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(
+                    "folded/unfolded classification: failed to draw the "
+                    f"summary stats textbox: {e}",
+                    exc_info=True,
+                )
 
             # Outlier info shown in textbox; do not add legend entry
 
@@ -2860,11 +2903,7 @@ class PeakFinder(MetaEventFitter):
             fig, ax = plt.subplots(figsize=(12, 6))
 
             # Ensure non-zero dynamic range
-            try:
-                if np.nanmax(arr) - np.nanmin(arr) <= 0:
-                    arr = arr + np.linspace(-1e-9, 1e-9, arr.size)
-            except Exception:
-                pass
+            arr = self._jitter_degenerate_array(arr)
 
             # Plot overall histogram using full data (all peaks)
             hist_bins = None
@@ -2938,7 +2977,14 @@ class PeakFinder(MetaEventFitter):
                 if arr.size > 0
                 else np.linspace(0, 1, 1000)
             )
-            if params is not None:
+            if params is not None and len(params) != 6:
+                self.logger.warning(
+                    "peak prominence classification: bitthresh returned "
+                    f"'params' with {len(params)} values, expected 6 (a1, a2, "
+                    "u1, u2, w1, w2); skipping the fitted-Gaussian overlay for "
+                    "this plot."
+                )
+            elif params is not None:
                 try:
                     a1, a2, u1, u2, w1, w2 = params
                     # Ensure we map fitted u1/u2 to the lower/higher centers used for labeling
@@ -2970,8 +3016,12 @@ class PeakFinder(MetaEventFitter):
                         color="red",
                         label=f"Higher prominence fit (mu={u_params[higher_idx]:.3f}, std={w_params[higher_idx]:.3f})",
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(
+                        "peak prominence classification: failed to draw the "
+                        f"fitted-Gaussian overlay: {e}",
+                        exc_info=True,
+                    )
 
             if "class_labels" in locals() and class_labels is not None:
                 lower_mask = class_labels == 0
@@ -3045,8 +3095,12 @@ class PeakFinder(MetaEventFitter):
                     verticalalignment="top",
                     bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(
+                    "peak prominence classification: failed to draw the "
+                    f"summary stats textbox: {e}",
+                    exc_info=True,
+                )
 
             # Outlier info shown in textbox; do not add legend entry
 
@@ -3262,11 +3316,7 @@ class PeakFinder(MetaEventFitter):
             fig, ax = plt.subplots(figsize=(12, 6))
 
             # Ensure non-zero dynamic range
-            try:
-                if np.nanmax(arr) - np.nanmin(arr) <= 0:
-                    arr = arr + np.linspace(-1e-9, 1e-9, arr.size)
-            except Exception:
-                pass
+            arr = self._jitter_degenerate_array(arr)
 
             # Overall histogram (plot full data including outliers)
             hist_bins = None
@@ -3355,8 +3405,12 @@ class PeakFinder(MetaEventFitter):
                         color="blue",
                         label="Backward",
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(
+                    "translocation direction classification: failed to draw "
+                    f"the forward/backward class histogram overlay: {e}",
+                    exc_info=True,
+                )
 
             x_range = (
                 np.linspace(np.nanmin(arr), np.nanmax(arr), 1000)
@@ -3439,8 +3493,12 @@ class PeakFinder(MetaEventFitter):
                     verticalalignment="top",
                     bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.9),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(
+                    "translocation direction classification: failed to draw "
+                    f"the summary stats textbox: {e}",
+                    exc_info=True,
+                )
 
             ax.set_xlabel("log10(ECD ratio)")
             ax.set_ylabel("Counts")
@@ -3599,6 +3657,41 @@ class PeakFinder(MetaEventFitter):
             self.logger.error(
                 f"Error saving classification report: {e!s}", exc_info=True
             )
+
+    @log(logger=logger)
+    def _jitter_degenerate_array(
+        self, arr: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
+        """
+        Add a small amount of jitter to a degenerate array so downstream
+        histogramming does not choke on it.
+
+        A degenerate array here means empty, all-NaN, or having no dynamic range
+        (``max - min <= 0``, including the single-valued case). An empty or
+        all-NaN array is returned unchanged - jittering it would not make it
+        histogrammable, it would only hide that it is empty/all-NaN - while a
+        single-valued array is nudged by a tiny symmetric linspace so
+        ``np.histogram`` has a non-zero bin range to work with.
+
+        This replaces three identical ``try: ... except Exception: pass`` blocks
+        (S110) that were meant to catch exactly this condition but instead caught
+        it *and* silently swallowed genuine failures: ``np.nanmax``/``np.nanmin``
+        raise ``ValueError`` on an empty array but only warn (returning ``nan``)
+        on an all-NaN one, so the empty-array case was the only one the old
+        handler ever actually caught, and any unrelated exception raised inside
+        that block would have been hidden the same way.
+
+        :param arr: array to inspect for degeneracy
+        :type arr: npt.NDArray[np.float64]
+        :return: ``arr`` unchanged if it is empty, all-NaN, or already has
+            dynamic range; otherwise ``arr`` plus a small symmetric jitter
+        :rtype: npt.NDArray[np.float64]
+        """
+        if arr.size == 0 or np.all(np.isnan(arr)):
+            return arr
+        if np.nanmax(arr) - np.nanmin(arr) <= 0:
+            return arr + np.linspace(-1e-9, 1e-9, arr.size)
+        return arr
 
     @log(logger=logger)
     def bitthresh(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
