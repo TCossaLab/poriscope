@@ -51,8 +51,13 @@ def install_pre_commit(repo_root: str) -> None:
 def install_post_merge_hook(repo_root: str) -> None:
     print("Installing Git hook: post-merge")
 
-    # Define the source path of the post-merge hook script
-    hook_src = os.path.join(repo_root, "scripts", "hooks", "post-merge.py")
+    # Define the source path of the post-merge hook script.
+    # This is the POSIX-shell shim, not post-merge.py itself. Git runs hooks
+    # through its bundled shell on every platform and honours their shebang, and
+    # post-merge.py's "#!/usr/bin/env python3" does not resolve on Windows, where
+    # "python3" is the Microsoft Store stub. The shim picks a working interpreter
+    # and launches post-merge.py with it.
+    hook_src = os.path.join(repo_root, "scripts", "hooks", "post-merge")
     # Define the destination path for the Git hook (inside the .git/hooks directory)
     hook_dst = os.path.join(repo_root, ".git", "hooks", "post-merge")
 
