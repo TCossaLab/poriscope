@@ -47,6 +47,7 @@ from tests.e2e._helpers import (
     open_menu_hybrid,
     schedule_dialog_autofill,
     select_any_channel,
+    sqlite_has_tables,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -510,7 +511,14 @@ def test_commit_events_writes_exact_schema(qtbot, monkeypatch, tmp_path, events_
     )
 
     QTest.mouseClick(controls.commit_btn, Qt.LeftButton)
-    qtbot.waitUntil(lambda: out_db.exists(), timeout=QT_WAIT_TIMEOUT_MS)
+    # NOTE: wait for the tables, not for the file. sqlite3 creates the database
+    # file the instant the writer opens it, so waiting on out_db.exists() can
+    # return while the file still has zero tables - which made the assertion
+    # below fail intermittently in full-suite runs and pass in isolation.
+    qtbot.waitUntil(
+        lambda: sqlite_has_tables(out_db, {"channels", "events", "columns"}),
+        timeout=QT_WAIT_TIMEOUT_MS,
+    )
 
     with sqlite3.connect(out_db) as conn:
         cur = conn.cursor()

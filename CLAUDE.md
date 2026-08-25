@@ -222,3 +222,8 @@ of every session, so it should stay a short list of standing rules.
   you find that a user-based assumption or instruction would cause problems.
 - We are not in a rush, and the poriscope codebase is complex. Take the time and spend the 
   tokens you need to get it right.
+
+## Version Controller
+
+- Poriscope uses git flow worksflows. feature branches are branched off `develop`, not `main`,
+  keep that in mind when doing code review on feature branches or merging anything.

@@ -17,8 +17,11 @@ here.
 
 from __future__ import annotations
 
+import json
 import os
-from typing import Callable, Optional, Sequence
+import sqlite3
+from pathlib import Path
+from typing import Callable, Iterable, Optional, Sequence
 
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -360,3 +363,66 @@ def select_any_channel(cb: QtWidgets.QComboBox, prefer: Optional[str] = None) ->
 def count_plot_lines(fig) -> int:
     """Total number of plotted lines across every axes in a matplotlib figure."""
     return sum(len(ax.lines) for ax in getattr(fig, "axes", []) or [])
+
+
+# ==========================================================================
+# Waiting on written files
+# ==========================================================================
+#
+# Do NOT wait on `path.exists()` before asserting on a file's *contents*.
+# A file appears at the moment its writer opens it, which is before any
+# content has been written or committed - sqlite3.connect() creates a
+# zero-table database file immediately, and a JSON dump is unparseable until
+# the final byte lands. Waiting on existence and then asserting on contents
+# is a race: it passes whenever the writer happens to finish inside the same
+# event-loop turn, and fails under load when it does not. Wait on the real
+# postcondition with the two helpers below instead.
+
+
+def sqlite_has_tables(path: Path, tables: Iterable[str]) -> bool:
+    """
+    Report whether a SQLite file exists *and* already contains every named table.
+
+    Intended as a ``qtbot.waitUntil`` predicate for a writer flow. Returns
+    ``False`` rather than raising while the database is absent, still empty, or
+    momentarily locked by the writer, so polling simply continues.
+
+    :param path: the database file being written.
+    :param tables: table names that must all be present.
+    :return: ``True`` once every named table exists, else ``False``.
+    """
+    if not path.exists():
+        return False
+    expected = set(tables)
+    try:
+        with sqlite3.connect(str(path)) as conn:
+            found = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+    except sqlite3.Error:
+        return False
+    return expected.issubset(found)
+
+
+def json_file_ready(path: Path) -> bool:
+    """
+    Report whether a JSON file exists *and* parses as complete JSON.
+
+    Intended as a ``qtbot.waitUntil`` predicate for a save flow. A partially
+    written file raises ``JSONDecodeError``, which is treated as "not ready
+    yet" rather than propagated, so polling simply continues.
+
+    :param path: the JSON file being written.
+    :return: ``True`` once the file parses, else ``False``.
+    """
+    if not path.exists():
+        return False
+    try:
+        with open(path, encoding="utf-8") as handle:
+            json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return True
