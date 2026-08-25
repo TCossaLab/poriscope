@@ -72,7 +72,7 @@ not let the file grow back silently.
 with the parser pydoclint 0.9.1 ships: only the *malformed* `.. attribute :: name`
 (note the space, which makes it a comment rather than a directive) is recognised, while
 the correct `.. attribute::` and every canonical field form parse to nothing. See
-`DECISIONS.md`; a bug report is drafted for upstream.
+`DECISIONS.md`; the bug has been filed upstream and a fix is awaited.
 
 Qt-based tests need `qt_api = pyside6` (already set in `pytest.ini`) and, on Linux/CI,
 `QT_QPA_PLATFORM=offscreen` plus `xvfb-run`.

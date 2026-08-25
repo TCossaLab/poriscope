@@ -385,7 +385,8 @@ invalid spelling. Both packages were already at their latest release (`pydoclint
 
 The resolution was therefore to correct the reStructuredText in `walkthrough.py` so Sphinx
 actually renders the signal, and set `check-class-attributes = false` in `pyproject.toml`
-with that rationale recorded inline. **The upstream bug has still not been reported.**
-The draft lived in a session scratchpad that no longer exists; the one-line fix and a
-reproduction are recorded in `future_fixes.md` under "Also queued", which is enough to
-refile it from scratch.
+with that rationale recorded inline. **The upstream bug has now been filed as
+https://github.com/jsh9/pydoclint/issues/304.** Nothing further is needed from this end;
+`check-class-attributes` stays `false` until a `pydoclint` release fixes the parser, per
+the revisit condition above. The one-line fix and a reproduction are kept in
+`future_fixes.md` in case the report needs to be restated.

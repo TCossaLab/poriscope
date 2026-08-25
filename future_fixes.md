@@ -161,17 +161,17 @@ are not re-raised as open work.
 
 ## Also queued - found during the type-annotation pass, not part of it
 
-- **Report the `pydoclint` class-attribute bug upstream (not yet filed).** File at
-  https://github.com/jsh9/pydoclint/issues - jsh9 maintains both `pydoclint` and
-  `docstring_parser_fork`, but pydoclint is the right front door because its own
-  documentation page prescribes the invalid syntax and its `DOC601`/`DOC603` codes are
-  the visible symptom. The full diagnosis, including the measured table of which
-  spellings parse, is in `DECISIONS.md` under the `IntroDialog` entry. The one-line fix
-  is to replace the two hardcoded `".. attribute ::"` literals in
-  `rest_attr_parser.py` with `re.compile(r"^\.\.\s+attribute\s*::\s*(?P<name>.+)$")`,
-  which accepts both spellings so no existing docstring breaks. Reproduction: a class
-  documented with the *correct* `.. attribute::` directive plus any `:param:` block
-  reports `DOC601` + `DOC603`; adding a space before the `::` makes it pass.
+- **`pydoclint` class-attribute bug - filed upstream, now awaiting a fix.** Reported to
+  the maintainer as https://github.com/jsh9/pydoclint/issues/304; jsh9 maintains both
+  `pydoclint` and `docstring_parser_fork`. Nothing to do here until a release lands -
+  `check-class-attributes` stays `false` in `pyproject.toml` in the meantime. Kept in
+  case the report needs restating: the one-line fix is to replace the two hardcoded
+  `".. attribute ::"` literals in `rest_attr_parser.py` with
+  `re.compile(r"^\.\.\s+attribute\s*::\s*(?P<name>.+)$")`, which accepts both spellings
+  so no existing docstring breaks. Reproduction: a class documented with the *correct*
+  `.. attribute::` directive plus any `:param:` block reports `DOC601` + `DOC603`;
+  adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
+  the `IntroDialog` entry.
 
 - **Adopt ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the grounds that
   both run against real code logic and so complement pydoclint's docstring/signature
