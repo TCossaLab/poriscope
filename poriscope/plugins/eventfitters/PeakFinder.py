@@ -3039,7 +3039,6 @@ class PeakFinder(MetaEventFitter):
             self.logger.error(f"Error saving translocation direction plot: {e}")
 
 
-        
     @log(logger=logger)
     def _collect_peak_statistics(self, channels: List[int]) -> None:
         """
@@ -3166,114 +3165,6 @@ class PeakFinder(MetaEventFitter):
             self.logger.error(f"Error saving classification report: {e!s}", exc_info=True)
 
 
-    @log(logger=logger)
-    def fit_2_gauss(
-        self,
-        data: np.ndarray,
-    ) -> Tuple[Any, ...]:
-        """
-        Fit two Gaussian functions to the data.
-
-        :param data: 1D array of data to fit
-        :type data: np.ndarray
-        :return: on a successful fit, the two fitted Gaussians as (amplitude, mean, stdev, offset) tuples; on failure, two empty arrays and None
-        :rtype: Tuple[Any, ...]
-        """
-        # NOTE (integration): the docstring here previously documented `n_components`
-        # and `return_centers`, which this method does not take - it looks copy-pasted
-        # from classify_1d_distribution. Replaced with fields matching the real
-        # signature so pydoclint passes.
-        # NOTE: the two return statements below disagree on arity - the failure path
-        # returns three values and the success path two - so no single tuple type
-        # describes both. Annotated honestly as Tuple[Any, ...]. Flagged, not fixed:
-        # the logic in this plugin belongs to its owner.
-        def Gauss(
-            x: np.ndarray,
-            Amplitude: float,
-            mean: float,
-            stdev: float,
-            offset: float,
-        ) -> np.ndarray:
-            """
-            Evaluate a single Gaussian with a vertical offset.
-
-            :param x: points at which to evaluate the Gaussian
-            :type x: np.ndarray
-            :param Amplitude: peak amplitude
-            :type Amplitude: float
-            :param mean: centre of the Gaussian
-            :type mean: float
-            :param stdev: standard deviation of the Gaussian
-            :type stdev: float
-            :param offset: constant added to the Gaussian
-            :type offset: float
-            :return: the Gaussian evaluated at x
-            :rtype: np.ndarray
-            """
-            return Amplitude * np.exp(-(x - mean)**2 / (2 * stdev**2)) + offset
-
-        def Gauss_2(
-            x: np.ndarray,
-            A1: float,
-            u1: float,
-            s1: float,
-            c1: float,
-            A2: float,
-            u2: float,
-            s2: float,
-            c2: float,
-        ) -> np.ndarray:
-            """
-            Evaluate the sum of two offset Gaussians.
-
-            :param x: points at which to evaluate the sum
-            :type x: np.ndarray
-            :param A1: amplitude of the first Gaussian
-            :type A1: float
-            :param u1: centre of the first Gaussian
-            :type u1: float
-            :param s1: standard deviation of the first Gaussian
-            :type s1: float
-            :param c1: vertical offset of the first Gaussian
-            :type c1: float
-            :param A2: amplitude of the second Gaussian
-            :type A2: float
-            :param u2: centre of the second Gaussian
-            :type u2: float
-            :param s2: standard deviation of the second Gaussian
-            :type s2: float
-            :param c2: vertical offset of the second Gaussian
-            :type c2: float
-            :return: the summed Gaussians evaluated at x
-            :rtype: np.ndarray
-            """
-            # NOTE (integration): Gauss() previously declared four parameters
-            # (x, Amplitude, mean, stdev) but was called here with five, so both calls
-            # raised TypeError. The curve_fit() call below catches everything and takes
-            # the `popt is None` path, so the error was silent and fit_2_gauss never
-            # actually fitted anything. Since the return statement unpacks popt in two
-            # groups of four, four parameters per Gaussian is the intended shape, so
-            # Gauss gained an `offset` term and these parameters were renamed from
-            # A/x/m/s to A/u/s/c to say which is which.
-            return Gauss(x, A1, u1, s1, c1) + Gauss(x, A2, u2, s2, c2)
-
-        data_reshaped = np.array(data).reshape(-1, 1)
-        
-        x = np.linspace(np.min(data_reshaped), np.max(data_reshaped), 1000)
-        popt = None
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", OptimizeWarning)
-            try:
-                popt, _ = curve_fit(Gauss_2, x, data_reshaped, maxfev=2000)
-            except Exception:
-                popt = None
-
-        if popt is None:
-            return np.array([]), np.array([]), None
-
-        return (popt[0], popt[1], popt[2], popt[3]), (popt[4], popt[5], popt[6], popt[7])
-    
-    
     @log(logger=logger)
     def bitthresh(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
         """

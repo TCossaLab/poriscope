@@ -15,6 +15,65 @@ they date the decision.
 
 ---
 
+## 2026-08-25 - Keep the four `None`-placeholder `type: ignore`s in `PeakFinder`
+
+**Context.** `PeakFinder._populate_event_metadata` deliberately stores `None` for
+`unfolded_level`, `folded_level`, `translocation_direction` and `sequence`, because those
+are decided globally in `_post_process_events` and cannot be known per event.
+`MetaEventFitter._populate_event_metadata` declares its return as
+`Dict[str, Union[int, float, str, bool]]`, and `_define_event_metadata_types` separately
+declares those same four keys as `float`/`float`/`str`/`str`, so both contracts disagree
+with the value actually written. Four narrow `# type: ignore[assignment]` mark the sites.
+
+**Decision.** Leave them. Do not widen the ABC to clear them.
+
+**Evidence.** The behaviour is correct: `SQLiteDBWriter` maps the declared types through
+`pytype_to_sql_type` to build `REAL`/`TEXT` columns, and SQLite accepts `NULL` in any
+column without a `NOT NULL` constraint, so nothing fails at runtime. This is a
+type-contract mismatch, not a latent crash. Against that, clearing it means widening two
+`Meta*` ABC methods to `Optional[...]`, and because `test_plugin_compliance.py` compares
+annotations **by equality** every override has to move in lockstep - `CUSUM`,
+`IntraCUSUM`, `NoFitter`, `NanoTrees`, `PeakFinder` and `Basic_PeakFinder`, six files, two
+of which belong to another developer and one of which may be deprecated. It would also be
+a breaking change to the plugin contract requiring a changelog callout. Four documented
+suppressions are the smaller cost.
+
+**The cheaper alternative if it is ever wanted.** Do not write the keys at all until
+post-processing fills them - absence rather than `None`. The columns still come from
+`_define_event_metadata_types`, so the schema is unaffected. That is a logic change in the
+owning developer's file and needs checking that the writer tolerates a row missing a
+declared key.
+
+**Revisit if.** A third-party plugin ecosystem exists, or someone wants `NOT NULL`
+constraints on those columns.
+
+---
+
+## 2026-08-25 - Do not consolidate the double-Gaussian fits; the owner is rewriting them
+
+**Context.** Three separate double-Gaussian implementations existed: `bitthresh`'s nested
+`dgfit`, `ProteinView._fit_double_gaussian`, and `PeakFinder.fit_2_gauss`. Consolidating
+onto the ProteinView implementation was scoped in detail - it is the only one with a
+sanity-check layer (covariance checks, a t-test on mean separation, an amplitude-ratio
+floor), and its normalization turned out to live in the caller rather than in the fit, so
+it is already scale-agnostic and portable as-is.
+
+**Decision.** Do not do it. The developer who owns the PeakFinder family is rewriting that
+fitting code from scratch, which supersedes the consolidation.
+
+**What was done instead.** `fit_2_gauss` was deleted. It had no call sites and could not
+have run: beyond a nested `Gauss` declared with four parameters and called with five, it
+passed a 1000-point linspace as `xdata` against the raw `(N, 1)` sample array as `ydata` -
+rejected by `curve_fit` unless an event is exactly 1000 samples, and not a distribution
+fit in any case, since both axes are current values rather than bin centres and counts.
+Deleting a dead third implementation does not conflict with a rewrite. `bitthresh` and
+`dgfit` are untouched and remain the live path.
+
+**Revisit if.** The rewrite lands and still leaves two divergent implementations, at which
+point the ProteinView port is the obvious target and the scoping above still holds.
+
+---
+
 ## 2026-08-24 - Leave two of the three unguarded `Optional` Qt accessors alone
 
 **Context.** The type-annotation pass flagged three families of Qt accessor that return
