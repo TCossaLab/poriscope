@@ -346,7 +346,7 @@ class DictDialog(QDialog):
 
     def check_validity(self) -> None:
         all_valid = True
-        for key, widget in self.entrywidgets.items():
+        for widget in self.entrywidgets.values():
             if isinstance(widget, NumericLineEdit):
                 if not widget.isValid():
                     all_valid = False
@@ -366,7 +366,7 @@ class DictDialog(QDialog):
 
     @log(logger=logger)
     def on_ok(self) -> None:
-        for key, val in self.params.items():
+        for key in self.params:
             if key not in ["Input File", "Output File", "Folder"]:
                 try:
                     self.params[key]["Value"] = self.params[key]["Type"](

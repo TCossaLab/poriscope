@@ -171,11 +171,11 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str, str)
     def get_settings_from_history(self, metaclass: str, subclass: str) -> None:
-        for key, val in self.plugin_history.items():
+        for val in self.plugin_history.values():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
                 self.data_plugin_controller.set_settings(val.get("settings"))
                 return
-        for key, val in self.previous_plugin_history.items():
+        for val in self.previous_plugin_history.values():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
                 self.data_plugin_controller.set_settings(val.get("settings"))
                 return
@@ -343,7 +343,7 @@ class MainController(QObject):
             f"Available {metaclass} plugins updates to {available_plugins}"
         )
         self.data_plugins[metaclass] = available_plugins
-        for key, val in self.analysis_tabs.items():
+        for val in self.analysis_tabs.values():
             if val:
                 val.update_available_plugins(self.data_plugins)
 
@@ -371,7 +371,7 @@ class MainController(QObject):
     def handle_plugin_state_changed(
         self, metaclass: str, plugin_key: str, reason: str
     ) -> None:
-        for key, val in self.analysis_tabs.items():
+        for val in self.analysis_tabs.values():
             if val:
                 val.view.notify_plugin_state_changed(metaclass, plugin_key, reason)
 

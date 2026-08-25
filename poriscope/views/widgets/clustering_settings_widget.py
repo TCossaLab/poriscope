@@ -492,7 +492,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             )
 
         # Include dynamically added rows
-        for column, data in self.column_item_widgets.items():
+        for data in self.column_item_widgets.values():
             current_column = data["combo"].currentText()
             column_data.append(
                 {

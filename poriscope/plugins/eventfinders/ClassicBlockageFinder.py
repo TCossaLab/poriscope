@@ -241,8 +241,13 @@ class ClassicBlockageFinder(MetaEventFinder):
         :type last_end: int
         :return:  A list of indices to reject from the given list of event starts and ends, and a list of reason for rejection
         :rtype: Tuple[List[int], List[str]]
+        :raises RuntimeError: if no reader plugin has been set on this event finder
         """
-        assert self.reader is not None, "Reader is not set"
+        # Not an assert: asserts are stripped under python -O, which would turn a
+        # missing reader into an opaque AttributeError on the next line. MetaEventFinder
+        # guards the same Optional attribute this way at lines 143 and 203.
+        if self.reader is None:
+            raise RuntimeError("Reader is not set")
         samplerate = self.reader.get_samplerate()
 
         min_duration = self.settings["Min Duration"]["Value"] * samplerate * 1e-6

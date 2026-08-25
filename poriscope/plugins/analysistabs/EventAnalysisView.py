@@ -734,7 +734,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         num_rows, num_cols = self._factors(num_events)
 
         j = 0
-        for i, (data, label) in enumerate(zip(event_data, labels)):
+        for data, label in zip(event_data, labels):
             if "Raw" in label and not use_raw:
                 # Bypass the raw (unfiltered) trace entirely when not requested,
                 # instead of relying on the caller to have omitted it.

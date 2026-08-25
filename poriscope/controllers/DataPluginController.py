@@ -96,7 +96,7 @@ class DataPluginController(QObject):
             )
             return
 
-        for settings_key, val in app_settings.items():
+        for settings_key in app_settings:
             if settings_key in self.model.get_available_metaclasses():
                 app_settings[settings_key]["Type"] = str
                 app_settings[settings_key][

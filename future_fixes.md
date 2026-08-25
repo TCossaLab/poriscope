@@ -185,20 +185,22 @@ are not re-raised as open work.
   | --- | --- | --- |
   | `B905` zip-without-explicit-strict | 54 | **Audited and closed 2026-08-25; deliberately not enabled as a gate.** 50 sites were in scope (the other 7 are in owner-held fitter files); 43 zipped sequences that are built together and need nothing. The 4 that mattered are fixed: 3 in `MetadataView` were silently dropping plot features that had no label, and `ClusteringView` no longer mutates `columns`, so its two zips now assert their alignment with `strict=True` rather than depending on truncation to hide the appended `"id"`. `SQLiteDBWriter`'s sublevel transpose was verified equal-length upstream and now says so with `strict=True`. Not enabled because the 54 remaining sites would each need their own `strict=` decision, and at least one - the list-against-generator zip in `MetaDatabaseLoader` CSV export - cannot be proven equal-length in advance. The rule earned its keep as a one-time audit. |
   | `B904` raise-without-from-inside-except | 1 | **Done 2026-08-25; not enabled as a gate.** All 23 in-scope sites now chain with `from e`; the one remaining is in `PeakFinder.py` (owner-held), so enabling the rule would need a `per-file-ignores` entry that hides a real check rather than satisfying it. Worth recording that this was not purely cosmetic: the 12 data-reader sites were discarding the name of the missing file, leaving the user with "at least one of the input raw data files is missing" and no way to tell which. |
-  | `B007` unused-loop-control-variable | 20 | mostly cosmetic |
+  | `B007` unused-loop-control-variable | 3 | **Done 2026-08-25.** 17 of 20 cleared: 13 `dict.items()` loops became `.values()` or plain key iteration, one pointless `enumerate` dropped, and 3 `zip` sites underscore-prefixed rather than restructured so their iteration count is untouched. The 3 remaining are in `PeakFinder.py`. |
   | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
   | `B028` no-explicit-stacklevel | 1 | one `warnings.warn` in `MetaWriter.py`; cosmetic |
   | `S608` hardcoded-sql-expression | 25 | **downgraded.** The database is a local file owned by the user running the app, so there is no privilege boundary for an injection to cross. Settled - see the `SQLitePeakDBLoader` note above. |
   | `S110` try-except-pass | 13 | **Triaged 2026-08-25; all 13 remaining are in `PeakFinder.py`.** The 6 that were in our own code are fixed: two `set.remove()` handlers became `set.discard()`, one settings-value type test narrowed to `except AttributeError`, and three cosmetic `tight_layout` handlers now log at debug. Enabling the rule would need either the owner to fix hers or a `per-file-ignores` entry for `PeakFinder.py` - the latter hides a real check rather than satisfying it, so it is not proposed. |
-  | `S101` assert | 8 | asserts in non-test code |
+  | `S101` assert | 7 | **Done 2026-08-25.** The one site in non-owner code, `ClassicBlockageFinder._filter_events`, now raises `RuntimeError` rather than asserting - asserts vanish under `python -O`, which would have left an opaque `AttributeError` instead. The 7 remaining are all in `NanoTrees.py`, owner-held and a deprecation candidate. |
   | `S112` try-except-continue | 1 | the single site is in `PeakFinder.py` (`_classify_folded_unfolded`, a bare `continue` on an array index); see the `S110` row. |
 
   Almost every remaining fix is a logic change, so this is unclaimed rather than
-  blocked. `B905`, `S110`, `S112` and `B904` are all now closed (see their rows above):
-  what each surfaced in our own code is fixed, and every site that remains sits in an
-  owner-held file - which is also why none of the four is enabled as a gate. Next up is
-  `S101`, 8 asserts in non-test code. Re-measure before starting, and enable each rule
-  only once its own backlog is zero, the way `B006`/`B020` were.
+  blocked. **This block is now essentially finished.** `B905`, `S110`, `S112`, `B904`,
+  `S101` and `B007` are all closed (see their rows above): what each surfaced in our own
+  code is fixed, and every site that remains sits in an owner-held file - which is also
+  why none of them is enabled as a gate. What is left is `S608` (25, accepted: the
+  database is a local file owned by the user running the app) and 3 cosmetic
+  `B010`/`B028` sites. There is no further bug-finding value in this block; treat it as
+  done unless the owner-held files change hands.
 
   Note this overlaps, but is not the same as, the bandit proposal in the
   community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust

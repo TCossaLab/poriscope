@@ -1255,7 +1255,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 )
                 return False
 
-            for exp, channels in experiments_and_channels.items():
+            for channels in experiments_and_channels.values():
                 if len(channels) > 1:
                     self.logger.warning(
                         f"Only a single channel can be used for {plot_type}"
@@ -2235,7 +2235,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
             return
 
-        for exp, channels in experiments_and_channels.items():
+        for channels in experiments_and_channels.values():
             if len(channels) > 1:
                 self.add_text_to_display.emit(
                     "Only a single channel can be used for plotting events",

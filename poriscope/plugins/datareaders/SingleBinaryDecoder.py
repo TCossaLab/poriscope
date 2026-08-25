@@ -155,7 +155,7 @@ class SingleBinaryDecoder(MetaReader):
         datamaps = []
         fmt = []
         offset = self.settings["Header Bytes"]["Value"]
-        for channel, (filename, config) in enumerate(zip(datafiles, configs)):
+        for channel, (_filename, _config) in enumerate(zip(datafiles, configs)):
             fmt.append((f"data_{channel}", self.dtype))
 
         try:

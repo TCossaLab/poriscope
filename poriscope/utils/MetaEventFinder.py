@@ -519,7 +519,7 @@ class MetaEventFinder(BaseDataPlugin):
                 bad_indices, rejected_reasons = self._filter_events(
                     event_starts, event_ends, channel, last_end
                 )
-                for bad_index, reason in zip(bad_indices, rejected_reasons):
+                for _bad_index, reason in zip(bad_indices, rejected_reasons):
                     self.rejected_events[channel][reason] = (
                         self.rejected_events[channel].get(reason, 0) + 1
                     )

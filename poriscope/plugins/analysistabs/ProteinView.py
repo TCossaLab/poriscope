@@ -1839,7 +1839,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
             return []
 
-        for exp, channels in experiments_and_channels.items():
+        for channels in experiments_and_channels.values():
             if len(channels) > 1:
                 self.add_text_to_display.emit(
                     f"Only a single channel can be used for plotting {action_label}",
@@ -2374,7 +2374,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
             return
 
-        for exp, channels in experiments_and_channels.items():
+        for channels in experiments_and_channels.values():
             if len(channels) > 1:
                 self.logger.warning(
                     "Only a single channel at a time can be used for protein ensemble analysis"
@@ -2848,7 +2848,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
             return
 
-        for exp, channels in experiments_and_channels.items():
+        for channels in experiments_and_channels.values():
             if len(channels) > 1:
                 self.logger.warning(
                     "Only a single channel at a time can be used for protein ensemble analysis"

@@ -1,5 +1,15 @@
 ## Poriscope 1.7: In Progress
 
+* **Replaced the last `assert` in non-owner runtime code with an explicit check**
+    * `ClassicBlockageFinder._filter_events` opened with `assert self.reader is not None`. The assert was doing real type-narrowing work for mypy, but asserts are stripped under `python -O`, which would have turned a missing reader into an opaque `AttributeError` on the following line. It now raises `RuntimeError`, matching how `MetaEventFinder` already guards that same `Optional` attribute (lines 143 and 203) and how the codebase reports missing prerequisites elsewhere. Nothing anywhere in `poriscope/` catches `AssertionError`, so changing the type breaks no handler.
+    * The remaining seven `S101` sites are all in `NanoTrees.py`, which is owner-held and a deprecation candidate.
+
+* **Cleared 17 unused loop-control variables (`B007`)**
+    * Thirteen were `dict.items()` loops using only one half of the pair; they now iterate `.values()`, or the keys directly, which is exactly equivalent. One was a pointless `enumerate` in `EventAnalysisView._update_event_plot`.
+    * Three sites zip two sequences and use only one: `MetaEventFinder`'s rejection tally, and `SingleBinaryDecoder._map_data`, which uses neither zipped value and only wants the index. These kept their `zip` with the unused names underscore-prefixed rather than being restructured, because dropping the pairing would change how many times the loop runs should the two sequences ever disagree in length - a behavioural difference that would be invisible at the call site.
+    * Checked and cleared as a non-bug on the way past: `MetaEventFinder` discards the `bad_indices` half of `_filter_events`' return value in its tally loop, which looked like rejected events might never actually be excluded. They are - `bad_indices` is consumed separately at four sites below it via `if idx not in bad_indices`.
+    * Three `B007` sites remain, all in `PeakFinder.py`.
+
 * **Exception chaining restored across 23 `raise` sites**
     * Every `raise X(...)` inside an `except` block in non-owner code now carries `from e`, so the exception being replaced is preserved as `__cause__` rather than discarded. Exception type, message and control flow are all unchanged, so nothing that catches by type or matches on message text is affected.
     * **The 12 sites in the data readers were losing real diagnostic information, not merely a traceback.** All six readers share a copy-pasted `_map_data` whose handler raises `FileNotFoundError("File Not Found : At least one of the input raw data files is missing or renamed")`. That message says "at least one of" because at that point it does not know which - but the exception it was replacing names the exact file. A user with a multi-file dataset was told a file was missing and given no way to find out which one. The sibling `OSError` handler, for inaccessible remote or external-media paths, had the same problem.
