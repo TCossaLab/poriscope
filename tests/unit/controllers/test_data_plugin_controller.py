@@ -665,7 +665,7 @@ def test_validate_and_instantiate_plugin_populates_from_historical_settings(
     )
 
     # view returns a valid result so the method proceeds
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 99}}, "r1")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 99}}, "r1", False)
 
     controller.validate_and_instantiate_plugin(
         metaclass="MetaReader",
@@ -711,6 +711,7 @@ def test_validate_and_instantiate_plugin_defaults_folder_to_data_server(
     mock_view.get_user_settings.return_value = (
         {"Folder": {"Value": "/tmp/data"}},
         "r1",
+        False,
     )
 
     controller.validate_and_instantiate_plugin(
@@ -730,7 +731,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_user_cancels(
     mocker: MockerFixture,
 ) -> None:
     """
-    Return early when get_user_settings returns None or (None, ...).
+    Return early when the dialog reports no settings and no key.
 
     Covers the ``if result is None or result[0] is None: return`` branch
     that fires when the user cancels the settings dialog.
@@ -750,7 +751,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_user_cancels(
     controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
     controller.get_settings_from_history.emit = mocker.Mock()
 
-    mock_view.get_user_settings.return_value = None
+    mock_view.get_user_settings.return_value = (None, None, False)
 
     controller.validate_and_instantiate_plugin(
         metaclass="MetaReader",
@@ -769,7 +770,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_result_first_none(
     mocker: MockerFixture,
 ) -> None:
     """
-    Return early when get_user_settings returns (None, key).
+    Return early when the dialog reports a key but no settings.
 
     Covers the ``result[0] is None`` sub-case of the cancel branch.
 
@@ -788,7 +789,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_result_first_none(
     controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
     controller.get_settings_from_history.emit = mocker.Mock()
 
-    mock_view.get_user_settings.return_value = (None, "r1")
+    mock_view.get_user_settings.return_value = (None, "r1", False)
 
     controller.validate_and_instantiate_plugin(
         metaclass="MetaReader",
@@ -841,7 +842,7 @@ def test_edit_plugin_returns_early_when_user_cancels(
     mocker: MockerFixture,
 ) -> None:
     """
-    Return early when get_user_settings returns (None, None).
+    Return early when the dialog is cancelled or dismissed.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -854,7 +855,7 @@ def test_edit_plugin_returns_early_when_user_cancels(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = (None, None)
+    mock_view.get_user_settings.return_value = (None, None, False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -867,13 +868,11 @@ def test_edit_plugin_deletes_plugin_when_result_is_delete_and_no_dependents(
     mocker: MockerFixture,
 ) -> None:
     """
-    Unregister the plugin when result is 'delete' and no dependents exist.
+    Unregister the plugin when deletion is requested and no dependents exist.
 
-    The delete branch unregisters the plugin and emits signals before falling
-    through to ``if key != old_key``. Because ``old_key`` is only assigned in
-    the ``else`` branch, Python raises UnboundLocalError when ``result ==
-    "delete"`` — this is a known source-level scoping issue. We verify the
-    delete behaviour fired correctly and then acknowledge the subsequent error.
+    The delete branch is self-contained: the ``if key != old_key`` rename check,
+    and everything else that reads ``old_key``, lives inside the sibling ``else``
+    arm, so the method returns normally once the delete has been performed.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -888,12 +887,9 @@ def test_edit_plugin_deletes_plugin_when_result_is_delete_and_no_dependents(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
-    mock_view.get_user_settings.return_value = "delete"
+    mock_view.get_user_settings.return_value = (None, None, True)
 
-    try:
-        ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
-    except UnboundLocalError:
-        pass
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
     mock_model.unregister_plugin.assert_called_once_with("MetaReader", "r1")  # type: ignore[attr-defined]
     ctrl.update_available_plugins.emit.assert_called_once()
@@ -907,9 +903,9 @@ def test_edit_plugin_blocks_delete_when_has_dependents(
     """
     Log info and emit message when delete is requested but dependents exist.
 
-    Same source-level scoping issue as the no-dependents test: ``old_key`` is
-    unbound when ``result == "delete"``. We catch the UnboundLocalError and
-    verify the blocking behaviour fired correctly before the fault.
+    The plugin stays registered and its parent links are restored. As in the
+    no-dependents test, the delete branch returns without ever reading
+    ``old_key``.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -924,12 +920,9 @@ def test_edit_plugin_blocks_delete_when_has_dependents(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = "delete"
+    mock_view.get_user_settings.return_value = (None, None, True)
 
-    try:
-        ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
-    except UnboundLocalError:
-        pass
+    ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
     mock_model.unregister_plugin.assert_not_called()  # type: ignore[attr-defined]
     ctrl.logger.info.assert_called_once()  # type: ignore[attr-defined]
@@ -956,7 +949,7 @@ def test_edit_plugin_applies_settings_and_emits_history_on_success(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -985,7 +978,7 @@ def test_edit_plugin_logs_info_on_apply_settings_failure(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -1031,7 +1024,7 @@ def test_edit_plugin_updates_app_settings_for_metaclass_keys(
     def capture_and_return(app_settings, *args, **kwargs):
         captured["Type"] = app_settings["MetaLoader"]["Type"]
         captured["Options"] = app_settings["MetaLoader"]["Options"]
-        return (settings, "r1")
+        return (settings, "r1", False)
 
     mock_view.get_user_settings.side_effect = capture_and_return
 
@@ -1069,7 +1062,7 @@ def test_edit_plugin_unregisters_from_parents(
     )
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r1", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -1104,7 +1097,7 @@ def test_edit_plugin_rename_key_updates_dependents_and_emits(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -1134,7 +1127,7 @@ def test_edit_plugin_rename_collision_logs_warning_and_returns(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1", "r2"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -1177,7 +1170,7 @@ def test_edit_plugin_rename_with_dependents_updates_them(
     )
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -1207,7 +1200,7 @@ def test_edit_plugin_set_key_exception_logs_and_returns(
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2")
+    mock_view.get_user_settings.return_value = ({"param": {"Value": 2}}, "r2", False)
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
@@ -1290,7 +1283,7 @@ def test_edit_plugin_rename_resolves_metaclass_references_in_app_settings(
     }
 
     settings = {"MetaLoader": {"Value": "loader1", "Type": str, "Options": ["loader1"]}}
-    mock_view.get_user_settings.return_value = (settings, "r2")
+    mock_view.get_user_settings.return_value = (settings, "r2", False)
 
     ctrl.edit_plugin("MetaReader", "r1", settings)
 

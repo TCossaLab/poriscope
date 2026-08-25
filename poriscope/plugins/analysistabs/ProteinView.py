@@ -2350,7 +2350,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         # Default N to 100 if missing
         N = int(parameters.get("n_values") or 100)
         bins = parameters.get("bins")
-        sizes = parameters.get("sizes")
+        sizes = parameters.get("sizes", False)
 
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]

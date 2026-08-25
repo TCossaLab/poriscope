@@ -36,7 +36,7 @@ import logging
 import os
 import re
 import sys  ### FIX: Imported sys to check the operating system
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -97,9 +97,12 @@ class DictDialog(QDialog):
         self.editable = editable
         self.params = params
         self.show_delete = show_delete
-        # three shapes: (params, name) on OK, (None, None) on cancel,
-        # and the sentinel string "delete" on delete
-        self._result: Union[Tuple[Optional[dict], Optional[str]], str, None] = None
+        # one shape: (params, name) on OK, (None, None) on cancel, on delete,
+        # and on dismissal via Esc or the window close button, neither of which
+        # runs a button handler. Delete is reported separately by
+        # _delete_requested rather than by a sentinel value in _result.
+        self._result: Tuple[Optional[dict], Optional[str]] = (None, None)
+        self._delete_requested: bool = False
         self.source_plugins = source_plugins if source_plugins is not None else []
         self.editable_source_plugins = editable_source_plugins
         self.init_ui(params, name)
@@ -390,9 +393,19 @@ class DictDialog(QDialog):
     @log(logger=logger)
     def on_delete(self) -> None:
         """Handle Delete button click."""
-        self._result = "delete"  # Mark delete request
+        self._delete_requested = True  # Mark delete request
         self.reject()  # Close dialog
 
     @log(logger=logger)
-    def get_result(self) -> Union[Tuple[Optional[dict], Optional[str]], str, None]:
+    def get_result(self) -> Tuple[Optional[dict], Optional[str]]:
         return self._result
+
+    @log(logger=logger)
+    def delete_requested(self) -> bool:
+        """
+        Report whether the user asked to delete the plugin rather than edit it.
+
+        :return: True if the Delete button was clicked, False otherwise.
+        :rtype: bool
+        """
+        return self._delete_requested

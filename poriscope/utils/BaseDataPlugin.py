@@ -272,12 +272,12 @@ class BaseDataPlugin(ABC):
         return self.parents
 
     @log(logger=logger)
-    def get_raw_settings(self) -> Optional[dict]:
+    def get_raw_settings(self) -> dict:
         """
         Get the settings that were applied during initialization of the instance
 
         :return: the dict that must be filled in to initialize the plguin
-        :rtype: Optional[dict]
+        :rtype: dict
         """
         return self.raw_settings
 

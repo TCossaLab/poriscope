@@ -36,8 +36,9 @@ repos:
         files: ^poriscope/
 
   # Docstring/signature consistency (runs during default commit stage).
-  # Only fails on NEW violations - pre-existing ones are grandfathered into
-  # .pydoclint-baseline.txt. See pyproject.toml's [tool.pydoclint] for config.
+  # .pydoclint-baseline.txt is empty as of 2026-08-26 - the ~1,090 grandfathered
+  # violations are all cleared, so every violation reported is a real one. Fix it
+  # rather than regenerating the baseline. See pyproject.toml's [tool.pydoclint].
   - repo: local
     hooks:
       - id: pydoclint

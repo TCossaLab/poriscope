@@ -240,7 +240,11 @@ class MetadataController(MetaController):
                     self.__class__.__name__,
                 )
 
-                self.view.update_filter_name(old_name, suffixed_new_name)
+                # NOTE: old_name is Optional[str] on the attribute, but
+                # show_edit_filter_dialog sets it from a `str` parameter before
+                # emitting this intent, so it is never None here. The guarantee
+                # travels through a signal connection mypy cannot follow.
+                self.view.update_filter_name(old_name, suffixed_new_name)  # type: ignore[arg-type]
         self.view.clear_pending_filter_state()
 
     @log(logger=logger)

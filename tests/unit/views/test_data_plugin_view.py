@@ -31,12 +31,13 @@ def plugin_view():
 @patch("poriscope.views.DataPluginView.DictDialog")
 def test_get_user_settings_returns_expected_tuple(mock_dialog_class, plugin_view):
     """
-    Test that get_user_settings correctly returns a tuple of (settings, key)
-    from the dialog.
+    Test that get_user_settings correctly returns a tuple of
+    (settings, key, delete_requested) from the dialog.
     """
     # Mock the dialog and its return value
     mock_dialog = MagicMock()
     mock_dialog.get_result.return_value = ({"param": "value"}, "plugin_key")
+    mock_dialog.delete_requested.return_value = False
     mock_dialog_class.return_value = mock_dialog
 
     # Call the method
@@ -53,7 +54,7 @@ def test_get_user_settings_returns_expected_tuple(mock_dialog_class, plugin_view
     # Assert that get_result was called and correct result is returned
     mock_dialog.exec.assert_called_once()
     mock_dialog.get_result.assert_called_once()
-    assert result == ({"param": "value"}, "plugin_key")
+    assert result == ({"param": "value"}, "plugin_key", False)
 
 
 @patch("poriscope.views.DataPluginView.DictDialog")
@@ -61,6 +62,11 @@ def test_get_user_settings_dialog_initialization(mock_dialog_class, plugin_view)
     """
     Test that DictDialog is initialized with correct parameters.
     """
+    mock_dialog = MagicMock()
+    mock_dialog.get_result.return_value = (None, None)
+    mock_dialog.delete_requested.return_value = False
+    mock_dialog_class.return_value = mock_dialog
+
     # Provide input arguments
     user_settings = {"a": 1}
     name = "Sample"
@@ -102,6 +108,7 @@ def test_get_user_settings_defaults(mock_dialog_class, plugin_view):
     # Mock result
     mock_dialog = MagicMock()
     mock_dialog.get_result.return_value = ({"test": 123}, "default_plugin")
+    mock_dialog.delete_requested.return_value = False
     mock_dialog_class.return_value = mock_dialog
 
     # Call with minimal args
@@ -110,6 +117,6 @@ def test_get_user_settings_defaults(mock_dialog_class, plugin_view):
     )
 
     # Assert result is returned and dialog was used
-    assert result == ({"test": 123}, "default_plugin")
+    assert result == ({"test": 123}, "default_plugin", False)
     mock_dialog.exec.assert_called_once()
     mock_dialog.get_result.assert_called_once()

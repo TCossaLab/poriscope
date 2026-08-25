@@ -269,7 +269,6 @@ def test_get_available_plugins(main_model):
 def test_get_plugin_classes(main_model):
     main_model.available_plugin_classes = {"MetaReader": {"MyReader": object}}
 
-    assert main_model.get_plugin_classes() == {"MetaReader": {"MyReader": object}}
     assert main_model.get_plugin_classes("MetaReader") == {"MyReader": object}
 
 

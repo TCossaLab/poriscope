@@ -267,13 +267,8 @@ class MainModel(QObject):
         return self.available_plugins_list
 
     @log(logger=logger)
-    def get_plugin_classes(
-        self, metaclass: Optional[str] = None
-    ) -> Union[Dict[str, type], Dict[str, Dict[str, type]]]:
-        if metaclass:
-            return self.available_plugin_classes[metaclass]
-        else:
-            return self.available_plugin_classes
+    def get_plugin_classes(self, metaclass: str) -> Dict[str, type]:
+        return self.available_plugin_classes[metaclass]
 
     @log(logger=logger)
     def get_plugin(self, metaclass: str, subclass: str) -> Optional[type]:

@@ -141,14 +141,15 @@ class IntraCUSUM(CUSUM):
 
         below_threshold = False
 
-        event_metadata["threshold_crossings"] = 0
+        threshold_crossings = 0
         for d in data:
             if below_threshold is False and sign * d < down_threshold:
                 below_threshold = True
-                event_metadata["threshold_crossings"] += 1
+                threshold_crossings += 1
             elif below_threshold is True and sign * d > up_threshold:
                 below_threshold = False
-                event_metadata["threshold_crossings"] += 1
+                threshold_crossings += 1
+        event_metadata["threshold_crossings"] = threshold_crossings
 
         return event_metadata
 

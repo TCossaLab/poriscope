@@ -222,7 +222,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             report the real reason instead of assuming a duplicate row.
         :rtype: bool
         :raises ValueError: if a database connection cannot be opened
-        :raises RuntimeError: if the experiment or channel cannot be found in the database
+        :raises RuntimeError: if the experiment or channel cannot be found in the database, or if the event insert reports success without producing a row id
         :raises sqlite3.Error: if a database operation fails
         :raises Exception: if an unexpected error occurs while writing the event
         """
@@ -274,6 +274,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             event_db_id = self.cursor.lastrowid
 
             if success:
+                if event_db_id is None:
+                    raise RuntimeError(
+                        f"Event insert for experiment '{experiment_name}' reported "
+                        "success but produced no row id."
+                    )
                 success = self._insert_sublevels(
                     self.cursor,
                     sublevel_metadata,
@@ -281,17 +286,17 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                     channel_db_id,
                     event_db_id,
                 )
-            if success:
-                success = self._insert_event_data(
-                    self.cursor,
-                    event_metadata,
-                    event_data,
-                    raw_data,
-                    fit_data,
-                    experiment_id,
-                    channel_db_id,
-                    event_db_id,
-                )
+                if success:
+                    success = self._insert_event_data(
+                        self.cursor,
+                        event_metadata,
+                        event_data,
+                        raw_data,
+                        fit_data,
+                        experiment_id,
+                        channel_db_id,
+                        event_db_id,
+                    )
 
         except sqlite3.Error as e:
             if self.conn:

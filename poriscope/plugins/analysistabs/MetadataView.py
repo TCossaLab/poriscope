@@ -2702,30 +2702,28 @@ class MetadataView(MetaView, WalkthroughMixin):
             show_delete=False,
         )
         dialog.exec()
-        result = dialog.get_result()
-        if result is None:  # dialog was cancelled
+        result, name = dialog.get_result()
+        if not result:  # dialog was cancelled or dismissed
             return
-        result, name = result
 
-        if result:
-            folder = result["Folder"]["Value"]
+        folder = result["Folder"]["Value"]
 
-            export_subset_args = (folder, name, filters, selection)
-            ret_args = (self.subset_export_count, loader, "MetaDatabaseLoader")
-            try:
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "export_subset_to_csv",
-                    export_subset_args,
-                    "set_generator",
-                    ret_args,
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to export subset: {repr(e)}")
-            else:
-                self.run_generators.emit(loader)
-                self.subset_export_count += 1
+        export_subset_args = (folder, name, filters, selection)
+        ret_args = (self.subset_export_count, loader, "MetaDatabaseLoader")
+        try:
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "export_subset_to_csv",
+                export_subset_args,
+                "set_generator",
+                ret_args,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to export subset: {repr(e)}")
+        else:
+            self.run_generators.emit(loader)
+            self.subset_export_count += 1
 
     @log(logger=logger)
     def set_exported_event_count(self, written: int) -> None:

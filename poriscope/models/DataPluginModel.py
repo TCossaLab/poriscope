@@ -126,13 +126,13 @@ class DataPluginModel(QObject):
         return self.available_plugins[metaclass][subclass]()
 
     @log(logger=logger)
-    def get_instantiated_plugins_list(self) -> Mapping[str, List[str]]:
+    def get_instantiated_plugins_list(self) -> Dict[str, List[str]]:
         """
         Get a dict keyed by metaclass with a list of all keys for plugins that have been instantiated
 
 
         :return: A dict keyed by metaclass with a list of all keys for plugins that have been instantiated
-        :rtype: Mapping[str, List[str]]
+        :rtype: Dict[str, List[str]]
         """
         return {
             metaclass: list(plugins.keys())

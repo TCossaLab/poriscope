@@ -60,8 +60,12 @@ class MainController(QObject):
             {}
         )  # a dict keyed by metaclass with lists of keys for instances of subclasses of that metaclass
 
+        # keyed by metaclass, same key set as available_plugin_classes
         self.data_plugin_controller = DataPluginController(
-            self.main_model.get_plugin_classes(),
+            {
+                metaclass: self.main_model.get_plugin_classes(metaclass)
+                for metaclass in self.main_model.get_available_plugins()
+            },
             self.main_model.get_data_server_location(),
         )
 
