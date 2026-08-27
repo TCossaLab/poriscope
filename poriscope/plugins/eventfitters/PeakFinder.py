@@ -366,6 +366,14 @@ class PeakFinder(MetaEventFitter):
             hlabel.append(f"unfolded level {t1_std:+d}σ")
 
             if self.event_metadata[channel][index]["sequence"] is not None:
+                translocation_confidence = self.event_metadata[channel][index].get(
+                    "translocation_confidence"
+                )
+                confidence_label = (
+                    "nan"
+                    if translocation_confidence is None
+                    else str(round(translocation_confidence, 3))
+                )
                 if (
                     self.event_metadata[channel][index]["translocation_direction"]
                     == "forward"
@@ -376,7 +384,7 @@ class PeakFinder(MetaEventFitter):
                         ]
                     )
                     vlabel.append(
-                        f"Forward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}"
+                        f"Forward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']} Confidence: {confidence_label}"
                     )
                 elif (
                     self.event_metadata[channel][index]["translocation_direction"]
@@ -388,7 +396,7 @@ class PeakFinder(MetaEventFitter):
                         ]
                     )
                     vlabel.append(
-                        f"Backward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']}"
+                        f"Backward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']} Confidence: {confidence_label}"
                     )
 
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
@@ -427,6 +435,15 @@ class PeakFinder(MetaEventFitter):
                         + str(self.sublevel_metadata[channel][index]["filtered"][i])
                         + " Class: "
                         + str(self.sublevel_metadata[channel][index]["classified"][i])
+                        + " Confidence: "
+                        + str(
+                            round(
+                                self.sublevel_metadata[channel][index][
+                                    "classification_confidence"
+                                ][i],
+                                3,
+                            )
+                        )
                     )
 
                     j += 1
@@ -1327,6 +1344,15 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
+        # confidence in the above classification (will be assigned alongside
+        # "classified" in post-processing; see _classification_confidence)
+        sublevel_metadata["classification_confidence"] = np.array(
+            [
+                (np.nan if "peak" in sublevel_starts[i]["type"] else np.nan)
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
         # get the standard deviation over the sublevel, ignoring the rise time
         sublevel_metadata["sublevel_stdev"] = np.array(
             [
@@ -1485,6 +1511,7 @@ class PeakFinder(MetaEventFitter):
         event_metadata["unfolded_level"] = None  # type: ignore[assignment]
         event_metadata["folded_level"] = None  # type: ignore[assignment]
         event_metadata["translocation_direction"] = None  # type: ignore[assignment]
+        event_metadata["translocation_confidence"] = None  # type: ignore[assignment]
         event_metadata["sequence"] = None  # type: ignore[assignment]
 
         return event_metadata
@@ -1523,6 +1550,7 @@ class PeakFinder(MetaEventFitter):
             "primary_level": float,
             "baseline_stdev": float,
             "translocation_direction": str,
+            "translocation_confidence": float,
             "sequence": str,
         }
 
@@ -1558,6 +1586,7 @@ class PeakFinder(MetaEventFitter):
             "peak_width": float,
             "prominence": float,
             "classified": float,
+            "classification_confidence": float,
             # "plateau_size": float,
             "max_blockage": float,
             "left_base": float,
@@ -1596,6 +1625,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["primary_level"] = "pA"
         metadata_units["baseline_stdev"] = "pA"
         metadata_units["translocation_direction"] = None
+        metadata_units["translocation_confidence"] = None
         metadata_units["sequence"] = None
 
         return metadata_units
@@ -1628,6 +1658,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["peak_width"] = "us"
         metadata_units["prominence"] = "pA"
         metadata_units["classified"] = None
+        metadata_units["classification_confidence"] = None
         # metadata_units["plateau_size"] = "us"
         metadata_units["max_blockage"] = "pA"
         metadata_units["left_base"] = "pA"
@@ -2696,10 +2727,16 @@ class PeakFinder(MetaEventFitter):
         """
         Classify peak prominences for peaks whose filtered value is 1, 2, or 3.
 
-        The lower prominence population is written as 0 and the higher
-        population as 1. If ``fit_threshold`` reports only one population
-        (see its ``"n_components"``), every eligible peak is classified
-        as 1 instead, and no threshold is reported.
+        Peaks below the threshold are written as class 0 and peaks at or above
+        it as class 1. This holds whether ``fit_threshold`` found two
+        populations or one: on single-population data the threshold is the first
+        local minimum above ``2 * mean - 2 * std`` rather than a valley between
+        two centres (see ``_threshold_between_populations``), but the split
+        itself is the same. That is deliberately unlike
+        ``_classify_folded_unfolded`` and ``_classify_translocation_direction``,
+        which decline to classify a single population at all - "folded" and
+        "forward" are claims about a second population that was not found,
+        whereas "more prominent than this population accounts for" is not.
         """
         prominence_values: list[float] = []
         prominence_refs: list[tuple[int, int, int]] = []
@@ -2723,6 +2760,12 @@ class PeakFinder(MetaEventFitter):
                     self.sublevel_metadata[ch][event_index]["classified"] = np.full(
                         len(peak_ids), np.nan, dtype=np.float64
                     )
+                if "classification_confidence" not in sublevel_data or len(
+                    sublevel_data["classification_confidence"]
+                ) != len(peak_ids):
+                    self.sublevel_metadata[ch][event_index][
+                        "classification_confidence"
+                    ] = np.full(len(peak_ids), np.nan, dtype=np.float64)
 
                 for peak_index, peak_id in enumerate(peak_ids):
                     if peak_id is None or (
@@ -2753,14 +2796,10 @@ class PeakFinder(MetaEventFitter):
 
         prominence_array = np.asarray(prominence_values, dtype=np.float64)
 
-        # Fit two populations to the prominence histogram. `fit_threshold`
-        # reports whether the fit actually describes two populations or one
-        # (see its "n_components") via the same collapsed-component /
-        # centres-not-separated diagnostics `_fit_and_check_double_gaussian`
-        # already computes - forcing a two-component fit onto genuinely
-        # unimodal data either collapses a component or lands both centres on
-        # the same mode, and that outcome is now acted on here instead of
-        # only appearing as a log line a caller could miss.
+        # Fit the prominence histogram. `fit_threshold` reports whether the fit
+        # describes two populations or one (see its "n_components") via the
+        # collapsed-component / centres-not-separated diagnostics
+        # `_fit_and_check_double_gaussian` computes.
         try:
             bt = self.fit_threshold(prominence_array)
         except Exception as e:
@@ -2775,39 +2814,56 @@ class PeakFinder(MetaEventFitter):
             if bt.get("centers") is not None
             else np.array([])
         )
-        if n_components < 2 or centers.size < 2:
-            if n_components < 2:
-                self.logger.info(
-                    "peak prominence classification: the double-Gaussian fit "
-                    "describes a single population; reporting all eligible "
-                    "peaks as class 1 rather than a threshold split."
-                )
-            # Single population -> mark all as class 1 per previous behavior
-            class_labels = np.ones(len(prominence_array), dtype=np.float64)
-            threshold = None
-        else:
-            # NOTE (integration): bt.get('threshold') is Optional, so float()
-            # raised TypeError whenever the threshold fit returned without a
-            # threshold.
-            # Checked and raised explicitly instead.
-            fit_threshold_value = bt.get("threshold")
-            if fit_threshold_value is None:
-                raise RuntimeError(
-                    "the fit returned no 'threshold'; prominence classes "
-                    "cannot be assigned without one"
-                )
-            threshold = float(fit_threshold_value)
-            class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(
-                np.float64
+
+        # NOTE (integration): bt.get('threshold') is Optional, so float()
+        # raised TypeError whenever the threshold fit returned without a
+        # threshold.
+        # Checked and raised explicitly instead.
+        fit_threshold_value = bt.get("threshold")
+        if fit_threshold_value is None:
+            raise RuntimeError(
+                "the fit returned no 'threshold'; prominence classes "
+                "cannot be assigned without one"
+            )
+        threshold = float(fit_threshold_value)
+
+        # A single population still gets a threshold and a split. Unlike the
+        # other two classifiers - which decline, because there is no meaningful
+        # "folded" or "forward" to name without a second population - a
+        # prominence split above 2*mean-2*std remains meaningful here: it is the
+        # boundary above which a peak is too prominent to belong to the one
+        # population that was found, whether or not those peaks are numerous
+        # enough to form a mode of their own.
+        if n_components < 2:
+            self.logger.info(
+                "peak prominence classification: the fit describes a single "
+                f"population, so the {threshold:.4g} pA threshold comes from "
+                f"'{bt.get('threshold_method')}' rather than a valley between "
+                "two centres. Peaks below it are class 0, above it class 1."
             )
 
+        class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(
+            np.float64
+        )
+
+        # Per-peak confidence that the assigned class is correct - see
+        # _classification_confidence for the derivation. Uses bt["params"]
+        # as fit, which already reflects peeling when params_method is
+        # "peeled".
+        confidence_values = self._classification_confidence(
+            prominence_array, bt["params"], class_labels.astype(bool)
+        )
+
         # Assign classifications back to sublevel metadata
-        for class_label, (ch, event_index, peak_index) in zip(
-            class_labels, prominence_refs
+        for class_label, confidence_value, (ch, event_index, peak_index) in zip(
+            class_labels, confidence_values, prominence_refs
         ):
             self.sublevel_metadata[ch][event_index]["classified"][
                 peak_index
             ] = class_label
+            self.sublevel_metadata[ch][event_index]["classification_confidence"][
+                peak_index
+            ] = confidence_value
 
         self._peak_prominence_classification_results = {
             "total_peaks": len(prominence_array),
@@ -3243,12 +3299,25 @@ class PeakFinder(MetaEventFitter):
         forward_count = int(np.sum(class_labels == 1))
         backward_count = int(np.sum(class_labels == 0))
 
-        for label, (ch, event_index) in zip(class_labels, filtered_refs):
+        # Per-event confidence that the assigned direction is correct - see
+        # _classification_confidence for the derivation. Uses bt["params"]
+        # as fit, which already reflects peeling when params_method is
+        # "peeled".
+        confidence_values = self._classification_confidence(
+            filtered_log_ecds, bt["params"], class_labels.astype(bool)
+        )
+
+        for label, confidence_value, (ch, event_index) in zip(
+            class_labels, confidence_values, filtered_refs
+        ):
             direction = "forward" if int(label) == 1 else "backward"
             if ch in self.event_metadata and event_index in self.event_metadata[ch]:
                 self.event_metadata[ch][event_index][
                     "translocation_direction"
                 ] = direction
+                self.event_metadata[ch][event_index]["translocation_confidence"] = (
+                    float(confidence_value)
+                )
 
         self.logger.info(
             f"Forward: {forward_count} ({forward_count/len(filtered_refs):.1%}), "
@@ -3728,6 +3797,36 @@ class PeakFinder(MetaEventFitter):
                 exc_info=True,
             )
 
+    def _single_gaussian(
+        self,
+        x: npt.NDArray[np.float64],
+        amp: float,
+        mean: float,
+        std: float,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Return the value of a single gaussian with the specified parameters.
+
+        Used by ``_peel_components_at_valley``, which fits one population at a
+        time rather than both at once.
+
+        Deliberately undecorated, for the same reason ``_double_gaussian`` is:
+        ``curve_fit`` calls this hundreds of times per fit, and a ``@log``
+        decorator here floods the logfile.
+
+        :param x: array of x values at which to calculate the gaussian
+        :type x: npt.NDArray[np.float64]
+        :param amp: amplitude of the gaussian
+        :type amp: float
+        :param mean: mean of the gaussian
+        :type mean: float
+        :param std: standard deviation of the gaussian
+        :type std: float
+        :return: array of gaussian values at the given x positions
+        :rtype: npt.NDArray[np.float64]
+        """
+        return amp * np.exp(-((x - mean) ** 2) / (2 * std**2))
+
     def _double_gaussian(
         self,
         x: npt.NDArray[np.float64],
@@ -4169,6 +4268,16 @@ class PeakFinder(MetaEventFitter):
         ``"n_components"`` surfaces that diagnosis as ``1`` or ``2`` so a
         caller can act on it directly instead of only finding it in the log.
 
+        Where the threshold came from the spline rather than a fallback, the two
+        components are then re-fit one per side of it - see
+        ``_peel_components_at_valley``, which explains why the joint fit
+        distorts the higher component and what peeling measurably recovers. This
+        happens on single-population data too, where the higher component ends up
+        describing only the sparse region above the threshold and so has a small
+        amplitude. ``"params_method"`` records whether it happened. Peeling
+        refines ``"params"`` and ``"centers"`` only; ``"threshold"`` is read off
+        the smoothing spline either way and is not affected.
+
         :param data: 1-D array of values from which to estimate a binary threshold
         :type data: npt.NDArray[np.float64]
         :return: dict with keys ``"threshold"`` (float), ``"centers"``
@@ -4177,8 +4286,11 @@ class PeakFinder(MetaEventFitter):
             (tuple of the six fitted parameters), ``"n_components"``
             (``1`` if the fit describes one population, ``2`` if it describes
             two), ``"threshold_method"`` (how ``"threshold"`` was picked -
-            see ``_threshold_between_populations``), and ``"spline"`` (the
-            smoothing spline that search was run on, for plotting, or None)
+            see ``_threshold_between_populations``), ``"spline"`` (the
+            smoothing spline that search was run on, for plotting, or None),
+            and ``"params_method"`` (``"peeled"`` if the components were re-fit
+            one per side of the valley, ``"joint"`` if they are straight from
+            the double-Gaussian fit)
         :rtype: Dict[str, Any]
         :raises ValueError: if the data cannot be histogrammed, or if the
             double-Gaussian fit fails to converge
@@ -4194,8 +4306,27 @@ class PeakFinder(MetaEventFitter):
         amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt)
 
         threshold, threshold_method, spline = self._threshold_between_populations(
-            data, bin_centers, counts, mean1, std1, mean2, std2
+            data, bin_centers, counts, mean1, std1, mean2, std2, one_population
         )
+
+        # Peel wherever the threshold came from an actual feature of the curve,
+        # which is both spline-derived methods. That includes the
+        # single-population case: the higher component then has only the sparse
+        # region above the threshold to describe and comes back with a small
+        # amplitude, which is the honest answer - far better than leaving it
+        # sitting on top of the lower component, where it claims a second
+        # population that was explicitly not found. The two `fallback` methods
+        # are excluded: those thresholds are not read off any feature, and
+        # `fallback_degenerate` is the midpoint of two co-located means, so
+        # splitting there would carve one mode arbitrarily in half.
+        params_method = "joint"
+        if threshold_method in ("spline_valley", "spline_valley_above_floor"):
+            peeled = self._peel_components_at_valley(
+                bin_centers, counts, threshold, popt
+            )
+            if peeled is not None:
+                amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in peeled)
+                params_method = "peeled"
 
         return {
             "threshold": threshold,
@@ -4205,6 +4336,7 @@ class PeakFinder(MetaEventFitter):
             "n_components": 1 if one_population else 2,
             "threshold_method": threshold_method,
             "spline": spline,
+            "params_method": params_method,
         }
 
     @log(logger=logger)
@@ -4217,6 +4349,7 @@ class PeakFinder(MetaEventFitter):
         std1: float,
         mean2: float,
         std2: float,
+        one_population: bool,
     ) -> Tuple[float, str, Optional[BSpline]]:
         """
         Pick a threshold between two fitted populations from the histogram's
@@ -4233,13 +4366,26 @@ class PeakFinder(MetaEventFitter):
         and sits there even when the true valley is well off-centre, e.g.
         because one population heavily outnumbers the other.
 
-        If no such valley exists - the smoothed histogram is monotonic between
-        the two means, which happens once the populations overlap enough that
-        there is nothing left to find - this falls back to the first raw data
-        point above ``2 * mean1 - 2 * std1``, where ``mean1``/``std1`` here are
-        whichever of the two fitted components has the lower mean (labelled
-        ``mean1``/``std1`` in this method's signature only by fit-parameter
-        order, not by value).
+        **The between-centres search is skipped entirely when ``one_population``
+        is set**, and this matters more than it sounds. On single-population data
+        both fitted centres land on the same mode, so the bracket between them is
+        narrow and contains no boundary between anything - but it is not empty.
+        Beside a tall peak the spline wiggles on counting noise alone, and the
+        search will happily return one of those wiggles. That is what produced a
+        2045 pA threshold on a real 6261-peak dataset whose two centres were 1787
+        and 2088: a 301 pA window either side of a single mode, and Poisson noise
+        of about +/-21 counts on 450-count bins, which is ample to make a local
+        minimum. Skipping the search is the fix; narrowing what counts as a valley
+        would not be, because there is no correct answer inside that bracket.
+
+        With the search skipped or unsuccessful, the threshold instead becomes the
+        **first** local minimum of the same spline above the floor
+        ``2 * mean1 - 2 * std1``, where ``mean1``/``std1`` here are whichever of
+        the two fitted components has the lower mean (labelled ``mean1``/``std1``
+        in this method's signature only by fit-parameter order, not by value).
+        Only if there is no local minimum up there either does this fall back to
+        the first raw data point above the floor, and finally to the midpoint of
+        the two means.
 
         The fitted spline is returned alongside the threshold so the classifiers
         can draw it on their plots. It is fit whenever the histogram has enough
@@ -4262,10 +4408,17 @@ class PeakFinder(MetaEventFitter):
         :type mean2: float
         :param std2: standard deviation of the second fitted component
         :type std2: float
+        :param one_population: True when the fit describes a single population,
+            in which case the between-centres valley search is skipped because
+            the bracket separates nothing and can only return spline noise
+        :type one_population: bool
         :return: tuple of (threshold, method, spline), where method is
-            ``"spline_valley"`` when a valley was found, ``"fallback"`` when the
-            2*mean-2*std floor was used, or ``"fallback_degenerate"`` on the
-            last-resort case where no data point clears that floor either, and
+            ``"spline_valley"`` when a valley was found between the two centres,
+            ``"spline_valley_above_floor"`` when there was none and the first
+            local minimum above ``2 * mean - 2 * std`` was used instead,
+            ``"fallback"`` when even that was unavailable and the first data
+            point above that floor was used, or ``"fallback_degenerate"`` on the
+            last-resort case where no data point clears the floor either, and
             spline is the fitted smoothing spline over ``bins``, or None if it
             could not be fit
         :rtype: Tuple[float, str, Optional[BSpline]]
@@ -4289,7 +4442,7 @@ class PeakFinder(MetaEventFitter):
                     exc_info=True,
                 )
 
-        if spline is not None and higher_mean > lower_mean:
+        if spline is not None and not one_population and higher_mean > lower_mean:
             grid = np.linspace(lower_mean, higher_mean, 1000)
             values = spline(grid)
             # A local minimum at grid index i (1 <= i <= len(grid)-2): the
@@ -4305,6 +4458,35 @@ class PeakFinder(MetaEventFitter):
                 return float(grid[deepest]), "spline_valley", spline
 
         fallback_floor = 2.0 * lower_mean - 2.0 * lower_std
+
+        # No valley between the two centres. That is the normal outcome on
+        # single-population data, where both fitted centres sit on the same mode
+        # and the bracket above is too narrow to contain anything - so there is
+        # still a threshold to find, just not between the means. Look for the
+        # first local minimum of the same spline *above* the floor instead.
+        #
+        # The FIRST such minimum, not the deepest. Past the bulk of the data the
+        # spline is fitting counting noise on near-empty bins, so it wiggles,
+        # and every wiggle is a local minimum: on a real 6261-peak dataset there
+        # were 43 local minima in total and 30 of them above the floor, the
+        # deepest sitting at 5165 pA with a spline value of -0.29 - i.e. out in
+        # the noise, below zero counts, cutting off 0.7% of the data. The first
+        # one above the floor landed at 3414 pA against a floor of 3262, which
+        # is the boundary the floor was pointing at.
+        if spline is not None and float(bins[-1]) > fallback_floor:
+            grid = np.linspace(
+                max(fallback_floor, float(bins[0])), float(bins[-1]), 2000
+            )
+            values = spline(grid)
+            diffs = np.diff(values)
+            above_idx = np.where((diffs[:-1] < 0) & (diffs[1:] > 0))[0] + 1
+            if above_idx.size > 0:
+                return (
+                    float(grid[above_idx[0]]),
+                    "spline_valley_above_floor",
+                    spline,
+                )
+
         sorted_data = np.sort(np.asarray(data, dtype=float).ravel())
         above_floor = sorted_data[sorted_data > fallback_floor]
         if above_floor.size > 0:
@@ -4316,6 +4498,226 @@ class PeakFinder(MetaEventFitter):
             "fitted means as a last resort."
         )
         return float((mean1 + mean2) / 2.0), "fallback_degenerate", spline
+
+    @log(logger=logger)
+    def _peel_components_at_valley(
+        self,
+        bins: npt.NDArray[np.float64],
+        amplitude: npt.NDArray[np.float64],
+        split_point: float,
+        popt: npt.NDArray[np.float64],
+    ) -> Optional[npt.NDArray[np.float64]]:
+        """
+        Re-fit each component separately on its own side of the split point.
+
+        Fitting both components at once against one objective lets the *higher*
+        component be recruited to patch a region the *lower* one cannot reach.
+        Real prominence and blockage populations are right-skewed, so a
+        symmetric Gaussian on the lower population falls away faster than the
+        data does and leaves a heavy un-modelled right shoulder; least squares
+        then widens the higher component and slides its mean down into that
+        shoulder, because doing so lowers the total residual. The result is a
+        higher component that describes neither population: measured on a
+        reconstruction of a real 12096-peak dataset, the joint fit put its
+        higher mean 114 pA from the mode the data actually has and its width at
+        755 against a true ~620.
+
+        Splitting the fit at the threshold removes the mechanism. Each component
+        sees only its own side, so neither can borrow the other's data to
+        reduce its own residual. On the same reconstruction this brought the
+        higher mean to within 10 pA of the true mode and its width to 621, and
+        the model-vs-data RMS over the upper population from 19.4 to 16.4.
+
+        **This also runs on single-population data**, where the split point is
+        the above-floor threshold rather than a valley between two modes. There
+        the higher component has no population of its own to describe, only the
+        sparse region above the threshold, so it comes back with a very small
+        amplitude - on a real 6261-peak dataset, about 10 counts against the
+        lower component's 435. That is the correct answer rather than a failure:
+        a small amplitude says the region above the threshold is sparsely
+        populated, which is exactly what the plot should show. The alternative -
+        leaving the higher component where the joint fit put it, on top of the
+        lower one - reports a second population that was explicitly not found.
+
+        This does **not** change the threshold. The threshold comes from the
+        smoothing spline over the histogram, which peeling does not touch, so
+        there is no circularity here: the threshold locates the split, the split
+        refines the parameters, and the parameters are not fed back into the
+        threshold.
+
+        :param bins: histogram bin centers, as built for the double-Gaussian fit
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: histogram bin counts, as built for the double-Gaussian fit
+        :type amplitude: npt.NDArray[np.float64]
+        :param split_point: the x position to split the histogram at - the
+            threshold ``_threshold_between_populations`` returned, whether that
+            came from a valley between two centres or from the first local
+            minimum above the ``2 * mean - 2 * std`` floor
+        :type split_point: float
+        :param popt: the joint double-Gaussian fit's six parameters, used for
+            width seeds and returned unchanged by the caller if peeling declines
+        :type popt: npt.NDArray[np.float64]
+        :return: six parameters ``(amp, mean, std)`` for the lower population
+            then the higher one, or None if peeling was not possible or
+            produced a degenerate component - in which case the caller keeps
+            the joint fit
+        :rtype: Optional[npt.NDArray[np.float64]]
+        """
+        bin_width = float(bins[1] - bins[0])
+        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt)
+        if mean1 > mean2:
+            std1, std2 = std2, std1
+
+        sides = (
+            (bins <= split_point, float(bins[0]), float(split_point), std1),
+            (bins > split_point, float(split_point), float(bins[-1]), std2),
+        )
+
+        # Three free parameters per side, so a side with only two or three bins
+        # is underdetermined however good the split is.
+        for mask, _, _, _ in sides:
+            if int(np.count_nonzero(mask)) < 4:
+                self.logger.debug(
+                    f"not peeling at {split_point:.4g}: one side has "
+                    f"{int(np.count_nonzero(mask))} bins, fewer than the 4 a "
+                    "three-parameter single-Gaussian fit needs. Keeping the "
+                    "joint fit."
+                )
+                return None
+
+        max_amp = float(np.max(amplitude))
+        max_std = float(np.abs(bins[-1] - bins[0]))
+        fitted: List[npt.NDArray[np.float64]] = []
+
+        for mask, mean_lo, mean_hi, std_seed in sides:
+            x_side = bins[mask]
+            y_side = amplitude[mask]
+            peak = int(np.argmax(y_side))
+            p0 = (
+                max(float(y_side[peak]), 1.0),
+                float(np.clip(x_side[peak], mean_lo, mean_hi)),
+                float(np.clip(std_seed, bin_width, max_std)),
+            )
+            try:
+                side_popt, _ = curve_fit(
+                    self._single_gaussian,
+                    x_side,
+                    y_side,
+                    p0=p0,
+                    bounds=(
+                        [0.0, mean_lo, bin_width / 2.0],
+                        [max_amp, mean_hi, max_std],
+                    ),
+                )
+            except (RuntimeError, ValueError) as e:
+                self.logger.warning(
+                    f"peeling at {split_point:.4g} failed on the "
+                    f"{'lower' if not fitted else 'higher'} population: {e}. "
+                    "Keeping the joint double-Gaussian fit, whose higher "
+                    "component may be distorted by the lower population's "
+                    "right shoulder."
+                )
+                return None
+            fitted.append(side_popt)
+
+        lower, higher = fitted
+        for label, side_popt in (("lower", lower), ("higher", higher)):
+            if side_popt[2] <= bin_width:
+                self.logger.warning(
+                    f"peeling at {split_point:.4g} collapsed the "
+                    f"{label} population to std={side_popt[2]:.4g}, at or below "
+                    f"the {bin_width:.4g} bin width. Keeping the joint "
+                    "double-Gaussian fit instead."
+                )
+                return None
+
+        self.logger.debug(
+            f"peeled at {split_point:.4g}: lower mean "
+            f"{lower[1]:.4g} std {lower[2]:.4g}, higher mean {higher[1]:.4g} "
+            f"std {higher[2]:.4g} (joint fit had means {mean1:.4g}/{mean2:.4g}, "
+            f"stds {std1:.4g}/{std2:.4g})."
+        )
+        return np.array(
+            [lower[0], lower[1], lower[2], higher[0], higher[1], higher[2]],
+            dtype=float,
+        )
+
+    @log(logger=logger)
+    def _classification_confidence(
+        self,
+        values: npt.NDArray[np.float64],
+        params: Tuple[float, float, float, float, float, float],
+        is_higher_class: npt.NDArray[np.bool_],
+    ) -> npt.NDArray[np.float64]:
+        """
+        Score how confidently each value was assigned to its threshold-derived class.
+
+        ``fit_threshold`` fits ``(amp1, mean1, std1, amp2, mean2, std2)`` with
+        ``curve_fit`` against histogram *counts*, not densities, so each fitted
+        curve ``amp_k * exp(-(x-mean_k)**2 / (2*std_k**2))`` is already the
+        expected bin count contributed by population k at x - amplitude has
+        absorbed both the population size and the ``1/(std*sqrt(2*pi))``
+        normalization a proper mixture weight would otherwise need. That means
+        the usual Gaussian-mixture posterior ("responsibility") falls out of
+        the fit parameters directly, with no re-fitting and no extra weighting
+        step:
+
+        ``confidence(x) = g_assigned(x) / (g_low(x) + g_high(x))``
+
+        where ``g_low``/``g_high`` are the two fitted curves ordered by mean
+        and ``g_assigned`` is whichever of the two matches the class the
+        caller already assigned by thresholding ``values`` (``is_higher_class``
+        records that assignment so this method does not need to know
+        ``fit_threshold``'s own threshold value).
+
+        This is a relative/ordinal score, not a calibrated probability: it
+        comes from the same symmetric-Gaussian model ``fit_threshold`` uses,
+        so on data where a population is genuinely skewed (see the log-normal
+        upper prominence component noted in ``future_fixes.md``) it will read
+        as overconfident approaching that skewed shoulder. It is also not
+        required to cross 0.5 exactly at ``fit_threshold``'s own threshold:
+        that threshold is read off the smoothing spline's valley
+        (``_threshold_between_populations``), not the point where the two
+        fitted Gaussians cross, so a handful of points just past the
+        threshold can legitimately score below 0.5 - the shape-based label
+        and the Gaussian-mixture vote disagree right at the boundary, which
+        is informative rather than a bug.
+
+        :param values: the 1-D data that was thresholded to produce
+            ``is_higher_class``
+        :type values: npt.NDArray[np.float64]
+        :param params: the six fitted double-Gaussian parameters from
+            ``fit_threshold``'s ``"params"`` - ``(amp1, mean1, std1, amp2,
+            mean2, std2)``, not necessarily ordered lower-then-higher
+        :type params: Tuple[float, float, float, float, float, float]
+        :param is_higher_class: boolean array, same length as ``values``,
+            True where the caller assigned the higher-mean class (i.e.
+            ``values >= threshold``)
+        :type is_higher_class: npt.NDArray[np.bool_]
+        :return: array of confidence scores in (0, 1], same length as
+            ``values``; 1.0 wherever both fitted curves numerically underflow
+            to zero, since a point that far from both means is unambiguously
+            not in the overlap between them
+        :rtype: npt.NDArray[np.float64]
+        """
+        amp1, mean1, std1, amp2, mean2, std2 = params
+        values = np.asarray(values, dtype=float)
+
+        g1 = amp1 * np.exp(-((values - mean1) ** 2) / (2 * std1**2))
+        g2 = amp2 * np.exp(-((values - mean2) ** 2) / (2 * std2**2))
+
+        if mean1 <= mean2:
+            g_low, g_high = g1, g2
+        else:
+            g_low, g_high = g2, g1
+
+        g_assigned = np.where(is_higher_class, g_high, g_low)
+        total = g_low + g_high
+
+        with np.errstate(invalid="ignore", divide="ignore"):
+            confidence = np.where(total > 0, g_assigned / total, 1.0)
+
+        return np.asarray(confidence, dtype=np.float64)
 
     @log(logger=logger)
     def classify_1d_distribution(
