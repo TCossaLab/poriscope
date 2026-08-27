@@ -144,20 +144,11 @@ are not re-raised as open work.
   the app, so there is no privilege boundary for an injection to cross. Recorded here
   only so the same finding is not re-raised. This also downgrades the `S608` item in the
   bandit proposal below, which described these sites as "worth real scrutiny".
-- **Three nested function definitions** remain: `dgfit` inside `bitthresh`, and formerly
-  `Gauss`/`Gauss_2` inside the now-deleted `fit_2_gauss`. `CLAUDE.md` forbids nested
-  functions but nothing enforces it (that is block 8 below). Annotated in place and left
-  nested, on instruction.
-- **The histogram low-end cut-off in the classifier plots.** Diagnosed but not fixed, and
-  parked pending the double-Gaussian rewrite: the "All Events (incl. outliers)" bar chart
-  is binned against edges `bitthresh` computed from a *filtered subset*, and
-  `np.histogram` silently discards values outside the given bin range. Which subset wins
-  is decided by discrete ratio tests, so the plot's left edge jumps to the 25th percentile
-  when the blockage-filter re-run branch fires - which is why the cut-off appears at
-  certain threshold settings and not others. Three call sites share the pattern
-  (`_classify_folded_unfolded`, `_classify_peak_prominences`,
-  `_classify_translocation_direction`). The fix is to build the histogram once from the
-  full data and pass it into the fit, rather than letting the fit dictate the plot's bins.
+- **Nested function definitions in `PeakFinder.py` are now gone.** `dgfit` went with
+  `bitthresh` when the classifiers moved to the ported ProteinView double-Gaussian fit,
+  and `Gauss`/`Gauss_2` went with `fit_2_gauss` before it; the ported `_double_gaussian`
+  is a normal method. `CLAUDE.md` forbids nested functions and nothing enforces it (that
+  is block 8 below), so this is worth a check if the rule is ever automated.
 
 ## Also queued - found during the type-annotation pass, not part of it
 

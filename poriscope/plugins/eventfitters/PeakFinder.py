@@ -24,16 +24,15 @@
 # Nada Kerrouri
 
 import logging
-import warnings
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast, override
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
-from scipy.optimize import OptimizeWarning, curve_fit
-from scipy.signal import find_peaks
+from scipy.interpolate import BSpline, make_smoothing_spline
+from scipy.optimize import curve_fit
+from scipy.signal import find_peaks, peak_widths
 from scipy.stats import iqr
 from sklearn.mixture import GaussianMixture
 
@@ -52,6 +51,18 @@ class PeakFinder(MetaEventFitter):
     """
 
     logger = logging.getLogger(__name__)
+
+    #: Minimum number of histogram bins handed to the double-Gaussian fit.
+    #: Six free parameters need meaningfully more bins than that to be
+    #: constrained; see ``_histogram_for_fit`` for the measurements behind this.
+    MIN_FIT_BINS = 30
+
+    #: Minimum separation, in units of the dominant peak's FWHM, that two
+    #: histogram maxima must have before they are accepted as seeds for the two
+    #: components of the double-Gaussian fit. Two maxima closer than this are
+    #: features of the same mode, not two populations. See
+    #: ``_fit_double_gaussian`` for the failure this exists to prevent.
+    SEED_SEPARATION_FWHM = 1.0
 
     # public API, must be overridden by subclasses:
     @log(logger=logger)
@@ -1725,7 +1736,6 @@ class PeakFinder(MetaEventFitter):
 
         # Collect all event data for global analysis
         all_longest_levels: list[float] = []
-        all_raw_ecds: list[float] = []
         all_event_info: list[tuple[int, int]] = (
             []
         )  # Track (channel, event_index) for updating metadata
@@ -1755,7 +1765,6 @@ class PeakFinder(MetaEventFitter):
 
                 if primary_level is not None and raw_ecd is not None and raw_ecd > 0:
                     all_longest_levels.append(primary_level)
-                    all_raw_ecds.append(raw_ecd)
                     all_event_info.append((ch, event_index))
                 else:
                     self.logger.info(
@@ -1774,7 +1783,6 @@ class PeakFinder(MetaEventFitter):
             return
 
         all_longest_levels_array = np.array(all_longest_levels)
-        all_raw_ecds_array = np.array(all_raw_ecds)
 
         self.logger.info(
             f"Collected {len(all_longest_levels)} events for classification analysis"
@@ -1784,7 +1792,6 @@ class PeakFinder(MetaEventFitter):
             channels=channels,
             all_event_info=all_event_info,
             all_longest_levels_array=all_longest_levels_array,
-            all_raw_ecds_array=all_raw_ecds_array,
         )
 
         # Classify peak prominences for peaks that survived the type filter
@@ -2294,55 +2301,28 @@ class PeakFinder(MetaEventFitter):
         channels: list[int],
         all_event_info: list[tuple[int, int]],
         all_longest_levels_array: np.ndarray,
-        all_raw_ecds_array: np.ndarray,
     ) -> None:
         """
         Implementation notes:
         - Assumes carrier-blockage pre-filtering has already been applied to the
             provided `all_longest_levels_array` (do not double-filter).
-        - Apply ECD pre-filters
-        - Use `bitthresh` to compute centers/threshold
-        - Apply the same blockage-filter re-run heuristic when ratio is poor
+        - Fit a double Gaussian to that array via `fit_threshold` to obtain the
+            two population centres and the threshold between them.
         - Classify all events and save results + plotting
+
+        Deliberately carries no ECD percentile pre-filter and no re-fit
+        fallbacks: the fit sees the whole dataset exactly once and either
+        succeeds or fails, so its real success rate on live data is observable
+        instead of being masked by retries. The histogram is likewise built once
+        and reused for both the fit and the plot, so the plot can no longer be
+        binned against edges derived from a different subset of the data.
         """
 
-        # NOTE: blockage-level filtering is assumed to be applied upstream and
-        # therefore is not re-applied here. We only compute an ECD percentile
-        # filter on the provided arrays so decisions are deterministic.
-        # ECD pre-filter
-        log_ecd = np.log10(all_raw_ecds_array)
-        ecd_5th = np.percentile(log_ecd, 5)
-        ecd_95th = np.percentile(log_ecd, 95)
-        ecd_filter_mask = (log_ecd >= ecd_5th) & (log_ecd <= ecd_95th)
-
-        n_filtered_out = len(all_event_info) - np.sum(ecd_filter_mask)
-
-        self.logger.info("ECD-based filtering:")
-        self.logger.info(
-            f"  log10(ECD) range: 5th percentile = {ecd_5th:.3f}, 95th percentile = {ecd_95th:.3f}"
-        )
-        self.logger.info("ECD filtering results:")
-        self.logger.info(
-            f"  Total filtered out: {n_filtered_out} events ({n_filtered_out/len(all_event_info):.1%})"
-        )
-        self.logger.info(
-            f"  Remaining events for classification: {np.sum(ecd_filter_mask)}"
-        )
-
-        filtered_longest_levels = all_longest_levels_array[ecd_filter_mask]
-        if len(filtered_longest_levels) < 10:
-            self.logger.warning(
-                "Too few events after ECD filtering, using unfiltered data"
-            )
-            filtered_longest_levels = all_longest_levels_array
-            ecd_filter_mask = np.ones(len(all_event_info), dtype=bool)
-
-        # Use bitthresh for threshold estimation
         try:
-            bt = self.bitthresh(filtered_longest_levels)
+            bt = self.fit_threshold(all_longest_levels_array)
         except Exception as e:
-            self.logger.error(f"bitthresh failed: {e}")
-            self._classification_results = {"error": "bitthresh failed"}
+            self.logger.error(f"folding double-Gaussian fit failed: {e}")
+            self._classification_results = {"error": "double-Gaussian fit failed"}
             self._collect_peak_statistics(channels)
             return
 
@@ -2362,102 +2342,52 @@ class PeakFinder(MetaEventFitter):
                 else None
             )
             self.logger.debug(
-                f"folding bitthresh: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_filtered={len(filtered_longest_levels)}"
+                f"folding fit: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_events={all_longest_levels_array.size}"
             )
         except (TypeError, IndexError, KeyError, AttributeError):
             pass
 
-        if not bt or "midpoint" not in bt or bt.get("centers") is None:
+        if not bt or "threshold" not in bt or bt.get("centers") is None:
             self.logger.error(
-                "bitthresh returned insufficient results for classification"
+                "the double-Gaussian fit returned insufficient results for "
+                "classification"
             )
-            self._classification_results = {"error": "bitthresh insufficient results"}
+            self._classification_results = {"error": "fit insufficient results"}
             self._collect_peak_statistics(channels)
             return
 
         centers_bt = np.asarray(bt.get("centers"), dtype=float)
-        # If centers are unexpectedly close, try re-running bitthresh on the
-        # unfiltered full dataset. This heuristic addresses cases where the
-        # ECD or other pre-filters removed a minority population (e.g. folded
-        # events) and the two-Gaussian histogram fit collapsed around the
-        # dominant mode. We only accept the unfiltered result if it improves
-        # center separation compared with the current fit.
-        try:
-            if centers_bt.size >= 2:
-                span = (
-                    float(
-                        np.nanmax(filtered_longest_levels)
-                        - np.nanmin(filtered_longest_levels)
-                    )
-                    if filtered_longest_levels.size > 0
-                    else 0.0
-                )
-                sep = float(np.abs(centers_bt[1] - centers_bt[0]))
-                if span > 0 and sep < max(1e-6, 0.05 * span):
-                    self.logger.info(
-                        "Detected very small separation between fitted centers; trying bitthresh on unfiltered data"
-                    )
-                    try:
-                        bt_all = self.bitthresh(all_longest_levels_array)
-                        centers_all = (
-                            np.asarray(bt_all.get("centers"), dtype=float)
-                            if bt_all.get("centers") is not None
-                            else np.array([])
-                        )
-                        if centers_all.size >= 2:
-                            sidx_all = np.argsort(centers_all)
-                            lower_all = float(centers_all[sidx_all[0]])
-                            higher_all = float(centers_all[sidx_all[1]])
-                            # compare to current fitted centers' ratio to decide if unfiltered results improve separation
-                            try:
-                                current_ratio = (
-                                    (float(centers_bt[1]) / float(centers_bt[0]))
-                                    if (
-                                        centers_bt is not None
-                                        and centers_bt.size >= 2
-                                        and centers_bt[0] > 0
-                                    )
-                                    else 0
-                                )
-                            except Exception:
-                                current_ratio = 0
-                            if (
-                                higher_all > lower_all
-                                and (higher_all / lower_all) > current_ratio
-                            ):
-                                self.logger.info(
-                                    "Using bitthresh results from unfiltered data (improved separation)"
-                                )
-                                bt = bt_all
-                                centers_bt = centers_all
-                                lower_center = lower_all
-                                higher_center = higher_all
-                                ratio = (
-                                    higher_center / lower_center
-                                    if lower_center > 0
-                                    else 0
-                                )
-                                ratio_fits = 1.7 <= ratio <= 2.3
-                    except Exception as e:
-                        self.logger.warning(
-                            "folded/unfolded classification: re-running "
-                            "bitthresh on the unfiltered dataset failed; "
-                            f"keeping the original fitted centers: {e}",
-                            exc_info=True,
-                        )
-        except Exception as e:
-            self.logger.warning(
-                "folded/unfolded classification: the fitted-center separation "
-                "sanity check failed; proceeding with the original centers "
-                f"as-is: {e}",
-                exc_info=True,
-            )
         if centers_bt.size < 2:
             self.logger.warning(
-                "bitthresh did not find two centers; cannot classify folded/unfolded"
+                "the double-Gaussian fit did not yield two centres; cannot "
+                "classify folded/unfolded"
             )
             self._classification_results = {
                 "error": "Could not find two distinct distributions"
+            }
+            self._collect_peak_statistics(channels)
+            return
+
+        # A folded/unfolded split only means something if the blockage-level
+        # distribution actually has two populations. `fit_threshold` reports
+        # that via "n_components", derived from the same
+        # collapsed-component / centres-not-separated diagnostics
+        # `_fit_and_check_double_gaussian` already computes - forcing a split
+        # onto genuinely unimodal data produces a collapsed component or two
+        # centres on the same mode, and that outcome is acted on here instead
+        # of only appearing as a log line.
+        n_components = bt.get("n_components", 2)
+        if n_components < 2:
+            self.logger.warning(
+                "folding classification: the double-Gaussian fit describes a "
+                "single population in the longest-blockage-level "
+                "distribution; folded and unfolded cannot be distinguished "
+                "from blockage level alone, so no split is reported."
+            )
+            self._classification_results = {
+                "n_components": 1,
+                "error": "only one population detected; cannot classify "
+                "folded vs unfolded",
             }
             self._collect_peak_statistics(channels)
             return
@@ -2466,42 +2396,20 @@ class PeakFinder(MetaEventFitter):
         lower_center = float(centers_bt[sorted_idx[0]])
         higher_center = float(centers_bt[sorted_idx[1]])
         ratio = higher_center / lower_center if lower_center > 0 else 0
-        ratio_fits = 1.7 <= ratio <= 2.3
-
-        # If ratio poor, attempt blockage-filtering re-run (same heuristic as before)
-        if not ratio_fits:
-            self.logger.info(
-                "Ratio check FAILED - applying blockage-level filtering strategy"
+        # A folded carrier blocks roughly twice as deeply as an unfolded one, so
+        # a healthy fit puts the two centres at a ratio near 2. This is reported
+        # and logged but deliberately NOT acted on: the previous re-fit on
+        # blockage-filtered data rescued weak fits, which is exactly what makes
+        # a bad fit rate invisible.
+        if not 1.7 <= ratio <= 2.3:
+            self.logger.warning(
+                f"folding fit: centre ratio {ratio:.3f} is outside the expected "
+                f"1.7-2.3 band (lower={lower_center:.3f}, "
+                f"higher={higher_center:.3f}); the fit may not have resolved the "
+                "folded and unfolded populations."
             )
-            blockage_25th = np.percentile(filtered_longest_levels, 25)
-            re_mask = filtered_longest_levels >= blockage_25th
-            re_filtered = filtered_longest_levels[re_mask]
-            if len(re_filtered) >= 10:
-                try:
-                    bt2 = self.bitthresh(re_filtered)
-                    centers2 = np.asarray(bt2.get("centers"), dtype=float)
-                    if centers2.size >= 2:
-                        sidx2 = np.argsort(centers2)
-                        lower2 = float(centers2[sidx2[0]])
-                        higher2 = float(centers2[sidx2[1]])
-                        ratio2 = higher2 / lower2 if lower2 > 0 else 0
-                        if 1.7 <= ratio2 <= 2.3 or ratio2 < ratio:
-                            self.logger.info(
-                                "Using blockage-filtered bitthresh results (ratio improved)"
-                            )
-                            bt = bt2
-                            centers_bt = centers2
-                            lower_center = lower2
-                            higher_center = higher2
-                            ratio = ratio2
-                            ratio_fits = 1.7 <= ratio2 <= 2.3
-                            filtered_longest_levels = re_filtered
-                except Exception:
-                    self.logger.warning(
-                        "Re-run bitthresh on blockage-filtered data failed; keeping original results"
-                    )
 
-        threshold = bt.get("midpoint", (lower_center + higher_center) / 2.0)
+        threshold = bt.get("threshold", (lower_center + higher_center) / 2.0)
 
         # Classify events
         # NOTE (S112 fix): `all_event_info` and `all_longest_levels_array` are
@@ -2547,16 +2455,19 @@ class PeakFinder(MetaEventFitter):
         # Save classification results
         self._classification_results = {
             "total_events": len(all_event_info),
+            "n_components": n_components,
             "folded_count": int(folded_count),
             "unfolded_count": int(unfolded_count),
             "lower_center": lower_center,
             "higher_center": higher_center,
             "threshold": threshold,
             "ratio": ratio,
-            "ecd_filtered_events": int(n_filtered_out),
+            # No ECD pre-filter is applied any more, so nothing is excluded from
+            # the fit. Key retained because report_channel_status reads it.
+            "ecd_filtered_events": 0,
         }
 
-        # Plotting: always create and save plot using bitthresh histogram bins
+        # Plotting: always create and save plot using the fit's histogram bins
         try:
             loader = getattr(self, "eventloader", None)
             plot_path = None
@@ -2570,7 +2481,7 @@ class PeakFinder(MetaEventFitter):
 
             counts, bins = bt.get("hist", (None, None))
             arr_all = np.asarray(all_longest_levels_array)
-            arr = np.asarray(filtered_longest_levels)
+            arr = np.asarray(all_longest_levels_array)
             fig, ax = plt.subplots(figsize=(12, 6))
 
             # Ensure non-zero dynamic range to avoid histogram normalization warnings
@@ -2580,7 +2491,7 @@ class PeakFinder(MetaEventFitter):
             hist_bins = None
             if counts is not None and bins is not None and np.sum(counts) > 0:
                 widths = np.diff(bins)
-                # Use the bin edges from bt (fitted on filtered data) to compute full-data counts
+                # Same bin edges the fit used, which are now the full-data edges
                 try:
                     if arr_all.size == 0 or np.any(widths <= 0):
                         raise ValueError("invalid bins")
@@ -2677,18 +2588,18 @@ class PeakFinder(MetaEventFitter):
             x_range = np.linspace(arr.min(), arr.max(), 1000)
             if params is not None and len(params) != 6:
                 self.logger.warning(
-                    "folded/unfolded classification: bitthresh returned "
-                    f"'params' with {len(params)} values, expected 6 (a1, a2, "
-                    "u1, u2, w1, w2); skipping the fitted-Gaussian overlay for "
-                    "this plot."
+                    "folded/unfolded classification: the fit returned "
+                    f"'params' with {len(params)} values, expected 6 (amp1, "
+                    "mean1, std1, amp2, mean2, std2); skipping the "
+                    "fitted-Gaussian overlay for this plot."
                 )
             elif params is not None:
                 try:
-                    a1, a2, u1, u2, w1, w2 = params
+                    amp1, mean1, std1, amp2, mean2, std2 = params
                     # Order fitted components by mean (lower -> higher)
-                    u_params = np.array([u1, u2], dtype=float)
-                    w_params = np.array([w1, w2], dtype=float)
-                    a_params = np.array([a1, a2], dtype=float)
+                    u_params = np.array([mean1, mean2], dtype=float)
+                    w_params = np.array([std1, std2], dtype=float)
+                    a_params = np.array([amp1, amp2], dtype=float)
                     order = np.argsort(u_params)
                     lower_idx, higher_idx = int(order[0]), int(order[1])
                     # model from fit is in histogram-count units already
@@ -2720,6 +2631,9 @@ class PeakFinder(MetaEventFitter):
                         f"fitted-Gaussian overlay: {e}",
                         exc_info=True,
                     )
+
+            # The curve the threshold below was actually chosen from
+            self._overlay_smoothing_spline(ax, bt)
 
             # Vertical threshold line (value shown in info textbox)
             ax.axvline(
@@ -2782,9 +2696,10 @@ class PeakFinder(MetaEventFitter):
         """
         Classify peak prominences for peaks whose filtered value is 1, 2, or 3.
 
-        The lower prominence population is written as 0 and the higher population
-        as 1. If a single population is selected by BIC, all eligible peaks are
-        as 1.
+        The lower prominence population is written as 0 and the higher
+        population as 1. If ``fit_threshold`` reports only one population
+        (see its ``"n_components"``), every eligible peak is classified
+        as 1 instead, and no threshold is reported.
         """
         prominence_values: list[float] = []
         prominence_refs: list[tuple[int, int, int]] = []
@@ -2838,33 +2753,50 @@ class PeakFinder(MetaEventFitter):
 
         prominence_array = np.asarray(prominence_values, dtype=np.float64)
 
-        # Use bitthresh to compute midpoint and histogram
+        # Fit two populations to the prominence histogram. `fit_threshold`
+        # reports whether the fit actually describes two populations or one
+        # (see its "n_components") via the same collapsed-component /
+        # centres-not-separated diagnostics `_fit_and_check_double_gaussian`
+        # already computes - forcing a two-component fit onto genuinely
+        # unimodal data either collapses a component or lands both centres on
+        # the same mode, and that outcome is now acted on here instead of
+        # only appearing as a log line a caller could miss.
         try:
-            bt = self.bitthresh(prominence_array)
+            bt = self.fit_threshold(prominence_array)
         except Exception as e:
-            self.logger.error(f"bitthresh failed for prominence classification: {e}")
+            self.logger.error(
+                f"double-Gaussian fit failed for prominence classification: {e}"
+            )
             return
 
+        n_components = bt.get("n_components", 2)
         centers = (
             np.asarray(bt.get("centers"), dtype=float)
             if bt.get("centers") is not None
             else np.array([])
         )
-        if centers.size < 2:
+        if n_components < 2 or centers.size < 2:
+            if n_components < 2:
+                self.logger.info(
+                    "peak prominence classification: the double-Gaussian fit "
+                    "describes a single population; reporting all eligible "
+                    "peaks as class 1 rather than a threshold split."
+                )
             # Single population -> mark all as class 1 per previous behavior
             class_labels = np.ones(len(prominence_array), dtype=np.float64)
             threshold = None
         else:
-            # NOTE (integration): bt.get('midpoint') is Optional, so float()
-            # raised TypeError whenever bitthresh returned without a midpoint.
+            # NOTE (integration): bt.get('threshold') is Optional, so float()
+            # raised TypeError whenever the threshold fit returned without a
+            # threshold.
             # Checked and raised explicitly instead.
-            midpoint = bt.get("midpoint")
-            if midpoint is None:
+            fit_threshold_value = bt.get("threshold")
+            if fit_threshold_value is None:
                 raise RuntimeError(
-                    "bitthresh returned no 'midpoint'; prominence classes "
-                    "cannot be assigned without a threshold"
+                    "the fit returned no 'threshold'; prominence classes "
+                    "cannot be assigned without one"
                 )
-            threshold = float(midpoint)
+            threshold = float(fit_threshold_value)
             class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(
                 np.float64
             )
@@ -2879,13 +2811,14 @@ class PeakFinder(MetaEventFitter):
 
         self._peak_prominence_classification_results = {
             "total_peaks": len(prominence_array),
+            "n_components": n_components,
             "threshold": threshold,
             "centers": centers.tolist() if centers.size > 0 else [],
             "lower_count": int(np.sum(class_labels == 0)),
             "higher_count": int(np.sum(class_labels == 1)),
         }
 
-        # Plotting: always save plot using bitthresh histogram
+        # Plotting: always save plot using the fit's histogram
         try:
             loader = getattr(self, "eventloader", None)
             plot_path = None
@@ -2979,18 +2912,18 @@ class PeakFinder(MetaEventFitter):
             )
             if params is not None and len(params) != 6:
                 self.logger.warning(
-                    "peak prominence classification: bitthresh returned "
-                    f"'params' with {len(params)} values, expected 6 (a1, a2, "
-                    "u1, u2, w1, w2); skipping the fitted-Gaussian overlay for "
-                    "this plot."
+                    "peak prominence classification: the fit returned "
+                    f"'params' with {len(params)} values, expected 6 (amp1, "
+                    "mean1, std1, amp2, mean2, std2); skipping the "
+                    "fitted-Gaussian overlay for this plot."
                 )
             elif params is not None:
                 try:
-                    a1, a2, u1, u2, w1, w2 = params
+                    amp1, mean1, std1, amp2, mean2, std2 = params
                     # Ensure we map fitted u1/u2 to the lower/higher centers used for labeling
-                    u_params = np.array([u1, u2], dtype=float)
-                    w_params = np.array([w1, w2], dtype=float)
-                    a_params = np.array([a1, a2], dtype=float)
+                    u_params = np.array([mean1, mean2], dtype=float)
+                    w_params = np.array([std1, std2], dtype=float)
+                    a_params = np.array([amp1, amp2], dtype=float)
                     order = np.argsort(u_params)
                     lower_idx, higher_idx = int(order[0]), int(order[1])
                     # model from fit is in histogram-count units already
@@ -3065,6 +2998,12 @@ class PeakFinder(MetaEventFitter):
                         label="Higher prominence",
                     )
 
+            # The curve the threshold below was actually chosen from. Drawn
+            # even in the single-population case, where there is no threshold
+            # line to justify: the spline is then the clearest evidence on the
+            # plot that the distribution has no valley to split on.
+            self._overlay_smoothing_spline(ax, bt)
+
             # Vertical threshold line
             if threshold is not None:
                 ax.axvline(
@@ -3082,6 +3021,7 @@ class PeakFinder(MetaEventFitter):
                 pct_outliers = n_outliers / total_peaks if total_peaks > 0 else 0.0
                 info_text = (
                     f"Total Peaks (used for fit): {total_peaks}\n"
+                    f"Selected populations: {n_components}\n"
                     f"Class 0: {lower_count} ({pct_low:.1%})\n"
                     f"Class 1: {higher_count} ({pct_high:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
@@ -3124,8 +3064,9 @@ class PeakFinder(MetaEventFitter):
         Classify translocation direction using cumulative ECD before/after type-3 peaks.
 
         Builds `log_ecds` (log10 ratio of pre-/post- ECD surrounding type-3 peaks)
-        and `event_refs` (tuples of (channel, event_index)), then uses `bitthresh`
-        to compute a threshold and classify each event as forward/backward.
+        and `event_refs` (tuples of (channel, event_index)), then uses
+        `fit_threshold` to compute a threshold and classify each event as
+        forward/backward.
         """
         event_refs: list[tuple[int, int]] = []
         log_ecds: list[float] = []
@@ -3231,12 +3172,14 @@ class PeakFinder(MetaEventFitter):
             filtered_refs = event_refs
 
         try:
-            bt = self.bitthresh(filtered_log_ecds)
+            bt = self.fit_threshold(filtered_log_ecds)
         except Exception as e:
-            self.logger.error(f"bitthresh failed for translocation direction: {e}")
+            self.logger.error(
+                f"double-Gaussian fit failed for translocation direction: {e}"
+            )
             self._translocation_direction_results = {
                 "skipped": True,
-                "reason": "bitthresh failure",
+                "reason": "fit failure",
             }
             return
 
@@ -3248,7 +3191,8 @@ class PeakFinder(MetaEventFitter):
         if centers.size < 2:
             # Single population -> cannot reliably classify
             self.logger.warning(
-                "bitthresh did not find two centers for translocation direction"
+                "the double-Gaussian fit did not yield two centres for "
+                "translocation direction"
             )
             self._translocation_direction_results = {
                 "skipped": True,
@@ -3256,19 +3200,43 @@ class PeakFinder(MetaEventFitter):
             }
             return
 
+        # A forward/backward split only means something if the log-ECD-ratio
+        # distribution actually has two populations. `fit_threshold` reports
+        # that via "n_components", derived from the same
+        # collapsed-component / centres-not-separated diagnostics
+        # `_fit_and_check_double_gaussian` already computes - forcing a split
+        # onto genuinely unimodal data produces a collapsed component or two
+        # centres on the same mode, and that outcome is acted on here instead
+        # of only appearing as a log line.
+        n_components = bt.get("n_components", 2)
+        if n_components < 2:
+            self.logger.warning(
+                "translocation direction: the double-Gaussian fit describes "
+                "a single population in the log-ECD-ratio distribution; "
+                "forward and backward cannot be distinguished, so no "
+                "direction is assigned."
+            )
+            self._translocation_direction_results = {
+                "skipped": True,
+                "reason": "only one population detected",
+                "n_components": 1,
+            }
+            return
+
         sorted_indices = np.argsort(centers)
         lower_center = float(centers[sorted_indices[0]])
         higher_center = float(centers[sorted_indices[1]])
-        # NOTE (integration): bt.get("midpoint") is Optional, so float() raised
-        # TypeError whenever bitthresh returned without a midpoint. Checked and
+        # NOTE (integration): bt.get("threshold") is Optional, so float() raised
+        # TypeError whenever the threshold fit returned without one.
+        # Checked and
         # raised explicitly instead.
-        midpoint = bt.get("midpoint")
-        if midpoint is None:
+        fit_threshold_value = bt.get("threshold")
+        if fit_threshold_value is None:
             raise RuntimeError(
-                "bitthresh returned no 'midpoint'; translocation direction "
-                "cannot be classified without a threshold"
+                "the fit returned no 'threshold'; translocation direction "
+                "cannot be classified without one"
             )
-        threshold = float(midpoint)
+        threshold = float(fit_threshold_value)
 
         # Classify only the filtered events, then map results back to original event refs
         class_labels = (filtered_log_ecds >= threshold).astype(int)
@@ -3289,6 +3257,7 @@ class PeakFinder(MetaEventFitter):
 
         self._translocation_direction_results = {
             "total_events": len(filtered_refs),
+            "n_components": n_components,
             "forward_count": forward_count,
             "backward_count": backward_count,
             "lower_center": float(lower_center),
@@ -3297,7 +3266,7 @@ class PeakFinder(MetaEventFitter):
             "ecd_filtered_events": int(len(event_refs) - len(filtered_refs)),
         }
 
-        # Plotting: always save plot using bitthresh histogram
+        # Plotting: always save plot using the fit's histogram
         try:
             loader = getattr(self, "eventloader", None)
             plot_path = None
@@ -3421,10 +3390,10 @@ class PeakFinder(MetaEventFitter):
             params = bt.get("params")
             if params is not None:
                 try:
-                    a1, a2, u1, u2, w1, w2 = params
-                    u_params = np.array([u1, u2], dtype=float)
-                    w_params = np.array([w1, w2], dtype=float)
-                    a_params = np.array([a1, a2], dtype=float)
+                    amp1, mean1, std1, amp2, mean2, std2 = params
+                    u_params = np.array([mean1, mean2], dtype=float)
+                    w_params = np.array([std1, std2], dtype=float)
+                    a_params = np.array([amp1, amp2], dtype=float)
                     if (
                         np.any(np.isnan(u_params))
                         or np.any(np.isnan(w_params))
@@ -3466,6 +3435,9 @@ class PeakFinder(MetaEventFitter):
                         "Could not build gaussian overlay for translocation direction",
                         exc_info=True,
                     )
+
+            # The curve the threshold below was actually chosen from
+            self._overlay_smoothing_spline(ax, bt)
 
             # Vertical threshold line (not added to legend; value shown in info textbox)
             ax.axvline(threshold, color="black", linestyle="-", linewidth=2)
@@ -3694,207 +3666,656 @@ class PeakFinder(MetaEventFitter):
         return arr
 
     @log(logger=logger)
-    def bitthresh(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
+    def _overlay_smoothing_spline(self, ax: Any, bt: Dict[str, Any]) -> None:
         """
-        Estimate a binary threshold from 1D data by fitting two Gaussians
-        to the histogram peaks and returning a midpoint threshold along with
-        supporting information for plotting.
+        Draw the smoothing spline ``fit_threshold`` searched for a valley on.
 
-        Returns a dict with keys:
-          - midpoint: float
-          - centers: np.ndarray (two means)
-          - hist: (counts, bins)
-          - params: tuple (a1,a2,u1,u2,w1,w2) if fit succeeded
+        Shared by all three classifier plots. The spline is what actually
+        chooses the threshold (see ``_threshold_between_populations``), so
+        without it on the plot the threshold line has no visible justification -
+        and in the fallback case, no visible explanation for why the valley
+        search came up empty.
 
-        :param data: 1D array of values from which to estimate a binary threshold
-        :type data: npt.NDArray[np.float64]
-        :return: the estimated threshold and the supporting fit information
-        :rtype: Dict[str, Any]
-        :raises ValueError: if there are fewer than three data points, if no peaks are found in the histogram, or if two distinct centers cannot be determined
-        :raises RuntimeError: if the two-Gaussian fit produces invalid parameters
+        Evaluated only across the bin centres the spline was fit over, never
+        the plot's full x-range: ``make_smoothing_spline`` returns a ``BSpline``
+        that extrapolates without bound outside its knots, and the plotted
+        histogram spans the bin *edges*, which is half a bin wider on each side.
+
+        Like the fitted-Gaussian overlays this sits alongside, the curve is in
+        the fit histogram's count units. That matches the plotted bars whenever
+        the plot could reuse the fit's bin edges, which is the normal path; on
+        the fallback path where the plot re-bins at 50 or 100 bins instead, this
+        curve is on the same mismatched scale as those overlays already are.
+
+        Nothing here rejects or raises: a plot that cannot draw the spline is
+        still a useful plot, so a failure is logged at debug and the rest of the
+        figure is left intact.
+
+        :param ax: the matplotlib axes to draw on
+        :type ax: Any
+        :param bt: the dict returned by ``fit_threshold``, read for its
+            ``"spline"`` and ``"hist"`` entries
+        :type bt: Dict[str, Any]
+        :return: None; the spline is drawn onto ``ax`` in place
+        :rtype: None
         """
-        s_bins = None
-        bin_width = None
+        spline = bt.get("spline")
+        if spline is None:
+            return
 
-        arr = np.asarray(data, dtype=float).ravel()
-        if arr.size < 3:
-            raise ValueError("bitthresh: need at least 3 data points")
+        hist = bt.get("hist")
+        if not hist or hist[1] is None:
+            return
 
-        # Freedman-Diaconis bin count
         try:
-            iqr_val = float(iqr(arr))
-            n = arr.size
-            if iqr_val > 0 and n > 1:
-                bin_width = 2.0 * iqr_val / (n ** (1.0 / 3.0))
-                data_range = float(np.max(arr) - np.min(arr))
-                if bin_width > 0 and data_range > 0:
-                    s_bins = max(3, int(np.ceil(data_range / bin_width)))
-                else:
-                    s_bins = 100
-            else:
-                s_bins = 100
-        except Exception:
-            s_bins = 100
-
-        # Compute histogram
-        counts, bin_edges = np.histogram(arr, bins=s_bins)
-        x = (bin_edges[1:] + bin_edges[:-1]) / 2.0
-        y = counts.astype(float)
-
-        # Find peaks in histogram: try strict relative height first, then
-        # fall back to a prominence-based search and finally an unconstrained search
-        s_rel_h = 0.5
-        peaks, properties = find_peaks(y, rel_height=s_rel_h)
-        if len(peaks) < 2:
-            try:
-                # allow much smaller secondary peaks (1% of max) with a small absolute floor
-                prom = max(np.nanmax(y) * 0.01, 0.1)
-                # set a minimum distance between peaks
-                dist = max(1.5 * np.where(y == prom)[0], 1.0)
-                peaks, properties = find_peaks(y, distance=dist, prominence=prom)
-            except Exception:
-                peaks, properties = find_peaks(y)
-        if len(peaks) == 0:
-            raise ValueError("bitthresh: no peaks found in histogram")
-
-        # Build peaks DataFrame
-        df_peaks = pd.DataFrame(
-            {
-                "peaks": peaks,
-                "prominences": properties.get("prominences", np.zeros(len(peaks))),
-                "heights": properties.get("peak_heights", y[peaks]),
-                "widths": properties.get("widths", np.ones(len(peaks))),
-            }
-        )
-        df_peaks = df_peaks.sort_values("prominences", ascending=False)
-        best = df_peaks.iloc[0]
-
-        scale = x[1] - x[0] if len(x) > 1 else 1.0
-        s_width = scale * best["widths"]
-        loc = float(x[int(best["peaks"])])
-
-        # Two-Gaussian fit to histogram
-        def dgfit(
-            xx: npt.NDArray[np.float64],
-            a1: float,
-            a2: float,
-            u1: float,
-            u2: float,
-            w1: float,
-            w2: float,
-        ) -> npt.NDArray[np.float64]:
-            """
-            Evaluate the sum of two Gaussians, parameterised for curve_fit.
-
-            :param xx: points at which to evaluate the sum
-            :type xx: npt.NDArray[np.float64]
-            :param a1: amplitude of the first Gaussian
-            :type a1: float
-            :param a2: amplitude of the second Gaussian
-            :type a2: float
-            :param u1: centre of the first Gaussian
-            :type u1: float
-            :param u2: centre of the second Gaussian
-            :type u2: float
-            :param w1: width of the first Gaussian
-            :type w1: float
-            :param w2: width of the second Gaussian
-            :type w2: float
-            :return: the summed Gaussians evaluated at xx
-            :rtype: npt.NDArray[np.float64]
-            """
-            return a1 * np.exp(-0.5 * ((xx - u1) / w1) ** 2) + a2 * np.exp(
-                -0.5 * ((xx - u2) / w2) ** 2
+            edges = np.asarray(hist[1], dtype=float)
+            if edges.size < 3:
+                return
+            centers = (edges[:-1] + edges[1:]) / 2.0
+            x_spline = np.linspace(float(centers[0]), float(centers[-1]), 1000)
+            ax.plot(
+                x_spline,
+                spline(x_spline),
+                "-",
+                color="green",
+                linewidth=1.5,
+                alpha=0.9,
+                label="Smoothing spline (threshold search)",
+            )
+        except Exception as e:
+            self.logger.debug(
+                f"failed to draw the smoothing-spline overlay: {e}",
+                exc_info=True,
             )
 
-        # Initial guesses: prefer using the two largest histogram peaks (more robust)
-        try:
-            # pick two highest peaks by observed peak heights
-            if len(df_peaks) >= 2:
-                top_two = df_peaks.sort_values("heights", ascending=False).iloc[:2]
-                p1 = int(top_two["peaks"].iloc[0])
-                p2 = int(top_two["peaks"].iloc[1])
-                u1i = float(x[p1])
-                u2i = float(x[p2])
-                a1i = float(y[p1]) if y[p1] > 0 else max(y.max(), 1.0)
-                a2i = float(y[p2]) if y[p2] > 0 else a1i / 2.0
-                # widths reported by find_peaks are in bin units; convert to x-space
-                w1i = max(float(top_two["widths"].iloc[0]) * scale / 2.0, 1e-3)
-                w2i = max(float(top_two["widths"].iloc[1]) * scale / 2.0, 1e-3)
-            else:
-                # fallback single-peak heuristic
-                a1i = max(y.max(), 1.0)
-                a2i = a1i / 2.0
-                u1i = loc
-                u2i = loc + max(s_width, 1.0)
-                w1i = max(s_width / 2.0, 1e-3)
-                w2i = w1i
-        except Exception:
-            a1i = max(y.max(), 1.0)
-            a2i = a1i / 2.0
-            u1i = loc
-            u2i = loc + max(s_width, 1.0)
-            w1i = max(s_width / 2.0, 1e-3)
-            w2i = w1i
+    def _double_gaussian(
+        self,
+        x: npt.NDArray[np.float64],
+        amp1: float,
+        mean1: float,
+        std1: float,
+        amp2: float,
+        mean2: float,
+        std2: float,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Return the value of a double gaussian with the specified parameters.
 
-        params = None
-        try:
-            # enforce bounds: amplitudes >= 0, widths > 0, centers within data range
-            xmin, xmax = float(np.min(x)), float(np.max(x))
-            # ensure initial centers differ slightly
-            if abs(u2i - u1i) < 1e-9:
-                u2i = u1i + max(1e-3, (xmax - xmin) * 1e-3)
+        Ported from ``ProteinView._double_gaussian``. Note the parameter order is
+        grouped per component - ``(amp, mean, std)`` then ``(amp, mean, std)`` -
+        NOT grouped by kind as the deleted ``bitthresh`` helper's ``dgfit`` was
+        (``a1, a2, u1, u2, w1, w2``). Both are six-element tuples, so nothing
+        catches a mix-up by arity; every consumer of the ``"params"`` key must
+        unpack in this order.
 
-            lower_bounds = [0.0, 0.0, xmin, xmin, 1e-6, 1e-6]
-            upper_bounds = [
-                np.inf,
-                np.inf,
-                xmax,
-                xmax,
-                np.ptp(x) if np.ptp(x) > 0 else 1.0,
-                np.ptp(x) * 2 if np.ptp(x) > 0 else 2.0,
-            ]
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", OptimizeWarning)
-                popt, pcov = curve_fit(
-                    dgfit,
-                    x,
-                    y,
-                    p0=[a1i, a2i, u1i, u2i, w1i, w2i],
-                    bounds=(lower_bounds, upper_bounds),
-                    maxfev=10000,
+        Deliberately undecorated: ``curve_fit`` calls this hundreds of times per
+        fit, and a ``@log`` decorator here floods the logfile.
+
+        :param x: array of x values at which to calculate the double gaussian
+        :type x: npt.NDArray[np.float64]
+        :param amp1: amplitude of the first gaussian
+        :type amp1: float
+        :param mean1: mean of the first gaussian
+        :type mean1: float
+        :param std1: standard deviation of the first gaussian
+        :type std1: float
+        :param amp2: amplitude of the second gaussian
+        :type amp2: float
+        :param mean2: mean of the second gaussian
+        :type mean2: float
+        :param std2: standard deviation of the second gaussian
+        :type std2: float
+        :return: array of gaussian values at the given x positions
+        :rtype: npt.NDArray[np.float64]
+        """
+        g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1**2))
+        g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2**2))
+        return g1 + g2
+
+    @log(logger=logger)
+    def _fit_double_gaussian(
+        self, bins: npt.NDArray[np.float64], amplitude: npt.NDArray[np.float64]
+    ) -> Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]:
+        """
+        Attempt to fit a double gaussian to a histogram, or return (None, None).
+
+        Ported from ``ProteinView._fit_double_gaussian``. Two-stage initial
+        guess: first from the two most prominent histogram peaks and their FWHM,
+        and if that cannot find two peaks (or the fit does not converge), from
+        splitting the histogram in half about its 5%-of-maximum support and
+        taking the argmax of each side.
+
+        :param bins: numpy array of bin centers
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: numpy array of amplitude (counts) in each bin
+        :type amplitude: npt.NDArray[np.float64]
+        :return: tuple of (best-fit parameters (amp1, mean1, std1, amp2, mean2,
+            std2), parameter covariance matrix), or (None, None) if both stages
+            fail
+        :rtype: Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
+        :raises ValueError: if too few peaks are found for the first-stage guess,
+            or the histogram cannot be split for the second-stage guess; both are
+            caught by this method's own fallback logic and never propagate to the
+            caller, which sees (None, None) instead
+        """
+        bin_width = bins[1] - bins[0]
+        try:
+            min_prominence = np.max(amplitude) * 0.05
+            peaks, properties = find_peaks(amplitude, prominence=min_prominence)
+
+            if len(peaks) < 2:
+                raise ValueError("Not enough peaks for initial guess")
+
+            # Require the two seeds to be at least one dominant-peak FWHM apart.
+            # Without this, `find_peaks` happily returns two maxima a few bins
+            # apart on the flank of a single mode - counting noise on a tall bin
+            # clears the 5%-of-maximum prominence floor easily - and seeding the
+            # fit with two Gaussians that close makes `curve_fit` converge to a
+            # local minimum where the second component collapses to near-zero
+            # width and contributes nothing. Deriving the distance from the
+            # dominant peak's own width rather than fixing it in bins keeps the
+            # criterion meaningful across binnings: two modes closer together
+            # than one linewidth are not resolved by this histogram anyway.
+            # Declining here is not a failure - it hands over to the
+            # histogram-split guess below, which picks one seed per half and is
+            # better behaved on exactly this shape.
+            dominant_peak = peaks[int(np.argmax(properties["prominences"]))]
+            dominant_width, _, _, _ = peak_widths(
+                amplitude, [dominant_peak], rel_height=0.5
+            )
+            min_separation = max(
+                1, int(np.ceil(self.SEED_SEPARATION_FWHM * dominant_width[0]))
+            )
+            peaks, properties = find_peaks(
+                amplitude, prominence=min_prominence, distance=min_separation
+            )
+
+            if len(peaks) < 2:
+                raise ValueError(
+                    "Only one resolved peak once seeds are required to be "
+                    f"{min_separation} bins apart; deferring to the "
+                    "histogram-split initial guess"
                 )
-            a1, a2, u1, u2, w1, w2 = popt
-            # basic sanity checks: widths must be positive
-            if not (
-                np.isfinite(w1)
-                and np.isfinite(w2)
-                and w1 > 0
-                and w2 > 0
-                and np.isfinite(a1)
-                and np.isfinite(a2)
-            ):
-                raise RuntimeError("bitthresh: fit produced invalid parameters")
-            midpoint = float((u1 + u2) / 2.0)
-            centers = np.array([u1, u2], dtype=float)
-            params = (float(a1), float(a2), float(u1), float(u2), float(w1), float(w2))
-        except Exception:
-            # If fit fails, fallback to using two largest peaks locations (if available)
-            if len(peaks) >= 2:
-                peak_locs = x[peaks]
-                sorted_peak_locs = np.sort(peak_locs)
-                u1, u2 = float(sorted_peak_locs[0]), float(sorted_peak_locs[-1])
-                midpoint = float((u1 + u2) / 2.0)
-                centers = np.array([u1, u2], dtype=float)
-            else:
-                raise ValueError("bitthresh: unable to determine two centers")
+
+            prominences = properties["prominences"]
+
+            largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
+            top_two_peaks = peaks[largest_prominence_indices]
+
+            widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
+
+            fwhm_guesses = widths * bin_width
+
+            std_guesses = fwhm_guesses / 2.355
+
+            p0 = (
+                amplitude[top_two_peaks[0]],
+                bins[top_two_peaks[0]],
+                std_guesses[0],
+                amplitude[top_two_peaks[1]],
+                bins[top_two_peaks[1]],
+                std_guesses[1],
+            )
+            min_mean = np.min(bins)
+            max_mean = np.max(bins)
+            min_amp = 0
+            max_amp = np.max(amplitude)
+            # Half a bin, not zero. At std == 0 the model divides by zero and
+            # evaluates to 0 away from the mean and nan at it, so a "fitted"
+            # component silently disappears from the curve and drags a nan into
+            # the plot. Nothing narrower than the binning is meaningful anyway.
+            min_std = bin_width / 2.0
+            max_std = np.abs(bins[-1] - bins[1])
+
+            p0 = tuple(max(v, min_std) if i in (2, 5) else v for i, v in enumerate(p0))
+
+            popt, pcov = curve_fit(
+                self._double_gaussian,
+                bins,
+                amplitude,
+                p0=p0,
+                bounds=(
+                    [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
+                    [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
+                ),
+            )
+            return popt, pcov
+        except (RuntimeError, ValueError):
+            try:
+                n = len(amplitude)
+                amax = np.max(amplitude)
+                left_start = 0
+                # NOTE: the index test is written before the bounds test here,
+                # unlike the ProteinView original, which evaluates
+                # `amplitude[left_start]` before checking `left_start < n` and
+                # so would IndexError if no bin ever reached 5% of the maximum.
+                # For a histogram that cannot happen (the argmax bin always
+                # does), so this is a latent rather than live bug there; the
+                # order is corrected here because the fix is free.
+                while left_start < n and amplitude[left_start] < 0.05 * amax:
+                    left_start += 1
+                right_start = n - 1
+                while right_start > 0 and amplitude[right_start] < 0.05 * amax:
+                    right_start -= 1
+
+                if left_start >= right_start:
+                    raise ValueError(
+                        "Cannot determine where to split the histogram for initial guess"
+                    )
+
+                left = amplitude[left_start : (left_start + right_start) // 2]
+                right = amplitude[(left_start + right_start) // 2 : right_start]
+
+                leftmax = np.max(left)
+                leftargmax = np.argmax(left)
+
+                rightmax = np.max(right)
+                rightargmax = np.argmax(right)
+
+                left_half_max = leftmax / 2.0
+                idx_left = leftargmax
+                while idx_left > 0 and left[idx_left] > left_half_max:
+                    idx_left -= 1
+
+                left_dist = abs(
+                    bins[left_start + idx_left] - bins[left_start + leftargmax]
+                )
+                left_std_guess = left_dist / 1.177
+
+                right_half_max = rightmax / 2.0
+                idx_right = rightargmax
+                while idx_right > 0 and right[idx_right] > right_half_max:
+                    idx_right -= 1
+
+                right_dist = abs(
+                    bins[(left_start + right_start) // 2 + idx_right]
+                    - bins[(left_start + right_start) // 2 + rightargmax]
+                )
+                right_std_guess = right_dist / 1.177
+
+                p0 = (
+                    leftmax,
+                    bins[left_start + leftargmax],
+                    left_std_guess,
+                    rightmax,
+                    bins[(left_start + right_start) // 2 + rightargmax],
+                    right_std_guess,
+                )
+                min_mean = np.min(bins)
+                max_mean = np.max(bins)
+                min_amp = 0
+                max_amp = np.max(amplitude)
+                min_std = bin_width / 2.0
+                max_std = np.abs(bins[-1] - bins[1])
+
+                p0 = tuple(
+                    max(v, min_std) if i in (2, 5) else v for i, v in enumerate(p0)
+                )
+
+                popt, pcov = curve_fit(
+                    self._double_gaussian,
+                    bins,
+                    amplitude,
+                    p0=p0,
+                    bounds=(
+                        [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
+                        [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
+                    ),
+                )
+                return popt, pcov
+            except (RuntimeError, ValueError, IndexError):
+                return None, None
+
+    @log(logger=logger)
+    def _fit_and_check_double_gaussian(
+        self, bins: npt.NDArray[np.float64], amplitude: npt.NDArray[np.float64]
+    ) -> Tuple[Optional[npt.NDArray[np.float64]], bool]:
+        """
+        Fit a double gaussian and apply convergence checks only.
+
+        This is a deliberately reduced version of
+        ``ProteinView._fit_and_sanity_check_double_gaussian``. That method
+        *rejects* a fit whose standard errors exceed ten times the parameter
+        magnitudes, whose two means are not separated at p < 0.05 by a t-test,
+        or whose amplitude ratio falls below 0.05. Only convergence failures
+        reject here; everything else is **reported and allowed through**, so a
+        questionable fit reaches the classifier and shows up in its counts and
+        plots rather than turning into a silent ``None``.
+
+        Three non-fatal diagnostics are checked, because a converged fit is not
+        the same as a meaningful one and these were previously indistinguishable
+        in the output. The first two both mean the data supports one population,
+        not two, and are folded into this method's second return value so a
+        caller can act on that instead of only seeing it in the log:
+
+        - **A collapsed component.** A fitted standard deviation at or below one
+          bin describes a spike the histogram cannot resolve; that component
+          contributes essentially nothing, the fit is a single Gaussian wearing
+          two sets of parameters, and any threshold taken from the midpoint of
+          the two means is meaningless because one of those means is a phantom.
+        - **Centres that are not separated.** Two fitted means closer together
+          than one FWHM of the narrower component describe a single mode, no
+          matter how good the residual looks. This is the same criterion stage 1
+          of ``_fit_double_gaussian`` applies to its seeds, applied to the
+          result, and it is the case the first diagnostic misses: two
+          components of comparable, non-degenerate width sitting on top of one
+          another.
+        - **Unconstrained parameters.** A standard error more than ten times the
+          parameter it belongs to means the data does not determine that
+          parameter at all. This is ProteinView's ``perr`` test, kept as a
+          warning rather than a rejection. It is not folded into the
+          one-population signal below: it can also fire on a genuinely
+          bimodal but small or heavily overlapping dataset, which is a
+          precision problem rather than a population-count one.
+
+        :param bins: numpy array of bin centers
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: numpy array of amplitude (counts) in each bin
+        :type amplitude: npt.NDArray[np.float64]
+        :return: tuple of (fit parameters (amp1, mean1, std1, amp2, mean2,
+            std2), or None if the fit did not converge or produced a
+            non-finite covariance) and a bool that is True when the converged
+            fit describes one population rather than two (a collapsed
+            component, or two centres on the same mode). The bool is
+            meaningless when the first element is None.
+        :rtype: Tuple[Optional[npt.NDArray[np.float64]], bool]
+        """
+        popt, pcov = self._fit_double_gaussian(bins, amplitude)
+
+        if popt is None or pcov is None:
+            self.logger.debug("double-Gaussian fit did not converge")
+            return None, False
+
+        if np.any(np.isinf(pcov)) or np.any(np.isnan(pcov)):
+            self.logger.debug(
+                "double-Gaussian fit converged but produced a non-finite "
+                "covariance matrix"
+            )
+            return None, False
+
+        # Non-fatal diagnostics. None of them reject the fit; they exist so
+        # that a converged-but-meaningless fit is visible in the log instead
+        # of being indistinguishable from a good one, and so the first two
+        # can drive the one-vs-two-population decision returned below.
+        names = ("amp1", "mean1", "std1", "amp2", "mean2", "std2")
+        bin_width = float(bins[1] - bins[0])
+        one_population = False
+
+        for comp, std_idx, mean_idx in ((1, 2, 1), (2, 5, 4)):
+            if popt[std_idx] <= bin_width:
+                one_population = True
+                self.logger.warning(
+                    f"double-Gaussian fit: component {comp} collapsed to "
+                    f"std={popt[std_idx]:.4g}, at or below the {bin_width:.4g} "
+                    "bin width. It contributes nothing to the fitted curve, so "
+                    f"its centre ({popt[mean_idx]:.4g}) and any threshold "
+                    "derived from it are not meaningful - this is effectively a "
+                    "single-Gaussian fit."
+                )
+
+        # The same separation criterion stage 1 applies to its seeds, applied to
+        # the fitted result. Two centres closer together than one linewidth are
+        # describing a single mode, whatever the fit residual says. This catches
+        # the case the first diagnostic misses: two components of comparable,
+        # non-degenerate width sitting on top of each other.
+        narrower_fwhm = 2.355 * min(float(popt[2]), float(popt[5]))
+        centre_separation = abs(float(popt[1]) - float(popt[4]))
+        if centre_separation < self.SEED_SEPARATION_FWHM * narrower_fwhm:
+            one_population = True
+            self.logger.warning(
+                f"double-Gaussian fit: the two fitted centres ({popt[1]:.4g} and "
+                f"{popt[4]:.4g}) are {centre_separation:.4g} apart, less than the "
+                f"{narrower_fwhm:.4g} FWHM of the narrower component. They "
+                "describe one mode rather than two populations, so any threshold "
+                "taken from their midpoint is arbitrary."
+            )
+
+        perr = np.sqrt(np.diag(pcov))
+        unconstrained = perr > np.abs(popt) * 10
+        if np.any(unconstrained):
+            detail = ", ".join(
+                f"{names[i]}={popt[i]:.4g}+/-{perr[i]:.4g}"
+                for i in np.flatnonzero(unconstrained)
+            )
+            self.logger.warning(
+                "double-Gaussian fit: the data does not constrain "
+                f"{np.count_nonzero(unconstrained)} of 6 parameters (standard "
+                f"error exceeds 10x the value): {detail}. The fit converged but "
+                "these parameters carry no information."
+            )
+
+        return popt, one_population
+
+    @log(logger=logger)
+    def _histogram_for_fit(
+        self, data: npt.NDArray[np.float64]
+    ) -> Tuple[
+        npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]
+    ]:
+        """
+        Bin 1-D data for double-Gaussian fitting using the Freedman-Diaconis rule.
+
+        The Freedman-Diaconis rule is carried over from the deleted ``bitthresh``,
+        but with a floor of ``MIN_FIT_BINS`` bins, which ``bitthresh`` did not
+        have and did not need.
+
+        The floor matters. FD sets bin width from the interquartile range, and on
+        exactly the bimodal data these classifiers exist to separate, the two
+        populations inflate the IQR and therefore the bin width, collapsing the
+        histogram to a handful of bins. Measured on synthetic two-population data
+        (means 300 and 600), FD alone yields 3 bins at n=60, 6 at n=300 and 7 at
+        n=600 - against which a six-parameter double Gaussian is underdetermined.
+        The fit then fails outright below roughly 600 points, and worse, near
+        600-1000 it can converge with *both* Gaussians sitting on the same mode
+        (595.4 and 597.3 for a 300/600 dataset) and pass every convergence check.
+        ``bitthresh`` tolerated the same starved binning only because it fell back
+        to raw histogram peak locations whenever its own fit failed.
+
+        With the floor applied, the same synthetic data resolves correctly at
+        every size tested from n=60 to n=20000.
+
+        :param data: 1-D array of values to histogram
+        :type data: npt.NDArray[np.float64]
+        :return: tuple of (counts, bin edges, bin centers)
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        :raises ValueError: if there are fewer than three data points
+        """
+        arr = np.asarray(data, dtype=float).ravel()
+        if arr.size < 3:
+            raise ValueError("need at least 3 data points to build a fit histogram")
+
+        s_bins = 100
+        iqr_val = float(iqr(arr))
+        if iqr_val > 0 and arr.size > 1:
+            bin_width = 2.0 * iqr_val / (arr.size ** (1.0 / 3.0))
+            data_range = float(np.max(arr) - np.min(arr))
+            if bin_width > 0 and data_range > 0:
+                s_bins = max(3, int(np.ceil(data_range / bin_width)))
+
+        if s_bins < self.MIN_FIT_BINS:
+            self.logger.debug(
+                f"Freedman-Diaconis suggested {s_bins} bins for {arr.size} "
+                f"points; raising to the {self.MIN_FIT_BINS}-bin floor so the "
+                "six-parameter double-Gaussian fit is not underdetermined."
+            )
+            s_bins = self.MIN_FIT_BINS
+
+        counts, bin_edges = np.histogram(arr, bins=s_bins)
+        bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2.0
+        return counts.astype(float), bin_edges, bin_centers
+
+    @log(logger=logger)
+    def fit_threshold(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
+        """
+        Estimate a binary threshold from 1-D data by fitting a double Gaussian.
+
+        Replaces the previous ``bitthresh`` and keeps its return shape, so the
+        three ``_classify_*`` methods and their plotting code consume it
+        unchanged - with three exceptions: ``"params"`` is now ordered
+        ``(amp1, mean1, std1, amp2, mean2, std2)``, per component, where
+        ``bitthresh`` grouped by kind as ``(a1, a2, u1, u2, w1, w2)``; the dict
+        has a new ``"n_components"`` key; and the key previously called
+        ``"midpoint"`` is now ``"threshold"``, because it is no longer
+        necessarily a midpoint (see ``_threshold_between_populations``).
+
+        Unlike ``bitthresh``, this raises rather than falling back to raw
+        histogram peak locations when the fit fails. A failed fit is a result
+        worth seeing, not one worth papering over.
+
+        A fitted double Gaussian always has two centres, whether or not the
+        data actually contains two populations - on genuinely unimodal data it
+        either collapses one component or converges with both centres on the
+        same mode, both diagnosed by ``_fit_and_check_double_gaussian``.
+        ``"n_components"`` surfaces that diagnosis as ``1`` or ``2`` so a
+        caller can act on it directly instead of only finding it in the log.
+
+        :param data: 1-D array of values from which to estimate a binary threshold
+        :type data: npt.NDArray[np.float64]
+        :return: dict with keys ``"threshold"`` (float), ``"centers"``
+            (np.ndarray of the two fitted means), ``"hist"``
+            (tuple of counts and bin edges), ``"params"``
+            (tuple of the six fitted parameters), ``"n_components"``
+            (``1`` if the fit describes one population, ``2`` if it describes
+            two), ``"threshold_method"`` (how ``"threshold"`` was picked -
+            see ``_threshold_between_populations``), and ``"spline"`` (the
+            smoothing spline that search was run on, for plotting, or None)
+        :rtype: Dict[str, Any]
+        :raises ValueError: if the data cannot be histogrammed, or if the
+            double-Gaussian fit fails to converge
+        """
+        counts, bin_edges, bin_centers = self._histogram_for_fit(data)
+
+        popt, one_population = self._fit_and_check_double_gaussian(bin_centers, counts)
+        if popt is None:
+            raise ValueError(
+                "could not fit a double Gaussian to the histogram of this data"
+            )
+
+        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt)
+
+        threshold, threshold_method, spline = self._threshold_between_populations(
+            data, bin_centers, counts, mean1, std1, mean2, std2
+        )
 
         return {
-            "midpoint": midpoint,
-            "centers": centers,
+            "threshold": threshold,
+            "centers": np.array([mean1, mean2], dtype=float),
             "hist": (counts, bin_edges),
-            "params": params,
+            "params": (amp1, mean1, std1, amp2, mean2, std2),
+            "n_components": 1 if one_population else 2,
+            "threshold_method": threshold_method,
+            "spline": spline,
         }
+
+    @log(logger=logger)
+    def _threshold_between_populations(
+        self,
+        data: npt.NDArray[np.float64],
+        bins: npt.NDArray[np.float64],
+        amplitude: npt.NDArray[np.float64],
+        mean1: float,
+        std1: float,
+        mean2: float,
+        std2: float,
+    ) -> Tuple[float, str, Optional[BSpline]]:
+        """
+        Pick a threshold between two fitted populations from the histogram's
+        shape, rather than the arithmetic midpoint of their fitted means.
+
+        A smoothing spline (``scipy.interpolate.make_smoothing_spline``, which
+        selects its own smoothing by generalized cross-validation - there is no
+        smoothing factor to hand-tune here) is fit to the same histogram
+        (``bins``, ``amplitude``) the double-Gaussian fit used, and evaluated on
+        a fine grid between the two fitted means. If that smoothed curve has a
+        local minimum in between - an actual valley separating the two modes -
+        the threshold is placed there (the deepest one, if more than one is
+        found). The arithmetic midpoint ignores the histogram's shape entirely
+        and sits there even when the true valley is well off-centre, e.g.
+        because one population heavily outnumbers the other.
+
+        If no such valley exists - the smoothed histogram is monotonic between
+        the two means, which happens once the populations overlap enough that
+        there is nothing left to find - this falls back to the first raw data
+        point above ``2 * mean1 - 2 * std1``, where ``mean1``/``std1`` here are
+        whichever of the two fitted components has the lower mean (labelled
+        ``mean1``/``std1`` in this method's signature only by fit-parameter
+        order, not by value).
+
+        The fitted spline is returned alongside the threshold so the classifiers
+        can draw it on their plots. It is fit whenever the histogram has enough
+        bins, even when the valley search is then skipped or comes up empty, so
+        that a plot showing a fallback threshold still shows the curve that
+        failed to find a valley - which is the evidence for why the fallback was
+        used.
+
+        :param data: the raw 1-D data the histogram was built from
+        :type data: npt.NDArray[np.float64]
+        :param bins: histogram bin centers, as built for the double-Gaussian fit
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: histogram bin counts, as built for the double-Gaussian fit
+        :type amplitude: npt.NDArray[np.float64]
+        :param mean1: mean of the first fitted component
+        :type mean1: float
+        :param std1: standard deviation of the first fitted component
+        :type std1: float
+        :param mean2: mean of the second fitted component
+        :type mean2: float
+        :param std2: standard deviation of the second fitted component
+        :type std2: float
+        :return: tuple of (threshold, method, spline), where method is
+            ``"spline_valley"`` when a valley was found, ``"fallback"`` when the
+            2*mean-2*std floor was used, or ``"fallback_degenerate"`` on the
+            last-resort case where no data point clears that floor either, and
+            spline is the fitted smoothing spline over ``bins``, or None if it
+            could not be fit
+        :rtype: Tuple[float, str, Optional[BSpline]]
+        """
+        if mean1 <= mean2:
+            lower_mean, lower_std, higher_mean = mean1, std1, mean2
+        else:
+            lower_mean, lower_std, higher_mean = mean2, std2, mean1
+
+        # Fit the spline first and unconditionally, so it is available to the
+        # plots even on the paths below that do not (or cannot) use it to place
+        # the threshold.
+        spline: Optional[BSpline] = None
+        if bins.size >= 4:
+            try:
+                spline = make_smoothing_spline(bins, amplitude)
+            except Exception as e:
+                self.logger.debug(
+                    "threshold spline fit failed, falling back to the "
+                    f"2*mean-2*std floor: {e}",
+                    exc_info=True,
+                )
+
+        if spline is not None and higher_mean > lower_mean:
+            grid = np.linspace(lower_mean, higher_mean, 1000)
+            values = spline(grid)
+            # A local minimum at grid index i (1 <= i <= len(grid)-2): the
+            # curve is falling into it from the left and rising out of it
+            # to the right. Using the sign of consecutive differences
+            # rather than e.g. `scipy.signal.argrelmin` tolerates a short
+            # flat run at the bottom of a shallow valley, which a strict
+            # less-than-both-neighbours test would miss entirely.
+            diffs = np.diff(values)
+            valley_idx = np.where((diffs[:-1] < 0) & (diffs[1:] > 0))[0] + 1
+            if valley_idx.size > 0:
+                deepest = valley_idx[np.argmin(values[valley_idx])]
+                return float(grid[deepest]), "spline_valley", spline
+
+        fallback_floor = 2.0 * lower_mean - 2.0 * lower_std
+        sorted_data = np.sort(np.asarray(data, dtype=float).ravel())
+        above_floor = sorted_data[sorted_data > fallback_floor]
+        if above_floor.size > 0:
+            return float(above_floor[0]), "fallback", spline
+
+        self.logger.warning(
+            "threshold fallback: no data point exceeds 2*mean-2*std "
+            f"({fallback_floor:.4g}); using the midpoint between the two "
+            "fitted means as a last resort."
+        )
+        return float((mean1 + mean2) / 2.0), "fallback_degenerate", spline
 
     @log(logger=logger)
     def classify_1d_distribution(
