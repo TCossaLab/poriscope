@@ -39,6 +39,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pytest  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 
@@ -69,8 +70,23 @@ def _prevent_blocking_dialogs(monkeypatch):
 @pytest.fixture(autouse=True)
 def _close_leftover_widgets():
     """
-    Safety net: close any top-level widgets left open by a test, close all
+    Safety net: destroy any top-level widgets left open by a test, close all
     Matplotlib figures, and force a GC sweep while Qt is still active.
+
+    Widgets must be *destroyed*, not merely closed. QWidget.close() only hides
+    a widget; it stays alive and stays in QApplication.topLevelWidgets() for
+    the life of the process. Closing alone therefore leaks every widget every
+    test creates, and since this fixture is autouse over the whole directory,
+    each subsequent teardown walks a longer list and hands gc.collect() a
+    larger heap. Measured before this was fixed: teardown cost grew from
+    ~0.09s early in the session to 9-13s in tests/unit/views/widgets, which
+    run last alphabetically - roughly 90% of the suite's wall-clock, spent
+    entirely in teardown.
+
+    deleteLater() alone is not enough either: it only posts a DeferredDelete
+    event, and QApplication.processEvents() does not dispatch those. They have
+    to be flushed explicitly via sendPostedEvents, otherwise the widgets are
+    scheduled for deletion that never happens and the leak is unchanged.
     """
     yield
     # Close all Matplotlib figures to disown C++ Qt bindings explicitly
@@ -80,7 +96,11 @@ def _close_leftover_widgets():
     if app is not None:
         for widget in app.topLevelWidgets():
             widget.close()
+            widget.deleteLater()
         app.processEvents()
+        # Actually dispatch the DeferredDelete events queued by deleteLater();
+        # processEvents() above deliberately does not deliver them.
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
     # Force Python GC to clean up Shiboken/PySide wrappers before the session advances
     gc.collect()
