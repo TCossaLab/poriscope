@@ -64,6 +64,88 @@ class PeakFinder(MetaEventFitter):
     #: ``_fit_double_gaussian`` for the failure this exists to prevent.
     SEED_SEPARATION_FWHM = 1.0
 
+    #: Estimate the two components by expectation-maximization on the unbinned
+    #: samples (``_fit_em_double_gaussian``) instead of least squares on the
+    #: histogram counts (``_fit_and_check_double_gaussian``).
+    #:
+    #: EM was adopted because least squares on binned counts shares one residual
+    #: objective between both components, which lets the higher component be
+    #: recruited into the lower population's un-modelled right shoulder -
+    #: the failure ``_peel_components_at_valley`` exists to undo. EM updates each
+    #: component only from data weighted by its own responsibility, so the
+    #: mechanism is absent and no split point is needed: the EM path does not
+    #: peel, and does not depend on the valley for its parameters.
+    #:
+    #: Measured against a known generative model (right-skewed lower population,
+    #: Gaussian higher at mu=2900/sd=620, n=12096, 6 seeds), recovery of the
+    #: higher component's mean was -234 pA for the joint fit, -209 pA peeled,
+    #: and +91 pA for EM; more importantly the seed-to-seed spread fell from
+    #: 272 pA (peeled, driven by the valley moving under spline noise) to 39 pA.
+    #: EM also reports ``n_components == 1`` on the documented single-population
+    #: Dataset B reconstruction across three seeds, where the least-squares path
+    #: reports 2 - i.e. it gets right the case section 4.3 of the handoff was
+    #: written about.
+    #:
+    #: Set False to fall back to the least-squares path with valley peeling,
+    #: which is retained for exactly that comparison on real data.
+    USE_EM_FIT = True
+
+    #: Number of independent EM restarts. EM is a local method, so a single
+    #: start can settle on a poor optimum; ten was enough for bit-identical
+    #: parameters across repeated runs on every dataset tested.
+    EM_N_INIT = 10
+
+    #: Fixed seed for EM initialization. EM's k-means init is randomized, and an
+    #: unseeded fit would make thresholds - and therefore classifications and
+    #: sequences - differ between runs on identical data.
+    EM_RANDOM_STATE = 0
+
+    #: Which density each of the two mixture components is given, when
+    #: ``USE_EM_FIT`` is set: ``"student_t"`` (the default) or ``"gaussian"``.
+    #:
+    #: Gaussian components estimate each width as a responsibility-weighted
+    #: *second* moment, so a handful of far-tail events dominate it: one event
+    #: ten widths out contributes a hundred times what one at a single width
+    #: does. On a minority population that is a real failure rather than a
+    #: nicety - on a real folding dataset of 3169 events, the 352-event folded
+    #: population had its core in roughly 1300-1750 pA but fitted std=242.7, and
+    #: the drawn curve peaked near 8 counts against an observed 20, because the
+    #: same counts had to be spread over a much wider curve.
+    #:
+    #: Student-t components fix that at the source. The EM gains a per-point
+    #: weight ``u = (nu + 1) / (nu + d^2 / sigma^2)`` which discounts points far
+    #: from a component's centre when its location and scale are updated, so the
+    #: sparse tail stops setting the width. Measured against a known core width
+    #: of 164.9 on a synthetic reproducing that dataset, Gaussian components
+    #: returned 295.7 (+130.8) and Student-t 152.1 (-12.8), with the best
+    #: model-vs-data RMS over the population's own range of four estimators
+    #: tried, and the run-to-run spread of that width fell from 47.4 to 18.7.
+    #:
+    #: The components are still *reported* as ``(amp, mean, std)`` triples, so
+    #: ``params``, the plot overlays, ``_classification_confidence`` and the
+    #: database schema are all unchanged - what changes is that the reported
+    #: location and scale describe the population's core instead of being
+    #: inflated by its outliers. Two consequences worth knowing: far-tail events
+    #: now sit further out in units of the fitted width, so they classify with
+    #: low confidence rather than being quietly absorbed by a wide component;
+    #: and the population-count decision is deliberately *not* taken from these
+    #: parameters (see ``_fit_em_double_gaussian``).
+    EM_COMPONENT_MODEL = "student_t"
+
+    #: Degrees of freedom for the Student-t components. Lower is more robust
+    #: (nu -> 1 is Cauchy); as nu grows the t tends to a Gaussian and the
+    #: robustness weights tend to 1, recovering the old behaviour. Four is the
+    #: conventional choice for heavy-tailed-but-not-pathological data and is
+    #: held fixed rather than estimated: estimating nu adds a parameter that the
+    #: minority population cannot constrain, which is the very problem this is
+    #: fixing.
+    T_DOF = 4.0
+
+    #: Convergence tolerance and iteration cap for the Student-t EM loop, on the
+    #: same footing as sklearn's own defaults.
+    T_TOL = 1e-6
+    T_MAX_ITER = 500
+
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
@@ -2492,6 +2574,9 @@ class PeakFinder(MetaEventFitter):
             "lower_center": lower_center,
             "higher_center": higher_center,
             "threshold": threshold,
+            "fit_method": bt.get("fit_method"),
+            "threshold_method": bt.get("threshold_method"),
+            "valley_threshold": bt.get("valley_threshold"),
             "ratio": ratio,
             # No ECD pre-filter is applied any more, so nothing is excluded from
             # the fit. Key retained because report_channel_status reads it.
@@ -2666,6 +2751,9 @@ class PeakFinder(MetaEventFitter):
             # The curve the threshold below was actually chosen from
             self._overlay_smoothing_spline(ax, bt)
 
+            # The histogram-derived boundary this threshold replaced, if any
+            self._overlay_valley_reference(ax, bt)
+
             # Vertical threshold line (value shown in info textbox)
             ax.axvline(
                 threshold,
@@ -2688,6 +2776,7 @@ class PeakFinder(MetaEventFitter):
                 )
                 info_text = (
                     f"Total Events (used for fit): {total_events_plot}\n"
+                    f"Fit: {bt.get('fit_method')} / {bt.get('threshold_method')}\n"
                     f"Unfolded: {lower_count} ({pct_low:.1%})\n"
                     f"Folded: {higher_count} ({pct_high:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
@@ -2869,6 +2958,9 @@ class PeakFinder(MetaEventFitter):
             "total_peaks": len(prominence_array),
             "n_components": n_components,
             "threshold": threshold,
+            "fit_method": bt.get("fit_method"),
+            "threshold_method": bt.get("threshold_method"),
+            "valley_threshold": bt.get("valley_threshold"),
             "centers": centers.tolist() if centers.size > 0 else [],
             "lower_count": int(np.sum(class_labels == 0)),
             "higher_count": int(np.sum(class_labels == 1)),
@@ -3060,6 +3152,9 @@ class PeakFinder(MetaEventFitter):
             # plot that the distribution has no valley to split on.
             self._overlay_smoothing_spline(ax, bt)
 
+            # The histogram-derived boundary this threshold replaced, if any
+            self._overlay_valley_reference(ax, bt)
+
             # Vertical threshold line
             if threshold is not None:
                 ax.axvline(
@@ -3078,6 +3173,7 @@ class PeakFinder(MetaEventFitter):
                 info_text = (
                     f"Total Peaks (used for fit): {total_peaks}\n"
                     f"Selected populations: {n_components}\n"
+                    f"Fit: {bt.get('fit_method')} / {bt.get('threshold_method')}\n"
                     f"Class 0: {lower_count} ({pct_low:.1%})\n"
                     f"Class 1: {higher_count} ({pct_high:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
@@ -3332,6 +3428,9 @@ class PeakFinder(MetaEventFitter):
             "lower_center": float(lower_center),
             "higher_center": float(higher_center),
             "threshold": float(threshold),
+            "fit_method": bt.get("fit_method"),
+            "threshold_method": bt.get("threshold_method"),
+            "valley_threshold": bt.get("valley_threshold"),
             "ecd_filtered_events": int(len(event_refs) - len(filtered_refs)),
         }
 
@@ -3508,6 +3607,9 @@ class PeakFinder(MetaEventFitter):
             # The curve the threshold below was actually chosen from
             self._overlay_smoothing_spline(ax, bt)
 
+            # The histogram-derived boundary this threshold replaced, if any
+            self._overlay_valley_reference(ax, bt)
+
             # Vertical threshold line (not added to legend; value shown in info textbox)
             ax.axvline(threshold, color="black", linestyle="-", linewidth=2)
 
@@ -3521,6 +3623,7 @@ class PeakFinder(MetaEventFitter):
                 )
                 info_text = (
                     f"Total Events (used for fit): {total_events_plot}\n"
+                    f"Fit: {bt.get('fit_method')} / {bt.get('threshold_method')}\n"
                     f"Forward: {forward_count} ({pct_fwd:.1%})\n"
                     f"Backward: {backward_count} ({pct_bwd:.1%})\n"
                     f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
@@ -3794,6 +3897,61 @@ class PeakFinder(MetaEventFitter):
         except Exception as e:
             self.logger.debug(
                 f"failed to draw the smoothing-spline overlay: {e}",
+                exc_info=True,
+            )
+
+    @log(logger=logger)
+    def _overlay_valley_reference(self, ax: Any, bt: Dict[str, Any]) -> None:
+        """
+        Draw the spline valley alongside the threshold actually used, when they differ.
+
+        Shared by all three classifier plots. When the threshold has been moved
+        to the equiprobability point of the two fitted components, the valley it
+        replaced is the natural reference for judging whether that move was
+        sensible: the valley is where the *histogram* says the boundary is, the
+        equiprobability point is where the *fitted model* says it is, and the gap
+        between the two lines is a direct read on how well the two Gaussians
+        describe this data. A large gap on a plot is the fastest way to spot a
+        population the model is misrepresenting - the skewed upper prominence
+        population being the known example.
+
+        Nothing is drawn when the two coincide, which is every case on the
+        least-squares path and any EM case that fell back to the valley - a
+        duplicate line at the same x would only clutter the legend.
+
+        Nothing here rejects or raises, for the same reason
+        ``_overlay_smoothing_spline`` does not: a plot that cannot draw this
+        reference is still a useful plot.
+
+        :param ax: the matplotlib axes to draw on
+        :type ax: Any
+        :param bt: the dict returned by ``fit_threshold``, read for its
+            ``"valley_threshold"`` and ``"threshold"`` entries
+        :type bt: Dict[str, Any]
+        :return: None; the line is drawn onto ``ax`` in place
+        :rtype: None
+        """
+        valley = bt.get("valley_threshold")
+        threshold = bt.get("threshold")
+        if valley is None or threshold is None:
+            return
+
+        try:
+            valley = float(valley)
+            threshold = float(threshold)
+            if not np.isfinite(valley) or np.isclose(valley, threshold):
+                return
+            ax.axvline(
+                valley,
+                color="dimgray",
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.9,
+                label=f"Spline valley (not used): {valley:.3f}",
+            )
+        except (TypeError, ValueError) as e:
+            self.logger.debug(
+                f"failed to draw the spline-valley reference line: {e}",
                 exc_info=True,
             )
 
@@ -4186,6 +4344,499 @@ class PeakFinder(MetaEventFitter):
         return popt, one_population
 
     @log(logger=logger)
+    def _fit_em_double_gaussian(
+        self,
+        data: npt.NDArray[np.float64],
+        bins: npt.NDArray[np.float64],
+        bin_width: float,
+    ) -> Tuple[Optional[npt.NDArray[np.float64]], bool]:
+        """
+        Estimate two Gaussian components by EM on the unbinned samples.
+
+        Drop-in alternative to ``_fit_and_check_double_gaussian``: same return
+        shape - ``(params, one_population)`` with ``params`` ordered
+        ``(amp1, mean1, std1, amp2, mean2, std2)`` - so ``fit_threshold``
+        consumes either interchangeably.
+
+        Why EM rather than ``curve_fit`` on the histogram: least squares
+        minimises one residual summed over all bins, so the higher component
+        earns credit for reducing residual *anywhere*, including inside the
+        lower population's un-modelled right shoulder. That is the recruitment
+        failure ``_peel_components_at_valley`` was written to undo by splitting
+        the data at the valley. EM has no shared residual - each component's
+        mean and variance are updated only from data weighted by its own
+        responsibility - so the mechanism does not exist and no split point,
+        and therefore no valley, is needed to obtain clean parameters.
+
+        **The histogram is still built and still used**, for two things: the
+        Freedman-Diaconis bin width (with the ``MIN_FIT_BINS`` floor) sets the
+        variance floor and the collapsed-component test, and it provides the
+        scale factor that converts EM's mixture weights into the count-unit
+        amplitudes the plot overlays and ``_classification_confidence`` expect.
+        Binning no longer constrains the *fit* itself, which now sees every
+        sample at full resolution.
+
+        Amplitudes are converted as ``amp_k = w_k * n * bin_width /
+        (std_k * sqrt(2*pi))`` - the peak height of component k's density
+        rescaled to histogram counts - so ``params`` stays on exactly the scale
+        the previous least-squares fit produced, and every consumer of
+        ``"params"`` is unaffected.
+
+        Which density the components carry is set by ``EM_COMPONENT_MODEL``.
+        The default, ``"student_t"``, estimates location and scale with the
+        outlier-robust mixture in ``_fit_student_t_mixture`` so a sparse far
+        tail cannot inflate a width, then reports them through the same
+        ``(amp, mean, std)`` triples; ``"gaussian"`` reports
+        ``sklearn.mixture.GaussianMixture`` directly. A Student-t fit that fails
+        falls back to Gaussian components with a warning rather than failing the
+        whole classification.
+
+        The one-population decision uses the **same two criteria** as the
+        least-squares path: a component collapsed to at or below one bin width,
+        or two centres closer together than one FWHM of the narrower component.
+        It deliberately does **not** use BIC or any likelihood-ratio model
+        selection - see section 4.1 of the classifier handoff, which measured
+        BIC decisively choosing two components on genuinely single-population
+        skewed data. Using EM to *estimate* two components while keeping the
+        shape-based diagnostics to decide whether two are *real* is not the
+        approach that was rejected there.
+
+        **That decision is always taken from the Gaussian fit**, even when
+        Student-t components are what gets reported, and both therefore run on
+        every call. Both criteria are expressed in units of a component's width,
+        so an estimator returning systematically narrower widths relaxes them -
+        measured, deciding from the Student-t widths turned the documented
+        single-population Dataset B into two populations. Rescaling the t scale
+        to its distributional standard deviation did not reliably fix it either
+        (it rescued one Dataset B seed and not another), and any factor that
+        rescued both would be fitted to two datasets rather than derived.
+        Keeping the decision on the Gaussian fit leaves it on exactly the
+        footing validated across every dataset tested and independent of both
+        the component model and ``nu``. A consequence to be aware of: the
+        centres in ``params`` can differ slightly from the centres the decision
+        was made on, and the population-count warnings quote the latter.
+
+        Note that under EM the collapsed-component test is close to vestigial,
+        because ``reg_covar`` floors the variance at the same bin-derived value
+        the test compares against; it is retained because it still fires if that
+        floor is lowered, and because losing it silently would leave the
+        one-population decision resting on a single criterion. In testing the
+        centres-not-separated criterion did all the work, correctly returning one
+        population on pure Gaussian, skewed unimodal, lopsided 95/5 and the
+        Dataset B reconstruction, and two on Dataset A and clean bimodal data.
+
+        :param data: the raw 1-D samples to fit
+        :type data: npt.NDArray[np.float64]
+        :param bins: histogram bin centers, used only for the amplitude scale
+            and the bounds-style reporting
+        :type bins: npt.NDArray[np.float64]
+        :param bin_width: width of one histogram bin, used as the variance floor
+            and the collapsed-component threshold
+        :type bin_width: float
+        :return: tuple of (fit parameters ordered lower-mean component first, or
+            None if EM did not converge) and a bool that is True when the fit
+            describes one population rather than two. The bool is meaningless
+            when the first element is None.
+        :rtype: Tuple[Optional[npt.NDArray[np.float64]], bool]
+        """
+        arr = np.asarray(data, dtype=float).ravel()
+        arr = arr[np.isfinite(arr)]
+        if arr.size < 2:
+            self.logger.debug("EM fit: fewer than two finite samples")
+            return None, False
+
+        # The Gaussian mixture is always fitted, and the one-population decision
+        # is always taken from it, whatever component model reports the final
+        # parameters. Both criteria below are expressed in units of a
+        # component's width, so an estimator that returns systematically
+        # narrower widths relaxes them: measured on the documented
+        # single-population Dataset B, taking the decision from the Student-t
+        # widths turned one population into two. Correcting the t scale to its
+        # distributional standard deviation (a factor sqrt(nu/(nu-2))) does not
+        # reliably fix that either - it rescued one Dataset B seed and not
+        # another, and the factor that would rescue both is a number fitted to
+        # two datasets rather than derived from anything. Taking the decision
+        # from the non-robust fit keeps it on exactly the footing already
+        # validated across every dataset tested, and makes it independent of
+        # both the component model and nu.
+        try:
+            gmm = GaussianMixture(
+                n_components=2,
+                n_init=self.EM_N_INIT,
+                random_state=self.EM_RANDOM_STATE,
+                # Same floor the least-squares path applies as min_std, squared:
+                # nothing narrower than half a bin is resolvable, and an
+                # unfloored EM variance can collapse onto a single sample.
+                reg_covar=max((bin_width / 2.0) ** 2, 1e-12),
+            )
+            gmm.fit(arr.reshape(-1, 1))
+        except (ValueError, FloatingPointError) as e:
+            self.logger.debug(f"EM fit failed: {e}", exc_info=True)
+            return None, False
+
+        if not getattr(gmm, "converged_", False):
+            self.logger.warning(
+                "EM fit did not converge within its iteration limit; keeping the "
+                "returned parameters but they may be unreliable."
+            )
+
+        means = np.asarray(gmm.means_, dtype=float).ravel()
+        stds = np.sqrt(np.asarray(gmm.covariances_, dtype=float).ravel())
+        weights = np.asarray(gmm.weights_, dtype=float).ravel()
+
+        if means.size != 2 or not np.all(np.isfinite(means)):
+            self.logger.debug("EM fit returned non-finite or malformed means")
+            return None, False
+
+        order_idx = np.argsort(means)
+        means = means[order_idx]
+        stds = stds[order_idx]
+        weights = weights[order_idx]
+
+        # Widths and centres the population-count criteria are evaluated
+        # against - always the Gaussian ones, per the note above.
+        diagnostic_means = means
+        diagnostic_stds = stds
+
+        # Refine the *reported* location and scale with the robust fit, which
+        # takes no part in the decision above.
+        robust: Optional[
+            Tuple[
+                npt.NDArray[np.float64],
+                npt.NDArray[np.float64],
+                npt.NDArray[np.float64],
+            ]
+        ] = None
+        if self.EM_COMPONENT_MODEL == "student_t":
+            robust = self._fit_student_t_mixture(arr, bin_width)
+            if robust is None:
+                self.logger.warning(
+                    "the Student-t mixture could not be fitted; reporting "
+                    "Gaussian components instead, whose widths are more easily "
+                    "inflated by a sparse tail."
+                )
+            else:
+                means, stds, weights = robust
+                if not (
+                    means.size == 2
+                    and np.all(np.isfinite(means))
+                    and np.all(np.isfinite(stds))
+                ):
+                    self.logger.warning(
+                        "the Student-t mixture returned malformed parameters; "
+                        "reporting Gaussian components instead."
+                    )
+                    means, stds = diagnostic_means, diagnostic_stds
+                    weights = np.asarray(gmm.weights_, dtype=float).ravel()[order_idx]
+                    robust = None
+
+        # Mixture weights -> histogram-count amplitudes, so `params` lands on
+        # the same scale the least-squares fit produced.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            amps = np.where(
+                stds > 0,
+                weights * arr.size * bin_width / (stds * np.sqrt(2.0 * np.pi)),
+                0.0,
+            )
+
+        params = np.array(
+            [amps[0], means[0], stds[0], amps[1], means[1], stds[1]], dtype=float
+        )
+
+        one_population = False
+        for comp, idx in ((1, 0), (2, 1)):
+            if diagnostic_stds[idx] <= bin_width:
+                one_population = True
+                self.logger.warning(
+                    f"EM fit: component {comp} collapsed to a width of "
+                    f"{diagnostic_stds[idx]:.4g}, at or below the "
+                    f"{bin_width:.4g} bin width. It describes a spike the data "
+                    f"cannot resolve, so its centre "
+                    f"({diagnostic_means[idx]:.4g}) and any threshold derived "
+                    "from it are not meaningful - this is effectively a "
+                    "single-component fit."
+                )
+
+        narrower_fwhm = 2.355 * float(np.min(diagnostic_stds))
+        centre_separation = float(abs(diagnostic_means[1] - diagnostic_means[0]))
+        if centre_separation < self.SEED_SEPARATION_FWHM * narrower_fwhm:
+            one_population = True
+            self.logger.warning(
+                f"EM fit: the two fitted centres "
+                f"({diagnostic_means[0]:.4g} and {diagnostic_means[1]:.4g}) are "
+                f"{centre_separation:.4g} apart, less than the "
+                f"{narrower_fwhm:.4g} FWHM of the narrower component. They "
+                "describe one mode rather than two populations, so any threshold "
+                "between them is arbitrary."
+            )
+
+        fell_back = robust is None and self.EM_COMPONENT_MODEL == "student_t"
+        self.logger.debug(
+            f"EM fit ({self.EM_COMPONENT_MODEL}"
+            f"{' -> gaussian fallback' if fell_back else ''}): reported "
+            f"mu={means[0]:.4g}/{means[1]:.4g} "
+            f"scale={stds[0]:.4g}/{stds[1]:.4g} "
+            f"weights={weights[0]:.4g}/{weights[1]:.4g} "
+            f"amps={amps[0]:.4g}/{amps[1]:.4g}; population count taken from "
+            f"gaussian mu={diagnostic_means[0]:.4g}/{diagnostic_means[1]:.4g} "
+            f"sd={diagnostic_stds[0]:.4g}/{diagnostic_stds[1]:.4g} "
+            f"-> {1 if one_population else 2} on {arr.size} samples"
+        )
+        return params, one_population
+
+    @log(logger=logger)
+    def _fit_student_t_mixture(
+        self,
+        data: npt.NDArray[np.float64],
+        bin_width: float,
+    ) -> Optional[
+        Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]
+    ]:
+        """
+        Fit a two-component Student-t mixture by EM, robustly to tail outliers.
+
+        Same expectation-maximization structure as the Gaussian mixture, with
+        one addition: because a Student-t is a Gaussian whose precision is
+        itself gamma-distributed, its EM carries a second latent quantity per
+        point,
+
+        ``u_ik = (nu + 1) / (nu + (x_i - mu_k)^2 / sigma_k^2)``
+
+        which is near 1 for points close to component k's centre and small for
+        points far from it. Location and scale updates are weighted by
+        ``r_ik * u_ik`` rather than ``r_ik`` alone, so a sparse far tail no
+        longer sets a component's width. That is the whole point: the Gaussian
+        scale update is a responsibility-weighted second moment, in which a
+        point ten widths out counts a hundred times a point one width out, and
+        on a minority population a dozen such points dominate several hundred
+        well-behaved ones.
+
+        The scale update divides by ``sum(r_ik)`` while its numerator carries
+        ``r_ik * u_ik`` - this is the standard ECM update for a t-mixture with
+        fixed degrees of freedom, and it is deliberately *not* self-normalising:
+        dividing by ``sum(r_ik * u_ik)`` instead would rescale the estimate back
+        towards the non-robust one.
+
+        Initialised deterministically from quantiles of the data rather than
+        randomly, so no seed is involved and repeated fits on identical data are
+        bit-identical. ``nu`` is held at ``T_DOF`` rather than estimated.
+
+        :param data: the raw 1-D samples to fit
+        :type data: npt.NDArray[np.float64]
+        :param bin_width: histogram bin width, used as the floor on a
+            component's scale for the same reason the other paths use it - a
+            component narrower than the binning is not resolvable
+        :type bin_width: float
+        :return: tuple of (means, scales, weights), each of length two and
+            ordered by mean, or None if the data is too small or the loop
+            produced non-finite parameters
+        :rtype: Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        """
+        arr = np.asarray(data, dtype=float).ravel()
+        arr = arr[np.isfinite(arr)]
+        if arr.size < 4:
+            return None
+
+        nu = float(self.T_DOF)
+        floor = max(bin_width / 2.0, 1e-12)
+
+        # Deterministic quantile initialisation: one seed low in the
+        # distribution, one high, with a common starting scale.
+        means = np.array(
+            [np.percentile(arr, 25.0), np.percentile(arr, 90.0)], dtype=float
+        )
+        if np.isclose(means[0], means[1]):
+            means = np.array([arr.min(), arr.max()], dtype=float)
+        spread = float(np.std(arr))
+        scales = np.array(
+            [max(spread / 3.0, floor), max(spread / 3.0, floor)], dtype=float
+        )
+        weights = np.array([0.5, 0.5], dtype=float)
+
+        x = arr[:, None]
+        for _ in range(int(self.T_MAX_ITER)):
+            # E-step: responsibilities from the t density, in log space so a
+            # component that is locally negligible cannot underflow to a hard
+            # zero and strand its parameters.
+            d2 = (x - means) ** 2 / scales**2
+            log_p = (
+                np.log(np.clip(weights, 1e-300, None))
+                - np.log(scales)
+                - (nu + 1.0) / 2.0 * np.log1p(d2 / nu)
+            )
+            log_p -= log_p.max(axis=1, keepdims=True)
+            p = np.exp(log_p)
+            denom = p.sum(axis=1, keepdims=True)
+            resp = np.divide(p, denom, out=np.full_like(p, 0.5), where=denom > 0)
+
+            # The robustness weights, and the combined weights used for the
+            # location/scale updates.
+            u = (nu + 1.0) / (nu + d2)
+            ru = resp * u
+
+            resp_sum = resp.sum(axis=0)
+            ru_sum = ru.sum(axis=0)
+            if np.any(resp_sum <= 0) or np.any(ru_sum <= 0):
+                self.logger.debug(
+                    "Student-t EM: a component lost all responsibility; "
+                    "abandoning the robust fit"
+                )
+                return None
+
+            new_means = (ru * x).sum(axis=0) / ru_sum
+            new_scales = np.sqrt((ru * (x - new_means) ** 2).sum(axis=0) / resp_sum)
+            new_scales = np.maximum(new_scales, floor)
+            new_weights = resp_sum / float(arr.size)
+
+            shift = float(
+                np.max(np.abs(new_means - means)) + np.max(np.abs(new_scales - scales))
+            )
+            means, scales, weights = new_means, new_scales, new_weights
+            if shift < float(self.T_TOL):
+                break
+        else:
+            self.logger.debug(
+                f"Student-t EM hit its {self.T_MAX_ITER}-iteration cap without "
+                "meeting the convergence tolerance; using the current estimate."
+            )
+
+        if not (
+            np.all(np.isfinite(means))
+            and np.all(np.isfinite(scales))
+            and np.all(np.isfinite(weights))
+        ):
+            self.logger.debug("Student-t EM produced non-finite parameters")
+            return None
+
+        order_idx = np.argsort(means)
+        return means[order_idx], scales[order_idx], weights[order_idx]
+
+    @log(logger=logger)
+    def _threshold_at_equiprobability(
+        self,
+        params: Tuple[float, float, float, float, float, float],
+        bins: npt.NDArray[np.float64],
+    ) -> Optional[float]:
+        """
+        Locate the point between the two fitted means where they are equally likely.
+
+        Because the amplitudes in ``params`` are on histogram-count scale, they
+        already carry each population's size, so the x where the two fitted
+        curves are equal is the point where the mixture posterior is 0.5 - the
+        Bayes-optimal boundary under the fitted model. Thresholding there makes
+        the classification and ``_classification_confidence`` consistent by
+        construction: no point can be assigned a class the model considers less
+        likely than the alternative, which is what produced confidences well
+        below 0.5 when the threshold came from the spline valley instead.
+
+        Taking logs of ``a1*exp(-(x-m1)^2/(2*s1^2)) = a2*exp(-(x-m2)^2/(2*s2^2))``
+        gives a quadratic in x with
+
+        - ``A = 1/(2*s1^2)``, ``B = 1/(2*s2^2)``
+        - ``a_coef = B - A``
+        - ``b_coef = -2*(B*m2 - A*m1)``
+        - ``c_coef = B*m2^2 - A*m1^2 - ln(a2/a1)``
+
+        Two Gaussians of *equal* width cross once (the quadratic degenerates to
+        a line, and the root is the amplitude-weighted midpoint). Of *unequal*
+        width they cross **twice**, and the second crossing is the reason this
+        method filters by bracket rather than just taking a root: out in the
+        tail the wider component takes over again, and on real data that second
+        root can fall inside the measured range. Only the root strictly between
+        the two means separates the two modes; the caller falls back to the
+        spline valley when there is none, which happens whenever the smaller
+        component never rises above the larger one anywhere between them.
+
+        :param params: the six fitted parameters, ``(amp1, mean1, std1, amp2,
+            mean2, std2)``
+        :type params: Tuple[float, float, float, float, float, float]
+        :param bins: histogram bin centers, used to reject a root outside the
+            range the fit actually saw
+        :type bins: npt.NDArray[np.float64]
+        :return: the equiprobability point between the two means, or None if
+            there is no real crossing there or it falls outside the histogram
+        :rtype: Optional[float]
+        """
+        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in params)
+
+        if amp1 <= 0.0 or amp2 <= 0.0 or std1 <= 0.0 or std2 <= 0.0:
+            self.logger.debug(
+                "no equiprobability point: a non-positive amplitude or width "
+                f"(amp={amp1:.4g}/{amp2:.4g}, std={std1:.4g}/{std2:.4g})"
+            )
+            return None
+
+        lower_mean, higher_mean = sorted((mean1, mean2))
+        if not higher_mean > lower_mean:
+            return None
+
+        a_inv = 1.0 / (2.0 * std1**2)
+        b_inv = 1.0 / (2.0 * std2**2)
+        a_coef = b_inv - a_inv
+        b_coef = -2.0 * (b_inv * mean2 - a_inv * mean1)
+        c_coef = b_inv * mean2**2 - a_inv * mean1**2 - np.log(amp2 / amp1)
+
+        roots: List[float] = []
+        if abs(a_coef) < 1e-15:
+            # Equal widths: the quadratic degenerates to a line.
+            if abs(b_coef) > 0.0:
+                roots = [-c_coef / b_coef]
+        else:
+            discriminant = b_coef**2 - 4.0 * a_coef * c_coef
+            if discriminant < 0.0:
+                self.logger.debug(
+                    "no equiprobability point: the two fitted curves never meet "
+                    "(negative discriminant), so one component stays below the "
+                    "other everywhere."
+                )
+                return None
+            sqrt_disc = float(np.sqrt(discriminant))
+            roots = [
+                (-b_coef - sqrt_disc) / (2.0 * a_coef),
+                (-b_coef + sqrt_disc) / (2.0 * a_coef),
+            ]
+
+        bracketed = [r for r in roots if lower_mean < r < higher_mean]
+        if not bracketed:
+            self.logger.debug(
+                f"no equiprobability point between the fitted means "
+                f"({lower_mean:.4g}, {higher_mean:.4g}); roots were "
+                f"{[f'{r:.4g}' for r in roots]}"
+            )
+            return None
+
+        outside = [r for r in roots if not (bins[0] <= r <= bins[-1])]
+        if outside:
+            self.logger.debug(
+                "equiprobability: ignoring "
+                f"{[f'{r:.4g}' for r in outside]}, outside the fit histogram "
+                f"range ({bins[0]:.4g}, {bins[-1]:.4g})"
+            )
+
+        second_in_range = [
+            r for r in roots if r not in bracketed and bins[0] <= r <= bins[-1]
+        ]
+        if second_in_range:
+            self.logger.info(
+                "the two fitted components also cross at "
+                f"{[f'{r:.4g}' for r in second_in_range]}, inside the measured "
+                "range. Past that point the wider component is the more likely "
+                "of the two, so a single threshold cannot match the mixture's "
+                "own preference everywhere and a few extreme values will carry "
+                "a classification confidence below 0.5."
+            )
+
+        threshold = float(min(bracketed))
+        if not bins[0] <= threshold <= bins[-1]:
+            self.logger.warning(
+                f"the equiprobability point ({threshold:.4g}) falls outside the "
+                f"fit histogram range ({bins[0]:.4g}, {bins[-1]:.4g}); "
+                "deferring to the spline-derived threshold."
+            )
+            return None
+        return threshold
+
+    @log(logger=logger)
     def _histogram_for_fit(
         self, data: npt.NDArray[np.float64]
     ) -> Tuple[
@@ -4268,6 +4919,17 @@ class PeakFinder(MetaEventFitter):
         ``"n_components"`` surfaces that diagnosis as ``1`` or ``2`` so a
         caller can act on it directly instead of only finding it in the log.
 
+        Which estimator produced the components depends on ``USE_EM_FIT``.
+        With it set (the default) the two components come from EM on the
+        unbinned samples (``_fit_em_double_gaussian``), the histogram is used
+        only for the bin width and the plots, peeling does not run, and the
+        threshold is moved to the point where the two components are equally
+        likely (``_threshold_at_equiprobability``) so that classifications agree
+        with the mixture that produced them. With it clear the original
+        least-squares-plus-peeling path runs unchanged. ``"fit_method"`` records
+        which ran, and ``"valley_threshold"`` always carries the spline-derived
+        threshold so the two are comparable on the plots.
+
         Where the threshold came from the spline rather than a fallback, the two
         components are then re-fit one per side of it - see
         ``_peel_components_at_valley``, which explains why the joint fit
@@ -4286,22 +4948,46 @@ class PeakFinder(MetaEventFitter):
             (tuple of the six fitted parameters), ``"n_components"``
             (``1`` if the fit describes one population, ``2`` if it describes
             two), ``"threshold_method"`` (how ``"threshold"`` was picked -
-            see ``_threshold_between_populations``), ``"spline"`` (the
+            see ``_threshold_between_populations``, plus
+            ``"equiprobability"`` when it was moved to the point where the two
+            components are equally likely), ``"spline"`` (the
             smoothing spline that search was run on, for plotting, or None),
-            and ``"params_method"`` (``"peeled"`` if the components were re-fit
+            ``"params_method"`` (``"peeled"`` if the components were re-fit
             one per side of the valley, ``"joint"`` if they are straight from
-            the double-Gaussian fit)
+            the fit), ``"fit_method"`` (``"em"`` or ``"least_squares"``),
+            ``"valley_threshold"`` (the spline-derived threshold, retained for
+            plotting and comparison whichever method won) and
+            ``"split_method"`` (how ``"valley_threshold"`` was picked, which is
+            what gates peeling)
         :rtype: Dict[str, Any]
         :raises ValueError: if the data cannot be histogrammed, or if the
-            double-Gaussian fit fails to converge
+            two-component fit fails to converge
         """
         counts, bin_edges, bin_centers = self._histogram_for_fit(data)
+        bin_width = float(bin_centers[1] - bin_centers[0])
 
-        popt, one_population = self._fit_and_check_double_gaussian(bin_centers, counts)
-        if popt is None:
-            raise ValueError(
-                "could not fit a double Gaussian to the histogram of this data"
+        if self.USE_EM_FIT:
+            fit_method = (
+                "em_student_t"
+                if self.EM_COMPONENT_MODEL == "student_t"
+                else "em_gaussian"
             )
+            popt, one_population = self._fit_em_double_gaussian(
+                data, bin_centers, bin_width
+            )
+            if popt is None:
+                raise ValueError(
+                    "could not fit a two-component Gaussian mixture to this data"
+                )
+        else:
+            fit_method = "least_squares"
+            popt, one_population = self._fit_and_check_double_gaussian(
+                bin_centers, counts
+            )
+            if popt is None:
+                raise ValueError(
+                    "could not fit a double Gaussian to the histogram of this data"
+                )
 
         amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt)
 
@@ -4319,14 +5005,56 @@ class PeakFinder(MetaEventFitter):
         # are excluded: those thresholds are not read off any feature, and
         # `fallback_degenerate` is the midpoint of two co-located means, so
         # splitting there would carve one mode arbitrarily in half.
+        # The spline-derived threshold is retained under its own key whichever
+        # path runs. On the least-squares path it is also the peel split point;
+        # on the EM path it is the fallback and the plotted reference, so the
+        # shift to the equiprobability threshold stays visible.
+        valley_threshold = threshold
+        split_method = threshold_method
+
         params_method = "joint"
-        if threshold_method in ("spline_valley", "spline_valley_above_floor"):
+        if not self.USE_EM_FIT and threshold_method in (
+            "spline_valley",
+            "spline_valley_above_floor",
+        ):
             peeled = self._peel_components_at_valley(
                 bin_centers, counts, threshold, popt
             )
             if peeled is not None:
                 amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in peeled)
                 params_method = "peeled"
+
+        # Move the threshold to the point where the two fitted components are
+        # equally likely, so the classification agrees with the mixture that
+        # produced it and `_classification_confidence` cannot report a value
+        # below 0.5 for a point between the two modes. Only meaningful when the
+        # fit found two populations: with one, both centres sit on the same mode
+        # and a crossing between them separates nothing - the same reason the
+        # between-centres valley search is skipped (see
+        # `_threshold_between_populations`).
+        if not one_population and threshold_method in (
+            "spline_valley",
+            "spline_valley_above_floor",
+        ):
+            equiprobable = self._threshold_at_equiprobability(
+                (amp1, mean1, std1, amp2, mean2, std2), bin_centers
+            )
+            if equiprobable is not None:
+                narrower_fwhm = 2.355 * min(std1, std2)
+                if abs(equiprobable - valley_threshold) > narrower_fwhm:
+                    self.logger.warning(
+                        f"the equiprobability threshold ({equiprobable:.4g}) is "
+                        f"{abs(equiprobable - valley_threshold):.4g} from the "
+                        f"spline valley ({valley_threshold:.4g}), more than the "
+                        f"{narrower_fwhm:.4g} FWHM of the narrower component. "
+                        "The fitted components and the histogram's own shape "
+                        "disagree about where the boundary is, which usually "
+                        "means a component is poorly described by a Gaussian; "
+                        "keeping the valley."
+                    )
+                else:
+                    threshold = equiprobable
+                    threshold_method = "equiprobability"
 
         return {
             "threshold": threshold,
@@ -4337,6 +5065,9 @@ class PeakFinder(MetaEventFitter):
             "threshold_method": threshold_method,
             "spline": spline,
             "params_method": params_method,
+            "fit_method": fit_method,
+            "valley_threshold": valley_threshold,
+            "split_method": split_method,
         }
 
     @log(logger=logger)
