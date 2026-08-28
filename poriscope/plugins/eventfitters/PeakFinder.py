@@ -1060,8 +1060,10 @@ class PeakFinder(MetaEventFitter):
                             ]  # turned into absolute blockage instead of current
                         ),
                         "prominence": properties["prominences"][i],
-                        "left_base":  np.sign(baseline_mean) * (baseline_mean - properties["left_bases"][i]),
-                        "right_base": np.sign(baseline_mean) * (baseline_mean - properties["right_bases"][i]),
+                        "left_base": np.sign(baseline_mean)
+                        * (baseline_mean - properties["left_bases"][i]),
+                        "right_base": np.sign(baseline_mean)
+                        * (baseline_mean - properties["right_bases"][i]),
                         "width": properties["widths"][i],
                         "left_ips": left_ip,
                         "right_ips": right_ip,
