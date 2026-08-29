@@ -359,7 +359,9 @@ class TestFitAndSanityCheck:
 
     def test_flat_returns_none(self, mock_view):
         x = np.linspace(0, 1, 100)
-        assert mock_view._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
+        assert (
+            mock_view._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
+        )
 
     def test_single_peak_behaviour_documented(self, mock_view):
         # Documents that single-peak input may pass or fail the sanity check
@@ -559,7 +561,9 @@ class TestGenerateVmEnsemble:
 
 class TestConstructSingleEventHistogram:
     def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_single_event_histogram(_make_event(), "Filtered Histogram")
+        df = mock_view._construct_single_event_histogram(
+            _make_event(), "Filtered Histogram"
+        )
         assert isinstance(df, pd.DataFrame)
         assert list(df.columns) == ["Normalized Current", "Amplitude"]
 
@@ -567,7 +571,9 @@ class TestConstructSingleEventHistogram:
         """Default binning (no explicit bins arg) now uses Freedman-Diaconis,
         which is data-dependent — assert it's a sane positive integer, not a
         fixed count."""
-        df = mock_view._construct_single_event_histogram(_make_event(), "Filtered Histogram")
+        df = mock_view._construct_single_event_histogram(
+            _make_event(), "Filtered Histogram"
+        )
         assert len(df) > 0
 
     def test_explicit_100_bins_still_works(self, mock_view):
@@ -602,7 +608,10 @@ class TestConstructSingleEventHistogram:
             "padding_before": 200,
             "padding_after": 200,
         }
-        assert mock_view._construct_single_event_histogram(ev, "Filtered Histogram") is None
+        assert (
+            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
+            is None
+        )
 
     def test_updates_hist_min_max(self, mock_view):
         mock_view._construct_single_event_histogram(
@@ -615,9 +624,12 @@ class TestConstructSingleEventHistogram:
     def test_raw_vs_filtered(self, mock_view):
         ev = _make_event()
         ev["raw_data"] = ev["filtered_data"].copy()
-        assert mock_view._construct_single_event_histogram(ev, "Raw Histogram") is not None
         assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram") is not None
+            mock_view._construct_single_event_histogram(ev, "Raw Histogram") is not None
+        )
+        assert (
+            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
+            is not None
         )
 
     def test_invalid_bins_raises(self, mock_view):
@@ -662,7 +674,9 @@ class TestConstructAllPointsHistogram:
         assert len(df) > 0
 
     def test_raw_histogram_type(self, mock_view):
-        df = mock_view._construct_all_points_histogram(iter(self._events()), "Raw Histogram")
+        df = mock_view._construct_all_points_histogram(
+            iter(self._events()), "Raw Histogram"
+        )
         assert df is not None
 
     def test_amplitude_nonnegative(self, mock_view):
@@ -1010,7 +1024,9 @@ class TestPlotScatterplot:
                 "m": np.abs(np.random.rand(10)) + 0.01,
             }
         )
-        real_view._plot_scatterplot(real_view.ax_vm, df, ["V", "m"], ["", ""], [True, False])
+        real_view._plot_scatterplot(
+            real_view.ax_vm, df, ["V", "m"], ["", ""], [True, False]
+        )
         assert "log10" in real_view.ax_vm.get_xlabel()
 
     def test_log_y_prefix(self, real_view):
@@ -1020,7 +1036,9 @@ class TestPlotScatterplot:
                 "m": np.abs(np.random.rand(10)) + 0.01,
             }
         )
-        real_view._plot_scatterplot(real_view.ax_vm, df, ["V", "m"], ["", ""], [False, True])
+        real_view._plot_scatterplot(
+            real_view.ax_vm, df, ["V", "m"], ["", ""], [False, True]
+        )
         assert "log10" in real_view.ax_vm.get_ylabel()
 
 
@@ -1133,7 +1151,11 @@ class TestRangeHelpers:
         assert mock_view._parse_event_indices("3-7", False) == [(3, 7)]
 
     def test_parse_mixed(self, mock_view):
-        assert mock_view._parse_event_indices("1,3-5,8", False) == [(1, 1), (3, 5), (8, 8)]
+        assert mock_view._parse_event_indices("1,3-5,8", False) == [
+            (1, 1),
+            (3, 5),
+            (8, 8),
+        ]
 
     def test_shift_right_increases_values(self, mock_view):
         before = mock_view._shift_ranges([(3, 3)], "right", 1)
@@ -1230,7 +1252,9 @@ class TestShiftRangeAndUpdatePlot:
 
     def test_empty_input_returns_early(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view._shift_range_and_update_plot({"db_loader": "l"}, "right")  # must not raise
+        mock_view._shift_range_and_update_plot(
+            {"db_loader": "l"}, "right"
+        )  # must not raise
 
     def test_dispatches_histogram(self, mock_view):
         self._setup_cache(mock_view)
@@ -1284,7 +1308,9 @@ class TestUpdateEventHistogram:
         assert mock_view._display_mode == "event"
 
     def test_multiple_events(self, mock_view):
-        mock_view._update_event_histogram([_make_event(i, rng_seed=i) for i in range(1, 4)])
+        mock_view._update_event_histogram(
+            [_make_event(i, rng_seed=i) for i in range(1, 4)]
+        )
 
     def test_custom_bins(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)], bins=[50])
@@ -1637,7 +1663,9 @@ class TestHandleParameterChange:
 
     def test_loader_changed_no_loader_skips(self, mock_view):
         with patch.object(mock_view, "update_available_columns") as mock_cols:
-            mock_view.handle_parameter_change("p", "loader_changed", ({"db_loader": None},))
+            mock_view.handle_parameter_change(
+                "p", "loader_changed", ({"db_loader": None},)
+            )
         mock_cols.assert_not_called()
 
     def test_select_experiment_and_channel_shows_tree(self, mock_view):
@@ -1651,13 +1679,17 @@ class TestHandleParameterChange:
 
     def test_shift_backward_routes_left(self, mock_view):
         with patch.object(mock_view, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change("p", "shift_range_backward", (self._params(),))
+            mock_view.handle_parameter_change(
+                "p", "shift_range_backward", (self._params(),)
+            )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "left"
 
     def test_shift_forward_routes_right(self, mock_view):
         with patch.object(mock_view, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change("p", "shift_range_forward", (self._params(),))
+            mock_view.handle_parameter_change(
+                "p", "shift_range_forward", (self._params(),)
+            )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "right"
 
@@ -1803,13 +1835,17 @@ class TestFetchEventData:
         assert any("single experiment" in m for m in received)
 
     def test_multiple_channels_returns_empty(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
         assert result == []
 
     def test_multiple_channels_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
         mock_view.get_selected_filters = MagicMock(return_value={})
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
@@ -1864,7 +1900,9 @@ class TestHandlePlotEvents:
         mock_view._fetch_event_data = MagicMock(return_value=[])
         mock_view._last_event_action = "plot_histogram"
         with patch.object(mock_view, "_update_event_plot"):
-            mock_view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
+            mock_view._handle_plot_events(
+                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
+            )
         assert mock_view._last_event_action == "plot_events"
 
     def test_calls_update_event_plot_with_data(self, mock_view):
@@ -1872,7 +1910,9 @@ class TestHandlePlotEvents:
         events = [_make_event(1)]
         mock_view._fetch_event_data = MagicMock(return_value=events)
         with patch.object(mock_view, "_update_event_plot") as mock_plot:
-            mock_view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 1})
+            mock_view._handle_plot_events(
+                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
+            )
         mock_plot.assert_called_once_with(events, use_raw=False)
 
     def test_no_data_emits_warning(self, mock_view):
@@ -1880,7 +1920,9 @@ class TestHandlePlotEvents:
         mock_view._fetch_event_data = MagicMock(return_value=[])
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._handle_plot_events({"db_loader": "ldr", "event_id": 1, "n_events": 2})
+        mock_view._handle_plot_events(
+            {"db_loader": "ldr", "event_id": 1, "n_events": 2}
+        )
         assert any("No data available" in m for m in received)
 
 
@@ -2169,7 +2211,9 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         mock_view.global_signal.emit.assert_called_once()
-        assert mock_view.global_signal.emit.call_args[0][2] == "construct_metadata_query"
+        assert (
+            mock_view.global_signal.emit.call_args[0][2] == "construct_metadata_query"
+        )
 
     def test_raw_edit_requires_select(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
@@ -2240,7 +2284,9 @@ class TestUpdateDistributionIndividual:
         assert any("single experiment" in r.message for r in caplog.records)
 
     def test_multiple_channels_logs_warning_and_returns(self, mock_view, caplog):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
         mock_view.get_selected_filters = MagicMock(return_value={})
         with caplog.at_level("WARNING"):
             mock_view._update_distribution_individual(self._params())
@@ -2287,7 +2333,9 @@ class TestUpdateDistributionEnsemble:
         assert any("single experiment" in r.message for r in caplog.records)
 
     def test_multiple_channels_logs_warning_and_returns(self, mock_view, caplog):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0", "1"]}}
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
         mock_view.get_selected_filters = MagicMock(return_value={})
         with caplog.at_level("WARNING"):
             mock_view._update_distribution_ensemble(self._params())

@@ -300,8 +300,8 @@ class TestExtractPlotEventParameters:
 
     def test_missing_optional_fields(self, mock_view):
         params = {"channel": ["0"], "event_index": []}
-        loader, fitter, filt, channels, events = mock_view._extract_plot_event_parameters(
-            params
+        loader, fitter, filt, channels, events = (
+            mock_view._extract_plot_event_parameters(params)
         )
         assert loader is None
         assert fitter is None
@@ -508,13 +508,17 @@ class TestHandleParameterChange:
 
     def test_routes_shift_backward(self, mock_view):
         with patch.object(EventAnalysisView, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change("M", "shift_range_backward", (self._params(),))
+            mock_view.handle_parameter_change(
+                "M", "shift_range_backward", (self._params(),)
+            )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "left"
 
     def test_routes_shift_forward(self, mock_view):
         with patch.object(EventAnalysisView, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change("M", "shift_range_forward", (self._params(),))
+            mock_view.handle_parameter_change(
+                "M", "shift_range_forward", (self._params(),)
+            )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "right"
 
@@ -717,7 +721,9 @@ class TestStartEventfitter:
     def test_emits_fit_events_signal(self, mock_view):
         self._setup(mock_view)
         mock_view._start_eventfitter("ef1", "No Filter", [0])
-        emitted_actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
+        emitted_actions = [
+            c.args[2] for c in mock_view.global_signal.emit.call_args_list
+        ]
         assert "fit_events" in emitted_actions
 
     def test_run_generators_called(self, mock_view):
@@ -728,7 +734,9 @@ class TestStartEventfitter:
     def test_with_filter_emits_get_callable_filter(self, mock_view):
         self._setup(mock_view)
         mock_view._start_eventfitter("ef1", "MyFilter", [0])
-        emitted_actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
+        emitted_actions = [
+            c.args[2] for c in mock_view.global_signal.emit.call_args_list
+        ]
         assert "get_callable_filter" in emitted_actions
 
     def test_non_list_channels_converted(self, mock_view):
@@ -747,7 +755,9 @@ class TestStartEventfitter:
         ):
             mock_view._start_eventfitter("ef1", "No Filter", [0])
         # Should still emit fit_events since we didn't return early
-        emitted_actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
+        emitted_actions = [
+            c.args[2] for c in mock_view.global_signal.emit.call_args_list
+        ]
         assert "fit_events" in emitted_actions
 
 
@@ -1456,8 +1466,8 @@ class TestSetDataFilterFunctionExtended:
 class TestExtractPlotEventParametersExtended:
     def test_empty_channel_list(self, mock_view):
         params = {"channel": [], "event_index": []}
-        loader, fitter, filt, channels, events = mock_view._extract_plot_event_parameters(
-            params
+        loader, fitter, filt, channels, events = (
+            mock_view._extract_plot_event_parameters(params)
         )
         assert channels == []
 
@@ -1683,13 +1693,17 @@ class TestHandleParameterChangeExtended:
 
     def test_shift_backward_direction_is_left(self, mock_view):
         with patch.object(EventAnalysisView, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change("M", "shift_range_backward", (self._params(),))
+            mock_view.handle_parameter_change(
+                "M", "shift_range_backward", (self._params(),)
+            )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "left"
 
     def test_shift_forward_direction_is_right(self, mock_view):
         with patch.object(EventAnalysisView, "_shift_range_and_update_plot") as mock:
-            mock_view.handle_parameter_change("M", "shift_range_forward", (self._params(),))
+            mock_view.handle_parameter_change(
+                "M", "shift_range_forward", (self._params(),)
+            )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "right"
 
