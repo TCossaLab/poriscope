@@ -6,8 +6,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.fast
-@pytest.mark.integration
 @pytest.mark.timeout(60)
 def test_metadata_and_clustering_instantiation_pipeline_no_gui(sample_metadata_db: str):
     """

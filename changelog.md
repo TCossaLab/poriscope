@@ -1,5 +1,14 @@
 ## Poriscope 1.7: In Progress
 
+* **Dropped the speed-based test markers now that durations are flat**
+    * **Breaking for anyone with a local script using them:** `fast` and `slow` are gone from `pytest.ini`, along with the three `@pytest.mark.fast` decorators. `-m fast` and `-m slow` now select nothing.
+    * The slow tail is now entirely e2e - every test above 2s, 14 of 14 - which is already a directory, and `fast`'s "<5s" definition matches 99.7% of the suite.
+    * `e2e` and `integration` are now applied by path in `tests/conftest.py`, since they describe where a test lives rather than a per-test judgement; `-m e2e` selects 20 and `-m "not e2e"` deselects 20. The redundant hand-applied `@pytest.mark.integration` decorators are dropped. `compliance`, `smoke` and `e2e_ux` stay hand-applied - no directory implies them.
+    * All four workflows (branches, fork PR, internal PR, release) now run plain `pytest`. The filters they previously carried referred to the unapplied markers, so `ci-branches.yml`'s `-m "not e2e and not slow"` selected everything and `ci-fork-pr.yml`'s `-m "fast"` selected three tests. At ~6 minutes there is no case for a subset, and the e2e tests are the highest-value coverage in the repo.
+    * `--strict-markers` added to `addopts`, so a marker name that is not registered is a collection error rather than an expression matching nothing. Verified against a bogus marker.
+    * New: **`pytest --marker-stats`** prints per-marker test counts and mean durations from the run's own timings, reading the marker list from `pytest.ini` so it stays correct as markers and tests are added. Current snapshot: `e2e` 20 tests/4.239s mean, `smoke` 4/0.537s, `compliance` 71/0.018s, `integration` 3/0.154s, all 2,616 tests at 0.130s mean.
+    * `CLAUDE.md`, the Quality Control docs page and `future_fixes.md` updated to match; the `future_fixes.md` item is pruned as landed.
+
 * **View-test teardown GC is now generation-limited, halving the view suite**
     * The `gc.collect()` in `tests/unit/views/conftest.py` was the single largest cost in the whole test suite: 193.0s across 1,494 tests, 129ms each, 95.9% of all teardown time and 55% of the view tree's wall clock. A full collect walks every generation including the long-lived one holding PySide6, numpy, pandas, sklearn and matplotlib, and that traversal is the entire cost - per-test Qt garbage is not in it.
     * **The sweep is not removed and its cadence is unchanged.** A collection still runs after every single test; only the full-generation sweep is now periodic (`gc.collect(1)` per test, full `gc.collect()` every 50). That call is load-bearing - it is what stopped the repeated Matplotlib/PySide segfaults in CI, which took three commits to settle (`06679373`, `cc2fd863`, `d829d688`) - so it was cost-reduced rather than dropped. Written up in `DECISIONS.md`.

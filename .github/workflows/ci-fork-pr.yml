@@ -76,6 +76,7 @@ jobs:
         run: |
           pre-commit run --all-files
 
-      - name: Run fast tests under Xvfb
+      # Runs the whole suite - no marker filter. ~6 minutes.
+      - name: Run tests under Xvfb
         run: |
-          xvfb-run -a pytest -q -m "fast"
+          xvfb-run -a pytest -q

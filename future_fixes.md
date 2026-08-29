@@ -37,17 +37,6 @@ every Critical item lives in that blind spot.
   the same pattern also wraps `return_function`. The docstring documents it as intentional,
   so this needs a decision rather than a patch. Fix: check arity up front with
   `inspect.signature(func).bind(*call_args)` and let body `TypeError`s propagate.
-- **CI's `-m "not e2e and not slow"` filter selects nothing.**
-  `.github/workflows/ci-branches.yml:121`. The `e2e` marker is never applied - the tests
-  under `tests/e2e/` carry `e2e_ux` (19) or no marker (4) - and `slow` appears nowhere in
-  the repo. `tests/e2e/conftest.py` only registers the names; there is no
-  `pytest_collection_modifyitems` hook. Verified: `pytest tests/e2e --collect-only -q`
-  collects 20 with and without the filter, so the click-driven Qt tests run under Xvfb on
-  every branch push. `pytest -m fast` likewise matches 3 tests. Fix: mark them `e2e`
-  (keeping `e2e_ux` as the narrower click-driven subset) or use `--ignore=tests/e2e`, then
-  add `--strict-markers` to `addopts` so an unregistered marker fails instead of matching
-  everything. `CLAUDE.md` and the Quality Control docs page both currently describe the
-  exclusion as working and need correcting with the fix.
 - **`force_serial_channel_operations()` is enforced at the wrong granularity.**
   `MetaModel.py:79,118-128`. It is a per-plugin declaration, but the lock handed to the
   worker is `MetaModel.lock` - one per model, and every tab builds its own. Two tabs
@@ -596,7 +585,7 @@ per-plugin "ownership" that already exists for a few plugins today.
 
 **Why.** `.github/workflows/ci-fork-pr.yml` already exists specifically for
 fork-originated PRs (the realistic path for a community contribution) and already runs
-strict `pre-commit run --all-files` plus `pytest -m fast` with `contents: read`
+strict `pre-commit run --all-files` plus the full `pytest` suite with `contents: read`
 fork-safe permissions — this is the right place to add plugin-specific gating rather
 than inventing a parallel workflow. There is currently no `CODEOWNERS` file in the
 repo, so plugin review isn't enforced by GitHub at all today.
@@ -614,7 +603,7 @@ repo, so plugin review isn't enforced by GitHub at all today.
    `poriscope/plugins/**`, runs the block-2 settings-schema check and block-1
    conformance suite scoped to just those files (e.g.
    `pytest -m conformance -k <derived from changed filenames>`), in addition to the
-   existing `pytest -m fast` step — so a plugin-touching PR gets strictly more
+   existing full `pytest` step — so a plugin-touching PR gets strictly more
    scrutiny than a non-plugin PR, without slowing down every PR with the full
    conformance suite.
 3. Mark this new step (and the existing strict `pre-commit` step) as required status
