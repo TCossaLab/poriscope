@@ -15,6 +15,68 @@ they date the decision.
 
 ---
 
+## 2026-08-28 - The view-test GC sweep stays; it is generation-limited, not removed
+
+**Context.** `tests/unit/views/conftest.py`'s autouse `_close_leftover_widgets` fixture
+ends with a `gc.collect()`. Matplotlib figures wrapping PySide6 widgets segfault in C++
+when their Python wrappers are collected asynchronously after the Qt widgets are already
+destroyed, and the explicit sweep forces that collection to happen deterministically
+while Qt is still alive. This was not a theoretical hazard: it produced repeated
+segfaults in CI and was settle through - `06679373` (2026-08-14) titled "prevent Matplotlib/
+PySide GC segfaults in view tests".
+
+Profiling the teardown on 2026-08-28 found that this one call was the single largest
+cost in the whole test suite: **193.0s across 1,494 tests, 129ms each, 95.9% of all
+teardown time and 55% of the view tree's wall clock** - roughly 30% of the entire suite.
+
+**Decision.** Keep the per-test sweep. Make it generation-limited - `gc.collect(1)`
+after every test, with a full `gc.collect()` every 50 - rather than removing or
+de-frequencing it.
+
+**Evidence.** Measured on the full view tree, back to back, all variants 1,494 passed:
+
+| variant | wall clock |
+| --- | --- |
+| full `gc.collect()` every test (previous) | 340.4s |
+| **`gc.collect(1)` every test + full every 50 (chosen)** | **168.5s** |
+| full `gc.collect()` every 50 only | 176.9s |
+| `gc.collect(1)` every test | 178.4s |
+| `gc.collect(0)` every test | 184.9s |
+| no GC at all | 163.7s |
+
+Removing the sweep entirely is only 4.8s faster than the chosen option and gives up the
+property that fixed CI. Dropping to "full sweep every 50 only" is both slower *and* less
+safe, because it is the only fast variant that stops collecting after every test. The
+chosen option reaches 97% of the theoretical maximum while changing the cadence not at
+all: a collection still runs after every single test. The one behavioural difference is
+that an object promoted to generation 2 waits up to 50 tests for its full sweep instead
+of zero.
+
+Why generation-limiting is nearly free: a full collect walks every generation, including
+the long-lived one holding PySide6, numpy, pandas, sklearn and matplotlib. That old-
+generation traversal is the 129ms, and per-test Qt garbage is not in it. Note also that
+`gc.collect(0)` is *slower* than `gc.collect(1)`, and that the periodic full sweep makes
+the run faster than `gc.collect(1)` alone - leaving garbage uncollected costs more later
+than collecting it costs now.
+
+**A caveat on the evidence.** All six runs above are Windows. CI is Linux under Xvfb,
+where Qt/Shiboken destruction ordering differs, and that is where the original segfaults
+appeared. Local green runs are not a substitute for a green CI run here.
+
+One condition has genuinely changed since those segfaults, which is why this was worth
+revisiting at all: when they occurred, the teardown only called `widget.close()`, which
+hides a widget without destroying it, so Shiboken wrappers accumulated for the life of
+the process and were swept in large unpredictable batches - the exact failure mode. As of
+`d2ac785b` widgets are destroyed deterministically at each teardown. That lowers the risk;
+it does not eliminate it.
+
+**Revisit if.** A segfault reappears in CI in the view tests. The first thing to try is
+restoring the unconditional full `gc.collect()` - a one-line change at the call site -
+before investigating anything else. Do not "simplify" `gc.collect(1)` to `gc.collect()`
+on the assumption it is a typo; it is deliberate and costs 172s.
+
+---
+
 ## 2026-08-25 - Keep the four `None`-placeholder `type: ignore`s in `PeakFinder`
 
 **Context.** `PeakFinder._populate_event_metadata` deliberately stores `None` for

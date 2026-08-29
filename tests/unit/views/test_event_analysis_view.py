@@ -48,8 +48,6 @@ def view(qt_app):
     v._set_custom_display_area(layout)
     v._set_control_area(layout)
     v._test_container = container
-    container.show()
-    qt_app.processEvents()
     return v
 
 

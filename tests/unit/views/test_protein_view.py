@@ -95,8 +95,6 @@ def view(qt_app):
     v._set_custom_display_area(layout)
     v._set_control_area(layout)
     v._test_container = container  # keep Qt parent alive for test duration
-    container.show()
-    qt_app.processEvents()  # flush any pending Qt events at setup
 
     return v
 
