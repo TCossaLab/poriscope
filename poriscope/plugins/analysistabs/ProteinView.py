@@ -414,7 +414,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             "MetaDatabaseLoader",
             loader,
             "get_table_by_column",
-            ("prolate_volume"),
+            ("prolate_volume",),
             "check_column_exists",
             (),
         )
@@ -458,7 +458,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     "MetaDatabaseLoader",
                     loader,
                     "alter_database",
-                    (queries),
+                    (queries,),
                     "alter_database_status",
                     (),
                 )

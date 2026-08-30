@@ -4,8 +4,9 @@ Tests for poriscope.controllers.main_controller.MainController.
 Covers:
 - instantiate_analysis_tab (new tab, existing tab, instantiation error)
 - handle_global_signal dispatch (success, instance None, missing member,
-  non-callable member, TypeError retry success, func raises, callback TypeError
-  fallback, callback other exception)
+  non-callable member, unbindable call args, body TypeError not retried, func
+  raises, None result reaching the callback, tuple return splatted by annotation,
+  callback other exception)
 - update_plugin_history CRUD (add, delete, rename, save_session called)
 - update_tab_action_history stores and saves
 - setup_connections signal wiring
@@ -16,7 +17,6 @@ Covers:
 - update_user_plugin_location adds parent to sys.path and saves config
 - get_plugin_instance retrieves instance and invokes callback
 - get_settings_from_history (found in current, found in previous, not found)
-- _ensure_tuple (tuple input, non-tuple input, None input)
 - handle_data_plugin_controller_signal (success with callback, func missing raises,
   non-callable raises, callback exception re-raises)
 - update_available_plugins caches and pushes to tabs
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, List, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -53,6 +53,95 @@ def _fake_signal(mocker: MockerFixture) -> MagicMock:
     sig.connect = mocker.Mock()
     sig.emit = mocker.Mock()
     return sig
+
+
+class _BodyTypeErrorPlugin:
+    """
+    Plugin double whose dispatched method binds cleanly but raises ``TypeError`` from its body.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[Any, ...]] = []
+
+    def fn(self, channel: int) -> None:
+        """
+        Record the call, then raise from the body rather than at the call boundary.
+
+        :param channel: Arbitrary single argument.
+        """
+        self.calls.append((channel,))
+        raise TypeError("raised from the body, not the call boundary")
+
+
+class _NoneReturningPlugin:
+    """
+    Plugin double whose dispatched method takes one argument and returns ``None``.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[Any, ...]] = []
+
+    def fn(self, channel: int) -> None:
+        """
+        Record the call and return nothing, as an ``Optional``-returning plugin method does on a miss.
+
+        :param channel: Arbitrary single argument.
+        """
+        self.calls.append((channel,))
+
+
+class _TupleReturningPlugin:
+    """
+    Plugin double whose dispatched method declares a ``Tuple`` return, as ``validate_filter_query`` does.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[Any, ...]] = []
+
+    def fn(self, channel: int) -> Tuple[str, str]:
+        """
+        Record the call and return a pair for the dispatcher to splat.
+
+        :param channel: Arbitrary single argument.
+        :return: A pair of values.
+        """
+        self.calls.append((channel,))
+        return ("first", "second")
+
+
+class _Callback:
+    """
+    Callback double with exactly one required parameter.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[Any, ...]] = []
+
+    def __call__(self, value: Any) -> None:
+        """
+        Record the single argument it was called with.
+
+        :param value: The value passed by the dispatcher.
+        """
+        self.calls.append((value,))
+
+
+class _TwoArgCallback:
+    """
+    Callback double with two required parameters, mirroring ``update_column_units(units, axis)``.
+    """
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[Any, ...]] = []
+
+    def __call__(self, value: Any, axis: Any) -> None:
+        """
+        Record both arguments it was called with.
+
+        :param value: The result of the dispatched call.
+        :param axis: The trailing ``ret_args`` entry.
+        """
+        self.calls.append((value, axis))
 
 
 # --------------------------- fixtures ---------------------------
@@ -295,33 +384,83 @@ def test_handle_global_signal_member_not_callable(
     cb.assert_not_called()
 
 
-def test_handle_global_signal_typeerror_then_none_ok(
+def test_handle_global_signal_never_guesses_at_the_forward_call(
     controller: MainController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Retry with None when func(*args) raises TypeError and succeed on second call.
+    Call a plugin method at most once, and only when the arguments actually bind.
+
+    The dispatcher used to catch a TypeError from the call and retry it with a single
+    None, which cannot be distinguished from a call-boundary arity mismatch and so ran
+    a method that had already run once more with different arguments. Arity is now
+    checked up front instead, which covers both halves of that: a method that raises
+    TypeError from its body is called exactly once and the error is logged, and a call
+    whose arguments cannot bind is reported without being attempted at all.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    plugin = mocker.Mock()
-
-    def side_effect(*args):
-        if args and args[0] == "bad":
-            raise TypeError("wrong arity")
-        assert args == (None,)
-        return "ok"
-
-    plugin.do = mocker.Mock(side_effect=side_effect)
+    plugin = _BodyTypeErrorPlugin()
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin
     )
-    cb = mocker.Mock()
+    cb = _Callback()
 
-    controller.handle_global_signal("MetaX", "Key", "do", ("bad",), cb, ("ret",))
+    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ("ret",))
 
-    cb.assert_called_once_with("ok", "ret")
+    assert plugin.calls == [("chan",)]
+    assert cb.calls == []
+
+    unbindable = _NoneReturningPlugin()
+    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
+        return_value=unbindable
+    )
+
+    controller.handle_global_signal(
+        "MetaX", "Key", "fn", ("one", "two", "three"), cb, ()
+    )
+
+    assert unbindable.calls == []
+    assert cb.calls == []
+
+
+def test_handle_global_signal_unpacks_the_result_by_declared_return_type(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Decide from the callee's return annotation whether to splat its result or pass it whole.
+
+    A method returning a pair and a method returning two values produce the same object,
+    and a method with an Optional return type that returns None is not returning an empty
+    argument list, so the runtime value cannot settle this. The declared return type can,
+    and does: a non-tuple return reaches the callback as one argument, None included, with
+    ret_args still appended after it; a Tuple return is splatted across the callback's
+    parameters.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _NoneReturningPlugin()
+    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
+        return_value=plugin
+    )
+    cb = _TwoArgCallback()
+
+    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ("x_axis",))
+
+    assert cb.calls == [(None, "x_axis")]
+
+    pair = _TupleReturningPlugin()
+    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
+        return_value=pair
+    )
+    splatted = _TwoArgCallback()
+
+    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), splatted, ())
+
+    assert splatted.calls == [("first", "second")]
 
 
 def test_handle_global_signal_func_raises(
@@ -347,28 +486,54 @@ def test_handle_global_signal_func_raises(
     plugin.boom.assert_called_once_with()
 
 
-def test_handle_global_signal_callback_typeerror_fallback(
+def test_handle_global_signal_none_result_reaches_the_callback(
     controller: MainController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Fall back to callback(None) when the callback raises TypeError on first call.
+    Pass an explicit None to a callback that needs a result slot when the call returned None.
+
+    A plugin method with an Optional return type says "no result" by returning None,
+    which _ensure_tuple renders as an empty argument list. A callback expecting a
+    result must still be given a None to put in that slot, and must be called once.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    plugin = mocker.Mock()
-    plugin.fn = mocker.Mock(return_value="rv")
+    plugin = _NoneReturningPlugin()
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin
     )
-    cb = mocker.Mock(side_effect=[TypeError("bad arity"), None])
+    cb = _Callback()
 
-    controller.handle_global_signal("MetaX", "Key", "fn", (), cb, ())
+    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ())
 
-    assert cb.call_count == 2
-    assert cb.call_args_list[0].args == ("rv",)
-    assert cb.call_args_list[1].args == (None,)
+    assert cb.calls == [(None,)]
+
+
+def test_handle_global_signal_none_result_keeps_ret_args(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Keep ret_args alongside the substituted None rather than dropping them.
+
+    This is the ``get_column_units`` -> ``update_column_units(units, axis)`` shape:
+    a None result used to fall back to a bare ``callback(None)``, which discarded the
+    axis and raised a second TypeError, so the callback never ran at all.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    plugin = _NoneReturningPlugin()
+    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
+        return_value=plugin
+    )
+    cb = _TwoArgCallback()
+
+    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ("x_axis",))
+
+    assert cb.calls == [(None, "x_axis")]
 
 
 def test_handle_global_signal_callback_other_exception(
@@ -744,39 +909,6 @@ def test_get_settings_from_history_not_found_calls_set_settings_none(
     controller.data_plugin_controller.set_settings.assert_called_once_with(None)
 
 
-def test_ensure_tuple_with_tuple_input(controller: MainController) -> None:
-    """
-    Return the input unchanged when it is already a tuple.
-
-    :param controller: Controller under test.
-    """
-    result = controller._ensure_tuple(("arg1", "arg2"))
-    assert result == ("arg1", "arg2")
-    assert isinstance(result, tuple)
-
-
-def test_ensure_tuple_with_non_tuple_input(controller: MainController) -> None:
-    """
-    Wrap a non-tuple input in a single-element tuple.
-
-    :param controller: Controller under test.
-    """
-    result = controller._ensure_tuple("arg1")
-    assert result == ("arg1",)
-    assert isinstance(result, tuple)
-
-
-def test_ensure_tuple_with_none_input(controller: MainController) -> None:
-    """
-    Return an empty tuple when the input is None.
-
-    :param controller: Controller under test.
-    """
-    result = controller._ensure_tuple(None)
-    assert result == ()
-    assert isinstance(result, tuple)
-
-
 def test_handle_data_plugin_controller_signal_calls_method_and_callback(
     controller: MainController,
     mocker: MockerFixture,
@@ -1140,7 +1272,7 @@ def test_handle_global_signal_outer_except_swallows_exception(
     Cover the outer ``except Exception: pass`` in handle_global_signal.
 
     The outer bare except catches anything that escapes the inner blocks.
-    We trigger it by making _ensure_tuple raise so the outer guard fires.
+    We trigger it by making _can_bind raise so the outer guard fires.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -1150,8 +1282,8 @@ def test_handle_global_signal_outer_except_swallows_exception(
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
         return_value=plugin
     )
-    # Make _ensure_tuple blow up on the first call to trigger outer except
-    controller._ensure_tuple = mocker.Mock(side_effect=RuntimeError("boom"))
+    # Make _can_bind blow up on the first call to trigger outer except
+    controller._can_bind = mocker.Mock(side_effect=RuntimeError("boom"))
 
     # Should not raise — outer except catches it silently
     controller.handle_global_signal("MetaX", "Key", "fn", (), None, ())

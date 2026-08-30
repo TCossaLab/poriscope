@@ -29,14 +29,6 @@ every Critical item lives in that blind spot.
 
 ### Critical - on the shared core, and each one fails quietly
 
-- **The signal dispatcher retries plugin methods with `None`.**
-  `main_controller.py:207-222`. `except TypeError: retval = func(None)` is meant as arity
-  recovery but cannot distinguish a signature mismatch at the call boundary from a
-  `TypeError` raised inside the callee, so a method that already ran halfway is invoked a
-  second time with different arguments. `commit_events` on a `MetaWriter` is on this path;
-  the same pattern also wraps `return_function`. The docstring documents it as intentional,
-  so this needs a decision rather than a patch. Fix: check arity up front with
-  `inspect.signature(func).bind(*call_args)` and let body `TypeError`s propagate.
 - **`force_serial_channel_operations()` is enforced at the wrong granularity.**
   `MetaModel.py:79,118-128`. It is a per-plugin declaration, but the lock handed to the
   worker is `MetaModel.lock` - one per model, and every tab builds its own. Two tabs
@@ -212,6 +204,14 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
   currently surface, as modal dialogs, while the `info` ones do not - so fix the two
   together rather than routing more traffic into a handler that pops a dialog per record.
+- **`RawDataView.commit_events` never fires for a single non-list channel.**
+  Around `RawDataView.py:903`, `if not isinstance(channels, list): channels = [channels]`
+  normalises the argument, but the loop that emits `commit_events` sits in that `if`'s
+  `else` branch - so the normalised single channel is built and then never iterated.
+  Only a caller that already passed a list commits anything. Found while correcting the
+  `call_args` payload at that emit site; the payload fix is unrelated to and does not
+  mask this. Not fixed there because it is a behavioural change to the commit path that
+  wants its own look at what the callers actually pass.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.

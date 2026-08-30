@@ -905,7 +905,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         else:
             try:
                 for channel in channels:
-                    write_events_args = channel
+                    write_events_args = (channel,)
                     # Emit the signal with the correct handler name for when the data is ready
                     ret_args = (channel, writer, "MetaWriter")
                     self.global_signal.emit(
