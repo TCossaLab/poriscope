@@ -526,9 +526,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         accordingly, and determine what the specific reaction should be.
 
         Currently known (metaclass, reason) combinations in use:
+
         - ("MetaDatabaseLoader", <loader_key>, "columns") — emitted after
-            columns are added to a loader's table (see
-            ClusteringView._commit_clusters, ProteinView._commit_fits).
+          columns are added to a loader's table (see
+          ClusteringView._commit_clusters, ProteinView._commit_fits).
 
         :param metaclass: The metaclass of the plugin instance whose state
                         changed (e.g. "MetaDatabaseLoader").

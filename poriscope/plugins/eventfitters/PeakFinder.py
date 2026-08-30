@@ -2304,8 +2304,9 @@ class PeakFinder(MetaEventFitter):
     ) -> None:
         """
         Implementation notes:
+
         - Assumes carrier-blockage pre-filtering has already been applied to the
-            provided `all_longest_levels_array` (do not double-filter).
+          provided `all_longest_levels_array` (do not double-filter).
         - Apply ECD pre-filters
         - Use `bitthresh` to compute centers/threshold
         - Apply the same blockage-filter re-run heuristic when ratio is poor
