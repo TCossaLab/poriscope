@@ -551,12 +551,16 @@ def test_relay_global_signal_emits_with_none_return_function(
     assert return_fn is None
 
 
-def test_relay_global_signal_logs_warning_on_emit_exception(
+def test_relay_global_signal_logs_exception_on_emit_failure(
     controller: MetaController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Log a warning when the global_signal emit raises an exception.
+    Log the failure with a traceback when the global_signal emit raises an exception.
+
+    This used to be reported at warning level as "<callback> is not a callable attribute",
+    naming a callback that had already resolved successfully two lines above and
+    discarding the stack of whatever actually failed inside emit.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -566,7 +570,7 @@ def test_relay_global_signal_logs_warning_on_emit_exception(
 
     controller._relay_global_signal("MetaReader", "key1", "my_func", (), "ignore", ())
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
 
 
 # ----------- _relay_data_plugin_controller_signal --------------------
@@ -626,12 +630,15 @@ def test_relay_data_plugin_controller_signal_emits_with_none_return_function(
     assert return_fn is None
 
 
-def test_relay_data_plugin_controller_signal_logs_warning_on_emit_exception(
+def test_relay_data_plugin_controller_signal_logs_exception_on_emit_failure(
     controller: MetaController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Log a warning when the data_plugin_controller_signal emit raises an exception.
+    Log the failure with a traceback when the data_plugin_controller_signal emit raises.
+
+    Matches the global_signal relay: both report an emit failure the same way rather than
+    blaming the already-resolved callback.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -643,7 +650,7 @@ def test_relay_data_plugin_controller_signal_logs_warning_on_emit_exception(
         "MetaReader", "key1", "my_func", (), "ignore", ()
     )
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
 
 
 # ------------------- update_available_plugins ------------------------

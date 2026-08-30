@@ -369,6 +369,11 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                     f"{return_function_name} is not an attribute of {self.__class__.__name__}"
                 )
                 return
+            if not callable(return_function):
+                self.logger.warning(
+                    f"{return_function_name} is not callable on {self.__class__.__name__}"
+                )
+                return
         else:
             return_function = None
 
@@ -384,9 +389,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 return_function,
                 ret_args,
             )
-        except Exception as e:
-            self.logger.warning(
-                f"Unable to relay global signal: {return_function_name} is not a callable attribute of {type(self).__name__}: {e}"
+        except Exception:
+            self.logger.exception(
+                f"Unable to relay global signal for {metaclass}/{subclass_key}.{call_function} "
+                f"from {type(self).__name__} to MainController"
             )
 
     @Slot(str, str, str, tuple, str, tuple)
@@ -431,6 +437,11 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                     f"{return_function_name} is not an attribute of {self.__class__.__name__}"
                 )
                 return
+            if not callable(return_function):
+                self.logger.warning(
+                    f"{return_function_name} is not callable on {self.__class__.__name__}"
+                )
+                return
         else:
             return_function = None
 
@@ -446,9 +457,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 return_function,
                 ret_args,
             )
-        except Exception as e:
-            self.logger.warning(
-                f"Unable to relay Data Plugin Controller signal: {return_function_name} is not a callable attribute of {type(self).__name__}: {e}"
+        except Exception:
+            self.logger.exception(
+                f"Unable to relay data plugin controller signal for {call_function} "
+                f"from {type(self).__name__} to MainController"
             )
 
     # public API, should generally be left alone by subclasses

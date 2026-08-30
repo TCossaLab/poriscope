@@ -18,7 +18,8 @@ Covers:
 - get_plugin_instance retrieves instance and invokes callback
 - get_settings_from_history (found in current, found in previous, not found)
 - handle_data_plugin_controller_signal (success with callback, func missing raises,
-  non-callable raises, callback exception re-raises)
+  non-callable raises, callback exception logged with traceback) - it shares
+  _dispatch_to with handle_global_signal, so the cases above cover both paths
 - update_available_plugins caches and pushes to tabs
 - save_session (with file, without file, empty history)
 - save_tab_action_history delegates to model
@@ -1269,24 +1270,24 @@ def test_handle_global_signal_outer_except_swallows_exception(
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover the outer ``except Exception: pass`` in handle_global_signal.
+    Swallow and log an exception raised while resolving the target instance.
 
-    The outer bare except catches anything that escapes the inner blocks.
-    We trigger it by making _can_bind raise so the outer guard fires.
+    The outer bare except catches anything that escapes the inner blocks, including a
+    failure of the instance lookup itself: ``DataPluginModel.get_plugin_instance``
+    subscripts ``self.plugins[metaclass]`` and so raises KeyError for an unregistered
+    metaclass, which must not escape into the Qt caller.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    plugin = mocker.Mock()
-    plugin.fn = mocker.Mock(return_value="rv")
     controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
+        side_effect=KeyError("MetaTypo")
     )
-    # Make _can_bind blow up on the first call to trigger outer except
-    controller._can_bind = mocker.Mock(side_effect=RuntimeError("boom"))
 
-    # Should not raise — outer except catches it silently
+    # Should not raise - the outer guard catches it and logs with a traceback
     controller.handle_global_signal("MetaX", "Key", "fn", (), None, ())
+
+    controller.logger.exception.assert_called_once()  # type: ignore[attr-defined]
 
 
 def test_handle_data_plugin_controller_signal_callback_exception_is_logged_and_swallowed(
@@ -1294,10 +1295,12 @@ def test_handle_data_plugin_controller_signal_callback_exception_is_logged_and_s
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover the ``except Exception as ex: logger.error(...)`` branch inside
-    handle_data_plugin_controller_signal when the return callback raises: the
-    exception is logged and swallowed rather than propagating out of the Qt
-    slot.
+    Log a raising return callback with its traceback and swallow it, rather than letting
+    it propagate out of the Qt slot.
+
+    This path used to use ``logger.error``, losing the stack, while the global_signal
+    path used ``logger.exception``. Both now share one dispatch body, so they cannot
+    diverge again.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -1315,7 +1318,7 @@ def test_handle_data_plugin_controller_signal_callback_exception_is_logged_and_s
         ret_args=(),
     )
 
-    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    controller.logger.exception.assert_called_once()  # type: ignore[attr-defined]
 
 
 def test_update_plugin_history_rename_preserves_other_entries(

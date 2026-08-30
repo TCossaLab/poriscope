@@ -115,15 +115,6 @@ every Critical item lives in that blind spot.
   elsewhere: `validate_and_instantiate_plugin` alone has six sequential
   try/except/log/return blocks, so a failure leaves the UI partially updated with no
   indication of which stage failed.
-- **The two dispatch handlers are near-duplicates that have already drifted.**
-  `main_controller.py:186-246` vs `:248-310` differ only in how the target is resolved;
-  everything after is copied. The first has the `TypeError` retry and uses
-  `logger.exception`, the second has neither - neither divergence looks deliberate. One
-  `_dispatch(target, ...)` helper removes ~55 lines. Note `_ensure_tuple` splats a returned
-  tuple into the callback's arguments, so a method legitimately returning a pair is
-  indistinguishable from one returning two values; and a method returning `None` yields
-  `()`, so its callback is called with zero arguments, raising the `TypeError` that
-  triggers the retry.
 - **Oversized units, measured.** Five functions exceed 300 lines:
   `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
   `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
