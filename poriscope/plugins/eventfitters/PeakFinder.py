@@ -165,6 +165,9 @@ class PeakFinder(MetaEventFitter):
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
+
+        :param channel: the index of the channel to close resources for, or None to close resources for every channel
+        :type channel: Optional[int]
         """
 
     @log(logger=logger)
@@ -512,7 +515,6 @@ class PeakFinder(MetaEventFitter):
 
             # set up running mean and variance calculation
             mean = data[0]
-            # NOTE: baseline_std is Optional under the MetaEventFitter contract and is used here without a guard. Flagged, not fixed - the logic in this plugin belongs to its owner.
             variance = baseline_std * baseline_std
             num_states = 0
             varM = data[0]
@@ -1642,7 +1644,13 @@ class PeakFinder(MetaEventFitter):
     def _post_process_events(self, channel: int) -> None:
         """
         Post-process events for a specific channel.
-        Performs global classification across all channels once all channels are fitted.
+
+        Once every channel has been fitted, this additionally runs the three global
+        classification passes, in order: _classify_folded_unfolded, then
+        _classify_peak_prominences, then _classify_translocation_direction. Those are
+        deliberately global rather than per-channel, because each derives a threshold
+        from the distribution across the whole dataset; running them per channel would
+        give different channels different thresholds.
 
         :param channel: the index of the channel to postprocess
         :type channel: int
@@ -2303,6 +2311,14 @@ class PeakFinder(MetaEventFitter):
         all_raw_ecds_array: np.ndarray,
     ) -> None:
         """
+        Split every fitted event across all channels into folded and unfolded carrier populations.
+
+        This runs once from _post_process_events, after every channel has been fitted, because
+        the folded/unfolded threshold is a property of the whole dataset rather than of any one
+        event. The three array arguments are index-parallel: entry ``i`` of each describes the
+        same event, and ``all_event_info[i]`` is what maps that position back to a channel and
+        an event index.
+
         Implementation notes:
 
         - Assumes carrier-blockage pre-filtering has already been applied to the
@@ -2311,6 +2327,16 @@ class PeakFinder(MetaEventFitter):
         - Use `bitthresh` to compute centers/threshold
         - Apply the same blockage-filter re-run heuristic when ratio is poor
         - Classify all events and save results + plotting
+
+        :param channels: the indices of every channel included in this classification
+        :type channels: list[int]
+        :param all_event_info: (channel, event_index) pairs identifying the event at each position of the two arrays below
+        :type all_event_info: list[tuple[int, int]]
+        :param all_longest_levels_array: the primary blockage level of each event, index-parallel to all_event_info
+        :type all_longest_levels_array: np.ndarray
+        :param all_raw_ecds_array: the raw equivalent charge displacement of each event, index-parallel to all_event_info
+        :type all_raw_ecds_array: np.ndarray
+        :raises ValueError: internally only, as control flow, when histogram bin edges are degenerate; it is caught by this method's own plotting guard and does not reach callers.
         """
 
         # NOTE: blockage-level filtering is assumed to be applied upstream and
@@ -2747,8 +2773,13 @@ class PeakFinder(MetaEventFitter):
         Classify peak prominences for peaks whose filtered value is 1, 2, or 3.
 
         The lower prominence population is written as 0 and the higher population
-        as 1. If a single population is selected by BIC, all eligible peaks are
-        as 1.
+        as 1. If a single population is selected by BIC, every eligible peak is
+        labelled 1, since there is no lower population to separate out.
+
+        :param channels: the indices of every channel whose peaks are to be classified
+        :type channels: list[int]
+        :raises RuntimeError: if bitthresh returns no midpoint, since there is then no threshold to classify against. This one does propagate.
+        :raises ValueError: internally only, as control flow, when histogram bin edges are degenerate; it is caught by this method's own plotting guard and does not reach callers.
         """
         prominence_values: list[float] = []
         prominence_refs: list[tuple[int, int, int]] = []
@@ -3079,6 +3110,11 @@ class PeakFinder(MetaEventFitter):
         Builds `log_ecds` (log10 ratio of pre-/post- ECD surrounding type-3 peaks)
         and `event_refs` (tuples of (channel, event_index)), then uses `bitthresh`
         to compute a threshold and classify each event as forward/backward.
+
+        :param channels: the indices of every channel whose events are to be classified
+        :type channels: list[int]
+        :raises RuntimeError: if bitthresh returns no midpoint, since there is then no threshold to classify against. This one does propagate.
+        :raises ValueError: internally only, as control flow, when histogram bin edges or fitted Gaussian parameters are degenerate; it is caught by this method's own plotting guard and does not reach callers.
         """
         event_refs: list[tuple[int, int]] = []
         log_ecds: list[float] = []
@@ -4114,7 +4150,6 @@ class PeakFinder(MetaEventFitter):
         if self.settings["Event Type"]["Value"] == "Single Peak":
 
             unfolded_lower_bound = (
-                # NOTE: baseline_std is Optional under the MetaEventFitter contract and is used here without a guard. Flagged, not fixed - the logic in this plugin belongs to its owner.
                 (unfolded_level + t1_std * baseline_std)
                 if unfolded_level is not None
                 else 0

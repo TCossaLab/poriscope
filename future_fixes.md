@@ -232,12 +232,14 @@ even when annotating surfaces a real bug. The logic in these files belongs to an
 developer. Everything below was found while annotating and left in place, marked with a
 narrow `# type: ignore` and a `NOTE:` comment at the site.
 
-- **`find_mode_blockage_level` guards two of its three Optional parameters.** In both
-  `PeakFinder.py` and `Basic_PeakFinder.py` the body explicitly handles `data is None`
-  and `baseline_std is None`, then computes `abs(data_min - baseline_mean)` with no
-  guard at all on `baseline_mean`, which is equally `Optional[float]` under the
-  `MetaEventFitter` contract. A caller with no baseline estimate gets a `TypeError`.
-  The asymmetry looks like a simple oversight rather than a decision.
+- **`find_mode_blockage_level` guards two of its three Optional parameters.** The body
+  explicitly handles `data is None` and `baseline_std is None`, then computes
+  `abs(data_min - baseline_mean)` with no guard at all on `baseline_mean`, which is
+  equally `Optional[float]` under the `MetaEventFitter` contract. A caller with no
+  baseline estimate gets a `TypeError`. The asymmetry looks like a simple oversight
+  rather than a decision. **Now open only in `Basic_PeakFinder.py`** - `PeakFinder.py`
+  has since gained an explicit `if baseline_mean is None: raise RuntimeError(...)`,
+  matching its docstring.
 - **`PeakFinder.filter_peaks` multiplies by a possibly-`None` `baseline_std`** at three
   adjacent lines (`type0_thresh`/`type1_thresh`/`type2_thresh`). Same root cause.
 - **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata.**
