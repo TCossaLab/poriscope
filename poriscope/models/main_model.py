@@ -270,10 +270,17 @@ class MainModel(QObject):
 
         The scan otherwise runs once, in the constructor, so a user who points
         the app at a different plugin folder sees no change until the next
-        launch. Re-importing is safe: modules already imported come back from
-        ``sys.modules``, so classes keep their identity and plugins already
-        instantiated do not end up as instances of a stale class. Files that
-        have since been deleted simply are not walked, and so drop out.
+        launch. Each plugin file is loaded fresh via
+        ``importlib.util.spec_from_file_location``/``exec_module`` rather than
+        through ``sys.modules``, so an edited file's new code is always picked
+        up on the next scan - but that also means every scan hands back a new
+        class object, never the one a previous scan produced. This does not
+        break anything already instantiated: an instance keeps working
+        through its own ``__class__`` reference regardless of what this cache
+        holds, it just does not become an instance of the freshly-scanned
+        class - the two are distinct objects until nothing references the
+        older one any more. Files that have since been deleted simply are not
+        walked, and so drop out.
 
         Callers are responsible for propagating the new lists - the controllers
         and the view each hold a copy taken at construction.

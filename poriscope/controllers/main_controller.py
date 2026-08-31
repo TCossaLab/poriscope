@@ -189,9 +189,11 @@ class MainController(QObject):
         user plugin folder therefore had no visible effect until the next launch.
 
         Instantiated plugins are untouched. ``self.data_plugins`` is the list of
-        *instantiated* plugins rather than available classes, so it is not part of
-        this refresh, and existing instances keep working because a re-scan
-        returns the same class objects for anything still on disk.
+        *instantiated* plugins rather than available classes, so it is not part
+        of this refresh, and an existing instance keeps working through its own
+        class reference regardless - see ``MainModel.refresh_available_plugins``
+        for why a re-scan does not hand back the same class object it did
+        before.
         """
         self.main_model.refresh_available_plugins()
         available_classes = {
