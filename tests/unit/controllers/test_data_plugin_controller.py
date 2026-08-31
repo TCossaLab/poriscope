@@ -630,9 +630,7 @@ def test_validate_and_instantiate_plugin_populates_from_historical_settings(
     empty = {"param": {"Value": None}}
     plugin.get_empty_settings.return_value = empty
 
-    controller._history_lookup = mocker.Mock(
-        return_value={"param": {"Value": 99}}
-    )
+    controller._history_lookup = mocker.Mock(return_value={"param": {"Value": 99}})
 
     # view returns a valid result so the method proceeds
     mock_view.get_user_settings.return_value = ({"param": {"Value": 99}}, "r1", False)
