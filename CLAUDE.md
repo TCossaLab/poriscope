@@ -237,7 +237,7 @@ of every session, so it should stay a short list of standing rules.
 
 - Poriscope uses git flow worksflows. feature branches are branched off `develop`, not `main`,
   keep that in mind when doing code review on feature branches or merging anything.
-- Release tags carry a `v` prefix (`v1.6.1`), because `.github/workflows/release.yml`
+- Release tags carry a `v` prefix (`v1.7.0`), because `.github/workflows/release.yml`
   triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
   to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
   so a fresh checkout needs that script run before cutting a release.
