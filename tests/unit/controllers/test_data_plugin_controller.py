@@ -10,7 +10,6 @@ Covers:
 - validate_and_instantiate_plugin (full success with provided key+settings, temp_instance
   creation error, key collision, apply_settings error, register_plugin error,
   empty settings early return, plugin reference resolution error)
-- set_settings stores historical_settings
 - update_data_server_location updates data_server attribute
 - get_instantiated_plugins_list delegates to model
 - get_available_metaclasses delegates to model
@@ -75,12 +74,11 @@ def controller(
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.data_server = "/tmp/data"
     ctrl.plugin_manager = None
-    ctrl.historical_settings = None  # type: ignore[assignment]
+    ctrl._history_lookup = mocker.Mock(return_value=None)
 
     for sig in [
         "update_available_plugins",
         "update_plugin_history",
-        "get_settings_from_history",
         "add_text_to_display",
     ]:
         mock_sig = mocker.Mock()
@@ -104,7 +102,7 @@ def test_init_sets_view_model_and_data_server(mocker: MockerFixture) -> None:
     mocker.patch("poriscope.controllers.DataPluginController.QObject.__init__")
 
     ctrl = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
-    with patch.object(DataPluginController, "__init__", lambda self, a, b: None):
+    with patch.object(DataPluginController, "__init__", lambda self, a, b, c: None):
         pass
 
     # Verify via direct construction with patched dependencies
@@ -114,13 +112,17 @@ def test_init_sets_view_model_and_data_server(mocker: MockerFixture) -> None:
     mock_model_cls = mocker.patch(
         "poriscope.controllers.DataPluginController.DataPluginModel"
     )
+    history_lookup = mocker.Mock(return_value=None)
 
     with patch("poriscope.controllers.DataPluginController.QObject.__init__"):
         ctrl = DataPluginController.__new__(DataPluginController)  # type: ignore[type-abstract]
-        DataPluginController.__init__(ctrl, {"MetaReader": {}}, "/data")  # type: ignore[misc]
+        DataPluginController.__init__(  # type: ignore[misc]
+            ctrl, {"MetaReader": {}}, "/data", history_lookup
+        )
 
     assert ctrl.data_server == "/data"
     assert ctrl.plugin_manager is None
+    assert ctrl._history_lookup is history_lookup
     mock_view_cls.assert_called_once()
     mock_model_cls.assert_called_once_with({"MetaReader": {}})
 
@@ -541,34 +543,6 @@ def test_validate_and_instantiate_plugin_logs_exception_on_plugin_reference_erro
     mock_model.register_plugin.assert_not_called()  # type: ignore[attr-defined]
 
 
-# ------------------------ set_settings -------------------------------
-
-
-def test_set_settings_stores_historical_settings(
-    controller: DataPluginController,
-) -> None:
-    """
-    Store the provided settings as historical_settings on the controller.
-
-    :param controller: Controller under test.
-    """
-    settings = {"param": {"Value": 42}}
-    controller.set_settings(settings)
-    assert controller.historical_settings == settings
-
-
-def test_set_settings_accepts_none(
-    controller: DataPluginController,
-) -> None:
-    """
-    Store None as historical_settings when None is provided.
-
-    :param controller: Controller under test.
-    """
-    controller.set_settings(None)
-    assert controller.historical_settings is None
-
-
 # ------------------ update_data_server_location ----------------------
 
 
@@ -636,11 +610,11 @@ def test_validate_and_instantiate_plugin_populates_from_historical_settings(
     mocker: MockerFixture,
 ) -> None:
     """
-    Copy Value fields from historical_settings into the empty settings dict.
+    Copy Value fields from the history lookup's result into the empty settings dict.
 
-    Covers the ``for setting_key, val in self.historical_settings.items()``
-    loop and the ``settings[setting_key]["Value"] = val.get("Value")`` line,
-    which only execute when settings is None and historical_settings is set.
+    Covers the ``for setting_key, val in historical_settings.items()`` loop and
+    the ``settings[setting_key]["Value"] = val.get("Value")`` line, which only
+    execute when settings is None and the history lookup returns a result.
 
     :param controller: Controller under test.
     :param mock_model: Mocked data plugin model.
@@ -656,12 +630,8 @@ def test_validate_and_instantiate_plugin_populates_from_historical_settings(
     empty = {"param": {"Value": None}}
     plugin.get_empty_settings.return_value = empty
 
-    def _emit_sets_history(mc: str, sc: str) -> None:
-        controller.historical_settings = {"param": {"Value": 99}}  # type: ignore[assignment]
-
-    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
-    controller.get_settings_from_history.emit = mocker.Mock(
-        side_effect=_emit_sets_history
+    controller._history_lookup = mocker.Mock(
+        return_value={"param": {"Value": 99}}
     )
 
     # view returns a valid result so the method proceeds
@@ -704,9 +674,7 @@ def test_validate_and_instantiate_plugin_defaults_folder_to_data_server(
     empty = {"Folder": {"Value": None}}
     plugin.get_empty_settings.return_value = empty
 
-    controller.historical_settings = None  # type: ignore[assignment]
-    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
-    controller.get_settings_from_history.emit = mocker.Mock()
+    controller._history_lookup = mocker.Mock(return_value=None)
 
     mock_view.get_user_settings.return_value = (
         {"Folder": {"Value": "/tmp/data"}},
@@ -747,9 +715,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_user_cancels(
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     plugin.get_empty_settings.return_value = {"param": {"Value": None}}
-    controller.historical_settings = None  # type: ignore[assignment]
-    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
-    controller.get_settings_from_history.emit = mocker.Mock()
+    controller._history_lookup = mocker.Mock(return_value=None)
 
     mock_view.get_user_settings.return_value = (None, None, False)
 
@@ -785,9 +751,7 @@ def test_validate_and_instantiate_plugin_returns_early_when_result_first_none(
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     plugin.get_empty_settings.return_value = {"param": {"Value": None}}
-    controller.historical_settings = None  # type: ignore[assignment]
-    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
-    controller.get_settings_from_history.emit = mocker.Mock()
+    controller._history_lookup = mocker.Mock(return_value=None)
 
     mock_view.get_user_settings.return_value = (None, "r1", False)
 
@@ -823,11 +787,10 @@ def _make_edit_plugin_controller(
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.data_server = "/tmp/data"
     ctrl.plugin_manager = None
-    ctrl.historical_settings = None  # type: ignore[assignment]
+    ctrl._history_lookup = mocker.Mock(return_value=None)
     for sig in [
         "update_available_plugins",
         "update_plugin_history",
-        "get_settings_from_history",
         "add_text_to_display",
     ]:
         mock_sig = mocker.Mock()
@@ -1234,9 +1197,7 @@ def test_validate_and_instantiate_plugin_logs_exception_on_key_setup_error(
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
 
     plugin.get_empty_settings.return_value = {"param": {"Value": None}}
-    controller.historical_settings = None  # type: ignore[assignment]
-    controller.get_settings_from_history = mocker.Mock()  # type: ignore[method-assign]
-    controller.get_settings_from_history.emit = mocker.Mock()
+    controller._history_lookup = mocker.Mock(return_value=None)
 
     controller.validate_and_instantiate_plugin(
         metaclass="MetaReader",

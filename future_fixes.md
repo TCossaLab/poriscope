@@ -34,15 +34,34 @@ two left behind are under "Still queued" below. **High is now the top of this se
 
 ### High - working today, but for reasons nothing records or tests
 
-- **Two paths use a signal as a synchronous call and read the answer from an attribute.**
-  `MetaModel.py:118-128` emits `force_serial_channel_operations` then reads
-  `self.serial_ops` on the next line; `DataPluginController.py:428-433` emits
-  `get_settings_from_history` then reads `self.historical_settings`. Correct only because
-  every hop is a same-thread automatic connection that Qt resolves as a direct call.
-  Nothing states that requirement and no test covers it. One `Qt.QueuedConnection` in
-  either chain silently degrades the item above to `lock = None` - no error, no log line.
-  Both sites want a direct call, or an explicit synchronous relay entry point that returns
-  a value so the coupling lives in a signature instead of in statement order.
+- **Closed, but undercounted at "two sites" - the real pattern recurred roughly a dozen
+  more times.** The `MetaModel.py`/`self.serial_ops` site was already gone (per-plugin-
+  locks work). The `DataPluginController.get_settings_from_history`/
+  `self.historical_settings` site is now fixed the same way: `DataPluginController`
+  takes a `history_lookup` callable at construction (`MainController._lookup_historical_settings`)
+  and calls it directly instead of emitting a signal and reading an attribute back -
+  correct now by construction, not by an assumption about connection type.
+  **What's still open**: the same shape of bug - emit `global_signal`/
+  `data_plugin_controller_signal` with a `return_function_name` callback, then read the
+  result off an attribute on the very next statement, trusting the callback already ran -
+  recurs in the analysis-tab View layer, uncounted by the original audit:
+  `RawDataView._apply_filter` (`RawDataView.py:1416-1443`); `MetadataView.py:2021-2030`,
+  `:2063-2072`, `:2306-2330`, `:2340-2348`, `:1411-1445`, `:1472-1490`; `ProteinView.py:1583-1592`,
+  `:1770-1779`, `:1872-1881`, `:421`; `ClusteringView.py:286-295`, `:579-601`;
+  `EventAnalysisView.py:940-964`. These can't be fixed the same way as the
+  `DataPluginController` site: `MetaController`/`MetaView` deliberately hold no reference
+  back to `MainController` (that's what keeps analysis tabs pluggable, resolved purely by
+  `(metaclass, subclass_key)` string), and a real `Signal.emit()` cannot hand back a
+  return value even over a direct connection - which is exactly why this attribute/callback
+  side-channel exists here at all. As a bounded mitigation (not a fix), the six
+  `.connect()` calls that carry this bus now pass
+  `type=Qt.ConnectionType.DirectConnection` explicitly
+  (`MetaController._connect_global_signal`'s four, `MainController.instantiate_analysis_tab`'s
+  two), so a future refactor that moves one of these objects onto a `QThread` fails loudly
+  (or at least deterministically synchronously) instead of silently degrading to a stale
+  read. Restructuring the View-layer sites into a genuine synchronous-call abstraction that
+  preserves the plugin-decoupling property remains open - a real multi-file refactor
+  touching Views with heavy existing test coverage.
 - **Every `WARNING` and `ERROR` record raises a modal dialog.** `QtHandler.py:38-60`, on
   the root logger with no level filter, so log severity doubles as a UI modality decision.
   Routine states hit it: `handle_kill_worker`'s "No active worker found",

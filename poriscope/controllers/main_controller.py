@@ -31,7 +31,7 @@ import typing
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Qt, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
 from poriscope.models.main_model import MainModel
@@ -63,12 +63,15 @@ class MainController(QObject):
         )  # a dict keyed by metaclass with lists of keys for instances of subclasses of that metaclass
 
         # keyed by metaclass, same key set as available_plugin_classes
+        # history_lookup is a bound method, so it resolves self.plugin_history and
+        # self.previous_plugin_history (set below) lazily at call time, not here
         self.data_plugin_controller = DataPluginController(
             {
                 metaclass: self.main_model.get_plugin_classes(metaclass)
                 for metaclass in self.main_model.get_available_plugins()
             },
             self.main_model.get_data_server_location(),
+            self._lookup_historical_settings,
         )
 
         self.plugin_history: Dict[str, Any] = {}
@@ -87,9 +90,6 @@ class MainController(QObject):
 
         self.main_view.instantiate_plugin.connect(
             self.data_plugin_controller.validate_and_instantiate_plugin
-        )
-        self.data_plugin_controller.get_settings_from_history.connect(
-            self.get_settings_from_history
         )
         self.data_plugin_controller.update_available_plugins.connect(
             self.update_available_plugins
@@ -171,17 +171,29 @@ class MainController(QObject):
         callback(self.data_plugin_controller.get_plugin_instance(metaclass, key))
 
     @log(logger=logger)
-    @Slot(str, str)
-    def get_settings_from_history(self, metaclass: str, subclass: str) -> None:
+    def _lookup_historical_settings(
+        self, metaclass: str, subclass: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Look up the most recently used settings for a plugin type, called directly by
+        DataPluginController.validate_and_instantiate_plugin rather than over the signal
+        bus, so the result comes back as a genuine return value instead of a signal
+        relay that the caller reads back off an attribute on trust.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :return: The historical settings dict for this plugin type, or None if none exists.
+        :rtype: Optional[Dict[str, Any]]
+        """
         for val in self.plugin_history.values():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
-                self.data_plugin_controller.set_settings(val.get("settings"))
-                return
+                return val.get("settings")
         for val in self.previous_plugin_history.values():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
-                self.data_plugin_controller.set_settings(val.get("settings"))
-                return
-        self.data_plugin_controller.set_settings(None)
+                return val.get("settings")
+        return None
 
     @log(logger=logger)
     def _binding_error(self, func: Callable, args: tuple) -> Optional[str]:
@@ -541,14 +553,21 @@ class MainController(QObject):
             )
 
             # Connect other necessary signals and update plugins
+            # DirectConnection is required, not cosmetic: callers on the other end of
+            # this bus (e.g. RawDataView._apply_filter) emit global_signal/
+            # data_plugin_controller_signal and then synchronously read back a result
+            # via a return_function_name callback on the very next statement. A queued
+            # connection would silently degrade that read to stale/None data with no
+            # error and no log line.
             self.analysis_tabs[subclass].global_signal.connect(
-                self.handle_global_signal
+                self.handle_global_signal, type=Qt.ConnectionType.DirectConnection
             )
             self.analysis_tabs[subclass].create_plugin.connect(
                 self.data_plugin_controller.validate_and_instantiate_plugin
             )
             self.analysis_tabs[subclass].data_plugin_controller_signal.connect(
-                self.handle_data_plugin_controller_signal
+                self.handle_data_plugin_controller_signal,
+                type=Qt.ConnectionType.DirectConnection,
             )
             self.analysis_tabs[subclass].plugin_state_changed.connect(
                 self.handle_plugin_state_changed

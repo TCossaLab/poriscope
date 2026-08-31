@@ -26,6 +26,7 @@ from collections import OrderedDict
 from unittest.mock import MagicMock, mock_open
 
 import pytest
+from PySide6.QtCore import Qt
 from pytest_mock import MockerFixture
 
 from poriscope.utils.MetaController import MetaController
@@ -253,16 +254,18 @@ def test_connect_global_signal_wires_view_and_model_signals(
     controller._connect_global_signal()
 
     mock_view.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal
+        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
     )
     mock_model.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal
+        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
     )
     mock_view.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal
+        controller._relay_data_plugin_controller_signal,
+        type=Qt.ConnectionType.DirectConnection,
     )
     mock_model.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal
+        controller._relay_data_plugin_controller_signal,
+        type=Qt.ConnectionType.DirectConnection,
     )
 
 

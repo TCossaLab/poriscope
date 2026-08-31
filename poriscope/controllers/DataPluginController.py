@@ -27,7 +27,7 @@
 
 import copy
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -43,7 +43,6 @@ class DataPluginController(QObject):
 
     update_available_plugins = Signal(str, list)
     update_plugin_history = Signal(dict, str)
-    get_settings_from_history = Signal(str, str)
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
@@ -51,12 +50,14 @@ class DataPluginController(QObject):
         self,
         available_plugin_classes: Mapping[str, Mapping[str, type]],
         data_server: str,
+        history_lookup: Callable[[str, str], Optional[Dict[str, Any]]],
     ) -> None:
         super().__init__()
         self.view = DataPluginView()
         self.model = DataPluginModel(available_plugin_classes)
         self.data_server = data_server
         self.plugin_manager = None
+        self._history_lookup = history_lookup
 
     @log(logger=logger)
     @Slot(str, str)
@@ -415,7 +416,6 @@ class DataPluginController(QObject):
         """
         history: Dict[str, Any] = {}
         temp_instance = None
-        self.historical_settings: Optional[Dict[str, Any]] = None
 
         # instantiate a temporary instance of the requested data plugin type
         try:
@@ -438,9 +438,9 @@ class DataPluginController(QObject):
                 settings = temp_instance.get_empty_settings(
                     self.model.get_instantiated_plugins_list()
                 )
-                self.get_settings_from_history.emit(metaclass, subclass)
-                if self.historical_settings:
-                    for setting_key, val in self.historical_settings.items():
+                historical_settings = self._history_lookup(metaclass, subclass)
+                if historical_settings:
+                    for setting_key, val in historical_settings.items():
                         settings[setting_key]["Value"] = val.get("Value")
                 if (
                     "Folder" in settings.keys()
@@ -552,13 +552,6 @@ class DataPluginController(QObject):
         history["subclass"] = subclass
         history["settings"] = settings
         self.update_plugin_history.emit(history, "")
-
-    @log(logger=logger)
-    def set_settings(self, settings: Optional[Dict[str, Any]]) -> None:
-        """
-        Receive previously used settings for a plugin type, relayed here in response to get_settings_from_history, and cache them for use by validate_and_instantiate_plugin.
-        """
-        self.historical_settings = settings
 
     @log(logger=logger)
     def update_data_server_location(self, data_server: str) -> None:

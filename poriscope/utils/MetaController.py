@@ -31,7 +31,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from typing import Any, Generator, List, Mapping, Optional
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
@@ -45,6 +45,11 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     global_signal = Signal(
         str, str, str, tuple, object, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, return function to call
+    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
+    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
+    # that passes a return_function_name reads the result back off an attribute the
+    # callback sets, on the very next statement after .emit() - a queued connection
+    # would silently degrade that read to stale/None data with no error and no log line.
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, object, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval, added args for retval
@@ -160,14 +165,20 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         This enables propagation of global signals upward to the main controller.
         """
-        self.view.global_signal.connect(self._relay_global_signal)
-        self.model.global_signal.connect(self._relay_global_signal)
+        self.view.global_signal.connect(
+            self._relay_global_signal, type=Qt.ConnectionType.DirectConnection
+        )
+        self.model.global_signal.connect(
+            self._relay_global_signal, type=Qt.ConnectionType.DirectConnection
+        )
 
         self.view.data_plugin_controller_signal.connect(
-            self._relay_data_plugin_controller_signal
+            self._relay_data_plugin_controller_signal,
+            type=Qt.ConnectionType.DirectConnection,
         )
         self.model.data_plugin_controller_signal.connect(
-            self._relay_data_plugin_controller_signal
+            self._relay_data_plugin_controller_signal,
+            type=Qt.ConnectionType.DirectConnection,
         )
 
     @log(logger=logger)

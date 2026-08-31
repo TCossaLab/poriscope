@@ -16,7 +16,7 @@ Covers:
 - update_data_server_location delegates to model and data_plugin_controller
 - update_user_plugin_location adds parent to sys.path and saves config
 - get_plugin_instance retrieves instance and invokes callback
-- get_settings_from_history (found in current, found in previous, not found)
+- _lookup_historical_settings (found in current, found in previous, not found)
 - handle_data_plugin_controller_signal (success with callback, func missing raises,
   non-callable raises, callback exception logged with traceback) - it shares
   _dispatch_to with handle_global_signal, so the cases above cover both paths
@@ -838,15 +838,13 @@ def test_get_plugin_instance_calls_callback_with_result(
     callback.assert_called_once_with(plugin_instance)
 
 
-def test_get_settings_from_history_found_in_current_history(
+def test_lookup_historical_settings_found_in_current_history(
     controller: MainController,
-    mocker: MockerFixture,
 ) -> None:
     """
-    Retrieve settings from plugin_history and call set_settings when found.
+    Return the settings dict from plugin_history when found.
 
     :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
     """
     controller.plugin_history = {
         "plugin_key": {
@@ -855,24 +853,19 @@ def test_get_settings_from_history_found_in_current_history(
             "settings": {"key": "value"},
         }
     }
-    controller.data_plugin_controller.set_settings = mocker.Mock()
 
-    controller.get_settings_from_history("MetaReader", "MyReader")
+    result = controller._lookup_historical_settings("MetaReader", "MyReader")
 
-    controller.data_plugin_controller.set_settings.assert_called_once_with(
-        {"key": "value"}
-    )
+    assert result == {"key": "value"}
 
 
-def test_get_settings_from_history_found_in_previous_history(
+def test_lookup_historical_settings_found_in_previous_history(
     controller: MainController,
-    mocker: MockerFixture,
 ) -> None:
     """
     Fall back to previous_plugin_history when not found in current history.
 
     :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
     """
     controller.plugin_history = {}
     controller.previous_plugin_history = {
@@ -882,32 +875,26 @@ def test_get_settings_from_history_found_in_previous_history(
             "settings": {"key": "previous_value"},
         }
     }
-    controller.data_plugin_controller.set_settings = mocker.Mock()
 
-    controller.get_settings_from_history("MetaReader", "MyReader")
+    result = controller._lookup_historical_settings("MetaReader", "MyReader")
 
-    controller.data_plugin_controller.set_settings.assert_called_once_with(
-        {"key": "previous_value"}
-    )
+    assert result == {"key": "previous_value"}
 
 
-def test_get_settings_from_history_not_found_calls_set_settings_none(
+def test_lookup_historical_settings_not_found_returns_none(
     controller: MainController,
-    mocker: MockerFixture,
 ) -> None:
     """
-    Call set_settings with None when no matching entry exists in either history.
+    Return None when no matching entry exists in either history.
 
     :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
     """
     controller.plugin_history = {}
     controller.previous_plugin_history = {}
-    controller.data_plugin_controller.set_settings = mocker.Mock()
 
-    controller.get_settings_from_history("MetaReader", "MyReader")
+    result = controller._lookup_historical_settings("MetaReader", "MyReader")
 
-    controller.data_plugin_controller.set_settings.assert_called_once_with(None)
+    assert result is None
 
 
 def test_handle_data_plugin_controller_signal_calls_method_and_callback(

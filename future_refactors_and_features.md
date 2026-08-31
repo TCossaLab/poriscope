@@ -1009,14 +1009,12 @@ the facts.
   hand-repeated "call restore, then return" at each point — the current
   shape is exactly the kind of thing that silently breaks if a future edit
   adds another exit path and forgets the call.
-- `DataPluginController.validate_and_instantiate_plugin`'s settings-from-
-  history block (`:388-446`) reads `self.historical_settings` immediately
-  after emitting `get_settings_from_history` (`:396-397`), relying on the
-  connected slot having already run synchronously by the time execution
-  resumes — true today only because of same-thread direct Qt signal
-  delivery, and not signaled anywhere in the code as a hard requirement.
-  Worth a comment at minimum if this file is touched again; a return-value-
-  based relay would make the dependency explicit instead of implicit.
+- **Fixed** (2026-08-31): `DataPluginController.validate_and_instantiate_plugin`'s
+  settings-from-history block used to read `self.historical_settings` immediately
+  after emitting `get_settings_from_history`, relying on the connected slot having
+  already run synchronously by the time execution resumed. It now calls a
+  constructor-injected `history_lookup` callable directly and uses its return value -
+  see `changelog.md` and `future_fixes.md`'s structural-audit entry.
 
 None of these change the overall value/risk conclusions already reached for
 this part; fold them in whenever findings #1-#3 above are next revisited.

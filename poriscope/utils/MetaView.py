@@ -69,6 +69,11 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     global_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
+    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
+    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
+    # that passes a return_function_name reads the result back off an attribute the
+    # callback sets, on the very next statement after .emit() - a queued connection
+    # would silently degrade that read to stale/None data with no error and no log line.
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (cane be None), added args for retval
