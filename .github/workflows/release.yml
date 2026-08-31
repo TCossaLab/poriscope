@@ -20,8 +20,18 @@ concurrency:
   cancel-in-progress: true
   
 jobs:
+#Zenodo uses CITATION.cff to generate repositories on release, if it the file is broken the whole process fails silently
+  validate-citation:
+    name: Validate CITATION.cff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate CITATION.cff
+        uses: dieghernan/cff-validator@v3
+        
   test-build-release:
     name: Run tests, build, and optionally release
+    needs: validate-citation
     runs-on: ubuntu-latest
     environment:
       name: release
