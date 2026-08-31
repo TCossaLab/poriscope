@@ -14,9 +14,13 @@
 # would render the docs twice on every internal PR, and a job added only to
 # ci-fork-pr.yml would miss PRs targeting release/*.
 #
-# This job needs no Qt, no Xvfb and no wavelet binary: conf.py mocks PySide6 for
-# autodoc, and the .rst generators under scripts/autodoc/ are pure ast parsers
-# that never import the package.
+# What this job does and does not need:
+# The .rst generators under scripts/autodoc/ are pure ast parsers that never import
+# the package, and no wavelet binary is required. Qt, however, IS required. conf.py no
+# longer mocks PySide6 (it never effectively did - see the comment there), so autodoc
+# imports the real modules and QtGui/QtWidgets/QtSvg have to load. That needs libEGL and
+# libGL, installed below. Xvfb and the XCB libs that ci-branches.yml installs are only
+# needed to instantiate a QApplication, which a docs build never does.
 
 name: Docs Render Check
 
@@ -37,9 +41,28 @@ jobs:
   render:
     runs-on: ubuntu-latest
 
+    env:
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Importing PySide6.QtGui/QtWidgets/QtSvg needs Qt's native libs. Without them the
+      # import fails partway through poriscope.exposed and autodoc falls back to mocks,
+      # which is what produced several hundred "wrapper loop when unwrapping
+      # PySide6.QtGui" warnings.
+      #
+      # This list is the DT_NEEDED set of the bundled libQt6Gui/Widgets/Svg that is not
+      # already on the runner image: libEGL.so.1, libGL.so.1 and libxkbcommon.so.0. The
+      # loader resolves all three when the module is imported, so xkbcommon is required
+      # here even though nothing about it is X11-specific. The libxcb-* packages and Xvfb
+      # that ci-branches.yml installs are NOT needed - those load with the xcb platform
+      # plugin, and a docs build never instantiates a QApplication.
+      - name: Install Qt native libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0
 
       - name: Set up Python 3.12.10
         uses: actions/setup-python@v5
