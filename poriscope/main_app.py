@@ -36,6 +36,7 @@ from PySide6.QtWidgets import QApplication
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
+from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.QtHandler import QtHandler
 from poriscope.views.main_view import MainView
@@ -74,16 +75,11 @@ class App(QApplication):
         self.config_path = Path(self.app_folder, "config")
         config_file_path = Path(self.config_path, "config.json")
 
-        # stored as str, not Path: these round-trip through JSON, and a
-        # Path left in the dict fails the isinstance(value, str) check in
-        # BaseDataPlugin._validate_param_types when it is used to
-        # pre-populate a plugin's Folder setting
-        self.app_config: Dict[str, Any] = {
-            "Parent Folder": str(Path.home()),
-            "User Plugin Folder": str(self.user_plugin_path),
-            "Log Level": logging.WARNING,
-        }
-        default_app_config = self.app_config
+        # default_app_config() is the single definition of these defaults,
+        # shared with the settings reset so the two cannot drift apart. Called
+        # twice deliberately: the fallback below needs a dict that later edits
+        # to self.app_config cannot have mutated.
+        self.app_config: Dict[str, Any] = default_app_config(self.user_plugin_path)
 
         if not self.config_path.exists():
             self.config_path.mkdir(parents=True, exist_ok=True)
@@ -115,7 +111,7 @@ class App(QApplication):
                 self.logger.warning(
                     f"Unable to load config file {config_file_path}, regenerating defaults: {e}"
                 )
-                self.app_config = default_app_config
+                self.app_config = default_app_config(self.user_plugin_path)
                 try:
                     with open(config_file_path, "w") as f:
                         json.dump(

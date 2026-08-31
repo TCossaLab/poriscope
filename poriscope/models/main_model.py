@@ -37,6 +37,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
@@ -263,6 +264,25 @@ class MainModel(QObject):
         return available_plugin_classes, available_plugins_list
 
     @log(logger=logger)
+    def refresh_available_plugins(self) -> None:
+        """
+        Re-scan the plugin directories and replace the cached results.
+
+        The scan otherwise runs once, in the constructor, so a user who points
+        the app at a different plugin folder sees no change until the next
+        launch. Re-importing is safe: modules already imported come back from
+        ``sys.modules``, so classes keep their identity and plugins already
+        instantiated do not end up as instances of a stale class. Files that
+        have since been deleted simply are not walked, and so drop out.
+
+        Callers are responsible for propagating the new lists - the controllers
+        and the view each hold a copy taken at construction.
+        """
+        self.available_plugin_classes, self.available_plugins_list = (
+            self.populate_available_plugins()
+        )
+
+    @log(logger=logger)
     def get_available_plugins(self) -> Dict[str, List[str]]:
         return self.available_plugins_list
 
@@ -385,6 +405,30 @@ class MainModel(QObject):
                     # Check if the value is a class name in the provided class_dict
                     if d[i] in class_dict:
                         d[i] = class_dict[d[i]]
+
+    @log(logger=logger)
+    def reset_app_config(self) -> Dict[str, Any]:
+        """
+        Restore the three stored settings to their defaults and persist them.
+
+        Only ``config/config.json`` is touched. Saved sessions, plugin history
+        and log files are left alone.
+
+        This writes the file and updates the in-memory config, but does not
+        apply the values to anything already running: reverting the parent
+        folder has to reach live data plugins, and reverting the log level has
+        to reconfigure the logger. ``MainController.reset_app_config`` routes
+        the returned values back through the same paths a manual edit uses, so
+        those side effects are not duplicated here.
+
+        :return: The defaults that were applied, so the caller can act on them.
+        :rtype: Dict[str, Any]
+        """
+        defaults = default_app_config(Path(self.appdata_path, "user_plugins"))
+        for key, value in defaults.items():
+            self.update_app_config(key, value)
+        self.logger.info("Application settings reset to defaults by user")
+        return defaults
 
     @log(logger=logger)
     def get_app_config(self, key: str) -> Any:

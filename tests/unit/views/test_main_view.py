@@ -723,3 +723,60 @@ class DummyWalkthroughWidget(QWidget, WalkthroughMixin):
 
     def launch_walkthrough(self):
         self.was_launched = True
+
+
+class TestRefreshAvailablePlugins:
+    """
+    Rebuilding the plugin menus after a re-scan.
+
+    The menus are built once from the list handed in at construction, so a
+    changed plugin folder is invisible until they are rebuilt. Rebuilding has to
+    reclaim the old menu tree: clear() destroys the top-level menus it owns but
+    not the submenus built by addMenu(), which otherwise linger as children of
+    the window - a menu bar's worth per refresh.
+    """
+
+    KEYS = (
+        "MetaReader", "MetaEventLoader", "MetaDatabaseLoader", "MetaFilter",
+        "MetaWriter", "MetaDatabaseWriter", "MetaController", "MetaEventFinder",
+        "MetaEventFitter",
+    )
+
+    def _reader_names(self, main_view):
+        for action in main_view.menuBar().actions():
+            if action.text() == "Data":
+                for sub in action.menu().actions():
+                    if sub.text() == "Load Timeseries":
+                        return [a.text() for a in sub.menu().actions()]
+        return None
+
+    def _plugins(self, readers):
+        return {k: (list(readers) if k == "MetaReader" else []) for k in self.KEYS}
+
+    def test_menu_shows_the_new_plugins(self, main_view):
+        main_view.refresh_available_plugins(self._plugins(["NewReader", "Another"]))
+
+        assert self._reader_names(main_view) == ["NewReader", "Another"]
+
+    def test_menu_drops_plugins_that_are_gone(self, main_view):
+        main_view.refresh_available_plugins(self._plugins(["OnlyOne"]))
+
+        assert "DummyReader" not in self._reader_names(main_view)
+
+    def test_repeated_refreshes_do_not_accumulate_menu_objects(self, main_view, qapp):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QMenu
+
+        before_actions = len(main_view.findChildren(QAction))
+        before_menus = len(main_view.findChildren(QMenu))
+
+        for _ in range(5):
+            main_view.refresh_available_plugins(self._plugins(["A", "B"]))
+            qapp.processEvents()
+            # deleteLater only schedules; processEvents does not dispatch
+            # DeferredDelete, so it has to be flushed explicitly.
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+        assert len(main_view.findChildren(QAction)) <= before_actions + 3
+        assert len(main_view.findChildren(QMenu)) <= before_menus + 3

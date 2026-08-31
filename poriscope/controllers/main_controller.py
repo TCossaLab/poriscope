@@ -121,6 +121,7 @@ class MainController(QObject):
             self.main_model.update_logging_level
         )
         self.main_view.clear_cache.connect(self.main_model.clear_cache)
+        self.main_view.reset_app_config.connect(self.reset_app_config)
         self.main_view.request_analysis_tabs.connect(self.send_analysis_tabs)
 
     @log(logger=logger)
@@ -168,6 +169,64 @@ class MainController(QObject):
         parent_path = plugin_path.parent
         if str(parent_path) not in sys.path:
             sys.path.append(str(parent_path))
+        self.refresh_available_plugins()
+
+    @log(logger=logger)
+    def refresh_available_plugins(self) -> None:
+        """
+        Re-scan the plugin directories and push the result to everyone holding it.
+
+        The scan ran once, in ``MainModel``'s constructor, and its results were
+        copied into three places at construction: this controller's data plugin
+        controller, that controller's model, and the view's menus. Changing the
+        user plugin folder therefore had no visible effect until the next launch.
+
+        Instantiated plugins are untouched. ``self.data_plugins`` is the list of
+        *instantiated* plugins rather than available classes, so it is not part of
+        this refresh, and existing instances keep working because a re-scan
+        returns the same class objects for anything still on disk.
+        """
+        self.main_model.refresh_available_plugins()
+        available_classes = {
+            metaclass: self.main_model.get_plugin_classes(metaclass)
+            for metaclass in self.main_model.get_available_plugins()
+        }
+        self.data_plugin_controller.set_available_plugins(available_classes)
+        self.main_view.refresh_available_plugins(
+            self.main_model.get_available_plugins()
+        )
+
+    @log(logger=logger)
+    @Slot()
+    def reset_app_config(self) -> None:
+        """
+        Restore the stored settings to their defaults and apply them live.
+
+        The model persists the defaults; each is then routed back through the
+        same path a manual edit takes, because rewriting ``config.json`` alone
+        would leave the running application on the old values until restart -
+        data plugins keep the previous parent folder, and the logger keeps the
+        previous level. Finally the settings window is refreshed, which would
+        otherwise go on displaying what the user had before.
+
+        Saved sessions and log files are not affected.
+
+        One limitation is inherited from the manual path rather than introduced
+        here: ``populate_available_plugins()`` runs once, in ``MainModel``'s
+        constructor, so changing the user plugin folder - by resetting it or by
+        editing it in Settings - does not rebuild the available-plugin list. The
+        new folder takes effect at the next launch. Reset deliberately behaves
+        the same way a manual edit does rather than diverging from it.
+        """
+        defaults = self.main_model.reset_app_config()
+
+        self.update_data_server_location(defaults["Parent Folder"])
+        self.update_user_plugin_location(defaults["User Plugin Folder"])
+        self.main_model.update_logging_level(defaults["Log Level"])
+
+        self.main_view.set_data_server(defaults["Parent Folder"])
+        self.main_view.set_user_plugin_location(defaults["User Plugin Folder"])
+        self.main_view.set_logging_level(defaults["Log Level"])
 
     @log(logger=logger)
     @Slot(str, str, object)

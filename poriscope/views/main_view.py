@@ -84,6 +84,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     update_data_server_location = Signal(str)
     update_user_plugin_location = Signal(str)
     clear_cache = Signal()
+    reset_app_config = Signal()
     kill_all_workers = Signal(str)
     update_thread_status = Signal(int, str, float)
     request_analysis_tabs = Signal()
@@ -259,12 +260,19 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.settings_window.get_shared_logging_level.connect(self.get_logging_level)
         self.settings_window.update_log_level.connect(self.update_log_level)
         self.settings_window.clear_cache.connect(self.handle_clear_cache)
+        self.settings_window.reset_app_config.connect(self.handle_reset_app_config)
 
     # Event Handling Methods
     @log(logger=logger)
     @Slot()
     def handle_clear_cache(self) -> None:
         self.clear_cache.emit()
+
+    @log(logger=logger)
+    @Slot()
+    def handle_reset_app_config(self) -> None:
+        """Relay the settings window's reset request to the controller."""
+        self.reset_app_config.emit()
 
     @log(logger=logger)
     @Slot(int)
@@ -415,17 +423,52 @@ class MainView(QMainWindow, WalkthroughMixin):
     def add_menu_action(
         self, menu: QMenu, action_name: str, slot: Callable[..., Any]
     ) -> None:
-        action = QAction(action_name, self)
+        # Parented to the menu, not the window: a menu destroys the actions it
+        # owns, so rebuilding the menu bar cannot leave them behind.
+        action = QAction(action_name, menu)
         action.setStatusTip(action_name)
         action.triggered.connect(slot)
         menu.addAction(action)
+
+    @log(logger=logger)
+    def refresh_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
+        """
+        Replace the plugin lists behind the menus and rebuild the menu bar.
+
+        The menus are built once from the list handed in at construction, so a
+        re-scan is invisible until they are rebuilt. Rebuilding is the whole
+        menu bar rather than the plugin submenus alone: the submenus are created
+        inline by ``setup_menubar`` and are not held anywhere that would let them
+        be refilled individually.
+
+        :param available_plugins: Plugin names keyed by metaclass.
+        :type available_plugins: Dict[str, List[str]]
+        """
+        # clear() destroys the top-level menus it owns and, now that actions are
+        # parented to their menu, the actions with them. It does not take the
+        # submenus built by addMenu(), which linger as children of this window -
+        # measured at 13 per rebuild. Collect the menus first and destroy
+        # whatever clear() left behind; the ones it did destroy raise
+        # RuntimeError, which is the signal that there is nothing left to do.
+        stale_menus = self.findChildren(QMenu)
+
+        self.available_plugins = available_plugins
+        self.menuBar().clear()
+        self.setup_menubar()
+
+        for menu in stale_menus:
+            try:
+                menu.deleteLater()
+            except RuntimeError:
+                pass  # already destroyed by clear()
 
     @log(logger=logger)
     def add_plugin_actions(
         self, menu: QMenu, plugin_type: str, slot: Callable[..., Any]
     ) -> None:
         for name in self.available_plugins[plugin_type]:
-            action = QAction(name, self)
+            # Parented to the menu, not the window - see add_menu_action.
+            action = QAction(name, menu)
             action.setStatusTip(f"Load a new {name}")
             action.triggered.connect(
                 lambda checked=False, name=name: slot(subclass=name)

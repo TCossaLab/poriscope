@@ -370,6 +370,19 @@ class DataPluginController(QObject):
             )
 
     @log(logger=logger)
+    def set_available_plugins(
+        self, available_plugin_classes: Mapping[str, Mapping[str, type]]
+    ) -> None:
+        """
+        Pass a re-scanned set of plugin classes down to the model.
+
+        :param available_plugin_classes: Dict of available plugin classes, keyed
+            by metaclass then subclass name.
+        :type available_plugin_classes: Mapping[str, Mapping[str, type]]
+        """
+        self.model.set_available_plugins(available_plugin_classes)
+
+    @log(logger=logger)
     def handle_exit(self) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit

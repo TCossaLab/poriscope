@@ -1520,3 +1520,38 @@ def test_update_plugin_history_rename_preserves_other_entries(
     # Unrelated entry preserved via the else branch
     assert "other_key" in controller.plugin_history
     mock_main_model.save_session.assert_called()
+
+
+class TestRefreshAvailablePlugins:
+    """
+    Propagating a re-scan to everyone holding a copy of the plugin list.
+
+    The scan runs once in MainModel's constructor and its results are copied into
+    three places, so refreshing the model alone changes nothing a user can see.
+    """
+
+    def test_changing_the_plugin_folder_triggers_a_rescan(self, controller):
+        controller.update_user_plugin_location("/some/new/folder")
+
+        assert controller.main_model.refresh_available_plugins.called
+
+    def test_rescan_reaches_the_data_plugin_controller_and_the_view(self, controller):
+        controller.refresh_available_plugins()
+
+        assert controller.data_plugin_controller.set_available_plugins.called
+        assert controller.main_view.refresh_available_plugins.called
+
+    def test_rescan_happens_after_the_config_is_written(self, controller):
+        # The scan reads "User Plugin Folder" back out of the config, so writing
+        # it afterwards would re-scan the old location.
+        order = []
+        controller.main_model.update_app_config.side_effect = lambda *a: order.append(
+            "config"
+        )
+        controller.main_model.refresh_available_plugins.side_effect = (
+            lambda: order.append("scan")
+        )
+
+        controller.update_user_plugin_location("/some/new/folder")
+
+        assert order == ["config", "scan"]
