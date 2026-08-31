@@ -888,5 +888,259 @@ class TestNoopOverrides(unittest.TestCase):
         self.assertIsNone(self.pf.close_resources())
 
 
+# ---------------------------------------------------------------------------
+# _trim_to_populated_core
+# ---------------------------------------------------------------------------
+
+
+class TestTrimToPopulatedCore(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def test_too_few_bins_returned_unchanged(self):
+        bins = np.array([1.0, 2.0, 3.0])
+        amplitude = np.array([1.0, 2.0, 1.0])
+        out_bins, out_amp = self.pf._trim_to_populated_core(bins, amplitude)
+        np.testing.assert_array_equal(out_bins, bins)
+        np.testing.assert_array_equal(out_amp, amplitude)
+
+    def test_zero_total_returned_unchanged(self):
+        bins = np.linspace(0, 10, 20)
+        amplitude = np.zeros_like(bins)
+        out_bins, out_amp = self.pf._trim_to_populated_core(bins, amplitude)
+        np.testing.assert_array_equal(out_bins, bins)
+        np.testing.assert_array_equal(out_amp, amplitude)
+
+    def test_sparse_tail_is_trimmed(self):
+        # A dense core in the middle of the range with a long, sparse tail on
+        # either side - the case _trim_to_populated_core exists to handle.
+        bins = np.arange(100, dtype=float)
+        amplitude = np.zeros_like(bins)
+        amplitude[45:55] = 100.0
+        amplitude[0] = 1.0
+        amplitude[99] = 1.0
+        out_bins, out_amp = self.pf._trim_to_populated_core(bins, amplitude)
+        self.assertLess(out_bins.size, bins.size)
+        # The populated core must still be inside the trimmed range.
+        self.assertLessEqual(out_bins[0], 45)
+        self.assertGreaterEqual(out_bins[-1], 54)
+
+    def test_trim_would_leave_almost_nothing_returns_unchanged(self):
+        # All the mass in a single bin near one edge collapses lo_index/hi_index
+        # to within the pad<3 guard.
+        bins = np.arange(10, dtype=float)
+        amplitude = np.zeros_like(bins)
+        amplitude[0] = 1.0
+        out_bins, out_amp = self.pf._trim_to_populated_core(bins, amplitude)
+        np.testing.assert_array_equal(out_bins, bins)
+        np.testing.assert_array_equal(out_amp, amplitude)
+
+
+# ---------------------------------------------------------------------------
+# _fit_least_smoothed_spline
+# ---------------------------------------------------------------------------
+
+
+class TestFitLeastSmoothedSpline(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def test_too_few_bins_returns_none(self):
+        bins = np.array([1.0, 2.0, 3.0])
+        amplitude = np.array([1.0, 2.0, 1.0])
+        self.assertIsNone(
+            self.pf._fit_least_smoothed_spline(bins, amplitude, 1.0, 3.0)
+        )
+
+    def test_empty_search_bracket_returns_none(self):
+        bins = np.linspace(0, 10, 40)
+        amplitude = np.abs(np.sin(bins))
+        self.assertIsNone(
+            self.pf._fit_least_smoothed_spline(bins, amplitude, 5.0, 5.0)
+        )
+
+    def test_smooth_bimodal_data_returns_a_spline(self):
+        rng = np.random.default_rng(0)
+        samples = np.concatenate(
+            [rng.normal(3, 0.5, 2000), rng.normal(8, 0.5, 2000)]
+        )
+        counts, edges = np.histogram(samples, bins=60)
+        centers = (edges[1:] + edges[:-1]) / 2.0
+        spline = self.pf._fit_least_smoothed_spline(
+            centers, counts.astype(float), float(centers[0]), float(centers[-1])
+        )
+        # Either a spline quiet enough was found, or the ladder legitimately
+        # fell through to None (caller then falls back to GCV) - both are
+        # valid outcomes; what matters is it does not raise and, when it
+        # does return something, that something is callable like a BSpline.
+        if spline is not None:
+            self.assertTrue(callable(spline))
+
+
+# ---------------------------------------------------------------------------
+# _resolve_two_histogram_peaks
+# ---------------------------------------------------------------------------
+
+
+class TestResolveTwoHistogramPeaks(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def test_too_few_bins_returns_none(self):
+        self.assertIsNone(
+            self.pf._resolve_two_histogram_peaks(
+                np.array([1.0]), np.array([1.0])
+            )
+        )
+
+    def test_single_peak_returns_none(self):
+        bins = np.linspace(0, 10, 50)
+        amplitude = np.exp(-0.5 * ((bins - 5) / 1.0) ** 2) * 100
+        self.assertIsNone(self.pf._resolve_two_histogram_peaks(bins, amplitude))
+
+    def test_two_well_separated_peaks_are_resolved(self):
+        bins = np.linspace(0, 20, 200)
+        amplitude = 100 * np.exp(-0.5 * ((bins - 5) / 0.5) ** 2) + 60 * np.exp(
+            -0.5 * ((bins - 15) / 0.5) ** 2
+        )
+        resolved = self.pf._resolve_two_histogram_peaks(bins, amplitude)
+        self.assertIsNotNone(resolved)
+        peak_idx, widths, left_ips, right_ips = resolved
+        self.assertEqual(peak_idx.size, 2)
+        peak_positions = sorted(bins[peak_idx])
+        self.assertAlmostEqual(peak_positions[0], 5, delta=0.5)
+        self.assertAlmostEqual(peak_positions[1], 15, delta=0.5)
+
+
+# ---------------------------------------------------------------------------
+# _warn_if_fitted_means_are_off_their_peaks
+# ---------------------------------------------------------------------------
+
+
+class TestWarnIfFittedMeansAreOffPeaks(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+        self.pf.logger = MagicMock()
+        self.bins = np.linspace(0, 20, 200)
+        self.amplitude = 100 * np.exp(
+            -0.5 * ((self.bins - 5) / 0.5) ** 2
+        ) + 60 * np.exp(-0.5 * ((self.bins - 15) / 0.5) ** 2)
+
+    def test_no_warning_when_means_sit_on_their_peaks(self):
+        params = (100.0, 5.0, 0.5, 60.0, 15.0, 0.5)
+        self.pf._warn_if_fitted_means_are_off_their_peaks(
+            self.bins, self.amplitude, params
+        )
+        self.pf.logger.warning.assert_not_called()
+
+    def test_warns_when_a_mean_is_off_its_peak(self):
+        # Second mean sits far from either real peak.
+        params = (100.0, 5.0, 0.5, 60.0, 10.0, 0.5)
+        self.pf._warn_if_fitted_means_are_off_their_peaks(
+            self.bins, self.amplitude, params
+        )
+        self.pf.logger.warning.assert_called()
+
+    def test_silent_when_peaks_cannot_be_resolved(self):
+        # Unimodal histogram: _resolve_two_histogram_peaks returns None.
+        unimodal = np.exp(-0.5 * ((self.bins - 10) / 1.0) ** 2) * 100
+        params = (50.0, 8.0, 0.5, 50.0, 12.0, 0.5)
+        self.pf._warn_if_fitted_means_are_off_their_peaks(
+            self.bins, unimodal, params
+        )
+        self.pf.logger.warning.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _overlay_fitted_gaussians
+# ---------------------------------------------------------------------------
+
+
+class TestOverlayFittedGaussians(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+        self.pf.logger = MagicMock()
+        self.ax = MagicMock()
+        self.x_range = np.linspace(0, 20, 100)
+
+    def test_none_params_draws_nothing(self):
+        self.pf._overlay_fitted_gaussians(
+            self.ax, None, self.x_range, "low", "high", "ctx"
+        )
+        self.ax.plot.assert_not_called()
+
+    def test_wrong_length_params_warns_and_draws_nothing(self):
+        self.pf._overlay_fitted_gaussians(
+            self.ax, (1.0, 2.0, 3.0), self.x_range, "low", "high", "ctx"
+        )
+        self.ax.plot.assert_not_called()
+        self.pf.logger.warning.assert_called()
+
+    def test_nan_params_are_skipped(self):
+        params = (np.nan, 5.0, 1.0, 60.0, 15.0, 1.0)
+        self.pf._overlay_fitted_gaussians(
+            self.ax, params, self.x_range, "low", "high", "ctx"
+        )
+        self.ax.plot.assert_not_called()
+
+    def test_non_positive_std_is_skipped(self):
+        params = (100.0, 5.0, 0.0, 60.0, 15.0, 1.0)
+        self.pf._overlay_fitted_gaussians(
+            self.ax, params, self.x_range, "low", "high", "ctx"
+        )
+        self.ax.plot.assert_not_called()
+
+    def test_valid_params_draw_two_curves(self):
+        params = (100.0, 5.0, 1.0, 60.0, 15.0, 1.0)
+        self.pf._overlay_fitted_gaussians(
+            self.ax, params, self.x_range, "low", "high", "ctx"
+        )
+        self.assertEqual(self.ax.plot.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# fit_threshold / _fit_em_double_gaussian (end-to-end)
+# ---------------------------------------------------------------------------
+
+
+class TestFitThreshold(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def test_raises_on_too_little_data(self):
+        with self.assertRaises(ValueError):
+            self.pf.fit_threshold(np.array([1.0, 2.0]))
+
+    def test_two_well_separated_populations(self):
+        rng = np.random.default_rng(1)
+        data = np.concatenate(
+            [rng.normal(300, 15, 1500), rng.normal(700, 15, 1500)]
+        )
+        bt = self.pf.fit_threshold(data)
+        self.assertEqual(bt["n_components"], 2)
+        self.assertIn(bt["fit_method"], ("em_student_t", "em_gaussian"))
+        centers = sorted(bt["centers"])
+        self.assertAlmostEqual(centers[0], 300, delta=20)
+        self.assertAlmostEqual(centers[1], 700, delta=20)
+        self.assertTrue(centers[0] < bt["threshold"] < centers[1])
+        self.assertEqual(len(bt["params"]), 6)
+        self.assertIn("spline_domain", bt)
+        self.assertIn("valley_threshold", bt)
+        # Equiprobability is used unconditionally whenever the fit found two
+        # populations and the point could be computed - not gated behind
+        # threshold_method or a disagreement check against the histogram
+        # valley.
+        self.assertEqual(bt["threshold_method"], "equiprobability")
+
+    def test_single_population(self):
+        rng = np.random.default_rng(2)
+        data = rng.normal(500, 20, 3000)
+        bt = self.pf.fit_threshold(data)
+        self.assertEqual(bt["n_components"], 1)
+        # Equiprobability is never attempted on single-population data - both
+        # fitted centres sit on the same mode, so it is meaningless there.
+        self.assertNotEqual(bt["threshold_method"], "equiprobability")
+
+
 if __name__ == "__main__":
     unittest.main()
