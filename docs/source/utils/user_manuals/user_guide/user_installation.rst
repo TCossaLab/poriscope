@@ -24,6 +24,8 @@ Prerequisites
       **Conda is not supported.** You can make it work, but you're on your own.
       Poriscope is built for standard ``pip`` environments.
 
+.. _stable_release:
+
 Stable Release (Recommended)
 -----------------------------
 
