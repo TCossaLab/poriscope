@@ -170,7 +170,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     @log(logger=logger)
     @Slot(int, str)
     def discard_generator(self, channel: int, key: str) -> None:
-        """
+        r"""
         Clear the run state for one (key, channel) once its worker thread has finished.
 
         Formerly ``reset_lock``, which reset no lock - it clears the ``thread_running``

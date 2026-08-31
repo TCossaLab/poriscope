@@ -902,26 +902,25 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         if not isinstance(channels, list):
             channels = [channels]
-        else:
-            try:
-                for channel in channels:
-                    write_events_args = (channel,)
-                    # Emit the signal with the correct handler name for when the data is ready
-                    ret_args = (channel, writer, "MetaWriter")
-                    self.global_signal.emit(
-                        "MetaWriter",
-                        writer,
-                        "commit_events",
-                        write_events_args,
-                        "set_generator",
-                        ret_args,
-                    )
-            except (IndexError, ValueError) as e:
-                self.logger.error(
-                    f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
+        try:
+            for channel in channels:
+                write_events_args = (channel,)
+                # Emit the signal with the correct handler name for when the data is ready
+                ret_args = (channel, writer, "MetaWriter")
+                self.global_signal.emit(
+                    "MetaWriter",
+                    writer,
+                    "commit_events",
+                    write_events_args,
+                    "set_generator",
+                    ret_args,
                 )
-            else:
-                self.run_generators.emit(writer)
+        except (IndexError, ValueError) as e:
+            self.logger.error(
+                f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
+            )
+        else:
+            self.run_generators.emit(writer)
 
     @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:

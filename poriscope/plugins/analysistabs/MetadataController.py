@@ -166,7 +166,7 @@ class MetadataController(MetaController):
 
     @log(logger=logger)
     def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:
-        """
+        r"""
         Relay a query and optional debug message to the view, handling optional filter intents.
 
         :param query: SQL query string to display or execute.
@@ -175,8 +175,8 @@ class MetadataController(MetaController):
         :type debug: str
         :param table_name: Name of the table associated with the query.
         :type table_name: str
-        :param *args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type *args: str
+        :param \*args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
+        :type \*args: str
         """
         intent = args[0] if args else None
 

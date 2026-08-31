@@ -138,11 +138,6 @@ two left behind are under "Still queued" below. **High is now the top of this se
   `"Output File"` and `"Input File"` - plugin-specific knowledge in the universal validator.
   A `"Validate Options": False` flag in the settings schema expresses it without the base
   class knowing any names.
-- **The docs workflow triggers on `main` while its comments say `develop`.**
-  `.github/workflows/build_and_deploy_docs.yml:5-12,27` - header comment "Run automatically
-  on pushes to develop", step named "Checkout (develop)", trigger `branches: ["main"]`.
-  Under git flow publishing from `main` is very likely correct, so fix the comments; left
-  alone, someone will eventually "fix" the trigger instead.
 - **Two dead conditions in the plugin loader.** `main_model.py:190` filters
   `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
   `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
@@ -168,21 +163,23 @@ order:
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
-Ranked, cheapest real value first:
+**Block 6 (the docs-render CI gate) is done** (2026-08-31), along with the two
+one-line items that used to sit at 3 and the docs-workflow comment fix - see
+`changelog.md`. What remains, ranked cheapest real value first:
 
-1. **Block 6, the Sphinx docs-render check in CI.** Pure workflow config, no test
-   writing. Highest value-per-effort item in this file - see the block for why.
-2. **The abort-with-no-panel-message bug** in "Still queued" below. The only open item
-   a user would actually notice, and the routing is already worked out.
-3. **The duplicated `QTimer.singleShot`** in "Still queued" - one line.
-4. **Block 2's validator half only**: `validate_settings_schema()` as a real module
+1. **The `QtHandler` severity/modality split and the abort-with-no-panel-message bug.**
+   Fix them together, as the `QtHandler` entry above explains. The only open items a
+   user would actually notice, and the routing is already worked out.
+2. **Block 2's validator half only**: `validate_settings_schema()` as a real module
    under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
    harness that is out of scope.
-5. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
+3. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
    Well-motivated: no-nested-functions, no-bare-except and explicit sqlite cleanup were
    all enforced by hand during the 2026-08-25 lint sweep.
-6. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
+4. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
+   Note the docs-render gate added in block 6 also wants marking as a required status
+   check in branch protection, which is the same out-of-repo admin step block 5 needs.
 
 Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
 
@@ -198,14 +195,6 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
   currently surface, as modal dialogs, while the `info` ones do not - so fix the two
   together rather than routing more traffic into a handler that pops a dialog per record.
-- **`RawDataView.commit_events` never fires for a single non-list channel.**
-  Around `RawDataView.py:903`, `if not isinstance(channels, list): channels = [channels]`
-  normalises the argument, but the loop that emits `commit_events` sits in that `if`'s
-  `else` branch - so the normalised single channel is built and then never iterated.
-  Only a caller that already passed a list commits anything. Found while correcting the
-  `call_args` payload at that emit site; the payload fix is unrelated to and does not
-  mask this. Not fixed there because it is a behavioural change to the commit path that
-  wants its own look at what the callers actually pass.
 - **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
   `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
   `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
@@ -220,21 +209,10 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   swallowed by the dispatcher. A finder without a reader raises `AttributeError` from
   `find_events` anyway, two lines later, so this is a change of messenger and not of
   outcome - but it is the guard that speaks first now.
-- **`MultiSelectFilterComboBox` installs an application-wide event filter and never
-  removes it.** `views/widgets/multiselect_filter.py:125` does
-  `QApplication.instance().installEventFilter(self)`; there is no `removeEventFilter`
-  anywhere in the file. Every instance ever created stays registered on the
-  process-lifetime `QApplication`, so once a widget's C++ side is gone the next event
-  routed to the stale filter raises `RuntimeError: Internal C++ object
-  (MultiSelectFilterComboBox) already deleted` from `eventFilter`.
-  **This makes `pytest tests/unit` intermittently error at setup of a
-  `TestRelayQuery` case in `test_protein_controller.py`** - a different case each run,
-  because the victim is whichever test next builds a widget. Measured on 2026-08-31:
-  1 failure in 3 runs on `develop`, 3 in 3 on `feature/per-plugin-locks`. The per-plugin
-  lock work does not cause it - it very likely shifts allocation and therefore GC timing,
-  which is enough to change how often a latent lifetime bug surfaces. Fix the leak, not
-  the symptom; a `try/except RuntimeError` in `eventFilter` would hide it while the
-  filters keep accumulating for the whole session in the real app too.
+- **Application-wide event filters are installed and never removed**, which is what makes
+  `pytest tests/unit` intermittently error at setup. Written up in full below under
+  "Handoff: the application-wide event-filter leak" - it is three sites rather than the
+  one originally recorded here, and it is owed to whoever picks up the widget layer.
 - **Placeholder guards on UI-supplied plugin keys are applied inconsistently.** A scan of
   every `global_signal` emit in the analysis-tab views whose plugin key is a
   UI-supplied parameter found 19 sites with no placeholder check in the emitting method.
@@ -263,9 +241,145 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   guards `progress_bars` in `remove_progress_bar` only; the other three accesses
   (`:282`, `:287`, `:325`) are unguarded, so the lock does not actually establish the
   invariant it looks like it establishes.
-- **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
-  `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
-  harmless, but plainly a copy-paste artifact.
+
+## Handoff: the application-wide event-filter leak (2026-08-31)
+
+Written up for handoff rather than fixed here. It is a logic change in widgets with real
+existing coverage, so it needs its own approved plan, and it is not one site but three.
+
+### The mechanism
+
+`QApplication.instance().installEventFilter(self)` runs unconditionally in the widget's
+`__init__`, registering it on the application singleton - whose lifetime is the whole
+process. `installEventFilter` stores a raw `QObject*` in the application's filter list, and
+Qt drops it only when the filter object goes through the normal `QObject` destructor path.
+Under Shiboken the Python wrapper and the C++ object can be torn down in an order, and at a
+garbage-collection time, where the application still calls into a half-dead wrapper. The
+filter's own body then dereferences `self.containerWidget` - a C++-backed attribute - and
+Shiboken refuses to resolve `self`:
+
+```
+RuntimeError: Internal C++ object (MultiSelectFilterComboBox) already deleted
+```
+
+Two things make it worse than a slow leak. First, `eventFilter` **ignores its `obj`
+parameter entirely** - it is accepted and passed straight to `super()`, never inspected - so
+the filter runs for every object in the application receiving any event, and N stale filters
+cost N Python calls per delivered event. Second, on the branch it does act on it returns
+`True`, swallowing the click, so a bug here is not confined to teardown.
+
+### Three sites, not one
+
+Fixing only the site originally recorded leaves the failure alive via the others.
+
+| Site | Class | Production instantiations |
+| --- | --- | --- |
+| `views/widgets/multiselect_filter.py:125`, `eventFilter` at `:127-135` | `MultiSelectFilterComboBox` | `metadatacontrols.py:411`, `proteincontrols.py:410` |
+| `views/widgets/multiselect.py:124`, `eventFilter` at `:255-262` | `MultiSelectComboBox` | `rawdatacontrols.py:177`, `eventAnalysisControls.py:197` |
+| `utils/BaseLineEdit.py:45` | `BaseLineEdit` | 13 construction sites across the controls widgets |
+
+The first two bodies are near-identical - `multiselect.py` calls `self.hidePopup()` where
+`multiselect_filter.py` calls `self.containerWidget.close()` - and are already recorded as
+~90% duplicates and a merge candidate in `future_refactors_and_features.md:1591-1592`.
+`BaseLineEdit` is much less crash-prone, because its `eventFilter` does check `obj`
+(`isinstance(obj, QMessageBox)`) and touches no C++ member of `self`, but it leaks at far
+the highest rate: ~13 more registrations per controls-widget build. It also connects
+`QApplication.instance().aboutToQuit` to a bound method per instance, a second permanent
+application-lifetime reference, and mutates the *class*-level `suspend_validation` /
+`app_closing` flags, so its instances interfere with each other globally.
+
+`removeEventFilter` appears **zero** times anywhere in the repository.
+
+### A second defect in the same constructor
+
+`multiselect_filter.py:68` does `self.containerWidget = QDialog(None)` - parentless. So the
+popup is a top-level widget owned by nobody, it is not destroyed when the combobox is
+destroyed, and it is precisely the object `eventFilter` dereferences.
+`tests/unit/views/conftest.py::_close_leftover_widgets` walks
+`QApplication.topLevelWidgets()` and `close()`/`deleteLater()`s exactly these, which can
+kill `containerWidget` while its combobox - or a stale filter pointing at it - is still
+registered. **Fixing the filter without also parenting or explicitly deleting
+`containerWidget` leaves half the hazard in place.**
+
+### Why it bites the test suite and not the running app
+
+`MainController.instantiate_analysis_tab:527-553` reuses an existing tab of the same
+subclass and never removes an entry from `self.analysis_tabs`, so the app constructs at most
+one Metadata and one Protein tab per session and never destroys either. The real app
+therefore caps at ~2 registrations for these two classes (plus ~13 per controls build from
+`BaseLineEdit`), and the `RuntimeError` is effectively unreachable there because nothing
+dies. Note the repopulation path mutates the existing combobox (`clear()` + `addItems()`,
+e.g. `proteincontrols.py:1044-1052`) rather than constructing a new one, so filters do not
+accumulate per repopulate.
+
+The suite is the opposite. Every one of these builds a real widget with no disposal:
+
+- `tests/unit/controllers/test_protein_controller.py` - function-scoped `controller`
+  fixture (`:37-47`) constructs a real `ProteinController`, hence a real `ProteinView` ->
+  `ProteinControls` -> one real `MultiSelectFilterComboBox`, with **no `yield`, no
+  `deleteLater`, no `close`**, across 51 test methods (48 before the
+  `feature/saveSessionRefactor` merge added `TestSessionState`). **`tests/unit/controllers/`
+  has no `conftest.py` at all**, so none of the view suite's widget-teardown or
+  blocking-dialog protections apply.
+- `tests/unit/views/test_protein_view.py` - `real_view` fixture (`:79-105`), referenced 92
+  times.
+- `tests/unit/views/widgets/test_multiselect_filter.py` - ~34 comboboxes, each *correctly*
+  disposed in `tearDown` via `deleteLater()` + a drained loop. This is the worst case
+  precisely because it does the right thing: it manufactures ~34 **stale** registrations.
+- `tests/e2e/metadata/*` and `tests/e2e/protein/*` build real views too.
+
+Order of magnitude for a full `pytest tests/unit`: 150-200+ registrations on one
+process-lifetime `QApplication`, an unknown but large fraction of them stale. The reported
+victim is a `TestRelayQuery` case in `test_protein_controller.py`, and it is a different
+case each run, because the victim is whichever test happens to be constructing a widget
+when the interpreter frees an earlier view.
+
+### Measurement
+
+1 failure in 3 runs on `develop` and 3 in 3 on `feature/per-plugin-locks` (2026-08-31). The
+per-plugin lock work does not cause it; it very likely shifts allocation and therefore GC
+timing, which is enough to change how often a latent lifetime bug surfaces. Re-measured the
+same day on `develop` at 646d48f: **2 runs, both green** (2623 passed, 2 skipped, ~167s
+each). So absence of a failure is not evidence of a fix - reproduce it before and after by
+running the suite repeatedly, not once.
+
+### The pattern a fix should follow
+
+There is in-repo precedent, and it is the opposite of what these three do:
+
+- `plugins/analysistabs/utils/walkthrough.py:181` installs on `parent`, not the
+  application, and its `eventFilter` (`:196-210`) **checks `obj`** before acting
+  (`if watched == self.parent() and event.type() in {...}`). It needs no removal, because it
+  dies with the parent relationship. It is also the only event filter in the codebase with a
+  direct test: `tests/unit/plugins/analysistabs/utils/test_walkthrough.py:92-97`, including
+  a non-matching-`obj` case.
+- `views/help.py:117` is the self-scoped variant (`self.installEventFilter(self)`), also
+  `obj`-checking, also tested directly (`tests/unit/views/test_help.py:206-238`).
+- Both `multiselect*.py` files carry an abandoned `# self.listWidget.installEventFilter(self)`
+  at line 107 - the author knew a narrower target was possible.
+- Release Qt objects with `deleteLater()` plus a drained loop, never `destroy()` - see
+  `MetaModel.py:194`'s docstring and `tests/unit/views/conftest.py:84-113`, which explains
+  why `close()` alone leaks and why `deleteLater()` needs
+  `QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)` after it.
+
+**Read `DECISIONS.md` first** - the entry on the view-test GC sweep. A prior long-running
+segfault was bisected to `test_multiselect_filter.py::TestClearSelectionList` and resolved
+by moving from `QWidget.destroy()` to `deleteLater()` + a drained loop. This file already
+has one Qt-lifetime crash in its history.
+
+**Do not** wrap `eventFilter` in `try/except RuntimeError`. That hides the symptom while the
+filters keep accumulating for the whole session in the real app too.
+
+### Suggested shape, to accept or reject
+
+Scope the filter to `self.containerWidget` (or `self`) instead of the application; check
+`obj` before acting; parent `containerWidget` to the combobox; apply the same change to
+`multiselect.py` in the same pass, since leaving it makes the intermittent failure persist;
+and consider a `tests/unit/controllers/conftest.py` mirroring
+`tests/unit/views/conftest.py::_close_leftover_widgets` so those tests stop leaking real
+views regardless of what the widgets do. Whether `BaseLineEdit` is folded into the same
+change or handled separately is a judgement call - it is the highest-volume leak but has
+never been observed to crash.
 
 ## Exclusions (standing project policy)
 
@@ -469,6 +583,7 @@ infrastructure) → 6/7/8 (rounding out coverage). That sequence assumed blocks 
 could be built first, and both are pytest suites, which are owned by another developer
 and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone
 with nothing built before them, and they are the order given at the top of this file.
+**Block 6 is now done** (2026-08-31), leaving 8 then 5.
 Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
 from a blank file, so building 3 while they do not exist loses most of its value.
 
@@ -666,35 +781,24 @@ repo, so plugin review isn't enforced by GitHub at all today.
 safety — don't add anything to this workflow that needs write access (e.g. auto-fix
 commits); that's what `ci-internal-pr.yml` is for, and it isn't fork-safe.
 
-## 6. Docs-render check in CI (Sphinx warnings-as-errors)
+## 6. Docs-render check in CI (Sphinx warnings-as-errors) - DONE 2026-08-31
 
-**Goal.** Catch a plugin whose docstrings are pydoclint-compliant but still break
-Sphinx rendering, before merge rather than after.
+Landed as `.github/workflows/docs-check.yml`, running the autodoc generator plus
+`sphinx-build -W --keep-going` on every pull request targeting `main`, `develop` or
+`release/*`, with the same flags added to the deploy workflow and the local `post-merge`
+hook. Full narrative in `changelog.md`.
 
-**Why.** `.github/workflows/build_and_deploy_docs.yml` only runs
-`scripts/generate_all_autodoc_rst.py` + `sphinx-build -b html docs/source docs/build`
-on push to `main` (or manual dispatch) — never on a PR, and without `-W`
-(warnings-as-errors), so a bad cross-reference or malformed directive in a new
-plugin's docstring currently surfaces, if at all, only after it's already merged and
-deployed.
+Two notes worth keeping. The block's Gotcha - "expect an initial cleanup pass, grandfather
+via a suppression list if the initial warning count is large" - **did not apply**: the
+count was 18, in five causes, twelve of them from a single bug in
+`plugins_generate_autodoc.py`, so all were fixed outright and no baseline was built. And
+`nitpicky` was measured at 1170 warnings (1152 `reference target not found` for
+numpy/pandas/matplotlib types missing from the intersphinx inventories) and deliberately
+left off; enabling it needs an extended inventory map plus a `nitpick_ignore_regex` and is
+its own piece of work.
 
-**Implementation plan.**
-1. Add a `docs-check` job to `ci-fork-pr.yml`/`ci-internal-pr.yml` (or a new dedicated
-   PR-triggered workflow) that runs the same two commands
-   (`python scripts/generate_all_autodoc_rst.py` then
-   `sphinx-build -b html docs/source docs/build`) but with `-W --keep-going` so
-   warnings fail the build and all of them are reported in one pass rather than
-   stopping at the first.
-2. This job doesn't need the full Qt/Xvfb system dependency set that the test jobs
-   need (autodoc generation and Sphinx build don't launch the app) — keep it as a
-   lighter, faster job so it doesn't slow down the PR feedback loop.
-3. No need to deploy anything from this job — it's a build-only check; reuse
-   `actions/upload-artifact` only if reviewers want a preview of the rendered docs.
-
-**Gotchas.** Turning on `-W` will likely surface pre-existing warnings from plugins
-already in the repo, not just future ones — expect an initial cleanup pass (grandfather
-via a suppression list keyed by warning text, mirroring the `.pydoclint-baseline.txt`
-pattern, if the initial warning count is large) before this can be made blocking.
+The remaining follow-through belongs to block 5: marking the new check as a required
+status check in branch protection for `main`/`develop` is an out-of-repo, admin-only step.
 
 ## 7. Fuzz / malformed-input testing for data readers
 

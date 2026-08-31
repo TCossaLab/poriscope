@@ -1,10 +1,12 @@
 # Build Sphinx and deploy the generated static site to GitHub Pages
 # Branch mode → publishes to gh-pages/docs
 
-name: Build and Deploy Docs to Pages (develop)
+name: Build and Deploy Docs to Pages (main)
 
 on:
-  # Run automatically on pushes to develop
+  # Run automatically on pushes to main. Under git flow main holds the
+  # released version, which is what should be published; do not repoint this
+  # at develop.
   push:
     branches: ["main"]
   # Allow manual runs from the Actions tab
@@ -25,7 +27,7 @@ jobs:
 
     steps:
       # 1) Checkout the branch this run was started from
-      - name: Checkout (develop)
+      - name: Checkout (main)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
@@ -54,8 +56,10 @@ jobs:
       - name: Generate .rst files using autodoc generators
         run: python scripts/generate_all_autodoc_rst.py
       
+      # -W --keep-going matches the Docs Render Check PR gate, so a warning that
+      # somehow reached main fails the deploy instead of publishing broken docs.
       - name: Build Sphinx HTML (docs/source → docs/build)
-        run: sphinx-build -b html docs/source docs/build
+        run: sphinx-build -W --keep-going -b html docs/source docs/build
 
 
       # Ensure GitHub Pages serves _static/ by placing .nojekyll in the publish root
