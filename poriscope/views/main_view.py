@@ -482,7 +482,9 @@ class MainView(QMainWindow, WalkthroughMixin):
         menu.addAction(action)
 
     @log(logger=logger)
-    def refresh_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
+    def refresh_available_plugins(
+        self, available_plugins: Dict[str, List[str]]
+    ) -> None:
         """
         Replace the plugin lists behind the menus and rebuild the menu bar.
 
