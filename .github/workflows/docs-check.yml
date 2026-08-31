@@ -1,7 +1,16 @@
 # Docs Render Check
 # -----------------
-# Verifies that the Sphinx documentation still builds cleanly on every pull
-# request, with warnings treated as errors.
+# Verifies that the Sphinx documentation still builds cleanly, with warnings treated as
+# errors, on every pull request and on every push to a hotfix branch.
+#
+# Why hotfix/* is on the push trigger and no other branch is:
+# every other branch reaches main or develop through a pull request, which this workflow
+# already covers. A hotfix does not - it branches off main and `git flow hotfix finish`
+# merges it back into main locally - so without a push trigger the first docs build a
+# hotfix ever gets is build_and_deploy_docs.yml running against main after the fact,
+# which is exactly the failure this workflow exists to prevent. If a hotfix branch also
+# has a pull request open, both triggers fire and the branch renders twice; that is a few
+# wasted minutes on a rare branch type, not a correctness problem.
 #
 # Why this exists separately from the docs deploy workflow:
 # build_and_deploy_docs.yml only runs on push to main, i.e. after merge, so a
@@ -14,9 +23,13 @@
 # would render the docs twice on every internal PR, and a job added only to
 # ci-fork-pr.yml would miss PRs targeting release/*.
 #
-# This job needs no Qt, no Xvfb and no wavelet binary: conf.py mocks PySide6 for
-# autodoc, and the .rst generators under scripts/autodoc/ are pure ast parsers
-# that never import the package.
+# What this job does and does not need:
+# The .rst generators under scripts/autodoc/ are pure ast parsers that never import
+# the package, and no wavelet binary is required. Qt, however, IS required. conf.py no
+# longer mocks PySide6 (it never effectively did - see the comment there), so autodoc
+# imports the real modules and QtGui/QtWidgets/QtSvg have to load. That needs libEGL,
+# libGL and libxkbcommon, installed below. Xvfb and the XCB libs that ci-branches.yml
+# installs are only needed to instantiate a QApplication, which a docs build never does.
 
 name: Docs Render Check
 
@@ -24,6 +37,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main, develop, 'release/*']
+  push:
+    branches: ['hotfix/*']
   workflow_dispatch:
 
 permissions:
@@ -37,9 +52,28 @@ jobs:
   render:
     runs-on: ubuntu-latest
 
+    env:
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Importing PySide6.QtGui/QtWidgets/QtSvg needs Qt's native libs. Without them the
+      # import fails partway through poriscope.exposed and autodoc falls back to mocks,
+      # which is what produced several hundred "wrapper loop when unwrapping
+      # PySide6.QtGui" warnings.
+      #
+      # This list is the DT_NEEDED set of the bundled libQt6Gui/Widgets/Svg that is not
+      # already on the runner image: libEGL.so.1, libGL.so.1 and libxkbcommon.so.0. The
+      # loader resolves all three when the module is imported, so xkbcommon is required
+      # here even though nothing about it is X11-specific. The libxcb-* packages and Xvfb
+      # that ci-branches.yml installs are NOT needed - those load with the xcb platform
+      # plugin, and a docs build never instantiates a QApplication.
+      - name: Install Qt native libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0
 
       - name: Set up Python 3.12.10
         uses: actions/setup-python@v5

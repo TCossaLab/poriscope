@@ -52,9 +52,28 @@ release_date = VERSION_DATE.strftime("%B %d, %Y")
 
 extensions = ["sphinx.ext.autodoc", "sphinx_tabs.tabs", "sphinx.ext.intersphinx"]
 
-autodoc_mock_imports = [
-    "PySide6",
-]
+# PySide6 is deliberately NOT mocked here, and must not be added back.
+#
+# This file imports ``poriscope.constants`` above, which runs ``poriscope/__init__.py``
+# and pulls in the real PySide6 long before autodoc can install its mock finder. Since
+# ``sys.modules`` is consulted ahead of any meta-path finder, ``autodoc_mock_imports``
+# was already inert on any machine where PySide6 imports cleanly - the docs have always
+# been built against the real library.
+#
+# Where it was *not* inert it was actively harmful. On a box missing libEGL, PySide6.QtGui
+# fails to import partway through ``poriscope.exposed``, leaving QtCore real and QtGui
+# mocked; shiboken's import hook then calls ``inspect.getsource()`` on a Sphinx mock, whose
+# ``__wrapped__`` chain never terminates, and every documented member raises
+# "ValueError: wrapper loop when unwrapping PySide6.QtGui".
+#
+# Mocking PySide6 *completely* is not the alternative: only 44 of the 100 modules under
+# ``poriscope/`` import under a total mock, because the ``functools.wraps`` and ``re``
+# calls in ``utils/DocstringDecorator.py`` and ``utils/LogDecorator.py`` run against mock
+# objects. Against the real library 99 of 100 import.
+#
+# The consequence is that a docs build needs PySide6 importable. Both docs workflows
+# install libegl1/libgl1 for exactly this reason - see the "Install Qt native libs" step
+# in .github/workflows/docs-check.yml and build_and_deploy_docs.yml.
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),  # for abc.ABC, abc.ABCMeta

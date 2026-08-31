@@ -229,6 +229,20 @@ rendering problem the moment you merge rather than when you open a pull request.
    regenerated from the source tree, so a build without it fails on missing table-of-
    contents entries rather than on anything you did.
 
+.. note::
+
+   **The build imports the real package, PySide6 included.** ``autodoc`` does not mock
+   Qt - ``docs/source/conf.py`` explains at length why mocking it is not an option here -
+   so ``sphinx-build`` needs an environment in which ``import poriscope`` works fully. On
+   a development machine with the project installed that is automatic. In CI both docs
+   workflows install ``libegl1``, ``libgl1`` and ``libxkbcommon0`` first: those are the
+   libraries the bundled ``libQt6Gui``/``libQt6Widgets``/``libQt6Svg`` link against that
+   the runner image does not already provide, and the dynamic loader resolves all three
+   the moment the module is imported. Without them the import fails halfway through
+   ``poriscope.exposed`` and the build fills with unrelated autodoc errors. Xvfb and the
+   ``libxcb-*`` packages the test workflows install are not needed, since those load with
+   the xcb platform plugin and a docs build never instantiates a ``QApplication``.
+
 Running Auto-fix Hooks Manually
 -------------------------------
 

@@ -24,7 +24,7 @@ Session Options Overview
 - **Reset Session**
   Closes every open analysis tab and removes every configured plugin, returning the workspace to the same clean state as a fresh launch — without restarting Poriscope. Your saved session files are left untouched, so **Restore Session** still brings the workspace back, as long as it is the next thing you do; opening a tab or adding a plugin afterward replaces what Restore would have loaded.
 
-.. image:: /_static/images/jsonFIle.png
+.. image:: /_static/images/jsonFile.png
    :alt: Saving Session as JSON
    :align: center
 

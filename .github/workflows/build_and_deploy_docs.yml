@@ -25,6 +25,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       # 1) Checkout the branch this run was started from
       - name: Checkout (main)
@@ -32,7 +35,19 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      # 2) Python & deps
+      # 2) Qt native libs. conf.py does not mock PySide6, so autodoc imports the real
+      #    modules and QtGui/QtWidgets/QtSvg must load. These three are the DT_NEEDED
+      #    entries of the bundled libQt6Gui/Widgets/Svg that the runner image does not
+      #    already provide, and the loader resolves all of them at import time. The
+      #    libxcb-* packages and Xvfb that ci-branches.yml installs are not needed here:
+      #    they load with the xcb platform plugin, and a docs build never instantiates a
+      #    QApplication. Keep this in step with the same step in docs-check.yml.
+      - name: Install Qt native libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0
+
+      # 3) Python & deps
       - name: Set up Python 3.12.10
         uses: actions/setup-python@v5
         with:
@@ -52,7 +67,7 @@ jobs:
             pip install sphinx furo
           fi
 
-    # 3) Build Sphinx (source → build)
+    # 4) Build Sphinx (source → build)
       - name: Generate .rst files using autodoc generators
         run: python scripts/generate_all_autodoc_rst.py
       
@@ -73,7 +88,7 @@ jobs:
       - name: List docs/build (debug)
         run: ls -la docs/build | sed -n '1,200p'
 
-      # 4) Deploy to gh-pages/docs (branch-based Pages; NOT the Actions Pages flow)
+      # 5) Deploy to gh-pages/docs (branch-based Pages; NOT the Actions Pages flow)
       #    Repo Settings → Pages must be: Source = Deploy from a branch • Branch = gh-pages • Folder = /docs
       - name: Deploy to GitHub Pages (gh-pages/docs)
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
@@ -86,7 +101,7 @@ jobs:
           enable_jekyll: false                       # also writes a root .nojekyll (belt & suspenders)
           force_orphan: true                         # clean deploy (single-commit history)
 
-      # 5) (Optional) downloadable artifact of the built site
+      # 6) (Optional) downloadable artifact of the built site
       - name: Upload HTML docs (artifact)
         uses: actions/upload-artifact@v4
         with:
