@@ -12,7 +12,7 @@ timeseries data (event detection, fitting, clustering, protein analysis, etc.). 
 
 ```
 pip install -e ".[dev]"
-python scripts/setup_hooks.py   # enables pre-commit and post-merge git hooks
+python scripts/setup_hooks.py   # git hooks (pre-commit, post-merge) + git flow tag prefix
 ```
 
 Run the app with the `poriscope` console-script entry point (`poriscope.main_app:main`).
@@ -237,3 +237,7 @@ of every session, so it should stay a short list of standing rules.
 
 - Poriscope uses git flow worksflows. feature branches are branched off `develop`, not `main`,
   keep that in mind when doing code review on feature branches or merging anything.
+- Release tags carry a `v` prefix (`v1.6.1`), because `.github/workflows/release.yml`
+  triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
+  to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
+  so a fresh checkout needs that script run before cutting a release.
