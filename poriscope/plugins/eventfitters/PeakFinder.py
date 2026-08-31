@@ -30,8 +30,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from matplotlib.patches import Ellipse
 from scipy.interpolate import BSpline, make_smoothing_spline
 from scipy.signal import find_peaks, peak_widths
+from scipy.special import gammaln
 from scipy.stats import iqr
 from sklearn.mixture import GaussianMixture
 
@@ -116,6 +118,18 @@ class PeakFinder(MetaEventFitter):
     #: See ``_trim_to_populated_core`` for why the untrimmed full range is not
     #: safe to fit a single spline across.
     SPLINE_FIT_DOMAIN_COVERAGE = 0.995
+
+    #: Ridge added to the diagonal of every fitted covariance in the
+    #: bivariate (prominence, log peak width) mixture used by
+    #: ``_classify_peak_prominences``, expressed in the standardized
+    #: (z-scored) space that mixture is actually fit in - see
+    #: ``_fit_em_bivariate_mixture``. Prominence (pA) and log peak width are
+    #: on unrelated, dataset-dependent scales, so a floor only makes sense
+    #: once both axes have been whitened to unit variance; this plays the
+    #: same role there that ``reg_covar`` plays for the 1-D fit and that
+    #: sklearn's own ``reg_covar`` argument plays for the Gaussian half of
+    #: this fit.
+    BIVARIATE_REG_COVAR = 1e-6
 
     # public API, must be overridden by subclasses:
     @log(logger=logger)
@@ -2289,23 +2303,24 @@ class PeakFinder(MetaEventFitter):
                     f"{higher_prominence_count/total_prominence_peaks:.1%} class 1)"
                 )
 
-            # NOTE (integration): this read the value, converted it with float(),
-            # and only then tested `threshold is not None` - a test that can never
-            # fire, since float() either returns a float or raises. A missing
-            # "threshold" key therefore raised TypeError from float(None) instead
-            # of skipping the line below. The check now guards the conversion,
-            # which is what was intended, and the cast() it needed is gone too.
-            raw_threshold = prominence_stats.get("threshold")
-            if isinstance(raw_threshold, (int, float)) and not isinstance(
-                raw_threshold, bool
-            ):
-                classification_report += f"\n  Threshold: {float(raw_threshold):.2f} pA"
+            # Fit against (prominence, log peak width) jointly - see
+            # `fit_threshold_2d` - so there is no single scalar threshold to
+            # report; the fitted mixture's own component means are reported
+            # in both dimensions instead.
+            fit_method = prominence_stats.get("fit_method")
+            if isinstance(fit_method, str) and fit_method:
+                classification_report += (
+                    f"\n  Fit: {fit_method} "
+                    f"({prominence_stats.get('boundary_method', 'unknown')})"
+                )
 
-            centers = prominence_stats.get("centers")
-
-            if isinstance(centers, list) and centers:
-                formatted_centers = ", ".join(f"{center:.2f}" for center in centers)
-                classification_report += f"\n  Centers: {formatted_centers} pA"
+            means_2d = prominence_stats.get("means_2d")
+            if isinstance(means_2d, list) and means_2d:
+                formatted_means = ", ".join(
+                    f"(prominence={mean[0]:.2f} pA, log_width={mean[1]:.3f})"
+                    for mean in means_2d
+                )
+                classification_report += f"\n  Component means: {formatted_means}"
             # Break down by peak type
 
         # Translocation direction classification
@@ -2750,18 +2765,39 @@ class PeakFinder(MetaEventFitter):
         """
         Classify peak prominences for peaks whose filtered value is 1, 2, or 3.
 
-        Peaks below the threshold are written as class 0 and peaks at or above
-        it as class 1. This holds whether ``fit_threshold`` found two
-        populations or one: on single-population data the threshold is the first
-        local minimum above ``2 * mean - 2 * std`` rather than a valley between
-        two centres (see ``_threshold_between_populations``), but the split
-        itself is the same. That is deliberately unlike
-        ``_classify_folded_unfolded`` and ``_classify_translocation_direction``,
-        which decline to classify a single population at all - "folded" and
-        "forward" are claims about a second population that was not found,
-        whereas "more prominent than this population accounts for" is not.
+        Fits a two-population bivariate mixture over ``(prominence,
+        log(peak_width))`` jointly (``fit_threshold_2d``) rather than
+        prominence alone, so a wide, shallow peak and a narrow, tall peak of
+        similar prominence are not necessarily assigned the same class - peak
+        width, logged because peak durations are naturally log-distributed
+        the way prominence is not, is what tells them apart. Each peak's
+        class is then the fitted mixture's own posterior probability at that
+        peak's ``(prominence, log_width)`` point (see
+        ``_posterior_probability_2d``), so there is no single
+        threshold-in-pA to report the way ``fit_threshold``'s other two
+        callers still do.
+
+        Peaks below the posterior boundary are written as class 0 and peaks
+        at or above it as class 1. This holds whether ``fit_threshold_2d``
+        found two populations or one: on single-population data every peak's
+        posterior still identifies it as more or less consistent with the one
+        population found, which remains a meaningful split for the same
+        reason it did before width was folded into the fit. That is
+        deliberately unlike ``_classify_folded_unfolded`` and
+        ``_classify_translocation_direction``, which decline to classify a
+        single population at all and are unaffected by this change - "folded"
+        and "forward" are claims about a second population that was not
+        found, whereas "more prominent than this population accounts for" is
+        not, and both of those classifiers still use the 1-D ``fit_threshold``.
+
+        Unlike the other two classifiers, the value this method writes to
+        ``"classification_confidence"`` is the fitted mixture's actual
+        posterior probability of the assigned class - a calibrated number in
+        (0.5, 1] - rather than ``_classification_confidence``'s ad hoc
+        ratio-of-fitted-curves score.
         """
         prominence_values: list[float] = []
+        log_width_values: list[float] = []
         prominence_refs: list[tuple[int, int, int]] = []
 
         for ch in channels:
@@ -2774,6 +2810,9 @@ class PeakFinder(MetaEventFitter):
                 )
                 prominences = np.asarray(
                     sublevel_data.get("prominence", []), dtype=float
+                )
+                peak_widths_us = np.asarray(
+                    sublevel_data.get("peak_width", []), dtype=float
                 )
                 peak_ids = sublevel_data.get("peak_id", [])
 
@@ -2795,8 +2834,10 @@ class PeakFinder(MetaEventFitter):
                         isinstance(peak_id, float) and np.isnan(peak_id)
                     ):
                         continue
-                    if peak_index >= len(filtered_values) or peak_index >= len(
-                        prominences
+                    if (
+                        peak_index >= len(filtered_values)
+                        or peak_index >= len(prominences)
+                        or peak_index >= len(peak_widths_us)
                     ):
                         continue
 
@@ -2805,74 +2846,74 @@ class PeakFinder(MetaEventFitter):
                         continue
 
                     prominence = prominences[peak_index]
-                    if np.isnan(prominence):
+                    width = peak_widths_us[peak_index]
+                    # width must be positive and finite to be logged; a peak
+                    # whose width could not be measured is excluded from the
+                    # fit and left unclassified, rather than assigning it an
+                    # arbitrary log-width.
+                    if np.isnan(prominence) or np.isnan(width) or width <= 0:
                         continue
 
                     prominence_values.append(float(prominence))
+                    log_width_values.append(float(np.log(width)))
                     prominence_refs.append((ch, event_index, peak_index))
 
         if not prominence_values:
             self.logger.warning(
-                "No peaks with filtered values 1, 2, or 3 were available for prominence classification"
+                "No peaks with filtered values 1, 2, or 3 and a positive, "
+                "finite peak width were available for prominence "
+                "classification"
             )
             return
 
-        prominence_array = np.asarray(prominence_values, dtype=np.float64)
-
-        # Fit the prominence histogram. `fit_threshold` reports whether the fit
-        # describes two populations or one (see its "n_components") via the
-        # collapsed-component / centres-not-separated diagnostics
-        # `_fit_em_double_gaussian` computes.
-        try:
-            bt = self.fit_threshold(prominence_array)
-        except Exception as e:
-            self.logger.error(f"fit failed for prominence classification: {e}")
-            return
-
-        n_components = bt.get("n_components", 2)
-        centers = (
-            np.asarray(bt.get("centers"), dtype=float)
-            if bt.get("centers") is not None
-            else np.array([])
+        data2d = np.column_stack(
+            [
+                np.asarray(prominence_values, dtype=np.float64),
+                np.asarray(log_width_values, dtype=np.float64),
+            ]
         )
 
-        # NOTE (integration): bt.get('threshold') is Optional, so float()
-        # raised TypeError whenever the threshold fit returned without a
-        # threshold.
-        # Checked and raised explicitly instead.
-        fit_threshold_value = bt.get("threshold")
-        if fit_threshold_value is None:
-            raise RuntimeError(
-                "the fit returned no 'threshold'; prominence classes "
-                "cannot be assigned without one"
-            )
-        threshold = float(fit_threshold_value)
+        # Fit the bivariate (prominence, log peak width) mixture.
+        # `fit_threshold_2d` reports whether the fit describes two
+        # populations or one (see its "n_components") via the
+        # collapsed-component / centres-not-separated diagnostics
+        # `_fit_em_bivariate_mixture` computes.
+        try:
+            bt = self.fit_threshold_2d(data2d)
+        except Exception as e:
+            self.logger.error(f"2-D fit failed for prominence classification: {e}")
+            return
 
-        # A single population still gets a threshold and a split. Unlike the
-        # other two classifiers - which decline, because there is no meaningful
-        # "folded" or "forward" to name without a second population - a
-        # prominence split above 2*mean-2*std remains meaningful here: it is the
-        # boundary above which a peak is too prominent to belong to the one
+        n_components = cast(int, bt.get("n_components", 2))
+        fit_method = cast(str, bt.get("fit_method", ""))
+        params_2d = bt.get("params_2d")
+        if params_2d is None:
+            self.logger.error(
+                "prominence classification: fit_threshold_2d returned no "
+                "'params_2d'; peaks cannot be classified without a fitted "
+                "mixture"
+            )
+            return
+
+        # A single population still gets a posterior boundary and a split.
+        # Unlike the other two classifiers - which decline, because there is
+        # no meaningful "folded" or "forward" to name without a second
+        # population - a prominence split remains meaningful here: it is the
+        # boundary beyond which a peak is less consistent with the one
         # population that was found, whether or not those peaks are numerous
         # enough to form a mode of their own.
         if n_components < 2:
             self.logger.info(
-                "peak prominence classification: the fit describes a single "
-                f"population, so the {threshold:.4g} pA threshold comes from "
-                f"'{bt.get('threshold_method')}' rather than a valley between "
-                "two centres. Peaks below it are class 0, above it class 1."
+                "peak prominence classification: the 2-D fit describes a "
+                f"single population ('{fit_method}'); peaks are still split "
+                "by which side of that population's posterior boundary they "
+                "fall on."
             )
 
-        class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(
-            np.float64
+        class_labels_bool, confidence_values = self._posterior_probability_2d(
+            data2d, params_2d, fit_method
         )
-
-        # Per-peak confidence that the assigned class is correct - see
-        # _classification_confidence for the derivation. Uses bt["params"] as
-        # fitted by the Student-t mixture (see fit_threshold).
-        confidence_values = self._classification_confidence(
-            prominence_array, bt["params"], class_labels.astype(bool)
-        )
+        class_labels = class_labels_bool.astype(np.float64)
 
         # Assign classifications back to sublevel metadata
         for class_label, confidence_value, (ch, event_index, peak_index) in zip(
@@ -2885,19 +2926,27 @@ class PeakFinder(MetaEventFitter):
                 peak_index
             ] = confidence_value
 
+        means = np.asarray(params_2d["means"], dtype=float)
+        total_peaks = len(prominence_values)
+        lower_count = int(np.sum(~class_labels_bool))
+        higher_count = int(np.sum(class_labels_bool))
+
         self._peak_prominence_classification_results = {
-            "total_peaks": len(prominence_array),
+            "total_peaks": total_peaks,
             "n_components": n_components,
-            "threshold": threshold,
-            "fit_method": bt.get("fit_method"),
-            "threshold_method": bt.get("threshold_method"),
-            "valley_threshold": bt.get("valley_threshold"),
-            "centers": centers.tolist() if centers.size > 0 else [],
-            "lower_count": int(np.sum(class_labels == 0)),
-            "higher_count": int(np.sum(class_labels == 1)),
+            "fit_method": fit_method,
+            "boundary_method": "posterior_probability_2d",
+            "means_2d": means.tolist(),
+            "lower_count": lower_count,
+            "higher_count": higher_count,
         }
 
-        # Plotting: always save plot using the fit's histogram
+        # Plotting: a 2-D scatter of (prominence, log peak width) with the
+        # fitted mixture's covariance ellipses and posterior-probability
+        # decision boundary, replacing the 1-D histogram this classifier
+        # used before logged peak width was folded into the fit - see
+        # `fit_threshold_2d` for why a scalar threshold/valley no longer
+        # applies.
         try:
             loader = getattr(self, "eventloader", None)
             plot_path = None
@@ -2908,169 +2957,45 @@ class PeakFinder(MetaEventFitter):
                 )
 
             matplotlib.use("Agg")
+            fig, ax = plt.subplots(figsize=(10, 8))
 
-            counts, bins = bt.get("hist", (None, None))
-            arr_all = np.asarray(prominence_array, dtype=float)
-            arr = arr_all
-            fig, ax = plt.subplots(figsize=(12, 6))
+            prominence_plot = data2d[:, 0]
+            log_width_plot = data2d[:, 1]
+            lower_mask = ~class_labels_bool
+            higher_mask = class_labels_bool
 
-            # Ensure non-zero dynamic range
-            arr = self._jitter_degenerate_array(arr)
-
-            # Plot overall histogram using full data (all peaks)
-            hist_bins = None
-            if counts is not None and bins is not None and np.sum(counts) > 0:
-                widths = np.diff(bins)
-                try:
-                    if arr_all.size == 0 or np.any(widths <= 0):
-                        raise ValueError("invalid bins")
-                    full_counts, _ = np.histogram(arr_all, bins=bins)
-                    centers = (bins[:-1] + bins[1:]) / 2.0
-                    ax.bar(
-                        centers,
-                        full_counts,
-                        width=widths,
-                        alpha=0.5,
-                        color="gray",
-                        label="All Peaks (incl. outliers)",
-                    )
-                    hist_bins = bins
-                except Exception:
-                    ax.hist(
-                        arr_all,
-                        bins=100,
-                        density=False,
-                        alpha=0.5,
-                        color="gray",
-                        label="All Peaks (incl. outliers)",
-                    )
-                    hist_bins = None
-            else:
-                ax.hist(
-                    arr_all,
-                    bins=100,
-                    density=False,
-                    alpha=0.5,
-                    color="gray",
-                    label="All Peaks (incl. outliers)",
-                )
-                hist_bins = None
-
-            # Overlay fitted Gaussians and per-class histograms
-            params = bt.get("params")
-            x_range = np.linspace(arr.min(), arr.max(), 1000)
-
-            lower_count = (
-                int(np.sum(class_labels == 0))
-                if "class_labels" in locals()
-                else (
-                    int(np.sum(np.asarray(arr) < threshold))
-                    if threshold is not None
-                    else 0
-                )
+            ax.scatter(
+                prominence_plot[lower_mask],
+                log_width_plot[lower_mask],
+                s=10,
+                alpha=0.5,
+                color="blue",
+                label=f"Lower prominence (class 0, n={lower_count})",
             )
-            higher_count = (
-                int(np.sum(class_labels == 1))
-                if "class_labels" in locals()
-                else (
-                    int(np.sum(np.asarray(arr) >= threshold))
-                    if threshold is not None
-                    else 0
-                )
-            )
-            total_peaks = len(arr)
-            n_outliers = int(max(0, arr_all.size - arr.size))
-            pct_outliers = n_outliers / arr_all.size if arr_all.size > 0 else 0.0
-
-            # Plot class histograms using the same bins when available
-            params = bt.get("params")
-            x_range = (
-                np.linspace(np.nanmin(arr), np.nanmax(arr), 1000)
-                if arr.size > 0
-                else np.linspace(0, 1, 1000)
-            )
-            self._overlay_fitted_gaussians(
-                ax,
-                params,
-                x_range,
-                "Lower prominence fit",
-                "Higher prominence fit",
-                "peak prominence classification",
+            ax.scatter(
+                prominence_plot[higher_mask],
+                log_width_plot[higher_mask],
+                s=10,
+                alpha=0.5,
+                color="red",
+                label=f"Higher prominence (class 1, n={higher_count})",
             )
 
-            if "class_labels" in locals() and class_labels is not None:
-                lower_mask = class_labels == 0
-                higher_mask = class_labels == 1
-                if hist_bins is not None:
-                    lower_counts, _ = np.histogram(arr[lower_mask], bins=hist_bins)
-                    higher_counts, _ = np.histogram(arr[higher_mask], bins=hist_bins)
-                    widths = np.diff(hist_bins)
-                    centers = (hist_bins[:-1] + hist_bins[1:]) / 2.0
-                    ax.bar(
-                        centers,
-                        lower_counts,
-                        width=widths,
-                        alpha=0.6,
-                        color="blue",
-                        label="Lower prominence",
-                    )
-                    ax.bar(
-                        centers,
-                        higher_counts,
-                        width=widths,
-                        alpha=0.6,
-                        color="red",
-                        label="Higher prominence",
-                    )
-                else:
-                    ax.hist(
-                        arr[lower_mask],
-                        bins=100,
-                        density=False,
-                        alpha=0.6,
-                        color="blue",
-                        label="Lower prominence",
-                    )
-                    ax.hist(
-                        arr[higher_mask],
-                        bins=100,
-                        density=False,
-                        alpha=0.6,
-                        color="red",
-                        label="Higher prominence",
-                    )
+            self._overlay_bivariate_ellipses(ax, params_2d)
+            self._overlay_posterior_boundary(
+                ax, params_2d, fit_method, prominence_plot, log_width_plot
+            )
 
-            # The curve the threshold below was actually chosen from. Drawn
-            # even in the single-population case, where there is no threshold
-            # line to justify: the spline is then the clearest evidence on the
-            # plot that the distribution has no valley to split on.
-            self._overlay_smoothing_spline(ax, bt)
-
-            # The histogram-derived boundary this threshold replaced, if any
-            self._overlay_valley_reference(ax, bt)
-
-            # Vertical threshold line
-            if threshold is not None:
-                ax.axvline(
-                    threshold,
-                    color="black",
-                    linestyle="-",
-                    linewidth=2,
-                    label=f"Threshold: {threshold:.3f} pA",
-                )
-
-            # Info textbox with counts and threshold type
+            # Info textbox with counts and fit type
             try:
                 pct_low = lower_count / total_peaks if total_peaks > 0 else 0.0
                 pct_high = higher_count / total_peaks if total_peaks > 0 else 0.0
-                pct_outliers = n_outliers / total_peaks if total_peaks > 0 else 0.0
                 info_text = (
                     f"Total Peaks (used for fit): {total_peaks}\n"
                     f"Selected populations: {n_components}\n"
-                    f"Fit: {bt.get('fit_method')} / {bt.get('threshold_method')}\n"
+                    f"Fit: {fit_method}\n"
                     f"Class 0: {lower_count} ({pct_low:.1%})\n"
                     f"Class 1: {higher_count} ({pct_high:.1%})\n"
-                    f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
                 ax.text(
                     0.02,
@@ -3088,11 +3013,11 @@ class PeakFinder(MetaEventFitter):
                     exc_info=True,
                 )
 
-            # Outlier info shown in textbox; do not add legend entry
-
             ax.set_xlabel("Peak Prominence (pA)")
-            ax.set_ylabel("Counts")
-            ax.set_title("Peak Prominence Classification")
+            ax.set_ylabel("log(Peak Width) [log(us)]")
+            ax.set_title(
+                "Peak Prominence Classification (prominence vs logged peak width)"
+            )
             ax.legend()
             plt.tight_layout()
             if plot_path is not None:
@@ -4296,6 +4221,719 @@ class PeakFinder(MetaEventFitter):
 
         order_idx = np.argsort(means)
         return means[order_idx], scales[order_idx], weights[order_idx]
+
+    @log(logger=logger)
+    def _fit_em_bivariate_mixture(
+        self,
+        data: npt.NDArray[np.float64],
+        bin_widths: Tuple[float, float],
+    ) -> Tuple[Optional[Dict[str, npt.NDArray[np.float64]]], bool, str]:
+        """
+        Estimate two bivariate mixture components, by EM, over (prominence,
+        log peak width) jointly.
+
+        The 2-D analogue of ``_fit_em_double_gaussian``, used only by
+        ``_classify_peak_prominences`` via ``fit_threshold_2d``. A
+        full-covariance two-component ``sklearn.mixture.GaussianMixture`` is
+        fit for the one-vs-two-population diagnostics, and a robust
+        bivariate Student-t mixture (``_fit_student_t_mixture_2d``) is fit
+        separately and, when it succeeds, reported in place of the Gaussian
+        mixture's own components - exactly the division of labour
+        ``_fit_em_double_gaussian`` uses, and for the same reason: a sparse
+        outlying tail of peaks should not be allowed to inflate a
+        component's fitted spread.
+
+        Prominence (pA) and log peak width are unrelated, dataset-dependent
+        scales, so both are z-scored (zero mean, unit variance) before
+        either mixture is fit, and every fitted mean/covariance is
+        transformed back to the original (prominence, log width) units
+        before it is returned. Without this, a single scalar covariance
+        ridge (``reg_covar``) could not simultaneously make sense on both
+        axes, and EM's distance-based E-step would be dominated by whichever
+        axis happens to have the larger raw numbers rather than by which
+        axis actually separates the two populations.
+
+        As in the 1-D fit, the one-vs-two-population decision is always
+        taken from the Gaussian mixture, never from the Student-t mixture
+        that may end up reported:
+
+        1. A component is collapsed if either of its per-axis standard
+           deviations, transformed back to *original* units, falls at or
+           below that axis's histogram bin width (``bin_widths``, from
+           ``_histogram_for_fit`` on each marginal) - the same "narrower
+           than the data can resolve" test the 1-D fit applies, run once per
+           axis because a bivariate component can collapse along either one
+           independently of the other.
+        2. The two centres are not separated if their Euclidean distance in
+           the shared whitened space is less than ``SEED_SEPARATION_FWHM``
+           times ``2.355`` times the smaller component's generalized
+           standard deviation - the geometric mean of its two whitened
+           principal-axis standard deviations, in that same whitened space.
+           This is the same FWHM-multiple test the 1-D fit uses, generalized
+           from "one std" to "one generalized std" because a bivariate
+           component no longer has a single scale to measure a separation
+           against.
+
+        :param data: (n, 2) array of finite ``[prominence, log_peak_width]``
+            samples
+        :type data: npt.NDArray[np.float64]
+        :param bin_widths: histogram bin width of the prominence marginal
+            and of the log-peak-width marginal, in that order, as built by
+            ``_histogram_for_fit``
+        :type bin_widths: Tuple[float, float]
+        :return: tuple of (a dict with keys ``"weights"`` (shape (2,)),
+            ``"means"`` (shape (2, 2)) and ``"covariances"`` (shape
+            (2, 2, 2)), all ordered lower-prominence component first, or
+            None if EM did not converge), a bool that is True when the fit
+            describes one population rather than two (meaningless when the
+            first element is None), and a string recording which density the
+            reported parameters carry (``"em_student_t_2d"`` normally, or
+            ``"em_gaussian_2d"`` when the Student-t mixture failed and the
+            Gaussian mixture's own components were reported instead)
+        :rtype: Tuple[Optional[Dict[str, npt.NDArray[np.float64]]], bool, str]
+        """
+        arr = np.asarray(data, dtype=float)
+        finite_mask = np.all(np.isfinite(arr), axis=1)
+        arr = arr[finite_mask]
+        if arr.shape[0] < 6:
+            self.logger.debug(
+                "bivariate EM fit: fewer than six finite (prominence, log "
+                "peak width) samples"
+            )
+            return None, False, ""
+
+        mu_scale = arr.mean(axis=0)
+        sigma_scale = arr.std(axis=0)
+        sigma_scale = np.where(sigma_scale > 0, sigma_scale, 1.0)
+        z = (arr - mu_scale) / sigma_scale
+
+        try:
+            gmm = GaussianMixture(
+                n_components=2,
+                covariance_type="full",
+                n_init=self.EM_N_INIT,
+                random_state=self.EM_RANDOM_STATE,
+                reg_covar=self.BIVARIATE_REG_COVAR,
+            )
+            gmm.fit(z)
+        except (ValueError, FloatingPointError) as e:
+            self.logger.debug(f"bivariate EM fit failed: {e}", exc_info=True)
+            return None, False, ""
+
+        if not getattr(gmm, "converged_", False):
+            self.logger.warning(
+                "bivariate EM fit did not converge within its iteration "
+                "limit; keeping the returned parameters but they may be "
+                "unreliable."
+            )
+
+        means_z = np.asarray(gmm.means_, dtype=float)
+        covs_z = np.asarray(gmm.covariances_, dtype=float)
+        weights = np.asarray(gmm.weights_, dtype=float)
+        if means_z.shape != (2, 2) or not np.all(np.isfinite(means_z)):
+            self.logger.debug("bivariate EM fit returned malformed means")
+            return None, False, ""
+
+        order_idx = np.argsort(means_z[:, 0])
+        means_z = means_z[order_idx]
+        covs_z = covs_z[order_idx]
+        weights = weights[order_idx]
+
+        # Widths and centres the population-count criteria are evaluated
+        # against - always the Gaussian ones, per the note above.
+        diagnostic_means_z = means_z
+        diagnostic_covs_z = covs_z
+
+        robust = self._fit_student_t_mixture_2d(z, means_z, covs_z, weights)
+        fell_back = robust is None
+        if fell_back:
+            self.logger.warning(
+                "the bivariate Student-t mixture could not be fitted; "
+                "reporting the Gaussian mixture's own components instead, "
+                "whose covariances are more easily inflated by a sparse "
+                "outlying tail of peaks."
+            )
+            report_means_z, report_covs_z, report_weights = means_z, covs_z, weights
+        else:
+            report_means_z, report_covs_z, report_weights = cast(
+                Tuple[
+                    npt.NDArray[np.float64],
+                    npt.NDArray[np.float64],
+                    npt.NDArray[np.float64],
+                ],
+                robust,
+            )
+            if report_means_z.shape != (2, 2) or not (
+                np.all(np.isfinite(report_means_z))
+                and np.all(np.isfinite(report_covs_z))
+            ):
+                self.logger.warning(
+                    "the bivariate Student-t mixture returned malformed "
+                    "parameters; reporting the Gaussian mixture's own "
+                    "components instead."
+                )
+                report_means_z, report_covs_z, report_weights = (
+                    means_z,
+                    covs_z,
+                    weights,
+                )
+                fell_back = True
+
+        # Collapsed-component test, per axis, in original units.
+        one_population = False
+        axis_names = ("prominence", "log peak width")
+        for comp_idx in (0, 1):
+            axis_stds = (
+                np.sqrt(np.clip(np.diag(diagnostic_covs_z[comp_idx]), 0.0, None))
+                * sigma_scale
+            )
+            for axis_idx, axis_name in enumerate(axis_names):
+                if axis_stds[axis_idx] <= bin_widths[axis_idx]:
+                    one_population = True
+                    self.logger.warning(
+                        f"bivariate EM fit: component {comp_idx + 1} collapsed "
+                        f"to a {axis_name} width of {axis_stds[axis_idx]:.4g}, "
+                        f"at or below the {bin_widths[axis_idx]:.4g} bin width "
+                        "on that axis. It describes a spike the data cannot "
+                        "resolve, so its centre and any classification "
+                        "derived from it are not meaningful - this is "
+                        "effectively a single-component fit."
+                    )
+
+        # Centre-separation test, in the shared whitened space.
+        eigvals = np.array(
+            [
+                np.clip(np.linalg.eigvalsh(diagnostic_covs_z[i]), 1e-300, None)
+                for i in (0, 1)
+            ]
+        )
+        generalized_std = np.sqrt(np.sqrt(eigvals[:, 0] * eigvals[:, 1]))
+        narrower_generalized_std = float(np.min(generalized_std))
+        centre_separation_z = float(
+            np.linalg.norm(diagnostic_means_z[1] - diagnostic_means_z[0])
+        )
+        fwhm_equivalent = 2.355 * narrower_generalized_std
+        if centre_separation_z < self.SEED_SEPARATION_FWHM * fwhm_equivalent:
+            one_population = True
+            self.logger.warning(
+                "bivariate EM fit: the two fitted centres are "
+                f"{centre_separation_z:.4g} apart in whitened units, less "
+                f"than the {fwhm_equivalent:.4g} FWHM-equivalent of the "
+                "narrower component. They describe one mode rather than two "
+                "populations, so any classification between them is "
+                "arbitrary."
+            )
+
+        # Transform back to original (prominence, log peak width) units.
+        means = report_means_z * sigma_scale + mu_scale
+        scale_outer = np.outer(sigma_scale, sigma_scale)
+        covariances = report_covs_z * scale_outer[None, :, :]
+
+        fit_method = "em_gaussian_2d" if fell_back else "em_student_t_2d"
+        self.logger.debug(
+            f"bivariate EM fit ({fit_method}"
+            f"{' -> gaussian fallback' if fell_back else ''}): reported "
+            f"means={means[0].tolist()}/{means[1].tolist()} "
+            f"weights={report_weights[0]:.4g}/{report_weights[1]:.4g}; "
+            f"population count -> {1 if one_population else 2} on "
+            f"{arr.shape[0]} samples"
+        )
+
+        return (
+            {
+                "weights": np.asarray(report_weights, dtype=np.float64),
+                "means": np.asarray(means, dtype=np.float64),
+                "covariances": np.asarray(covariances, dtype=np.float64),
+            },
+            one_population,
+            fit_method,
+        )
+
+    @log(logger=logger)
+    def _fit_student_t_mixture_2d(
+        self,
+        z: npt.NDArray[np.float64],
+        init_means: npt.NDArray[np.float64],
+        init_covariances: npt.NDArray[np.float64],
+        init_weights: npt.NDArray[np.float64],
+    ) -> Optional[
+        Tuple[
+            npt.NDArray[np.float64],
+            npt.NDArray[np.float64],
+            npt.NDArray[np.float64],
+        ]
+    ]:
+        """
+        Fit a two-component bivariate Student-t mixture by EM, robustly to
+        tail outliers, in already-whitened (prominence, log peak width)
+        space.
+
+        The 2-D analogue of ``_fit_student_t_mixture``, with the same
+        ``u_ik = (nu + d) / (nu + maha_ik / nu)`` robustness weight
+        (``d = 2`` here, a Mahalanobis distance ``maha_ik`` in place of the
+        1-D squared z-score) down-weighting points far from a component's
+        centre before its location and scale are updated, for the same
+        reason: an unweighted second-moment update lets a handful of distant
+        points set an entire component's covariance.
+
+        Unlike ``_fit_student_t_mixture``, which initializes deterministically
+        from data quantiles, this is seeded from the Gaussian mixture's own
+        fitted means, covariances and weights (``_fit_em_bivariate_mixture``
+        always fits that Gaussian mixture first). A percentile-based seed
+        does not generalize past one dimension - there is no single "25th
+        percentile" of a scatter of points - while the Gaussian mixture
+        already had to solve the easier version of the same clustering
+        problem to produce the one-vs-two-population diagnostics, so reusing
+        its answer as a starting point is both well-defined and cheap. This
+        does mean the two fits are not independent checks on one another the
+        way the 1-D pair's different initializations are; that trade-off is
+        deliberate, made once here rather than per call.
+
+        :param z: (n, 2) array of whitened, finite samples
+        :type z: npt.NDArray[np.float64]
+        :param init_means: (2, 2) starting means, one row per component
+        :type init_means: npt.NDArray[np.float64]
+        :param init_covariances: (2, 2, 2) starting covariances, one per
+            component
+        :type init_covariances: npt.NDArray[np.float64]
+        :param init_weights: (2,) starting mixture weights
+        :type init_weights: npt.NDArray[np.float64]
+        :return: tuple of (means, covariances, weights), shaped (2, 2),
+            (2, 2, 2) and (2,) respectively, ordered by mean prominence, or
+            None if the loop produced non-finite or singular parameters
+        :rtype: Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        """
+        n, d = z.shape
+        nu = float(self.T_DOF)
+        means = np.array(init_means, dtype=float, copy=True)
+        covariances = np.array(init_covariances, dtype=float, copy=True)
+        weights = np.array(init_weights, dtype=float, copy=True)
+        ridge = self.BIVARIATE_REG_COVAR * np.eye(d)
+
+        for _ in range(int(self.T_MAX_ITER)):
+            log_p = np.empty((n, 2), dtype=float)
+            maha = np.empty((n, 2), dtype=float)
+            singular = False
+            for k in range(2):
+                try:
+                    sign, logdet = np.linalg.slogdet(covariances[k])
+                    if sign <= 0:
+                        raise np.linalg.LinAlgError("non-positive-definite covariance")
+                    inv_cov = np.linalg.inv(covariances[k])
+                except np.linalg.LinAlgError as e:
+                    self.logger.debug(
+                        f"bivariate Student-t EM: component {k + 1} "
+                        f"covariance is singular; abandoning the robust "
+                        f"fit: {e}"
+                    )
+                    singular = True
+                    break
+                diff = z - means[k]
+                maha[:, k] = np.einsum("ij,jk,ik->i", diff, inv_cov, diff)
+                log_p[:, k] = (
+                    np.log(max(float(weights[k]), 1e-300))
+                    - 0.5 * logdet
+                    - (nu + d) / 2.0 * np.log1p(maha[:, k] / nu)
+                )
+            if singular:
+                return None
+
+            log_p -= log_p.max(axis=1, keepdims=True)
+            p = np.exp(log_p)
+            denom = p.sum(axis=1, keepdims=True)
+            resp = np.divide(p, denom, out=np.full_like(p, 0.5), where=denom > 0)
+
+            u = (nu + d) / (nu + maha)
+            ru = resp * u
+
+            resp_sum = resp.sum(axis=0)
+            ru_sum = ru.sum(axis=0)
+            if np.any(resp_sum <= 0) or np.any(ru_sum <= 0):
+                self.logger.debug(
+                    "bivariate Student-t EM: a component lost all "
+                    "responsibility; abandoning the robust fit"
+                )
+                return None
+
+            new_means = np.empty_like(means)
+            new_covariances = np.empty_like(covariances)
+            for k in range(2):
+                new_means[k] = (ru[:, k : k + 1] * z).sum(axis=0) / ru_sum[k]
+                diff = z - new_means[k]
+                weighted = ru[:, k : k + 1] * diff
+                new_covariances[k] = weighted.T @ diff / resp_sum[k] + ridge
+            new_weights = resp_sum / float(n)
+
+            shift = float(
+                np.max(np.abs(new_means - means))
+                + np.max(np.abs(new_covariances - covariances))
+            )
+            means, covariances, weights = new_means, new_covariances, new_weights
+            if shift < float(self.T_TOL):
+                break
+        else:
+            self.logger.debug(
+                f"bivariate Student-t EM hit its {self.T_MAX_ITER}-iteration "
+                "cap without meeting the convergence tolerance; using the "
+                "current estimate."
+            )
+
+        if not (
+            np.all(np.isfinite(means))
+            and np.all(np.isfinite(covariances))
+            and np.all(np.isfinite(weights))
+        ):
+            self.logger.debug("bivariate Student-t EM produced non-finite parameters")
+            return None
+
+        order_idx = np.argsort(means[:, 0])
+        return means[order_idx], covariances[order_idx], weights[order_idx]
+
+    def _bivariate_log_density(
+        self,
+        x: npt.NDArray[np.float64],
+        mean: npt.NDArray[np.float64],
+        covariance: npt.NDArray[np.float64],
+        nu: Optional[float],
+    ) -> npt.NDArray[np.float64]:
+        """
+        Log-density of a bivariate Gaussian or Student-t at each row of ``x``.
+
+        Shared by ``_posterior_probability_2d`` and
+        ``_overlay_posterior_boundary`` for whichever density
+        ``fit_threshold_2d``'s ``"params_2d"`` actually carries -
+        ``nu=None`` evaluates the Gaussian density reported when the robust
+        fit falls back (``fit_method == "em_gaussian_2d"``); any other
+        ``nu`` evaluates the Student-t density at that many degrees of
+        freedom (``T_DOF`` in every caller here).
+
+        :param x: (n, 2) array of points to evaluate
+        :type x: npt.NDArray[np.float64]
+        :param mean: (2,) component mean
+        :type mean: npt.NDArray[np.float64]
+        :param covariance: (2, 2) component covariance
+        :type covariance: npt.NDArray[np.float64]
+        :param nu: degrees of freedom for a Student-t density, or None for a
+            Gaussian density
+        :type nu: Optional[float]
+        :return: (n,) array of log-density values
+        :rtype: npt.NDArray[np.float64]
+        :raises numpy.linalg.LinAlgError: if ``covariance`` is singular
+        """
+        d = mean.shape[0]
+        sign, logdet = np.linalg.slogdet(covariance)
+        if sign <= 0:
+            raise np.linalg.LinAlgError("non-positive-definite covariance")
+        inv_cov = np.linalg.inv(covariance)
+        diff = x - mean
+        maha = np.einsum("ij,jk,ik->i", diff, inv_cov, diff)
+        if nu is None:
+            return np.asarray(
+                -0.5 * (d * np.log(2.0 * np.pi) + logdet + maha), dtype=np.float64
+            )
+        return np.asarray(
+            gammaln((nu + d) / 2.0)
+            - gammaln(nu / 2.0)
+            - 0.5 * d * np.log(nu * np.pi)
+            - 0.5 * logdet
+            - (nu + d) / 2.0 * np.log1p(maha / nu),
+            dtype=np.float64,
+        )
+
+    def _posterior_probability_2d(
+        self,
+        data: npt.NDArray[np.float64],
+        params_2d: Dict[str, npt.NDArray[np.float64]],
+        fit_method: str,
+    ) -> Tuple[npt.NDArray[np.bool_], npt.NDArray[np.float64]]:
+        """
+        Classify (prominence, log peak width) points by posterior
+        probability under a fitted two-component bivariate mixture.
+
+        This is the 2-D replacement for a scalar threshold: rather than
+        splitting on prominence alone, a peak is assigned to whichever
+        component - lower- or higher-prominence - the fitted mixture says is
+        more likely, given *both* its prominence and its log peak width. The
+        posterior is the actual mixture responsibility (mixture weight times
+        component density, normalized to sum to one across the two
+        components), so unlike ``_classification_confidence``'s ad hoc
+        ratio-of-fitted-curves score, this is a calibrated probability under
+        the fitted model - a class-1 posterior of exactly 0.5 is the model's
+        own class boundary, and away from it the model's own confidence can
+        be taken literally, to the extent the fitted mixture describes the
+        true population.
+
+        :param data: (n, 2) array of ``[prominence, log_peak_width]`` samples
+        :type data: npt.NDArray[np.float64]
+        :param params_2d: ``"params_2d"`` from ``fit_threshold_2d``, with
+            keys ``"weights"`` (2,), ``"means"`` (2, 2) and
+            ``"covariances"`` (2, 2, 2), ordered lower-prominence component
+            first
+        :type params_2d: Dict[str, npt.NDArray[np.float64]]
+        :param fit_method: ``fit_threshold_2d``'s ``"fit_method"`` - the
+            Student-t density is used for ``"em_student_t_2d"``, the
+            Gaussian density otherwise
+        :type fit_method: str
+        :return: tuple of (boolean array, True where the point was assigned
+            to the higher-prominence component, and a float array of the
+            posterior probability of the assigned class), both length ``n``
+        :rtype: Tuple[npt.NDArray[np.bool_], npt.NDArray[np.float64]]
+        """
+        weights = np.asarray(params_2d["weights"], dtype=float)
+        means = np.asarray(params_2d["means"], dtype=float)
+        covariances = np.asarray(params_2d["covariances"], dtype=float)
+        nu = float(self.T_DOF) if fit_method == "em_student_t_2d" else None
+
+        log_p = np.empty((data.shape[0], 2), dtype=float)
+        for k in range(2):
+            log_p[:, k] = np.log(
+                max(float(weights[k]), 1e-300)
+            ) + self._bivariate_log_density(data, means[k], covariances[k], nu)
+
+        log_p -= log_p.max(axis=1, keepdims=True)
+        p = np.exp(log_p)
+        denom = p.sum(axis=1, keepdims=True)
+        resp = np.divide(p, denom, out=np.full_like(p, 0.5), where=denom > 0)
+
+        is_higher_class = resp[:, 1] >= resp[:, 0]
+        confidence = np.where(is_higher_class, resp[:, 1], resp[:, 0])
+        return is_higher_class, np.asarray(confidence, dtype=np.float64)
+
+    @log(logger=logger)
+    def fit_threshold_2d(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
+        """
+        Fit a two-population bivariate mixture over (prominence, log peak
+        width) and derive a posterior-probability classification boundary.
+
+        The 2-D counterpart to ``fit_threshold``, used only by
+        ``_classify_peak_prominences``. Peak prominence alone conflates two
+        things that a wide, shallow peak and a narrow, tall peak can both
+        produce; adding logged peak width as a second axis lets the fit tell
+        those apart instead of collapsing them onto the same 1-D value.
+        Width is logged, not used raw, for the same reason prominence
+        classification's own populations are handled the way they are:
+        physical durations/widths are naturally log-distributed, and a
+        Gaussian/Student-t component describes a log-distributed quantity far
+        better on a log axis than on a linear one.
+
+        Unlike ``fit_threshold``, this reports no single scalar
+        ``"threshold"``. A 1-D valley/equiprobability point generalizes to a
+        *boundary curve* in 2-D (in general, not even a straight line, once
+        the two components have different covariances) - reducing it back
+        down to one number would throw away exactly the width information
+        this fit exists to use. Classification is instead done directly from
+        the fitted mixture's posterior probability (see
+        ``_posterior_probability_2d``), which is well-defined at any point in
+        the (prominence, log width) plane without ever naming that curve
+        explicitly.
+
+        For the same reason, the smoothing-spline valley search
+        (``_threshold_between_populations``) and its off-peak-mean sanity
+        check (``_warn_if_fitted_means_are_off_their_peaks``) are not ported
+        here: both are built specifically around a 1-D histogram's shape,
+        and "the histogram's own local minimum" has no non-arbitrary 2-D
+        equivalent under a posterior-probability boundary, which by
+        construction does not need one. What *is* ported, because it does
+        generalize without inventing an arbitrary rule, is the
+        one-vs-two-population decision (collapsed-component and
+        centres-not-separated diagnostics - see ``_fit_em_bivariate_mixture``)
+        and the robust-vs-Gaussian reporting split
+        (``_fit_student_t_mixture_2d``).
+
+        :param data: (n, 2) array of ``[prominence, log_peak_width]`` samples
+        :type data: npt.NDArray[np.float64]
+        :return: dict with keys ``"params_2d"`` (the dict returned by
+            ``_fit_em_bivariate_mixture``), ``"n_components"`` (``1`` or
+            ``2``), ``"fit_method"`` (``"em_student_t_2d"`` or
+            ``"em_gaussian_2d"``), ``"hist_prominence"`` and
+            ``"hist_log_width"`` (each a ``(counts, bin_edges)`` tuple from
+            ``_histogram_for_fit`` on that marginal - not drawn by the
+            current 2-D scatter plot, but kept available for anyone
+            inspecting a marginal by hand, the same way ``fit_threshold``'s
+            own ``"hist"`` is)
+        :rtype: Dict[str, Any]
+        :raises ValueError: if the data cannot be histogrammed on either
+            axis, or if the bivariate fit fails to converge
+        """
+        arr = np.asarray(data, dtype=float)
+        finite_mask = np.all(np.isfinite(arr), axis=1)
+        arr = arr[finite_mask]
+        if arr.shape[0] < 3:
+            raise ValueError(
+                "need at least 3 finite (prominence, log peak width) rows to "
+                "fit a bivariate mixture"
+            )
+        prominence = arr[:, 0]
+        log_width = arr[:, 1]
+
+        counts_p, edges_p, centers_p = self._histogram_for_fit(prominence)
+        counts_w, edges_w, centers_w = self._histogram_for_fit(log_width)
+        bin_width_p = float(centers_p[1] - centers_p[0]) if centers_p.size >= 2 else 0.0
+        bin_width_w = float(centers_w[1] - centers_w[0]) if centers_w.size >= 2 else 0.0
+
+        params_2d, one_population, fit_method = self._fit_em_bivariate_mixture(
+            arr, (bin_width_p, bin_width_w)
+        )
+        if params_2d is None:
+            raise ValueError(
+                "could not fit a two-component bivariate Student-t/Gaussian "
+                "mixture to this (prominence, log peak width) data"
+            )
+
+        return {
+            "params_2d": params_2d,
+            "n_components": 1 if one_population else 2,
+            "fit_method": fit_method,
+            "hist_prominence": (counts_p, edges_p),
+            "hist_log_width": (counts_w, edges_w),
+        }
+
+    def _overlay_bivariate_ellipses(
+        self,
+        ax: Any,
+        params_2d: Dict[str, npt.NDArray[np.float64]],
+    ) -> None:
+        """
+        Draw each fitted bivariate component's 2-sigma covariance ellipse.
+
+        The 2-D analogue of ``_overlay_fitted_gaussians``: rather than two
+        dashed 1-D curves, each component is drawn as an ellipse centred on
+        its fitted mean, oriented along its covariance's eigenvectors and
+        scaled to its eigenvalues, at 2 standard deviations along each
+        principal axis (roughly the mixture's own 86% contour for a Gaussian
+        component; drawn identically for a reported Student-t component,
+        whose heavier tails it therefore understates).
+
+        Nothing here rejects or raises: a plot that cannot draw this overlay
+        is still a useful plot, so a failure is logged and the rest of the
+        figure is left intact.
+
+        :param ax: the matplotlib axes to draw on
+        :type ax: Any
+        :param params_2d: ``"params_2d"`` from ``fit_threshold_2d``, with
+            keys ``"means"`` (2, 2) and ``"covariances"`` (2, 2, 2)
+        :type params_2d: Dict[str, npt.NDArray[np.float64]]
+        :return: None; the ellipses are drawn onto ``ax`` in place
+        :rtype: None
+        """
+        try:
+            means = np.asarray(params_2d["means"], dtype=float)
+            covariances = np.asarray(params_2d["covariances"], dtype=float)
+            colors = ("blue", "red")
+            labels = ("Lower prominence fit", "Higher prominence fit")
+            for k in range(2):
+                eigvals, eigvecs = np.linalg.eigh(covariances[k])
+                eigvals = np.clip(eigvals, 0.0, None)
+                order = np.argsort(eigvals)[::-1]
+                eigvals = eigvals[order]
+                eigvecs = eigvecs[:, order]
+                angle = float(np.degrees(np.arctan2(eigvecs[1, 0], eigvecs[0, 0])))
+                width, height = 2.0 * 2.0 * np.sqrt(eigvals)
+                ellipse = Ellipse(
+                    xy=(float(means[k, 0]), float(means[k, 1])),
+                    width=float(width),
+                    height=float(height),
+                    angle=angle,
+                    edgecolor=colors[k],
+                    facecolor="none",
+                    linewidth=2,
+                    linestyle="--",
+                    label=f"{labels[k]} (2-sigma)",
+                )
+                ax.add_patch(ellipse)
+                ax.plot(
+                    means[k, 0],
+                    means[k, 1],
+                    marker="x",
+                    color=colors[k],
+                    markersize=10,
+                )
+        except Exception as e:
+            self.logger.debug(
+                "peak prominence classification: failed to draw the "
+                f"bivariate covariance ellipses: {e}",
+                exc_info=True,
+            )
+
+    def _overlay_posterior_boundary(
+        self,
+        ax: Any,
+        params_2d: Dict[str, npt.NDArray[np.float64]],
+        fit_method: str,
+        prominence: npt.NDArray[np.float64],
+        log_width: npt.NDArray[np.float64],
+    ) -> None:
+        """
+        Draw the posterior-probability = 0.5 decision boundary.
+
+        Evaluates the same log-density ``_posterior_probability_2d`` uses on
+        a grid spanning the plotted data, and contours the difference in the
+        two components' weighted log-densities at zero - the point where
+        they are equally likely. This is the 2-D analogue of
+        ``fit_threshold``'s single threshold line, except this one is a
+        curve (or, when the two covariances happen to be equal, a straight
+        line) because it depends on peak width as well as prominence.
+
+        Nothing here rejects or raises: a plot that cannot draw this overlay
+        is still a useful plot, so a failure is logged and the rest of the
+        figure is left intact.
+
+        :param ax: the matplotlib axes to draw on
+        :type ax: Any
+        :param params_2d: ``"params_2d"`` from ``fit_threshold_2d``
+        :type params_2d: Dict[str, npt.NDArray[np.float64]]
+        :param fit_method: ``fit_threshold_2d``'s ``"fit_method"``
+        :type fit_method: str
+        :param prominence: the plotted prominence values, used only to set
+            the grid's extent
+        :type prominence: npt.NDArray[np.float64]
+        :param log_width: the plotted log-peak-width values, used only to
+            set the grid's extent
+        :type log_width: npt.NDArray[np.float64]
+        :return: None; the boundary is drawn onto ``ax`` in place
+        :rtype: None
+        """
+        try:
+            if prominence.size == 0 or log_width.size == 0:
+                return
+            weights = np.asarray(params_2d["weights"], dtype=float)
+            means = np.asarray(params_2d["means"], dtype=float)
+            covariances = np.asarray(params_2d["covariances"], dtype=float)
+            nu = float(self.T_DOF) if fit_method == "em_student_t_2d" else None
+
+            pad_x = 0.05 * max(float(np.ptp(prominence)), 1e-9)
+            pad_y = 0.05 * max(float(np.ptp(log_width)), 1e-9)
+            grid_x = np.linspace(
+                prominence.min() - pad_x, prominence.max() + pad_x, 200
+            )
+            grid_y = np.linspace(log_width.min() - pad_y, log_width.max() + pad_y, 200)
+            xx, yy = np.meshgrid(grid_x, grid_y)
+            grid_points = np.column_stack([xx.ravel(), yy.ravel()])
+
+            log_p = np.empty((grid_points.shape[0], 2), dtype=float)
+            for k in range(2):
+                log_p[:, k] = np.log(
+                    max(float(weights[k]), 1e-300)
+                ) + self._bivariate_log_density(
+                    grid_points, means[k], covariances[k], nu
+                )
+            diff = (log_p[:, 1] - log_p[:, 0]).reshape(xx.shape)
+
+            if np.nanmin(diff) < 0.0 < np.nanmax(diff):
+                ax.contour(xx, yy, diff, levels=[0.0], colors="black", linewidths=2)
+                ax.plot(
+                    [],
+                    [],
+                    color="black",
+                    linewidth=2,
+                    label="Posterior boundary (p=0.5)",
+                )
+        except Exception as e:
+            self.logger.debug(
+                "peak prominence classification: failed to draw the "
+                f"posterior-probability boundary: {e}",
+                exc_info=True,
+            )
 
     @log(logger=logger)
     def _threshold_at_equiprobability(
