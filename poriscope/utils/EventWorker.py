@@ -24,8 +24,7 @@
 # Kyle Briggs
 
 import logging
-import threading
-from typing import Any, Generator, Optional
+from typing import Any, Generator
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -42,14 +41,12 @@ class Worker(QObject):
         generator: Generator[Any, Any, Any],
         channel: int,
         key: str,
-        lock: Optional[threading.Lock] = None,
     ) -> None:
         super().__init__()
         self.generator = generator
         self.channel = channel
         self.stop_requested = False
         self.key = key
-        self.lock = lock
         self.logger = logging.getLogger(f"Worker[{self.key}/{self.channel}]")
         self.stop_signal.connect(self.stop)
         self.logger.debug("Worker initialized.")
@@ -115,11 +112,12 @@ class Worker(QObject):
         p: float = 0
         self.update_progressbar.emit(p, f"{self.key}/{self.channel}")
         try:
-            if self.lock:
-                with self.lock:
-                    self.process_generator()
-            else:
-                self.process_generator()
+            # Serialization across channels, where a plugin declares it is required, is
+            # taken by the plugin itself inside its own generator; see
+            # poriscope.utils.SerializeDecorator.serialize_channels. The worker used to
+            # hold a lock supplied by MetaModel, which was scoped to the model rather than
+            # to the plugin instance.
+            self.process_generator()
         finally:
             self.update_progressbar.emit(100, f"{self.key}/{self.channel}")
             self.logger.info(f"Worker [{self.key}/{self.channel}] finished.")

@@ -25,7 +25,6 @@
 # Alejandra Carolina González González
 
 import logging
-import threading
 from abc import abstractmethod
 from typing import Any, Dict, Generator, List, Optional
 
@@ -75,8 +74,6 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
-        self.serial_ops: Dict[str, Dict[int, bool]] = {}
-        self.lock: threading.Lock = threading.Lock()
 
         # nested dicts keyed by plugin key and channel number
         self.cache_data: Optional[List[np.ndarray]] = None
@@ -124,7 +121,23 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     def run_generators(self, key: str) -> None:
-        metaclass = self.reporter_metaclasses[key]
+        """
+        Start one worker thread per channel for which a generator has been staged under this key.
+
+        Serialization is not decided here. A plugin that declares
+        ``force_serial_channel_operations()`` now takes its *own* lock inside its
+        generator (see
+        :py:func:`~poriscope.utils.SerializeDecorator.serialize_channels`), so this
+        method no longer asks the plugin anything and no longer hands the worker a lock.
+        It used to emit ``global_signal`` for that answer and read it back off
+        ``self.serial_ops`` on the next statement, which worked only because every hop in
+        that chain was a same-thread automatic connection Qt resolves as a direct call -
+        one ``Qt.QueuedConnection`` anywhere in it would have silently degraded the lock
+        to ``None``, with no error and no log line.
+
+        :param key: the plugin key whose staged generators should be run
+        :type key: str
+        """
         for channel, generator in self.generators[key].items():
             thread_running = self.thread_running[key].get(channel)
             if not thread_running:
@@ -134,20 +147,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                 if key not in self.threads.keys():
                     self.threads[key] = {}
 
-                self.global_signal.emit(
-                    metaclass,
-                    key,
-                    "force_serial_channel_operations",
-                    (),
-                    "set_force_serial_channel_operations",
-                    (key, channel),
-                )
-                lock = (
-                    self.lock
-                    if self.serial_ops.get(key, {}).get(channel, False)
-                    else None
-                )
-                self.workers[key][channel] = Worker(generator, channel, key, lock)
+                self.workers[key][channel] = Worker(generator, channel, key)
                 self.workers[key][channel].update_progressbar.connect(
                     self.emit_progress_update, Qt.QueuedConnection
                 )
@@ -155,7 +155,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     self.workers[key][channel], channel, key
                 )
                 self.threads[key][channel].workerthread_finished.connect(
-                    self.reset_lock, Qt.QueuedConnection
+                    self.discard_generator, Qt.QueuedConnection
                 )
                 self.threads[key][channel].workerthread_finished.connect(
                     self.generate_report, Qt.QueuedConnection
@@ -164,20 +164,33 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(int, str)
-    def reset_lock(self, channel: int, key: str) -> None:
+    def discard_generator(self, channel: int, key: str) -> None:
+        """
+        Clear the run state for one (key, channel) once its worker thread has finished.
+
+        Formerly ``reset_lock``, which reset no lock - it clears the ``thread_running``
+        flag, which is what allows :py:meth:`set_generator` to stage a new run for this
+        key and channel, and drops the spent generator.
+
+        The generator is explicitly closed before being dropped. A plugin that declares
+        serial channel operations holds its own lock across the generator's ``yield``\ s,
+        and that lock is released when the generator is exhausted *or closed*; relying on
+        the reference count falling to zero to finalize it would make release depend on
+        garbage-collection timing, and a stranded lock here is a silent hang rather than an
+        error. ``close()`` is a harmless no-op on a generator that already ran to
+        completion.
+
+        :param channel: the channel whose run has finished
+        :type channel: int
+        :param key: the plugin key whose run has finished
+        :type key: str
+        """
         self.thread_running[key][channel] = False
         try:
-            self.generators[key].pop(channel)
+            generator = self.generators[key].pop(channel)
         except KeyError:
-            pass
-
-    @log(logger=logger)
-    def set_force_serial_channel_operations(
-        self, serial_ops: bool, key: str, channel: int
-    ) -> None:
-        if key not in self.serial_ops.keys():
-            self.serial_ops[key] = {}
-        self.serial_ops[key][channel] = serial_ops
+            return
+        generator.close()
 
     @log(logger=logger)
     @Slot(int, str)
@@ -276,7 +289,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     # finishes, otherwise Qt destroys a QThread still running.
                     self.threads[key][channel].wait()
                 # Otherwise let workerthread_finished emit and trigger
-                # reset_lock() asynchronously - avoid blocking here.
+                # discard_generator() asynchronously - avoid blocking here.
                 self.logger.debug(
                     f"Worker and thread stopped for key: {key}, channel: {channel}"
                 )

@@ -132,22 +132,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         self.view.update_plot_data(data)
 
-    @log(logger=logger)
-    def set_force_serial_channel_operations(
-        self, serial_ops: bool, key: str, channel: int
-    ) -> None:
-        """
-        Set a flag to enforce serial execution for specific channel operations.
-
-        :param serial_ops: Boolean flag to enforce serial behavior.
-        :type serial_ops: bool
-        :param key: Identifier key for the operation group.
-        :type key: str
-        :param channel: Target channel number.
-        :type channel: int
-        """
-        self.model.set_force_serial_channel_operations(serial_ops, key, channel)
-
     # public API, must be implemented by sublcasses
 
     @log(logger=logger)

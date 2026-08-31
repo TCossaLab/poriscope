@@ -37,6 +37,7 @@ import pandas as pd
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.SerializeDecorator import serialize_channels
 
 Numeric = Union[int, float, np.number]
 
@@ -430,6 +431,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
             self.logger.error(f"Failed to get channel_db_id: {e}")
             return None
 
+    @serialize_channels
     @log(logger=logger)
     def export_subset_to_csv(
         self,

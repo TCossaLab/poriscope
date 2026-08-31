@@ -15,7 +15,9 @@ You don’t have to manually manage threads or signals. ``MetaModel`` handles:
 
 - Spawning and tracking worker threads (``WorkerThread``)
 - Connecting signals for progress updates
-- Running generators in parallel or serial mode per channel
+- Running one generator per channel, each on its own worker thread. Whether a plugin's
+  channels may overlap is decided by the plugin itself, not here - see
+  :ref:`serial_channel_operations`
 
 **Signals and communication**
 
@@ -34,7 +36,7 @@ Built-in signals allow your model to communicate with the view, controller, or e
 **Helper functions you don’t need to write yourself**
 
 - ``stop_workers()`` to gracefully terminate long-running tasks
-- ``reset_lock()`` to clean up when threads complete
+- ``discard_generator()`` to clean up when threads complete
 - ``set_generator()`` and ``run_generators()`` to queue and execute background operations
 
 What You Need to Implement

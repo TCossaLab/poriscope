@@ -207,8 +207,10 @@ of every session, so it should stay a short list of standing rules.
 
 ## General Instructions
 
-- Do not nest functions inside other functions (`utils/LogDecorator.py` is the standing
-  exception - decorators require it).
+- Do not nest functions inside other functions. **Decorators are the standing exception**,
+  because they require a closure: `utils/LogDecorator.py` and `utils/SerializeDecorator.py`
+  are the two that exist today. Do not "flatten" either, and if you add a decorator module,
+  say in a comment that this is why it nests.
 - **Never add `@overload` or `cast()` to work around an over-broad return union.** Verify
   every incoming call and delete the dead branch instead. If both arms are genuinely live,
   flag it for review rather than overloading - the fix is usually to change the callers.
@@ -227,6 +229,9 @@ of every session, so it should stay a short list of standing rules.
   you find that a user-based assumption or instruction would cause problems.
 - We are not in a rush, and the poriscope codebase is complex. Take the time and spend the 
   tokens you need to get it right.
+- Before finishing any tasks, verify that the docs (both auto generated and hand-written) 
+  accurately reflect the changes, and mmake any necessary updates to the docs to keep them
+  in sync with the codebase.
 
 ## Version Controller
 

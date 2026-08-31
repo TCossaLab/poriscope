@@ -21,23 +21,16 @@ tab traverses. None of these were already recorded here or in `DECISIONS.md`. Fu
 write-up with per-finding reasoning:
 <https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>
 
-Everything except the CI-marker and stale-comment items is a logic change, so it needs
-an approved plan first. **This section outranks "What to pick up next" below until it is
-cleared.** The common thread: the app's main control path is a method name passed as a
-string and resolved with `getattr`, which none of the four pre-commit gates can see, and
-every Critical item lives in that blind spot.
+Everything here is a logic change, so it needs an approved plan first. **This section
+outranks "What to pick up next" below until it is cleared.** The common thread: the app's
+main control path is a method name passed as a string and resolved with `getattr`, which
+none of the four pre-commit gates can see.
 
-### Critical - on the shared core, and each one fails quietly
-
-- **`force_serial_channel_operations()` is enforced at the wrong granularity.**
-  `MetaModel.py:79,118-128`. It is a per-plugin declaration, but the lock handed to the
-  worker is `MetaModel.lock` - one per model, and every tab builds its own. Two tabs
-  driving the same writer take different locks and it runs concurrently on two channels
-  despite declaring it must not (`MetaWriter` and `MetaDatabaseWriter` both return `True`).
-  Within one tab that single lock is shared across all keys, so unrelated plugins
-  serialize against each other for nothing. The lock belongs to the plugin instance.
-  `BaseDataPlugin.lock` is *not* the fix as written: it is a class attribute, one lock for
-  every data plugin in the process, which `WaveletFilter._apply_filter` relies on today.
+**All four Critical items are cleared** (2026-08-31): the signal dispatcher's `TypeError`
+retries, CI's marker filter, the generator failure reported as success, and the
+serial-channel lock granularity. What they had in common is that each failed silently in
+the `getattr` blind spot; the narrative is in `changelog.md` and the limitations the last
+two left behind are under "Still queued" below. **High is now the top of this section.**
 
 ### High - working today, but for reasons nothing records or tests
 
@@ -70,13 +63,14 @@ every Critical item lives in that blind spot.
   folding into compliance-gate block 4 below.
 - **Finished `Worker`/`WorkerThread` objects are retained for the whole session.**
   `MetaModel.py:129-140` assigns them; nothing ever pops them - there is no `pop` or `del`
-  against `self.workers`/`self.threads` anywhere under `poriscope/`. `reset_lock` clears
+  against `self.workers`/`self.threads` anywhere under `poriscope/`. `discard_generator` clears
   only `thread_running` and `generators`, so every dead `QThread` stays alive holding the
   generator closure and the data it touched. Also why `handle_kill_worker` reports
   "Stopping worker for channel N" for runs that finished hours ago (harmless -
   `stop_workers` skips them on `thread_running`, but the log misleads). Pop both entries in
-  `reset_lock` and `deleteLater()` the thread. While there: `reset_lock` resets no lock, it
-  clears run state - rename it.
+  `discard_generator` and `deleteLater()` the thread. (The rename half of this item is
+  done: `reset_lock` is now `discard_generator`, and it closes the spent generator as well
+  as dropping it. Popping the worker and thread is still open.)
 
 ### Moderate
 
@@ -194,6 +188,46 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   `call_args` payload at that emit site; the payload fix is unrelated to and does not
   mask this. Not fixed there because it is a behavioural change to the commit path that
   wants its own look at what the callers actually pass.
+- **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
+  `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
+  `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
+  per-instance guard locks the finder, which does not protect a reader shared by two
+  finders. Latent today: every reader and loader returns `False` and no concrete plugin
+  overrides. A future reader returning `True` would not actually be protected. Deliberately
+  not solved with dependency-chain lock ordering, which risks deadlock - see the guard's
+  docstring.
+- **`MetaEventFinder.force_serial_channel_operations` raises `AttributeError` when
+  `self.reader is None`.** Now called from inside the generator by the serialization guard
+  rather than over the signal bus, so it surfaces at the first advance instead of being
+  swallowed by the dispatcher. A finder without a reader raises `AttributeError` from
+  `find_events` anyway, two lines later, so this is a change of messenger and not of
+  outcome - but it is the guard that speaks first now.
+- **`MultiSelectFilterComboBox` installs an application-wide event filter and never
+  removes it.** `views/widgets/multiselect_filter.py:125` does
+  `QApplication.instance().installEventFilter(self)`; there is no `removeEventFilter`
+  anywhere in the file. Every instance ever created stays registered on the
+  process-lifetime `QApplication`, so once a widget's C++ side is gone the next event
+  routed to the stale filter raises `RuntimeError: Internal C++ object
+  (MultiSelectFilterComboBox) already deleted` from `eventFilter`.
+  **This makes `pytest tests/unit` intermittently error at setup of a
+  `TestRelayQuery` case in `test_protein_controller.py`** - a different case each run,
+  because the victim is whichever test next builds a widget. Measured on 2026-08-31:
+  1 failure in 3 runs on `develop`, 3 in 3 on `feature/per-plugin-locks`. The per-plugin
+  lock work does not cause it - it very likely shifts allocation and therefore GC timing,
+  which is enough to change how often a latent lifetime bug surfaces. Fix the leak, not
+  the symptom; a `try/except RuntimeError` in `eventFilter` would hide it while the
+  filters keep accumulating for the whole session in the real app too.
+- **Placeholder guards on UI-supplied plugin keys are applied inconsistently.** A scan of
+  every `global_signal` emit in the analysis-tab views whose plugin key is a
+  UI-supplied parameter found 19 sites with no placeholder check in the emitting method.
+  Two were traced and are guarded by their callers (`_apply_filter` behind
+  `if data_filter and data_filter != "No Filter"`, `_commit_clusters` behind a deliberate
+  user action), which is very likely true of most of the rest - they are private helpers
+  reached from action handlers. The three that were *not* guarded anywhere were the
+  reactive `update_units` methods, now fixed. Worth auditing the remaining 17 properly
+  rather than assuming; the distinction that matters is whether a path is reactive
+  (runs on plugin-state change or combobox repopulation, so the placeholder is live) or
+  action-driven (the user already chose a real plugin).
 - **`EventWorker` still has no test coverage.** The generator-failure fix landed verified
   only by a throwaway script (four scenarios: happy path, mid-run `TypeError`, abort, empty
   generator). `test_event_worker.py` does not exist - see `test_mapping_audit.csv` - and

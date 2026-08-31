@@ -3,7 +3,6 @@ Tests for poriscope.utils.MetaController.MetaController.
 
 Covers:
 - update_plot_data delegation
-- set_force_serial_channel_operations delegation
 - export_plot_data (data present, data absent, no filename given)
 - _connect_global_signal wiring
 - load_actions_from_json (success, file error, class name key present)
@@ -164,25 +163,6 @@ def test_update_plot_data_delegates_to_view(
     data = {"x": [1, 2], "y": [3, 4]}
     controller.update_plot_data(data)
     mock_view.update_plot_data.assert_called_once_with(data)
-
-
-# ------------- set_force_serial_channel_operations -------------------
-
-
-def test_set_force_serial_channel_operations_delegates_to_model(
-    controller: MetaController,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Forward serial operation flag to the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked meta model.
-    """
-    controller.set_force_serial_channel_operations(True, "key1", 0)
-    mock_model.set_force_serial_channel_operations.assert_called_once_with(
-        True, "key1", 0
-    )
 
 
 # ----------------------- export_plot_data ----------------------------

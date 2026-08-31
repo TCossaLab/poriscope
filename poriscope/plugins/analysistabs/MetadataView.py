@@ -2901,6 +2901,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
         :type axis: str
         """
+        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
+        # rather than an error, so do not dispatch it as a plugin key.
+        if not loader or loader == "No Event Database":
+            return
         try:
             self.global_signal.emit(
                 "MetaDatabaseLoader",

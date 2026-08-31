@@ -161,6 +161,16 @@ Saving an event database
 
 Once this loop is complete, our eventfinder will have flagged and built an internal list of all the locations at which events occurred according to your settings, but it has not saved or printed them, yet. To save them, we must create a writer object that links to an eventfinder that has completed its task in the loop above, and write a database of the events it found to disk for later analysis. As with the eventfinding step, writing to a database involves using a generator to iterate through the events found and write them to disk. As always, replace the values here with ones appropriate to your data.
 
+.. note::
+
+   Whether a plugin's channels may be driven in parallel is not a matter of taste - ask the
+   plugin. :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.force_serial_channel_operations`
+   returns ``True`` when they may not, which is the case for both writer types. As of
+   Poriscope 1.7 the plugin enforces this itself rather than relying on the GUI, so the
+   guarantee holds in scripts too: if you drive a serial plugin's channels from your own
+   threads they will serialise rather than corrupt each other. Single-threaded scripts like
+   this one are unaffected. See :ref:`serial_channel_operations`.
+
 .. code:: python
 
     # Now that we have found all our events we need to write them to a database
@@ -179,9 +189,9 @@ Once this loop is complete, our eventfinder will have flagged and built an inter
 
     for channel in channels:
         print(f"Writing data for channel {channel}")
-        # eventfinders need a channel argument, a list of (start, end) pairs to set which parts of the data to look at, the length in second of the chunk of data to load, and the function to use to filter the data
-        # you could also do this in parallel by channel
-        # [(0,0)] for start, end means to just read the whole channel
+        # unlike the eventfinder above, do NOT try to run this in parallel by channel:
+        # writers declare force_serial_channel_operations() == True, and the plugin now
+        # takes its own lock to enforce that, so parallel channels would simply queue
         writer_generator = writer.commit_events(channel)
         while True:
             try:

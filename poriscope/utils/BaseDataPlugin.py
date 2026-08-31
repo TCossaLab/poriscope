@@ -24,11 +24,23 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
+import contextlib
 import logging
 import threading
 from abc import ABC, abstractmethod
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypedDict, cast
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypedDict,
+    cast,
+)
 
 from poriscope.utils.LogDecorator import log
 
@@ -74,11 +86,10 @@ class BaseDataPlugin(ABC):
 
     Attributes:
         logger (logging.Logger): Logger instance for logging messages.
-        lock (threading.Lock): Class-level lock available for subclasses that need to serialize access to shared state.
+        lock (threading.RLock): Per-instance reentrant lock, used by :py:meth:`serialize_channel_operations` to serialize this plugin's own operations across channels when it declares that it must not run concurrently. One lock per plugin instance, so two different plugins never contend with each other. A plugin needing *process-wide* serialization (a non-reentrant native library, say) must declare its own class-level lock rather than reusing this one - see ``WaveletFilter``.
     """
 
     logger = logging.getLogger(__name__)
-    lock = threading.Lock()
 
     def __init__(self, settings: Optional[dict] = None) -> None:
         """
@@ -87,6 +98,11 @@ class BaseDataPlugin(ABC):
         :param settings: A dict specifying the parameters of the plugin to be created. Required keys depend on subclass. If None, the plugin is left unconfigured until :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` is called.
         :type settings: Optional[dict]
         """
+        # Created before _init() so that subclass hooks and apply_settings can rely on
+        # it. Reentrant on purpose: this guard goes into base classes that plugin authors
+        # subclass, and the failure mode of a plain Lock re-acquired by the thread that
+        # already holds it is a silent hang rather than an exception.
+        self.lock = threading.RLock()  # typeshed: RLock is a factory, not a type
         self._init()
         self.settings: dict[str, dict[str, Any]] = settings or {}
         self.dependents: Set[Tuple[str, str]] = set()
@@ -194,6 +210,26 @@ class BaseDataPlugin(ABC):
         :rtype: bool
         """
         return False
+
+    @contextlib.contextmanager
+    def serialize_channel_operations(self) -> Iterator[None]:
+        """
+        Hold this plugin's own lock for the duration of the block, but only if the plugin declares that its channels must not run concurrently.
+
+        This is where :py:meth:`force_serial_channel_operations` is actually enforced. The declaration is a statement about *this instance* - "my own operations must not overlap across channels" - so the lock taken is this instance's :py:attr:`lock`. Two different plugin instances never contend with each other, and a plugin that returns ``False`` pays nothing.
+
+        Enforcement lives here, on the object that makes the declaration, rather than in the caller. It used to live in ``MetaModel``, which asked the plugin over the signal bus and then handed its own model-scoped lock to the worker - and since every analysis tab builds its own model, two tabs driving the *same* plugin instance took *different* locks and ran it concurrently anyway, while unrelated plugins within one tab serialized against each other for nothing.
+
+        The lock is held across ``yield``, so a generator guarded by this is serialized for its whole run and releases when it is exhausted or closed. :py:meth:`~poriscope.utils.MetaModel.MetaModel.discard_generator` closes spent generators explicitly so that release does not depend on garbage-collection timing.
+
+        :yield: None; the block runs with the lock held if serialization was requested.
+        :ytype: None
+        """
+        if self.force_serial_channel_operations():
+            with self.lock:
+                yield
+        else:
+            yield
 
     @log(logger=logger)
     def register_dependent(self, metaclass: str, key: str) -> None:
