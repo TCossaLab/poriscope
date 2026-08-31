@@ -33,9 +33,11 @@ The following tools are used in Poriscope:
 - **pydoclint** – checks that a docstring's documented parameters, return type, and
   raised exceptions actually match the function's real signature and body (see
   :ref:`docstring_consistency` below)
+- **settings-schema** – checks that every plugin's ``get_empty_settings()`` is
+  internally self-consistent (see :ref:`plugin_settings_schema_testing` below)
 - **check-added-large-files** – prevents accidental commits of large files
 
-All five are managed through the **pre-commit** framework.
+All six are managed through the **pre-commit** framework.
 
 Alongside these, a dedicated automated test — :ref:`plugin_compliance_testing` below —
 checks that any plugin you add or modify actually implements the interface its base
@@ -54,10 +56,13 @@ run automatically:
 - ``ruff`` (strict mode) – validates code without modifying files
 - ``mypy`` – validates static typing
 - ``pydoclint`` – validates that docstrings match real signatures and behavior
+- ``settings-schema`` – validates every plugin's declared settings schema
 - ``check-added-large-files`` – blocks files larger than 123 KB
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
-``tests/``. Everything else runs against every tracked file.
+``tests/``. ``settings-schema`` is scoped tighter still, to ``poriscope/plugins/**``
+only, and only needs to run when a plugin's settings could have changed. Everything
+else runs against every tracked file.
 
 These checks **never modify files**.
 
@@ -448,6 +453,18 @@ through its declared ``Type`` before you ever see it:
 
    pytest tests/unit/plugins/test_settings_schema.py
 
+The first three checks above (everything except the default-value check, which needs
+a live plugin instance) also run outside pytest, as
+:py:func:`poriscope.utils.settings_schema.validate_settings_schema`. A local
+pre-commit hook, ``settings-schema``, runs this on every commit touching
+``poriscope/plugins/**`` via ``scripts/check_settings_schema.py`` - so a schema
+mistake like the two above is caught at commit time, before you ever run the full
+test suite:
+
+.. code-block:: bash
+
+   python scripts/check_settings_schema.py
+
 .. _plugin_conformance_testing:
 
 Behavioural Conformance Testing
@@ -605,7 +622,8 @@ then stage the changes.
 
    pre-commit run --all-files
 
-This runs ``ruff`` (strict), ``mypy``, ``pydoclint``, and ``check-added-large-files``.
+This runs ``ruff`` (strict), ``mypy``, ``pydoclint``, ``settings-schema``, and
+``check-added-large-files``.
 Nothing here is auto-fixed for you — if ``mypy`` or ``pydoclint`` report a problem,
 you need to edit the code or docstring yourself. See :ref:`docstring_consistency`
 above if a pydoclint failure doesn't make sense, and :ref:`type_checking_policy` for

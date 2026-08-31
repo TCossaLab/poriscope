@@ -149,7 +149,7 @@ order:
 (Test-writing was out of scope here as of 2026-08-25, which had pushed blocks 1 and 7
 down the queue indefinitely and split block 2. That restriction no longer holds - block
 1's pytest harness has since landed in full, across all eight `Meta*` families, and
-block 2's harness half has landed too, as `test_settings_schema.py`. Block 7 is still
+block 2 is now fully landed, harness and reusable-module halves both. Block 7 is still
 open.)
 
 Ranked, cheapest real value first:
@@ -159,13 +159,10 @@ Ranked, cheapest real value first:
 2. **The abort-with-no-panel-message bug** in "Still queued" below. The only open item
    a user would actually notice, and the routing is already worked out.
 3. **The duplicated `QTimer.singleShot`** in "Still queued" - one line.
-4. **Block 2's validator half only**: `validate_settings_schema()` as a real module
-   under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
-   harness that is out of scope.
-5. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
+4. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
    Well-motivated: no-nested-functions, no-bare-except and explicit sqlite cleanup were
    all enforced by hand during the 2026-08-25 lint sweep.
-6. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
+5. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
 
 Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
@@ -585,24 +582,27 @@ conformance failure on a new contribution as meaningful signal — but do not ex
 clean sweep. The fitter pass needed `ClassicCUSUM` retuned and two plugins skipped for
 want of a fixture, and neither was a plugin defect.
 
-## 2. Settings-schema linter for `get_empty_settings()`
+## 2. Settings-schema linter for `get_empty_settings()` - landed (2026-08-31)
 
-**The pytest half has landed** as `tests/unit/plugins/test_settings_schema.py`: it walks
-every concrete `BaseDataPlugin` subclass and checks `Type`/`Value` presence, `Min <= Max`,
-`Options` element types, `isinstance(Value, Type)` for shipped defaults, and `Value in
-Options`. The 21 violations it found are fixed - see `changelog.md`. Two pieces remain.
+`tests/unit/plugins/test_settings_schema.py` walks every concrete `BaseDataPlugin`
+subclass and checks `Type`/`Value` presence, `Min <= Max`, `Options` element types,
+`isinstance(Value, Type)` for shipped defaults, and `Value in Options`. The 21
+violations it found are fixed - see `changelog.md`.
 
-**Still open: the reusable validator.** The checks currently live in the test, and the
-default-value half delegates to the plugin's own `_validate_param_types` /
-`_validate_param_ranges` rather than reimplementing them. Extracting
-`poriscope/utils/settings_schema.py::validate_settings_schema(schema: dict) -> list[str]`
-returning human-readable problems (empty list = clean) would make the same check usable
-from a script or a hook without pytest. Note the delegation is deliberate and worth
-keeping in the test: it cannot drift from the rules it enforces.
+The static (schema-only) half now lives in
+`poriscope/utils/settings_schema.py::validate_settings_schema(schema: dict) -> list[str]`,
+reusable outside pytest; the test imports it rather than duplicating it. The
+default-value half still delegates to each plugin's own `_validate_param_types` /
+`_validate_param_ranges` rather than reimplementing them - deliberately: it cannot
+drift from the rules it enforces, and it inherently needs a live instance, so it stays
+pytest-only rather than moving into the static module.
 
-**Still open: the gate.** Cheap enough to run as a blocking pre-commit/CI check on every
-PR touching `poriscope/plugins/**`, well before the more expensive conformance suite in
-block 1. Needs the validator module above first.
+`scripts/check_settings_schema.py` runs the static half standalone (no pytest), and a
+new local `settings-schema` pre-commit hook (`.pre-commit-config.yaml`) runs it on
+every commit touching `poriscope/plugins/**`, ahead of the much more expensive
+conformance suite in block 1. Verified to actually catch a violation before landing:
+a deliberately injected `Min > Max` was caught and reported with the offending
+plugin/parameter named, then reverted.
 
 **Open contract question surfaced by the above.** `Units` is a sixth schema field that
 `SQLiteEventWriter` and `SQLiteDBWriter` both read (`base_settings["Voltage"]["Units"]`)
