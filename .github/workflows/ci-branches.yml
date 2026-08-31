@@ -1,7 +1,10 @@
 # CI (Branches)
 # -----------------------------------------------------------------------------
 # What it does
-# - Runs on branch pushes to: develop, feature/*, bugfix/*
+# - Runs on branch pushes to: develop, feature/*, bugfix/*, hotfix/*
+#   hotfix/* is included because a hotfix branches off main and git flow merges it
+#   straight back into main locally - there is no pull request in that flow, so
+#   without this trigger the first CI a hotfix ever sees is the release itself.
 # - Installs Linux GUI prereqs for PySide6 (EGL/GL/XCB) + Xvfb virtual display
 # - Sets up Python, caches pip by requirements files
 # - Installs runtime + dev deps
@@ -33,6 +36,7 @@ on:
       - develop
       - 'feature/*'
       - 'bugfix/*'
+      - 'hotfix/*'
 
 permissions:
   contents: write  # required for auto-commit of pre-commit fixes
