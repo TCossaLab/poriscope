@@ -56,10 +56,22 @@ def main():
     print("Regenerating autodoc .rst files...")
     subprocess.run([sys.executable, "scripts/generate_all_autodoc_rst.py"], check=True)
 
-    # Build docs
+    # Build docs. -W --keep-going matches the Docs Render Check CI gate, so a
+    # local merge surfaces exactly what a pull request would fail on rather
+    # than printing warnings nobody reads.
     print("Building Sphinx docs...")
     subprocess.run(
-        [sys.executable, "-m", "sphinx", "-b", "html", "docs/source", "docs/build"],
+        [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-W",
+            "--keep-going",
+            "-b",
+            "html",
+            "docs/source",
+            "docs/build",
+        ],
         check=True,
     )
 

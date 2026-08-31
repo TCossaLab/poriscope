@@ -58,8 +58,20 @@ autodoc_mock_imports = [
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),  # for abc.ABC, abc.ABCMeta
-    "qt": ("https://doc.qt.io/qtforpython/", None),  # for PySide6.QtCore.QObject, etc.
+    # qtforpython/ 301-redirects to qtforpython-6/; naming the real location
+    # avoids a redirect notice on every build.
+    "qt": (
+        "https://doc.qt.io/qtforpython-6/",
+        None,
+    ),  # for PySide6.QtCore.QObject, etc.
 }
+
+# The docs are built with -W (see .github/workflows/docs-check.yml), so an
+# unreachable inventory would otherwise fail CI on a transient network problem
+# rather than on anything a contributor did. Cap the wait and let a failed
+# fetch degrade to unresolved references instead of an error.
+intersphinx_timeout = 10
+suppress_warnings = ["intersphinx.external"]
 
 templates_path = ["_templates"]
 exclude_patterns: List[str] = []
