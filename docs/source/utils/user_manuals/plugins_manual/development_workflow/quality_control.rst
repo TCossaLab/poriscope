@@ -569,10 +569,17 @@ scattered across plugin files.
 
 .. note::
 
-   One gap remains, limited by a synthetic fixture rather than by the harness.
-   ``tests/synthetic_data`` plants flat rectangular blockages, which suits step- and
-   level-based fitters but gives a peak-based one nothing to find, so ``PeakFinder``
-   and ``Basic_PeakFinder`` are skipped with that reason recorded.
+   ``tests/synthetic_data``'s events database can plant a resolvable intra-event
+   dip - a smooth taper, not a rectangle, since a rectangular one's sharp edges
+   turned out to trigger a real fitter bug more often, not less (see below) -
+   via ``sublevel_dip_pA``/``sublevel_dip_width_samples``, used through a second
+   ``peaked_events_db_path`` fixture that the fitters passing against the
+   original flat one never see. ``Basic_PeakFinder`` uses it and is fully
+   covered. ``PeakFinder`` is still skipped: it needs a fundamentally different
+   fixture, not this one tuned differently - its internal minimum peak
+   prominence is derived from the blockage's own depth, not from any exposed
+   setting, so a modest intra-event dip can never clear it regardless of
+   tuning. See ``FITTERS_SKIPPED`` in ``_recipes.py`` for the full reasoning.
 
 .. tip::
 

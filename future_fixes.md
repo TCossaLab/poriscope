@@ -469,13 +469,43 @@ driven against real data; see `changelog.md` for what each family checks and wha
 found. The notes below are what is still open, plus the findings that reshaped the
 plan.
 
-**Still open: a fixture that plants intra-event structure.** `_build_event_trace` in
-`tests/synthetic_data/synthetic_events_db.py` plants one flat rectangular blockage per
-event, so peak-based fitters have nothing to find - `PeakFinder` rejects all 25 events
-and `Basic_PeakFinder` fits 1. Both are skipped in the conformance suite with that
-reason recorded. Adding a knob for resolvable peaks (or multiple sublevels) inside the
-blockage would bring them in, and would also let the CUSUM family be tested against a
-known sublevel count rather than only a known event count.
+**Partially landed (2026-08-31): a fixture that plants intra-event structure.**
+`_build_event_trace` in `tests/synthetic_data/synthetic_events_db.py` gained
+`sublevel_dip_pA`/`sublevel_dip_width_samples`: a smooth (raised-cosine/Hann) taper
+added on top of the flat blockage, one resolvable local extremum per event. A second,
+separate database (`peaked_events_db_path` in `tests/unit/plugins/conformance/conftest.py`)
+uses it; the original flat one is untouched, so the five fitters already passing
+against it carry zero risk from this. `Basic_PeakFinder` now fits all 25 planted
+events and is fully in the conformance suite (`test_eventfitters.py`, no longer
+skipped).
+
+Un-skipping `Basic_PeakFinder` surfaced a real bug, since fixed:
+`_populate_sublevel_metadata`'s `sublevel_max_deviation` computation had a ternary
+whose both arms slice to an empty array when two consecutive sublevel-transition
+indices land on the exact same sample (`np.max` on that raises "zero-size array to
+reduction operation maximum which has no identity") - reachable whenever
+`scipy.signal.find_peaks`'s interpolated half-height width crossing truncates to the
+peak's own index under noise, confirmed via direct reproduction (a transition list
+containing `..., 227, 227, ...`). Fixed by returning `0.0` for a zero-width sublevel,
+matching `sublevel_raw_ecd`'s existing `np.sum`-over-empty-slice precedent two lines
+above it. A rectangular dip was tried first and made this worse, not better (edge
+ripple resolving into two close peaks); the smooth taper reduces but does not by
+itself eliminate the underlying edge case - the plugin fix is what actually closed it.
+
+`PeakFinder` stays skipped, with a more precise reason than before: it was tried
+against the same peaked database and rejected all 25 events as "No Peaks Found" under
+every setting tried, because its internal minimum peak prominence
+(`PeakFinder._locate_sublevel_transitions`) is derived from `carrier_blockage` - the
+depth of the blockage itself (~400 pA here), not from the "Min Carrier Blockage"
+setting - so a modest intra-event dip can never clear it regardless of tuning. It
+would need a genuinely different fixture shape: a two-level signal with both levels
+comparable in depth, and even that would only reach the entry point to its own
+downstream folded/unfolded and translocation-direction classification stages, which
+remain unexplored. See `FITTERS_SKIPPED` in `_recipes.py`.
+
+Still open: extending the same knob to let the CUSUM family be tested against a known
+sublevel count, not just a known event count - untouched by the above, since CUSUM
+et al. use the original flat database.
 
 **Landed, and worth extending: the resource-leak check.** `psutil` was never needed - on
 Windows an open handle blocks `os.unlink`, so unlinking a plugin's output after
