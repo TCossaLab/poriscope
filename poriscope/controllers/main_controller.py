@@ -24,6 +24,7 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
+import copy
 import inspect
 import logging
 import sys
@@ -125,6 +126,11 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot()
     def handle_about_to_quit(self) -> None:
+        # Flush tab state (e.g. Metadata/Protein subset filters) that only lives on the
+        # view and is otherwise persisted lazily, only when some other plugin-history
+        # event happens to fire. Without this, editing filters and quitting without
+        # touching a data plugin or clicking Save Session would silently lose them.
+        self.save_session()
         for key, val in self.analysis_tabs.items():
             if val:
                 val.handle_kill_all_workers(key, exiting=True)
@@ -493,7 +499,29 @@ class MainController(QObject):
                 else:
                     new_history[key] = val
             self.plugin_history = new_history
+        self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history)
+
+    @log(logger=logger)
+    def _sync_tab_session_state_into_history(self) -> None:
+        """
+        Snapshot each open analysis tab's extra session state into its plugin history entry.
+
+        A tab may keep state beyond what MainController already tracks (e.g. Metadata
+        and Protein build a filter list entirely on their own view) via
+        ``MetaController.get_session_state()``, which defaults to returning nothing.
+        This merges whatever a tab does return into its corresponding history entry so
+        it round-trips through session save/load along with the rest of the tab's state.
+        """
+        for subclass, tab in self.analysis_tabs.items():
+            if tab is None:
+                continue
+            entry = self.plugin_history.get(subclass)
+            if entry is None:
+                continue
+            state = tab.get_session_state()
+            if state:
+                entry.update(copy.deepcopy(state))
 
     @Slot(str, str, str)
     def handle_plugin_state_changed(
@@ -588,6 +616,7 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str)
     def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
+        self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, save_file)
 
     @log(logger=logger)
@@ -612,12 +641,18 @@ class MainController(QObject):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
             if metaclass == "MetaController":
+                tab_already_open = subclass in self.analysis_tabs
                 try:
                     self.instantiate_analysis_tab(subclass)
                 except Exception as e:
                     self.logger.error(
                         f"Unable to restore Analysis Tab {key} of type {subclass} due to {str(e)}"
                     )
+                    continue
+                if not tab_already_open:
+                    tab = self.analysis_tabs.get(subclass)
+                    if tab is not None:
+                        tab.restore_session_state(plugin)
             else:
                 settings = plugin.get("settings")
                 try:

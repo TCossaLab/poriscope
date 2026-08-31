@@ -29,7 +29,7 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Generator, List, Mapping, Optional
+from typing import Any, Dict, Generator, List, Mapping, Optional
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
@@ -531,5 +531,36 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     def ignore(self) -> None:
         """
         Placeholder method that does nothing. Can be overridden if needed.
+        """
+        pass
+
+    @log(logger=logger)
+    def get_session_state(self) -> Dict[str, Any]:
+        """
+        Return extra tab-specific state to persist alongside this tab's session history entry.
+
+        MainController calls this on every open tab immediately before writing session
+        history to disk, and merges the result into that tab's history entry. The base
+        implementation returns an empty dict. A subclass that keeps state MainController
+        cannot otherwise see (e.g. a filter list built entirely in the view) should
+        override this, and override :meth:`restore_session_state` to apply it back.
+
+        :return: Extra state to serialize into this tab's session history entry.
+        :rtype: Dict[str, Any]
+        """
+        return {}
+
+    @log(logger=logger)
+    def restore_session_state(self, state: Dict[str, Any]) -> None:
+        """
+        Restore extra tab-specific state captured by :meth:`get_session_state`.
+
+        Called by MainController after this tab is freshly instantiated during session
+        load, with that tab's full history entry (including keys unrelated to session
+        state, which implementations should ignore). The base implementation does nothing.
+
+        :param state: This tab's session history entry, as previously written by
+            :meth:`get_session_state`.
+        :type state: Dict[str, Any]
         """
         pass

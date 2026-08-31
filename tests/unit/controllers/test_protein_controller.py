@@ -500,3 +500,24 @@ class TestRelayQueryResult:
     def test_forwards_none_to_view(self, controller):
         controller.relay_query_result(None)
         assert controller.view.relayed_query_result is None
+
+
+# ===========================================================================
+# get_session_state / restore_session_state
+# ===========================================================================
+
+
+class TestSessionState:
+    def test_get_session_state_returns_view_subset_filters(self, controller):
+        controller.view.subset_filters = {"f1": "dur>100"}
+        assert controller.get_session_state() == {"subset_filters": {"f1": "dur>100"}}
+
+    def test_restore_session_state_applies_subset_filters(self, controller):
+        controller.restore_session_state(
+            {"metaclass": "MetaController", "subset_filters": {"f1": "dur>100"}}
+        )
+        assert controller.view.subset_filters == {"f1": "dur>100"}
+
+    def test_restore_session_state_is_noop_without_subset_filters(self, controller):
+        controller.restore_session_state({"metaclass": "MetaController"})
+        assert controller.view.subset_filters == {}
