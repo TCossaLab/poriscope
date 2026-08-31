@@ -56,51 +56,57 @@ class Worker(QObject):
 
     @log(logger=logger)
     def process_generator(self) -> None:
-        """Run the generator loop in a separate thread."""
+        """
+        Drive the generator to completion on this worker's thread, relaying its yielded progress.
+
+        The generator is primed with a single ``next()`` on the first iteration and driven with
+        ``send(self.stop_requested)`` on every iteration after that. Priming explicitly matters:
+        ``send()`` on a not-yet-started generator raises ``TypeError`` by design, and the loop
+        used to absorb that with a blanket ``except TypeError: next(self.generator)``. That arm
+        could not distinguish the unstarted-generator case from a ``TypeError`` raised inside the
+        generator *body* - by which point the generator is already closed, so the ``next()``
+        fallback raised ``StopIteration`` and the run was logged as a successful finish at INFO.
+        A failed analysis was indistinguishable from one that legitimately found nothing.
+
+        Every failure is therefore now reported through one ``except Exception`` arm, with a
+        traceback. The typed arms this replaces (``RuntimeError``, ``ValueError``, ``IOError``)
+        differed only in wording and all ended the run identically, and per-type special-casing
+        in this loop is what allowed the bug above - so there is deliberately no per-type
+        handling here beyond ``StopIteration``, which is the success path.
+
+        Every exit arm emits a completion value for the progress bar explicitly rather than
+        relying on the ``finally`` in :py:meth:`run`, and does so *before* logging the failure:
+        the progress-bar teardown travels on a queued connection while an ERROR record raises a
+        modal dialog, so emitting first is what stops the bar being stranded behind that dialog.
+        """
+        identifier = f"{self.key}/{self.channel}"
         p: float = 0
+        started = False
         while True:
-            self.logger.debug(
-                f"Worker [{self.key}/{self.channel}] waiting for generator output..."
-            )
+            self.logger.debug(f"Worker [{identifier}] waiting for generator output...")
             try:
-                try:
+                if started:
                     p = self.generator.send(self.stop_requested)
-                except TypeError:
+                else:
                     p = next(self.generator)
-                self.logger.debug(
-                    f"Worker [{self.key}/{self.channel}] Generator produced: {p}"
-                )
+                    started = True
+                self.logger.debug(f"Worker [{identifier}] Generator produced: {p}")
             except StopIteration:
-                self.logger.info(
-                    f"Worker [{self.key}/{self.channel}] Generator finished StopIteration."
-                )
-                break
-            except RuntimeError as e:
-                self.logger.error(
-                    f"Worker [{self.key}/{self.channel}] encountered RuntimeError: {e}"
-                )
-                break
-            except ValueError as e:
-                self.logger.error(
-                    f"Worker [{self.key}/{self.channel}] encountered ValueError: {e}"
-                )
-                break
-            except IOError as e:
-                self.logger.error(
-                    f"Worker [{self.key}/{self.channel}] encountered IOError: {e}"
-                )
+                self.update_progressbar.emit(100, identifier)
+                self.logger.info(f"Worker [{identifier}] Generator finished.")
                 break
             except Exception as e:
+                self.update_progressbar.emit(100, identifier)
                 self.logger.exception(
-                    f"Worker [{self.key}/{self.channel}] encountered unexpected error: {e}"
+                    f"Worker [{identifier}] failed after {'0' if not started else 'at least one'} "
+                    f"generator step: {repr(e)}"
                 )
-                self.update_progressbar.emit(100, f"{self.key}/{self.channel}")
                 break
             else:
                 progress = 100 * p
-                self.update_progressbar.emit(progress, f"{self.key}/{self.channel}")
+                self.update_progressbar.emit(progress, identifier)
                 self.logger.debug(
-                    f"Worker [{self.key}/{self.channel}] Progress updated: {progress:.2f}%"
+                    f"Worker [{identifier}] Progress updated: {progress:.2f}%"
                 )
 
     @log(logger=logger)
@@ -114,8 +120,6 @@ class Worker(QObject):
                     self.process_generator()
             else:
                 self.process_generator()
-        except Exception:
-            raise
         finally:
             self.update_progressbar.emit(100, f"{self.key}/{self.channel}")
             self.logger.info(f"Worker [{self.key}/{self.channel}] finished.")

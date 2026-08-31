@@ -38,15 +38,6 @@ every Critical item lives in that blind spot.
   serialize against each other for nothing. The lock belongs to the plugin instance.
   `BaseDataPlugin.lock` is *not* the fix as written: it is a class attribute, one lock for
   every data plugin in the process, which `WaveletFilter._apply_filter` relies on today.
-- **A `TypeError` inside any generator is reported as successful completion.**
-  `EventWorker.py:63-68`. `send()` on a not-yet-started generator raises `TypeError`, so
-  the `next()` fallback fires by design on iteration one. But when `send()` raises
-  `TypeError` from the generator body the generator is already terminated, `next()` raises
-  `StopIteration`, and the loop logs "Generator finished StopIteration." at INFO. Verified
-  by execution. Event finding or fitting appears to succeed and produces nothing,
-  indistinguishable from "no events found" - likely the costliest item here. Fix: prime
-  the generator with one `next()` before the loop, then `send()` unconditionally, so
-  plugin `TypeError`s reach the `except Exception` arm already below.
 
 ### High - working today, but for reasons nothing records or tests
 
@@ -203,6 +194,19 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   `call_args` payload at that emit site; the payload fix is unrelated to and does not
   mask this. Not fixed there because it is a behavioural change to the commit path that
   wants its own look at what the callers actually pass.
+- **`EventWorker` still has no test coverage.** The generator-failure fix landed verified
+  only by a throwaway script (four scenarios: happy path, mid-run `TypeError`, abort, empty
+  generator). `test_event_worker.py` does not exist - see `test_mapping_audit.csv` - and
+  this is the single dispatch loop behind every event finder, fitter and writer run. Owed by
+  whoever owns test-writing; the scenarios above are the ones worth encoding.
+- **A worker blocked on a lock cannot observe an abort.** `Worker.stop()` only sets
+  `stop_requested`, which is read on the generator's next turn, so a channel queued behind a
+  serial-mode lock keeps waiting until it acquires. Pre-existing and unrelated to the
+  granularity fix; per-instance locks shorten the queues but do not change this.
+- **`MetaView.lock` is a class attribute shared by every tab view.** `MetaView.py:90`. It
+  guards `progress_bars` in `remove_progress_bar` only; the other three accesses
+  (`:282`, `:287`, `:325`) are unguarded, so the lock does not actually establish the
+  invariant it looks like it establishes.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.

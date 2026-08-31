@@ -169,7 +169,7 @@ class MetaWriter(BaseDataPlugin):
         return settings
 
     @log(logger=logger)
-    def commit_events(self, channel: int) -> Generator[float, None, None]:
+    def commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file

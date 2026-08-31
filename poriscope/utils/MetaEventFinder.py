@@ -379,7 +379,7 @@ class MetaEventFinder(BaseDataPlugin):
         end: float = 0,
         chunk_length: float = 1.0,
         data_filter: Optional[Callable] = None,
-    ) -> Generator[float, Optional[bool], None]:
+    ) -> Generator[float, None, None]:
         """
         Set up a generator that will walk through all provided data and find events, yielding its percentage completion each time next() is called on it.
         If silent flag is set, run through without yielding progress reports on the first call to next(). Once StopIteration is reached, internal
