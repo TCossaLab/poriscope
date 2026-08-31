@@ -1,4 +1,4 @@
-## Poriscope 1.7: In Progress
+## Poriscope 1.7.0: 2026-08-31
 
 * **Fixed: Load Session / Restore Session could fail with an "already exists" error if the workspace already had state**
     * `MainController.load_session` applied the loaded plugin history directly on top of whatever was already instantiated, so a plugin key or named filter already present from the current workspace collided with the same key/name in the loaded session, surfacing as an "already exists" error instead of loading cleanly. **Load Session** (a chosen file) and **Restore Session** (the last saved session) both route through this one method, so both were affected identically.
