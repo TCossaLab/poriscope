@@ -1438,7 +1438,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 "MetaDatabaseLoader",
                                 loader,
                                 "get_column_units",
-                                (column),
+                                (column,),
                                 "relay_units",
                                 (),
                             )
@@ -1943,7 +1943,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                     "MetaDatabaseLoader",
                     loader,
                     "get_column_type",
-                    x_axis_col,
+                    (x_axis_col,),
                     "relay_column_type",
                     (),
                 )

@@ -20,11 +20,11 @@ Run the app with the `poriscope` console-script entry point (`poriscope.main_app
 ## Common commands
 
 ```
-pytest                                        # full suite
-pytest -m "not e2e and not slow"              # what CI runs on every branch push
+pytest                                        # full suite - also what CI runs, everywhere
 pytest tests/unit/plugins/test_plugin_compliance.py   # plugin interface compliance
 pytest path/to/test_file.py::test_name        # single test
-pytest -m fast                                # quick tests only (<5s)
+pytest --marker-stats                         # per-marker test counts and mean durations
+pytest -m "not e2e"                           # skip the e2e tests
 
 pre-commit run --all-files --hook-stage manual   # auto-fix: black, ruff --fix
 pre-commit run --all-files                       # strict check: ruff + mypy + pydoclint (what pre-commit/CI enforce on real commits)
@@ -79,7 +79,10 @@ actually fixes `rest_attr_parser.py`. Do not flip it back on just because the is
 Qt-based tests need `qt_api = pyside6` (already set in `pytest.ini`) and, on Linux/CI,
 `QT_QPA_PLATFORM=offscreen` plus `xvfb-run`.
 
-Pytest markers (see `pytest.ini`): `compliance`, `fast`, `integration`, `e2e`, `e2e_ux`.
+Pytest markers (see `pytest.ini`): `compliance`, `integration`, `e2e`, `e2e_ux`,
+`smoke`. `e2e` and `integration` are applied **automatically by path** in
+`tests/conftest.py` - do not hand-apply them. `pytest --marker-stats` prints current
+per-marker counts and mean durations.
 
 ## Architecture
 
@@ -171,8 +174,8 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   and never call a run green from a progress line; read the real summary line.
 - `tests/integration/flows/` instantiate real controller/model/view stacks
   "no_gui" (headless) for cross-plugin flows; `tests/e2e/` drive actual Qt widgets
-  (`e2e_ux` marker) end-to-end and are excluded from the standard CI run
-  (`not e2e and not slow`).
+  (`e2e_ux` marker) end-to-end. **CI runs the entire suite on every branch push,
+  fork PR, internal PR and release** - there is no subset and no marker filter.
 
 ## Docs
 

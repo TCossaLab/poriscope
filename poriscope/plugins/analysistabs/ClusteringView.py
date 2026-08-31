@@ -287,7 +287,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
             "MetaDatabaseLoader",
             loader,
             "get_table_by_column",
-            ("cluster_label"),
+            ("cluster_label",),
             "check_cluster_column_exists",
             (),
         )
@@ -311,7 +311,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
                     "MetaDatabaseLoader",
                     loader,
                     "alter_database",
-                    (queries),
+                    (queries,),
                     "alter_database_status",
                     (),
                 )

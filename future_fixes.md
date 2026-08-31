@@ -29,25 +29,6 @@ every Critical item lives in that blind spot.
 
 ### Critical - on the shared core, and each one fails quietly
 
-- **The signal dispatcher retries plugin methods with `None`.**
-  `main_controller.py:207-222`. `except TypeError: retval = func(None)` is meant as arity
-  recovery but cannot distinguish a signature mismatch at the call boundary from a
-  `TypeError` raised inside the callee, so a method that already ran halfway is invoked a
-  second time with different arguments. `commit_events` on a `MetaWriter` is on this path;
-  the same pattern also wraps `return_function`. The docstring documents it as intentional,
-  so this needs a decision rather than a patch. Fix: check arity up front with
-  `inspect.signature(func).bind(*call_args)` and let body `TypeError`s propagate.
-- **CI's `-m "not e2e and not slow"` filter selects nothing.**
-  `.github/workflows/ci-branches.yml:121`. The `e2e` marker is never applied - the tests
-  under `tests/e2e/` carry `e2e_ux` (19) or no marker (4) - and `slow` appears nowhere in
-  the repo. `tests/e2e/conftest.py` only registers the names; there is no
-  `pytest_collection_modifyitems` hook. Verified: `pytest tests/e2e --collect-only -q`
-  collects 20 with and without the filter, so the click-driven Qt tests run under Xvfb on
-  every branch push. `pytest -m fast` likewise matches 3 tests. Fix: mark them `e2e`
-  (keeping `e2e_ux` as the narrower click-driven subset) or use `--ignore=tests/e2e`, then
-  add `--strict-markers` to `addopts` so an unregistered marker fails instead of matching
-  everything. `CLAUDE.md` and the Quality Control docs page both currently describe the
-  exclusion as working and need correcting with the fix.
 - **`force_serial_channel_operations()` is enforced at the wrong granularity.**
   `MetaModel.py:79,118-128`. It is a per-plugin declaration, but the lock handed to the
   worker is `MetaModel.lock` - one per model, and every tab builds its own. Two tabs
@@ -134,15 +115,6 @@ every Critical item lives in that blind spot.
   elsewhere: `validate_and_instantiate_plugin` alone has six sequential
   try/except/log/return blocks, so a failure leaves the UI partially updated with no
   indication of which stage failed.
-- **The two dispatch handlers are near-duplicates that have already drifted.**
-  `main_controller.py:186-246` vs `:248-310` differ only in how the target is resolved;
-  everything after is copied. The first has the `TypeError` retry and uses
-  `logger.exception`, the second has neither - neither divergence looks deliberate. One
-  `_dispatch(target, ...)` helper removes ~55 lines. Note `_ensure_tuple` splats a returned
-  tuple into the callback's arguments, so a method legitimately returning a pair is
-  indistinguishable from one returning two values; and a method returning `None` yields
-  `()`, so its callback is called with zero arguments, raising the `TypeError` that
-  triggers the retry.
 - **Oversized units, measured.** Five functions exceed 300 lines:
   `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
   `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
@@ -223,6 +195,14 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
   currently surface, as modal dialogs, while the `info` ones do not - so fix the two
   together rather than routing more traffic into a handler that pops a dialog per record.
+- **`RawDataView.commit_events` never fires for a single non-list channel.**
+  Around `RawDataView.py:903`, `if not isinstance(channels, list): channels = [channels]`
+  normalises the argument, but the loop that emits `commit_events` sits in that `if`'s
+  `else` branch - so the normalised single channel is built and then never iterated.
+  Only a caller that already passed a list commits anything. Found while correcting the
+  `call_args` payload at that emit site; the payload fix is unrelated to and does not
+  mask this. Not fixed there because it is a behavioural change to the commit path that
+  wants its own look at what the callers actually pass.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
@@ -252,12 +232,14 @@ even when annotating surfaces a real bug. The logic in these files belongs to an
 developer. Everything below was found while annotating and left in place, marked with a
 narrow `# type: ignore` and a `NOTE:` comment at the site.
 
-- **`find_mode_blockage_level` guards two of its three Optional parameters.** In both
-  `PeakFinder.py` and `Basic_PeakFinder.py` the body explicitly handles `data is None`
-  and `baseline_std is None`, then computes `abs(data_min - baseline_mean)` with no
-  guard at all on `baseline_mean`, which is equally `Optional[float]` under the
-  `MetaEventFitter` contract. A caller with no baseline estimate gets a `TypeError`.
-  The asymmetry looks like a simple oversight rather than a decision.
+- **`find_mode_blockage_level` guards two of its three Optional parameters.** The body
+  explicitly handles `data is None` and `baseline_std is None`, then computes
+  `abs(data_min - baseline_mean)` with no guard at all on `baseline_mean`, which is
+  equally `Optional[float]` under the `MetaEventFitter` contract. A caller with no
+  baseline estimate gets a `TypeError`. The asymmetry looks like a simple oversight
+  rather than a decision. **Now open only in `Basic_PeakFinder.py`** - `PeakFinder.py`
+  has since gained an explicit `if baseline_mean is None: raise RuntimeError(...)`,
+  matching its docstring.
 - **`PeakFinder.filter_peaks` multiplies by a possibly-`None` `baseline_std`** at three
   adjacent lines (`type0_thresh`/`type1_thresh`/`type2_thresh`). Same root cause.
 - **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata.**
@@ -596,7 +578,7 @@ per-plugin "ownership" that already exists for a few plugins today.
 
 **Why.** `.github/workflows/ci-fork-pr.yml` already exists specifically for
 fork-originated PRs (the realistic path for a community contribution) and already runs
-strict `pre-commit run --all-files` plus `pytest -m fast` with `contents: read`
+strict `pre-commit run --all-files` plus the full `pytest` suite with `contents: read`
 fork-safe permissions — this is the right place to add plugin-specific gating rather
 than inventing a parallel workflow. There is currently no `CODEOWNERS` file in the
 repo, so plugin review isn't enforced by GitHub at all today.
@@ -614,7 +596,7 @@ repo, so plugin review isn't enforced by GitHub at all today.
    `poriscope/plugins/**`, runs the block-2 settings-schema check and block-1
    conformance suite scoped to just those files (e.g.
    `pytest -m conformance -k <derived from changed filenames>`), in addition to the
-   existing `pytest -m fast` step — so a plugin-touching PR gets strictly more
+   existing full `pytest` step — so a plugin-touching PR gets strictly more
    scrutiny than a non-plugin PR, without slowing down every PR with the full
    conformance suite.
 3. Mark this new step (and the existing strict `pre-commit` step) as required status

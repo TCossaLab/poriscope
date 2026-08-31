@@ -457,15 +457,18 @@ compliance suite.**
 
 See :ref:`plugin_compliance_testing` above for what this actually checks.
 
-☐ **4. Run the fast test suite** — the same subset continuous integration runs on
-every branch push:
+☐ **4. Run the test suite** — the same suite continuous integration runs on every
+branch push:
 
 .. code-block:: bash
 
-   pytest -m "not e2e and not slow"
+   pytest
 
-If you have time, running the **full** suite (``pytest``, no marker filter) locally
-before a large or risky change is even better, but step 4 is the minimum expected.
+There is no subset and no marker filter, at under 10 minutes, e2e tests are worth their cost. CI runs the whole suite everywhere, e2e
+tests included. 
+
+For per-marker counts and mean
+durations, run ``pytest --marker-stats``.
 
 ☐ **5. Update the changelog.**
 
@@ -477,7 +480,7 @@ the appropriate existing heading.
    **If you are contributing from a fork** (the typical path for an external/
    community contribution), steps 1–4 above must be completed *before you push*.
    Fork-originated pull requests run in a restricted, read-only CI workflow that
-   performs strict validation and the fast test suite only — it deliberately cannot
+   performs strict validation and the full test suite — it deliberately cannot
    auto-fix formatting or push corrections back to your branch, for security reasons.
    If you skip step 1 or 2 locally, CI will simply fail on something a maintainer has
    no way to fix for you, and you'll need to push a follow-up commit anyway.

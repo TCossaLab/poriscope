@@ -7,9 +7,11 @@ Which to use
 
       **Method Signature**: Both methods use the same function signature, taking parameters `metaclass`, `subclass_key`, `call_function`, `call_args`, `return_function`, and `ret_args`.
 
-      **Error Handling**: Both methods check for the existence and callable status of the function intended to be executed (`call_function`).
+      **Shared implementation**: Beyond resolving their target, both handlers run *the same code* — ``MainController._dispatch_to`` — so their guards, their argument rules, their return-value handling and their log messages are identical by construction and cannot drift apart. The two were previously copies of one another and had already diverged in their error handling.
 
-      **Return Function Execution**: Both methods can execute a `return_function` with the results of `call_function`, appending `ret_args` if provided.
+      **Error Handling**: The shared body checks that `call_function` exists and is callable, then checks that `call_args` will bind to its signature *before* calling it. A call that cannot bind is reported and never attempted; the target is called at most once; a `TypeError` raised inside the target is reported as such, with a traceback, rather than being mistaken for an argument mismatch.
+
+      **Return Function Execution**: Both execute a `return_function` with the result of `call_function` followed by `ret_args`. Whether the result is spread across the callback's parameters or passed as a single argument is decided by the target's declared return type — see the :ref:`GlobalSignal` API overview.
 
    .. tab:: Differences
 
@@ -33,33 +35,35 @@ Which to use
         - MetaController
         - MetaModel
         - MetaView
+        - MainController: both slots delegate to the same ``_dispatch_to``
 
-    **Different Implementation:**
+    **The only difference is what each slot resolves as the target**, after which they
+    hand off to identical code:
 
-        MainController: ``handle_global_signal`` vs ``handle_data_plugin_controller_signal``
+    **handle_global_signal** — resolves a plugin instance:
 
-
-    **Function Signature: handle_global_signal**
-      
       .. code-block:: python
 
-         @Slot(str, str, str, tuple, object, tuple)
-         def handle_global_signal(self, metaclass: str, subclass_key: str, call_function: str, call_args: tuple, return_function: object, ret_args: tuple):
-             self.logger.debug(f'received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}')
-             instance = self.data_plugin_controller.get_plugin_instance(metaclass, subclass_key)
+         target_label = f"{metaclass}/{subclass_key}"
+         instance = self.data_plugin_controller.get_plugin_instance(metaclass, subclass_key)
+         if instance is None:
+             ...log and return...
+         self._dispatch_to(instance, target_label, call_function, call_args, return_function, ret_args)
 
-        Unique line: **instance = self.data_plugin_controller.get_plugin_instance(metaclass, subclass_key)**
+    **handle_data_plugin_controller_signal** — the target *is* the controller:
 
-    **Function Signature: handle_data_plugin_controller_signal**
       .. code-block:: python
 
-         @log(logger=logger)
-         @Slot(str, str, str, tuple, object, tuple)
-         def handle_data_plugin_controller_signal(self, metaclass: str, subclass_key: str, call_function: str, call_args: tuple, return_function: object, ret_args: tuple):
-             self.logger.debug(f'received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}')
-             instance = self.data_plugin_controller  # this one goes to the data plugin controller directly, NOT to an actual plugin instance
-    
-        Unique line: **instance = self.data_plugin_controller**
+         target_label = "DataPluginController"
+         self._dispatch_to(self.data_plugin_controller, target_label, call_function, call_args, return_function, ret_args)
+
+    Both wrap that in a guard that logs with a traceback and swallows, because the slots
+    are invoked from C++ and an exception must not escape into the Qt caller. In
+    ``handle_global_signal`` the resolution itself is inside the guard: looking up an
+    unregistered ``metaclass`` raises ``KeyError`` rather than returning ``None``.
+
+    ``target_label`` is what you will see naming the target in every log message on that
+    path — a plugin key for one, the literal ``DataPluginController`` for the other.
 
    .. tab:: Summary
 

@@ -24,8 +24,10 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
+import inspect
 import logging
 import sys
+import typing
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -182,14 +184,173 @@ class MainController(QObject):
         self.data_plugin_controller.set_settings(None)
 
     @log(logger=logger)
-    def _ensure_tuple(self, args: Any) -> tuple:
-        if isinstance(args, tuple):
-            return args
-        else:
-            if args is None:
-                return ()
-            else:
-                return (args,)
+    def _binding_error(self, func: Callable, args: tuple) -> Optional[str]:
+        """
+        Report why func would refuse args as its positional arguments, without calling it. Arity is checked here, up front at the dispatch boundary, so that a TypeError raised from inside a callee is never mistaken for a call-site mismatch and the callee is never invoked twice. The reason is taken from Signature.bind itself rather than reconstructed, so the caller can log which argument is missing or surplus rather than leaving the reader to diff a signature against an argument list. Callables that cannot be introspected at all (C-implemented, or otherwise opaque) report no error, so the dispatcher falls through and calls them rather than refusing to.
+
+        :param func: The callable whose signature is to be tested.
+        :type func: Callable
+        :param args: Positional arguments to test against the signature.
+        :type args: tuple
+        :return: None if the call would bind or func cannot be introspected, otherwise a description of the mismatch.
+        :rtype: Optional[str]
+        """
+        try:
+            signature = inspect.signature(func)
+        except (TypeError, ValueError):
+            return None
+        try:
+            signature.bind(*args)
+        except TypeError as e:
+            return f"{signature} cannot accept arguments {args}: {e}"
+        return None
+
+    @log(logger=logger)
+    def _return_annotation(self, func: Callable) -> Any:
+        """
+        Resolve a callable's declared return type, preferring evaluated annotations over their string spellings and reporting inspect.Signature.empty if it has none that can be read.
+
+        :param func: The callable to introspect.
+        :type func: Callable
+        :return: The resolved return annotation, or inspect.Signature.empty if it cannot be determined.
+        :rtype: Any
+        """
+        try:
+            return inspect.signature(func, eval_str=True).return_annotation
+        except (TypeError, ValueError, NameError, AttributeError) as e:
+            self.logger.debug(
+                f"Could not evaluate the annotations of {getattr(func, '__name__', func)}, "
+                f"falling back to their unevaluated form: {repr(e)}"
+            )
+        try:
+            return inspect.signature(func).return_annotation
+        except (TypeError, ValueError):
+            return inspect.Signature.empty
+
+    @log(logger=logger)
+    def _unpack_result(self, func: Callable, result: Any) -> tuple:
+        """
+        Render the result of a dispatched call as the leading positional arguments for its callback.
+
+        The signal protocol splats a tuple return across the callback's parameters and passes anything else as a single argument. Which of those applies is decided here by func's *declared* return type rather than by inspecting the value, because the two are indistinguishable at runtime: a method returning a pair and a method returning two values produce the same object, and a method with an Optional return type that returns None is not returning an empty argument list. Every function under poriscope/ is annotated and none of them defer annotation evaluation, so the declared type is always available and is an exact discriminator.
+
+        A callee that declares a tuple return and produces something else has broken its own contract; that is logged and the value is passed as a single argument rather than coerced, since tuple() would silently shred a string and raise on None.
+
+        Annotations are resolved with eval_str=True so that a plugin written with `from __future__ import annotations` - which no module under poriscope/ uses, but a user plugin dropped into the user plugin folder may - is read as the type it declares rather than as the string spelling of it. A plugin whose annotations cannot be resolved at all falls back to the unevaluated ones, and one with no usable return type is treated as returning a single value.
+
+        :param func: The callable whose result is being unpacked, consulted for its return annotation.
+        :type func: Callable
+        :param result: The value func returned.
+        :type result: Any
+        :return: The positional arguments representing that result.
+        :rtype: tuple
+        """
+        annotation = self._return_annotation(func)
+        if annotation is tuple or typing.get_origin(annotation) is tuple:
+            if isinstance(result, tuple):
+                return result
+            self.logger.error(
+                f"{getattr(func, '__name__', func)} declares a tuple return but returned "
+                f"{type(result).__name__}; passing it as a single argument"
+            )
+        return (result,)
+
+    @log(logger=logger)
+    def _call_return_function(
+        self,
+        return_function: Callable,
+        called_function: Callable,
+        result: Any,
+        ret_args: tuple,
+        context: str,
+    ) -> None:
+        """
+        Call return_function with the result of a dispatched call followed by ret_args. The result is rendered into positional arguments by _unpack_result, and the whole argument list is checked against return_function's signature before the call, so a mismatch is reported once and never guessed at. Exceptions raised by return_function itself are not caught here.
+
+        :param return_function: The callback to invoke.
+        :type return_function: Callable
+        :param called_function: The callable whose result is being relayed, consulted for its return annotation.
+        :type called_function: Callable
+        :param result: The value returned by the dispatched call.
+        :type result: Any
+        :param ret_args: Additional positional arguments appended after the result.
+        :type ret_args: tuple
+        :param context: Description of the originating call, used only in the mismatch log message.
+        :type context: str
+        """
+        call_args = self._unpack_result(called_function, result) + ret_args
+        problem = self._binding_error(return_function, call_args)
+        if problem is not None:
+            self.logger.error(
+                f"Not calling return function "
+                f"{getattr(return_function, '__name__', return_function)}, which was to "
+                f"receive the result of {context}: {problem}"
+            )
+            return
+        return_function(*call_args)
+
+    @log(logger=logger)
+    def _dispatch_to(
+        self,
+        target: object,
+        target_label: str,
+        call_function: str,
+        call_args: tuple,
+        return_function: Optional[Callable],
+        ret_args: tuple,
+    ) -> None:
+        """
+        Look call_function up on target, call it with call_args, and relay its result to return_function. This is the whole of the signal-bus dispatch mechanism; handle_global_signal and handle_data_plugin_controller_signal differ only in what they resolve as the target, and share this body so that the two paths cannot drift apart in their guards or their diagnostics.
+
+        call_args and ret_args are taken to be tuples of positional arguments, as the signals' own signatures declare; nothing here guesses at a bare value passed in their place. Arity is checked before the call (see _binding_error), so a call that could not bind is reported and never attempted, and a TypeError raised from inside call_function is reported as such rather than being mistaken for a call-site mismatch - call_function is called at most once. The result is splatted or passed whole to return_function according to call_function's declared return type (see _unpack_result). Every failure is logged and swallowed rather than raised, since the callers are Qt slots.
+
+        :param target: The object to look call_function up on.
+        :type target: object
+        :param target_label: Human-readable identifier for target, used in log messages.
+        :type target_label: str
+        :param call_function: Name of the method to call on target.
+        :type call_function: str
+        :param call_args: Positional arguments to call_function.
+        :type call_args: tuple
+        :param return_function: Optional callable to invoke with the result of call_function.
+        :type return_function: Optional[Callable]
+        :param ret_args: Additional positional arguments appended after the result when calling return_function.
+        :type ret_args: tuple
+        """
+        func = getattr(target, call_function, None)
+        if func is None:
+            self.logger.error(f"No member {target_label}.{call_function} found")
+            return
+        if not callable(func):
+            self.logger.error(f"{target_label}.{call_function} is not callable")
+            return
+        problem = self._binding_error(func, call_args)
+        if problem is not None:
+            self.logger.error(f"Not calling {target_label}.{call_function}: {problem}")
+            return
+        try:
+            result = func(*call_args)
+        except Exception:
+            self.logger.exception(
+                f"{target_label}.{call_function} raised while executing with arguments {call_args}"
+            )
+            return
+        self.logger.debug(f"{target_label}.{call_function} returned {result}")
+        if return_function is not None:
+            try:
+                self._call_return_function(
+                    return_function,
+                    func,
+                    result,
+                    ret_args,
+                    f"{target_label}.{call_function}",
+                )
+            except Exception:
+                self.logger.exception(
+                    f"Return function "
+                    f"{getattr(return_function, '__name__', return_function)} raised "
+                    f"while handling the result of {target_label}.{call_function}"
+                )
 
     @log(logger=logger)
     @Slot(str, str, str, tuple, object, tuple)
@@ -203,7 +364,7 @@ class MainController(QObject):
         ret_args: tuple,
     ) -> None:
         """
-        Resolve (metaclass, subclass_key) to a live data plugin instance and call call_function(*call_args) on it, so a tab or plugin can invoke a method on another plugin without holding a direct reference to it. If call_function raises TypeError, retries with a single None argument, on the assumption call_args didn't apply. If return_function is given, it is called with the result plus ret_args once call_function succeeds (again falling back to a single None argument on TypeError). Errors resolving the instance, function, or either call are logged and swallowed rather than raised.
+        Resolve (metaclass, subclass_key) to a live data plugin instance and dispatch call_function to it, so a tab or plugin can invoke a method on another plugin without holding a direct reference to it. Resolution and the call itself both happen inside the error guard, because looking up an unregistered metaclass raises rather than returning None, and this is a Qt slot, which must not let an exception escape into the C++ caller. The dispatch itself is _dispatch_to, shared with handle_data_plugin_controller_signal.
 
         :param metaclass: The metaclass of the target plugin instance.
         :type metaclass: str
@@ -221,54 +382,28 @@ class MainController(QObject):
         self.logger.debug(
             f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
         )
-        instance = self.data_plugin_controller.get_plugin_instance(
-            metaclass, subclass_key
-        )
-
-        if instance is None:
-            self.logger.error(
-                f"No plugin instance found for {metaclass}/{subclass_key}, unable to call {call_function}"
+        target_label = f"{metaclass}/{subclass_key}"
+        try:
+            instance = self.data_plugin_controller.get_plugin_instance(
+                metaclass, subclass_key
             )
-        else:
-            func = getattr(instance, call_function, None)
-            if func is None:
+            if instance is None:
                 self.logger.error(
-                    f"No member of {metaclass}/{subclass_key}.{call_function} found"
+                    f"No plugin instance found for {target_label}, unable to call {call_function}"
                 )
                 return
-            elif not callable(func):
-                self.logger.error(
-                    f"{metaclass}/{subclass_key}.{call_function} is not callable"
-                )
-                return
-            else:
-                try:
-                    call_args = self._ensure_tuple(call_args)
-                    try:
-                        retval = self._ensure_tuple(func(*call_args))
-                    except TypeError:
-                        retval = self._ensure_tuple(func(None))
-                    except Exception as e:
-                        self.logger.exception(
-                            f"Unable to resolve function {metaclass}/{subclass_key}.{call_function} with arguments {call_args}: {repr(e)}"
-                        )
-                        return
-                    if return_function is not None:
-                        try:
-                            retval = retval + self._ensure_tuple(ret_args)
-                            try:
-                                return_function(*retval)
-                            except TypeError:
-                                return_function(None)
-                        except Exception as e:
-                            self.logger.exception(
-                                f"Error executing return function with args {ret_args}: {repr(e)}"
-                            )
-                            return
-                except Exception as e:
-                    self.logger.exception(
-                        f"Unexpected error handling global signal for {metaclass}/{subclass_key}.{call_function}: {repr(e)}"
-                    )
+            self._dispatch_to(
+                instance,
+                target_label,
+                call_function,
+                call_args,
+                return_function,
+                ret_args,
+            )
+        except Exception:
+            self.logger.exception(
+                f"Unexpected error handling global signal for {target_label}.{call_function}"
+            )
 
     @log(logger=logger)
     @Slot(str, str, str, tuple, object, tuple)
@@ -282,7 +417,7 @@ class MainController(QObject):
         ret_args: tuple,
     ) -> None:
         """
-        Same dispatch mechanism as handle_global_signal, except call_function is looked up and called on the DataPluginController itself rather than on a resolved plugin instance (metaclass/subclass_key are accepted for signal-signature parity with handle_global_signal but are not used to resolve a target here). Used when a tab needs to invoke a DataPluginController method (e.g. to instantiate or edit a plugin) rather than a method on an existing plugin instance.
+        Same dispatch mechanism as handle_global_signal, and literally the same code path (see _dispatch_to), except that call_function is looked up on the DataPluginController itself rather than on a resolved plugin instance. metaclass and subclass_key are accepted for signal-signature parity with handle_global_signal and are logged, but are not used to resolve a target here and so do not appear in this path's error messages. Used when a tab needs to invoke a DataPluginController method (e.g. to instantiate or edit a plugin) rather than a method on an existing plugin instance.
 
         :param metaclass: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
         :type metaclass: str
@@ -300,39 +435,20 @@ class MainController(QObject):
         self.logger.debug(
             f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
         )
-        instance = (
-            self.data_plugin_controller
-        )  # this one goes to the data plugin controller directly, NOT to an actual plugin instance
-
-        if instance is not None:
-            func = getattr(instance, call_function, None)
-            if func is None:
-                self.logger.error(
-                    f"No value {call_function} found in data plugin controller"
-                )
-                return
-            elif not callable(func):
-                self.logger.error(f"{call_function} is not callable")
-                return
-            else:
-                try:
-                    call_args = self._ensure_tuple(call_args)
-                    self.logger.debug(f"calling with: {call_args}")
-                    retval = self._ensure_tuple(func(*call_args))
-                    self.logger.debug(f"{call_function} returned {retval}")
-                    if return_function is not None:
-                        try:
-                            self.logger.debug(
-                                f"Executing {return_function} with {retval}"
-                            )
-                            retval = retval + self._ensure_tuple(ret_args)
-                            return_function(*retval)
-                        except Exception as ex:
-                            self.logger.error(f"Error executing return function: {ex}")
-                except Exception as e:
-                    self.logger.exception(
-                        f"Unable to resolve function {metaclass}/{subclass_key}.{call_function} with arguments {call_args}: {repr(e)}"
-                    )
+        target_label = "DataPluginController"
+        try:
+            self._dispatch_to(
+                self.data_plugin_controller,
+                target_label,
+                call_function,
+                call_args,
+                return_function,
+                ret_args,
+            )
+        except Exception:
+            self.logger.exception(
+                f"Unexpected error handling data plugin controller signal for {target_label}.{call_function}"
+            )
 
     @log(logger=logger)
     @Slot(str, list)

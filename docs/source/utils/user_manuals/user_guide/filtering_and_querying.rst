@@ -259,7 +259,7 @@ Common Mistakes
 +------------------------------------------+--------------------------------------------------+
 | Raw scatterplot missing a selected column| Plot fails with "column not present" error       |
 +------------------------------------------+--------------------------------------------------+
-| Typo in column name                      | Validation error             |
+| Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+
 
 Available Columns

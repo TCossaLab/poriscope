@@ -6,8 +6,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.fast
-@pytest.mark.integration
 @pytest.mark.timeout(90)
 def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     """

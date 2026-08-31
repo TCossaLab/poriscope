@@ -61,8 +61,6 @@ def _assert_db_schema_sqlite_dbwriter(
             assert not missing, f"Expected channel IDs not present in DB: {missing}"
 
 
-@pytest.mark.fast
-@pytest.mark.integration
 @pytest.mark.timeout(90)
 def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path):
     """
