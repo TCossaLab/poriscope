@@ -15,6 +15,45 @@ they date the decision.
 
 ---
 
+## 2026-08-31 - Plugin name collisions are the user's to rename, not ours to accommodate
+
+**Context.** Plugin discovery walks `poriscope/plugins/` and then the user plugin folder
+into one flat map keyed by the plugin's class name, which is also its filename stem. Until
+2026-08-31 a collision was silent and last-writer-wins, so a user file named after a
+built-in replaced the shipped plugin with no way to tell which had run. Fixing that raised
+the question of what *should* happen, and several accommodating answers were on the table:
+let the user copy win and report the override, keep both under disambiguated names, or
+record provenance so a run could at least be attributed after the fact.
+
+**Decision.** None of those. `populate_available_plugins` keeps a set of the names already
+claimed and logs at `ERROR` - which `QtHandler` raises as a dialog - for any later file
+claiming a taken name, and skips it. The first file found wins, and built-ins are walked
+first, so **a built-in cannot be displaced by a user plugin of the same name**. The user is
+told which file was ignored and that renaming it will load it.
+
+**Reasoning.** The goal is that people rename their collisions, not that the application
+manages collisions in a way that lets them persist. A name that resolves to two different
+implementations is ambiguous in the session history and in any discussion of a result, and
+an override mechanism - however well reported - is a way of living with that ambiguity
+rather than removing it. Making the failure loud and the remedy obvious (rename the file)
+costs the user one rename, once.
+
+**Consequences worth knowing.** There is deliberately no way to override a shipped plugin
+by shadowing its filename. Someone who wants to modify a built-in's behaviour must give
+their plugin its own name, which is also what makes the modification visible in the menus
+and in session history. The check is keyed on the plugin name alone rather than per
+metaclass, because plugin names are unique application-wide - the menus and
+`DataPluginController`'s key-uniqueness check both rely on it - and a collision across two
+different metaclasses was the quietest variant, leaving both classes live under one name in
+two different menus.
+
+**Revisit if.** A concrete workflow appears that genuinely needs a built-in replaced in
+place and cannot use a differently-named plugin. Reporting the override more elaborately -
+a provenance map, a panel message, a startup summary - is *not* a reason to revisit; that
+was considered and rejected as machinery around a problem the rename already solves.
+
+---
+
 ## 2026-08-28 - The view-test GC sweep stays; it is generation-limited, not removed
 
 **Context.** `tests/unit/views/conftest.py`'s autouse `_close_leftover_widgets` fixture
