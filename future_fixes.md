@@ -220,21 +220,10 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   swallowed by the dispatcher. A finder without a reader raises `AttributeError` from
   `find_events` anyway, two lines later, so this is a change of messenger and not of
   outcome - but it is the guard that speaks first now.
-- **`MultiSelectFilterComboBox` installs an application-wide event filter and never
-  removes it.** `views/widgets/multiselect_filter.py:125` does
-  `QApplication.instance().installEventFilter(self)`; there is no `removeEventFilter`
-  anywhere in the file. Every instance ever created stays registered on the
-  process-lifetime `QApplication`, so once a widget's C++ side is gone the next event
-  routed to the stale filter raises `RuntimeError: Internal C++ object
-  (MultiSelectFilterComboBox) already deleted` from `eventFilter`.
-  **This makes `pytest tests/unit` intermittently error at setup of a
-  `TestRelayQuery` case in `test_protein_controller.py`** - a different case each run,
-  because the victim is whichever test next builds a widget. Measured on 2026-08-31:
-  1 failure in 3 runs on `develop`, 3 in 3 on `feature/per-plugin-locks`. The per-plugin
-  lock work does not cause it - it very likely shifts allocation and therefore GC timing,
-  which is enough to change how often a latent lifetime bug surfaces. Fix the leak, not
-  the symptom; a `try/except RuntimeError` in `eventFilter` would hide it while the
-  filters keep accumulating for the whole session in the real app too.
+- **Application-wide event filters are installed and never removed**, which is what makes
+  `pytest tests/unit` intermittently error at setup. Written up in full below under
+  "Handoff: the application-wide event-filter leak" - it is three sites rather than the
+  one originally recorded here, and it is owed to whoever picks up the widget layer.
 - **Placeholder guards on UI-supplied plugin keys are applied inconsistently.** A scan of
   every `global_signal` emit in the analysis-tab views whose plugin key is a
   UI-supplied parameter found 19 sites with no placeholder check in the emitting method.
@@ -266,6 +255,145 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
 - **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
   `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
   harmless, but plainly a copy-paste artifact.
+
+## Handoff: the application-wide event-filter leak (2026-08-31)
+
+Written up for handoff rather than fixed here. It is a logic change in widgets with real
+existing coverage, so it needs its own approved plan, and it is not one site but three.
+
+### The mechanism
+
+`QApplication.instance().installEventFilter(self)` runs unconditionally in the widget's
+`__init__`, registering it on the application singleton - whose lifetime is the whole
+process. `installEventFilter` stores a raw `QObject*` in the application's filter list, and
+Qt drops it only when the filter object goes through the normal `QObject` destructor path.
+Under Shiboken the Python wrapper and the C++ object can be torn down in an order, and at a
+garbage-collection time, where the application still calls into a half-dead wrapper. The
+filter's own body then dereferences `self.containerWidget` - a C++-backed attribute - and
+Shiboken refuses to resolve `self`:
+
+```
+RuntimeError: Internal C++ object (MultiSelectFilterComboBox) already deleted
+```
+
+Two things make it worse than a slow leak. First, `eventFilter` **ignores its `obj`
+parameter entirely** - it is accepted and passed straight to `super()`, never inspected - so
+the filter runs for every object in the application receiving any event, and N stale filters
+cost N Python calls per delivered event. Second, on the branch it does act on it returns
+`True`, swallowing the click, so a bug here is not confined to teardown.
+
+### Three sites, not one
+
+Fixing only the site originally recorded leaves the failure alive via the others.
+
+| Site | Class | Production instantiations |
+| --- | --- | --- |
+| `views/widgets/multiselect_filter.py:125`, `eventFilter` at `:127-135` | `MultiSelectFilterComboBox` | `metadatacontrols.py:411`, `proteincontrols.py:410` |
+| `views/widgets/multiselect.py:124`, `eventFilter` at `:255-262` | `MultiSelectComboBox` | `rawdatacontrols.py:177`, `eventAnalysisControls.py:197` |
+| `utils/BaseLineEdit.py:45` | `BaseLineEdit` | 13 construction sites across the controls widgets |
+
+The first two bodies are near-identical - `multiselect.py` calls `self.hidePopup()` where
+`multiselect_filter.py` calls `self.containerWidget.close()` - and are already recorded as
+~90% duplicates and a merge candidate in `future_refactors_and_features.md:1591-1592`.
+`BaseLineEdit` is much less crash-prone, because its `eventFilter` does check `obj`
+(`isinstance(obj, QMessageBox)`) and touches no C++ member of `self`, but it leaks at far
+the highest rate: ~13 more registrations per controls-widget build. It also connects
+`QApplication.instance().aboutToQuit` to a bound method per instance, a second permanent
+application-lifetime reference, and mutates the *class*-level `suspend_validation` /
+`app_closing` flags, so its instances interfere with each other globally.
+
+`removeEventFilter` appears **zero** times anywhere in the repository.
+
+### A second defect in the same constructor
+
+`multiselect_filter.py:68` does `self.containerWidget = QDialog(None)` - parentless. So the
+popup is a top-level widget owned by nobody, it is not destroyed when the combobox is
+destroyed, and it is precisely the object `eventFilter` dereferences.
+`tests/unit/views/conftest.py::_close_leftover_widgets` walks
+`QApplication.topLevelWidgets()` and `close()`/`deleteLater()`s exactly these, which can
+kill `containerWidget` while its combobox - or a stale filter pointing at it - is still
+registered. **Fixing the filter without also parenting or explicitly deleting
+`containerWidget` leaves half the hazard in place.**
+
+### Why it bites the test suite and not the running app
+
+`MainController.instantiate_analysis_tab:527-553` reuses an existing tab of the same
+subclass and never removes an entry from `self.analysis_tabs`, so the app constructs at most
+one Metadata and one Protein tab per session and never destroys either. The real app
+therefore caps at ~2 registrations for these two classes (plus ~13 per controls build from
+`BaseLineEdit`), and the `RuntimeError` is effectively unreachable there because nothing
+dies. Note the repopulation path mutates the existing combobox (`clear()` + `addItems()`,
+e.g. `proteincontrols.py:1044-1052`) rather than constructing a new one, so filters do not
+accumulate per repopulate.
+
+The suite is the opposite. Every one of these builds a real widget with no disposal:
+
+- `tests/unit/controllers/test_protein_controller.py` - function-scoped `controller`
+  fixture (`:37-47`) constructs a real `ProteinController`, hence a real `ProteinView` ->
+  `ProteinControls` -> one real `MultiSelectFilterComboBox`, with **no `yield`, no
+  `deleteLater`, no `close`**, across 51 test methods (48 before the
+  `feature/saveSessionRefactor` merge added `TestSessionState`). **`tests/unit/controllers/`
+  has no `conftest.py` at all**, so none of the view suite's widget-teardown or
+  blocking-dialog protections apply.
+- `tests/unit/views/test_protein_view.py` - `real_view` fixture (`:79-105`), referenced 92
+  times.
+- `tests/unit/views/widgets/test_multiselect_filter.py` - ~34 comboboxes, each *correctly*
+  disposed in `tearDown` via `deleteLater()` + a drained loop. This is the worst case
+  precisely because it does the right thing: it manufactures ~34 **stale** registrations.
+- `tests/e2e/metadata/*` and `tests/e2e/protein/*` build real views too.
+
+Order of magnitude for a full `pytest tests/unit`: 150-200+ registrations on one
+process-lifetime `QApplication`, an unknown but large fraction of them stale. The reported
+victim is a `TestRelayQuery` case in `test_protein_controller.py`, and it is a different
+case each run, because the victim is whichever test happens to be constructing a widget
+when the interpreter frees an earlier view.
+
+### Measurement
+
+1 failure in 3 runs on `develop` and 3 in 3 on `feature/per-plugin-locks` (2026-08-31). The
+per-plugin lock work does not cause it; it very likely shifts allocation and therefore GC
+timing, which is enough to change how often a latent lifetime bug surfaces. Re-measured the
+same day on `develop` at 646d48f: **2 runs, both green** (2623 passed, 2 skipped, ~167s
+each). So absence of a failure is not evidence of a fix - reproduce it before and after by
+running the suite repeatedly, not once.
+
+### The pattern a fix should follow
+
+There is in-repo precedent, and it is the opposite of what these three do:
+
+- `plugins/analysistabs/utils/walkthrough.py:181` installs on `parent`, not the
+  application, and its `eventFilter` (`:196-210`) **checks `obj`** before acting
+  (`if watched == self.parent() and event.type() in {...}`). It needs no removal, because it
+  dies with the parent relationship. It is also the only event filter in the codebase with a
+  direct test: `tests/unit/plugins/analysistabs/utils/test_walkthrough.py:92-97`, including
+  a non-matching-`obj` case.
+- `views/help.py:117` is the self-scoped variant (`self.installEventFilter(self)`), also
+  `obj`-checking, also tested directly (`tests/unit/views/test_help.py:206-238`).
+- Both `multiselect*.py` files carry an abandoned `# self.listWidget.installEventFilter(self)`
+  at line 107 - the author knew a narrower target was possible.
+- Release Qt objects with `deleteLater()` plus a drained loop, never `destroy()` - see
+  `MetaModel.py:194`'s docstring and `tests/unit/views/conftest.py:84-113`, which explains
+  why `close()` alone leaks and why `deleteLater()` needs
+  `QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)` after it.
+
+**Read `DECISIONS.md` first** - the entry on the view-test GC sweep. A prior long-running
+segfault was bisected to `test_multiselect_filter.py::TestClearSelectionList` and resolved
+by moving from `QWidget.destroy()` to `deleteLater()` + a drained loop. This file already
+has one Qt-lifetime crash in its history.
+
+**Do not** wrap `eventFilter` in `try/except RuntimeError`. That hides the symptom while the
+filters keep accumulating for the whole session in the real app too.
+
+### Suggested shape, to accept or reject
+
+Scope the filter to `self.containerWidget` (or `self`) instead of the application; check
+`obj` before acting; parent `containerWidget` to the combobox; apply the same change to
+`multiselect.py` in the same pass, since leaving it makes the intermittent failure persist;
+and consider a `tests/unit/controllers/conftest.py` mirroring
+`tests/unit/views/conftest.py::_close_leftover_widgets` so those tests stop leaking real
+views regardless of what the widgets do. Whether `BaseLineEdit` is folded into the same
+change or handled separately is a judgement call - it is the highest-volume leak but has
+never been observed to crash.
 
 ## Exclusions (standing project policy)
 
