@@ -80,16 +80,15 @@ two left behind are under "Still queued" below. **High is now the top of this se
   `sys.modules`, so two plugins importing a shared helper by file each get their own copy.
   Minimum fix: detect the collision and log it loudly, keyed by resolved path. Worth
   folding into compliance-gate block 4 below.
-- **Finished `Worker`/`WorkerThread` objects are retained for the whole session.**
-  `MetaModel.py:129-140` assigns them; nothing ever pops them - there is no `pop` or `del`
-  against `self.workers`/`self.threads` anywhere under `poriscope/`. `discard_generator` clears
-  only `thread_running` and `generators`, so every dead `QThread` stays alive holding the
-  generator closure and the data it touched. Also why `handle_kill_worker` reports
-  "Stopping worker for channel N" for runs that finished hours ago (harmless -
-  `stop_workers` skips them on `thread_running`, but the log misleads). Pop both entries in
-  `discard_generator` and `deleteLater()` the thread. (The rename half of this item is
-  done: `reset_lock` is now `discard_generator`, and it closes the spent generator as well
-  as dropping it. Popping the worker and thread is still open.)
+- **Fixed** (2026-08-31): finished `Worker`/`WorkerThread` objects used to be retained for
+  the whole session - `discard_generator` cleared only `thread_running` and `generators`,
+  never popping `self.workers[key][channel]`/`self.threads[key][channel]`, so every dead
+  `QThread` stayed alive holding its generator closure and the data it touched, and
+  `handle_kill_worker`/`stop_workers` logged "Stopping worker for channel N" for runs that
+  had finished hours earlier. `discard_generator` now pops both and calls `deleteLater()`
+  on each - see `changelog.md`. Verified with a throwaway script, the same way as the two
+  fixes immediately below it in this file; `EventWorker.py`/`MetaModel.py` still have no
+  real test coverage (see "Still queued").
 
 ### Moderate
 
@@ -247,11 +246,15 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   rather than assuming; the distinction that matters is whether a path is reactive
   (runs on plugin-state change or combobox repopulation, so the placeholder is live) or
   action-driven (the user already chose a real plugin).
-- **`EventWorker` still has no test coverage.** The generator-failure fix landed verified
-  only by a throwaway script (four scenarios: happy path, mid-run `TypeError`, abort, empty
-  generator). `test_event_worker.py` does not exist - see `test_mapping_audit.csv` - and
-  this is the single dispatch loop behind every event finder, fitter and writer run. Owed by
-  whoever owns test-writing; the scenarios above are the ones worth encoding.
+- **`EventWorker`/`MetaModel`'s worker lifecycle still has no test coverage.** The
+  generator-failure fix and the worker/thread cleanup fix both landed verified only by
+  throwaway scripts (generator-failure: happy path, mid-run `TypeError`, abort, empty
+  generator; cleanup: two independent runs to completion, each popped from
+  `workers`/`threads`/`generators` without affecting the other, `deleteLater()` doesn't
+  raise). `test_event_worker.py` does not exist - see `test_mapping_audit.csv` - and
+  neither does a test file for `MetaModel.py`; this is the single dispatch loop behind
+  every event finder, fitter and writer run. Owed by whoever owns test-writing; the
+  scenarios above are the ones worth encoding.
 - **A worker blocked on a lock cannot observe an abort.** `Worker.stop()` only sets
   `stop_requested`, which is read on the generator's next turn, so a channel queued behind a
   serial-mode lock keeps waiting until it acquires. Pre-existing and unrelated to the
