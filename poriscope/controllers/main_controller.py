@@ -211,12 +211,12 @@ class MainController(QObject):
 
         Saved sessions and log files are not affected.
 
-        One limitation is inherited from the manual path rather than introduced
-        here: ``populate_available_plugins()`` runs once, in ``MainModel``'s
-        constructor, so changing the user plugin folder - by resetting it or by
-        editing it in Settings - does not rebuild the available-plugin list. The
-        new folder takes effect at the next launch. Reset deliberately behaves
-        the same way a manual edit does rather than diverging from it.
+        Resetting the user plugin folder re-scans it immediately, the same way
+        editing it in Settings does: this routes through
+        ``update_user_plugin_location`` below, which already calls
+        ``refresh_available_plugins()`` at the end of its own path. The plugin
+        menus reflect the default folder right away rather than waiting for
+        the next launch.
         """
         defaults = self.main_model.reset_app_config()
 
