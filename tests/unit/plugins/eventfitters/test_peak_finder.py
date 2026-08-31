@@ -948,22 +948,16 @@ class TestFitLeastSmoothedSpline(unittest.TestCase):
     def test_too_few_bins_returns_none(self):
         bins = np.array([1.0, 2.0, 3.0])
         amplitude = np.array([1.0, 2.0, 1.0])
-        self.assertIsNone(
-            self.pf._fit_least_smoothed_spline(bins, amplitude, 1.0, 3.0)
-        )
+        self.assertIsNone(self.pf._fit_least_smoothed_spline(bins, amplitude, 1.0, 3.0))
 
     def test_empty_search_bracket_returns_none(self):
         bins = np.linspace(0, 10, 40)
         amplitude = np.abs(np.sin(bins))
-        self.assertIsNone(
-            self.pf._fit_least_smoothed_spline(bins, amplitude, 5.0, 5.0)
-        )
+        self.assertIsNone(self.pf._fit_least_smoothed_spline(bins, amplitude, 5.0, 5.0))
 
     def test_smooth_bimodal_data_returns_a_spline(self):
         rng = np.random.default_rng(0)
-        samples = np.concatenate(
-            [rng.normal(3, 0.5, 2000), rng.normal(8, 0.5, 2000)]
-        )
+        samples = np.concatenate([rng.normal(3, 0.5, 2000), rng.normal(8, 0.5, 2000)])
         counts, edges = np.histogram(samples, bins=60)
         centers = (edges[1:] + edges[:-1]) / 2.0
         spline = self.pf._fit_least_smoothed_spline(
@@ -988,9 +982,7 @@ class TestResolveTwoHistogramPeaks(unittest.TestCase):
 
     def test_too_few_bins_returns_none(self):
         self.assertIsNone(
-            self.pf._resolve_two_histogram_peaks(
-                np.array([1.0]), np.array([1.0])
-            )
+            self.pf._resolve_two_histogram_peaks(np.array([1.0]), np.array([1.0]))
         )
 
     def test_single_peak_returns_none(self):
@@ -1045,9 +1037,7 @@ class TestWarnIfFittedMeansAreOffPeaks(unittest.TestCase):
         # Unimodal histogram: _resolve_two_histogram_peaks returns None.
         unimodal = np.exp(-0.5 * ((self.bins - 10) / 1.0) ** 2) * 100
         params = (50.0, 8.0, 0.5, 50.0, 12.0, 0.5)
-        self.pf._warn_if_fitted_means_are_off_their_peaks(
-            self.bins, unimodal, params
-        )
+        self.pf._warn_if_fitted_means_are_off_their_peaks(self.bins, unimodal, params)
         self.pf.logger.warning.assert_not_called()
 
 
@@ -1113,9 +1103,7 @@ class TestFitThreshold(unittest.TestCase):
 
     def test_two_well_separated_populations(self):
         rng = np.random.default_rng(1)
-        data = np.concatenate(
-            [rng.normal(300, 15, 1500), rng.normal(700, 15, 1500)]
-        )
+        data = np.concatenate([rng.normal(300, 15, 1500), rng.normal(700, 15, 1500)])
         bt = self.pf.fit_threshold(data)
         self.assertEqual(bt["n_components"], 2)
         self.assertIn(bt["fit_method"], ("em_student_t", "em_gaussian"))
