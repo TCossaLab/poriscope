@@ -7,13 +7,14 @@ name = "poriscope"
 dynamic = ["version"]
 description = "A tool for selecting and analyzing nanopore data."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12.10"
 license = { text = "MIT" }
 authors = [
     { name = "Kyle Briggs & Alejandra Carolina González González", email = "kbriggs@uottawa.ca" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
 ]

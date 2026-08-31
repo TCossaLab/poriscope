@@ -12,7 +12,7 @@ Prerequisites
 
       python --version
 
-   If not installed, download it here: https://www.python.org/downloads/release/python-31210/
+   If not installed, download it here: https://www.python.org/downloads/
 
    .. important::
 
