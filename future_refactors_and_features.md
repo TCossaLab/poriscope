@@ -1652,52 +1652,23 @@ tour feature that's easy to subtly break. `SettingsWindow`'s per-widget
 stylesheet strings are already centralized through the `Theme` class with
 an explanatory docstring — working as intended.
 
-## Addendum (2026-08-31): Abort Analysis only ever targets one hardcoded tab
+## Addendum (2026-08-31, resolved on merge): Abort Analysis only ever targeted one hardcoded tab
 
-Not from the original audit — surfaced while reviewing the new Reset Session
-feature (`MainController.reset_session`), whose own worker-killing loop
-became the point of comparison.
-
-**`MainView.on_abort_analysis_click`** (`main_view.py:928-930`) does:
-
-```python
-def on_abort_analysis_click(self) -> None:
-    self.logger.info("Aborting Analysis")
-    self.kill_all_workers.emit("RawDataController")
-```
-
-`kill_all_workers` is a plain `Signal(str)`; every instantiated
-`MetaController` connects it to its own `handle_kill_all_workers`, which
-only acts `if subclass == self.__class__.__name__`. Emitting a single
-hardcoded `"RawDataController"` therefore only ever asks the RawData tab to
-stop its workers — regardless of which tab (if any) actually has one
-running, and regardless of which tab the user currently has focused.
-
-**Worth checking before treating this as a bug to fix:** per
-`CLAUDE.md`/Part 8-9's context, worker-driven generators aren't RawData-
-exclusive — `MetaWriter.commit_events`, `MetaDatabaseWriter.write_events`,
-`MetaEventFinder.find_events`, `MetaEventFitter.fit_events`, and
-`MetaDatabaseLoader.export_subset_to_csv` all route through the same
-`Worker`/`WorkerThread` machinery and can be triggered from Clustering,
-Metadata, or Protein tabs, not just RawData. If a user starts a long DB
-export from the Metadata tab and clicks **Abort Analysis**, nothing stops
-it — the click silently does nothing for that tab. Whether that's
-deliberate (the button was perhaps only ever meant to abort RawData's own
-event-finding/fitting workflow, matching its place in the UI) or an
-oversight from an era when RawData was the only tab that ran workers isn't
-established here; confirm the intent (check git history / ask before
-assuming) before changing the behavior.
-
-**If it is a gap worth closing**, `MainController.reset_session`
-(`main_controller.py:276-284`, added in the same feature this was found
-while reviewing) already establishes the pattern to mirror: iterate
-`self.analysis_tabs.items()` and call `handle_kill_all_workers` on each tab
-that exists, rather than hardcoding one subclass name. The one open
-question a fix would need to settle: should Abort Analysis stop *every*
-open tab's workers (matching Reset Session's breadth), or only the
-currently-focused/visible tab's (closer to what "abort *this* analysis"
-implies)? The current code does neither consistently — it always targets
-RawData specifically, whether or not RawData is the visible tab.
+**Fixed independently on `develop`** (merged into this feature's history via
+the `feature/resetSettingsAndSession` → `develop` merge) before this note
+was ever acted on here. `MainView.on_abort_analysis_click` used to emit a
+`kill_all_workers` signal hardcoded to `"RawDataController"`, so clicking
+Abort Analysis only ever asked the RawData tab to stop, regardless of which
+tab (if any) actually had a worker running. `develop` replaced this with
+`abort_all_analysis` (a plain `Signal()`) routed to
+`MainController.handle_abort_all_analysis`, which iterates
+`self.analysis_tabs.items()` and calls `handle_kill_all_workers` on each -
+exactly the pattern this note recommended, resolving the "every tab vs. only
+the focused one" question in favor of every tab, matching Reset Session's
+own breadth. The now-dead `MainView.kill_all_workers` signal declaration
+(zero connections once the fix landed) was dropped as part of reconciling
+the merge conflict this caused with `reset_session`'s own signal
+declarations in the same class body.
 
 ---
 
