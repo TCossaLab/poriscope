@@ -95,15 +95,21 @@ two left behind are under "Still queued" below. **High is now the top of this se
     (`DataPluginController.py:155-161`, `:470-476`; `MetadataView.py:1848-1849`;
     `ProteinView.py:1343-1344`). Those are the model for the intended pattern, and are
     now the only copy the user sees.
-- **A user plugin silently replaces a built-in of the same filename.**
-  `main_model.py:174-246`. The walk visits `poriscope/plugins/` then the user folder into
-  one flat `{subclass_name: class}` map, so a user `ClassicBlockageFinder.py` overwrites
-  the shipped one with no warning and no way to tell which ran - a reproducibility problem,
-  not just a packaging one. Related: `load_plugin` calls `exec_module` on every `.py` file
-  *before* checking whether it holds a plugin, and never registers modules in
-  `sys.modules`, so two plugins importing a shared helper by file each get their own copy.
-  Minimum fix: detect the collision and log it loudly, keyed by resolved path. Worth
-  folding into compliance-gate block 4 below.
+- **Fixed** (2026-08-31): a user plugin used to silently replace a built-in of the same
+  filename. Discovery walks `poriscope/plugins/` and then the user folder into one flat
+  `{subclass_name: class}` map, and both the assignment and the menu-list `append` were
+  unconditional, so a user `ClassicBlockageFinder.py` overwrote the shipped one with no
+  warning and no way to tell which ran. `populate_available_plugins` now keeps a set of
+  plugin names already claimed and logs at ERROR, which is a dialog, for the second and
+  any subsequent file claiming a name; the first one found wins, so a built-in can no
+  longer be displaced. See `changelog.md`.
+  **What's still open** in the same code, deliberately left out of that fix to keep it
+  proportionate: `load_plugin` calls `exec_module` on every `.py` file *before* checking
+  whether it holds a plugin at all, so a helper module that was never a plugin executes
+  during discovery and reports as a plugin failure if it raises (see the log-level item
+  above); and it never registers modules in `sys.modules`, so two plugins importing a
+  shared helper by file each get their own copy. Worth folding into compliance-gate
+  block 4 below.
 - **Fixed** (2026-08-31): finished `Worker`/`WorkerThread` objects used to be retained for
   the whole session - `discard_generator` cleared only `thread_running` and `generators`,
   never popping `self.workers[key][channel]`/`self.threads[key][channel]`, so every dead

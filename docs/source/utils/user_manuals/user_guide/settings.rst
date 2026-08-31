@@ -35,8 +35,15 @@ Under the **General** section, you can configure the following:
 
      ``%LOCALAPPDATA%\Poriscope\user_plugins``
 
-     Only plugins located in this folder at application startup will be recognized.  
+     Only plugins located in this folder at application startup will be recognized.
      **This folder is not monitored dynamically** — changes made after launch will not be reflected unless the application is restarted.
+
+  .. note::
+
+     A plugin's name is unique across the whole application. If a file in this folder has
+     the same name as a plugin that ships with Poriscope, or as another plugin already
+     found, it is **not loaded**, and an error at startup names the file that was ignored.
+     Rename it to load it.
 
 Advanced Settings Tab
 ---------------------

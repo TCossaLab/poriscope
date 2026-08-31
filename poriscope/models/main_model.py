@@ -32,7 +32,7 @@ import logging
 import os
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
@@ -209,6 +209,12 @@ class MainModel(QObject):
             k: [] for k in allowed_base_classes
         }
 
+        # plugin names are unique across the whole app, not per metaclass, so this is
+        # keyed by name alone. Built-ins are walked before the user plugin folder, so
+        # without this check a user file of the same name silently replaced the shipped
+        # plugin and there was no way to tell which one had run.
+        seen_plugin_names: Set[str] = set()
+
         plugin_dirs_to_search = [
             self.plugin_path,
             Path(self.get_app_config("User Plugin Folder")),
@@ -258,6 +264,14 @@ class MainModel(QObject):
                     # plugin_class is necessarily non-None whenever metaclass was
                     # set above; the explicit check is what lets mypy see that.
                     if metaclass and plugin_class is not None:
+                        if subclass in seen_plugin_names:
+                            self.logger.error(
+                                f"More than one plugin is named {subclass}. The copy at "
+                                f"{Path(plugin_folder, plugin_name)} is ignored; rename it "
+                                f"to load it."
+                            )
+                            continue
+                        seen_plugin_names.add(subclass)
                         available_plugin_classes[metaclass][subclass] = plugin_class
                         available_plugins_list[metaclass].append(subclass)
 
