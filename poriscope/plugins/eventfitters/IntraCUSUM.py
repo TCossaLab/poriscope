@@ -80,13 +80,13 @@ class IntraCUSUM(CUSUM):
 
         settings["Intraevent Threshold"] = {
             "Type": float,
-            "Value": 0,
+            "Value": 0.0,
             "Min": 0,
             "Units": "pA",
         }
         settings["Intraevent Hysteresis"] = {
             "Type": float,
-            "Value": 0,
+            "Value": 0.0,
             "Min": 0,
             "Units": "pA",
         }

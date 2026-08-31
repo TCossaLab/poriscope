@@ -165,7 +165,7 @@ class MetaWriter(BaseDataPlugin):
                 "Value": eventfinder_options[0] if eventfinder_options else "",
                 "Options": eventfinder_options,
             },
-            "Output File": {"Type": str, "Options": ["All Files (*.*)"]},
+            "Output File": {"Type": str, "Value": None, "Options": ["All Files (*.*)"]},
         }
         return settings
 

@@ -77,8 +77,13 @@ class ClassicCUSUM(CUSUM):
         :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "σ"}
-        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
+        settings["Step Size"] = {
+            "Type": float,
+            "Value": None,
+            "Min": 0.0,
+            "Units": "σ",
+        }
+        settings["Sensitivity"] = {"Type": float, "Value": 1.0, "Min": 1, "Max": 5}
         return settings
 
     @log(logger=logger)

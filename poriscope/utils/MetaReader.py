@@ -308,7 +308,9 @@ class MetaReader(BaseDataPlugin):
         :return: the dict that must be filled in to initialize the filter
         :rtype: Dict[str, Dict[str, Any]]
         """
-        settings: Dict[str, Dict[str, Any]] = {"Input File": {"Type": str}}
+        settings: Dict[str, Dict[str, Any]] = {
+            "Input File": {"Type": str, "Value": None}
+        }
         return settings
 
     @log(logger=logger)

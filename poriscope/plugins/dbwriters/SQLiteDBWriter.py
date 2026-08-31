@@ -163,10 +163,20 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             "Database Files (*.db)",
             "SQLite Files (*.sqlite)",
         ]
-        settings["Experiment Name"] = {"Type": str}
-        settings["Voltage"] = {"Type": float, "Units": "mV"}
-        settings["Membrane Thickness"] = {"Type": float, "Units": "nm", "Min": 0}
-        settings["Conductivity"] = {"Type": float, "Units": "S/m", "Min": 0}
+        settings["Experiment Name"] = {"Type": str, "Value": None}
+        settings["Voltage"] = {"Type": float, "Value": None, "Units": "mV"}
+        settings["Membrane Thickness"] = {
+            "Type": float,
+            "Value": None,
+            "Units": "nm",
+            "Min": 0,
+        }
+        settings["Conductivity"] = {
+            "Type": float,
+            "Value": None,
+            "Units": "S/m",
+            "Min": 0,
+        }
         return settings
 
     # Public API continued, should implemented by subclasses, but has default behavior if it is not needed

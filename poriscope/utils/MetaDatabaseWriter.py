@@ -457,7 +457,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
                 ),
                 "Options": eventfitter_options,
             },
-            "Output File": {"Type": str, "Options": ["All Files (*.*)"]},
+            "Output File": {"Type": str, "Value": None, "Options": ["All Files (*.*)"]},
         }
         return settings
 

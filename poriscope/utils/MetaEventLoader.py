@@ -157,7 +157,7 @@ class MetaEventLoader(BaseDataPlugin):
         :rtype: Dict[str, Dict[str, Any]]
         """
         settings: Dict[str, Dict[str, Any]] = {
-            "Input File": {"Type": str, "Options": ["All Files (*.*)"]}
+            "Input File": {"Type": str, "Value": None, "Options": ["All Files (*.*)"]}
         }
         return settings
 

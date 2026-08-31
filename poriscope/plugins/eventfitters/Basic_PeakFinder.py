@@ -111,33 +111,33 @@ class Basic_PeakFinder(MetaEventFitter):
         }
         settings["Min Height"] = {
             "Type": float,
-            "Value": 500,
+            "Value": 500.0,
             "Min": 0.0,
             "Units": "pA",
         }
         settings["Min Prominence"] = {
             "Type": float,
-            "Value": 100,
+            "Value": 100.0,
             "Min": 0.0,
             "Units": "pA",
         }
         settings["Relative Height"] = {"Type": float, "Value": 0.5, "Min": 0}
         settings["Window Length"] = {
             "Type": float,
-            "Value": 25,
+            "Value": 25.0,
             "Min": 0.0,
             "Units": "μs",
         }
-        settings["Width"] = {"Type": float, "Value": 0, "Min": 0.0, "Units": "μs"}
+        settings["Width"] = {"Type": float, "Value": 0.0, "Min": 0.0, "Units": "μs"}
         settings["Min Distance"] = {
             "Type": float,
-            "Value": 1,
+            "Value": 1.0,
             "Min": 0.0,
             "Units": "μs",
         }
         settings["Plateau Size"] = {
             "Type": float,
-            "Value": 0,
+            "Value": 0.0,
             "Min": 0.0,
             "Units": "μs",
         }

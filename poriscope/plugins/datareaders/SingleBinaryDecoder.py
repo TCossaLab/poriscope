@@ -393,7 +393,12 @@ class SingleBinaryDecoder(MetaReader):
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Input File"]["Options"] = ["Binary Files (*.*)"]
-        settings["Sampling Rate"] = {"Type": float, "Min": 0.0, "Units": "Hz"}
+        settings["Sampling Rate"] = {
+            "Type": float,
+            "Value": None,
+            "Min": 0.0,
+            "Units": "Hz",
+        }
         settings["Header Bytes"] = {"Type": int, "Value": 0, "Min": 0}
         settings["Number of Arrays"] = {"Type": int, "Value": 1, "Min": 1}
         settings["Byte Order"] = {"Type": str, "Value": "<", "Options": ["<", ">"]}

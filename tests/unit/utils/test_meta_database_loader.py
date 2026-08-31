@@ -1150,7 +1150,13 @@ class TestQueryGeneratorNoneBranch:
 class TestGetEmptySettingsBase:
     def test_base_impl_default(self, loader: ConcreteDatabaseLoader) -> None:
         settings = MetaDatabaseLoader.get_empty_settings(loader)
-        assert settings == {"Input File": {"Type": str, "Options": ["All Files (*.*)"]}}
+        assert settings == {
+            "Input File": {
+                "Type": str,
+                "Value": None,
+                "Options": ["All Files (*.*)"],
+            }
+        }
 
 
 # ---------------------------------------------------------------------------

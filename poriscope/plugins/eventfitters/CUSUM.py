@@ -103,9 +103,19 @@ class CUSUM(MetaEventFitter):
         :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "pA"}
-        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
-        settings["Rise Time"] = {"Type": float, "Min": 0.0, "Units": "us"}
+        settings["Step Size"] = {
+            "Type": float,
+            "Value": None,
+            "Min": 0.0,
+            "Units": "pA",
+        }
+        settings["Sensitivity"] = {"Type": float, "Value": 1.0, "Min": 1, "Max": 5}
+        settings["Rise Time"] = {
+            "Type": float,
+            "Value": None,
+            "Min": 0.0,
+            "Units": "us",
+        }
         settings["Max Sublevels"] = {"Type": int, "Value": 0, "Min": 0}
         return settings
 

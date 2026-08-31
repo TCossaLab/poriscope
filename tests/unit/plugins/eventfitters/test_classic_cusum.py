@@ -96,10 +96,12 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertIn("Step Size", settings)
         self.assertIn("Sensitivity", settings)
 
-    def test_step_size_has_no_value_key(self):
-        # Unlike every other setting dict in this codebase, "Step Size" is
-        # given Type/Min/Units but no "Value" key at all. This is tested
-        # explicitly as documented, observed behavior.
+    def test_step_size_has_explicit_none_value(self):
+        # "Step Size" has no usable default - the caller must supply one - and
+        # the contract in BaseDataPlugin.get_empty_settings requires that be
+        # spelled as an explicit "Value": None rather than by omitting the key.
+        # tests/unit/plugins/test_settings_schema.py enforces that across every
+        # plugin; this pins the shape ClassicCUSUM itself produces.
         with patch.object(CUSUM, "get_empty_settings", return_value={}):
             pf = object.__new__(ClassicCUSUM)
             settings = pf.get_empty_settings(standalone=True)
@@ -108,7 +110,8 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertIs(step_size_setting["Type"], float)
         self.assertEqual(step_size_setting["Min"], 0.0)
         self.assertEqual(step_size_setting["Units"], "σ")
-        self.assertNotIn("Value", step_size_setting)
+        self.assertIn("Value", step_size_setting)
+        self.assertIsNone(step_size_setting["Value"])
 
     def test_sensitivity_shape(self):
         with patch.object(CUSUM, "get_empty_settings", return_value={}):
