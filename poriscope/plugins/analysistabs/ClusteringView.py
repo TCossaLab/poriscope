@@ -218,7 +218,9 @@ class ClusteringView(MetaView, WalkthroughMixin):
         :type merge: Any
         """
         if self.cluster_data is None:
-            self.logger.error("No clusters defined, unable to merge")
+            self.add_text_to_display.emit(
+                "No clusters defined, unable to merge", self.__class__.__name__
+            )
             return
         else:
             try:

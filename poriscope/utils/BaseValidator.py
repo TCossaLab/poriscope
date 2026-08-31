@@ -89,7 +89,11 @@ class BaseValidator(QValidator, metaclass=QObjectABCMeta):
             else:
                 return self._validate_final(input)
         except Exception as e:
-            self.logger.error(f"Error during validation: {str(e)}")
+            # warning, not error: Qt calls validate on every keystroke, and an error
+            # here is a modal dialog, so a defect on this path would raise one dialog
+            # per character typed. The except itself stays because an exception must
+            # not escape a QValidator into Qt's C++ caller.
+            self.logger.warning(f"Error during validation: {str(e)}", exc_info=True)
             return QValidator.Invalid, input, pos
 
     @abstractmethod

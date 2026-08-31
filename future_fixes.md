@@ -30,7 +30,14 @@ none of the four pre-commit gates can see.
 retries, CI's marker filter, the generator failure reported as success, and the
 serial-channel lock granularity. What they had in common is that each failed silently in
 the `getattr` blind spot; the narrative is in `changelog.md` and the limitations the last
-two left behind are under "Still queued" below. **High is now the top of this section.**
+two left behind are under "Still queued" below.
+
+**High is now cleared too** (2026-08-31), except for one item held open by decision. The
+plugin-shadowing and routine-ERROR items both landed; the remaining High entry is the
+emit-then-read-an-attribute pattern in the analysis-tab Views, which is **deferred
+deliberately** rather than queued: the explicit `Qt.ConnectionType.DirectConnection` on
+that bus already makes those reads deterministic, so what is left is structural clarity
+and not behaviour. Do not treat it as blocking "What to pick up next" below.
 
 ### High - working today, but for reasons nothing records or tests
 
@@ -69,32 +76,33 @@ two left behind are under "Still queued" below. **High is now the top of this se
   the log level), carries a `"%(message)s"` formatter instead of the shared log-line one,
   and queues records that arrive while a dialog is up rather than discarding them. See
   `changelog.md`.
-  **What's still open** is the other half: the individual log *levels* were deliberately
-  left alone, so a large number of routine states are still recorded at `WARNING` or
-  `ERROR` even though the user cannot act on them. They no longer interrupt anyone, so
-  this is now a tidiness and log-signal problem rather than a UX one. The catalogue worth
-  working from, of 112 `logger.warning` + 161 `logger.error` + 16 `logger.exception` sites
-  under `poriscope/`:
-  - `float_range_line_edit.py:140` logs **ERROR for an empty text box**, and `:78` fires
-    from inside `FloatRangeValidator._validate_final`, which `BaseValidator.validate`
-    calls on every keystroke where the line edit lacks focus. `BaseValidator.py:91-93` is
-    a blanket `except` inside a `QValidator.validate`.
+  **The ERROR half is also now closed** (2026-08-31): 19 routine conditions logged at
+  `ERROR`, and therefore raising a dialog each, were re-levelled or moved to the
+  `add_text_to_display` panel - the six parse/empty-input sites in
+  `float_range_line_edit.py` and `BaseValidator`'s per-keystroke blanket `except`, two
+  per-channel loop notes in `RawDataView`, and nine empty-state guards across the five
+  analysis tabs. See `changelog.md`.
+  **What's still open** is the `WARNING` half. Roughly 109 `logger.warning` +
+  16 `logger.exception` sites under `poriscope/` still record routine states at a level
+  that reads as a problem. **None of them interrupts anyone**, since `QtHandler` floors at
+  `ERROR`, so this is purely a log-signal and tidiness problem and is deliberately not
+  queued as urgent. If it is ever picked up, the families worth working from are:
   - Per-event and per-channel "skipping"/"proceeding without" notes logged at WARNING from
     inside worker generators: `RawDataView.py:853, 869, 881, 1071, 1549`,
     `EventAnalysisView.py:419, 436, 588, 950`, `ProteinView.py:1103, 1152`,
     `RawDataModel.py:101, 109`, `MetaDatabaseWriter.py:178-180`.
   - "No selection"/"select only one" user guidance at WARNING across `MetadataView`,
     `ProteinView`, `RawDataView` and the three controllers' `"No column names received"`.
-  - `main_model.py:176-179` logs **ERROR at startup for any `.py` file under
-    `poriscope/plugins/` that fails to import**, because `load_plugin` calls
-    `exec_module` before checking whether the file holds a plugin at all - so a helper
-    module that was never a plugin reports as a plugin failure. Related to the plugin-
-    shadowing item below. Its `errorOccurred.emit` on the next line is connected to
-    nothing (`main_model.py:70` is the only other reference).
+    These belong on the panel rather than in the log at all, the way the nine ERROR-level
+    guards now are.
   - A handful of sites already emit to the panel *and* log at WARNING for the same event
     (`DataPluginController.py:155-161`, `:470-476`; `MetadataView.py:1848-1849`;
     `ProteinView.py:1343-1344`). Those are the model for the intended pattern, and are
     now the only copy the user sees.
+  Deliberately staying at `ERROR`, so do not "finish the job" by changing them:
+  `main_model.py`'s plugin-import failure (a broken plugin is worth interrupting for, and
+  with no pre-import check it is the only signal the user gets), `ClusteringView.py:530`'s
+  empty dataframe, and `SQLiteDBLoader.py:605`'s missing `id` column.
 - **Fixed** (2026-08-31): a user plugin used to silently replace a built-in of the same
   filename. Discovery walks `poriscope/plugins/` and then the user folder into one flat
   `{subclass_name: class}` map, and both the assignment and the menu-list `append` were

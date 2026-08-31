@@ -3627,7 +3627,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             loader = parameters["db_loader"]
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             self._pending_filter_name = name
@@ -3702,7 +3704,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             self._pending_filter_name = new_name

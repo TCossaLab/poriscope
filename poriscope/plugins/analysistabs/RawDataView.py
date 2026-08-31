@@ -709,7 +709,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         original_str = self._get_event_index_text()
         self.logger.debug(f"Original GUI input string: {original_str}")
         if not original_str:
-            self.logger.error("Event index input is empty.")
+            self.logger.debug("Event index input is empty.")
             return
 
         parsed = self._parse_event_indices(original_str, False)
@@ -886,7 +886,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                 if data_list:
                     self._update_event_plot(data_list, events)
                 else:
-                    self.logger.error("No data available for plotting")
+                    self.add_text_to_display.emit(
+                        "No data available for plotting", self.__class__.__name__
+                    )
             except Exception:
                 self.logger.error("Unable to plot event data")
 
@@ -1321,7 +1323,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 if self.plot_data is not None:
                     data_list.append(self.plot_data)
                 else:
-                    self.logger.error(f"No data loaded for channel {channel}, skipping")
+                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
                     channels.remove(channel)
 
             # Apply filter if needed
@@ -1336,7 +1338,9 @@ class RawDataView(MetaView, WalkthroughMixin):
             if data_list:
                 self.update_plot(data_list, channels, start, baseline=baseline)
             else:
-                self.logger.error("No data available for plotting")
+                self.add_text_to_display.emit(
+                    "No data available for plotting", self.__class__.__name__
+                )
         else:
             self.logger.error("Invalid parameters for plotting data")
 
@@ -1365,7 +1369,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 if self.plot_data is not None:
                     data_list.append(self.plot_data)
                 else:
-                    self.logger.error(f"No data loaded for channel {channel}, skipping")
+                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
                     channels.remove(channel)
 
             # Apply filter if needed
@@ -1383,7 +1387,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                     self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels
                 )
             else:
-                self.logger.error("No data available for psd calculation")
+                self.add_text_to_display.emit(
+                    "No data available for psd calculation", self.__class__.__name__
+                )
         else:
             self.logger.error("Invalid parameters for plotting data")
 

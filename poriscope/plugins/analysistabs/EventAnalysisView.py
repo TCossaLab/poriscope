@@ -321,7 +321,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         original_str = self._get_event_index_text()
         self.logger.debug(f"Original GUI input string: {original_str}")
         if not original_str:
-            self.logger.error("Event index input is empty.")
+            self.logger.debug("Event index input is empty.")
             return
 
         parsed = self._parse_event_indices(original_str, False)
@@ -603,7 +603,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         use_raw=parameters.get("raw", False),
                     )
                 else:
-                    self.logger.error("No data available for plotting")
+                    self.add_text_to_display.emit(
+                        "No data available for plotting", self.__class__.__name__
+                    )
             except Exception as e:
                 self.logger.error(f"Unable to plot event data: {e}")
 

@@ -2145,7 +2145,11 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
         if exp_and_ch is None:
-            self.logger.error("No experiments or channels in scope for navigation.")
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to "
+                "navigate events",
+                self.__class__.__name__,
+            )
             return
 
         exp = next(iter(exp_and_ch.keys()))
@@ -3107,7 +3111,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             loader = parameters["db_loader"]
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             # Store pending data for use in relay_query
@@ -3182,7 +3188,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             # Store pending update info to be committed in relay_query after validation
