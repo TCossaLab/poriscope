@@ -217,7 +217,6 @@ class IconTextMenuWidget(QWidget):
     def menu_button_clicked(self) -> None:
         self.menuToggled.emit()
         QTimer.singleShot(100, self.uncheckMenuButton)
-        QTimer.singleShot(100, self.uncheckMenuButton)  # Add delay
         self.logger.info("text_menu_button_clicked")
 
     @log(logger=logger)
