@@ -746,8 +746,9 @@ class MainController(QObject):
     def instantiate_analysis_tab(self, subclass: str) -> None:
         """
         Instantiate a new analysis-tab controller of the given subclass and wire it into the app
-        (add its page, connect its signals, register it in plugin history), or reuse the existing
-        instance if a tab of that type has already been instantiated.
+        (add its page, sync the sidebar highlight to it, connect its signals, register it in
+        plugin history), or reuse the existing instance if a tab of that type has already been
+        instantiated.
 
         Exceptions raised while instantiating the controller itself are caught and logged here.
         Exceptions raised afterward, while wiring up or registering the new tab, are not caught
@@ -779,10 +780,17 @@ class MainController(QObject):
             history["subclass"] = subclass
             self.analysis_tabs[subclass] = new_analysis_tab
 
-            self.main_view.add_page(
-                new_analysis_tab.view.__class__.__name__,
-                self.analysis_tabs[subclass].view,
-            )
+            view_name = new_analysis_tab.view.__class__.__name__
+            self.main_view.add_page(view_name, self.analysis_tabs[subclass].view)
+            # The button-click handlers that normally open a tab
+            # (on_raw_data_view_click and friends) sync the sidebar highlight
+            # themselves alongside emitting the signal that reaches here, so
+            # this looks redundant for that path - but callers that reach this
+            # method directly, like load_session restoring a saved session,
+            # never go through a click handler at all, and the sidebar was
+            # left showing nothing (or whatever was highlighted before) with no
+            # tab actually behind it.
+            self.main_view.sync_sidebar_highlight(view_name)
 
             # Connect other necessary signals and update plugins
             # DirectConnection is required, not cosmetic: callers on the other end of

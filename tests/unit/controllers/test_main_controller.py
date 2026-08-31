@@ -247,6 +247,38 @@ def test_instantiate_analysis_tab_adds_new_tab(
     ].global_signal.connect.assert_called_once()
 
 
+def test_instantiate_analysis_tab_syncs_the_sidebar_highlight(
+    controller: MainController,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    Highlight the sidebar button for a newly created tab's view.
+
+    The normal button-click handlers (on_raw_data_view_click and similar)
+    sync the sidebar themselves alongside emitting the signal that reaches
+    this method, so this looks redundant for that path. A caller that
+    reaches this method directly instead - load_session restoring a saved
+    session, in particular - never goes through a click handler at all, and
+    without this the sidebar was left showing nothing, or whatever was
+    highlighted before, with no tab actually behind it.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    tab_view = MagicMock()
+    tab_view.__class__.__name__ = "RawDataView"
+    mock_main_model.get_plugin_classes.return_value = {
+        "RawDataController": lambda available_plugins: MagicMock(view=tab_view)
+    }
+    controller.analysis_tabs = {}
+
+    controller.instantiate_analysis_tab("RawDataController")
+
+    mock_main_view.sync_sidebar_highlight.assert_called_once_with("RawDataView")
+
+
 def test_instantiate_analysis_tab_uses_existing_instance(
     controller: MainController,
     mock_main_view: MagicMock,
@@ -263,6 +295,7 @@ def test_instantiate_analysis_tab_uses_existing_instance(
     controller.instantiate_analysis_tab("RawDataController")
 
     mock_main_view.add_page.assert_not_called()
+    mock_main_view.sync_sidebar_highlight.assert_not_called()
 
 
 def test_instantiate_analysis_tab_logs_error_on_instantiation_failure(
