@@ -729,7 +729,9 @@ def test_handle_about_to_quit_flushes_session_state_first(
     assert controller.plugin_history["MetadataController"]["subset_filters"] == {
         "f1": "voltage > 0"
     }
-    mock_main_model.save_session.assert_called_once_with(controller.plugin_history, None)
+    mock_main_model.save_session.assert_called_once_with(
+        controller.plugin_history, None
+    )
 
 
 def test_send_curent_data_server_delegates_to_model_and_view(
