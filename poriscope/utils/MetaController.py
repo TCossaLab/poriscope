@@ -306,9 +306,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                     self.__class__.__name__,
                 )
         else:
-            self.logger.info(
-                f"No active workers found for key '{key}' in {subclass}."
-            )
+            self.logger.info(f"No active workers found for key '{key}' in {subclass}.")
             self.logger.debug(f"Full workers dictionary: {self.model.workers}")
             self.add_text_to_display.emit(
                 f"Nothing to stop for {key} - it is not running.",
