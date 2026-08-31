@@ -1,5 +1,9 @@
 ## Poriscope 1.7: In Progress
 
+* **Fixed: every dataset link in the documentation pointed at a retired FRDR record**
+    * The tutorial dataset DOI in the docs, `10.20383/103.01599`, is Version 1. It was superseded on 2026-06-01 by `10.20383/103.01695` ("Adding a second dataset and README to extend the testing functionality of the dataset"). 11 occurrences across 6 files now point at the current DOI.
+    * Added the DOI to the two pages where a new user first needs data and it was missing: `raw_data_tab.rst`, at the **Select Input File** step and naming `ChimeraReader20240501` for the deposit's `.log` files, and `tutorial.rst`, worded to keep the built-in Help -> Tutorial walkthrough distinct from the YouTube tutorial series that shares the dataset.
+
 * **View tests build mocked views instead of real Qt widgets**
     * `test_protein_view.py` and `test_event_analysis_view.py` built a full view per test - widget tree, Matplotlib canvases and controls panel - at roughly half a second each, which was fixture cost rather than test work: of protein_view's 123.8s, 103.8s was setup and 10.7s was the test bodies. Both now build the view with `__new__` and supply only what the code under test touches, following the pattern `test_metadata_view.py` and `test_raw_data_view.py` already used.
     * `test_protein_view.py` 123.8s to 26.1s (and that is with 36 more tests than before, mean per test 0.497s to 0.091s); `test_event_analysis_view.py` 32.3s to ~11s. Measured across the view tree, 364.9s to 249.1s.

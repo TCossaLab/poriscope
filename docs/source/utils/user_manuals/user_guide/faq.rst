@@ -67,8 +67,8 @@ Where can I find the data used in the tutorials?
 
 The data used in the YouTube tutorial series is archived on the Federated Research Data Repository (FRDR):
 
-**DOI:** `10.20383/103.01599 <https://doi.org/10.20383/103.01599>`_
+**DOI:** `10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
 
 The full dataset is ~9.92 GB. Individual ``.log`` and ``.json`` files can be downloaded separately from the FRDR page if you only need specific channels.
 
-The reference ``.db`` files generated during the tutorial are in the process of being archived as well. A link will be added once available.
+The deposit also contains the reference SQLite databases used in the tutorial (``.sqlite3``), and a ``README.txt`` giving the parameters needed to regenerate them from the recordings.
