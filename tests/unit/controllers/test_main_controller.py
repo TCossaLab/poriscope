@@ -1317,35 +1317,50 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
     tab_instance.restore_session_state.assert_called_once_with(history["tab_key"])
 
 
-def test_load_session_does_not_restore_state_into_already_open_tab(
+def test_load_session_resets_an_already_open_tab_before_restoring(
     controller: MainController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Skip session-state restoration for a tab that was already open before session
-    load, so a freshly loaded session cannot clobber the user's live, unsaved state.
+    Tear down an already-open tab via reset_session() before applying a load,
+    rather than preserving its live state.
+
+    A load always starts from a clean workspace now, the same as Reset
+    Session does on its own - so the previously-open tab is closed (its
+    workers killed) rather than left alone, and the freshly created
+    replacement is what gets the saved state restored onto it.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
     existing_tab = mocker.Mock()
     controller.analysis_tabs = {"MetadataController": existing_tab}
-    controller.instantiate_analysis_tab = mocker.Mock()
+    controller.data_plugin_controller.delete_all_plugins.return_value = []
 
-    controller.plugin_history = {
+    new_tab = mocker.Mock()
+    new_tab.get_session_state.return_value = {}
+    controller.instantiate_analysis_tab = mocker.Mock(
+        side_effect=lambda subclass: controller.analysis_tabs.__setitem__(
+            subclass, new_tab
+        )
+    )
+
+    loaded_history = {
         "tab_key": {
             "metaclass": "MetaController",
             "subclass": "MetadataController",
             "subset_filters": {"f1": "voltage > 0"},
         }
     }
-    controller.main_model.load_session = mocker.Mock(
-        return_value=controller.plugin_history
-    )
+    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
 
     controller.load_session("session.json")
 
+    existing_tab.handle_kill_all_workers.assert_called_once_with(
+        "MetadataController", exiting=True
+    )
     existing_tab.restore_session_state.assert_not_called()
+    new_tab.restore_session_state.assert_called_once_with(loaded_history["tab_key"])
 
 
 def test_load_session_returns_early_when_history_is_none(
@@ -1355,15 +1370,55 @@ def test_load_session_returns_early_when_history_is_none(
     """
     Return early and log info when load_session returns None.
 
+    A failed load must not tear down the current workspace for nothing -
+    reset_session() is only worth running once there is something to apply.
+
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
     controller.main_model.load_session = mocker.Mock(return_value=None)
     controller.plugin_history = {}
+    reset_spy = mocker.patch.object(controller, "reset_session")
 
     controller.load_session("file.json")
 
     controller.main_model.save_session.assert_not_called()
+    reset_spy.assert_not_called()
+
+
+def test_load_session_resets_before_applying_the_loaded_history(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Clear the current workspace before restoring anything from a load.
+
+    Applying a loaded session on top of whatever is already instantiated
+    collided with anything already registered under the same key or name -
+    a plugin key already taken, a named filter already added - and surfaced
+    as an "already exists" error for state the user never meant to keep.
+    Both "Load Session" and "Restore Session" go through this same method,
+    so this covers both.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    order: List[str] = []
+    mocker.patch.object(
+        controller, "reset_session", side_effect=lambda: order.append("reset")
+    )
+    loaded_history = {
+        "reader_key": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
+    }
+    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
+    controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
+        side_effect=lambda **kwargs: order.append("restore")
+    )
+
+    controller.load_session("session.json")
+
+    assert order == ["reset", "restore"]
+    assert controller.plugin_history == loaded_history
 
 
 def test_load_session_logs_error_on_analysis_tab_failure(
@@ -1376,12 +1431,11 @@ def test_load_session_logs_error_on_analysis_tab_failure(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.plugin_history = {
-        "key1": {"metaclass": "MetaController", "subclass": "SomeTab"}
-    }
-    controller.main_model.load_session = mocker.Mock(
-        return_value=controller.plugin_history
-    )
+    # A separate dict, not controller.plugin_history itself: reset_session()
+    # now runs before this is applied and clears that dict in place, which
+    # would otherwise wipe out the same object this mock returns.
+    loaded_history = {"key1": {"metaclass": "MetaController", "subclass": "SomeTab"}}
+    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
     controller.instantiate_analysis_tab = mocker.Mock(side_effect=RuntimeError("fail"))
 
     controller.load_session("session.json")
@@ -1399,12 +1453,13 @@ def test_load_session_logs_error_on_other_value_error(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.plugin_history = {
+    # A separate dict, not controller.plugin_history itself: reset_session()
+    # now runs before this is applied and clears that dict in place, which
+    # would otherwise wipe out the same object this mock returns.
+    loaded_history = {
         "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
     }
-    controller.main_model.load_session = mocker.Mock(
-        return_value=controller.plugin_history
-    )
+    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
         side_effect=ValueError("some other error")
     )
@@ -1424,12 +1479,13 @@ def test_load_session_logs_error_on_unexpected_plugin_exception(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.plugin_history = {
+    # A separate dict, not controller.plugin_history itself: reset_session()
+    # now runs before this is applied and clears that dict in place, which
+    # would otherwise wipe out the same object this mock returns.
+    loaded_history = {
         "key2": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
     }
-    controller.main_model.load_session = mocker.Mock(
-        return_value=controller.plugin_history
-    )
+    controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
         side_effect=RuntimeError("unexpected")
     )

@@ -833,19 +833,39 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str)
     def load_session(self, file_name: Optional[Union[str, Path]] = None) -> None:
+        """
+        Load a saved session, replacing whatever is currently instantiated.
+
+        Applying the loaded plugin history on top of an already-populated
+        workspace collided with anything the current session already held
+        under the same key or name - a plugin key already registered, a
+        named filter already added - and surfaced as an "already exists"
+        error for state the user never meant to keep. ``reset_session()``
+        clears the workspace first, the same as it does for its own menu
+        action, so a load always starts from nothing regardless of what was
+        open before it. Both "Load Session" (a chosen file) and "Restore
+        Session" (``file_name=None``, the last saved session) route through
+        this same method.
+
+        :param file_name: Path to the session file to load, or None to
+            restore the last saved session.
+        :type file_name: Optional[Union[str, Path]]
+        """
         self.logger.debug(f"Loading session from file {file_name}")
         plugin_history = self.main_model.load_session(file_name)
-        if plugin_history is not None:
-            self.plugin_history = plugin_history
-            self.main_model.save_session(self.plugin_history)
-        else:
+        if plugin_history is None:
             self.logger.info(f"Unable to recover plugin history from {file_name}")
             return
+        self.reset_session()
+        self.plugin_history = plugin_history
+        self.main_model.save_session(self.plugin_history)
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
             if metaclass == "MetaController":
-                tab_already_open = subclass in self.analysis_tabs
+                # reset_session() above has already cleared every tab, so this
+                # is always a fresh instantiation - never one already open
+                # whose live state should be left alone.
                 try:
                     self.instantiate_analysis_tab(subclass)
                 except Exception as e:
@@ -853,10 +873,9 @@ class MainController(QObject):
                         f"Unable to restore Analysis Tab {key} of type {subclass} due to {str(e)}"
                     )
                     continue
-                if not tab_already_open:
-                    tab = self.analysis_tabs.get(subclass)
-                    if tab is not None:
-                        tab.restore_session_state(plugin)
+                tab = self.analysis_tabs.get(subclass)
+                if tab is not None:
+                    tab.restore_session_state(plugin)
             else:
                 settings = plugin.get("settings")
                 try:
