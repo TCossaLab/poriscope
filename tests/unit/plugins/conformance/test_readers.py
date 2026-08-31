@@ -96,18 +96,18 @@ def test_reports_the_recording_shape(opened) -> None:
     reader, dataset = opened
 
     channels = reader.get_channels()
-    assert dataset.channel in channels, (
-        f"expected channel {dataset.channel} among {channels}"
-    )
+    assert (
+        dataset.channel in channels
+    ), f"expected channel {dataset.channel} among {channels}"
     assert reader.get_samplerate() == pytest.approx(dataset.samplerate, rel=1e-6)
 
     expected_length = int(round(dataset.duration_s * dataset.samplerate))
     actual_length = reader.get_channel_length(dataset.channel)
     # Within one sample: some formats derive length from file size divided by
     # record size, which can round differently than duration_s * samplerate.
-    assert abs(actual_length - expected_length) <= 1, (
-        f"channel length {actual_length} vs expected {expected_length}"
-    )
+    assert (
+        abs(actual_length - expected_length) <= 1
+    ), f"channel length {actual_length} vs expected {expected_length}"
 
 
 @pytest.mark.conformance
@@ -136,17 +136,17 @@ def test_load_data_matches_the_planted_signal(opened) -> None:
             False
         )
     baseline_mean = data[baseline_mask].mean()
-    assert baseline_mean == pytest.approx(READER_BASELINE_PA, abs=MEAN_TOLERANCE_PA), (
-        f"baseline mean {baseline_mean:.1f} pA, planted {READER_BASELINE_PA} pA"
-    )
+    assert baseline_mean == pytest.approx(
+        READER_BASELINE_PA, abs=MEAN_TOLERANCE_PA
+    ), f"baseline mean {baseline_mean:.1f} pA, planted {READER_BASELINE_PA} pA"
 
     assert dataset.events, "fixture planted no events to check event depth against"
     event = dataset.events[0]
     window = data[event.start_index : event.start_index + event.length_samples]
     expected_event_mean = READER_BASELINE_PA + READER_EVENT_AMPLITUDE_PA
-    assert window.mean() == pytest.approx(expected_event_mean, abs=MEAN_TOLERANCE_PA), (
-        f"event window mean {window.mean():.1f} pA, expected {expected_event_mean} pA"
-    )
+    assert window.mean() == pytest.approx(
+        expected_event_mean, abs=MEAN_TOLERANCE_PA
+    ), f"event window mean {window.mean():.1f} pA, expected {expected_event_mean} pA"
 
 
 @pytest.mark.conformance
@@ -170,11 +170,13 @@ def test_raw_data_path_is_self_consistent(opened) -> None:
     assert np.dtype(raw_dtype) is not None  # raises TypeError if unusable
 
     non_raw = reader.load_data(0.0, dataset.duration_s, channel)
-    raw, scale, offset = reader.load_data(0.0, dataset.duration_s, channel, raw_data=True)
-
-    assert raw.size == non_raw.size, (
-        f"raw path returned {raw.size} samples, non-raw returned {non_raw.size}"
+    raw, scale, offset = reader.load_data(
+        0.0, dataset.duration_s, channel, raw_data=True
     )
+
+    assert (
+        raw.size == non_raw.size
+    ), f"raw path returned {raw.size} samples, non-raw returned {non_raw.size}"
     assert isinstance(scale, (int, float, np.floating, np.integer))
     assert isinstance(offset, (int, float, np.floating, np.integer))
 
@@ -197,9 +199,9 @@ def test_reports_base_file_and_experiment(opened) -> None:
     assert base_file, "get_base_file returned something falsy"
 
     experiment_name = reader.get_base_experiment_name()
-    assert isinstance(experiment_name, str) and experiment_name, (
-        f"get_base_experiment_name returned {experiment_name!r}"
-    )
+    assert (
+        isinstance(experiment_name, str) and experiment_name
+    ), f"get_base_experiment_name returned {experiment_name!r}"
 
 
 @pytest.mark.conformance

@@ -143,8 +143,13 @@ def _build_strings_blob(num_channels: int) -> bytes:
     :rtype: bytes
     """
     names = [f"IChannel{i}" if i == 0 else f"Aux{i}" for i in range(num_channels)]
-    units = [CHANNEL_NAME_UNIT if i == 0 else VOLTAGE_CHANNEL_UNIT for i in range(num_channels)]
-    entries = [b""] + [n.encode("ascii") for n in names] + [u.encode("ascii") for u in units]
+    units = [
+        CHANNEL_NAME_UNIT if i == 0 else VOLTAGE_CHANNEL_UNIT
+        for i in range(num_channels)
+    ]
+    entries = (
+        [b""] + [n.encode("ascii") for n in names] + [u.encode("ascii") for u in units]
+    )
     return b"\x00\x00" + b"\x00".join(entries)
 
 
@@ -216,9 +221,7 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
         header[0:4] = b"ABF2"
         _pack_at(header, 30, "<H", 1)  # nonzero => float32 samples
         _pack_at(header, 76, "<IIl", protocol_block, 0, 0)  # ProtocolSection
-        _pack_at(
-            header, 92, "<IIl", adc_block, ADC_RECORD_STRIDE, n
-        )  # ADCSection
+        _pack_at(header, 92, "<IIl", adc_block, ADC_RECORD_STRIDE, n)  # ADCSection
         strings_blob = _build_strings_blob(n)
         _pack_at(
             header, 220, "<IIl", strings_block, len(strings_blob), 0
@@ -251,18 +254,7 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
                 # fPostProcessLowpassFilter, nPostProcessLowpassFilterType,
                 # bEnabledDuringPN, nStatsChannelPolarity,
                 # lADCChannelNameIndex, lADCUnitsIndex
-                "<hhh"
-                "fff"
-                "h"
-                "f"
-                "hh"
-                "fffffffff"
-                "BB"
-                "f"
-                "c"
-                "B"
-                "h"
-                "ii",
+                "<hhh" "fff" "h" "f" "hh" "fffffffff" "BB" "f" "c" "B" "h" "ii",
                 i,  # nADCNum
                 0,  # nTelegraphEnable - disabled, skips the AdditGain divide
                 0,  # nTelegraphInstrument
