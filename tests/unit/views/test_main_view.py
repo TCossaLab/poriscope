@@ -945,10 +945,22 @@ class TestClearSidebarHighlight:
             main_view.clear_sidebar_highlight()
 
             for icon_button, text_button in (
-                (main_view.icon_menu_widget.raw_data_icon_button, main_view.text_menu_widget.raw_data_text_button),
-                (main_view.icon_menu_widget.event_analysis_icon_button, main_view.text_menu_widget.event_analysis_text_button),
-                (main_view.icon_menu_widget.metadata_icon_button, main_view.text_menu_widget.metadata_text_button),
-                (main_view.icon_menu_widget.add_icon_button, main_view.text_menu_widget.plugins_text_button),
+                (
+                    main_view.icon_menu_widget.raw_data_icon_button,
+                    main_view.text_menu_widget.raw_data_text_button,
+                ),
+                (
+                    main_view.icon_menu_widget.event_analysis_icon_button,
+                    main_view.text_menu_widget.event_analysis_text_button,
+                ),
+                (
+                    main_view.icon_menu_widget.metadata_icon_button,
+                    main_view.text_menu_widget.metadata_text_button,
+                ),
+                (
+                    main_view.icon_menu_widget.add_icon_button,
+                    main_view.text_menu_widget.plugins_text_button,
+                ),
             ):
                 assert icon_button.isChecked() is False
                 assert text_button.isChecked() is False
@@ -1046,8 +1058,14 @@ class TestRefreshAvailablePlugins:
     """
 
     KEYS = (
-        "MetaReader", "MetaEventLoader", "MetaDatabaseLoader", "MetaFilter",
-        "MetaWriter", "MetaDatabaseWriter", "MetaController", "MetaEventFinder",
+        "MetaReader",
+        "MetaEventLoader",
+        "MetaDatabaseLoader",
+        "MetaFilter",
+        "MetaWriter",
+        "MetaDatabaseWriter",
+        "MetaController",
+        "MetaEventFinder",
         "MetaEventFitter",
     )
 

@@ -1283,7 +1283,9 @@ def _wire_store(controller: DataPluginController, store: dict) -> None:
     controller.model.get_instantiated_plugins_list.side_effect = lambda: {
         m: list(d) for m, d in store.items()
     }
-    controller.model.get_plugin_instance.side_effect = lambda m, k: store.get(m, {}).get(k)
+    controller.model.get_plugin_instance.side_effect = lambda m, k: store.get(
+        m, {}
+    ).get(k)
     controller.model.unregister_plugin.side_effect = lambda m, k: store[m].pop(k, None)
 
 

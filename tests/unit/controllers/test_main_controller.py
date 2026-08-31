@@ -1552,9 +1552,10 @@ class TestResetSession:
     def test_does_not_overwrite_the_saved_session(self, controller):
         controller.plugin_history = {"reader_1": {"metaclass": "MetaReader"}}
         # deleting a plugin emits a history update, exactly as delete_plugin does
-        controller.data_plugin_controller.delete_all_plugins.side_effect = (
-            lambda: (controller.update_plugin_history(None, "reader_1"), [])[1]
-        )
+        controller.data_plugin_controller.delete_all_plugins.side_effect = lambda: (
+            controller.update_plugin_history(None, "reader_1"),
+            [],
+        )[1]
 
         controller.reset_session()
 
@@ -1590,9 +1591,10 @@ class TestResetSession:
         tab = MagicMock()
         tab.handle_kill_all_workers.side_effect = lambda *a, **k: order.append("kill")
         controller.analysis_tabs = {"RawDataController": tab}
-        controller.data_plugin_controller.delete_all_plugins.side_effect = (
-            lambda: (order.append("delete"), [])[1]
-        )
+        controller.data_plugin_controller.delete_all_plugins.side_effect = lambda: (
+            order.append("delete"),
+            [],
+        )[1]
 
         controller.reset_session()
 
@@ -1647,8 +1649,8 @@ class TestResetSession:
         controller.main_view.close_settings_page.side_effect = lambda: order.append(
             "detach"
         )
-        controller.main_view.remove_pages_except.side_effect = lambda _keep: order.append(
-            "remove"
+        controller.main_view.remove_pages_except.side_effect = (
+            lambda _keep: order.append("remove")
         )
 
         controller.reset_session()
