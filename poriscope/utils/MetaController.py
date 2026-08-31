@@ -228,7 +228,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.view.set_column_exists(table_name)
 
     @log(logger=logger)
-    @Slot(str)
+    @Slot(str, str)
     def relay_add_text_to_display(self, text: str, source: str) -> None:
         """
         Relay text from model or view to be displayed in the main text display widget
@@ -236,17 +236,22 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.add_text_to_display.emit(text, source)
 
     @log(logger=logger)
-    @Slot(str, int)
+    @Slot(str, str)
     def handle_kill_worker(self, subclass: str, identifier: str) -> None:
         """
-        Kill the selected worker if it is running.
+        Kill the selected worker if it is running, and say so on the display panel.
 
-        Note: the ``@Slot(str, int)`` decorator's declared second-argument type
-        (``int``) does not match the ``str`` value actually delivered by
-        ``MetaView.kill_worker`` (``Signal(str, str)``) or the ``"key/channel"``
-        string parsing performed below; this is a pre-existing mismatch and is
-        left as-is here since fixing it is a behavior change, not a type-hint
-        change.
+        Every branch reports to the user. Previously the *success* path logged at
+        INFO, which is below the default log level and therefore invisible, while
+        the two no-op paths logged at WARNING and so raised a modal dialog
+        containing a repr of the whole worker dictionary - feedback was exactly
+        inverted, and a user aborting an operation had no way to tell whether it
+        had taken effect.
+
+        :param subclass: Name of the controller the kill request is addressed to.
+        :type subclass: str
+        :param identifier: Worker identifier in ``"key/channel"`` form.
+        :type identifier: str
         """
         self.logger.debug(
             f"Called handle_kill_worker with subclass='{subclass}', self class='{self.__class__.__name__}', identifier={identifier}"
@@ -259,6 +264,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         except ValueError:
             self.logger.error(
                 f"Invalid identifier format: {identifier}. Expected format 'key/channel'."
+            )
+            self.add_text_to_display.emit(
+                f"Unable to stop {identifier}: expected a 'key/channel' identifier.",
+                self.__class__.__name__,
             )
             return
 
@@ -279,15 +288,31 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 self.logger.info(
                     f"Stopping worker for channel {channel} in {subclass} (matched worker: {key}/{channel})"
                 )
+                self.add_text_to_display.emit(
+                    f"Stopping {key} on channel {channel}.",
+                    self.__class__.__name__,
+                )
                 self.model.stop_workers(key, channel)  # Pass both key and channel
                 return
             else:
-                self.logger.warning(
+                # Routine rather than exceptional: discard_generator pops a finished
+                # run out of self.workers, so pressing kill on a run that has just
+                # completed lands here. INFO plus a panel message, not a dialog.
+                self.logger.info(
                     f"No active worker found for channel {channel} under key '{key}' in {subclass}. Available channels: {available_channels}"
                 )
+                self.add_text_to_display.emit(
+                    f"Nothing to stop for {key} on channel {channel} - it is not running.",
+                    self.__class__.__name__,
+                )
         else:
-            self.logger.warning(
-                f"No active workers found for key '{key}' in {subclass}. Full dictionary: {self.model.workers}"
+            self.logger.info(
+                f"No active workers found for key '{key}' in {subclass}."
+            )
+            self.logger.debug(f"Full workers dictionary: {self.model.workers}")
+            self.add_text_to_display.emit(
+                f"Nothing to stop for {key} - it is not running.",
+                self.__class__.__name__,
             )
 
     @log(logger=logger)
@@ -316,11 +341,30 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @Slot(str)
     def handle_kill_all_workers(self, subclass: str, exiting: bool = False) -> None:
         """
-        Kill all running workers.
+        Kill all running workers for this tab, and say so on the display panel.
+
+        The panel message is skipped when ``exiting`` is set: the display widget is
+        being torn down along with everything else, so writing to it at that point
+        would be pointless at best.
+
+        :param subclass: Name of the controller the request is addressed to; the
+            request is ignored if it names a different one.
+        :type subclass: str
+        :param exiting: True when called from the application's shutdown handler,
+            which additionally blocks until each thread has finished.
+        :type exiting: bool
         """
-        if subclass == self.__class__.__name__:
-            self.logger.info(f"Stopping all workers for {subclass}")
-            self.model.stop_workers(exiting=exiting)
+        if subclass != self.__class__.__name__:
+            self.logger.debug(
+                f"Ignoring kill-all addressed to {subclass}; this is {self.__class__.__name__}"
+            )
+            return
+        self.logger.info(f"Stopping all workers for {subclass}")
+        if not exiting:
+            self.add_text_to_display.emit(
+                "Stopping all running operations.", self.__class__.__name__
+            )
+        self.model.stop_workers(exiting=exiting)
 
     @Slot(str, str, str, tuple, str, tuple)
     def _relay_global_signal(

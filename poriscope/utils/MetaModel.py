@@ -288,9 +288,12 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             return  # Exit after stopping all workers
 
         if key not in self.workers:
-            self.logger.warning(
-                f"No active workers found for key '{key}'. Full dictionary: {self.workers}"
-            )
+            # INFO, not WARNING: this is reached routinely, and it duplicates the
+            # message MetaController.handle_kill_worker already produced for the
+            # same abort. The panel message belongs to the controller, which knows
+            # whether the user asked for this or whether it is a shutdown sweep.
+            self.logger.info(f"No active workers found for key '{key}'.")
+            self.logger.debug(f"Full workers dictionary: {self.workers}")
             return
 
         if channel is None:
@@ -303,20 +306,27 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     self.stop_workers(key, chan, exiting=exiting)
         else:
             # Stop only the specific channel's worker within the given key
-            if channel in self.workers[key]:
-                self.logger.info(f"Stopping worker for key: {key}, channel: {channel}")
-                if self.thread_running[key][channel] is True:
-                    self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
-
-                if exiting:
-                    # On app exit we must block until the thread actually
-                    # finishes, otherwise Qt destroys a QThread still running.
-                    self.threads[key][channel].wait()
-                # Otherwise let workerthread_finished emit and trigger
-                # discard_generator() asynchronously - avoid blocking here.
-                self.logger.debug(
-                    f"Worker and thread stopped for key: {key}, channel: {channel}"
+            if channel not in self.workers[key]:
+                # Previously this `if` had no `else` at all, so a stale channel was
+                # a completely silent no-op even in the log.
+                self.logger.info(
+                    f"No worker to stop for key: {key}, channel: {channel}"
                 )
+                return
+
+            self.logger.info(f"Stopping worker for key: {key}, channel: {channel}")
+            if self.thread_running[key][channel] is True:
+                self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
+
+            if exiting:
+                # On app exit we must block until the thread actually
+                # finishes, otherwise Qt destroys a QThread still running.
+                self.threads[key][channel].wait()
+            # Otherwise let workerthread_finished emit and trigger
+            # discard_generator() asynchronously - avoid blocking here.
+            self.logger.debug(
+                f"Worker and thread stopped for key: {key}, channel: {channel}"
+            )
 
     # private API, should generally be left alone by subclasses
 

@@ -62,15 +62,39 @@ two left behind are under "Still queued" below. **High is now the top of this se
   read. Restructuring the View-layer sites into a genuine synchronous-call abstraction that
   preserves the plugin-decoupling property remains open - a real multi-file refactor
   touching Views with heavy existing test coverage.
-- **Every `WARNING` and `ERROR` record raises a modal dialog.** `QtHandler.py:38-60`, on
-  the root logger with no level filter, so log severity doubles as a UI modality decision.
-  Routine states hit it: `handle_kill_worker`'s "No active worker found",
-  `send_analysis_tabs`' "No instantiated analysis tabs found" (true at every cold start),
-  `populate_available_plugins`' skipped-directory warning (fires before the main window
-  shows). The `_dialog_open` guard also *discards* records arriving while a dialog is up,
-  so a burst of real errors shows the first and drops the rest. Minimum:
-  `qtHandler.setLevel(logging.ERROR)`. Better: route user-facing messages through the
-  existing `add_text_to_display` channel and let the log be a log.
+- **Fixed** (2026-08-31): every `WARNING` and `ERROR` record used to raise a modal
+  dialog. `QtHandler` now defaults to `ERROR`, is skipped by
+  `MainModel.update_logging_level`'s handler loop (which was the only place its level was
+  ever set, and would have silently undone a static floor the first time a user changed
+  the log level), carries a `"%(message)s"` formatter instead of the shared log-line one,
+  and queues records that arrive while a dialog is up rather than discarding them. See
+  `changelog.md`.
+  **What's still open** is the other half: the individual log *levels* were deliberately
+  left alone, so a large number of routine states are still recorded at `WARNING` or
+  `ERROR` even though the user cannot act on them. They no longer interrupt anyone, so
+  this is now a tidiness and log-signal problem rather than a UX one. The catalogue worth
+  working from, of 112 `logger.warning` + 161 `logger.error` + 16 `logger.exception` sites
+  under `poriscope/`:
+  - `float_range_line_edit.py:140` logs **ERROR for an empty text box**, and `:78` fires
+    from inside `FloatRangeValidator._validate_final`, which `BaseValidator.validate`
+    calls on every keystroke where the line edit lacks focus. `BaseValidator.py:91-93` is
+    a blanket `except` inside a `QValidator.validate`.
+  - Per-event and per-channel "skipping"/"proceeding without" notes logged at WARNING from
+    inside worker generators: `RawDataView.py:853, 869, 881, 1071, 1549`,
+    `EventAnalysisView.py:419, 436, 588, 950`, `ProteinView.py:1103, 1152`,
+    `RawDataModel.py:101, 109`, `MetaDatabaseWriter.py:178-180`.
+  - "No selection"/"select only one" user guidance at WARNING across `MetadataView`,
+    `ProteinView`, `RawDataView` and the three controllers' `"No column names received"`.
+  - `main_model.py:176-179` logs **ERROR at startup for any `.py` file under
+    `poriscope/plugins/` that fails to import**, because `load_plugin` calls
+    `exec_module` before checking whether the file holds a plugin at all - so a helper
+    module that was never a plugin reports as a plugin failure. Related to the plugin-
+    shadowing item below. Its `errorOccurred.emit` on the next line is connected to
+    nothing (`main_model.py:70` is the only other reference).
+  - A handful of sites already emit to the panel *and* log at WARNING for the same event
+    (`DataPluginController.py:155-161`, `:470-476`; `MetadataView.py:1848-1849`;
+    `ProteinView.py:1343-1344`). Those are the model for the intended pattern, and are
+    now the only copy the user sees.
 - **A user plugin silently replaces a built-in of the same filename.**
   `main_model.py:174-246`. The walk visits `poriscope/plugins/` then the user folder into
   one flat `{subclass_name: class}` map, so a user `ClassicBlockageFinder.py` overwrites
@@ -163,14 +187,12 @@ order:
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
-**Block 6 (the docs-render CI gate) is done** (2026-08-31), along with the two
-one-line items that used to sit at 3 and the docs-workflow comment fix - see
-`changelog.md`. What remains, ranked cheapest real value first:
+**Block 6 (the docs-render CI gate) is done** (2026-08-31), along with the two one-line
+items that used to sit at 3, the docs-workflow comment fix, and the `QtHandler`
+severity/modality split paired with the abort-feedback bug - see `changelog.md`. What
+remains, ranked cheapest real value first:
 
-1. **The `QtHandler` severity/modality split and the abort-with-no-panel-message bug.**
-   Fix them together, as the `QtHandler` entry above explains. The only open items a
-   user would actually notice, and the routing is already worked out.
-2. **Block 2's validator half only**: `validate_settings_schema()` as a real module
+1. **Block 2's validator half only**: `validate_settings_schema()` as a real module
    under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
    harness that is out of scope.
 3. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
@@ -185,16 +207,6 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
 
 ## Still queued
 
-- **Aborting any operation produces no message in the panel.** `MetaController`'s
-  `handle_kill_worker`/`handle_kill_all_workers` only call `self.logger`, so a user whose
-  log level is above INFO gets no confirmation that a stop took effect - for every
-  operation, not just CSV export. Note a data plugin **cannot** emit to the panel: it is a
-  plain `ABC` with no signals, and the established route is returning a string from
-  `report_channel_status()`, which `MetaModel.generate_report` relays. `add_text_to_display`
-  exists only on `MetaController`/`MetaModel`/`MetaView`, so that is where any fix belongs.
-  Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
-  currently surface, as modal dialogs, while the `info` ones do not - so fix the two
-  together rather than routing more traffic into a handler that pops a dialog per record.
 - **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
   `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
   `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
@@ -233,6 +245,19 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   neither does a test file for `MetaModel.py`; this is the single dispatch loop behind
   every event finder, fitter and writer run. Owed by whoever owns test-writing; the
   scenarios above are the ones worth encoding.
+  **`QtHandler.py` and `App.configure_logger` are in the same position** as of
+  2026-08-31: the severity/modality work landed verified by two throwaway scripts rather
+  than tests, because `test_qt_handler.py` and `test_main_app.py` do not exist either.
+  The scenarios those scripts cover, and which are worth encoding, are: the handler's
+  default `ERROR` level; DEBUG/INFO/WARNING raising no dialog; one ERROR raising exactly
+  one; a burst of four distinct errors arriving behind an open dialog all being shown
+  rather than three being dropped; fifty *identical* errors collapsing to one dialog;
+  `update_logging_level` lowering every other handler but leaving `QtHandler` at `ERROR`;
+  and the dialog body carrying the bare message rather than a formatted log line. Also
+  worth encoding on the abort side, likewise script-verified only: `MetaModel.stop_workers`
+  logging INFO rather than WARNING for a stale key and no longer being silent for a stale
+  channel, and `MainController.handle_abort_all_analysis` reaching every open tab without
+  `exiting=True`.
 - **A worker blocked on a lock cannot observe an abort.** `Worker.stop()` only sets
   `stop_requested`, which is read on the generator's next turn, so a channel queued behind a
   serial-mode lock keeps waiting until it acquires. Pre-existing and unrelated to the
@@ -267,6 +292,23 @@ parameter entirely** - it is accepted and passed straight to `super()`, never in
 the filter runs for every object in the application receiving any event, and N stale filters
 cost N Python calls per delivered event. Second, on the branch it does act on it returns
 `True`, swallowing the click, so a bug here is not confined to teardown.
+
+**Reproduced on 2026-08-31 while working on an unrelated branch**, and the traceback
+refines the above in a way that matters: the failure was
+
+```
+poriscope/views/widgets/multiselect_filter.py:135: in eventFilter
+    return super().eventFilter(obj, event)
+E   RuntimeError: Error calling Python override of QComboBox::eventFilter():
+    Internal C++ object (MultiSelectFilterComboBox) already deleted.
+```
+
+with `event` a `QDynamicPropertyChangeEvent` - not a `QEvent.MouseButtonPress`. So the crash
+is not on the `containerWidget` dereference at all; it is on `super()` resolving a dead
+`self` at the fall-through `return`. **Every event type reaching a stale filter can raise
+it, not just mouse presses**, which makes the exposure considerably wider than the
+`MouseButtonPress` gate suggests and means narrowing the *event* test would not help. Only
+removing the registration, or scoping it to an object with the right lifetime, does.
 
 ### Three sites, not one
 

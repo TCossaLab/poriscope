@@ -84,7 +84,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     update_data_server_location = Signal(str)
     update_user_plugin_location = Signal(str)
     clear_cache = Signal()
-    kill_all_workers = Signal(str)
+    abort_all_analysis = Signal()
     update_thread_status = Signal(int, str, float)
     request_analysis_tabs = Signal()
     received_analysis_tabs = Signal(dict)
@@ -777,8 +777,18 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     def on_abort_analysis_click(self) -> None:
+        """
+        Ask MainController to stop running operations in every open analysis tab.
+
+        This used to emit a ``kill_all_workers`` signal that was connected to
+        nothing - MetaController connects the identically-named signal on a *tab's*
+        MetaView, which is a different object - and it hard-coded
+        ``"RawDataController"`` as the recipient, so even had it been connected it
+        would only ever have reached one tab. The menu item logged a line and did
+        nothing.
+        """
         self.logger.info("Aborting Analysis")
-        self.kill_all_workers.emit("RawDataController")
+        self.abort_all_analysis.emit()
 
     @log(logger=logger)
     def closeEvent(self, event: QCloseEvent) -> None:

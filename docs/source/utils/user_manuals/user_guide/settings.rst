@@ -47,8 +47,13 @@ Advanced Settings Tab
 
 The **Advanced Settings** section provides power users and developers with the following tools:
 
-- **Logging Level**:  
+- **Logging Level**:
   Adjust the verbosity of internal logging. Use the dropdown to select a level such as `None`, `Info`, `Debug`, etc.
+  This controls what is written to the console and to the log file. It does **not** control
+  which problems pop up a dialog: error dialogs are shown for errors regardless of the level
+  you choose here, and never for warnings, so turning the level up to `Debug` will not start
+  interrupting you with dialogs about routine states. Messages meant for you, rather than for
+  the log, appear in the message panel on the right-hand side of the main window.
 
 - **Clear Cache**:  
   Click this red button to remove temporary files and cached analysis results.

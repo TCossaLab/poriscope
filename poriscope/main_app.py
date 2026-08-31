@@ -157,9 +157,18 @@ class App(QApplication):
         fileHandler.setFormatter(formatter)
         root_logger.addHandler(fileHandler)
 
-        # display error messages in dialog box
+        # display error messages in dialog box.
+        #
+        # Deliberately NOT given `formatter`: that format is right for a log line and
+        # wrong for a dialog, which would otherwise show the user a timestamp, a thread
+        # name and id, and a dotted module path before the message they need to read.
+        # The console and file handlers above still record all of it.
+        #
+        # QtHandler defaults to ERROR rather than inheriting the root logger's level;
+        # see its docstring for why, and note MainModel.update_logging_level skips it
+        # when applying a new level to the root logger's handlers.
         qtHandler = QtHandler()
-        qtHandler.setFormatter(formatter)
+        qtHandler.setFormatter(logging.Formatter("%(message)s"))
         root_logger.addHandler(qtHandler)
 
         root_logger.debug(

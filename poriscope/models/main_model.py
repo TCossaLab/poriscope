@@ -50,6 +50,7 @@ from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
+from poriscope.utils.QtHandler import QtHandler
 
 #: Maps the class names written into session JSON back to real types.
 _JSON_CLASS_NAMES: Mapping[str, Any] = {
@@ -420,5 +421,13 @@ class MainModel(QObject):
         logger = logging.getLogger()
         logger.setLevel(level)
         for handler in logger.handlers:
+            # QtHandler is excluded on purpose. It raises a modal dialog per record,
+            # so its level is a decision about how much to interrupt the user, not
+            # about how much to record - and it is the only handler whose level was
+            # ever set here, which meant choosing a more verbose log level silently
+            # turned every routine warning back into a dialog. It keeps its own
+            # ERROR floor; see QtHandler's docstring.
+            if isinstance(handler, QtHandler):
+                continue
             handler.setLevel(level)
         self.update_app_config("Log Level", level)

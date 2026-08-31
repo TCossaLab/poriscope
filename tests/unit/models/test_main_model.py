@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 
 from poriscope.models.main_model import MainModel
+from poriscope.utils.QtHandler import QtHandler
 
 # Set up logging for the tests
 logger = logging.getLogger("MainModelTest")
@@ -228,18 +229,25 @@ def test_update_app_config(main_model):
 
 def test_update_logging_level_handlers(main_model):
     mock_handler = MagicMock()
+    # QtHandler raises a modal dialog per record, so its level is a decision about
+    # interrupting the user rather than about how much to record, and it must keep
+    # its own ERROR floor. Before this carve-out it was the only handler whose level
+    # was ever set here, so picking a more verbose log level in the settings window
+    # silently turned every routine warning back into a dialog.
+    mock_qt_handler = MagicMock(spec=QtHandler)
     with (
         patch("builtins.open", MagicMock()),
         patch("logging.getLogger") as mock_get_logger,
     ):
         mock_logger = MagicMock()
-        mock_logger.handlers = [mock_handler]
+        mock_logger.handlers = [mock_handler, mock_qt_handler]
         mock_get_logger.return_value = mock_logger
 
         main_model.update_logging_level(20)
 
         mock_logger.setLevel.assert_called_once_with(20)
         mock_handler.setLevel.assert_called_once_with(20)
+        mock_qt_handler.setLevel.assert_not_called()
 
 
 def test_save_tab_actions(main_model):

@@ -121,7 +121,26 @@ class MainController(QObject):
             self.main_model.update_logging_level
         )
         self.main_view.clear_cache.connect(self.main_model.clear_cache)
+        self.main_view.abort_all_analysis.connect(self.handle_abort_all_analysis)
         self.main_view.request_analysis_tabs.connect(self.send_analysis_tabs)
+
+    @log(logger=logger)
+    @Slot()
+    def handle_abort_all_analysis(self) -> None:
+        """
+        Stop running operations in every open analysis tab.
+
+        Backs the Analysis -> Abort Analysis menu item, which previously emitted a
+        signal that was connected to nothing and named a single hard-coded tab, so
+        it never aborted anything. Each tab reports its own outcome on the display
+        panel, so nothing is emitted here.
+        """
+        if not self.analysis_tabs:
+            self.logger.info("Abort requested with no analysis tabs instantiated.")
+            return
+        for key, val in self.analysis_tabs.items():
+            if val:
+                val.handle_kill_all_workers(key)
 
     @log(logger=logger)
     @Slot()

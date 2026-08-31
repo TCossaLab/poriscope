@@ -66,6 +66,8 @@ The *Analysis* menu allows you to:
 
 - Add filters, event finders, fitters, and new analysis tabs
 - **Abort Analysis**: forcibly stops any active processes (identified by active progress bars)
+  in every open analysis tab. Each tab confirms what it stopped in the message panel on the
+  right-hand side of the main window, and says so there if it had nothing running.
 
 Help Menu
 ---------
