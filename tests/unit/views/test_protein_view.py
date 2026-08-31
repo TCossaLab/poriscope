@@ -1489,6 +1489,17 @@ class TestSaveLoadFilter:
         mock_view._load_filter({})
 
 
+class TestRestoreSubsetFilters:
+    def test_restore_subset_filters_adds_filters_directly(self, mock_view):
+        mock_view.restore_subset_filters({"f1": "dur>100"})
+        assert mock_view.subset_filters == {"f1": "dur>100"}
+
+    def test_restore_subset_filters_skips_existing_names(self, mock_view):
+        mock_view.subset_filters = {"f1": "dur>999"}
+        mock_view.restore_subset_filters({"f1": "dur>100"})
+        assert mock_view.subset_filters == {"f1": "dur>999"}
+
+
 # ===========================================================================
 # Miscellaneous
 # ===========================================================================

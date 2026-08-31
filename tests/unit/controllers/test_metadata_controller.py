@@ -897,4 +897,56 @@ def test_relay_query_edited_filter_skipped_when_new_name_is_none(
     """
     mock_view._pending_filter_name = None
     controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+
+
+# ----------------------------- session state ------------------------------
+
+
+def test_get_session_state_returns_view_subset_filters(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    Include a copy of the view's live subset filters in the returned session state.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked metadata view.
+    """
+    mock_view.subset_filters = {"f1": "voltage > 0"}
+
+    state = controller.get_session_state()
+
+    assert state == {"subset_filters": {"f1": "voltage > 0"}}
+
+
+def test_restore_session_state_applies_subset_filters(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    Forward a session entry's subset filters to the view's restore method.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked metadata view.
+    """
+    controller.restore_session_state(
+        {"metaclass": "MetaController", "subset_filters": {"f1": "voltage > 0"}}
+    )
+
+    mock_view.restore_subset_filters.assert_called_once_with({"f1": "voltage > 0"})
+
+
+def test_restore_session_state_is_noop_without_subset_filters(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    Do nothing when the session entry carries no subset filters to restore.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked metadata view.
+    """
+    controller.restore_session_state({"metaclass": "MetaController"})
+
+    mock_view.restore_subset_filters.assert_not_called()
     mock_view.update_filter_name.assert_not_called()

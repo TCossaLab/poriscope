@@ -3248,6 +3248,39 @@ def test_load_filter_logs_error_on_exception(
     # Should log error but not crash
 
 
+# ------------------------ Restore Subset Filters (Session Load) Tests --------------------
+
+
+def test_restore_subset_filters_adds_filters_directly(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify restored filters are added to subset_filters and the combo box without validation."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox = mocker.Mock()
+
+    view.restore_subset_filters({"Filter1": "WHERE x > 1"})
+
+    assert view.subset_filters == {"Filter1": "WHERE x > 1"}
+    view.metadatacontrols.filter_comboBox.addItem.assert_called_once_with("Filter1")
+    view.metadatacontrols.filter_comboBox.selectItem.assert_called_once_with(
+        "Filter1", select=True
+    )
+
+
+def test_restore_subset_filters_skips_existing_names(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify a restored filter whose name already exists is skipped rather than overwritten."""
+    view.subset_filters = {"Filter1": "WHERE x > 999"}
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox = mocker.Mock()
+
+    view.restore_subset_filters({"Filter1": "WHERE x > 1"})
+
+    assert view.subset_filters == {"Filter1": "WHERE x > 999"}
+    view.metadatacontrols.filter_comboBox.addItem.assert_not_called()
+
+
 # ----------------------------- Handle Parameter Change Tests ------------------------------
 
 

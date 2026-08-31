@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Any, Generator, Optional
+from typing import Any, Dict, Generator, Optional
 
 import pandas as pd
 from PySide6.QtWidgets import QMessageBox
@@ -372,3 +372,28 @@ class ProteinController(MetaController):
         :type result: Optional[pd.DataFrame]
         """
         self.view.relay_query_result(result)
+
+    @log(logger=logger)
+    @override
+    def get_session_state(self) -> Dict[str, Any]:
+        """
+        Include the view's live subset filters in this tab's session history entry.
+
+        :return: Extra state to serialize into this tab's session history entry.
+        :rtype: Dict[str, Any]
+        """
+        return {"subset_filters": dict(self.view.subset_filters)}
+
+    @log(logger=logger)
+    @override
+    def restore_session_state(self, state: Dict[str, Any]) -> None:
+        """
+        Restore subset filters captured by :meth:`get_session_state` onto the view.
+
+        :param state: This tab's session history entry, as previously written by
+            :meth:`get_session_state`.
+        :type state: Dict[str, Any]
+        """
+        subset_filters = state.get("subset_filters")
+        if subset_filters:
+            self.view.restore_subset_filters(subset_filters)

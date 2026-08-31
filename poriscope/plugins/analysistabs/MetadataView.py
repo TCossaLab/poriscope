@@ -1882,6 +1882,29 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.logger.info(f"Filters loaded from {path}")
 
     @log(logger=logger)
+    def restore_subset_filters(self, filters: Dict[str, str]) -> None:
+        """
+        Restore subset filters captured in a saved session.
+
+        Unlike :meth:`_load_filter`, this does not re-validate the filters against a
+        database loader, since they were already valid when the session was saved.
+
+        :param filters: Mapping of filter name to filter expression to restore.
+        :type filters: Dict[str, str]
+        """
+        combo = self.metadatacontrols.filter_comboBox
+        for name, filter_text in filters.items():
+            if name in self.subset_filters:
+                self.logger.warning(
+                    f"Filter '{name}' already exists; skipping restore of duplicate."
+                )
+                continue
+            self.subset_filters[name] = filter_text
+            combo.addItem(name)
+            combo.selectItem(name, select=True)
+        combo.refreshDisplayText()
+
+    @log(logger=logger)
     @Slot(str, str, tuple)
     def handle_parameter_change(
         self, submodel_name: str, action_name: str, args: tuple
