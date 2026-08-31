@@ -1408,7 +1408,11 @@ def test_load_session_resets_before_applying_the_loaded_history(
         controller, "reset_session", side_effect=lambda: order.append("reset")
     )
     loaded_history = {
-        "reader_key": {"metaclass": "MetaReader", "subclass": "MyReader", "settings": {}}
+        "reader_key": {
+            "metaclass": "MetaReader",
+            "subclass": "MyReader",
+            "settings": {},
+        }
     }
     controller.main_model.load_session = mocker.Mock(return_value=loaded_history)
     controller.data_plugin_controller.validate_and_instantiate_plugin = mocker.Mock(
