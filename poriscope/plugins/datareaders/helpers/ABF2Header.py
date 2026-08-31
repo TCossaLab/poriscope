@@ -24,26 +24,30 @@
 # Kyle Briggs
 
 import struct
+from typing import Any, List
 
 
 class ABF2Header:
-    def __init__(self, filename):
+    def __init__(self, filename: str) -> None:
         self.f = open(filename, "rb")
-        self._read_sections()
+        try:
+            self._read_sections()
+        finally:
+            self.f.close()
 
-    def get_abf_version(self):
+    def get_abf_version(self) -> str:
         return self.abf_version
 
-    def get_channels(self):
+    def get_channels(self) -> List[str]:
         return self.channel_names
 
-    def get_channel_units(self, channel_index):
+    def get_channel_units(self, channel_index: int) -> str:
         return self.channel_units[channel_index]
 
-    def get_scale_factor(self, channel_index):
+    def get_scale_factor(self, channel_index: int) -> float:
         return self.scaleFactors[channel_index]
 
-    def get_num_channels(self):
+    def get_num_channels(self) -> int:
         if self.abf_version == "ABF2":
             return self.ADCSection[2]
         else:
@@ -52,10 +56,10 @@ class ABF2Header:
                 "File version is not supported, only ABF2 files are supported"
             )
 
-    def get_data_format(self):
+    def get_data_format(self) -> str:
         return "{0}{1}{2}".format(self.byte_order, self.data_type, self.data_size)
 
-    def get_header_bytes(self):
+    def get_header_bytes(self) -> int:
         if self.abf_version == "ABF2":
             return self.DataSection[0] * 512
         else:
@@ -64,13 +68,13 @@ class ABF2Header:
                 "File version is not supported, only ABF2 files are supported"
             )
 
-    def get_channel_index_by_name(self, channel_name):
+    def get_channel_index_by_name(self, channel_name: str) -> int:
         return self.channel_names.index(channel_name)
 
-    def get_samplerate(self):
+    def get_samplerate(self) -> float:
         return self.samplerate
 
-    def get_rescale_to_pA_factor(self, unit):
+    def get_rescale_to_pA_factor(self, unit: str) -> float:
         rescale_dict = {
             "fA": 0.001,
             "pA": 1.0,
@@ -83,7 +87,7 @@ class ABF2Header:
         except KeyError:
             return 1.0
 
-    def _read_abf2_header(self):
+    def _read_abf2_header(self) -> None:
         self.ProtocolSection = self._readStruct("IIl", 76)
         self.ADCSection = self._readStruct("IIl", 92)
         self.DataSection = self._readStruct("IIl", 236)
@@ -134,8 +138,8 @@ class ABF2Header:
         nPostProcessLowpassFilterType = []  # 70 #not used
         bEnabledDuringPN = []  # 71 #not used
         nStatsChannelPolarity = []  # 72 #not used
-        self.lADCChannelNameIndex = []  # 74
-        self.lADCUnitsIndex = []  # 78
+        self.lADCChannelNameIndex: List[int] = []  # 74
+        self.lADCUnitsIndex: List[int] = []  # 78
 
         # many of these are not directly used, but may be useful in the future and so are kept for reference
         for i in range(self.ADCSection[2]):
@@ -185,13 +189,13 @@ class ABF2Header:
         self.f.seek(self.ProtocolSection[0] * 512 + 118)
         lADCResolution = struct.unpack("i", self.f.read(4))[0]
 
-        self.scaleFactors = []
+        self.scaleFactors: List[float] = []
         for i in range(self.ADCSection[2]):
             self.scaleFactors.append(1)
             self.scaleFactors[i] /= fInstrumentScaleFactor[i]
             self.scaleFactors[i] /= fSignalGain[i]
             self.scaleFactors[i] /= fADCProgrammableGain[i]
-            if nTelegraphEnable[0]:
+            if nTelegraphEnable[i]:
                 self.scaleFactors[i] /= fTelegraphAdditGain[i]
             self.scaleFactors[i] *= fADCRange
             self.scaleFactors[i] /= lADCResolution
@@ -207,19 +211,19 @@ class ABF2Header:
             if self.data_type == "f":
                 self.scaleFactors[i] = 1
 
-        self.channel_names = []
+        self.channel_names: List[str] = []
         if self.indexedStrings != []:
             for name in self.lADCChannelNameIndex:
                 self.channel_names.append("{0}".format(self.indexedStrings[name]))
 
-        self.channel_units = []
+        self.channel_units: List[str] = []
         if self.indexedStrings != []:
             for unit in self.lADCUnitsIndex:
                 self.channel_units.append("{0}".format(self.indexedStrings[unit]))
 
         self.samplerate = 1.0e6 / fADCSequenceInterval
 
-    def _read_sections(self):
+    def _read_sections(self) -> None:
         self.abf_version = self._readStruct("4s", 0)[0]
         self.abf_version = self.abf_version.decode("ascii", errors="ignore")
         if self.abf_version == "ABF2":
@@ -227,7 +231,7 @@ class ABF2Header:
         else:
             raise NotImplementedError("ABF1 files are not supported")
 
-    def _readStruct(self, structFormat, seekTo=-1):
+    def _readStruct(self, structFormat: str, seekTo: int = -1) -> List[Any]:
         if seekTo >= 0:
             self.f.seek(seekTo)
         byteCount = struct.calcsize(structFormat)

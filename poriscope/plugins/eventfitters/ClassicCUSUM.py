@@ -24,8 +24,10 @@
 # Kyle Briggs
 
 import logging
+from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
@@ -45,7 +47,11 @@ class ClassicCUSUM(CUSUM):
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -64,11 +70,11 @@ class ClassicCUSUM(CUSUM):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Mapping[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Mapping[str, Mapping[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "σ"}
@@ -79,17 +85,15 @@ class ClassicCUSUM(CUSUM):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
-    ):
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+    ) -> Optional[List[Any]]:
         """
-        Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
-        Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
-        Raising an an acceptable handler.
+        Runs the same CUSUM log-likelihood-ratio changepoint detection as CUSUM, but Step Size is already expressed in units of the local baseline standard deviation (σ) and is used directly rather than normalized against it, unlike CUSUM. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
@@ -110,14 +114,13 @@ class ClassicCUSUM(CUSUM):
         :rtype: Optional[List[Any]]
 
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
-        :raises AttributeError: if the fitting method cannot operate without provision of specific padding and baseline metadata and cannot rescue itself. This will cause a stop to processing of the dataset.
         """
 
         if baseline_std is None:  # the rest of the args can be None without issue
             if padding_before is not None:
-                baseline_std = np.std(data[:padding_before])
+                baseline_std = float(np.std(data[:padding_before]))
             elif padding_after is not None:
-                baseline_std = np.std(data[-padding_after:])
+                baseline_std = float(np.std(data[-padding_after:]))
             else:
                 raise ValueError(
                     "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
@@ -155,10 +158,9 @@ class ClassicCUSUM(CUSUM):
             varS = 0
             mean = data[0]
 
-            threshold = (
-                self._calculate_threshold(length, step_size) / 5
+            threshold = self._calculate_threshold(
+                length, step_size
             )  # determine optimal sensitivity
-            print(threshold, length, step_size)
             edges = [0]  # first sublevel starts at the start of the data block
 
             k = 0  # current data point index

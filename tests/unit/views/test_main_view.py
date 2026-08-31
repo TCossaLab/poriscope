@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +11,7 @@ from poriscope.views.main_view import MainView
 
 
 @pytest.fixture
-def main_view():
+def main_view(qapp):
     """Fixture to create a MainView instance with all required plugin categories."""
     plugins = {
         "MetaReader": ["DummyReader"],
@@ -236,10 +237,17 @@ def test_on_restore_session_button_click_emits_signal(main_view, qtbot):
 
 def test_populate_plugins_menu_empty(main_view, caplog):
     """
-    Test handling of empty analysis tab list in populate_plugins_menu.
+    An empty analysis tab list is reported, but not as a warning.
+
+    It is the normal state at startup and after a session reset. QtHandler
+    promotes WARNING to a modal dialog, so warning here would pop a dialog at
+    both of those moments.
     """
-    main_view.populate_plugins_menu({})
+    with caplog.at_level(logging.DEBUG):
+        main_view.populate_plugins_menu({})
+
     assert "No analysis tabs available" in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_populate_plugins_menu_with_tabs(main_view, qtbot):
@@ -289,8 +297,9 @@ def test_on_help_button_click_opens_help_window(mocker, main_view):
     """
     Test that clicking the help button opens the HelpCentre window.
     """
-    # Patch HelpCentre used in main_view
-    mock_help = mocker.patch("poriscope.views.help.HelpCentre")
+    # main_view imports HelpCentre at module level, so patch the name where
+    # it is looked up, not where it is defined
+    mock_help = mocker.patch("poriscope.views.main_view.HelpCentre")
 
     main_view.on_help_button_click()
 
@@ -432,11 +441,11 @@ def test_on_raw_data_view_click(main_view, qtbot, mocker):
     main_view.switch_to_page.assert_called_once_with("RawDataView")
 
 
-def test_on_stats_click(main_view, mocker):
+def test_on_event_analysis_click(main_view, mocker):
     mocker.patch.object(main_view, "on_load_analysis_tab_button_click")
     mocker.patch.object(main_view, "switch_to_page")
 
-    main_view.on_stats_click()
+    main_view.on_event_analysis_click()
 
     main_view.on_load_analysis_tab_button_click.assert_called_once_with(
         "EventAnalysisController"
@@ -722,3 +731,379 @@ class DummyWalkthroughWidget(QWidget, WalkthroughMixin):
 
     def launch_walkthrough(self):
         self.was_launched = True
+
+
+class TestRemovePagesExcept:
+    """
+    Tearing analysis pages back down to the just-launched set.
+
+    The reindexing case is the one that matters: self.pages caches each page's
+    index into the QStackedWidget, and the stack renumbers everything after a
+    widget it removes. Without rebuilding that map, surviving pages silently
+    switch to the wrong widget - which looks like a working app showing the
+    wrong tab, not like a crash.
+
+    Note "Settings" is registered lazily, on first click, so a freshly built
+    window holds only the landing page.
+    """
+
+    KEEP = ["MainView", "Settings"]
+
+    def _add_tabs(self, main_view, *names):
+        for name in names:
+            main_view.add_page(name, QWidget())
+
+    def test_removes_only_the_unnamed_pages(self, main_view):
+        initial = set(main_view.pages)
+        self._add_tabs(main_view, "TabA", "TabB", "TabC")
+
+        main_view.remove_pages_except(self.KEEP)
+
+        assert set(main_view.pages) == initial
+
+    def test_surviving_pages_still_select_their_own_widget(self, main_view):
+        self._add_tabs(main_view, "TabA", "TabB", "TabC")
+
+        main_view.remove_pages_except(self.KEEP)
+
+        for name, info in main_view.pages.items():
+            main_view.stackedWidget.setCurrentIndex(info["index"])
+            assert main_view.stackedWidget.currentWidget().objectName() == name
+
+    def test_keeps_settings_once_it_has_been_opened(self, main_view):
+        main_view.add_page("Settings", QWidget())
+        self._add_tabs(main_view, "TabA", "TabB")
+
+        main_view.remove_pages_except(self.KEEP)
+
+        assert "Settings" in main_view.pages
+        info = main_view.pages["Settings"]
+        main_view.stackedWidget.setCurrentIndex(info["index"])
+        assert main_view.stackedWidget.currentWidget().objectName() == "Settings"
+
+    def test_removed_widgets_leave_the_stack(self, main_view):
+        before = main_view.stackedWidget.count()
+        self._add_tabs(main_view, "TabA", "TabB", "TabC")
+        assert main_view.stackedWidget.count() == before + 3
+
+        main_view.remove_pages_except(self.KEEP)
+
+        assert main_view.stackedWidget.count() == before
+
+    def test_is_a_no_op_when_nothing_to_remove(self, main_view):
+        pages_before = set(main_view.pages)
+
+        main_view.remove_pages_except(list(main_view.pages))
+
+        assert set(main_view.pages) == pages_before
+
+    def test_can_add_a_page_again_after_removal(self, main_view):
+        self._add_tabs(main_view, "TabA")
+        main_view.remove_pages_except(self.KEEP)
+
+        main_view.add_page("TabA", QWidget())
+
+        info = main_view.pages["TabA"]
+        main_view.stackedWidget.setCurrentIndex(info["index"])
+        assert main_view.stackedWidget.currentWidget().objectName() == "TabA"
+
+
+class TestCloseSettingsPage:
+    """
+    self.settings_window is a singleton created once in __init__, not a
+    disposable per-open instance like an analysis tab's view. Removing its
+    page wrapper without detaching it first would destroy the singleton along
+    with the wrapper, since add_page reparents it as a Qt child of that
+    wrapper - leaving every other reference to it pointing at a deleted
+    C++ object.
+    """
+
+    def test_detaches_the_widget_but_leaves_removal_to_remove_pages_except(
+        self, main_view
+    ):
+        # close_settings_page only detaches - actually dropping "Settings"
+        # from the registry and destroying its wrapper is remove_pages_except's
+        # job, same as for any other page, once the widget is safe to lose.
+        main_view.on_settings_button_click()
+        wrapper = main_view.settings_window.parentWidget()
+
+        main_view.close_settings_page()
+
+        assert "Settings" in main_view.pages
+        assert main_view.settings_window.parentWidget() is not wrapper
+
+        main_view.remove_pages_except(["MainView"])
+
+        assert "Settings" not in main_view.pages
+
+    def test_is_a_no_op_when_settings_was_never_opened(self, main_view):
+        assert "Settings" not in main_view.pages
+
+        main_view.close_settings_page()  # must not raise
+
+        assert "Settings" not in main_view.pages
+        assert main_view.settings_window is not None
+
+    def test_the_settings_widget_survives_its_wrapper_being_destroyed(
+        self, main_view, qapp
+    ):
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        main_view.on_settings_button_click()
+        settings_window = main_view.settings_window
+
+        main_view.close_settings_page()
+        main_view.remove_pages_except(["MainView"])
+        qapp.processEvents()
+        # deleteLater only schedules; processEvents does not dispatch
+        # DeferredDelete, so the wrapper's actual destruction has to be
+        # flushed explicitly to prove the widget survives it.
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+        assert main_view.settings_window is settings_window
+        settings_window.isVisible()  # raises RuntimeError if it was deleted too
+
+    def test_settings_can_be_reopened_afterward(self, main_view):
+        main_view.on_settings_button_click()
+        main_view.close_settings_page()
+        main_view.remove_pages_except(["MainView"])
+
+        main_view.on_settings_button_click()
+
+        assert "Settings" in main_view.pages
+        assert main_view.stackedWidget.currentWidget().objectName() == "Settings"
+
+
+class TestCancelWalkthrough:
+    """
+    switch_to_page refuses to move while a walkthrough or milestone is active,
+    so anything returning the window to a known page must clear that first or be
+    silently ignored.
+    """
+
+    def test_active_walkthrough_blocks_a_page_switch(self, main_view):
+        main_view.add_page("TabA", QWidget())
+        main_view._walkthrough_active = True
+        main_view._expected_next_view = "SomethingElse"
+
+        main_view.switch_to_page("MainView")
+
+        assert main_view.stackedWidget.currentWidget().objectName() == "TabA"
+
+    def test_cancelling_lets_the_switch_through(self, main_view):
+        main_view.add_page("TabA", QWidget())
+        main_view._walkthrough_active = True
+        main_view._expected_next_view = "SomethingElse"
+
+        main_view.cancel_walkthrough()
+        main_view.switch_to_page("MainView")
+
+        assert main_view.stackedWidget.currentWidget().objectName() == "MainView"
+
+    def test_cancelling_clears_the_state(self, main_view):
+        main_view._walkthrough_active = True
+        main_view._expected_next_view = "SomethingElse"
+
+        main_view.cancel_walkthrough()
+
+        assert main_view._walkthrough_active is False
+        assert main_view._expected_next_view is None
+        assert main_view._milestone_dialog is None
+
+
+class TestClearSidebarHighlight:
+    """
+    sync_sidebar_highlight only ever checks a button, never unchecks the one it
+    replaces, so a caller that wants nothing highlighted - such as Reset Session,
+    returning to the landing page with nothing open - has to clear it explicitly.
+
+    The sidebar buttons are all ``autoExclusive`` and share one parent per
+    widget, so Qt treats them as a single radio-button-style group: once any
+    one of them is checked, a plain ``setChecked(False)`` is a no-op on it -
+    Qt refuses to leave the group with nothing checked that way. Each case
+    below checks that this is actually cleared, not just called.
+    """
+
+    PAGE_NAMES = ("RawDataView", "EventAnalysisView", "MetadataView", "Plugins")
+
+    def test_unchecks_a_highlighted_page_button_on_both_widgets(self, main_view):
+        main_view.sync_sidebar_highlight("MetadataView")
+        assert main_view.icon_menu_widget.metadata_icon_button.isChecked() is True
+        assert main_view.text_menu_widget.metadata_text_button.isChecked() is True
+
+        main_view.clear_sidebar_highlight()
+
+        assert main_view.icon_menu_widget.metadata_icon_button.isChecked() is False
+        assert main_view.text_menu_widget.metadata_text_button.isChecked() is False
+
+    def test_unchecks_whichever_page_button_ends_up_highlighted(self, main_view):
+        # autoExclusive means only the last one checked here actually stays
+        # checked - each case is still worth pinning independently, since the
+        # workaround toggles autoExclusive per button rather than per group.
+        for name in self.PAGE_NAMES:
+            main_view.sync_sidebar_highlight(name)
+            main_view.clear_sidebar_highlight()
+
+            for icon_button, text_button in (
+                (
+                    main_view.icon_menu_widget.raw_data_icon_button,
+                    main_view.text_menu_widget.raw_data_text_button,
+                ),
+                (
+                    main_view.icon_menu_widget.event_analysis_icon_button,
+                    main_view.text_menu_widget.event_analysis_text_button,
+                ),
+                (
+                    main_view.icon_menu_widget.metadata_icon_button,
+                    main_view.text_menu_widget.metadata_text_button,
+                ),
+                (
+                    main_view.icon_menu_widget.add_icon_button,
+                    main_view.text_menu_widget.plugins_text_button,
+                ),
+            ):
+                assert icon_button.isChecked() is False
+                assert text_button.isChecked() is False
+
+    def test_autoexclusive_is_restored_after_clearing(self, main_view):
+        # The workaround must leave the property as it found it, or a later
+        # click could check two page buttons at once instead of swapping.
+        main_view.sync_sidebar_highlight("RawDataView")
+
+        main_view.clear_sidebar_highlight()
+
+        assert main_view.icon_menu_widget.raw_data_icon_button.autoExclusive() is True
+        assert main_view.text_menu_widget.raw_data_text_button.autoExclusive() is True
+
+    def test_is_a_no_op_when_nothing_is_highlighted(self, main_view):
+        main_view.clear_sidebar_highlight()  # must not raise with nothing checked
+
+
+class TestClearDisplay:
+    """The status/log panel is empty on a fresh launch, so Reset Session clears it too."""
+
+    def test_empties_the_panel(self, main_view):
+        main_view.add_text_to_display("something logged before the reset", "Test")
+        assert main_view.text_display_widget.toPlainText() != ""
+
+        main_view.clear_display()
+
+        assert main_view.text_display_widget.toPlainText() == ""
+
+    def test_a_message_can_still_be_added_afterwards(self, main_view):
+        main_view.clear_display()
+
+        main_view.add_text_to_display("Session reset.", "MainController")
+
+        assert "Session reset." in main_view.text_display_widget.toPlainText()
+
+
+class TestResetSidebarLayout:
+    """The sidebar is icon-only on a fresh launch, so Reset Session collapses it back."""
+
+    def test_collapses_an_expanded_sidebar(self, main_view, qtbot):
+        main_view.toggle_menu_widgets()
+        qtbot.wait(350)  # past the 300ms debounce, so the swap has actually happened
+        assert main_view.text_menu_container.isVisible() is True
+        assert main_view.icon_menu_container.isVisible() is False
+
+        main_view.reset_sidebar_layout()
+
+        assert main_view.icon_menu_container.isVisible() is True
+        assert main_view.text_menu_container.isVisible() is False
+
+    def test_is_a_no_op_on_the_default_layout(self, main_view):
+        main_view.reset_sidebar_layout()
+
+        assert main_view.icon_menu_container.isVisible() is True
+        assert main_view.text_menu_container.isVisible() is False
+
+
+class TestCloseHelpWindow:
+    """Help is a floating top-level window a fresh launch never has open."""
+
+    def test_closes_an_open_help_window(self, main_view):
+        main_view.on_help_button_click()
+        assert main_view.help_window is not None
+
+        main_view.close_help_window()
+
+        assert main_view.help_window is None
+
+    def test_is_a_no_op_when_nothing_is_open(self, main_view):
+        assert main_view.help_window is None
+
+        main_view.close_help_window()  # must not raise with nothing open
+
+        assert main_view.help_window is None
+
+    def test_help_can_be_reopened_afterwards(self, main_view):
+        main_view.on_help_button_click()
+        main_view.close_help_window()
+
+        main_view.on_help_button_click()
+
+        assert main_view.help_window is not None
+
+
+class TestRefreshAvailablePlugins:
+    """
+    Rebuilding the plugin menus after a re-scan.
+
+    The menus are built once from the list handed in at construction, so a
+    changed plugin folder is invisible until they are rebuilt. Rebuilding has to
+    reclaim the old menu tree: clear() destroys the top-level menus it owns but
+    not the submenus built by addMenu(), which otherwise linger as children of
+    the window - a menu bar's worth per refresh.
+    """
+
+    KEYS = (
+        "MetaReader",
+        "MetaEventLoader",
+        "MetaDatabaseLoader",
+        "MetaFilter",
+        "MetaWriter",
+        "MetaDatabaseWriter",
+        "MetaController",
+        "MetaEventFinder",
+        "MetaEventFitter",
+    )
+
+    def _reader_names(self, main_view):
+        for action in main_view.menuBar().actions():
+            if action.text() == "Data":
+                for sub in action.menu().actions():
+                    if sub.text() == "Load Timeseries":
+                        return [a.text() for a in sub.menu().actions()]
+        return None
+
+    def _plugins(self, readers):
+        return {k: (list(readers) if k == "MetaReader" else []) for k in self.KEYS}
+
+    def test_menu_shows_the_new_plugins(self, main_view):
+        main_view.refresh_available_plugins(self._plugins(["NewReader", "Another"]))
+
+        assert self._reader_names(main_view) == ["NewReader", "Another"]
+
+    def test_menu_drops_plugins_that_are_gone(self, main_view):
+        main_view.refresh_available_plugins(self._plugins(["OnlyOne"]))
+
+        assert "DummyReader" not in self._reader_names(main_view)
+
+    def test_repeated_refreshes_do_not_accumulate_menu_objects(self, main_view, qapp):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QMenu
+
+        before_actions = len(main_view.findChildren(QAction))
+        before_menus = len(main_view.findChildren(QMenu))
+
+        for _ in range(5):
+            main_view.refresh_available_plugins(self._plugins(["A", "B"]))
+            qapp.processEvents()
+            # deleteLater only schedules; processEvents does not dispatch
+            # DeferredDelete, so it has to be flushed explicitly.
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+        assert len(main_view.findChildren(QAction)) <= before_actions + 3
+        assert len(main_view.findChildren(QMenu)) <= before_menus + 3

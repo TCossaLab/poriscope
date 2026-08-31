@@ -6,13 +6,11 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.fast
-@pytest.mark.integration
 @pytest.mark.timeout(90)
 def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     """
-    Integration test (no GUI) for the *raw data* instantiation pipeline:
-    (Specifically for 2kbp_n200mV_HS3_20240604_122657.log in tests/data/)
+    Integration test (no GUI) for the *raw data* instantiation pipeline,
+    against a synthetic Chimera recording built by the sample_chimera fixture.
 
       ChimeraReader20240501  ->  BesselFilter  ->  ClassicBlockageFinder  ->  SQLiteEventWriter
 
@@ -71,23 +69,28 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     finder = ClassicBlockageFinder()
     finderset = finder.get_empty_settings(standalone=True)
     if "MetaReader" in finderset:
+        # Type must be reset to None to reflect a resolved plugin reference
+        # (mirroring what DataPluginController does before apply_settings),
+        # since the declared "Type": str only describes the pre-resolution
+        # dropdown-key state.
         finderset["MetaReader"]["Value"] = reader
-    # Dataset-tuned values you mentioned
+        finderset["MetaReader"]["Type"] = None
     if "Threshold" in finderset:
-        finderset["Threshold"]["Value"] = 2000.0  # pA
+        finderset["Threshold"]["Value"] = 200.0  # pA; planted events are 400 pA deep
     if "Min Duration" in finderset:
-        finderset["Min Duration"]["Value"] = 1.0  # µs
+        finderset["Min Duration"]["Value"] = 100.0  # us; planted events are 500 us long
     if "Max Duration" in finderset:
         finderset["Max Duration"]["Value"] = 1_000_000.0  # µs
     if "Min Separation" in finderset:
-        finderset["Min Separation"]["Value"] = 1.0  # µs
+        finderset["Min Separation"]["Value"] = 10.0  # us
     finder.apply_settings(finderset)
 
     # Channels discovered by the finder
     channels = finder.get_channels()
     assert isinstance(channels, (list, tuple)) and len(channels) >= 1
-    # Your dataset is expected to use channel 3 (HS3 → ch 3)
-    assert 3 in channels, f"Expected channel 3 in dataset; got {channels}"
+    channel = sample_chimera["channel"]
+    planted = sample_chimera["num_events"]
+    assert channel in channels, f"Expected channel {channel} in dataset; got {channels}"
 
     # ----- 4) Run event finding WITHOUT applying the Bessel filter (identity function)
     # Use a no-op "filter" so the event finder runs on unfiltered data.
@@ -113,22 +116,25 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
 
     # Assert expected finder status details for Ch3
     fstatus = finder.report_channel_status()
-    # Look for the specific lines you asked about
+    # The fixture plants a known number of events, so the finder is checked
+    # against that ground truth rather than a count observed once from a
+    # recording. Nothing asserts on rejections: the planted events are clean, so
+    # none are rejected and the report omits that section entirely. Which events
+    # a real recording's noise pushed under the duration floor was a property of
+    # that file, not of the detector.
     assert (
-        "Ch3: Found 5 events" in fstatus
+        f"Ch{channel}: Found {planted} events" in fstatus
     ), f"Finder status didn't match expectation:\n{fstatus}"
     assert (
-        "Rejected Events:" in fstatus
-    ), f"Finder status missing rejection header:\n{fstatus}"
-    assert (
-        "Too Short: 3" in fstatus
-    ), f"Finder status missing 'Too Short: 3':\n{fstatus}"
+        f"Accepted {sample_chimera['duration_s']}s of data" in fstatus
+    ), f"Finder did not report scanning the whole recording:\n{fstatus}"
 
     # ----- 5) Write events to SQLite
     out_db: Path = tmp_path / "events.sqlite"
     writer = SQLiteEventWriter()
     writer_settings = writer.get_empty_settings(standalone=True)
     writer_settings["MetaEventFinder"]["Value"] = finder
+    writer_settings["MetaEventFinder"]["Type"] = None
     writer_settings["Experiment Name"]["Value"] = "chimera_integration_test"
     writer_settings["Voltage"]["Value"] = 200.0
     writer_settings["Membrane Thickness"]["Value"] = 10.0
@@ -142,15 +148,11 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
         for _ in genw:
             pass
 
-    # Check writer status for Ch3 write counts
+    # Check writer status against the planted count
     wstatus = writer.report_channel_status()
     assert (
-        "Ch3: Wrote 5/5 events" in wstatus
+        f"Ch{channel}: Wrote {planted}/{planted} events" in wstatus
     ), f"Writer status didn't match expectation:\n{wstatus}"
-    # It's fine if no explicit rejection counts follow; we just ensure the header exists
-    assert (
-        "Rejected Events:" in wstatus
-    ), f"Writer status missing 'Rejected Events' header:\n{wstatus}"
 
     # ----- 6) Sanity-check the output DB
     assert out_db.exists() and out_db.stat().st_size > 0

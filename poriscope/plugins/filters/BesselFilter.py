@@ -24,7 +24,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -86,7 +86,7 @@ class BesselFilter(MetaFilter):
             raise ValueError(
                 "Cutoff must be a positive number less than half the sampling rate"
             )
-        if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] < 0:
+        if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] <= 0:
             raise ValueError("Poles must be a positive integer between 1 and 10")
         z, p, k = bessel(
             settings["Poles"]["Value"],
@@ -126,29 +126,33 @@ class BesselFilter(MetaFilter):
     # public API, must be implemented by subclasses
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
+        Reset the state of a specific channel for a new operation or run. If channel is not None, handle only that channel, else reset all of them. No-op here, since this filter holds no persistent per-channel state between calls.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         pass
 
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -166,9 +170,11 @@ class BesselFilter(MetaFilter):
                           }
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Union[int, float, str, list[Union[int,float,str,None], None]]]]
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings: Dict[str, Dict[str, Any]] = {
             "Cutoff": {
@@ -193,13 +199,10 @@ class BesselFilter(MetaFilter):
 
     @log(logger=logger)
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided filter paramters and intialize any internal structures needed by self.apply_filter().
         Should Raise if initialization fails, but corner cases should be handled by _validate_settings already
-
-        :raises ValueError: If invalid cutoff frequency or order are provided
-        :raises RuntimeError: If calculation of filter coefficients fails
         """
         cutoff = self.settings["Cutoff"]["Value"]
         samplerate = self.settings["Samplerate"]["Value"]

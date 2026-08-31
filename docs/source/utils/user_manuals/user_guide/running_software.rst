@@ -63,10 +63,9 @@ Loading Data
 
 1. Click **Add Reader**.
 2. Select **ChimeraReader20240501**.
-3. Click **Select Input File** and choose any ``.log`` file from the data
-   directory:
+3. Click **Select Input File** and choose any ``.log`` file from the data in the FRDR repository. Click the link below to access the dataset used in the tutorial series:
 
-   `DOI: https://doi.org/10.20383/103.01599 <https://doi.org/10.20383/103.01599>`_
+   `DOI: https://doi.org/10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
 
 .. image:: /_static/images/reader_settings.png
    :alt: Reader parameters

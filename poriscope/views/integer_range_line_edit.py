@@ -26,7 +26,7 @@
 
 import logging
 import re
-from typing import Set
+from typing import List, Optional, Set, Tuple
 
 from PySide6.QtGui import QValidator
 
@@ -37,12 +37,27 @@ from poriscope.utils.BaseValidator import BaseValidator
 class RangeValidator(BaseValidator):
     logger = logging.getLogger(__name__)
 
-    def has_forbidden_characters(self, input):
+    def has_forbidden_characters(self, input: str) -> Optional[re.Match]:
         return re.search(r"[^0-9,\-]", input)
 
-    def _validate_intermediate(self, input, pos):
+    def _validate_intermediate(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Intermediate validation logic for integer ranges."""
         self.logger.debug(f"Intermediate validation for input: {input}")
+
+        # Split the input by commas to handle each part
+        parts = input.split(",")
+
+        # Negative numbers are never valid here (times/indices are non-negative),
+        # so a leading '-' can be rejected immediately rather than waiting for
+        # a second number to disambiguate it from a range separator.
+        for part in parts:
+            if part.strip().startswith("-"):
+                self.logger.debug(
+                    f"Intermediate validation: leading '-' is invalid in part '{part}'."
+                )
+                return QValidator.Invalid, input, pos
 
         # Allow trailing commas or hyphens during typing
         if input.endswith(",") or input.endswith("-"):
@@ -51,15 +66,19 @@ class RangeValidator(BaseValidator):
             )
             return QValidator.Intermediate, input, pos
 
-        # Split the input by commas to handle each part
-        parts = input.split(",")
         for part in parts:
             part = part.strip()
             if "-" in part:
                 numbers = part.split("-")
 
+                # A range must split into exactly two numbers; anything else
+                # (extra dashes) is malformed
+                if len(numbers) != 2:
+                    self.logger.debug(f"Invalid range structure in part: '{part}'.")
+                    return QValidator.Invalid, input, pos
+
                 # Allow incomplete ranges during intermediate typing
-                if len(numbers) == 2 and len(numbers[1]) == 0:
+                if len(numbers[1]) == 0:
                     self.logger.debug(
                         "Intermediate validation: incomplete range, still typing."
                     )
@@ -92,7 +111,7 @@ class RangeValidator(BaseValidator):
         )
         return QValidator.Acceptable, input, len(input)
 
-    def _validate_final(self, input):
+    def _validate_final(self, input: str) -> Tuple[QValidator.State, str, int]:
         """Final validation for integer ranges."""
         self.logger.debug(f"Final validation for input: {input}")
 
@@ -104,15 +123,18 @@ class RangeValidator(BaseValidator):
         parts = input.split(",")
         for part in parts:
             part = part.strip()
+            if part.startswith("-"):
+                self.logger.debug(f"Invalid input: leading '-' in part '{part}'.")
+                return QValidator.Invalid, input, 0
             if "-" in part:
                 numbers = part.split("-")
-                if len(numbers[0]) == 0 or len(numbers[1]) == 0:
-                    self.logger.debug(f"Invalid range: incomplete range in '{part}'.")
+                if len(numbers) != 2 or len(numbers[0]) == 0 or len(numbers[1]) == 0:
+                    self.logger.debug(f"Invalid range: malformed range in '{part}'.")
                     return (
                         QValidator.Invalid,
                         input,
                         0,
-                    )  # Invalid if the range is incomplete
+                    )  # Invalid if the range is incomplete or malformed
 
                 try:
                     start = int(numbers[0])
@@ -140,11 +162,11 @@ class RangeValidator(BaseValidator):
 class IntegerRangeLineEdit(BaseLineEdit):
     logger = logging.getLogger(__name__)
 
-    def create_validator(self):
+    def create_validator(self) -> RangeValidator:
         """Create the range validator for integer ranges."""
         return RangeValidator(self)
 
-    def get_values(self):
+    def get_values(self) -> List[int]:
         """Parse the text and return a sorted list of integers."""
         text = self.text()
         result: Set[int] = set()
@@ -153,9 +175,18 @@ class IntegerRangeLineEdit(BaseLineEdit):
             segment = segment.strip()
             if not segment:
                 continue
+            if segment.startswith("-"):
+                self.logger.debug(
+                    f"Skipping invalid (leading '-') segment: '{segment}'"
+                )
+                continue
             if "-" in segment:
+                numbers = segment.split("-")
+                if len(numbers) != 2:
+                    self.logger.debug(f"Invalid range in segment: '{segment}'")
+                    continue
                 try:
-                    start, end = map(int, segment.split("-"))
+                    start, end = int(numbers[0]), int(numbers[1])
                     result.update(range(start, end + 1))
                 except ValueError:
                     self.logger.debug(f"Invalid range in segment: '{segment}'")
@@ -166,7 +197,7 @@ class IntegerRangeLineEdit(BaseLineEdit):
                     self.logger.debug(f"Invalid integer in segment: '{segment}'")
         return sorted(result)
 
-    def set_range(self, value: str):
+    def set_range(self, value: str) -> None:
         """
         Sets the input text for the line edit and triggers any connected signals or validation.
         """

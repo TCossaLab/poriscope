@@ -24,6 +24,14 @@ Step 1: Loading Your Data
 
    Make sure the reader you choose matches your file type, otherwise loading will fail.
 
+.. note:: Don't have a file to try this with?
+
+   The dataset used in the YouTube tutorial series is archived on the Federated
+   Research Data Repository (FRDR), and its ``.log`` files work with
+   ``ChimeraReader20240501``:
+
+   `DOI: 10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
+
 3. A plugin settings dialog will prompt you to:
 
    - Enter a **name** for the reader instance (e.g., ``ABF2Reader_1``).

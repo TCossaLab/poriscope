@@ -1,8 +1,8 @@
 """
-Unit tests for MultiSelectComboBox.
+Unit tests for MultiSelectFilterComboBox.
 Runs headlessly — no display required.
 
-NOTE: MultiSelectComboBox imports from poriscope.configs.utils (get_icon).
+NOTE: MultiSelectFilterComboBox imports from poriscope.configs.utils (get_icon).
 If that module is not available in test environment, stub it out via
 the patch in the module-level setup below.
 """
@@ -23,25 +23,44 @@ app = QApplication.instance() or QApplication(sys.argv)
 _icon_patch = patch("poriscope.configs.utils.get_icon", return_value=QIcon())
 _icon_patch.start()
 
-from poriscope.views.widgets.multiselect_filter import MultiSelectComboBox  # noqa: E402
+from poriscope.views.widgets.multiselect_filter import (  # noqa: E402
+    MultiSelectFilterComboBox,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def make_combo() -> MultiSelectComboBox:
-    cb = MultiSelectComboBox()
+def dispose(widget) -> None:
+    """
+    Tear a widget down through the event loop.
+
+    ``QWidget.destroy()`` only releases the native window - the C++ object
+    survives until Shiboken collects the Python wrapper, at an arbitrary
+    later point in the run. A widget disposed of that way can leave posted
+    events behind that fault the interpreter the next time *any* test spins
+    the event loop, which is how this file used to segfault
+    ``test_walkthrough_mixin.py`` several hundred tests later.
+    ``deleteLater()`` plus a drained loop deletes it while Qt can still clean
+    up after it.
+    """
+    widget.deleteLater()
+    app.processEvents()
+
+
+def make_combo() -> MultiSelectFilterComboBox:
+    cb = MultiSelectFilterComboBox()
     return cb
 
 
-def get_checkbox(combo: MultiSelectComboBox, row: int) -> QCheckBox:
+def get_checkbox(combo: MultiSelectFilterComboBox, row: int) -> QCheckBox:
     item = combo.listWidget.item(row)
     widget = combo.listWidget.itemWidget(item)
     return widget.findChild(QCheckBox)
 
 
-def check_all_boxes(combo: MultiSelectComboBox, checked: bool):
+def check_all_boxes(combo: MultiSelectFilterComboBox, checked: bool):
     for i in range(combo.listWidget.count()):
         get_checkbox(combo, i).setChecked(checked)
     app.processEvents()
@@ -58,7 +77,7 @@ class TestAddItems(unittest.TestCase):
         self.c = make_combo()
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_add_single_item_creates_row(self):
         self.c.addItem("filter_a")
@@ -101,7 +120,7 @@ class TestGetSelectedItems(unittest.TestCase):
         self.c.addItems(["alpha", "beta", "gamma"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_none_selected_returns_empty(self):
         self.assertEqual(self.c.getSelectedItems(), [])
@@ -134,7 +153,7 @@ class TestSelectItem(unittest.TestCase):
         self.c.addItems(["x", "y", "z"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_select_by_name(self):
         self.c.selectItem("y")
@@ -170,7 +189,7 @@ class TestHandleItemChanged(unittest.TestCase):
         self.c.addItems(["p", "q", "r"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_line_edit_empty_when_nothing_selected(self):
         self.assertEqual(self.c.lineEdit().text(), "")
@@ -219,7 +238,7 @@ class TestSelectAllButton(unittest.TestCase):
         self.c.addItems(["one", "two", "three"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_initial_state_is_select_all(self):
         self.assertEqual(self.c.selectAllButton.text(), "Select All")
@@ -286,7 +305,7 @@ class TestRefreshDisplayText(unittest.TestCase):
         self.c.addItems(["m", "n"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_refresh_reflects_current_state(self):
         get_checkbox(self.c, 0).setChecked(True)
@@ -313,7 +332,7 @@ class TestClearSelectionList(unittest.TestCase):
         check_all_boxes(self.c, True)
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_clears_list_widget(self):
         self.c.clear_selection_list()
@@ -344,7 +363,7 @@ class TestCallbacks(unittest.TestCase):
         self.c.addItems(["cb_item"])
 
     def tearDown(self):
-        self.c.destroy()
+        dispose(self.c)
 
     def test_delete_filter_callback_called(self):
         mock_delete = MagicMock()

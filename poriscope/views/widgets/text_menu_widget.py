@@ -25,6 +25,7 @@
 
 import logging
 import os
+from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QIcon
@@ -39,10 +40,20 @@ from PySide6.QtWidgets import (
 
 from poriscope.utils.LogDecorator import log
 
+# This import cannot be made at module level. main_view.py imports both menu
+# widgets in order to build the sidebar, so importing MainView back from here
+# would close a cycle and fail at startup. TYPE_CHECKING is False at runtime,
+# so the block below never executes and costs nothing; type checkers read it
+# anyway, which is why the annotation on __init__'s main_view parameter is
+# written as the string "MainView" - the name genuinely does not exist once
+# the module is running. Do not "clean this up" into a plain import.
+if TYPE_CHECKING:
+    from poriscope.views.main_view import MainView
+
 
 class IconTextMenuWidget(QWidget):
     rawDataToggled = Signal(bool)
-    statsToggled = Signal(bool)
+    eventAnalysisToggled = Signal(bool)
     metadataToggled = Signal(bool)
     pluginsToggled = Signal(bool)
     helpToggled = Signal(bool)
@@ -51,16 +62,15 @@ class IconTextMenuWidget(QWidget):
     menuToggled = Signal()
 
     switchToRawData = Signal()
-    switchToStatistics = Signal()
+    switchToEventAnalysis = Signal()
     switchToMetadata = Signal()
     switchToPlugins = Signal()
     switchToHelp = Signal()
     switchToSettings = Signal()
-    switchUser = Signal()
     switchToExit = Signal()
     logger = logging.getLogger(__name__)
 
-    def __init__(self, main_view, parent=None):
+    def __init__(self, main_view: "MainView", parent: Optional[QWidget] = None) -> None:
 
         super().__init__(parent)
         self.icon_path = os.path.join(
@@ -82,7 +92,7 @@ class IconTextMenuWidget(QWidget):
         self.setupUi()
 
         self.raw_data_text_button.clicked.connect(self.switchToRawData.emit)
-        self.stats_text_button.clicked.connect(self.switchToStatistics.emit)
+        self.event_analysis_text_button.clicked.connect(self.switchToEventAnalysis.emit)
         self.metadata_text_button.clicked.connect(self.switchToMetadata.emit)
         self.plugins_text_button.clicked.connect(self.switchToPlugins.emit)
         self.settings_text_button.clicked.connect(self.switchToSettings.emit)
@@ -93,7 +103,7 @@ class IconTextMenuWidget(QWidget):
         main_view.help_window_closed.connect(self.setHelpUnchecked)
 
     @log(logger=logger)
-    def setupUi(self):
+    def setupUi(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(9, 30, 9, 30)
         layout.setSpacing(10)
@@ -114,68 +124,61 @@ class IconTextMenuWidget(QWidget):
 
         self.raw_data_text_button = self.createTextButton(
             layout,
-            "raw_data_text_button",
-            "    Raw Data",
-            os.path.join(self.icon_path, "datapie-black.svg"),
-            25,
             "data",
+            "    Raw Data",  # spaces are intentional for desired alignment
+            os.path.join(self.icon_path, "stats-black.svg"),
+            25,
         )
-        self.stats_text_button = self.createTextButton(
+        self.event_analysis_text_button = self.createTextButton(
             layout,
-            "stats_text_button",
+            "event",
             "    Event Analysis",
             os.path.join(self.icon_path, "stats-black.svg"),
             25,
-            "stats",
         )
         self.metadata_text_button = self.createTextButton(
             layout,
-            "metadata_text_button",
+            "metadata",
             "    Metadata",
             os.path.join(self.icon_path, "database-black.svg"),
             25,
-            "metadata",
         )
         self.plugins_text_button = self.createTextButton(
             layout,
-            "plugins_text_button",
+            "add",
             "    Add",
             os.path.join(self.icon_path, "add-black.png"),
             25,
-            "add",
         )
 
         layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         self.help_text_button = self.createTextButton(
             layout,
-            "help_text_button",
+            "help",
             "    Help",
             os.path.join(self.icon_path, "help-black.png"),
             25,
-            "help",
         )
         self.settings_text_button = self.createTextButton(
             layout,
-            "settings_text_button",
+            "settings",
             "    Settings",
             os.path.join(self.icon_path, "settings-black.png"),
             25,
-            "settings",
         )
         self.exit_text_button = self.createTextButton(
             layout,
-            "exit_text_button",
+            "exit",
             "     Exit",
             os.path.join(self.icon_path, "exit-black.svg"),
             25,
-            "exit",
         )
 
         layout.addItem(QSpacerItem(20, 5, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     @log(logger=logger)
-    def createMenuButton(self):
+    def createMenuButton(self) -> QPushButton:
         button = QPushButton(self)
         button.setObjectName("menu_button")
         icon = QIcon()
@@ -211,15 +214,13 @@ class IconTextMenuWidget(QWidget):
         return button
 
     @log(logger=logger)
-    def menu_button_clicked(self):
+    def menu_button_clicked(self) -> None:
         self.menuToggled.emit()
         QTimer.singleShot(100, self.uncheckMenuButton)
-        print("text_menu_button_clicked")
-        QTimer.singleShot(100, self.uncheckMenuButton)  # Add delay
         self.logger.info("text_menu_button_clicked")
 
     @log(logger=logger)
-    def createLogoButton(self):
+    def createLogoButton(self) -> QPushButton:
         button = QPushButton(self)
         button.setObjectName("icon_menu_pushButton")
         icon = QIcon(os.path.join(self.icon_path, "TCossaLab-black.png"))
@@ -243,8 +244,13 @@ class IconTextMenuWidget(QWidget):
 
     @log(logger=logger)
     def createTextButton(
-        self, layout, objectName, text, iconPath, iconSize, buttonName
-    ):
+        self,
+        layout: QVBoxLayout,
+        objectName: str,
+        text: str,
+        iconPath: str,
+        iconSize: int,
+    ) -> QPushButton:
         button = QPushButton(text, self)
         button.setObjectName(objectName)
         button.setFont(QFont("MS Shell Dlg 2", 10))
@@ -272,16 +278,16 @@ class IconTextMenuWidget(QWidget):
         button.setIconSize(QSize(iconSize, iconSize))
         button.setCheckable(True)
         button.setAutoExclusive(True)
-        button.toggled.connect(lambda checked: self.emitSignal(buttonName, checked))
+        button.toggled.connect(lambda checked: self.emitSignal(objectName, checked))
 
         layout.addWidget(button)
         return button
 
     @log(logger=logger)
-    def emitSignal(self, buttonName, checked):
+    def emitSignal(self, buttonName: str, checked: bool) -> None:
         signals = {
             "data": self.rawDataToggled,
-            "stats": self.statsToggled,
+            "event": self.eventAnalysisToggled,
             "metadata": self.metadataToggled,
             "add": self.pluginsToggled,
             "help": self.helpToggled,
@@ -290,48 +296,68 @@ class IconTextMenuWidget(QWidget):
         }
         if buttonName in signals:
             signals[buttonName].emit(checked)
+        else:
+            self.logger.warning(f"emitSignal: unrecognized buttonName {buttonName!r}")
 
     @log(logger=logger)
-    def setRawDataChecked(self, checked):
+    def setRawDataChecked(self, checked: bool) -> None:
         self.raw_data_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setStatsChecked(self, checked):
-        self.stats_text_button.setChecked(checked)
+    def setEventAnalysisChecked(self, checked: bool) -> None:
+        self.event_analysis_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setMetadataChecked(self, checked):
+    def setMetadataChecked(self, checked: bool) -> None:
         self.metadata_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setPluginsChecked(self, checked):
+    def setPluginsChecked(self, checked: bool) -> None:
         self.plugins_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setHelpChecked(self, checked):
+    def setHelpChecked(self, checked: bool) -> None:
         self.help_text_button.setChecked(checked)
 
-    def setSettingsChecked(self, checked):
+    def setSettingsChecked(self, checked: bool) -> None:
         self.settings_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setLanguageChecked(self, checked):
-        self.language_text_button.setChecked(checked)
-
-    @log(logger=logger)
-    def setThemeChecked(self, checked):
-        self.theme_text_button.setChecked(checked)
-
-    @log(logger=logger)
-    def setExitChecked(self, checked):
+    def setExitChecked(self, checked: bool) -> None:
         self.exit_text_button.setChecked(checked)
 
-    def setHelpUnchecked(self):
+    @log(logger=logger)
+    def uncheckAll(self) -> None:
+        """
+        Uncheck whichever sidebar menu button is currently highlighted, if any.
+
+        These buttons are all ``autoExclusive`` and share this widget as their
+        parent, so Qt treats them as one radio-button-style group: a plain
+        ``setChecked(False)`` is a no-op on the sole checked member, since Qt
+        refuses to leave an autoExclusive group with nothing checked once
+        anything has been. Toggling ``autoExclusive`` off just long enough to
+        release it is the standard workaround.
+        """
+        for button in (
+            self.raw_data_text_button,
+            self.event_analysis_text_button,
+            self.metadata_text_button,
+            self.plugins_text_button,
+            self.help_text_button,
+            self.settings_text_button,
+            self.exit_text_button,
+        ):
+            if button.isChecked():
+                button.setAutoExclusive(False)
+                button.setChecked(False)
+                button.setAutoExclusive(True)
+
+    def setHelpUnchecked(self) -> None:
         self.help_text_button.setChecked(False)
         self.help_text_button.repaint()
         self.help_text_button.setDown(False)
 
     @log(logger=logger)
-    def uncheckMenuButton(self):
+    def uncheckMenuButton(self) -> None:
         self.menu_button.setChecked(False)
         self.logger.info("unchecked")

@@ -23,13 +23,22 @@
 # Contributors:
 # Alejandra Carolina González González
 
+from typing import Dict, Optional
+
+from PySide6.QtWidgets import QWidget
+
 from poriscope.views.widgets.base_widgets.base_subset_filter_dialog import (
     BaseSubsetFilterDialog,
 )
 
 
 class EditSubsetFilterDialog(BaseSubsetFilterDialog):
-    def __init__(self, parent, original_name, existing_filters):
+    def __init__(
+        self,
+        parent: Optional[QWidget],
+        original_name: str,
+        existing_filters: Dict[str, str],
+    ) -> None:
         super().__init__(
             parent,
             title=f"Edit Filter: {original_name}",
@@ -37,10 +46,10 @@ class EditSubsetFilterDialog(BaseSubsetFilterDialog):
             default_name=original_name,
             default_filter=existing_filters.get(original_name, ""),
         )
-        self.new_name = None
-        self.new_filter = None
+        self.new_name: Optional[str] = None
+        self.new_filter: Optional[str] = None
 
-    def accept(self):
+    def accept(self) -> None:
         self.new_name = self.name
         self.new_filter = self.filter_text
         super().accept()

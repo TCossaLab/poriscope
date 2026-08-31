@@ -29,19 +29,23 @@ import logging
 import platform
 import sys
 from pathlib import Path
+from typing import Any, Dict, List
 
 from platformdirs import user_data_dir
 from PySide6.QtWidgets import QApplication
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
+from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.QtHandler import QtHandler
 from poriscope.views.main_view import MainView
 
 
 class App(QApplication):
-    def __init__(self, sys_argv):
+    logger = logging.getLogger(__name__)
+
+    def __init__(self, sys_argv: List[str]) -> None:
         super(App, self).__init__(sys_argv)
         self.create_appdata_folders()
         self.configure_logger(self.app_config["Log Level"])
@@ -50,7 +54,7 @@ class App(QApplication):
 
         self.main_view.show()
 
-    def create_appdata_folders(self):
+    def create_appdata_folders(self) -> None:
         local = Path(user_data_dir())
         self.app_folder = Path(local, "Poriscope")
         if not self.app_folder.exists():
@@ -71,44 +75,64 @@ class App(QApplication):
         self.config_path = Path(self.app_folder, "config")
         config_file_path = Path(self.config_path, "config.json")
 
-        self.app_config = {
-            "Parent Folder": Path(
-                r"\\storage.rdc.uottawa.ca\1707_vtabardc"
-            ),  # replace with one-time setup
-            "User Plugin Folder": self.user_plugin_path,
-            "Log Level": logging.WARNING,
-        }
+        # default_app_config() is the single definition of these defaults,
+        # shared with the settings reset so the two cannot drift apart. Called
+        # twice deliberately: the fallback below needs a dict that later edits
+        # to self.app_config cannot have mutated.
+        self.app_config: Dict[str, Any] = default_app_config(self.user_plugin_path)
 
         if not self.config_path.exists():
             self.config_path.mkdir(parents=True, exist_ok=True)
         if not config_file_path.is_file():
-            with open(config_file_path, "w") as f:
-                json.dump(self.app_config, f, default=serialize_object, indent=4)
+            try:
+                with open(config_file_path, "w") as f:
+                    json.dump(self.app_config, f, default=serialize_object, indent=4)
+            except Exception as e:
+                self.logger.warning(
+                    f"Unable to write initial config file {config_file_path}: {e}"
+                )
 
-        try:
-            if Path(self.config_path, "config.json").is_file():
-                with open(Path(self.config_path, "config.json"), "r") as f:
+        if config_file_path.is_file():
+            try:
+                with open(config_file_path, "r") as f:
                     self.app_config = json.load(f)
-                    if "User Plugin Folder" not in self.app_config.keys():
-                        self.app_config["User Plugin Folder"] = self.user_plugin_path
+                if "User Plugin Folder" not in self.app_config.keys():
+                    self.app_config["User Plugin Folder"] = str(self.user_plugin_path)
+                    try:
                         with open(config_file_path, "w") as f:
                             json.dump(
                                 self.app_config, f, default=serialize_object, indent=4
                             )
-            plugin_path = Path(self.user_plugin_path).resolve()
-            parent_path = plugin_path.parent
-            if str(parent_path) not in sys.path:
-                sys.path.append(str(parent_path))
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Unable to persist updated config file {config_file_path}: {e}"
+                        )
+            except Exception as e:
+                self.logger.warning(
+                    f"Unable to load config file {config_file_path}, regenerating defaults: {e}"
+                )
+                self.app_config = default_app_config(self.user_plugin_path)
+                try:
+                    with open(config_file_path, "w") as f:
+                        json.dump(
+                            self.app_config, f, default=serialize_object, indent=4
+                        )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Unable to persist regenerated default config file {config_file_path}: {e}"
+                    )
 
-        except:
-            raise
+        plugin_path = Path(self.user_plugin_path).resolve()
+        parent_path = plugin_path.parent
+        if str(parent_path) not in sys.path:
+            sys.path.append(str(parent_path))
 
-    def initialize_components(self):
+    def initialize_components(self) -> None:
         self.main_model = MainModel(self.app_config)
         self.main_view = MainView(self.main_model.get_available_plugins())
         self.main_controller = MainController(self.main_model, self.main_view)
 
-    def configure_logger(self, loglevel):
+    def configure_logger(self, loglevel: int) -> None:
 
         formatter = logging.Formatter(
             "%(asctime)s: %(levelname)s:\t%(threadName)s(%(thread)d):\t%(name)s:\t%(message)s"
@@ -129,9 +153,18 @@ class App(QApplication):
         fileHandler.setFormatter(formatter)
         root_logger.addHandler(fileHandler)
 
-        # display error messages in dialog box
+        # display error messages in dialog box.
+        #
+        # Deliberately NOT given `formatter`: that format is right for a log line and
+        # wrong for a dialog, which would otherwise show the user a timestamp, a thread
+        # name and id, and a dotted module path before the message they need to read.
+        # The console and file handlers above still record all of it.
+        #
+        # QtHandler defaults to ERROR rather than inheriting the root logger's level;
+        # see its docstring for why, and note MainModel.update_logging_level skips it
+        # when applying a new level to the root logger's handlers.
         qtHandler = QtHandler()
-        qtHandler.setFormatter(formatter)
+        qtHandler.setFormatter(logging.Formatter("%(message)s"))
         root_logger.addHandler(qtHandler)
 
         root_logger.debug(
@@ -139,7 +172,7 @@ class App(QApplication):
         )
 
 
-def main():
+def main() -> None:
     logger = logging.getLogger(__name__)
 
     # Refuse to run if 32-bit Python

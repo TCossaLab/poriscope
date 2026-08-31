@@ -23,22 +23,29 @@
 # Contributors:
 # Alejandra Carolina González González
 
-from PySide6.QtWidgets import QDialogButtonBox
+from typing import Collection, List, Optional
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from PySide6.QtWidgets import QDialogButtonBox, QWidget
+
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 from poriscope.views.widgets.base_widgets.base_subset_filter_dialog import (
     BaseSubsetFilterDialog,
 )
 
 
 class AddSubsetFilterDialog(BaseSubsetFilterDialog, WalkthroughMixin):
-    def __init__(self, parent, existing_names):
+    def __init__(
+        self, parent: Optional[QWidget], existing_names: Collection[str]
+    ) -> None:
         super().__init__(parent, "Create Subset Filter", existing_names)
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return "AddSubsetFilterDialog"
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [
             (
                 "Add Filter",

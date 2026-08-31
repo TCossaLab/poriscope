@@ -66,6 +66,29 @@ def classify_method(method_node):
     return "private" if method_node.name.startswith("_") else "public"
 
 
+def is_property_accessor(method_node):
+    """Return True if the method is a property getter, setter or deleter.
+
+    A getter is decorated ``@property``, which parses to an ``ast.Name``. A setter
+    or deleter is decorated ``@<name>.setter`` / ``@<name>.deleter``, which parses
+    to an ``ast.Attribute`` instead. Matching only the ``ast.Name`` form emitted the
+    accessors as ordinary methods, so a property with a setter was written out as
+    both ``.. automethod::`` and ``.. autoattribute::`` under the same name - one
+    "duplicate object description" warning and one "not a callable object" warning
+    per property.
+    """
+    for decorator in method_node.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id == "property":
+            return True
+        if isinstance(decorator, ast.Attribute) and decorator.attr in (
+            "setter",
+            "getter",
+            "deleter",
+        ):
+            return True
+    return False
+
+
 def find_classes_and_nodes(py_file):
     """Return a list of (class_name, class_node) tuples."""
     with open(py_file, "r", encoding="utf-8") as f:
@@ -195,11 +218,11 @@ def write_class_rst(category_dir, class_node, import_path, class_name, exclusion
     properties: List[str] = []
     for item in class_node.body:
         if isinstance(item, ast.FunctionDef):
-            if any(
-                isinstance(d, ast.Name) and d.id == "property"
-                for d in item.decorator_list
-            ):
-                properties.append(item.name)
+            if is_property_accessor(item):
+                # A property with a setter yields two accessors under one name; emit
+                # the attribute once.
+                if item.name not in properties:
+                    properties.append(item.name)
             else:
                 visibility = classify_method(item)
                 methods[visibility].append(item.name)

@@ -7,13 +7,14 @@ name = "poriscope"
 dynamic = ["version"]
 description = "A tool for selecting and analyzing nanopore data."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12.10"
 license = { text = "MIT" }
 authors = [
     { name = "Kyle Briggs & Alejandra Carolina González González", email = "kbriggs@uottawa.ca" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
 ]
@@ -33,8 +34,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "black==25.1.0",
-    "ruff==0.12.9",
+    "ruff==0.12.11",
     "mypy==1.9.0",
+    "pydoclint==0.9.1",
     "pytest==8.4.1",
     "pytest-mock==3.14.1",
     "pytest-qt==4.5.0",
@@ -68,9 +70,38 @@ line-length = 88
 src = ["poriscope", "tests"]
 
 [tool.ruff.lint]
-extend-select = ["I"]
+# I  = isort import ordering.
+# B006/B020 = the two flake8-bugbear rules whose backlog is zero, so they are
+#   enforced rather than baselined: mutable data structures as argument
+#   defaults, and a loop control variable shadowing the iterable it iterates.
+#   The rest of bugbear is not adopted yet - see future_fixes.md.
+extend-select = ["I", "B006", "B020"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["poriscope"]
+known-first-party = ["poriscope", "tests"]
 known-third-party = ["PySide6", "matplotlib", "pytest", "numpy", "pandas"]
 combine-as-imports = true
+
+[tool.pydoclint]
+style = "sphinx"
+# Signature type hints are the source of truth for parameter and return
+# types; ":type:"/":rtype:" in the docstring must agree with them. An earlier
+# revision set this to false on the premise that most plugin methods omit
+# signature hints - an AST scan disproved that (the large majority carry at
+# least one hint), and the false setting turned 663 of the baseline's 709
+# entries into DOC108 "you have hints but policy says you shouldn't" noise
+# that masked nothing and fixed nothing. See future_fixes.md's
+# type-annotation pass for the work that closes the remaining DOC106/DOC107.
+arg-type-hints-in-signature = true
+# Every __init__ in this codebase has its own docstring separate from the
+# class docstring; that's an established convention here, not a violation.
+allow-init-docstring = true
+# Class-attribute checking cannot work under sphinx style with the parser
+# pydoclint 0.9.1 ships. It reads docstring_parser_fork's `.attrs`, and in
+# REST/sphinx mode that list is only ever populated by a malformed
+# ".. attribute :: name" (note the space, which makes it a field rather than a
+# directive). The correct directive and every canonical field form - `:ivar:`,
+# `:cvar:`, `:var:` - all yield nothing, so the check can only ever fire against
+# docstrings that are wrong. Both packages are already at their latest release.
+check-class-attributes = false
+exclude = "^tests/"

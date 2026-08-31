@@ -32,6 +32,8 @@ When executed, the setup script:
 - Reinstalls pre-commit hooks using the repository configuration
 - Copies the project’s post-merge hook into ``.git/hooks/``
 - Marks the post-merge hook as executable
+- Sets ``gitflow.prefix.versiontag`` to ``v``, so ``git flow release finish <version>``
+  tags the release ``v<version>``
 
 The script is safe to run multiple times.
 
@@ -45,7 +47,17 @@ From the repository root, run:
 
    python scripts/setup_hooks.py
 
-This command installs both the pre-commit and post-merge hooks locally.
+This command installs both the pre-commit and post-merge hooks locally, and sets the
+git flow release tag prefix.
+
+.. note::
+
+   The release tag prefix matters because the CD workflow
+   (``.github/workflows/release.yml``) triggers on tags matching ``v*``. git flow leaves
+   ``gitflow.prefix.versiontag`` empty by default, which would tag a release
+   ``1.7.0`` rather than ``v1.7.0`` and so miss that trigger. Like git hooks, git config
+   is local to each clone, which is why the setup script sets it rather than the
+   repository carrying it.
 
 .. note::
 

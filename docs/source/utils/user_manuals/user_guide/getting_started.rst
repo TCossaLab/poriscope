@@ -20,13 +20,13 @@ Before installing Poriscope, make sure you have the following installed:
 
    If Git is not installed, download it here: https://git-scm.com/downloads
 
-2. **Python 3.12.10**
+2. **Python >=3.12.10**
 
-   Required version. Check by running::
+   Minimum required version. Check by running::
 
       python --version
 
-   If not installed, download it here: https://www.python.org/downloads/release/python-31210/
+   If not installed, download it here: https://www.python.org/downloads/
 
    .. important::
 

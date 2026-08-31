@@ -32,6 +32,18 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 - Can save and reload these actions from a JSON file
 - Undo logic included (with safety checks and filtering)
 
+**Session state**
+
+- ``get_session_state()`` / ``restore_session_state()`` let a tab opt in to persisting
+  state that MainController has no other way to see — the default implementations do
+  nothing
+- Override both if your tab keeps state entirely on the view (as MetadataController and
+  ProteinController do for their subset filter lists): return whatever needs to survive
+  a save from ``get_session_state()``, and apply it back in ``restore_session_state()``
+- MainController calls these automatically on every open tab whenever it writes session
+  history to disk, and again on a freshly-restored tab right after Load/Restore Session;
+  you never call them yourself
+
 **Utility methods already set up**
 
 - ``export_plot_data()`` to save cached data as a CSV

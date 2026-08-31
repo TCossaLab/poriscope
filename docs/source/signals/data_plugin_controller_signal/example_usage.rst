@@ -1,17 +1,32 @@
-Example Usage: RawDataView
----------------------------
+Example Usage: editing plugin settings from a view
+---------------------------------------------------
 
 .. code-block:: python
 
    @log(logger=logger)
-   def _apply_filter(self, data_filter, channel_data):
-      try:
-         filter_data_args = (channel_data,)
-         self.global_signal.emit('MetaFilter', data_filter, 'filter_data', filter_data_args, 'update_plot_data', ())
-         return self.plot_data  # Assuming the plot_data is updated by the filter
-      except Exception as e:
-         self.logger.error(f"Unable to filter data with {data_filter}: {repr(e)}")
-         return channel_data  # Return unfiltered data if the filter fails
+   def handle_edit_triggered(self, metaclass: str, key: str) -> None:
+      # A tuple of the arguments expected by DataPluginController.edit_plugin_settings,
+      # whose signature is (self, metaclass: str, key: str) -> None
+      call_args = (metaclass, key)
+      self.data_plugin_controller_signal.emit(
+         metaclass, key, "edit_plugin_settings", call_args, "", ()
+      )
+
+This is the real shape used by ``MetaView``, and it shows the two things worth copying:
+
+#. ``call_args`` is built to match the *target's* signature — here two positional
+   ``str`` arguments — and is a genuine tuple. Note that the same ``metaclass`` and
+   ``key`` appear twice: once in the first two signal arguments, where they are only
+   logged, and once inside ``call_args``, where they are the actual arguments to
+   ``edit_plugin_settings``. This signal does not use the first two to find anything.
+
+#. The return function is ``""``. ``edit_plugin_settings`` drives the settings dialog
+   itself and there is nothing to hand back, so no callback is registered and
+   ``ret_args`` is empty. Supplying a callback is optional on this path and usually
+   unnecessary.
+
+``delete_plugin`` is emitted identically, with ``"delete_plugin"`` in place of
+``"edit_plugin_settings"``.
 
 Detailed Explanation
 ~~~~~~~~~~~~~~~~~~~~~

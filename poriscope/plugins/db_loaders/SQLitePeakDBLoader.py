@@ -68,26 +68,34 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
         :return: a list of x locations to plot vertical lines and a list of y locations to plot horizontal lines, list of tuples to plot little x's, labels for the vertical lines, labels for the horizontal lines, labels for x's. Must be lists of equal length, or None
         :rtype: Tuple[Optional[List[float]], Optional[List[float]], Optional[List[Tuple[float, float]]], Optional[List[str]], Optional[List[str]], Optional[List[str]]]
-
-        :raises RuntimeError: if fitting is not complete yet
         """
 
         try:
-            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_std, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.sublevel_start_times                        FROM sublevels s
+            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_stdev, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.classified, e.sequence, e.translocation_direction, s.sublevel_start_times                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
 
         except Exception as e:
+            # NOTE (integration): this handler had lost its `return`, so a failure
+            # while building the query fell straight through to
+            # validate_filter_query(query) with `query` never assigned - a NameError
+            # instead of the clean "no features to plot" result the caller expects.
+            # Restored the early return.
             self.logger.debug(
                 f"Error constructing query in get_plot_features: {str(e)}",
                 self.__class__.__name__,
             )
+            return None, None, None, None, None, None
 
         valid, debug = self.validate_filter_query(query)
         if valid:
             result = self.query_database_directly(query)
-            if len(result) == 0:
+            # NOTE (integration): the `result is None` half of this guard had been
+            # dropped. query_database_directly() returns None when the query yields
+            # nothing, and len(None) raises TypeError, so the None case has to be
+            # tested before the length. Restored.
+            if result is None or len(result) == 0:
                 self.logger.info(
                     "Empty dataframe, no features to plot for event",
                     self.__class__.__name__,
@@ -126,7 +134,6 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             if "translocation_direction" in first_row
             else None
         )
-
         event_start = event_first["sublevel_start_times"]
         event_end = event_last["sublevel_start_times"]
         # std = first_row["baseline_std"]
@@ -143,8 +150,13 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         bases.append(baseline)
         hlabel.append("Baseline")
 
-        bases.append(baseline - sign * unfolded)
-        hlabel.append("unfolded level")
+        # NOTE (integration): this pair was previously guarded by
+        # `if unfolded is not None:`. The guard was removed, but the line above still
+        # assigns None when the "unfolded_level" column is missing from the row, so
+        # the arithmetic here raised TypeError in exactly that case. Guard restored.
+        if unfolded is not None:
+            bases.append(baseline - sign * unfolded)
+            hlabel.append("unfolded level")
 
         # bases.append(-sign * unfolded + baseline - sign * std)
         # hlabel.append("unfolded level + std")
@@ -167,7 +179,14 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                 # hlabel.append(f"Left base #{j}")
 
                 peaks.append((row.peak_loc, baseline - sign * row.peak_height))
-                plabel.append("Peak #" + str(j) + " Filter: " + str(row.filtered))
+                plabel.append(
+                    "Peak #"
+                    + str(j)
+                    + " Filter: "
+                    + str(row.filtered)
+                    + " Class: "
+                    + str(row.classified)
+                )
 
                 # Filter logic
                 # if row.filtered not in (0, -1):

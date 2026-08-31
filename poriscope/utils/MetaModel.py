@@ -25,9 +25,8 @@
 # Alejandra Carolina González González
 
 import logging
-import threading
 from abc import abstractmethod
-from typing import Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -46,6 +45,11 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     global_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
+    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
+    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
+    # that passes a return_function_name reads the result back off an attribute the
+    # callback sets, on the very next statement after .emit() - a queued connection
+    # would silently degrade that read to stale/None data with no error and no log line.
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
@@ -53,28 +57,28 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize the MetaModel
 
-        :param kwargs: Additional parameters to set as attributes on the instance
-        :type kwargs: dict
+        :param \\**kwargs: Additional parameters to set as attributes on the instance
+        :type \\**kwargs: Any
         """
 
         self.available_plugins: Dict[str, List[str]] = {}
         self.reporter_metaclasses: Dict[str, str] = {}
-        self.generators: Dict[str, Dict[int, Generator]] = {}
+        self.generators: Dict[
+            str, Dict[int, Generator[float, Optional[bool], None]]
+        ] = {}
         self.threads: Dict[str, Dict[int, WorkerThread]] = (
             {}
-        )  # Holds worker objects per key/channel
+        )  # Holds worker threads per key/channel
         self.workers: Dict[str, Dict[int, Worker]] = (
             {}
-        )  # Holds worker threads per key/channel
+        )  # Holds worker objects per key/channel
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
-        self.serial_ops: Dict[str, Dict[int, bool]] = {}
-        self.lock: threading.Lock = threading.Lock()
 
         # nested dicts keyed by plugin key and channel number
         self.cache_data: Optional[List[np.ndarray]] = None
@@ -103,7 +107,13 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     # public API, must be implemented by sublcasses
 
     @log(logger=logger)
-    def set_generator(self, generator, channel, key, metaclass):
+    def set_generator(
+        self,
+        generator: Generator[float, Optional[bool], None],
+        channel: int,
+        key: str,
+        metaclass: str,
+    ) -> None:
         """Add generator and set it to be run by a QThread."""
         if key not in self.thread_running.keys():
             self.thread_running[key] = {}
@@ -115,8 +125,24 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             self.generators[key][channel] = generator
 
     @log(logger=logger)
-    def run_generators(self, key):
-        metaclass = self.reporter_metaclasses[key]
+    def run_generators(self, key: str) -> None:
+        """
+        Start one worker thread per channel for which a generator has been staged under this key.
+
+        Serialization is not decided here. A plugin that declares
+        ``force_serial_channel_operations()`` now takes its *own* lock inside its
+        generator (see
+        :py:func:`~poriscope.utils.SerializeDecorator.serialize_channels`), so this
+        method no longer asks the plugin anything and no longer hands the worker a lock.
+        It used to emit ``global_signal`` for that answer and read it back off
+        ``self.serial_ops`` on the next statement, which worked only because every hop in
+        that chain was a same-thread automatic connection Qt resolves as a direct call -
+        one ``Qt.QueuedConnection`` anywhere in it would have silently degraded the lock
+        to ``None``, with no error and no log line.
+
+        :param key: the plugin key whose staged generators should be run
+        :type key: str
+        """
         for channel, generator in self.generators[key].items():
             thread_running = self.thread_running[key].get(channel)
             if not thread_running:
@@ -126,16 +152,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                 if key not in self.threads.keys():
                     self.threads[key] = {}
 
-                self.global_signal.emit(
-                    metaclass,
-                    key,
-                    "force_serial_channel_operations",
-                    (),
-                    "set_force_serial_channel_operations",
-                    (key, channel),
-                )
-                lock = self.lock if self.serial_ops[key][channel] else None
-                self.workers[key][channel] = Worker(generator, channel, key, lock)
+                self.workers[key][channel] = Worker(generator, channel, key)
                 self.workers[key][channel].update_progressbar.connect(
                     self.emit_progress_update, Qt.QueuedConnection
                 )
@@ -143,7 +160,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     self.workers[key][channel], channel, key
                 )
                 self.threads[key][channel].workerthread_finished.connect(
-                    self.reset_lock, Qt.QueuedConnection
+                    self.discard_generator, Qt.QueuedConnection
                 )
                 self.threads[key][channel].workerthread_finished.connect(
                     self.generate_report, Qt.QueuedConnection
@@ -152,22 +169,56 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(int, str)
-    def reset_lock(self, channel, key):
+    def discard_generator(self, channel: int, key: str) -> None:
+        r"""
+        Clear the run state for one (key, channel) once its worker thread has finished.
+
+        Formerly ``reset_lock``, which reset no lock - it clears the ``thread_running``
+        flag, which is what allows :py:meth:`set_generator` to stage a new run for this
+        key and channel, and drops the spent generator.
+
+        The generator is explicitly closed before being dropped. A plugin that declares
+        serial channel operations holds its own lock across the generator's ``yield``\ s,
+        and that lock is released when the generator is exhausted *or closed*; relying on
+        the reference count falling to zero to finalize it would make release depend on
+        garbage-collection timing, and a stranded lock here is a silent hang rather than an
+        error. ``close()`` is a harmless no-op on a generator that already ran to
+        completion.
+
+        The finished ``Worker``/``WorkerThread`` pair is also popped out of
+        ``self.workers``/``self.threads`` and scheduled for deletion here, for the same
+        reason: leaving them in the dicts kept every generator closure and the channel
+        data it touched alive for the rest of the session, and made
+        ``stop_workers``/``handle_kill_worker`` log "Stopping worker for channel N" for
+        runs that had finished hours earlier. Both are ``QObject``s created on (and never
+        moved from) this thread, so ``deleteLater()`` is the correct way to release them
+        rather than waiting on Python's reference counting.
+
+        :param channel: the channel whose run has finished
+        :type channel: int
+        :param key: the plugin key whose run has finished
+        :type key: str
+        """
         self.thread_running[key][channel] = False
         try:
-            self.generators[key].pop(channel)
+            generator = self.generators[key].pop(channel)
         except KeyError:
-            pass
+            return
+        generator.close()
 
-    @log(logger=logger)
-    def set_force_serial_channel_operations(self, serial_ops, key, channel):
-        if key not in self.serial_ops.keys():
-            self.serial_ops[key] = {}
-        self.serial_ops[key][channel] = serial_ops
+        # workers/threads[key][channel] are always created together with
+        # generators[key][channel] in run_generators, so the pop above succeeding
+        # guarantees both of these exist too.
+        worker = self.workers[key].pop(channel)
+        thread = self.threads[key].pop(channel)
+        thread.wait()  # run() has already returned by the time this queued slot
+        # fires from workerthread_finished; this confirms it rather than blocking.
+        thread.deleteLater()
+        worker.deleteLater()
 
     @log(logger=logger)
     @Slot(int, str)
-    def generate_report(self, channel, key):
+    def generate_report(self, channel: int, key: str) -> None:
         metaclass = self.reporter_metaclasses[key]
         report_channel_status_args = (channel,)
         ret_args = (key,)
@@ -181,24 +232,24 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         )
 
     @log(logger=logger)
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up to date list of possible data sources for use by this plugin.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
+        :type available_plugins: Dict[str, List[str]]
         """
         self.logger.info(f"Model updated: {available_plugins}")
         self.available_plugins = available_plugins
 
     @log(logger=logger)
     @Slot(list, list)
-    def cache_plot_data(self, data, labels):
+    def cache_plot_data(self, data: List[np.ndarray], labels: List[str]) -> None:
         self.cache_data = data
         self.cache_labels = labels
 
     @log(logger=logger)
-    def format_cache_data(self):
+    def format_cache_data(self) -> Optional[pd.DataFrame]:
         if self.cache_data and self.cache_labels:
             max_length = max([len(arr) for arr in self.cache_data])
             # Convert arrays to float type first to allow np.nan
@@ -214,9 +265,15 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             )
             df = pd.DataFrame(padded_data.T, columns=self.cache_labels)
             return df
+        return None
 
     @log(logger=logger)
-    def stop_workers(self, key=None, channel=None, exiting=False):
+    def stop_workers(
+        self,
+        key: Optional[str] = None,
+        channel: Optional[int] = None,
+        exiting: bool = False,
+    ) -> None:
         """Stop workers based on specified key and/or channel."""
         if key is None:
             # If no key is provided, stop workers for all keys
@@ -231,9 +288,12 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             return  # Exit after stopping all workers
 
         if key not in self.workers:
-            self.logger.warning(
-                f"No active workers found for key '{key}'. Full dictionary: {self.workers}"
-            )
+            # INFO, not WARNING: this is reached routinely, and it duplicates the
+            # message MetaController.handle_kill_worker already produced for the
+            # same abort. The panel message belongs to the controller, which knows
+            # whether the user asked for this or whether it is a shutdown sweep.
+            self.logger.info(f"No active workers found for key '{key}'.")
+            self.logger.debug(f"Full workers dictionary: {self.workers}")
             return
 
         if channel is None:
@@ -246,16 +306,27 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     self.stop_workers(key, chan, exiting=exiting)
         else:
             # Stop only the specific channel's worker within the given key
-            if channel in self.workers[key]:
-                self.logger.info(f"Stopping worker for key: {key}, channel: {channel}")
-                if self.thread_running[key][channel] is True:
-                    self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
-
-                # Let workerthread_finished emit and trigger reset_lock() - avoid race conditions - UNNECESSARY
-                # self.threads[key][channel].wait()
-                self.logger.debug(
-                    f"Worker and thread stopped for key: {key}, channel: {channel}"
+            if channel not in self.workers[key]:
+                # Previously this `if` had no `else` at all, so a stale channel was
+                # a completely silent no-op even in the log.
+                self.logger.info(
+                    f"No worker to stop for key: {key}, channel: {channel}"
                 )
+                return
+
+            self.logger.info(f"Stopping worker for key: {key}, channel: {channel}")
+            if self.thread_running[key][channel] is True:
+                self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
+
+            if exiting:
+                # On app exit we must block until the thread actually
+                # finishes, otherwise Qt destroys a QThread still running.
+                self.threads[key][channel].wait()
+            # Otherwise let workerthread_finished emit and trigger
+            # discard_generator() asynchronously - avoid blocking here.
+            self.logger.debug(
+                f"Worker and thread stopped for key: {key}, channel: {channel}"
+            )
 
     # private API, should generally be left alone by subclasses
 
@@ -263,7 +334,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     @Slot(float, str)
-    def emit_progress_update(self, progress, identifier):
+    def emit_progress_update(self, progress: float, identifier: str) -> None:
         """
         Emit the progress update signal
         """

@@ -26,10 +26,10 @@
 import logging
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QDoubleValidator, QIcon, QIntValidator
+from PySide6.QtGui import QDoubleValidator, QFont, QIcon, QIntValidator
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -49,7 +49,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 
 
 class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
@@ -57,13 +60,13 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
 
     def __init__(
         self,
-        dynamic_title="Clustering Settings",
-        available_columns=None,
-        available_methods=None,
-        column_units=None,
-        preselected_config=None,
-        method_parameters=None,
-    ):
+        dynamic_title: str = "Clustering Settings",
+        available_columns: Optional[List[str]] = None,
+        available_methods: Optional[List[str]] = None,
+        column_units: Optional[Mapping[str, Optional[str]]] = None,
+        preselected_config: Optional[Dict[str, Any]] = None,
+        method_parameters: Optional[Dict[str, Any]] = None,
+    ) -> None:
 
         super().__init__()
         self._init_walkthrough()
@@ -82,9 +85,9 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             else self.get_default_config()
         )
 
-        self.selected_columns = set()
-        self.column_item_widgets = {}
-        self.scroll_row = 0
+        self.selected_columns: Set[str] = set()
+        self.column_item_widgets: Dict[str, Dict[str, Any]] = {}
+        self.scroll_row: int = 0
 
         self.icon_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "configs", "icons"
@@ -93,7 +96,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         self.init_ui()
 
     # @log(logger=logger)
-    def init_ui(self):
+    def init_ui(self) -> None:
         main_layout = QVBoxLayout(self)
 
         # === Title ===
@@ -234,7 +237,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
 
         self._check_apply_enabled()
 
-    def _init_add_row(self):
+    def _init_add_row(self) -> None:
         self.add_button = QPushButton("Add Column")
         self.add_button.setCursor(Qt.PointingHandCursor)
         self.add_button.clicked.connect(self.add_column_item)
@@ -247,12 +250,12 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         add_row_layout.setSpacing(0)
         add_row_layout.addWidget(self.add_button)
 
-    def _place_add_row_at_bottom(self):
+    def _place_add_row_at_bottom(self) -> None:
         self.scroll_layout.addWidget(
             self.add_row_container, self.add_row_index, 0, 1, 5
         )
 
-    def get_default_config(self):
+    def get_default_config(self) -> Dict[str, Any]:
         return {
             "method": "HDBSCAN",
             "filter": "",
@@ -264,7 +267,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             "columns": [],
         }
 
-    def update_method_parameters(self, method_name):
+    def update_method_parameters(self, method_name: str) -> None:
         # Clear old parameter widgets
         while self.param_layout.count():
             widget = self.param_layout.takeAt(0).widget()
@@ -297,7 +300,9 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             self.param_layout.addWidget(label)
             self.param_layout.addWidget(line_edit)
 
-    def add_column_item_with_values(self, column, log, norm, plot):
+    def add_column_item_with_values(
+        self, column: str, log: bool, norm: bool, plot: bool
+    ) -> None:
         if len(self.column_item_widgets) >= 8:
             return
 
@@ -367,24 +372,18 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         self._check_apply_enabled()
 
     # @log(logger=logger)
-    def _bold_font(self):
+    def _bold_font(self) -> QFont:
         font = QLabel().font()
         font.setBold(True)
         return font
 
     # @log(logger=logger)
-    def update_unit_label(self, text):
-        unit = self.column_units.get(text, "")
-        self.unit_label.setText(f"({unit})" if unit else "")
-        self.unit_label.setVisible(bool(unit))
-
-    # @log(logger=logger)
-    def update_unit_label_for_row(self, text, label):
+    def update_unit_label_for_row(self, text: str, label: QLabel) -> None:
         unit = self.column_units.get(text, "")
         label.setText(f"({unit})" if unit else "")
         label.setVisible(bool(unit))
 
-    def add_column_item(self):
+    def add_column_item(self) -> None:
         if len(self.column_item_widgets) >= 8:
             QMessageBox.warning(
                 self, "Limit Reached", "You can only add up to 8 dynamic columns."
@@ -453,7 +452,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         self._place_add_row_at_bottom()
         self._check_apply_enabled()
 
-    def _move_add_row_down(self):
+    def _move_add_row_down(self) -> None:
         # Remove current add row widgets
         for col in range(5):
             item = self.scroll_layout.itemAtPosition(self.add_row_index - 1, col)
@@ -463,7 +462,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         # Reinsert at new index
         self._place_add_row_at_bottom()
 
-    def remove_column_item(self, key):
+    def remove_column_item(self, key: str) -> None:
         if key in self.column_item_widgets:
             row_index = self.column_item_widgets[key]["row"]
             for col in range(5):
@@ -472,8 +471,9 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
                     item.widget().deleteLater()
             del self.column_item_widgets[key]
             self._refresh_add_button_position()
+            self._check_apply_enabled()
 
-    def get_result(self):
+    def get_result(self) -> Dict[str, Any]:
         column_data = []
 
         # Include static default rows
@@ -492,7 +492,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             )
 
         # Include dynamically added rows
-        for column, data in self.column_item_widgets.items():
+        for data in self.column_item_widgets.values():
             current_column = data["combo"].currentText()
             column_data.append(
                 {
@@ -505,11 +505,11 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             )
 
         # Collect method-specific parameters
-        method_params = {}
+        method_params: Dict[str, str] = {}
         for i in range(self.param_layout.count()):
-            widget = self.param_layout.itemAt(i).widget()
-            if isinstance(widget, QLineEdit):
-                method_params[widget.objectName()] = widget.text()
+            param_widget = self.param_layout.itemAt(i).widget()
+            if isinstance(param_widget, QLineEdit):
+                method_params[param_widget.objectName()] = param_widget.text()
 
         result = {
             "method": self.method_combo.currentText(),
@@ -521,16 +521,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         self.logger.info(f"Clustering Settings Dialog params: {result}")
         return result
 
-    # @log(logger=logger)
-    def reset_top_inputs(self):
-        self.column_combo.setCurrentIndex(0)
-        self.unit_label.clear()
-        self.unit_label.setVisible(False)
-        self.log_cb.setChecked(False)
-        self.norm_cb.setChecked(False)
-        self.plot_cb.setChecked(False)
-
-    def _add_default_row(self, layout, row):
+    def _add_default_row(self, layout: QGridLayout, row: int) -> None:
         combo = QComboBox()
         combo.currentTextChanged.connect(self._check_apply_enabled)
         combo.addItem("Select Column")
@@ -574,7 +565,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             }
         )
 
-    def _check_apply_enabled(self):
+    def _check_apply_enabled(self) -> None:
         if not hasattr(self, "plot_warning_label"):
             return
         plot_checked = 0
@@ -615,17 +606,17 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             self.plot_warning_label.setVisible(False)
             self.apply_button.setEnabled(True)
 
-    def _refresh_add_button_position(self):
+    def _refresh_add_button_position(self) -> None:
         self.scroll_layout.removeWidget(self.add_row_container)
         self.add_row_index = (
             max([w["row"] for w in self.column_item_widgets.values()] + [1]) + 1
         )
         self._place_add_row_at_bottom()
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return "ClusteringSettingsDialog"
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [
             (
                 "Choose Method",

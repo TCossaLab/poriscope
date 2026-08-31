@@ -23,11 +23,10 @@
 # Contributors:
 # Kyle Briggs
 
-import contextlib
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Generator, List, Optional, Tuple, cast
+from typing import Any, Dict, Generator, List, Optional, Tuple, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -53,12 +52,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     # public API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
-    def get_llm_prompt(self):
+    def get_llm_prompt(self) -> Optional[str]:
         """
         Return a prompt that will tell the LLM the structure of the database to be queried
 
-        :return: a prompt that gives an LLM context for the database and  how to query it
-        :rtype: str
+        :return: a prompt that gives an LLM context for the database and how to query it, or None on failure
+        :rtype: Optional[str]
         """
         conn = None
         cursor = None
@@ -139,12 +138,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
 
         :param channel: channel ID
-        :type channel: int
+        :type channel: Optional[int]
         """
         # database connection is not persistent between calls so no action needed here closing
         pass
@@ -163,28 +162,33 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :return: List of experiment names, or None on failure
         :rtype: Optional[List[str]]
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                if experiment_id is None:
-                    query = "SELECT name FROM experiments;"
-                    cursor.execute(query)
-                    experiment_names = [row[0] for row in cursor.fetchall()]
-                    self.logger.debug(
-                        f"All experiment names fetched: {experiment_names}"
-                    )
-                    return list(set(experiment_names)) if experiment_names else None
-                else:
-                    query = "SELECT name FROM experiments WHERE id=?;"
-                    cursor.execute(query, (experiment_id,))
-                    experiment_name = cursor.fetchone()
-                    self.logger.debug(
-                        f"Experiment name for id {experiment_id}: {experiment_name}"
-                    )
-                    return [experiment_name[0]] if experiment_name else None
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            if experiment_id is None:
+                query = "SELECT name FROM experiments;"
+                cursor.execute(query)
+                experiment_names = [row[0] for row in cursor.fetchall()]
+                self.logger.debug(f"All experiment names fetched: {experiment_names}")
+                return list(set(experiment_names)) if experiment_names else None
+            else:
+                query = "SELECT name FROM experiments WHERE id=?;"
+                cursor.execute(query, (experiment_id,))
+                experiment_name = cursor.fetchone()
+                self.logger.debug(
+                    f"Experiment name for id {experiment_id}: {experiment_name}"
+                )
+                return [experiment_name[0]] if experiment_name else None
         except sqlite3.Error as e:
             self.logger.error(f"Database error fetching experiment names: {e}")
             return None
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
     @log(logger=logger)
     @override
@@ -227,7 +231,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def get_event_counts_by_experiment_and_channel(self, experiment=None, channel=None):
+    def get_event_counts_by_experiment_and_channel(
+        self, experiment: Optional[str] = None, channel: Optional[int] = None
+    ) -> Optional[int]:
         """
         Return the number of events in the database matching the experiment name and channel name.
         If no channel name is provided, count across all channels for that experiment.
@@ -238,8 +244,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param channel: The index of the channel
         :type channel: Optional[int]
 
-        :return: event count matching the conditions
-        :rtype: int
+        :return: event count matching the conditions, or None on failure
+        :rtype: Optional[int]
         """
         conn = None
         cursor = None
@@ -326,12 +332,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     @override
     def get_column_type(self, column_name: str) -> Optional[str]:
         """
+        Retrieve the datatype associated with a specific column name or None on failure
+
         :param column_name: The name of the column.
         :type column_name: str
         :return: The datatype of the column.
         :rtype: Optional[str]
-
-        **Purpose:** Retrieve the datatype associated with a specific column name or None on failure
         """
         conn = None
         cursor = None
@@ -448,13 +454,13 @@ class SQLiteDBLoader(MetaDatabaseLoader):
     @override
     def get_table_by_column(self, column: str) -> Optional[str]:
         """
+        Retrieve the name of the table in which the given column is found, or None on failure
+
         :param column: The name of the column.
         :type column: str
 
-        :return: List of table names.
-        :rtype: List[str]
-
-        **Purpose:** Retrieve the names of the table in which the given column is found, or None on failure
+        :return: The name of the table containing the column, or None on failure.
+        :rtype: Optional[str]
         """
         conn = None
         cursor = None
@@ -491,19 +497,21 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype:  Tuple[bool, str]
         """
         explain_query = f"EXPLAIN QUERY PLAN {query}"
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                with contextlib.closing(conn.cursor()) as cursor:
-                    cursor.execute(explain_query)
-                    result = (
-                        cursor.fetchall()
-                    )  # This will not run the query but provide the query plan
-                    if not result:
-                        return (
-                            False,
-                            "Invalid query\n\n{query}\n\n no useful debugging information provided",
-                        )
-                    return True, ""
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(explain_query)
+            result = (
+                cursor.fetchall()
+            )  # This will not run the query but provide the query plan
+            if not result:
+                return (
+                    False,
+                    f"Invalid query\n\n{query}\n\n no useful debugging information provided",
+                )
+            return True, ""
         except sqlite3.Error as e:
             return False, f"Invalid query\n\n{query}\n\n{str(e)}"
         finally:
@@ -523,6 +531,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
         :return: True if the operation succeeded, False otherwise
         :rtype: bool
+        :raises sqlite3.Error: if a database operation fails
+        :raises ValueError: if a value error occurs while running the queries
+        :raises Exception: if an unexpected error occurs while running the queries
         """
         conn = None
         cursor = None
@@ -539,21 +550,25 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error in alter_database: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT alter_database")
+                conn.execute("RELEASE SAVEPOINT alter_database")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:
             self.logger.error(f"Value error in alter_database: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT alter_database")
+                conn.execute("RELEASE SAVEPOINT alter_database")
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error in alter_database: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT alter_database")
+                conn.execute("RELEASE SAVEPOINT alter_database")
             raise
         else:
             success = True
             if conn:
+                conn.execute("RELEASE SAVEPOINT alter_database")
                 conn.commit()
         finally:
             if cursor:
@@ -582,7 +597,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype: bool
 
         :raises ValueError: If the DataFrame does not contain an 'id' column or if the specified table does not exist.
-        :raises IOError: If any write-related error occurs
+        :raises sqlite3.Error: If a database operation fails
+        :raises Exception: If an unexpected error occurs while adding the columns
         """
 
         if "id" not in df.columns:
@@ -634,10 +650,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                         "INSERT INTO columns (name, table_name, units) VALUES (?, ?, ?);",
                         (col, table_name, unit),
                     )  # Assuming no units info
-                except sqlite3.IntegrityError:
+                except sqlite3.IntegrityError as e:
                     raise ValueError(
                         f"Column '{col}' already exists in the 'columns' table."
-                    )
+                    ) from e
 
             set_clause = ", ".join([f"{col} = ?" for col in new_cols])
             sql_update = f"UPDATE {table_name} SET {set_clause} WHERE id = ?"
@@ -655,23 +671,27 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error in add_columns_to_table: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT write_new_columns")
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:
             self.logger.error(f"Value error in add_columns_to_table: {e}")
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT write_new_columns")
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
             raise
         except Exception as e:
             self.logger.error(
                 f"Unexpected error in add_columns_to_table: {e}", exc_info=True
             )
             if conn:
-                conn.rollback()
+                conn.execute("ROLLBACK TO SAVEPOINT write_new_columns")
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
             raise
         else:
             success = True
             if conn:
+                conn.execute("RELEASE SAVEPOINT write_new_columns")
                 conn.commit()
         finally:
             if cursor:
@@ -694,6 +714,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :type channel: int
         :return: sampling rate for the specific expreiment-channel combination, or None on failure
         :rtype: Optional[float]
+        :raises ValueError: if no samplerate could be found for the given experiment and channel
         """
         conn = None
         cursor = None
@@ -726,9 +747,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 conn.close()
 
     @log(logger=logger)
-    @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
@@ -756,7 +780,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Dict[str, List[str]]
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
         :return: the dict that must be filled in to initialize the filter
         :rtype: Dict[str, Dict[str, Any]]
         """
@@ -837,8 +863,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param query: query to  run on the database
         :type query: str
 
-        :return: A generator that feeds out onne row at a time in the form of a single-line dataframe
-        :rtype: Generator[pd.DataFrame, None, None]
+        :return: None. This is a generator that yields one row at a time in the form
+            of a single-line pd.DataFrame; it returns None once exhausted or on failure.
+        :rtype: None
         """
         conn = None
         cursor = None
@@ -864,19 +891,34 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _load_event_data(self, query):
+    def _load_event_data(self, query: str) -> Generator[
+        Tuple[
+            int,
+            int,
+            int,
+            int,
+            float,
+            int,
+            int,
+            npt.NDArray[np.float64],
+            npt.NDArray[np.float64],
+            npt.NDArray[np.float64],
+        ],
+        bool,
+        None,
+    ]:
         """
         Load data and return a generator that gives a one-row dataframe corresponding one row returned by query
         Make sure you exhaust or explicitly abort the generator, or else connections will remain open
-        You can assume that the query was generated by self.construct_event_data_query() and will have 10 colums:
-        event_id, channel_id, experiment_id, data_format, baseline, stdev, padding_before, padding_after, samplerate, data
-        where data is a bytes object to be interpreted using data_format
+        You can assume that the query was generated by self.construct_event_data_query() and will have 11 columns, in this order:
+        db_id, event_id, channel_id, experiment_id, data_format, samplerate, padding_before, padding_after, raw_data, filtered_data, fit_data
+        where raw_data, filtered_data, and fit_data are bytes objects to be interpreted using data_format
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
 
-        :return: a generator that returns primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, samplerate, and three numpy arrays with raw event data, filtered event data, and fitted event data
-        :rtype: Generator[Dict[str,Union[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]], bool, None]
+        :return: a generator that yields tuples of (primary database id, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, raw event data, filtered event data, and fitted event data), and accepts an abort boolean sent back via generator.send()
+        :rtype: Generator[Tuple[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]], bool, None]
         """
         conn = None
         cursor = None
@@ -927,7 +969,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                         )
                     except Exception:
                         self.logger.info(
-                            "Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
+                            f"Unable to interpret event data for event {event_id} in channel {channel_id} from experiment {experiment_id}"
                         )
                         continue
                     abort = bool(abort)
@@ -947,7 +989,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def _finalize_initialization(self):
+    def _finalize_initialization(self) -> None:
         """
         Apply the provided paramters and intialize any internal structures needed
         Should Raise if initialization fails.
@@ -1033,7 +1075,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         Maps pandas dtype to SQLite data type.
 
         :param dtype: The pandas dtype
-        :type dtype: str
+        :type dtype: np.dtype
 
         :return: The corresponding SQLite data type as a string.
         :rtype: str
@@ -1061,8 +1103,11 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :rtype: None
         :raises sqlite3.Error: If a database error occurs during table creation or population.
         """
+        conn = None
+        cursor = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            conn = sqlite3.connect(self.db_path)
+            with conn:
                 cursor = conn.cursor()
 
                 cursor.execute(
@@ -1122,3 +1167,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         except sqlite3.Error as e:
             self.logger.error(f"Failed to ensure event_counts table: {e}")
             raise
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()

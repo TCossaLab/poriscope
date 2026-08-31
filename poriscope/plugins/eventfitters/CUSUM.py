@@ -25,7 +25,7 @@
 
 import logging
 import warnings
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -53,16 +53,9 @@ class CUSUM(MetaEventFitter):
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone=False,
-    ):
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -101,6 +94,13 @@ class CUSUM(MetaEventFitter):
             return settings
 
         which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "pA"}
@@ -111,9 +111,12 @@ class CUSUM(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
+
+        :param channel: the channel identifier
+        :type channel: Optional[int]
         """
         pass
 
@@ -130,10 +133,9 @@ class CUSUM(MetaEventFitter):
         :param index: the index of the target event
         :type index: int
 
-        :return: numpy array of fitted data for the event, or None
+        :return: numpy array of fitted data for the event, or None if fitting is not complete or the event was rejected
         :rtype: Optional[npt.NDArray[np.float64]]
-
-        :raises RuntimeError: if fitting is not complete yet
+        :raises AttributeError: if this instance is not linked to a MetaEventLoader
         """
         if self.sublevel_metadata == {} or not self.eventfitting_status.get(channel):
             self.logger.info(
@@ -141,9 +143,7 @@ class CUSUM(MetaEventFitter):
             )
             return None
         try:
-            if self.eventloader is not None:
-                self.eventloader.get_samplerate(channel)
-            else:
+            if self.eventloader is None:
                 raise AttributeError(
                     "CUSUM cannot operate without a linked MetaEventLoader"
                 )
@@ -192,17 +192,15 @@ class CUSUM(MetaEventFitter):
     @override
     def _locate_sublevel_transitions(
         self,
-        data,
-        samplerate,
-        padding_before,
-        padding_after,
-        baseline_mean,
-        baseline_std,
-    ):
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+    ) -> Optional[List[Any]]:
         """
-        Get a list of indices corresponding to the starting point of all sublevels within an event. Will be pre-pended with 0 if 0 is not the first entry.
-        Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
-        Raising an an acceptable handler.
+        Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size normalized by the local baseline standard deviation, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
@@ -223,14 +221,13 @@ class CUSUM(MetaEventFitter):
         :rtype: Optional[List[Any]]
 
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
-        :raises AttributeError: if the fitting method cannot operate without provision of specific padding and baseline metadata and cannot rescue itself. This will cause a stop to processing of the dataset.
         """
 
         if baseline_std is None:  # the rest of the args can be None without issue
             if padding_before is not None:
-                baseline_std = np.std(data[:padding_before])
+                baseline_std = float(np.std(data[:padding_before]))
             elif padding_after is not None:
-                baseline_std = np.std(data[-padding_after:])
+                baseline_std = float(np.std(data[-padding_after:]))
             else:
                 raise ValueError(
                     "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
@@ -395,8 +392,13 @@ class CUSUM(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_sublevel_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_starts
-    ):
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_starts: List[Any],
+    ) -> Dict[str, npt.NDArray[Numeric]]:
         """
         Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
 
@@ -409,11 +411,17 @@ class CUSUM(MetaEventFitter):
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
         :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
-        :type sublevel_starts: List[int]
+        :type sublevel_starts: List[Any]
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
         :rtype: Dict[str, npt.NDArray[Numeric]]
+        :raises ValueError: if baseline_std is None, or if the sublevel current at the start and end of the event differ by more than twice the local baseline standard deviation (baseline mismatch)
         """
+        if baseline_std is None:
+            raise ValueError(
+                "baseline_std must be provided to populate sublevel metadata; it cannot be recovered here if the event was reported without it"
+            )
+
         sublevel_metadata = {}
 
         num_states = len(sublevel_starts) - 1
@@ -517,12 +525,13 @@ class CUSUM(MetaEventFitter):
 
             # get sublevel start times
             sublevel_metadata["sublevel_start_times"] = np.array(
-                sublevel_starts[:-1] * dt_us, dtype=np.float64
+                np.asarray(sublevel_starts[:-1]) * dt_us,
+                dtype=np.float64,
             )
 
             # get sublevel end times
             sublevel_metadata["sublevel_end_times"] = np.array(
-                sublevel_starts[1:] * dt_us, dtype=np.float64
+                np.asarray(sublevel_starts[1:]) * dt_us, dtype=np.float64
             )
 
             # get the maximal deviation from the event baseline for each sublevel
@@ -570,8 +579,13 @@ class CUSUM(MetaEventFitter):
     @log(logger=logger)
     @override
     def _populate_event_metadata(
-        self, data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-    ):
+        self,
+        data: npt.NDArray[np.float64],
+        samplerate: float,
+        baseline_mean: Optional[float],
+        baseline_std: Optional[float],
+        sublevel_metadata: Dict[str, List[Numeric]],
+    ) -> Dict[str, Union[int, float, str, bool]]:
         """
         Assemble a list of metadata to save in the event database later. Note that keys 'start_time_s' and 'index' are already handled in the base class and should not be touched here.
 
@@ -587,9 +601,9 @@ class CUSUM(MetaEventFitter):
         :type sublevel_metadata: Dict[str, List[Numeric]]
 
         :return: a dict of event metadata values
-        :rtype: Dict[str, float]
+        :rtype: Dict[str, Union[int, float, str, bool]]
         """
-        event_metadata = {}
+        event_metadata: Dict[str, Union[int, float, str, bool]] = {}
 
         event_metadata["duration"] = np.sum(
             sublevel_metadata["sublevel_duration"][1:-1]
@@ -609,13 +623,13 @@ class CUSUM(MetaEventFitter):
         )
         event_metadata["max_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["min_blockage_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
+        ][1:-1][np.argmin(sublevel_metadata["sublevel_blockage"][1:-1])]
         event_metadata["max_deviation_duration"] = sublevel_metadata[
             "sublevel_duration"
-        ][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
+        ][1:-1][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
         event_metadata["baseline_current"] = (
             sublevel_metadata["sublevel_current"][0]
             * sublevel_metadata["sublevel_duration"][0]
@@ -654,22 +668,23 @@ class CUSUM(MetaEventFitter):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
         """
         pass
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_types(self):
+    def _define_event_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_event_metadata()
         All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
-        metadata_types = {}
+        metadata_types: Dict[str, Type[Union[int, float, str, bool]]] = {}
         metadata_types["duration"] = float
         metadata_types["fitted_ecd"] = float
         metadata_types["raw_ecd"] = float
@@ -685,7 +700,9 @@ class CUSUM(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_sublevel_metadata_types(self):
+    def _define_sublevel_metadata_types(
+        self,
+    ) -> Dict[str, Type[Union[int, float, str, bool]]]:
         """
         Build a dict of sublevel metadata along with associated datatypes for use by the database writer downstream.
         Keys must match columns defined in _populate_sublevel_metadata()
@@ -693,9 +710,9 @@ class CUSUM(MetaEventFitter):
         it should not include the list element
 
         :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :rtype: Dict[str, Type[Union[int, float, str, bool]]]
         """
-        metadata_types = {}
+        metadata_types: Dict[str, Type[Union[int, float, str, bool]]] = {}
         metadata_types["sublevel_current"] = float
         metadata_types["sublevel_stdev"] = float
         metadata_types["sublevel_blockage"] = float
@@ -709,16 +726,15 @@ class CUSUM(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_event_metadata_units(self):
+    def _define_event_metadata_units(self) -> Dict[str, Optional[str]]:
         """
-        Build a dict of metadata along with associated datatypes for use by the database writer downstream.
-        Keys must match columns defined in _populate_event_metadata()
-        All of this metadata must be populated during fitting. Options for dtypes are int, float, str, bool
+        Build a dict of metadata units, or None if unitless. Keys must match columns defined in _populate_event_metadata()
+        All of this metadata must be populated during fitting.
 
-        :return: a dict of metadata keys and associated base dtypes
-        :rtype: Dict[str, Union[int, float, str, bool]]
+        :return: a dict of metadata keys and associated units
+        :rtype: Dict[str, Optional[str]]
         """
-        metadata_units = {}
+        metadata_units: Dict[str, Optional[str]] = {}
         metadata_units["duration"] = "us"
         metadata_units["fitted_ecd"] = "pC"
         metadata_units["raw_ecd"] = "pC"
@@ -734,7 +750,7 @@ class CUSUM(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _define_sublevel_metadata_units(self):
+    def _define_sublevel_metadata_units(self) -> Dict[str, Optional[str]]:
         """
         Build a dict of sublevel metadata units , or None if unitless. Keys must match columns defined in _populate_sublevel_metadata()
         All of this metadata must be populated during fitting.
@@ -743,7 +759,7 @@ class CUSUM(MetaEventFitter):
         :return: a dict of metadata keys and associated base dtypes
         :rtype: Dict[str, Optional[str]]
         """
-        metadata_units = {}
+        metadata_units: Dict[str, Optional[str]] = {}
         metadata_units["sublevel_current"] = "pA"
         metadata_units["sublevel_stdev"] = "pA"
         metadata_units["sublevel_blockage"] = "pA"
@@ -757,11 +773,28 @@ class CUSUM(MetaEventFitter):
 
     # utility functions
     @log(logger=logger)
-    def _calculate_threshold(self, length, step, min_threshold=0.4, max_threshold=10.0):
+    def _calculate_threshold(
+        self,
+        length: int,
+        step: float,
+        min_threshold: float = 0.4,
+        max_threshold: float = 10.0,
+    ) -> float:
         """
         Calculate an optimal threshold value based on signal length and step size.
 
         Exact Python port of the C functions get_cusum_threshold and ARL.
+
+        :param length: the length of the event data, in samples
+        :type length: int
+        :param step: the CUSUM step size, in units of the local baseline standard deviation
+        :type step: float
+        :param min_threshold: the smallest threshold value to consider, default 0.4
+        :type min_threshold: float
+        :param max_threshold: the largest threshold value to consider, default 10.0
+        :type max_threshold: float
+        :return: the calculated optimal threshold
+        :rtype: float
         """
         # Map the original Python interface variables to match C parameters
         sigma = step
@@ -769,7 +802,7 @@ class CUSUM(MetaEventFitter):
         length *= 2
 
         # Inner helper to replicate the C ARL() function
-        def ARL(length, s, m, h):
+        def ARL(length: float, s: float, m: float, h: float) -> float:
             term = h / s + 1.166
             return (np.exp(-2.0 * m * term) - 1.0 + 2.0 * m * term) / (
                 2.0 * m * m

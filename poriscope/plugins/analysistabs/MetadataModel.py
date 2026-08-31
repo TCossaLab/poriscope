@@ -43,5 +43,5 @@ class MetadataModel(MetaModel):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         pass

@@ -12,6 +12,13 @@ To build a data plugin, you must:
 3. Provide an implementation for all abstract classes required by that base classes that respects the API defined in the base class
 4. Comply exactly with the API (argument names, order of arguments, and return types) required by the base class
 
+.. important::
+
+   One decision is easy to overlook and expensive to get wrong: Poriscope runs **one worker
+   thread per channel**, so several threads can call into your plugin instance at once. If
+   yours cannot survive that, it has to say so. Read
+   :ref:`serial_channel_operations` before you finish your implementation.
+
 .. note::
 
 	Implementation of a data plugin will feel incomplete - it is! Much of the functionality is held together in the base class itself. All you are doing is filling in the blanks where the poriscope developers cannot reasonable predict how a particular piece of information can be extracted without knowing the specific thing you are trying to build. While not strictly required, we encourage plugin developers to familiarize themselves with all of the functinality in the base class - it may help with your implementation to know how the functions you are filling in are being used, and if you're lucky, you may find a bug that we missed.
@@ -19,6 +26,14 @@ To build a data plugin, you must:
 As long as the API is respected (order and type of arguments, return type, and any limits on the circumstances in which your plugin should `Raise`), it is sometimes acceptable to override functions that are implemented in the base class. That being said, while we have done our best to predict common behaviors, it is possible that overrides of non-anstract classes will be necessary. If you do, however, be sure that you understand the base class implementation. In many cases, it is strongly suggested that you call ``super().[function_name](...)`` and extend the implementation from there, rather than overriding completely or duplicating code, and never, ever change the arguments, argument types, or return types of public functions.
 
 To assist with quality control, any contributions to the poriscope repository will need to pass our tests and type checks. To assist with this, functions should be decorated with the ``@override`` tag to tell our type checker what to expect, and should have detailed docstrings that explain the you are doing in your function. Plugins will only be added to the repository when fully compliant, but we are happy to help if you get stuck in the process.
+
+.. tip::
+
+   "Our tests and type checks" means something specific and checkable, not a vague
+   standard a reviewer applies by eye. See :ref:`quality_control` for exactly what
+   runs (formatting, typing, docstring consistency, and plugin interface compliance
+   testing), and work through :ref:`pre_pr_checklist` before you open your pull
+   request — it will save you a review round-trip.
 
 .. toctree::
    :maxdepth: 1
@@ -32,5 +47,6 @@ To assist with quality control, any contributions to the poriscope repository wi
    meta_event_fitter
    meta_database_writer
    meta_database_loader
+   serial_channel_operations
    
    

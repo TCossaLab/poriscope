@@ -26,7 +26,7 @@ Before installing Poriscope, make sure you have the following installed:
 
       python --version
 
-   If not installed, download it here: https://www.python.org/downloads/release/python-31210/
+   If not installed, download it here: https://www.python.org/downloads/
 
    .. important::
 
@@ -69,7 +69,7 @@ This allows live code edits without reinstallation.
 Installing the Stable Version
 -----------------------------
 
-To install the **latest stable version** (recommended for general users — **does not track future updates unless reinstalled manually**) see :ref:`stable_release
+To install the **latest stable version** (recommended for general users — **does not track future updates unless reinstalled manually**) see :ref:`stable_release`.
 
 Launching Poriscope
 -------------------

@@ -24,17 +24,24 @@
 # Kyle Briggs
 
 import abc
+from typing import Any, Dict, Tuple, Type
 
 from PySide6.QtWidgets import QWidget
 
 
 class QWidgetABCMeta(abc.ABCMeta, type(QWidget)):  # type: ignore[misc]
-    def __new__(mcls, name, bases, ns, **kw):
+    def __new__(
+        mcls,
+        name: str,
+        bases: Tuple[type, ...],
+        ns: Dict[str, Any],
+        **kw: Any,
+    ) -> Type[Any]:
         cls = super().__new__(mcls, name, bases, ns, **kw)
         # abc._abc_init(cls)
         return cls
 
-    def __call__(cls, *args, **kw):
+    def __call__(cls, *args: Any, **kw: Any) -> Any:
         if cls.__abstractmethods__:
             raise TypeError(
                 f"Can't instantiate abstract class {cls.__name__} without an implementation for abstract methods {set(cls.__abstractmethods__)}"

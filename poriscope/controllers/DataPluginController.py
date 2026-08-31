@@ -27,7 +27,7 @@
 
 import copy
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -43,20 +43,25 @@ class DataPluginController(QObject):
 
     update_available_plugins = Signal(str, list)
     update_plugin_history = Signal(dict, str)
-    get_settings_from_history = Signal(str, str)
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, available_plugin_classes, data_server) -> None:
+    def __init__(
+        self,
+        available_plugin_classes: Mapping[str, Mapping[str, type]],
+        data_server: str,
+        history_lookup: Callable[[str, str], Optional[Dict[str, Any]]],
+    ) -> None:
         super().__init__()
         self.view = DataPluginView()
         self.model = DataPluginModel(available_plugin_classes)
         self.data_server = data_server
         self.plugin_manager = None
+        self._history_lookup = history_lookup
 
     @log(logger=logger)
     @Slot(str, str)
-    def edit_plugin_settings(self, metaclass: str, key: str):
+    def edit_plugin_settings(self, metaclass: str, key: str) -> None:
         """
         Retrieve plugin details and allow editing of the plugin's settings in the view.
         """
@@ -69,21 +74,30 @@ class DataPluginController(QObject):
             else:
                 self.edit_plugin(metaclass, key, settings)
 
-    def edit_plugin(self, metaclass, key, settings):
+    def edit_plugin(self, metaclass: str, key: str, settings: dict) -> None:
         """
         Edit and apply settings for an existing plugin
 
         :param metaclass: The metaclass of the plugin.
         :type metaclass: str
-        :param subclass: The subclass of the plugin, defaults to None.
-        :type subclass: Optional[str]
-        :raises Exception: If unable to instantiate the plugin.
+        :param key: The current key of the plugin instance being edited.
+        :type key: str
+        :param settings: The plugin's current settings dict, used to populate the edit dialog.
+        :type settings: dict
+        :raises RuntimeError: if a registered dependent has no live plugin
+            instance. Caught by the per-dependent handler in this method and
+            reported to the user; it never propagates to the caller.
         """
 
         app_settings = copy.deepcopy(settings)
         instance = self.model.get_plugin_instance(metaclass, key)
+        if instance is None:
+            self.logger.warning(
+                f"Unable to edit plugin {key}: no such instance under {metaclass}"
+            )
+            return
 
-        for settings_key, val in app_settings.items():
+        for settings_key in app_settings:
             if settings_key in self.model.get_available_metaclasses():
                 app_settings[settings_key]["Type"] = str
                 app_settings[settings_key][
@@ -92,7 +106,7 @@ class DataPluginController(QObject):
 
         history: Dict[str, Any] = {}
 
-        result = self.view.get_user_settings(
+        new_settings, new_key, delete_requested = self.view.get_user_settings(
             app_settings,
             key,
             self.data_server,
@@ -101,16 +115,12 @@ class DataPluginController(QObject):
             editable_source_plugins=False,
             source_plugins=self.model.get_available_metaclasses(),
         )
-        if result == (None, None):
-            return
 
         parents = instance.get_parents()
         dependents = instance.get_dependents()
-        for pmetaclass, pkey in parents:
-            pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
-            pinstance.unregister_dependent(metaclass, key)
 
-        if result == "delete":
+        if delete_requested:
+            self._unregister_parent_dependent_links(metaclass, key, parents)
             if not dependents:
                 self.model.unregister_plugin(metaclass, key)
                 self.update_available_plugins.emit(
@@ -118,17 +128,25 @@ class DataPluginController(QObject):
                 )
                 self.update_plugin_history.emit(history, key)
             else:
-                dependents = [dependent[1] for dependent in dependents]
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
+                dependent_keys = [dependent[1] for dependent in dependents]
                 self.logger.info(
-                    f"Unable to delete {key} since it has dependents {dependents}"
+                    f"Unable to delete {key} since it has dependents {dependent_keys}"
                 )
                 self.add_text_to_display.emit(
-                    f"Unable to delete {key} since it has dependents {dependents}",
+                    f"Unable to delete {key} since it has dependents {dependent_keys}",
                     self.__class__.__name__,
                 )
+        elif new_settings is None or new_key is None:
+            # cancelled, or dismissed with Esc or the window close button, both
+            # of which reach QDialog.reject() without running a button handler
+            return
         else:
+            self._unregister_parent_dependent_links(metaclass, key, parents)
             old_key = instance.get_key()
-            settings, key = result
+            settings, key = new_settings, new_key
 
             # Global plugin key collision check
             if key != old_key:
@@ -141,24 +159,42 @@ class DataPluginController(QObject):
                             f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
                             "DataPluginController",
                         )
+                        self._restore_parent_dependent_links(
+                            metaclass, instance.get_key(), parents
+                        )
                         return
 
                 for dmetaclass, dkey in dependents:
-                    dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
-                    dinstance.unregister_parent(metaclass, old_key)
-                    dinstance.register_parent(metaclass, key)
-                    dhistory = {}
-                    dhistory["key"] = dinstance.get_key()
-                    dhistory["metaclass"] = dmetaclass
-                    dhistory["subclass"] = dinstance.__class__.__name__
-                    dsettings = dinstance.get_raw_settings()
-                    dhistory["settings"] = dsettings
-                    dsettings[metaclass]["Value"] = key
-                    dinstance.update_raw_settings(metaclass, key)
-                    if dsettings[metaclass]["Options"] is not None:
-                        dsettings[metaclass]["Options"].append(key)
-                        dsettings[metaclass]["Options"].remove(old_key)
-                    self.update_plugin_history.emit(dhistory, "")
+                    try:
+                        dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
+                        if dinstance is None:
+                            raise RuntimeError(
+                                f"No plugin instance found for {dmetaclass}:{dkey}"
+                            )
+                        dinstance.unregister_parent(metaclass, old_key)
+                        dinstance.register_parent(metaclass, key)
+                        dhistory: Dict[str, Any] = {}
+                        dhistory["key"] = dinstance.get_key()
+                        dhistory["metaclass"] = dmetaclass
+                        dhistory["subclass"] = dinstance.__class__.__name__
+                        dsettings = dinstance.get_raw_settings()
+                        dhistory["settings"] = dsettings
+                        dsettings[metaclass]["Value"] = key
+                        dinstance.update_raw_settings(metaclass, key)
+                        if dsettings[metaclass]["Options"] is not None:
+                            if old_key in dsettings[metaclass]["Options"]:
+                                dsettings[metaclass]["Options"].remove(old_key)
+                            if key not in dsettings[metaclass]["Options"]:
+                                dsettings[metaclass]["Options"].append(key)
+                        self.update_plugin_history.emit(dhistory, "")
+                    except Exception as e:
+                        self.logger.error(
+                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}"
+                        )
+                        self.add_text_to_display.emit(
+                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}",
+                            self.__class__.__name__,
+                        )
                 try:
                     instance.set_key(key)
                 except Exception as e:
@@ -168,6 +204,9 @@ class DataPluginController(QObject):
                     self.add_text_to_display.emit(
                         f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
                         self.__class__.__name__,
+                    )
+                    self._restore_parent_dependent_links(
+                        metaclass, instance.get_key(), parents
                     )
                     return
 
@@ -202,6 +241,9 @@ class DataPluginController(QObject):
                     f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
                     self.__class__.__name__,
                 )
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
+                )
                 return
 
             # apply the settings to the new plugin object
@@ -214,6 +256,9 @@ class DataPluginController(QObject):
                 self.add_text_to_display.emit(
                     f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
                     self.__class__.__name__,
+                )
+                self._restore_parent_dependent_links(
+                    metaclass, instance.get_key(), parents
                 )
                 return
             else:
@@ -228,8 +273,55 @@ class DataPluginController(QObject):
                 )
 
     @log(logger=logger)
+    def _unregister_parent_dependent_links(
+        self, metaclass: str, key: str, parents: Set[Tuple[str, str]]
+    ) -> None:
+        """
+        Drop this plugin from the dependent list of each of its parents.
+
+        Done upfront in `edit_plugin` so that the edit sees an accurate
+        dependency graph; `_restore_parent_dependent_links` undoes it on every
+        path that aborts before `apply_settings` re-establishes the link.
+
+        :param metaclass: The metaclass of the plugin being unregistered.
+        :type metaclass: str
+        :param key: The key of the plugin being unregistered.
+        :type key: str
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: Set[Tuple[str, str]]
+        """
+        for pmetaclass, pkey in parents:
+            pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
+            if pinstance:
+                pinstance.unregister_dependent(metaclass, key)
+
+    @log(logger=logger)
+    def _restore_parent_dependent_links(
+        self, metaclass: str, key: str, parents: Set[Tuple[str, str]]
+    ) -> None:
+        """
+        Re-register this plugin as a dependent on each of its parents.
+
+        Used to undo the upfront `unregister_dependent` calls in `edit_plugin`
+        when the edit is aborted before `apply_settings` re-establishes the
+        link, since the plugin instance and its actual parent usage are
+        otherwise unchanged.
+
+        :param metaclass: The metaclass of the plugin being restored.
+        :type metaclass: str
+        :param key: The key of the plugin being restored.
+        :type key: str
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: Set[Tuple[str, str]]
+        """
+        for pmetaclass, pkey in parents:
+            pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
+            if pinstance:
+                pinstance.register_dependent(metaclass, key)
+
+    @log(logger=logger)
     @Slot(str, str)
-    def delete_plugin(self, metaclass: str, key: str):
+    def delete_plugin(self, metaclass: str, key: str) -> None:
         """
         Delete a plugin instance if it has no dependents.
 
@@ -256,6 +348,9 @@ class DataPluginController(QObject):
             # Delete from model
             self.model.unregister_plugin(metaclass, key)
 
+            # Remove from persisted plugin history
+            self.update_plugin_history.emit({}, key)
+
             # Notify UI
             self.update_available_plugins.emit(
                 metaclass, self.model.get_instantiated_plugins_list()[metaclass]
@@ -275,6 +370,78 @@ class DataPluginController(QObject):
             )
 
     @log(logger=logger)
+    def set_available_plugins(
+        self, available_plugin_classes: Mapping[str, Mapping[str, type]]
+    ) -> None:
+        """
+        Pass a re-scanned set of plugin classes down to the model.
+
+        :param available_plugin_classes: Dict of available plugin classes, keyed
+            by metaclass then subclass name.
+        :type available_plugin_classes: Mapping[str, Mapping[str, type]]
+        """
+        self.model.set_available_plugins(available_plugin_classes)
+
+    def _instantiated_keys(self) -> List[Tuple[str, str]]:
+        """
+        Every instantiated plugin as (metaclass, key) pairs.
+
+        :return: One pair per live plugin instance.
+        :rtype: List[Tuple[str, str]]
+        """
+        return [
+            (metaclass, key)
+            for metaclass, keys in self.model.get_instantiated_plugins_list().items()
+            for key in keys
+        ]
+
+    @log(logger=logger)
+    def delete_all_plugins(self) -> List[str]:
+        """
+        Delete every instantiated plugin, dependents before their parents.
+
+        Order is not optional: :py:meth:`delete_plugin` refuses any plugin that
+        still has dependents, so a single pass in arbitrary order would leave
+        most of the graph behind. Each round deletes whatever currently has no
+        dependents, which frees the next layer up, until nothing is left.
+
+        The loop stops when a round removes nothing, and returns whatever is
+        left so the caller can report a partial clear rather than announce
+        success. Three things can leave survivors: a dependency cycle, a stale
+        registration leaving a parent holding a dependent that no longer exists,
+        and a key listed with no instance behind it.
+
+        That last case is why the guard counts what was actually removed rather
+        than what looked removable. A key whose instance is missing reports no
+        dependents, so it appears deletable every round, while delete_plugin
+        declines it and leaves the key in place - a guard watching for "nothing
+        looks deletable" would never fire and the loop would spin forever.
+
+        :return: Keys of any plugins that could not be deleted, empty if all were.
+        :rtype: List[str]
+        """
+
+        while True:
+            before = self._instantiated_keys()
+            if not before:
+                break
+            for metaclass, key in before:
+                instance = self.model.get_plugin_instance(metaclass, key)
+                if instance is not None and not instance.get_dependents():
+                    self.delete_plugin(metaclass, key)
+            if self._instantiated_keys() == before:
+                break  # nothing came off this round; it will not on the next
+
+        survivors = [
+            key
+            for keys in self.model.get_instantiated_plugins_list().values()
+            for key in keys
+        ]
+        if survivors:
+            self.logger.warning(f"Unable to delete plugins: {survivors}")
+        return survivors
+
+    @log(logger=logger)
     def handle_exit(self) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
@@ -282,7 +449,7 @@ class DataPluginController(QObject):
         self.model.handle_exit()
 
     @log(logger=logger)
-    def get_plugin_instance(self, metaclass, key):
+    def get_plugin_instance(self, metaclass: str, key: str) -> object:
         """
         Get the plugin instance corresponding to the given key.
 
@@ -290,8 +457,8 @@ class DataPluginController(QObject):
         :type metaclass: str
         :param key: The key of the plugin instance.
         :type key: str
-        :return: The plugin instance.
-        :rtype: object of the type of the data plugin being controlled
+        :return: The plugin instance, or None if the key is not found.
+        :rtype: object
         """
         return self.model.get_plugin_instance(metaclass, key)
 
@@ -300,7 +467,7 @@ class DataPluginController(QObject):
     def validate_and_instantiate_plugin(
         self,
         metaclass: str,
-        subclass: Optional[str] = None,
+        subclass: str,
         settings: Optional[Dict[str, Any]] = None,
         key: Optional[str] = None,
     ) -> None:
@@ -308,13 +475,19 @@ class DataPluginController(QObject):
         Validate and instantiate a plugin based on the given metaclass and subclass.
 
         :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
         :param subclass: The subclass of the plugin.
+        :type subclass: str
         :param settings: The settings dictionary for the plugin.
+        :type settings: Optional[Dict[str, Any]]
         :param key: Optional key to set for the new plugin instance.
+        :type key: Optional[str]
+        :raises ValueError: if no key was supplied by the caller and none was
+            chosen in the settings dialog. Caught by this method's own handler
+            and reported to the user; it never propagates to the caller.
         """
         history: Dict[str, Any] = {}
         temp_instance = None
-        self.historical_settings = None
 
         # instantiate a temporary instance of the requested data plugin type
         try:
@@ -337,9 +510,9 @@ class DataPluginController(QObject):
                 settings = temp_instance.get_empty_settings(
                     self.model.get_instantiated_plugins_list()
                 )
-                self.get_settings_from_history.emit(metaclass, subclass)
-                if self.historical_settings:
-                    for setting_key, val in self.historical_settings.items():
+                historical_settings = self._history_lookup(metaclass, subclass)
+                if historical_settings:
+                    for setting_key, val in historical_settings.items():
                         settings[setting_key]["Value"] = val.get("Value")
                 if (
                     "Folder" in settings.keys()
@@ -351,16 +524,14 @@ class DataPluginController(QObject):
                         self.data_server
                     )  # default to the data server in the absence of better things
 
-                result: Optional[Tuple[Dict[str, Any], str]] = (
-                    self.view.get_user_settings(
-                        settings,
-                        f"{subclass}_{len(self.model.get_instantiated_plugins_list()[metaclass])}",
-                        self.data_server,
-                    )
+                new_settings, new_key, _ = self.view.get_user_settings(
+                    settings,
+                    f"{subclass}_{len(self.model.get_instantiated_plugins_list()[metaclass])}",
+                    self.data_server,
                 )
-                if result is None or result[0] is None:
+                if new_settings is None or new_key is None:
                     return
-                settings, key = result
+                settings, key = new_settings, new_key
 
             # Enforce global uniqueness of plugin name across all metaclasses
             for (
@@ -377,6 +548,8 @@ class DataPluginController(QObject):
                     )
                     return
 
+            if key is None:
+                raise ValueError("No plugin key was provided or chosen")
             temp_instance.set_key(key)
 
         except Exception as e:
@@ -401,6 +574,7 @@ class DataPluginController(QObject):
                     app_settings[settings_key]["Value"] = (
                         self.model.get_plugin_instance(settings_key, val["Value"])
                     )
+                    app_settings[settings_key]["Type"] = None
                     app_settings[settings_key]["Options"] = None
         except Exception as e:
             self.logger.exception(
@@ -452,26 +626,19 @@ class DataPluginController(QObject):
         self.update_plugin_history.emit(history, "")
 
     @log(logger=logger)
-    def set_settings(self, settings):
+    def update_data_server_location(self, data_server: str) -> None:
         """
-        get previously used settings for this plugin tpye, if available
-        """
-        self.historical_settings = settings
-
-    @log(logger=logger)
-    def update_data_server_location(self, data_server):
-        """
-        get previously used settings for this plugin tpye, if available
+        Update the cached data server location used to pre-populate a new plugin's Folder setting.
         """
         self.data_server = data_server
 
     @log(logger=logger)
-    def get_instantiated_plugins_list(self) -> Mapping[str, List[str]]:
+    def get_instantiated_plugins_list(self) -> Dict[str, List[str]]:
         """
         Get a dict keyed by metaclass with a list of all keys for plugins that have been instantiated
 
         :return: A dict keyed by metaclass with a list of all keys for plugins that have been instantiated
-        :rtype: Mapping[str, List[str]]
+        :rtype: Dict[str, List[str]]
         """
         return self.model.get_instantiated_plugins_list()
 

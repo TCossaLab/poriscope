@@ -1,5 +1,5 @@
 """
-Unit tests for FloatRangeValidator and TimeWidget.
+Unit tests for TimeRangeValidator and TimeWidget.
 Qt widgets are tested without a display using QApplication + offscreen platform.
 """
 
@@ -19,20 +19,20 @@ app = QApplication.instance() or QApplication(sys.argv)
 # Import the module under test
 # ---------------------------------------------------------------------------
 from poriscope.views.widgets.time_widget import (  # noqa: E402
-    FloatRangeValidator,
+    TimeRangeValidator,
     TimeWidget,
 )
 
 # ===========================================================================
-# FloatRangeValidator
+# TimeRangeValidator
 # ===========================================================================
 
 
-class TestFloatRangeValidatorAcceptable(unittest.TestCase):
+class TestTimeRangeValidatorAcceptable(unittest.TestCase):
     """Inputs that should be fully Acceptable."""
 
     def setUp(self):
-        self.v = FloatRangeValidator()
+        self.v = TimeRangeValidator()
 
     def _state(self, text):
         state, _, _ = self.v.validate(text, 0)
@@ -70,11 +70,11 @@ class TestFloatRangeValidatorAcceptable(unittest.TestCase):
         self.assertEqual(self._state("0.0-2.5,3.0-6.0"), QValidator.Acceptable)
 
 
-class TestFloatRangeValidatorIntermediate(unittest.TestCase):
+class TestTimeRangeValidatorIntermediate(unittest.TestCase):
     """Inputs that are incomplete but fixable (Intermediate)."""
 
     def setUp(self):
-        self.v = FloatRangeValidator()
+        self.v = TimeRangeValidator()
 
     def _state(self, text):
         state, _, _ = self.v.validate(text, 0)
@@ -92,24 +92,23 @@ class TestFloatRangeValidatorIntermediate(unittest.TestCase):
         self.assertEqual(self._state("3-"), QValidator.Acceptable)
 
     def test_start_greater_than_end(self):
-        """'5-3' → simulated_end appends '0' → end=30, start=5 < 30 → Acceptable.
-        The validator cannot detect start>end for single-digit ends while typing."""
-        self.assertEqual(self._state("5-3"), QValidator.Acceptable)
+        """'5-3' is backwards (start > end) → Intermediate, not a final value yet."""
+        self.assertEqual(self._state("5-3"), QValidator.Intermediate)
 
     def test_start_equals_end_exact(self):
-        """'4-4' → simulated_end='40', start=4 < 40 → Acceptable."""
-        self.assertEqual(self._state("4-4"), QValidator.Acceptable)
+        """'4-4' has a zero-width range (start == end) → Intermediate, not a final value yet."""
+        self.assertEqual(self._state("4-4"), QValidator.Intermediate)
 
     def test_partial_second_range(self):
         """First range done, second range partially typed."""
         self.assertEqual(self._state("0-1,2"), QValidator.Intermediate)
 
 
-class TestFloatRangeValidatorInvalid(unittest.TestCase):
+class TestTimeRangeValidatorInvalid(unittest.TestCase):
     """Inputs that are definitively Invalid."""
 
     def setUp(self):
-        self.v = FloatRangeValidator()
+        self.v = TimeRangeValidator()
 
     def _state(self, text):
         state, _, _ = self.v.validate(text, 0)

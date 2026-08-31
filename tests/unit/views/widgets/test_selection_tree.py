@@ -23,6 +23,23 @@ STRUCTURE = {
 }
 
 
+def dispose(widget) -> None:
+    """
+    Tear a widget down through the event loop.
+
+    ``QWidget.destroy()`` only releases the native window - the C++ object
+    survives until Shiboken collects the Python wrapper, at an arbitrary
+    later point in the run. A widget disposed of that way can leave posted
+    events behind that fault the interpreter the next time *any* test spins
+    the event loop, which is how this file used to segfault
+    ``test_walkthrough_mixin.py`` several hundred tests later.
+    ``deleteLater()`` plus a drained loop deletes it while Qt can still clean
+    up after it.
+    """
+    widget.deleteLater()
+    app.processEvents()
+
+
 def make_widget() -> SelectionTree:
     w = SelectionTree()
     return w
@@ -47,7 +64,7 @@ class TestPopulateTree(unittest.TestCase):
         self.w = make_widget()
 
     def tearDown(self):
-        self.w.destroy()
+        dispose(self.w)
 
     def test_correct_number_of_top_level_items(self):
         self.w.populate_tree(STRUCTURE, "loader1")
@@ -129,7 +146,7 @@ class TestOnItemChanged(unittest.TestCase):
         self.w.populate_tree(STRUCTURE, "loader1")
 
     def tearDown(self):
-        self.w.destroy()
+        dispose(self.w)
 
     def test_unchecking_parent_unchecks_all_children(self):
         top_item(self.w, 0).setCheckState(0, Qt.Unchecked)
@@ -177,7 +194,7 @@ class TestSelectAllButton(unittest.TestCase):
         self.w.populate_tree(STRUCTURE, "loader1")
 
     def tearDown(self):
-        self.w.destroy()
+        dispose(self.w)
 
     def test_all_checked_button_shows_deselect(self):
         app.processEvents()
@@ -230,7 +247,7 @@ class TestGetSelected(unittest.TestCase):
         self.w = make_widget()
 
     def tearDown(self):
-        self.w.destroy()
+        dispose(self.w)
 
     def test_all_checked_returns_full_structure(self):
         self.w.populate_tree(STRUCTURE, "loader1")
@@ -273,7 +290,7 @@ class TestSelectionCache(unittest.TestCase):
         self.w = make_widget()
 
     def tearDown(self):
-        self.w.destroy()
+        dispose(self.w)
 
     def test_two_loaders_cached_independently(self):
         self.w.populate_tree(STRUCTURE, "loader1")

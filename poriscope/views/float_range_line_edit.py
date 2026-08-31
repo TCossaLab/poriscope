@@ -27,6 +27,7 @@
 import logging
 import re
 import sys
+from typing import Any, List, Optional, Tuple
 
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
@@ -43,17 +44,19 @@ logging.basicConfig(
 class FloatRangeValidator(BaseValidator):
     logger = logging.getLogger(__name__)
 
-    def has_forbidden_characters(self, input):
+    def has_forbidden_characters(self, input: str) -> Optional[re.Match]:
         """Check for forbidden characters specific to float ranges (commas are forbidden)."""
         return re.search(r"[^0-9.\-]", input)  # Allow only digits, dots, and hyphens
 
-    def _validate_intermediate(self, input, pos):
+    def _validate_intermediate(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Intermediate validation logic for float ranges, allowing incomplete inputs."""
         if input.endswith("-") or input.endswith(",") or input.endswith("."):
             return QValidator.Intermediate, input, pos
         return QValidator.Acceptable, input, pos
 
-    def _validate_final(self, input):
+    def _validate_final(self, input: str) -> Tuple[QValidator.State, str, int]:
         """Final validation logic for float ranges, enforcing correct format."""
         if input.endswith(",") or input.endswith("-") or input.endswith("."):
             return QValidator.Invalid, input, len(input)
@@ -72,7 +75,7 @@ class FloatRangeValidator(BaseValidator):
                     )
                     return QValidator.Invalid, input, len(input)
             except ValueError:
-                self.logger.error(f"Invalid number format in input: '{input}'")
+                self.logger.debug(f"Invalid number format in input: '{input}'")
                 return QValidator.Invalid, input, len(input)
         else:
             # Reject if no hyphen is found, as we expect a range like "start-end"
@@ -86,14 +89,16 @@ class FloatRangeValidator(BaseValidator):
 
 
 class FloatRangeLineEdit(BaseLineEdit):
-    def __init__(self, *args, **kwargs):
+    logger = logging.getLogger(__name__)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._used_floats = False
 
-    def create_validator(self):
+    def create_validator(self) -> FloatRangeValidator:
         return FloatRangeValidator(self)
 
-    def get_values(self):
+    def get_values(self) -> List[float]:
         """Parse and return a list of floats covering the defined ranges."""
         text = self.text()
         result = set()
@@ -113,7 +118,7 @@ class FloatRangeLineEdit(BaseLineEdit):
                         [start + i * 0.1 for i in range(int((end - start) * 10) + 1)]
                     )
                 except ValueError:
-                    self.logger.error(f"Invalid range in segment: '{segment}'")
+                    self.logger.debug(f"Invalid range in segment: '{segment}'")
             else:
                 try:
                     num = float(segment)
@@ -121,26 +126,18 @@ class FloatRangeLineEdit(BaseLineEdit):
                         self._used_floats = True
                     result.add(num)
                 except ValueError:
-                    self.logger.error(f"Invalid float in segment: '{segment}'")
+                    self.logger.debug(f"Invalid float in segment: '{segment}'")
 
         return sorted(result)
-
-    def get_values_with_type_info(self):
-        """
-        Returns a tuple of (parsed values, used_floats flag).
-        Example: ([1.0, 1.1, 1.2], True)
-        """
-        values = self.get_values()
-        return values, self._used_floats
 
     def used_floats(self) -> bool:
         return self._used_floats
 
-    def get_start(self):
+    def get_start(self) -> Optional[float]:
         """Extracts and returns the starting float of the first valid range or number."""
         text = self.text().strip()
         if not text:
-            self.logger.error("Start time input is empty.")
+            self.logger.debug("Start time input is empty.")
             return None
 
         first_segment = text.split(",")[0].strip()
@@ -149,20 +146,20 @@ class FloatRangeLineEdit(BaseLineEdit):
                 start, _ = map(float, first_segment.split("-"))
                 return start
             except ValueError as e:
-                self.logger.error(
+                self.logger.debug(
                     f"Invalid range format in segment: '{first_segment}' with error: {e}"
                 )
         else:
             try:
                 return float(first_segment)
             except ValueError as e:
-                self.logger.error(
+                self.logger.debug(
                     f"Invalid float conversion for input: '{first_segment}' with error: {e}"
                 )
 
         return None
 
-    def get_duration(self):
+    def get_duration(self) -> Optional[float]:
         """Calculates and returns the duration of the first valid range."""
         text = self.text().strip()
         if not text:
@@ -176,7 +173,7 @@ class FloatRangeLineEdit(BaseLineEdit):
                 pass
         return None
 
-    def set_range(self, start: float, duration: float):
+    def set_range(self, start: float, duration: float) -> None:
         """
         Sets the displayed text to a formatted range like '1.0-4.0' or '1-4' depending on whether
         the values are whole numbers.

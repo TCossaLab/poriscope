@@ -25,15 +25,13 @@
 # Alejandra Carolina González González
 
 import logging
-import os
 import sys
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QAction, QIcon, QTextCursor
+from PySide6.QtGui import QAction, QCloseEvent, QResizeEvent, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -42,6 +40,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
@@ -56,14 +55,22 @@ from poriscope.plugins.analysistabs.utils.walkthrough import (
     Overlay,
     StepDialog,
 )
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 from poriscope.utils.LogDecorator import log
+from poriscope.views.help import HelpCentre
 from poriscope.views.settings_window import SettingsWindow
 from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
 
 
 class MainView(QMainWindow, WalkthroughMixin):
+    """
+    App-shell main window: hosts the menu bar, sidebar navigation, and the stacked pages for each instantiated analysis tab, and exposes the signals MainController relays to instantiate tabs/plugins, open Settings, and run the app-wide walkthrough.
+    """
+
     # Signals
     rawdata_toggled = Signal()
     instantiate_plugin = Signal(str, str)
@@ -74,10 +81,13 @@ class MainView(QMainWindow, WalkthroughMixin):
     update_logging_level = Signal(int)
     get_shared_data_server = Signal()
     get_user_plugin_location = Signal()
+    get_shared_logging_level = Signal()
     update_data_server_location = Signal(str)
     update_user_plugin_location = Signal(str)
     clear_cache = Signal()
-    kill_all_workers = Signal(str)
+    abort_all_analysis = Signal()
+    reset_app_config = Signal()
+    reset_session = Signal()
     update_thread_status = Signal(int, str, float)
     request_analysis_tabs = Signal()
     received_analysis_tabs = Signal(dict)
@@ -85,32 +95,32 @@ class MainView(QMainWindow, WalkthroughMixin):
     logger = logging.getLogger(__name__)
 
     # Constructor and Initial Setup
-    def __init__(self, available_plugins):
+    def __init__(self, available_plugins: Dict[str, List[str]]) -> None:
         super().__init__()
         self._init_walkthrough()
         self.setWindowTitle(f"Poriscope {__VERSION__}")
         self.setGeometry(100, 100, 1200, 750)
         self.setMinimumSize(QSize(1150, 750))
         self.available_plugins = available_plugins
-        self.pages = {}
+        self.pages: Dict[str, Dict[str, Any]] = {}
         self.received_analysis_tabs.connect(self.populate_plugins_menu)
-        self.icon_path = Path(Path(__file__).resolve().parent, "configs", "icons")
         self.setup_menubar()
-        self._milestone_dialog = None
-        self._expected_next_view = None
+        self._milestone_dialog: Optional[QWidget] = None
+        self._expected_next_view: Optional[str] = None
+        self._plugins_menu_anchor: Optional[QWidget] = None
         self.setup_ui()
         self.figure = plt.Figure()
         self.canvas = FigureCanvas(self.figure)
         self.toggle_in_progress = False
-        self.child_windows = []
-        self.help_window = None
-        self.settings_window = None
+        self.child_windows: List[QWidget] = []
+        self.help_window: Optional[HelpCentre] = None
+        self.settings_window: Optional[SettingsWindow] = None
         self._analysis_proxy: Optional[QWidget] = None
         self.setup_settings_window_connections()
 
     # UI Setup Methods
     @log(logger=logger)
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
         self.gridLayout = QGridLayout(central_widget)
@@ -161,7 +171,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     # Add custom logic to built-in Qt method resizeEvent -reason why setColumnStretch does not work
     @log(logger=logger)
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: QResizeEvent) -> None:
         """
         Ensures that the text display container always takes 20% of the screen width.
 
@@ -179,7 +189,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     @Slot(str, str)
-    def add_text_to_display(self, text, source):
+    def add_text_to_display(self, text: str, source: str) -> None:
         """Method to dynamically add text to the QTextEdit and scroll to bottom"""
         if text:
             self.text_display_widget.append(f"{source}: {text}\n")  # Add new text
@@ -190,12 +200,23 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.text_display_widget.setTextCursor(cursor)  # Set the cursor position
             self.text_display_widget.ensureCursorVisible()  # Ensure the cursor is visible (scroll down)
 
+    @log(logger=logger)
+    def clear_display(self) -> None:
+        """Empty the status/log panel, as it is on a fresh launch."""
+        self.text_display_widget.setPlainText("")
+
+    @log(logger=logger)
+    def close_help_window(self) -> None:
+        """Close the floating Help window if it is open, as none is on a fresh launch."""
+        if self.help_window is not None:
+            self.help_window.close()
+
     # Signal Connection Setup
     @log(logger=logger)
-    def connect_signals(self):
+    def connect_signals(self) -> None:
         icon_text_signals = [
             ("rawDataToggled", self.text_menu_widget.setRawDataChecked),
-            ("statsToggled", self.text_menu_widget.setStatsChecked),
+            ("eventAnalysisToggled", self.text_menu_widget.setEventAnalysisChecked),
             ("metadataToggled", self.text_menu_widget.setMetadataChecked),
             ("pluginsToggled", self.text_menu_widget.setPluginsChecked),
             ("helpToggled", self.text_menu_widget.setHelpChecked),
@@ -214,7 +235,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
         page_switch_signals = [
             ("switchToRawData", self.on_raw_data_view_click),
-            ("switchToStatistics", self.on_stats_click),
+            ("switchToEventAnalysis", self.on_event_analysis_click),
             ("switchToMetadata", self.on_metadata_click),
             ("switchToSettings", self.on_settings_button_click),
             ("switchToHelp", self.on_help_button_click),
@@ -237,7 +258,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.help_window_closed.connect(self.text_menu_widget.setHelpUnchecked)
 
     @log(logger=logger)
-    def setup_settings_window_connections(self):
+    def setup_settings_window_connections(self) -> None:
         self.settings_window = SettingsWindow()
         self.settings_window.get_shared_server_location.connect(self.get_data_server)
         self.settings_window.update_data_server_location.connect(
@@ -249,40 +270,82 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.settings_window.update_user_plugin_location.connect(
             self.update_user_plugin_folder
         )
+        self.settings_window.get_shared_logging_level.connect(self.get_logging_level)
         self.settings_window.update_log_level.connect(self.update_log_level)
         self.settings_window.clear_cache.connect(self.handle_clear_cache)
+        self.settings_window.reset_app_config.connect(self.handle_reset_app_config)
 
     # Event Handling Methods
     @log(logger=logger)
     @Slot()
-    def handle_clear_cache(self):
+    def handle_clear_cache(self) -> None:
         self.clear_cache.emit()
 
     @log(logger=logger)
+    @Slot()
+    def handle_reset_app_config(self) -> None:
+        """Relay the settings window's reset request to the controller."""
+        self.reset_app_config.emit()
+
+    @log(logger=logger)
+    def on_reset_session_button_click(self) -> None:
+        """
+        Confirm, then ask for the workspace to be returned to a fresh start.
+
+        Confirmed because it closes every open tab and deletes every configured
+        plugin. The saved session files are untouched, so Restore Session brings
+        the workspace back - but only until something replaces it. plugin_history
+        .json is a live mirror rewritten on every plugin or tab change, and the
+        in-memory history is empty after a reset, so the next thing the user sets
+        up overwrites what Restore would have read. That is equally true after
+        launching the application, and is not introduced here; the prompt states
+        the condition rather than the code papering over it.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Reset Session",
+            "Close all tabs and remove all configured plugins?\n\n"
+            "This gives you the same clean workspace as restarting "
+            "Poriscope, without restarting it. Your already saved sessions "
+            "stay intact.\n\n"
+            "Restore Session still reloads your last workspace, so long as "
+            "it is your next action - opening a tab or adding a plugin "
+            "replaces it.",
+            QMessageBox.Ok | QMessageBox.Cancel,
+        )
+        if reply == QMessageBox.Ok:
+            self.reset_session.emit()
+
+    @log(logger=logger)
     @Slot(int)
-    def update_log_level(self, level):
+    def update_log_level(self, level: int) -> None:
         self.logger.debug("Emitting update_logging_level with new level: %s", level)
         self.update_logging_level.emit(level)
 
     @log(logger=logger)
     @Slot()
-    def get_data_server(self):
+    def get_data_server(self) -> None:
         self.get_shared_data_server.emit()
 
     @log(logger=logger)
     @Slot()
-    def get_user_plugin_folder(self):
+    def get_user_plugin_folder(self) -> None:
         self.get_user_plugin_location.emit()
 
     @log(logger=logger)
-    def set_data_server(self, data_server):
+    @Slot()
+    def get_logging_level(self) -> None:
+        self.get_shared_logging_level.emit()
+
+    @log(logger=logger)
+    def set_data_server(self, data_server: str) -> None:
         if self.settings_window is not None:
             self.settings_window.set_data_server(data_server)
         else:
             raise AttributeError("Cannot set data server without a settings winddow!")
 
     @log(logger=logger)
-    def set_user_plugin_location(self, user_plugin_loc):
+    def set_user_plugin_location(self, user_plugin_loc: str) -> None:
         if self.settings_window is not None:
             self.settings_window.set_user_plugin_location(user_plugin_loc)
         else:
@@ -291,18 +354,25 @@ class MainView(QMainWindow, WalkthroughMixin):
             )
 
     @log(logger=logger)
+    def set_logging_level(self, level: int) -> None:
+        if self.settings_window is not None:
+            self.settings_window.set_logging_level(level)
+        else:
+            raise AttributeError("Cannot set logging level without a settings winddow!")
+
+    @log(logger=logger)
     @Slot(str)
-    def update_data_server(self, data_server):
+    def update_data_server(self, data_server: str) -> None:
         self.update_data_server_location.emit(data_server)
 
     @log(logger=logger)
     @Slot(str)
-    def update_user_plugin_folder(self, user_plugin_loc):
+    def update_user_plugin_folder(self, user_plugin_loc: str) -> None:
         self.update_user_plugin_location.emit(user_plugin_loc)
 
     # Menus
     @Slot()
-    def toggle_menu_widgets(self):
+    def toggle_menu_widgets(self) -> None:
         if self.toggle_in_progress:
             return
         self.toggle_in_progress = True
@@ -313,11 +383,17 @@ class MainView(QMainWindow, WalkthroughMixin):
         QTimer.singleShot(300, self.reset_toggle_flag)
 
     @log(logger=logger)
-    def reset_toggle_flag(self):
+    def reset_toggle_flag(self) -> None:
         self.toggle_in_progress = False
 
     @log(logger=logger)
-    def setup_menubar(self):
+    def reset_sidebar_layout(self) -> None:
+        """Collapse the sidebar back to its default icon-only layout, as it is on a fresh launch."""
+        self.icon_menu_container.setVisible(True)
+        self.text_menu_container.setVisible(False)
+
+    @log(logger=logger)
+    def setup_menubar(self) -> None:
         self.menu = self.menuBar()
         file_menu = self.menu.addMenu("File")
         data_menu = self.menu.addMenu("Data")
@@ -332,6 +408,9 @@ class MainView(QMainWindow, WalkthroughMixin):
         )
         self.add_menu_action(
             file_menu, "Load Session", self.on_load_session_button_click
+        )
+        self.add_menu_action(
+            file_menu, "Reset Session", self.on_reset_session_button_click
         )
         self.add_menu_action(file_menu, "Settings", self.on_settings_button_click)
 
@@ -392,20 +471,57 @@ class MainView(QMainWindow, WalkthroughMixin):
         )
 
     @log(logger=logger)
-    def add_menu_action(self, menu, action_name, slot):
-        action = QAction(
-            QIcon(os.path.join(self.icon_path, "fire.png")), action_name, self
-        )
+    def add_menu_action(
+        self, menu: QMenu, action_name: str, slot: Callable[..., Any]
+    ) -> None:
+        # Parented to the menu, not the window: a menu destroys the actions it
+        # owns, so rebuilding the menu bar cannot leave them behind.
+        action = QAction(action_name, menu)
         action.setStatusTip(action_name)
         action.triggered.connect(slot)
         menu.addAction(action)
 
     @log(logger=logger)
-    def add_plugin_actions(self, menu, plugin_type, slot):
+    def refresh_available_plugins(
+        self, available_plugins: Dict[str, List[str]]
+    ) -> None:
+        """
+        Replace the plugin lists behind the menus and rebuild the menu bar.
+
+        The menus are built once from the list handed in at construction, so a
+        re-scan is invisible until they are rebuilt. Rebuilding is the whole
+        menu bar rather than the plugin submenus alone: the submenus are created
+        inline by ``setup_menubar`` and are not held anywhere that would let them
+        be refilled individually.
+
+        :param available_plugins: Plugin names keyed by metaclass.
+        :type available_plugins: Dict[str, List[str]]
+        """
+        # clear() destroys the top-level menus it owns and, now that actions are
+        # parented to their menu, the actions with them. It does not take the
+        # submenus built by addMenu(), which linger as children of this window -
+        # measured at 13 per rebuild. Collect the menus first and destroy
+        # whatever clear() left behind; the ones it did destroy raise
+        # RuntimeError, which is the signal that there is nothing left to do.
+        stale_menus = self.findChildren(QMenu)
+
+        self.available_plugins = available_plugins
+        self.menuBar().clear()
+        self.setup_menubar()
+
+        for menu in stale_menus:
+            try:
+                menu.deleteLater()
+            except RuntimeError:
+                pass  # already destroyed by clear()
+
+    @log(logger=logger)
+    def add_plugin_actions(
+        self, menu: QMenu, plugin_type: str, slot: Callable[..., Any]
+    ) -> None:
         for name in self.available_plugins[plugin_type]:
-            action = QAction(
-                QIcon(os.path.join(self.icon_path, "fire.png")), name, self
-            )
+            # Parented to the menu, not the window - see add_menu_action.
+            action = QAction(name, menu)
             action.setStatusTip(f"Load a new {name}")
             action.triggered.connect(
                 lambda checked=False, name=name: slot(subclass=name)
@@ -415,7 +531,7 @@ class MainView(QMainWindow, WalkthroughMixin):
     # Widgets
 
     @log(logger=logger)
-    def create_container(self, width, color=None):
+    def create_container(self, width: int, color: Optional[str] = None) -> QWidget:
         container = QWidget()
         if color is not None:
             container.setStyleSheet(f"background-color: {color}; border-radius: 8px;")
@@ -426,56 +542,54 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     # Button Actions
     @log(logger=logger)
-    def on_help_button_click(self):
+    def on_help_button_click(self) -> None:
         if self.help_window is None:
-            from poriscope.views.help import HelpCentre
-
             self.help_window = HelpCentre()
             self.help_window.show()
             self.help_window.closeEvent = self.on_help_window_closed
 
     @log(logger=logger)
-    def on_help_window_closed(self, event):
+    def on_help_window_closed(self, event: QCloseEvent) -> None:
         self.help_window = None
         self.help_window_closed.emit()
         event.accept()
 
     @log(logger=logger)
-    def on_load_timeseries_button_click(self, subclass):
+    def on_load_timeseries_button_click(self, subclass: str) -> None:
         self.logger.info(f"Loading timeseries for subclass: {subclass}")
         self.instantiate_plugin.emit("MetaReader", subclass)
         # self.instantiate_analysis_tab.emit(subclass)
 
     @log(logger=logger)
-    def on_load_events_button_click(self, subclass):
+    def on_load_events_button_click(self, subclass: str) -> None:
         self.logger.info(f"Loading events for subclass: {subclass}")
         self.instantiate_plugin.emit("MetaEventLoader", subclass)
         # self.instantiate_analysis_tab.emit(subclass)
 
     @log(logger=logger)
-    def on_load_metadata_button_click(self, subclass):
+    def on_load_metadata_button_click(self, subclass: str) -> None:
         self.logger.info(f"Loading events for subclass: {subclass}")
         self.instantiate_plugin.emit("MetaDatabaseLoader", subclass)
         # self.instantiate_analysis_tab.emit(subclass)
 
     @log(logger=logger)
-    def on_load_eventfinder_button_click(self, subclass):
+    def on_load_eventfinder_button_click(self, subclass: str) -> None:
         self.logger.info("Loading eventfinder")
         self.instantiate_plugin.emit("MetaEventFinder", subclass)
 
     @log(logger=logger)
-    def on_load_eventfitter_button_click(self, subclass):
+    def on_load_eventfitter_button_click(self, subclass: str) -> None:
         self.logger.info("Loading eventfitter")
         self.instantiate_plugin.emit("MetaEventFitter", subclass)
 
     @log(logger=logger)
-    def on_save_session_button_click(self):
+    def on_save_session_button_click(self) -> None:
         save_file = self.get_save_file_name()
         if save_file is not None:
             self.save_session.emit(save_file)
 
     @log(logger=logger)
-    def on_load_session_button_click(self):
+    def on_load_session_button_click(self) -> None:
         starting_loc = ""
         file_path = None
         file_path, _ = QFileDialog.getOpenFileName(
@@ -485,38 +599,46 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.load_session.emit(file_path)
 
     @log(logger=logger)
-    def on_restore_session_button_click(self):
+    def on_restore_session_button_click(self) -> None:
         self.load_session.emit(None)
 
     @log(logger=logger)
-    def on_load_filter_button_click(self, subclass):
+    def on_load_filter_button_click(self, subclass: str) -> None:
         self.logger.info("Loading filter {subclass}")
         self.instantiate_plugin.emit("MetaFilter", subclass)
 
     @log(logger=logger)
-    def on_raw_data_view_click(self):
+    def on_raw_data_view_click(self) -> None:
         self.on_load_analysis_tab_button_click("RawDataController")
+        self.sync_sidebar_highlight("RawDataView")
         self.switch_to_page("RawDataView")
 
     @log(logger=logger)
-    def on_stats_click(self):
+    def on_event_analysis_click(self) -> None:
         self.on_load_analysis_tab_button_click("EventAnalysisController")
+        self.sync_sidebar_highlight("EventAnalysisView")
         self.switch_to_page("EventAnalysisView")
 
     @log(logger=logger)
-    def on_metadata_click(self):
+    def on_metadata_click(self) -> None:
         self.on_load_analysis_tab_button_click("MetadataController")
+        self.sync_sidebar_highlight("MetadataView")
         self.switch_to_page("MetadataView")
 
     @log(logger=logger)
-    def on_plugins_button_click(self):
+    def on_plugins_button_click(self) -> None:
         """Emit signal to request analysis tabs from MainController."""
         self.logger.info("Plugins button clicked - requesting analysis tabs.")
+        # Capture the widget that triggered this click now, since by the time
+        # populate_plugins_menu runs (after an async round-trip through
+        # MainController via received_analysis_tabs), self.sender() there
+        # would resolve to this MainView instance instead of the button.
+        self._plugins_menu_anchor = self.sender()
         self.request_analysis_tabs.emit()  # Ask MainController for the list of instantiated tabs
         self.logger.info("request_analysis_tabs signal emitted.")
 
     @log(logger=logger)
-    def populate_plugins_menu(self, analysis_tabs):
+    def populate_plugins_menu(self, analysis_tabs: Dict[str, Any]) -> None:
         """Dynamically generates a dropdown menu when MainController responds."""
         self.logger.info(
             f"populate_plugins_menu called with {len(analysis_tabs)} analysis tabs."
@@ -525,7 +647,9 @@ class MainView(QMainWindow, WalkthroughMixin):
         menu = QMenu(self)
 
         if not analysis_tabs:
-            self.logger.warning("No analysis tabs available.")
+            # Normal at startup and after a session reset, so not a warning:
+            # QtHandler promotes WARNING to a modal dialog.
+            self.logger.debug("No analysis tabs available.")
             no_tabs_action = QAction("No analysis tabs available", self)
             no_tabs_action.setEnabled(False)
             menu.addAction(no_tabs_action)
@@ -544,7 +668,7 @@ class MainView(QMainWindow, WalkthroughMixin):
                 )
                 menu.addAction(action)
 
-        button = self.sender()
+        button = self._plugins_menu_anchor
         if button:
             menu_pos = button.mapToGlobal(
                 button.rect().topLeft()
@@ -565,32 +689,41 @@ class MainView(QMainWindow, WalkthroughMixin):
             menu.exec(menu_pos)
 
     @log(logger=logger)
-    def handle_menu_click(self, page_name):
+    def handle_menu_click(self, page_name: str) -> None:
         """Handles clicks on the menu items and switches to the correct view page."""
         self.logger.info(f"Menu item clicked: {page_name}")
+        self.sync_sidebar_highlight(page_name)
         self.switch_to_page(page_name)
 
     @log(logger=logger)
-    def on_settings_button_click(self):
+    def on_settings_button_click(self) -> None:
         self.add_page("Settings", self.settings_window)
         self.switch_to_page("Settings")
+        self.get_logging_level()
         self.logger.info("Settings button pressed")
 
     @log(logger=logger)
-    def on_load_writer_button_click(self, subclass):
+    def on_load_writer_button_click(self, subclass: str) -> None:
         self.instantiate_plugin.emit("MetaWriter", subclass)
 
     @log(logger=logger)
-    def on_load_db_writer_button_click(self, subclass):
+    def on_load_db_writer_button_click(self, subclass: str) -> None:
         self.instantiate_plugin.emit("MetaDatabaseWriter", subclass)
 
     @log(logger=logger)
-    def on_load_analysis_tab_button_click(self, subclass):
+    def on_load_analysis_tab_button_click(self, subclass: str) -> None:
         self.instantiate_analysis_tab.emit(subclass)
+        dedicated_view_for_subclass = {
+            "RawDataController": "RawDataView",
+            "EventAnalysisController": "EventAnalysisView",
+            "MetadataController": "MetadataView",
+        }
+        page_name = dedicated_view_for_subclass.get(subclass, "Plugins")
+        self.sync_sidebar_highlight(page_name)
 
     # Page management
     @log(logger=logger)
-    def setup_stacked_widget(self, gridLayout):
+    def setup_stacked_widget(self, gridLayout: QGridLayout) -> None:
         combined_widgets_frame = QFrame()
         combined_widgets_frame.setMinimumWidth(300)
         gridLayout.addWidget(combined_widgets_frame, 0, 2)
@@ -639,7 +772,18 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.switch_to_page("MainView")
 
     @log(logger=logger)
-    def add_page(self, page_name, widget_instance):
+    def add_page(self, page_name: str, widget_instance: QWidget) -> None:
+        existing_page_info = self.pages.get(page_name)
+        if existing_page_info is not None:
+            # Reusing page_name would otherwise leak the previous wrapper
+            # QWidget: addWidget() below always creates a new one, and
+            # reparenting widget_instance into it empties the old wrapper
+            # without ever removing it from the stack.
+            old_page = self.stackedWidget.widget(existing_page_info["index"])
+            if old_page is not None:
+                self.stackedWidget.removeWidget(old_page)
+                old_page.deleteLater()
+
         page = QWidget()
         page.setObjectName(page_name)
         page_layout = QVBoxLayout(page)
@@ -655,7 +799,79 @@ class MainView(QMainWindow, WalkthroughMixin):
         self.logger.info(f"Leaving addPage for '{page_name}'")
 
     @log(logger=logger)
-    def switch_to_page(self, page_name):
+    def remove_pages_except(self, keep: Sequence[str]) -> None:
+        """
+        Remove every registered page except those named, and reindex the rest.
+
+        Used to return the window to its just-launched state without restarting.
+        Anything not named to keep is destroyed along with its wrapper - see
+        ``close_settings_page()`` first if Settings' page is among them, since
+        its widget is a reusable singleton rather than something disposable.
+
+        Reindexing is not optional. ``self.pages`` caches each page's index into
+        the QStackedWidget, and the stack renumbers whatever follows a widget it
+        removes - so without rebuilding the map, every page after the first
+        removal would switch to the wrong widget. Indices are re-derived from the
+        stack itself, matching on the wrapper's objectName, rather than being
+        arithmetic guesses about what shifted.
+
+        :param keep: Page names to leave in place.
+        :type keep: Sequence[str]
+        """
+        keep_names = set(keep)
+        doomed = {n for n in self.pages if n not in keep_names}
+
+        # Resolve every widget before removing any. removeWidget() renumbers the
+        # stack, so a cached index read after the first removal points at the
+        # wrong widget - which silently removes the wrong page rather than
+        # failing. Matching on the wrapper's objectName avoids indices entirely.
+        pages_to_remove = [
+            page
+            for page in (
+                self.stackedWidget.widget(i) for i in range(self.stackedWidget.count())
+            )
+            if page is not None and page.objectName() in doomed
+        ]
+
+        for page in pages_to_remove:
+            self.stackedWidget.removeWidget(page)
+            page.deleteLater()
+        for page_name in doomed:
+            del self.pages[page_name]
+            self.logger.debug(f"Removed page '{page_name}'")
+
+        # Re-derive the cached indices from the stack's current order.
+        for index in range(self.stackedWidget.count()):
+            page = self.stackedWidget.widget(index)
+            if page is not None and page.objectName() in self.pages:
+                self.pages[page.objectName()]["index"] = index
+
+    @log(logger=logger)
+    def close_settings_page(self) -> None:
+        """
+        Detach the Settings widget from its page wrapper, if it is currently open.
+
+        ``self.settings_window`` is a MainView-level singleton created once in
+        ``__init__``, not a per-open instance the way an analysis tab's view
+        is. ``add_page`` reparents it as a Qt child of a disposable page
+        wrapper, so destroying that wrapper (e.g. via ``remove_pages_except``)
+        without detaching first would destroy the singleton along with it -
+        leaving every other reference to it (``set_data_server``,
+        ``set_user_plugin_location``, ``set_logging_level``, and the reopen
+        path itself, all guarded only with an ``is not None`` check) pointing
+        at a deleted C++ object. Detaching first keeps it alive and reusable
+        the next time Settings is opened - ``add_page`` builds it a fresh
+        wrapper either way, the same as if Settings had never been opened.
+        """
+        if "Settings" not in self.pages or self.settings_window is None:
+            return
+        wrapper = self.settings_window.parentWidget()
+        if wrapper is not None and wrapper.layout() is not None:
+            wrapper.layout().removeWidget(self.settings_window)
+        self.settings_window.setParent(None)
+
+    @log(logger=logger)
+    def switch_to_page(self, page_name: str) -> None:
         """Switch to a different view while enforcing walkthrough and milestone constraints."""
 
         # Block switching if walkthrough is active and this is not the expected next step
@@ -699,14 +915,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 
                 self._milestone_dialog = None
 
-                # Clean up any analysis highlight
-                if (
-                    hasattr(self, "_analysis_proxy")
-                    and self._analysis_proxy is not None
-                ):
-                    self._analysis_proxy.hide()
-                    self._analysis_proxy.deleteLater()
-                    self._analysis_proxy = None
+                self._clear_analysis_proxy()
 
                 self._expected_next_view = None
 
@@ -725,37 +934,55 @@ class MainView(QMainWindow, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def on_abort_analysis_click(self):
-        self.logger.info("Aborting Analysis")
-        self.kill_all_workers.emit("RawDataController")
+    def sync_sidebar_highlight(self, page_name: str) -> None:
+        """Ensure the correct sidebar/menu button is checked for the given page."""
+        dedicated = {
+            "RawDataView": "setRawDataChecked",
+            "EventAnalysisView": "setEventAnalysisChecked",
+            "MetadataView": "setMetadataChecked",
+        }
+        setter_name = dedicated.get(page_name, "setPluginsChecked")
+        getattr(self.icon_menu_widget, setter_name)(True)
+        getattr(self.text_menu_widget, setter_name)(True)
 
     @log(logger=logger)
-    def closeEvent(self, event):
-        # Close the help window if it is open
-        if self.help_window is not None:
-            self.help_window.close()
+    def clear_sidebar_highlight(self) -> None:
+        """Uncheck whichever sidebar/menu button is currently highlighted, as none are on a fresh launch."""
+        self.icon_menu_widget.uncheckAll()
+        self.text_menu_widget.uncheckAll()
+
+    @log(logger=logger)
+    def on_abort_analysis_click(self) -> None:
+        """
+        Ask MainController to stop running operations in every open analysis tab.
+
+        This used to emit a ``kill_all_workers`` signal that was connected to
+        nothing - MetaController connects the identically-named signal on a *tab's*
+        MetaView, which is a different object - and it hard-coded
+        ``"RawDataController"`` as the recipient, so even had it been connected it
+        would only ever have reached one tab. The menu item logged a line and did
+        nothing.
+        """
+        self.logger.info("Aborting Analysis")
+        self.abort_all_analysis.emit()
+
+    @log(logger=logger)
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.close_help_window()
 
         # Call the base class implementation
         super().closeEvent(event)
 
     def get_save_file_name(
         self,
-        starting_file_path="",
-        title="Save Session",
-        file_types="JSON Files (*.json);;All Files (*)",
-    ):
+        starting_file_path: str = "",
+        title: str = "Save Session",
+        file_types: str = "JSON Files (*.json);;All Files (*)",
+    ) -> str:
         file_name, _ = QFileDialog.getSaveFileName(
             self, title, starting_file_path, file_types
         )
         return file_name
-
-    @log(logger=logger)
-    def display_data(self, data):
-        self.rawDataWidget.display_data(data)
-
-    @log(logger=logger)
-    def on_file_loaded(self):
-        pass
 
     def get_analysis_highlight(self) -> QWidget:
         if not hasattr(self, "analysis_action_ref"):
@@ -776,7 +1003,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self._analysis_proxy.show()
         return self._analysis_proxy
 
-    def get_walkthrough_steps(self):
+    def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         current_view = self.page_title_label.text()
         if current_view in self.pages:
             view_widget = self.pages[current_view]["widget"]
@@ -784,7 +1011,7 @@ class MainView(QMainWindow, WalkthroughMixin):
                 return view_widget.get_walkthrough_steps()
         return []
 
-    def get_intro_text(self, view_name):
+    def get_intro_text(self, view_name: str) -> str:
         step_mapping = {
             "MainView": "Welcome aboard! You're on the landing page. This tutorial will walk you through the whole process of Nanopore's Data Analysis.",
             "RawDataView": "You are currently in the Raw Data Tab. Here, you can load your data and perform baseline analysis to find events.",
@@ -794,17 +1021,20 @@ class MainView(QMainWindow, WalkthroughMixin):
         }
         return step_mapping.get(view_name, "You're starting a guided tutorial.")
 
-    def show_walkthrough_intro(self):
+    def show_walkthrough_intro(self, current_view: str = "") -> None:
         if self._walkthrough_active:
             self.logger.info("Walkthrough is already active, skipping intro.")
             return  # Exit if the walkthrough is already active
 
-        current_view = self.get_current_view()
+        # WalkthroughMixin passes the view in; MainView's own callers do not,
+        # and it can derive it itself, so the argument stays optional.
+        if not current_view:
+            current_view = self.get_current_view()
         intro = IntroDialog(self, current_step=current_view)
         intro.start_walkthrough.connect(lambda: self._on_intro_finished(current_view))
         intro.exec()
 
-    def _on_intro_finished(self, view_name):
+    def _on_intro_finished(self, view_name: str) -> None:
         """
         Handle logic after the intro dialog is closed.
         """
@@ -818,7 +1048,7 @@ class MainView(QMainWindow, WalkthroughMixin):
             )
             self.launch_walkthrough_if_needed()
 
-    def launch_walkthrough_if_needed(self):
+    def launch_walkthrough_if_needed(self) -> None:
         """Helper method to check the current view and launch walkthrough if eligible."""
         current_view = self.get_current_view()  # Get the current view dynamically
 
@@ -849,10 +1079,12 @@ class MainView(QMainWindow, WalkthroughMixin):
                 f"Current view {current_view} does not support walkthrough."
             )
 
-    def get_current_view(self):
+    def get_current_view(self) -> str:
         return self.page_title_label.text()
 
-    def _reset_walkthrough_flag(self, view_name, completed_successfully: bool):
+    def _reset_walkthrough_flag(
+        self, view_name: str, completed_successfully: bool
+    ) -> None:
         self.logger.info(
             f"Walkthrough finished for {view_name}, completed: {completed_successfully}"
         )
@@ -861,10 +1093,10 @@ class MainView(QMainWindow, WalkthroughMixin):
         if completed_successfully:
             self.show_milestone_step(view_name)
 
-    def on_view_switched(self, view_name):
+    def on_view_switched(self, view_name: str) -> None:
         self._current_view = view_name
 
-    def clear_milestone_dialog(self):
+    def clear_milestone_dialog(self) -> None:
         """Safely clear the milestone dialog and its overlay."""
         dialog = self._milestone_dialog
         self._milestone_dialog = None  # Set to None first to avoid re-cleanup
@@ -887,7 +1119,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         else:
             self.logger.debug("Milestone dialog was already None during cleanup.")
 
-    def show_milestone_step(self, previous_view):
+    def show_milestone_step(self, previous_view: str) -> None:
         """Show milestone StepDialog after a walkthrough finishes."""
         self.clear_milestone_dialog()
         milestone = self.get_milestone_step(previous_view)
@@ -901,7 +1133,7 @@ class MainView(QMainWindow, WalkthroughMixin):
                 self, steps=[(label, desc, widget)], overlay=overlay
             )
 
-            def delayed_show():
+            def delayed_show() -> None:
                 # self._reposition_step_dialog(self._milestone_dialog, [widget])
                 if self._milestone_dialog is not None:
                     self._milestone_dialog.show()
@@ -914,16 +1146,35 @@ class MainView(QMainWindow, WalkthroughMixin):
                 f"Milestone shown for {previous_view}, expecting {self._expected_next_view} next"
             )
 
-    @Slot()
-    def _on_milestone_closed(self):
-        """Called when the milestone dialog is closed manually (e.g., via 'Done' or 'X')."""
-        self.logger.info("Milestone manually closed by user (X or Done clicked).")
+    @log(logger=logger)
+    def cancel_walkthrough(self) -> None:
+        """
+        Tear down any active walkthrough or milestone overlay.
 
+        ``switch_to_page`` refuses to move while a walkthrough or milestone is
+        active, so anything that returns the window to a known page has to clear
+        this first or be silently ignored - leaving the user on a page that may
+        no longer exist, with a stale title.
+        """
         self.clear_milestone_dialog()
+        self._clear_analysis_proxy()
         self._expected_next_view = None
         self._walkthrough_active = False
 
-    def get_expected_next_view(self, previous_view):
+    @Slot()
+    def _on_milestone_closed(self) -> None:
+        """Called when the milestone dialog is closed manually (e.g., via 'Done' or 'X')."""
+        self.logger.info("Milestone manually closed by user (X or Done clicked).")
+        self.cancel_walkthrough()
+
+    def _clear_analysis_proxy(self) -> None:
+        """Clean up the transparent 'Analysis' menu highlight overlay, if any."""
+        if hasattr(self, "_analysis_proxy") and self._analysis_proxy is not None:
+            self._analysis_proxy.hide()
+            self._analysis_proxy.deleteLater()
+            self._analysis_proxy = None
+
+    def get_expected_next_view(self, previous_view: str) -> Optional[str]:
         expected_transitions = {
             "MainView": "RawDataView",
             "RawDataView": "EventAnalysisView",
@@ -932,7 +1183,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         }
         return expected_transitions.get(previous_view)
 
-    def get_milestone_step(self, view_name):
+    def get_milestone_step(self, view_name: str) -> Optional[Tuple[str, str, QWidget]]:
         """Return the label, description, and highlight widget for the given view."""
 
         milestone_map = {
@@ -969,7 +1220,7 @@ class MainView(QMainWindow, WalkthroughMixin):
 # If the widget needs to be run standalone for testing
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    available_plugins: Dict[str, List[Optional[str]]] = {
+    available_plugins: Dict[str, List[str]] = {
         "MetaFilter": [],
         "MetaEventFinder": [],
         "MetaWriter": [],

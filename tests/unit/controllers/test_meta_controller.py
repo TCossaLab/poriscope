@@ -3,7 +3,6 @@ Tests for poriscope.utils.MetaController.MetaController.
 
 Covers:
 - update_plot_data delegation
-- set_force_serial_channel_operations delegation
 - export_plot_data (data present, data absent, no filename given)
 - _connect_global_signal wiring
 - load_actions_from_json (success, file error, class name key present)
@@ -27,6 +26,7 @@ from collections import OrderedDict
 from unittest.mock import MagicMock, mock_open
 
 import pytest
+from PySide6.QtCore import Qt
 from pytest_mock import MockerFixture
 
 from poriscope.utils.MetaController import MetaController
@@ -166,25 +166,6 @@ def test_update_plot_data_delegates_to_view(
     mock_view.update_plot_data.assert_called_once_with(data)
 
 
-# ------------- set_force_serial_channel_operations -------------------
-
-
-def test_set_force_serial_channel_operations_delegates_to_model(
-    controller: MetaController,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Forward serial operation flag to the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked meta model.
-    """
-    controller.set_force_serial_channel_operations(True, "key1", 0)
-    mock_model.set_force_serial_channel_operations.assert_called_once_with(
-        True, "key1", 0
-    )
-
-
 # ----------------------- export_plot_data ----------------------------
 
 
@@ -273,16 +254,18 @@ def test_connect_global_signal_wires_view_and_model_signals(
     controller._connect_global_signal()
 
     mock_view.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal
+        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
     )
     mock_model.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal
+        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
     )
     mock_view.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal
+        controller._relay_data_plugin_controller_signal,
+        type=Qt.ConnectionType.DirectConnection,
     )
     mock_model.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal
+        controller._relay_data_plugin_controller_signal,
+        type=Qt.ConnectionType.DirectConnection,
     )
 
 
@@ -381,6 +364,11 @@ def test_handle_kill_worker_stops_worker_when_key_and_channel_match(
     controller.handle_kill_worker("MyReader", "key1/0")
 
     mock_model.stop_workers.assert_called_once_with("key1", 0)
+    # The success path used to log at INFO only, which is below the default log
+    # level, so an abort that worked gave the user no confirmation at all.
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
+    text, _source = controller.add_text_to_display.emit.call_args[0]  # type: ignore[attr-defined]
+    assert "key1" in text
 
 
 def test_handle_kill_worker_logs_error_on_invalid_identifier_format(
@@ -395,16 +383,23 @@ def test_handle_kill_worker_logs_error_on_invalid_identifier_format(
     """
     controller.handle_kill_worker("MyReader", "bad_format")
 
+    # Stays at ERROR: unlike the "nothing running" branches this is a real defect
+    # rather than a routine state, so a dialog is warranted.
     controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
     mock_model.stop_workers.assert_not_called()
 
 
-def test_handle_kill_worker_logs_warning_when_key_missing(
+def test_handle_kill_worker_reports_to_panel_when_key_missing(
     controller: MetaController,
     mock_model: MagicMock,
 ) -> None:
     """
-    Log a warning when the key is not present in the workers dict.
+    Tell the user nothing is running when the key is not present in the workers dict.
+
+    Reported on the display panel at INFO rather than as a WARNING: a finished run
+    is popped out of the workers dict, so pressing kill just after one completes
+    reaches this branch routinely and must not raise a modal dialog.
 
     :param controller: Controller under test.
     :param mock_model: Mocked meta model.
@@ -413,16 +408,19 @@ def test_handle_kill_worker_logs_warning_when_key_missing(
 
     controller.handle_kill_worker("MyReader", "missing_key/0")
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.warning.assert_not_called()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
+    text, _source = controller.add_text_to_display.emit.call_args[0]  # type: ignore[attr-defined]
+    assert "missing_key" in text
     mock_model.stop_workers.assert_not_called()
 
 
-def test_handle_kill_worker_logs_warning_when_channel_missing(
+def test_handle_kill_worker_reports_to_panel_when_channel_missing(
     controller: MetaController,
     mock_model: MagicMock,
 ) -> None:
     """
-    Log a warning when the key exists but the channel is not present.
+    Tell the user nothing is running when the key exists but the channel does not.
 
     :param controller: Controller under test.
     :param mock_model: Mocked meta model.
@@ -431,7 +429,10 @@ def test_handle_kill_worker_logs_warning_when_channel_missing(
 
     controller.handle_kill_worker("MyReader", "key1/99")
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.warning.assert_not_called()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
+    text, _source = controller.add_text_to_display.emit.call_args[0]  # type: ignore[attr-defined]
+    assert "99" in text
     mock_model.stop_workers.assert_not_called()
 
 
@@ -551,12 +552,16 @@ def test_relay_global_signal_emits_with_none_return_function(
     assert return_fn is None
 
 
-def test_relay_global_signal_logs_warning_on_emit_exception(
+def test_relay_global_signal_logs_exception_on_emit_failure(
     controller: MetaController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Log a warning when the global_signal emit raises an exception.
+    Log the failure with a traceback when the global_signal emit raises an exception.
+
+    This used to be reported at warning level as "<callback> is not a callable attribute",
+    naming a callback that had already resolved successfully two lines above and
+    discarding the stack of whatever actually failed inside emit.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -566,7 +571,7 @@ def test_relay_global_signal_logs_warning_on_emit_exception(
 
     controller._relay_global_signal("MetaReader", "key1", "my_func", (), "ignore", ())
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
 
 
 # ----------- _relay_data_plugin_controller_signal --------------------
@@ -626,12 +631,15 @@ def test_relay_data_plugin_controller_signal_emits_with_none_return_function(
     assert return_fn is None
 
 
-def test_relay_data_plugin_controller_signal_logs_warning_on_emit_exception(
+def test_relay_data_plugin_controller_signal_logs_exception_on_emit_failure(
     controller: MetaController,
     mocker: MockerFixture,
 ) -> None:
     """
-    Log a warning when the data_plugin_controller_signal emit raises an exception.
+    Log the failure with a traceback when the data_plugin_controller_signal emit raises.
+
+    Matches the global_signal relay: both report an emit failure the same way rather than
+    blaming the already-resolved callback.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -643,7 +651,7 @@ def test_relay_data_plugin_controller_signal_logs_warning_on_emit_exception(
         "MetaReader", "key1", "my_func", (), "ignore", ()
     )
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
 
 
 # ------------------- update_available_plugins ------------------------

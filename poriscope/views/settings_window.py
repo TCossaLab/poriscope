@@ -24,9 +24,19 @@
 # Alejandra Carolina González González
 
 import logging
+import sys
+from typing import Iterable, Optional, Union
 
-from PySide6.QtCore import QCoreApplication, QMetaObject, Qt, Signal, Slot
-from PySide6.QtGui import QFont, QPainter, QPixmap
+from PySide6.QtCore import (
+    QCoreApplication,
+    QMetaObject,
+    QModelIndex,
+    QPersistentModelIndex,
+    Qt,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QFont, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -35,18 +45,83 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
-    QSpacerItem,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleFactory,
+    QStyleOptionViewItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from poriscope.configs.utils import get_themed_icon_path, is_dark_mode
+from poriscope.constants import __VERSION__
 from poriscope.utils.LogDecorator import log
+
+
+class _NoFocusRectDelegate(QStyledItemDelegate):
+    """
+    Item delegate that strips the State_HasFocus flag before painting.
+
+    QComboBox popups paint a focus rectangle around the current-index
+    item using QStyle::State_HasFocus, independent of the view's actual
+    keyboard focus state and immune to stylesheet :focus rules. This is
+    baked into native/Fusion style painting itself, so the only reliable
+    way to suppress it is to clear the flag before delegating to the
+    normal paint logic.
+    """
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: Union[QModelIndex, QPersistentModelIndex],
+    ) -> None:
+        option.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, option, index)
+
+
+class Theme:
+    """
+    Resolved color palette for the current OS light/dark mode.
+
+    Centralizing these means every widget factory method below reads
+    from one place, so a future palette tweak (or a live theme-switch
+    feature) only has to change this class instead of every stylesheet
+    string scattered through the file.
+    """
+
+    def __init__(self, dark: bool) -> None:
+        self.dark = dark
+        if dark:
+            self.bg = "#1E1E1E"
+            self.surface = "#2B2B2B"
+            self.border = "#444444"
+            self.text = "#E8E8E8"
+            self.text_secondary = "#A0A0A0"
+            self.hover = "#3A3A3A"
+            self.selected_bg = "#264F78"
+            self.selected_text = "#8AB4F8"
+            self.divider = "#3A3A3A"
+            self.tab_selected = "#FFFFFF"
+        else:
+            self.bg = "#FFFFFF"
+            self.surface = "#FFFFFF"
+            self.border = "#D0D0D0"
+            self.text = "#333333"
+            self.text_secondary = "#666666"
+            self.hover = "#F0F0F0"
+            self.selected_bg = "#E8F0FE"
+            self.selected_text = "#1A73E8"
+            self.divider = "#A0A0A0"
+            self.tab_selected = "#000000"
 
 
 class SettingsWindow(QWidget):
@@ -55,20 +130,88 @@ class SettingsWindow(QWidget):
     update_user_plugin_location = Signal(str)
     get_shared_server_location = Signal()
     get_user_plugin_folder_location = Signal()
+    get_shared_logging_level = Signal()
     update_log_level = Signal(int)
     clear_cache = Signal()
+    reset_app_config = Signal()
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
+        self.theme = Theme(is_dark_mode())
+        # Values are populated externally via set_data_server() /
+        # set_user_plugin_location(); default to "" so the folder-picker
+        # dialogs below never crash on an unset attribute before that
+        # happens.
+        self.data_server = ""
+        self.user_plugin_location = ""
+        self._current_tab_index = 0
         self.setupUi()
 
-    @log(logger=logger)
-    def setupUi(self):
-        self.setObjectName("Form")
-        self.resize(915, 900)  # Initial size
-        self.setStyleSheet("margin:0")
+        # Stylesheets are static strings baked in at build time, so they
+        # don't react to the OS theme changing mid-session on their own
+        # (and switching tabs doesn't help either -- QTabWidget just
+        # shows/hides already-built widgets, it doesn't rebuild them).
+        # Re-check on every palette change and rebuild if the resolved
+        # theme actually flipped.
+        app = QApplication.instance()
+        if app is not None:
+            app.paletteChanged.connect(self._on_palette_changed)
 
-        main_layout = QVBoxLayout(self)
+    @log(logger=logger)
+    def _on_palette_changed(self, _palette: Optional[QPalette] = None) -> None:
+        new_dark = is_dark_mode()
+        if new_dark == self.theme.dark:
+            return
+        self.logger.info(f"OS theme changed (dark={new_dark}); rebuilding Settings UI")
+        self.theme = Theme(new_dark)
+        self._current_tab_index = self.tabWidget.currentIndex()
+        self._clear_layout(self.layout())
+        self.setupUi()
+
+    @staticmethod
+    def _clear_layout(layout: Optional[QLayout]) -> None:
+        """Recursively delete every widget/sub-layout from a layout so it
+        can be rebuilt from scratch, rather than erroring on a second
+        QVBoxLayout(self) call while one is already installed."""
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                child_layout = item.layout()
+                if child_layout is not None:
+                    SettingsWindow._clear_layout(child_layout)
+
+    @log(logger=logger)
+    def setupUi(self) -> None:
+        self.setObjectName("Form")
+        self.resize(915, 900)
+        # Only cascade text color here, not background. The original
+        # design intentionally left the window background unset so it
+        # inherits the native system palette -- the same grey MainView's
+        # chrome uses -- rather than forcing a stark white card. Only
+        # the interactive controls (combobox, line edit, buttons, list
+        # widget) get an explicit surface color below, for contrast
+        # against that background.
+        self.setStyleSheet(
+            f"""
+            QWidget {{
+                color: {self.theme.text};
+            }}
+            QToolTip {{
+                background-color: #2B2B2B;
+                color: #FFFFFF;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 5px 9px;
+            }}
+            """
+        )
+
+        main_layout = self.layout() or QVBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
 
         self.settingsLabel = self.create_label(self, "Settings", 24, bold=True)
@@ -77,32 +220,30 @@ class SettingsWindow(QWidget):
         self.tabWidget = QTabWidget(self)
         self.tabWidget.setFont(QFont("", -1, QFont.Bold))
         self.tabWidget.setStyleSheet(
+            f"""
+            QTabWidget::pane {{
+                border: none;
+                margin: 10px;
+            }}
+            QTabBar::tab {{
+                padding: 10px;
+                margin: 0px;
+                border: none;
+                border-bottom: 2px solid {self.theme.border};
+                font-size: 16px;
+                font-family: Arial, Helvetica, sans-serif;
+                color: {self.theme.text};
+                background: transparent;
+            }}
+            QTabBar::tab:selected {{
+                border-bottom: 2px solid {self.theme.tab_selected};
+                font-weight: bold;
+            }}
+            QTabBar::tab:hover {{
+                border-bottom: 2px solid {self.theme.tab_selected};
+                font-weight: bold;
+            }}
             """
-            QTabWidget::pane {
-                border: none; 
-                margin:10px;
-            }
-            QTabBar::tab {
-                padding: 10px; 
-                margin: 0px; 
-                border: none; 
-                border-bottom: 2px solid #D0D0D0;
-                font-size: 16px; 
-                
-            }
-            QTabBar::tab:selected {
-                border-bottom: 2px solid #000000;
-                font-weight: bold;  
-            }
-            QTabBar::tab:hover {
-                border-bottom: 2px solid #000000;
-                font-weight: bold;  
-            }
-            QTabBar::tab {
-                font-family: Arial, Helvetica, sans-serif;  /* Set a font family known for good rendering */
-                text-rendering: optimizeLegibility;  /* Enable optimized text rendering */
-            }
-        """
         )
         main_layout.addWidget(self.tabWidget)
 
@@ -121,118 +262,115 @@ class SettingsWindow(QWidget):
         self.add_about_tab_contents(self.tab_about, self.aboutVerticalLayout)
 
         self.retranslateUi()
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(self._current_tab_index)
         QMetaObject.connectSlotsByName(self)
 
+    # ------------------------------------------------------------------
+    # Widget factories
+    # ------------------------------------------------------------------
+
     @log(logger=logger)
-    def create_label(self, parent, text, font_size, bold=False, circular_image=False):
+    def create_label(
+        self, parent: QWidget, text: str, font_size: int, bold: bool = False
+    ) -> QLabel:
         label = QLabel(parent)
         label.setText(QCoreApplication.translate("Form", text, None))
         font = QFont()
         font.setPointSize(font_size)
         font.setBold(bold)
         label.setFont(font)
-
-        if circular_image:
-            path = "/mnt/data/image.png"  # Path to the uploaded image
-            pixmap = QPixmap(path)
-            if not pixmap.isNull():
-                pixmap = pixmap.scaled(
-                    50, 50, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
-                )
-                mask = QPixmap(50, 50)
-                mask.fill(Qt.transparent)
-                painter = QPainter(mask)
-                painter.setRenderHint(QPainter.Antialiasing)
-                painter.setBrush(Qt.white)
-                painter.drawEllipse(0, 0, 50, 50)
-                painter.end()
-                pixmap.setMask(mask.createMaskFromColor(Qt.transparent, Qt.MaskInColor))
-                label.setPixmap(pixmap)
-
+        label.setStyleSheet(f"color: {self.theme.text}; background: transparent;")
         return label
 
     @log(logger=logger)
-    def create_circle_label(self, parent, diameter, background_color):
-        label = QLabel(parent)
-        label.setFixedSize(diameter, diameter)
-        label.setStyleSheet(
-            f"background-color: {background_color}; border-radius: {diameter // 2}px;"
-        )
-        return label
-
-    @log(logger=logger)
-    def create_tab(self, tabWidget, tab_name):
+    def create_tab(self, tabWidget: QTabWidget, tab_name: str) -> QWidget:
         tab = QWidget()
         tabWidget.addTab(tab, QCoreApplication.translate("Form", tab_name, None))
         return tab
 
     @log(logger=logger)
-    def create_combo_box(self, parent, items, max_width=None):
+    def create_combo_box(
+        self, parent: QWidget, items: Iterable[str], max_width: Optional[int] = None
+    ) -> QComboBox:
         comboBox = QComboBox(parent)
         for item in items:
             comboBox.addItem(QCoreApplication.translate("Form", item, None))
 
         if max_width:
             comboBox.setMaximumWidth(max_width)
+        comboBox.setMinimumWidth(200)
+
+        arrow_path = get_themed_icon_path("arrowdown-black.png")
+        if arrow_path:
+            arrow_path = arrow_path.replace("\\", "/")
 
         comboBox.setStyleSheet(
-            """
-            QComboBox {
-                border: 1px solid #D0D0D0;
-                border-radius: 15px;
-                padding: 5px 15px;
-                background: #FFFFFF;
-                color: #333333;
-                min-height: 30px;
-                min-width: 200px;
-            }
-            QComboBox::drop-down {
+            f"""
+            QComboBox {{
+                border: 1px solid {self.theme.border};
+                border-radius: 6px;
+                padding: 5px 10px;
+                background: {self.theme.surface};
+                color: {self.theme.text};
+                min-height: 28px;
+            }}
+            QComboBox:disabled {{
+                color: {self.theme.text_secondary};
+            }}
+            QComboBox::drop-down {{
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
-                width: 20px;
+                width: 24px;
                 border: none;
-            }
-            QComboBox::down-arrow {
-                width: 20px;
-                height: 20px;
-                image: url(":/icons/arrowdown-black.png");
-                margin-right: 5px;
-            }
-            QComboBox QAbstractItemView {
-                border: 1px solid #D0D0D0;
-                border-radius: 15px;
-                background: #FFFFFF;
-                color: #333333;
-                selection-background-color: #F5F5F5;
-                padding: 5px;
+            }}
+            QComboBox::down-arrow {{
+                image: url("{arrow_path}");
+                width: 12px;
+                height: 12px;
+                margin-right: 8px;
+            }}
+            QComboBox QAbstractItemView {{
+                border: 1px solid {self.theme.border};
+                background: {self.theme.surface};
+                color: {self.theme.text};
+                padding: 4px;
                 outline: 0px;
-            }
-            QComboBox QAbstractItemView::item {
-                padding: 5px 15px;
-                min-height: 20px;
-                min-width: 20px;
+            }}
+            QComboBox QAbstractItemView::item {{
+                padding: 6px 10px;
+                min-height: 22px;
+                border-radius: 4px;
                 border: none;
-                background: #FFFFFF;
-                color: #333333;
-            }
-            QComboBox QAbstractItemView::item:selected {
-                background: #F5F5F5;
-                color: #333333;
-                border-radius: 15px;
-            }
-            QComboBox QAbstractItemView::item:hover {
-                background: #E5E5E5;
-                color: #333333;
-                border-radius: 15px;
-            }
-        """
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background: {self.theme.hover};
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background: {self.theme.selected_bg};
+                color: {self.theme.selected_text};
+            }}
+            QComboBox QAbstractItemView::item:selected:hover {{
+                background: {self.theme.selected_bg};
+                color: {self.theme.selected_text};
+            }}
+            """
         )
+
+        # The popup list needs Fusion so hover/selected colors above are
+        # actually respected -- native Windows-style popups ignore parts
+        # of the stylesheet. The custom delegate then strips the
+        # State_HasFocus flag Qt paints on the current-index item, which
+        # otherwise shows as a boxed outline no stylesheet rule can
+        # suppress.
+        comboBox.view().setStyle(QStyleFactory.create("Fusion"))
+        comboBox.setItemDelegate(_NoFocusRectDelegate(comboBox))
 
         return comboBox
 
     @log(logger=logger)
-    def create_checkable_list_widget(self, parent, items):
+    def create_checkable_list_widget(
+        self, parent: QWidget, items: Iterable[str]
+    ) -> QListWidget:
         listWidget = QListWidget(parent)
         for item in items:
             list_item = QListWidgetItem(QCoreApplication.translate("Form", item, None))
@@ -241,69 +379,52 @@ class SettingsWindow(QWidget):
             listWidget.addItem(list_item)
 
         listWidget.setStyleSheet(
-            """
-            QListWidget {
-                border: 1px solid #D0D0D0;
-                border-radius: 15px;
-                padding: 5px 15px;
-                background: #FFFFFF;
-                color: #333333;
+            f"""
+            QListWidget {{
+                border: 1px solid {self.theme.border};
+                border-radius: 10px;
+                padding: 5px 10px;
+                background: {self.theme.surface};
+                color: {self.theme.text};
                 min-height: 30px;
                 min-width: 200px;
-            }
-            QListWidget::item {
-                padding: 5px 15px;
-            }
-            QListWidget::item:selected {
-                background: #F5F5F5;
-                color: #333333;
-                border-radius: 15px;
-            }
-            QListWidget::item:hover {
-                background: #E5E5E5;
-                color: #333333;
-                border-radius: 15px;
-            }
-        """
+            }}
+            QListWidget::item {{
+                padding: 5px 10px;
+                border-radius: 4px;
+            }}
+            QListWidget::item:hover {{
+                background: {self.theme.hover};
+            }}
+            QListWidget::item:selected {{
+                background: {self.theme.selected_bg};
+                color: {self.theme.selected_text};
+            }}
+            QListWidget::item:selected:hover {{
+                background: {self.theme.selected_bg};
+                color: {self.theme.selected_text};
+            }}
+            """
         )
-
         return listWidget
 
     @log(logger=logger)
-    def create_check_box(self, parent):
+    def create_check_box(self, parent: QWidget) -> QCheckBox:
         checkBox = QCheckBox(parent)
         checkBox.setStyleSheet(
             """
-        QCheckBox::indicator {
-            width: 20px;
-            height: 20px;
-        }
-        """
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+            }
+            """
         )
         return checkBox
 
     @log(logger=logger)
-    def create_styled_check_box(self, parent, object_name):
-        checkBox = QCheckBox(parent)
-        checkBox.setObjectName(object_name)
-        checkBox.setStyleSheet(
-            """
-        QCheckBox::indicator {
-            width: 50px;
-            height: 50px;
-        }
-        QCheckBox::indicator:checked {
-            image: url(":/icons/toggle-on.png");
-        }
-        QCheckBox::indicator:unchecked {
-            image: url(":/icons/toggle-off.png");
-        }
-        """
-        )
-        return checkBox
-
-    @log(logger=logger)
-    def create_line_edit(self, parent, max_width=None):
+    def create_line_edit(
+        self, parent: QWidget, max_width: Optional[int] = None
+    ) -> QLineEdit:
         lineEdit = QLineEdit(parent)
         if max_width:
             lineEdit.setMaximumWidth(max_width)
@@ -311,83 +432,163 @@ class SettingsWindow(QWidget):
         sizePolicy.setHeightForWidth(lineEdit.sizePolicy().hasHeightForWidth())
         lineEdit.setSizePolicy(sizePolicy)
         lineEdit.setStyleSheet(
-            """
-            QLineEdit {
-                border: 1px solid #D0D0D0;
-                border-radius: 15px;
-                padding: 5px 15px;
-                background: #FFFFFF;
-                color: #333333;
-                min-height: 30px;
+            f"""
+            QLineEdit {{
+                border: 1px solid {self.theme.border};
+                border-radius: 6px;
+                padding: 5px 10px;
+                background: {self.theme.surface};
+                color: {self.theme.text};
+                min-height: 28px;
                 min-width: 200px;
-            }
-        """
+            }}
+            """
         )
         return lineEdit
 
     @log(logger=logger)
     def create_push_button(
         self,
-        parent,
-        text,
-        background_color,
-        text_color,
-        is_circle=False,
-        image_path=None,
-        max_width=None,
-    ):
+        parent: QWidget,
+        text: str,
+        background_color: str,
+        text_color: str,
+        max_width: Optional[int] = None,
+        border_color: Optional[str] = None,
+    ) -> QPushButton:
         pushButton = QPushButton(parent)
         pushButton.setText(QCoreApplication.translate("Form", text, None))
         if max_width:
             pushButton.setMaximumWidth(max_width)
-        border_radius = "15px" if not is_circle else "25px"
-        style_sheet = f"""
+        pushButton.setCursor(Qt.PointingHandCursor)
+        border_rule = f"1px solid {border_color}" if border_color else "none"
+        pushButton.setStyleSheet(
+            f"""
             QPushButton {{
                 background: {background_color};
                 color: {text_color};
-                border: none;
-                border-radius: {border_radius};
+                border: {border_rule};
+                border-radius: 6px;
                 padding: 5px 15px;
                 min-width: 100px;
                 min-height: 30px;
             }}
-        """
-        if is_circle:
-            style_sheet += """
-                max-width: 50px;
-                max-height: 50px;
-            """
-            if image_path:
-                style_sheet += f"""
-                    background-image: url({image_path});
-                    background-repeat: no-repeat;
-                    background-position: center;
-                """
-        style_sheet += """
-            QPushButton:hover {
-                background: #333333;
-                color: #FFFFFF;
-            }
-            QPushButton:pressed {
+            QPushButton:hover {{
+                background: {self.theme.hover if self.theme.dark else "#333333"};
+                color: {self.theme.text if self.theme.dark else "#FFFFFF"};
+                border: {border_rule};
+            }}
+            QPushButton:pressed {{
                 background: #999999;
                 color: #FFFFFF;
-            }
-        """
-        pushButton.setStyleSheet(style_sheet)
+                border: {border_rule};
+            }}
+            """
+        )
         return pushButton
 
     @log(logger=logger)
-    def create_section_layout(self, widget, color):
+    def create_secondary_button(
+        self, parent: QWidget, text: str, max_width: Optional[int] = None
+    ) -> QPushButton:
+        """
+        Folder-picker action button (Change Data Server Location / Change
+        User Plugin Location).
+
+        Light mode: solid black, inverting to white on hover.
+        Dark mode: the theme's surface/border styling, unchanged.
+
+        Styled directly rather than through create_push_button since the
+        hover behavior (invert, not darken) differs from every other
+        button in this window. The border color and width stay identical
+        across normal/hover/pressed states in both branches -- a mismatch
+        there is what caused a stale black repaint artifact to linger
+        after the cursor left the button.
+        """
+        pushButton = QPushButton(parent)
+        pushButton.setText(QCoreApplication.translate("Form", text, None))
+        if max_width:
+            pushButton.setMaximumWidth(max_width)
+        pushButton.setCursor(Qt.PointingHandCursor)
+
+        if self.theme.dark:
+            pushButton.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background: {self.theme.surface};
+                    color: {self.theme.text};
+                    border: 1px solid #777777;
+                    border-radius: 6px;
+                    padding: 5px 15px;
+                    min-width: 100px;
+                    min-height: 30px;
+                }}
+                QPushButton:hover {{
+                    background: {self.theme.hover};
+                    color: {self.theme.text};
+                    border: 1px solid #777777;
+                }}
+                QPushButton:pressed {{
+                    background: #444444;
+                    color: {self.theme.text};
+                    border: 1px solid #777777;
+                }}
+                """
+            )
+        else:
+            pushButton.setStyleSheet(
+                """
+                QPushButton {
+                    background: #000000;
+                    color: #FFFFFF;
+                    border: 1px solid #000000;
+                    border-radius: 6px;
+                    padding: 5px 15px;
+                    min-width: 100px;
+                    min-height: 30px;
+                }
+                QPushButton:hover {
+                    background: #FFFFFF;
+                    color: #000000;
+                    border: 1px solid #000000;
+                }
+                QPushButton:pressed {
+                    background: #DDDDDD;
+                    color: #000000;
+                    border: 1px solid #000000;
+                }
+                """
+            )
+
+        return pushButton
+
+    @log(logger=logger)
+    def create_section_layout(self, widget: QWidget) -> QWidget:
         container = QWidget()
-        container.setStyleSheet(f"background-color: {color};")
+        container.setStyleSheet("background-color: transparent;")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(10, 10, 10, 10)
         container_layout.addWidget(widget)
         return container
 
+    def add_horizontal_line(self) -> QFrame:
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        line.setStyleSheet(
+            f"min-height: 1px; max-height: 1px; background-color: {self.theme.divider}; border: none;"
+        )
+        return line
+
+    # ------------------------------------------------------------------
+    # Tabs
+    # ------------------------------------------------------------------
+
     @log(logger=logger)
-    def add_general_tab_contents(self, parent_widget, layout):
-        layout.setSpacing(0)  # Adjust the spacing between the main sections
+    def add_general_tab_contents(
+        self, parent_widget: QWidget, layout: QVBoxLayout
+    ) -> None:
+        layout.setSpacing(0)
 
         general_label = self.create_label(parent_widget, "General", 14)
         description_label = self.create_label(
@@ -395,30 +596,30 @@ class SettingsWindow(QWidget):
             "Configure the overall preferences for your application experience",
             10,
         )
-
         general_layout = QVBoxLayout()
         general_layout.addWidget(general_label)
         general_layout.addWidget(description_label)
         general_widget = QWidget()
         general_widget.setLayout(general_layout)
-        layout.addWidget(self.create_section_layout(general_widget, ""))
+        layout.addWidget(self.create_section_layout(general_widget))
 
         layout_language = QHBoxLayout()
         layout_language.addWidget(self.create_label(parent_widget, "Language", 10))
         layout_language.addWidget(
             self.create_combo_box(
-                parent_widget, ["English", "Español"], max_width=self.width() // 3
+                parent_widget, ["English"], max_width=self.width() // 3
             ),
             alignment=Qt.AlignLeft,
         )
-
         language_widget = QWidget()
         language_widget.setLayout(layout_language)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(language_widget, ""))
+        layout.addWidget(self.create_section_layout(language_widget))
 
-        self.update_data_server_button = QPushButton("Change Data Server Location")
+        self.update_data_server_button = self.create_secondary_button(
+            parent_widget, "Change Data Server Location"
+        )
         self.update_data_server_button.setToolTip("Select a folder")
         self.update_data_server_button.clicked.connect(self.update_data_server)
 
@@ -428,7 +629,9 @@ class SettingsWindow(QWidget):
         )
         layout_dataServerLocation.addWidget(self.update_data_server_button)
 
-        self.update_user_plugin_button = QPushButton("Change User Plugin Location")
+        self.update_user_plugin_button = self.create_secondary_button(
+            parent_widget, "Change User Plugin Location"
+        )
         self.update_user_plugin_button.setToolTip("Select a folder")
         self.update_user_plugin_button.clicked.connect(self.update_user_plugin_folder)
 
@@ -441,57 +644,17 @@ class SettingsWindow(QWidget):
         shared_service_layout = QVBoxLayout()
         shared_service_layout.addLayout(layout_dataServerLocation)
         shared_service_layout.addLayout(layout_userPluginLocation)
-
         shared_service_widget = QWidget()
         shared_service_widget.setLayout(shared_service_layout)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(shared_service_widget, ""))
-
-        # Setting up buttons with connections
-        layout_buttons = QHBoxLayout()
-        layout_buttons.addItem(
-            QSpacerItem(
-                40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
-            )
-        )
-
-        buttons_widget = QWidget()
-        buttons_widget.setLayout(layout_buttons)
-
+        layout.addWidget(self.create_section_layout(shared_service_widget))
         layout.addWidget(self.add_horizontal_line())
 
-    def handle_clear_cache(self):
-        self.clear_cache.emit()
-
     @log(logger=logger)
-    def update_data_server(self):
-        self.get_shared_server_location.emit()
-        folder_path = QFileDialog.getExistingDirectory(
-            self, "Select Folder", self.data_server
-        )
-        if folder_path:
-            self.update_data_server_location.emit(folder_path)
-
-    @log(logger=logger)
-    def update_user_plugin_folder(self):
-        self.get_user_plugin_folder_location.emit()
-        folder_path = QFileDialog.getExistingDirectory(
-            self, "Select Folder", self.user_plugin_location
-        )
-        if folder_path:
-            self.update_user_plugin_location.emit(folder_path)
-
-    @log(logger=logger)
-    def set_data_server(self, data_server):
-        self.data_server = data_server
-
-    @log(logger=logger)
-    def set_user_plugin_location(self, user_plugin_loc):
-        self.user_plugin_location = user_plugin_loc
-
-    @log(logger=logger)
-    def add_advanced_settings_tab_contents(self, parent_widget, layout):
+    def add_advanced_settings_tab_contents(
+        self, parent_widget: QWidget, layout: QVBoxLayout
+    ) -> None:
         layout.setSpacing(0)
 
         advanced_settings_label = self.create_label(
@@ -502,13 +665,12 @@ class SettingsWindow(QWidget):
             "Adjust detailed settings and configurations for advanced users and developers",
             10,
         )
-
         advanced_settings_layout = QVBoxLayout()
         advanced_settings_layout.addWidget(advanced_settings_label)
         advanced_settings_layout.addWidget(description_label)
         advanced_settings_widget = QWidget()
         advanced_settings_widget.setLayout(advanced_settings_layout)
-        layout.addWidget(self.create_section_layout(advanced_settings_widget, ""))
+        layout.addWidget(self.create_section_layout(advanced_settings_widget))
 
         layout_loggingLevel = QHBoxLayout()
         layout_loggingLevel.addWidget(
@@ -522,8 +684,6 @@ class SettingsWindow(QWidget):
         layout_loggingLevel.addWidget(
             self.logging_level_combobox, alignment=Qt.AlignLeft
         )
-
-        # Connect the combobox to a method that updates the logging level
         self.logging_level_combobox.currentIndexChanged.connect(
             self.update_logging_level
         )
@@ -532,11 +692,17 @@ class SettingsWindow(QWidget):
         logging_level_widget.setLayout(layout_loggingLevel)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(logging_level_widget, ""))
+        layout.addWidget(self.create_section_layout(logging_level_widget))
 
-        # Clear Cache button
         layout_clearCache = QHBoxLayout()
-        layout_clearCache.addWidget(self.create_label(parent_widget, "Clear Cache", 10))
+        layout_clearCache.addWidget(
+            self.create_label(
+                parent_widget,
+                "Empties the application log file. Past diagnostic output is\n"
+                "discarded and cannot be recovered.",
+                10,
+            )
+        )
         self.clear_cache_button = self.create_push_button(
             parent_widget,
             "Clear Cache",
@@ -551,33 +717,42 @@ class SettingsWindow(QWidget):
         clear_cache_widget.setLayout(layout_clearCache)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(clear_cache_widget, ""))
+        layout.addWidget(self.create_section_layout(clear_cache_widget))
 
         layout_resetSettings = QHBoxLayout()
         layout_resetSettings.addWidget(
-            self.create_label(parent_widget, "Reset to Default Settings", 10)
-        )
-        layout_resetSettings.addWidget(
-            self.create_push_button(
+            self.create_label(
                 parent_widget,
-                "Reset Settings",
-                "rgb(255, 107, 107)",
-                "#FFFFFF",
-                max_width=self.width() // 3,
-            ),
-            alignment=Qt.AlignLeft,
+                "Restores the data server location, user plugin folder and\n"
+                "logging level above to their defaults. Configured plugins and\n"
+                "saved sessions are not affected.",
+                10,
+            )
+        )
+        self.reset_settings_button = self.create_push_button(
+            parent_widget,
+            "Reset Settings",
+            "rgb(255, 107, 107)",
+            "#FFFFFF",
+            max_width=self.width() // 3,
+        )
+        self.reset_settings_button.clicked.connect(self.handle_reset_app_config)
+        layout_resetSettings.addWidget(
+            self.reset_settings_button, alignment=Qt.AlignLeft
         )
 
         reset_settings_widget = QWidget()
         reset_settings_widget.setLayout(layout_resetSettings)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(reset_settings_widget, ""))
+        layout.addWidget(self.create_section_layout(reset_settings_widget))
 
         layout.addWidget(self.add_horizontal_line())
 
     @log(logger=logger)
-    def add_about_tab_contents(self, parent_widget, layout):
+    def add_about_tab_contents(
+        self, parent_widget: QWidget, layout: QVBoxLayout
+    ) -> None:
         layout.setSpacing(0)
 
         about_label = self.create_label(parent_widget, "About", 14)
@@ -586,27 +761,25 @@ class SettingsWindow(QWidget):
             "Learn more about this application, its version, developers, and licensing information",
             10,
         )
-
         about_layout = QVBoxLayout()
         about_layout.addWidget(about_label)
         about_layout.addWidget(description_label)
         about_widget = QWidget()
         about_widget.setLayout(about_layout)
-        layout.addWidget(self.create_section_layout(about_widget, ""))
+        layout.addWidget(self.create_section_layout(about_widget))
 
         layout_versionInfo = QVBoxLayout()
         layout_versionInfo.addWidget(
             self.create_label(parent_widget, "Application Version", 10)
         )
         layout_versionInfo.addWidget(
-            self.create_label(parent_widget, "Version 1.0.2", 10)
+            self.create_label(parent_widget, f"Version {__VERSION__}", 10)
         )
-
         version_info_widget = QWidget()
         version_info_widget.setLayout(layout_versionInfo)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(version_info_widget, ""))
+        layout.addWidget(self.create_section_layout(version_info_widget))
 
         layout_developerInformation = QVBoxLayout()
         layout_developerInformation.addWidget(
@@ -617,24 +790,83 @@ class SettingsWindow(QWidget):
                 parent_widget, "Kyle Briggs & Alejandra Carolina González González", 10
             )
         )
-
         developer_info_widget = QWidget()
         developer_info_widget.setLayout(layout_developerInformation)
 
         layout.addWidget(self.add_horizontal_line())
-        layout.addWidget(self.create_section_layout(developer_info_widget, ""))
+        layout.addWidget(self.create_section_layout(developer_info_widget))
 
-    def add_horizontal_line(self):
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        line.setStyleSheet(
-            "min-height: 1px; max-height: 1px; background-color: #a0a0a0; border: none;"
+    # ------------------------------------------------------------------
+    # Slots / actions
+    # ------------------------------------------------------------------
+
+    def handle_clear_cache(self) -> None:
+        self.clear_cache.emit()
+
+    @log(logger=logger)
+    def handle_reset_app_config(self) -> None:
+        """
+        Confirm, then ask for the stored settings to be restored to defaults.
+
+        Confirmed because reverting the parent folder silently re-points every
+        live data plugin at a different root, which is not obvious from the
+        button alone.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Reset Settings",
+            "Restore the data server location, user plugin folder and logging "
+            "level to their defaults?\n\n"
+            "Configured plugins and saved sessions are not affected.\n\n"
+            "A changed plugin folder takes effect when you next start "
+            "Poriscope.",
+            QMessageBox.Ok | QMessageBox.Cancel,
         )
-        return line
+        if reply == QMessageBox.Ok:
+            self.reset_app_config.emit()
+
+    @log(logger=logger)
+    def update_data_server(self) -> None:
+        self.get_shared_server_location.emit()
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "Select Folder", self.data_server
+        )
+        if folder_path:
+            self.update_data_server_location.emit(folder_path)
+
+    @log(logger=logger)
+    def update_user_plugin_folder(self) -> None:
+        self.get_user_plugin_folder_location.emit()
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "Select Folder", self.user_plugin_location
+        )
+        if folder_path:
+            self.update_user_plugin_location.emit(folder_path)
+
+    @log(logger=logger)
+    def set_data_server(self, data_server: str) -> None:
+        self.data_server = data_server
+
+    @log(logger=logger)
+    def set_user_plugin_location(self, user_plugin_loc: str) -> None:
+        self.user_plugin_location = user_plugin_loc
+
+    @log(logger=logger)
+    def set_logging_level(self, level: int) -> None:
+        index = {
+            logging.NOTSET: 0,
+            logging.DEBUG: 1,
+            logging.INFO: 2,
+            logging.WARNING: 3,
+            logging.ERROR: 4,
+            logging.CRITICAL: 5,
+        }.get(level, 0)
+        self.logging_level_combobox.blockSignals(True)
+        self.logging_level_combobox.setCurrentIndex(index)
+        self.logging_level_combobox.blockSignals(False)
 
     @Slot(int)
-    def update_logging_level(self, index):
+    def update_logging_level(self, index: int) -> None:
         level = {
             0: logging.NOTSET,
             1: logging.DEBUG,
@@ -645,14 +877,12 @@ class SettingsWindow(QWidget):
         }.get(index, logging.NOTSET)
         self.update_log_level.emit(level)
 
-    def retranslateUi(self):
+    def retranslateUi(self) -> None:
         self.setWindowTitle(QCoreApplication.translate("Form", "Settings", None))
 
-    def main(self):
-        import sys
-
+    def main(self) -> None:
         app = QApplication(sys.argv)
-        SettingsWindow()
+        SettingsWindow().show()
         sys.exit(app.exec())
 
 

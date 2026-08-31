@@ -25,8 +25,10 @@
 # Kyle Briggs
 
 import logging
+from typing import Optional
 
 import numpy as np
+import numpy.typing as npt
 from scipy.signal import welch
 from typing_extensions import override
 
@@ -47,11 +49,13 @@ class RawDataModel(MetaModel):
 
     @log(logger=logger)
     @override
-    def _init(self):
+    def _init(self) -> None:
         pass
 
     @log(logger=logger)
-    def integrate_noise(self, f, Pxx):
+    def integrate_noise(
+        self, f: npt.NDArray[np.floating], Pxx: npt.NDArray[np.floating]
+    ) -> npt.NDArray[np.floating]:
         """
         Compute the integrated noise from a power spectral density.
 
@@ -60,26 +64,51 @@ class RawDataModel(MetaModel):
         frequency. It assumes evenly spaced frequency bins.
 
         :param f: Array of frequency values (Hz), evenly spaced.
-        :type f: numpy.ndarray or list[float]
+        :type f: npt.NDArray[np.floating]
         :param Pxx: Power spectral density values corresponding to `f`.
-        :type Pxx: numpy.ndarray or list[float]
+        :type Pxx: npt.NDArray[np.floating]
         :return: Array of integrated RMS noise values for each frequency point.
-        :rtype: numpy.ndarray
+        :rtype: npt.NDArray[np.floating]
         """
         df = f[1] - f[0]
         return np.sqrt(np.cumsum(Pxx * df))
 
     @log(logger=logger)
-    def calculate_psd(self, psd_data, samplerate):
+    def calculate_psd(
+        self, psd_data: list, samplerate: float
+    ) -> tuple[list, list, Optional[np.ndarray], list[int]]:
         """
         Calculate a psd for each dataset in the list, assuming a common samplerate
+
+        :param psd_data: List of time-domain signal arrays for which PSD will be computed.
+        :type psd_data: list
+        :param samplerate: Sampling rate of the signal in Hz.
+        :type samplerate: float
+        :return: Pxx_list, rms_list, the frequency axis, and the indices into
+            ``psd_data`` that were successfully processed. A channel is
+            skipped (and its index omitted) if it has too few samples, if
+            ``welch()`` fails, or if the resulting frequency axis is too
+            short to integrate noise over.
+        :rtype: tuple[list, list, Optional[np.ndarray], list[int]]
         """
         Pxx_list = []
         rms_list = []
-        for data in psd_data:
-            length = len(data) / 10
-            f, Pxx = welch(data, samplerate, nperseg=length)
-            rms = self.integrate_noise(f, Pxx)
+        kept_indices = []
+        f = None
+        for index, data in enumerate(psd_data):
+            length = int(len(data) / 10)
+            if length < 1:
+                self.logger.warning(
+                    f"Skipping PSD calculation for a channel with insufficient data ({len(data)} samples)"
+                )
+                continue
+            try:
+                f, Pxx = welch(data, samplerate, nperseg=length)
+                rms = self.integrate_noise(f, Pxx)
+            except Exception as e:
+                self.logger.warning(f"Unable to calculate PSD for a channel: {e}")
+                continue
             Pxx_list.append(Pxx)
             rms_list.append(rms)
-        return Pxx_list, rms_list, f
+            kept_indices.append(index)
+        return Pxx_list, rms_list, f, kept_indices

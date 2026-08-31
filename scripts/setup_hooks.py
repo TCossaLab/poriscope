@@ -51,8 +51,13 @@ def install_pre_commit(repo_root: str) -> None:
 def install_post_merge_hook(repo_root: str) -> None:
     print("Installing Git hook: post-merge")
 
-    # Define the source path of the post-merge hook script
-    hook_src = os.path.join(repo_root, "scripts", "hooks", "post-merge.py")
+    # Define the source path of the post-merge hook script.
+    # This is the POSIX-shell shim, not post-merge.py itself. Git runs hooks
+    # through its bundled shell on every platform and honours their shebang, and
+    # post-merge.py's "#!/usr/bin/env python3" does not resolve on Windows, where
+    # "python3" is the Microsoft Store stub. The shim picks a working interpreter
+    # and launches post-merge.py with it.
+    hook_src = os.path.join(repo_root, "scripts", "hooks", "post-merge")
     # Define the destination path for the Git hook (inside the .git/hooks directory)
     hook_dst = os.path.join(repo_root, ".git", "hooks", "post-merge")
 
@@ -68,12 +73,44 @@ def install_post_merge_hook(repo_root: str) -> None:
     print("post-merge hook installed")
 
 
+def configure_gitflow(repo_root: str) -> None:
+    print("Configuring git flow: release tag prefix")
+
+    # git flow reads the tag prefix from git config, and it defaults to empty, so
+    # "git flow release finish 1.7.0" would tag a bare "1.7.0". The CD workflow in
+    # .github/workflows/release.yml triggers on "tags: ['v*']", so an unprefixed tag
+    # does not match it - which is how the old 1.5.0 tag came to disagree with the
+    # v1.6.0 and v1.6.1 ones that followed. .git/config is not version-controlled,
+    # so this has to be set per clone, which is why it lives here.
+    key = "gitflow.prefix.versiontag"
+    current = subprocess.run(
+        ["git", "config", "--get", key],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    if current == "v":
+        print(f"{key} is already 'v'")
+        return
+    if current:
+        print(
+            f"{key} is set to '{current}', leaving it alone. Release tags are expected "
+            "to be v-prefixed; set it to 'v' by hand if that is not deliberate."
+        )
+        return
+
+    subprocess.run(["git", "config", key, "v"], cwd=repo_root)
+    print(f"{key} set to 'v', so git flow will tag releases as v<version>")
+
+
 def main() -> None:
     repo_root: str = subprocess.check_output(
         ["git", "rev-parse", "--show-toplevel"], text=True
     ).strip()
     install_post_merge_hook(repo_root)
     install_pre_commit(repo_root)
+    configure_gitflow(repo_root)
 
 
 if __name__ == "__main__":

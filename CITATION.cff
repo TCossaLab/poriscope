@@ -1,9 +1,9 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below. To cite all versions, use the concept DOI 10.5281/zenodo.17860299. Version-specific DOIs can be found at https://doi.org/10.5281/zenodo.17860299"
 title: "Poriscope"
-version: "1.6.1"
+version: "1.7.0"
 doi: "10.5281/zenodo.17860299"
-date-released: "2026-06-08"
+date-released: "2026-08-31"
 authors:
   - family-names: "Briggs"
     given-names: "Kyle"
@@ -13,3 +13,22 @@ authors:
     given-names: "Deekshant"
   - family-names: "Kerrouri"
     given-names: "Nada"
+preferred-citation:
+  type: article
+  title: "Poriscope: A Configurable Pipeline for Nanopore Data Analysis"
+  authors:
+    - family-names: "González González"
+      given-names: "Alejandra Carolina"
+    - family-names: "Kerrouri"
+      given-names: "Nada"
+    - family-names: "Wadhwa"
+      given-names: "Deekshant"
+    - family-names: "Tabard-Cossa"
+      given-names: "Vincent"
+    - family-names: "Briggs"
+      given-names: "Kyle"
+  journal: "Journal of Open Research Software"
+  year: 2026
+  volume: 14
+  doi: "10.5334/jors.703"
+  url: "https://doi.org/10.5334/jors.703"

@@ -26,19 +26,25 @@
 import logging
 import re
 from abc import abstractmethod
+from typing import Optional, Tuple
 
 from PySide6.QtGui import QValidator
+from PySide6.QtWidgets import QLineEdit
+
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 
 
-class BaseValidator(QValidator):
+class BaseValidator(QValidator, metaclass=QObjectABCMeta):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, line_edit):
+    def __init__(self, line_edit: QLineEdit) -> None:
         super().__init__()
         self.line_edit = line_edit
         # this is a test
 
-    def common_validation(self, input, pos):
+    def common_validation(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Common validation logic to be applied implicitly by the base class."""
         if input == "":
             self.logger.debug("Input is empty but allowed.")
@@ -62,12 +68,12 @@ class BaseValidator(QValidator):
 
         return QValidator.Acceptable, input, pos
 
-    def has_forbidden_characters(self, input):
+    def has_forbidden_characters(self, input: str) -> Optional[re.Match]:
         """Check for forbidden characters. This can be overridden by subclasses."""
         # Default: disallow anything other than digits, commas, and hyphens
         return re.search(r"[^0-9,\-\.]", input)
 
-    def validate(self, input, pos):
+    def validate(self, input: str, pos: int) -> Tuple[QValidator.State, str, int]:
         """Base validation method that automatically handles common, intermediate, and final validation."""
         try:
             # Apply common validation
@@ -83,18 +89,24 @@ class BaseValidator(QValidator):
             else:
                 return self._validate_final(input)
         except Exception as e:
-            self.logger.error(f"Error during validation: {str(e)}")
+            # warning, not error: Qt calls validate on every keystroke, and an error
+            # here is a modal dialog, so a defect on this path would raise one dialog
+            # per character typed. The except itself stays because an exception must
+            # not escape a QValidator into Qt's C++ caller.
+            self.logger.warning(f"Error during validation: {str(e)}", exc_info=True)
             return QValidator.Invalid, input, pos
 
     @abstractmethod
-    def _validate_intermediate(self, input, pos):
+    def _validate_intermediate(
+        self, input: str, pos: int
+    ) -> Tuple[QValidator.State, str, int]:
         """Intermediate validation to be implemented in subclass."""
         raise NotImplementedError(
             "Subclasses must implement the '_validate_intermediate' method."
         )
 
     @abstractmethod
-    def _validate_final(self, input):
+    def _validate_final(self, input: str) -> Tuple[QValidator.State, str, int]:
         """Final validation to be implemented in subclass."""
         raise NotImplementedError(
             "Subclasses must implement the '_validate_final' method."

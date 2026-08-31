@@ -25,10 +25,12 @@
 
 import logging
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -51,7 +53,7 @@ class SQLiteEventLoader(MetaEventLoader):
     # Public API, probably usable as-is in most cases
     @log(logger=logger)
     @override
-    def close_resources(self, channel=None):
+    def close_resources(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
         """
@@ -59,7 +61,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel=None):
+    def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
         """
@@ -78,15 +80,27 @@ class SQLiteEventLoader(MetaEventLoader):
     # private API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
-    def load_event(self, channel, index, data_filter=None):
+    def load_event(
+        self,
+        channel: int,
+        index: int,
+        data_filter: Optional[Callable] = None,
+    ) -> Dict[str, Union[npt.NDArray[np.float64], int, float]]:
         """
         :param channel: channel number from which to load data.
         :type channel: int
         :param index: The unique identifier for the event to load
         :type index: int
+        :param data_filter: an optional filter function to apply to the data before it is returned
+        :type data_filter: Optional[Callable]
 
         :return: data and context corresponding to the event, with baseline padding before and after
         :rtype: Dict[str, Union[npt.NDArray[np.float64], int, float]]
+
+        :raises IndexError: if no event with the given index exists for the given channel
+        :raises ValueError: if a value error occurs while loading the event
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while loading the event
 
         **Purpose:** Load the data and metadata associated with a single specified event
 
@@ -163,7 +177,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_num_events(self, channel):
+    def get_num_events(self, channel: int) -> int:
         """
         get the number of events available in the given channel
 
@@ -172,6 +186,8 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :return: The number of events in the channel for the given experiment
         :rtype: int
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while counting events
         """
         conn = None
         cursor = None
@@ -186,17 +202,11 @@ class SQLiteEventLoader(MetaEventLoader):
                        WHERE e.channel_id = ?;"""
             cursor.execute(query, (channel,))
 
-            num_events_row = cursor.fetchone()
-            if num_events_row is None:
-                raise ValueError(f"No events found for channel {channel}")
-            num_events = num_events_row[0]
+            num_events = cursor.fetchone()[0]
 
         except sqlite3.Error as e:
             self.logger.error(f"SQLite error in get_num_events: {e}")
             raise  # Re-raise the exception to propagate it
-        except ValueError as e:
-            self.logger.error(f"Value error in get_num_events: {e}")
-            raise
         except Exception as e:
             self.logger.error(f"Unexpected error in get_num_events: {e}", exc_info=True)
             raise
@@ -209,7 +219,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_samplerate(self, channel):
+    def get_samplerate(self, channel: int) -> float:
         """
         Return the sampling rate for the channel.
 
@@ -218,6 +228,9 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :return: Sampling rate for the dataset.
         :rtype: float
+        :raises ValueError: if no samplerate is found for the given channel
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while fetching the samplerate
         """
         conn = None
         cursor = None
@@ -237,7 +250,7 @@ class SQLiteEventLoader(MetaEventLoader):
                 raise ValueError(f"No samplerate found for channel {channel}")
             samplerate = samplerate_row[0]
 
-        except (sqlite3.Error, ValueError, Exception) as e:
+        except sqlite3.Error as e:
             self.logger.error(f"SQLite error in get_samplerate: {e}")
             raise  # Re-raise the exception to propagate it
         except ValueError as e:
@@ -263,9 +276,11 @@ class SQLiteEventLoader(MetaEventLoader):
         :return: A list of event ids
         :rtype: List[int]
 
-        :raises: ValueError if no event_ids exist
+        :raises ValueError: if no event_ids exist
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while fetching event ids
 
-        **Purpose** Return a list of indices correspond to the id of events within the given channel, or a list of all valid indices in the database if channel is not specified
+        **Purpose** Return a list of indices corresponding to the id of events within the given channel. `channel` is required; there is no "all channels" mode.
         """
         conn = None
         cursor = None
@@ -303,12 +318,15 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_channels(self):
+    def get_channels(self) -> List[int]:
         """
         Return the keys of valid channels in the reader
 
         :return: keys of valid channels in the reader
         :rtype: List[int]
+        :raises ValueError: if no channels are found
+        :raises sqlite3.Error: if a database operation fails
+        :raises Exception: if an unexpected error occurs while fetching channels
         """
         conn = None
         cursor = None
@@ -347,15 +365,12 @@ class SQLiteEventLoader(MetaEventLoader):
 
     @log(logger=logger)
     @override
-    def get_empty_settings(self, globally_available_plugins=None, standalone=False):
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
-        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-
         **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
@@ -396,6 +411,13 @@ class SQLiteEventLoader(MetaEventLoader):
             return settings
 
         which will ensure that your have the ``Input File`` key and limit visible options to sqlite3 files. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :type globally_available_plugins: Optional[ Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Input File"]["Options"] = [
@@ -413,7 +435,7 @@ class SQLiteEventLoader(MetaEventLoader):
 
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the settings dict does not contain the correct information.
+        :raises KeyError: If the settings dict does not contain the correct information.
         """
         if "Input File" not in settings.keys():
             raise KeyError("""settings must include an 'Input File' key""")
@@ -442,6 +464,12 @@ class SQLiteEventLoader(MetaEventLoader):
             # Fetch all tables from the database
             existing_tables = [row[0] for row in cursor.fetchall()]
 
+            # sqlite_sequence is an internal table SQLite creates automatically for
+            # any AUTOINCREMENT column; it's not part of the expected schema, but its
+            # presence is normal and not itself a validation problem.
+            if "sqlite_sequence" in existing_tables:
+                existing_tables.remove("sqlite_sequence")
+
             # Check if the existing tables match the expected channels
             missing_tables = [
                 table for table in expected_tables if table not in existing_tables
@@ -450,17 +478,12 @@ class SQLiteEventLoader(MetaEventLoader):
                 table for table in existing_tables if table not in expected_tables
             ]
 
-            if "sqlite_sequence" in existing_tables:
-                existing_tables.remove("sqlite_sequence")
-
             if missing_tables:
                 raise ValueError(
                     f"Missing tables: {', '.join(missing_tables)}. Double check that you are loading a database of raw event data."
                 )
 
-            if extra_tables and not (
-                len(extra_tables) == 1 and extra_tables[0] == "sqlite_sequence"
-            ):
+            if extra_tables:
                 raise ValueError(
                     f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of raw event data."
                 )

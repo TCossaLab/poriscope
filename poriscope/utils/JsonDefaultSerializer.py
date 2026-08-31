@@ -23,10 +23,19 @@
 # Contributors:
 # Deekshant Wadhwa
 
+from datetime import date, datetime
+from enum import Enum
 from pathlib import PurePath
+from typing import Any
 
 
-def serialize_object(obj):
+def serialize_object(obj: Any) -> Any:
     if isinstance(obj, PurePath):
         return str(obj)
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, (set, frozenset)):
+        return list(obj)
     raise TypeError(f"Object of type {obj.__class__.__name__} is not serializable")

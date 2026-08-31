@@ -9,7 +9,7 @@
 #     1) Auto-fix (non-blocking)
 #     2) Strict validation (blocking)
 # - Commits auto-fixes back to the branch if needed
-# - Runs tests marked "not e2e and not slow" under Xvfb
+# - Runs the full test suite under Xvfb (no marker filter, e2e included)
 #
 # Why we need the GUI prereqs
 # - PySide6/Qt requires native shared libs (libEGL, libGL, XCB) to import QtGui
@@ -116,6 +116,8 @@ jobs:
       # ---------------------------------------------------------------------
       # Tests
       # ---------------------------------------------------------------------
-      - name: Run tests (no slow/e2e) under Xvfb
+      # Runs the whole suite, e2e included - no marker filter. At ~6 minutes the
+      # e2e tests are worth their cost.
+      - name: Run tests under Xvfb
         run: |
-          xvfb-run -a pytest -q -m "not e2e and not slow"
+          xvfb-run -a pytest -q

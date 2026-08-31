@@ -24,6 +24,7 @@
 # Kyle Briggs
 
 import logging
+from typing import Any, Generator
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -35,80 +36,95 @@ class Worker(QObject):
     stop_signal = Signal()
     logger = logging.getLogger(__name__)
 
-    def __init__(self, generator, channel, key, lock=None):
+    def __init__(
+        self,
+        generator: Generator[Any, Any, Any],
+        channel: int,
+        key: str,
+    ) -> None:
         super().__init__()
         self.generator = generator
         self.channel = channel
         self.stop_requested = False
         self.key = key
-        self.lock = lock
         self.logger = logging.getLogger(f"Worker[{self.key}/{self.channel}]")
         self.stop_signal.connect(self.stop)
         self.logger.debug("Worker initialized.")
 
     @log(logger=logger)
-    def process_generator(self):
-        """Run the generator loop in a separate thread."""
-        p = 0
+    def process_generator(self) -> None:
+        """
+        Drive the generator to completion on this worker's thread, relaying its yielded progress.
+
+        The generator is primed with a single ``next()`` on the first iteration and driven with
+        ``send(self.stop_requested)`` on every iteration after that. Priming explicitly matters:
+        ``send()`` on a not-yet-started generator raises ``TypeError`` by design, and the loop
+        used to absorb that with a blanket ``except TypeError: next(self.generator)``. That arm
+        could not distinguish the unstarted-generator case from a ``TypeError`` raised inside the
+        generator *body* - by which point the generator is already closed, so the ``next()``
+        fallback raised ``StopIteration`` and the run was logged as a successful finish at INFO.
+        A failed analysis was indistinguishable from one that legitimately found nothing.
+
+        Every failure is therefore now reported through one ``except Exception`` arm, with a
+        traceback. The typed arms this replaces (``RuntimeError``, ``ValueError``, ``IOError``)
+        differed only in wording and all ended the run identically, and per-type special-casing
+        in this loop is what allowed the bug above - so there is deliberately no per-type
+        handling here beyond ``StopIteration``, which is the success path.
+
+        Every exit arm emits a completion value for the progress bar explicitly rather than
+        relying on the ``finally`` in :py:meth:`run`, and does so *before* logging the failure:
+        the progress-bar teardown travels on a queued connection while an ERROR record raises a
+        modal dialog, so emitting first is what stops the bar being stranded behind that dialog.
+        """
+        identifier = f"{self.key}/{self.channel}"
+        p: float = 0
+        started = False
         while True:
-            self.logger.debug(
-                f"Worker [{self.key}/{self.channel}] waiting for generator output..."
-            )
+            self.logger.debug(f"Worker [{identifier}] waiting for generator output...")
             try:
-                try:
+                if started:
                     p = self.generator.send(self.stop_requested)
-                except TypeError:
+                else:
                     p = next(self.generator)
-                self.logger.debug(
-                    f"Worker [{self.key}/{self.channel}] Generator produced: {p}"
-                )
+                    started = True
+                self.logger.debug(f"Worker [{identifier}] Generator produced: {p}")
             except StopIteration:
-                self.logger.info(
-                    f"Worker [{self.key}/{self.channel}] Generator finished StopIteration."
-                )
+                self.update_progressbar.emit(100, identifier)
+                self.logger.info(f"Worker [{identifier}] Generator finished.")
                 break
-            except RuntimeError as e:
-                self.logger.error(
-                    f"Worker [{self.key}/{self.channel}] encountered RuntimeError: {e}"
-                )
-                break
-            except ValueError as e:
-                self.logger.error(
-                    f"Worker [{self.key}/{self.channel}] encountered ValueError: {e}"
-                )
-                break
-            except IOError as e:
-                self.logger.error(
-                    f"Worker [{self.key}/{self.channel}] encountered IOError: {e}"
+            except Exception as e:
+                self.update_progressbar.emit(100, identifier)
+                self.logger.exception(
+                    f"Worker [{identifier}] failed after {'0' if not started else 'at least one'} "
+                    f"generator step: {repr(e)}"
                 )
                 break
             else:
                 progress = 100 * p
-                self.update_progressbar.emit(progress, f"{self.key}/{self.channel}")
+                self.update_progressbar.emit(progress, identifier)
                 self.logger.debug(
-                    f"Worker [{self.key}/{self.channel}] Progress updated: {progress:.2f}%"
+                    f"Worker [{identifier}] Progress updated: {progress:.2f}%"
                 )
 
     @log(logger=logger)
-    def run(self):
+    def run(self) -> None:
         self.logger.info(f"Worker [{self.key}/{self.channel}] started.")
-        p = 0
+        p: float = 0
         self.update_progressbar.emit(p, f"{self.key}/{self.channel}")
         try:
-            if self.lock:
-                with self.lock:
-                    self.process_generator()
-            else:
-                self.process_generator()
-        except:
-            raise
+            # Serialization across channels, where a plugin declares it is required, is
+            # taken by the plugin itself inside its own generator; see
+            # poriscope.utils.SerializeDecorator.serialize_channels. The worker used to
+            # hold a lock supplied by MetaModel, which was scoped to the model rather than
+            # to the plugin instance.
+            self.process_generator()
         finally:
             self.update_progressbar.emit(100, f"{self.key}/{self.channel}")
             self.logger.info(f"Worker [{self.key}/{self.channel}] finished.")
 
     @Slot()
     @log(logger=logger)
-    def stop(self):
+    def stop(self) -> None:
         """Stop the worker gracefully."""
         self.stop_requested = True
 
@@ -117,7 +133,7 @@ class WorkerThread(QThread):
     workerthread_finished = Signal(int, str)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, worker, channel, key):
+    def __init__(self, worker: Worker, channel: int, key: str) -> None:
         super().__init__()
         self.worker = worker
         self.channel = channel
@@ -126,9 +142,15 @@ class WorkerThread(QThread):
         self.logger.debug("WorkerThread initialized.")
 
     @log(logger=logger)
-    def run(self):
+    def run(self) -> None:
         """Run the worker inside the thread."""
         self.logger.info("WorkerThread started.")
-        self.worker.run()
-        self.workerthread_finished.emit(self.channel, self.key)
-        self.logger.info("WorkerThread finished.")
+        try:
+            self.worker.run()
+        except Exception:
+            self.logger.exception(
+                f"WorkerThread [{self.key}/{self.channel}] worker raised an unexpected exception."
+            )
+        finally:
+            self.workerthread_finished.emit(self.channel, self.key)
+            self.logger.info("WorkerThread finished.")

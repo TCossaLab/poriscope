@@ -32,10 +32,13 @@ import logging
 import os
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.app_config import default_app_config
+from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -48,20 +51,35 @@ from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
+from poriscope.utils.QtHandler import QtHandler
+
+#: Maps the class names written into session JSON back to real types.
+_JSON_CLASS_NAMES: Mapping[str, Any] = {
+    "str": str,
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "null": None,
+}
 
 
 class MainModel(QObject):
+    """
+    App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
+    """
+
     configUpdated = Signal()
     errorOccurred = Signal(str)
     dataReadInstancesUpdated = Signal(dict)
     fileLoaded = Signal(object)
     logger = logging.getLogger(__name__)
 
-    def __init__(self, app_config):
+    def __init__(self, app_config: Dict[str, Any]) -> None:
         """
-        Initializes the MainModel with the given configuration file path.
-        Args:
-            config_path (str): The path to the configuration file.
+        Initializes the MainModel with the given app configuration.
+
+        :param app_config: The application's configuration settings.
+        :type app_config: Dict[str, Any]
         """
         super().__init__()
         self.app_config = app_config
@@ -75,12 +93,9 @@ class MainModel(QObject):
         )
 
     @log(logger=logger)
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """
-        Deletes log file and wait until it's confirmed deleted.
-
-        :param filepath: Path to the file to be deleted.
-        :param timeout: Maximum time (in seconds) to wait for file deletion.
+        Truncate the app's log file (flushing any buffered log data first).
         """
         log_file_path = Path(self.log_path, "app.log")
 
@@ -102,7 +117,12 @@ class MainModel(QObject):
                 break
 
     @log(logger=logger)
-    def load_plugin(self, plugin_key, folder, allowed_base_classes):
+    def load_plugin(
+        self,
+        plugin_key: str,
+        folder: Union[str, Path],
+        allowed_base_classes: Tuple[type, ...],
+    ) -> Optional[type]:
         """
         Dynamically loads a plugin, ensuring it is a subclass of a supported abstract class.
 
@@ -161,7 +181,9 @@ class MainModel(QObject):
             return None
 
     @log(logger=logger)
-    def populate_available_plugins(self):
+    def populate_available_plugins(
+        self,
+    ) -> Tuple[Dict[str, Dict[str, type]], Dict[str, List[str]]]:
         """
         Get a dict of available plugin names, keyed by base class.
         Each entry in the dict is a list of plugin class names.
@@ -181,8 +203,18 @@ class MainModel(QObject):
             "MetaModel": MetaModel,
         }
 
-        available_plugin_classes = {k: {} for k in allowed_base_classes}
-        available_plugins_list = {k: [] for k in allowed_base_classes}
+        available_plugin_classes: Dict[str, Dict[str, type]] = {
+            k: {} for k in allowed_base_classes
+        }
+        available_plugins_list: Dict[str, List[str]] = {
+            k: [] for k in allowed_base_classes
+        }
+
+        # plugin names are unique across the whole app, not per metaclass, so this is
+        # keyed by name alone. Built-ins are walked before the user plugin folder, so
+        # without this check a user file of the same name silently replaced the shipped
+        # plugin and there was no way to tell which one had run.
+        seen_plugin_names: Set[str] = set()
 
         plugin_dirs_to_search = [
             self.plugin_path,
@@ -190,13 +222,13 @@ class MainModel(QObject):
         ]
 
         for base_path in plugin_dirs_to_search:
-            try:
-                walker = os.walk(base_path)
-            except Exception as e:
-                self.logger.warning(f"Skipping plugin directory {base_path}: {e}")
+            if not Path(base_path).is_dir():
+                self.logger.warning(
+                    f"Skipping plugin directory {base_path}: not a valid directory"
+                )
                 continue
 
-            for root_dir, _, files in walker:
+            for root_dir, _, files in os.walk(base_path):
                 try:
                     files = [
                         f
@@ -230,35 +262,66 @@ class MainModel(QObject):
                             metaclass = key
                             break
 
-                    if metaclass:
+                    # plugin_class is necessarily non-None whenever metaclass was
+                    # set above; the explicit check is what lets mypy see that.
+                    if metaclass and plugin_class is not None:
+                        if subclass in seen_plugin_names:
+                            self.logger.error(
+                                f"More than one plugin is named {subclass}. The copy at "
+                                f"{Path(plugin_folder, plugin_name)} is ignored; rename it "
+                                f"to load it."
+                            )
+                            continue
+                        seen_plugin_names.add(subclass)
                         available_plugin_classes[metaclass][subclass] = plugin_class
                         available_plugins_list[metaclass].append(subclass)
 
         return available_plugin_classes, available_plugins_list
 
     @log(logger=logger)
-    def get_available_plugins(self, metaclass=None):
-        if metaclass:
-            return self.available_plugins_list[metaclass]
-        else:
-            return self.available_plugins_list
+    def refresh_available_plugins(self) -> None:
+        """
+        Re-scan the plugin directories and replace the cached results.
+
+        The scan otherwise runs once, in the constructor, so a user who points
+        the app at a different plugin folder sees no change until the next
+        launch. Each plugin file is loaded fresh via
+        ``importlib.util.spec_from_file_location``/``exec_module`` rather than
+        through ``sys.modules``, so an edited file's new code is always picked
+        up on the next scan - but that also means every scan hands back a new
+        class object, never the one a previous scan produced. This does not
+        break anything already instantiated: an instance keeps working
+        through its own ``__class__`` reference regardless of what this cache
+        holds, it just does not become an instance of the freshly-scanned
+        class - the two are distinct objects until nothing references the
+        older one any more. Files that have since been deleted simply are not
+        walked, and so drop out.
+
+        Callers are responsible for propagating the new lists - the controllers
+        and the view each hold a copy taken at construction.
+        """
+        self.available_plugin_classes, self.available_plugins_list = (
+            self.populate_available_plugins()
+        )
 
     @log(logger=logger)
-    def get_plugin_classes(self, metaclass=None):
-        if metaclass:
-            return self.available_plugin_classes[metaclass]
-        else:
-            return self.available_plugin_classes
+    def get_available_plugins(self) -> Dict[str, List[str]]:
+        return self.available_plugins_list
 
     @log(logger=logger)
-    def get_plugin(self, metaclass, subclass):
+    def get_plugin_classes(self, metaclass: str) -> Dict[str, type]:
+        return self.available_plugin_classes[metaclass]
+
+    @log(logger=logger)
+    def get_plugin(self, metaclass: str, subclass: str) -> Optional[type]:
         try:
             return self.available_plugin_classes[metaclass][subclass]
         except KeyError:
             self.logger.error(f"unable to load class {metaclass} {subclass}")
+            return None
 
     @log(logger=logger)
-    def get_plugin_data(self, plugin_key):
+    def get_plugin_data(self, plugin_key: str) -> Dict[str, Any]:
         """
         Fetches plugin data from the local application data JSON file.
 
@@ -284,7 +347,11 @@ class MainModel(QObject):
             return {}
 
     @log(logger=logger)
-    def save_session(self, plugin_history, save_file=None):
+    def save_session(
+        self,
+        plugin_history: Dict[str, Any],
+        save_file: Optional[Union[str, Path]] = None,
+    ) -> None:
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
         if save_file is None:
@@ -293,7 +360,11 @@ class MainModel(QObject):
             json.dump(json_dump, jf, indent=4)
 
     @log(logger=logger)
-    def save_tab_actions(self, plugin_history, save_file=None):
+    def save_tab_actions(
+        self,
+        plugin_history: Dict[str, Any],
+        save_file: Optional[Union[str, Path]] = None,
+    ) -> None:
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
         if save_file is None:
@@ -302,7 +373,9 @@ class MainModel(QObject):
             json.dump(json_dump, jf, indent=4)
 
     @log(logger=logger)
-    def load_session(self, file_name=None):
+    def load_session(
+        self, file_name: Optional[Union[str, Path]] = None
+    ) -> Optional[Dict[str, Any]]:
         if not file_name:
             file_name = Path(self.session_path, "plugin_history.json")
         try:
@@ -318,7 +391,7 @@ class MainModel(QObject):
             return plugin_history
 
     @log(logger=logger)
-    def replace_classes_with_class_names(self, d):
+    def replace_classes_with_class_names(self, d: Any) -> None:
         if isinstance(d, dict):
             for key, value in d.items():
                 if isinstance(value, dict):
@@ -335,9 +408,9 @@ class MainModel(QObject):
     @log(logger=logger)
     def replace_class_names_with_classes(
         self,
-        d,
-        class_dict={"str": str, "int": int, "float": float, "bool": bool, "null": None},
-    ):
+        d: Any,
+        class_dict: Mapping[str, Any] = _JSON_CLASS_NAMES,
+    ) -> None:
         if isinstance(d, dict):
             for key, value in d.items():
                 if isinstance(value, dict):
@@ -356,29 +429,70 @@ class MainModel(QObject):
                         d[i] = class_dict[d[i]]
 
     @log(logger=logger)
-    def get_app_config(self, key):
+    def reset_app_config(self) -> Dict[str, Any]:
+        """
+        Restore the three stored settings to their defaults and persist them.
+
+        Only ``config/config.json`` is touched. Saved sessions, plugin history
+        and log files are left alone.
+
+        This writes the file and updates the in-memory config, but does not
+        apply the values to anything already running: reverting the parent
+        folder has to reach live data plugins, and reverting the log level has
+        to reconfigure the logger. ``MainController.reset_app_config`` routes
+        the returned values back through the same paths a manual edit uses, so
+        those side effects are not duplicated here.
+
+        :return: The defaults that were applied, so the caller can act on them.
+        :rtype: Dict[str, Any]
+        """
+        defaults = default_app_config(Path(self.appdata_path, "user_plugins"))
+        for key, value in defaults.items():
+            self.update_app_config(key, value)
+        self.logger.info("Application settings reset to defaults by user")
+        return defaults
+
+    @log(logger=logger)
+    def get_app_config(self, key: str) -> Any:
         return self.app_config.get(key)
 
     @log(logger=logger)
-    def update_app_config(self, key, val):
+    def update_app_config(self, key: str, val: Any) -> None:
         self.app_config[key] = val
         config_file_path = Path(self.config_path, "config.json")
-        with open(config_file_path, "w") as f:
-            json.dump(self.app_config, f, indent=4)
+        try:
+            with open(config_file_path, "w") as f:
+                json.dump(self.app_config, f, default=serialize_object, indent=4)
+        except Exception as e:
+            self.logger.warning(
+                f"Unable to persist updated config file {config_file_path}: {e}"
+            )
 
     @log(logger=logger)
-    def get_data_server_location(self):
+    def get_data_server_location(self) -> str:
         return self.get_app_config("Parent Folder")
 
     @log(logger=logger)
-    def get_user_plugin_location(self):
+    def get_user_plugin_location(self) -> str:
         return self.get_app_config("User Plugin Folder")
 
     @log(logger=logger)
+    def get_logging_level(self) -> int:
+        return self.get_app_config("Log Level")
+
+    @log(logger=logger)
     @Slot(int)
-    def update_logging_level(self, level):
+    def update_logging_level(self, level: int) -> None:
         logger = logging.getLogger()
         logger.setLevel(level)
         for handler in logger.handlers:
+            # QtHandler is excluded on purpose. It raises a modal dialog per record,
+            # so its level is a decision about how much to interrupt the user, not
+            # about how much to record - and it is the only handler whose level was
+            # ever set here, which meant choosing a more verbose log level silently
+            # turned every routine warning back into a dialog. It keeps its own
+            # ERROR floor; see QtHandler's docstring.
+            if isinstance(handler, QtHandler):
+                continue
             handler.setLevel(level)
         self.update_app_config("Log Level", level)

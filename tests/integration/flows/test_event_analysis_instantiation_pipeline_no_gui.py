@@ -61,13 +61,11 @@ def _assert_db_schema_sqlite_dbwriter(
             assert not missing, f"Expected channel IDs not present in DB: {missing}"
 
 
-@pytest.mark.fast
-@pytest.mark.integration
 @pytest.mark.timeout(90)
 def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path):
     """
     Integration (no GUI):
-    (Specifically for events.sqlite3 in tests/data/)
+    (Against the synthetic events database built by the sample_events_db fixture.)
 
       SQLiteEventLoader -> CUSUM -> SQLiteDBWriter
 
@@ -103,12 +101,15 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     fitter_settings = _get_settings(fitter)
     if "MetaEventLoader" in fitter_settings:
         fitter_settings["MetaEventLoader"]["Value"] = events_loader
+        fitter_settings["MetaEventLoader"]["Type"] = None
     if "Max Sublevels" in fitter_settings:
         fitter_settings["Max Sublevels"]["Value"] = 10
     if "Rise Time" in fitter_settings:
         fitter_settings["Rise Time"]["Value"] = 10.0
     if "Step Size" in fitter_settings:
-        fitter_settings["Step Size"]["Value"] = 1000.0
+        # 100.0 fits every planted event; 1000.0 rejects them all as "too few
+        # levels", which tests/e2e/event_analysis pins as a parametrized case.
+        fitter_settings["Step Size"]["Value"] = 100.0
     if "Sensitivity" in fitter_settings:
         fitter_settings["Sensitivity"]["Value"] = 1.0
     fitter.apply_settings(fitter_settings)
@@ -149,6 +150,7 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     writer_settings = _get_settings(writer)
     if "MetaEventFitter" in writer_settings:
         writer_settings["MetaEventFitter"]["Value"] = fitter
+        writer_settings["MetaEventFitter"]["Type"] = None
     if "Experiment Name" in writer_settings:
         writer_settings["Experiment Name"]["Value"] = "cusum_integration_test"
     for k, v in (
