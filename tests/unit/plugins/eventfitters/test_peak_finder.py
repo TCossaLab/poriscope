@@ -15,6 +15,10 @@ Coverage targets:
 - construct_fitted_event (None paths)
 - get_plot_features (None paths + Some/All/None plot feature paths)
 - _init / _pre_process_events / _post_process_events / _validate_settings / close_resources
+- _gaussian_intersection
+- _fit_double_gaussian_bounded_at_valley
+- _fit_least_smoothed_spline
+- _warn_if_fitted_means_are_off_their_peaks
 """
 
 import unittest
@@ -886,6 +890,443 @@ class TestNoopOverrides(unittest.TestCase):
 
     def test_close_resources_noop(self):
         self.assertIsNone(self.pf.close_resources())
+
+
+# ---------------------------------------------------------------------------
+# _gaussian_intersection
+# ---------------------------------------------------------------------------
+
+
+class TestGaussianIntersection(unittest.TestCase):
+    def test_equal_std_matches_closed_form(self):
+        # amp1=100, mean1=0, std1=10; amp2=50, mean2=20, std2=10.
+        # Equal std collapses the quadratic to a line:
+        # x = (m1+m2)/2 + std**2 * ln(amp2/amp1) / (m1-m2)
+        expected = 10.0 + (100.0 * np.log(0.5)) / (-20.0)
+        x = PeakFinder._gaussian_intersection(100.0, 0.0, 10.0, 50.0, 20.0, 10.0)
+        self.assertIsNotNone(x)
+        self.assertAlmostEqual(x, expected, places=6)
+
+    def test_equal_amplitude_and_std_gives_exact_midpoint(self):
+        x = PeakFinder._gaussian_intersection(100.0, 0.0, 5.0, 100.0, 10.0, 5.0)
+        self.assertAlmostEqual(x, 5.0, places=9)
+
+    def test_unequal_std_crossing_is_between_the_means(self):
+        x = PeakFinder._gaussian_intersection(
+            800.0, 2500.0, 300.0, 1000.0, 4700.0, 500.0
+        )
+        self.assertIsNotNone(x)
+        self.assertGreater(x, 2500.0)
+        self.assertLess(x, 4700.0)
+
+    def test_crossing_is_symmetric_to_argument_order(self):
+        # Swapping which component is "1" and which is "2" must not change
+        # which x position the two curves cross at.
+        x_ab = PeakFinder._gaussian_intersection(
+            800.0, 2500.0, 300.0, 1000.0, 4700.0, 500.0
+        )
+        x_ba = PeakFinder._gaussian_intersection(
+            1000.0, 4700.0, 500.0, 800.0, 2500.0, 300.0
+        )
+        self.assertAlmostEqual(x_ab, x_ba, places=6)
+
+    def test_no_dominance_at_own_mean_returns_none(self):
+        # amp2's curve already exceeds amp1's at amp1's own mean (mean1=0):
+        # g1(0)=10, g2(0)=1e6*exp(-100/(2*2500)) ~= 9.8e5. No real separating
+        # crossing exists between the means in that case.
+        x = PeakFinder._gaussian_intersection(10.0, 0.0, 5.0, 1e6, 10.0, 50.0)
+        self.assertIsNone(x)
+
+    def test_nonpositive_amplitude_returns_none(self):
+        self.assertIsNone(
+            PeakFinder._gaussian_intersection(0.0, 0.0, 5.0, 10.0, 10.0, 5.0)
+        )
+        self.assertIsNone(
+            PeakFinder._gaussian_intersection(10.0, 0.0, 5.0, -1.0, 10.0, 5.0)
+        )
+
+
+# ---------------------------------------------------------------------------
+# _fit_double_gaussian_bounded_at_valley
+# ---------------------------------------------------------------------------
+
+
+class TestFitDoubleGaussianBoundedAtValley(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def _bimodal_histogram(self, seed=5):
+        rng = np.random.default_rng(seed)
+        x = np.linspace(300, 8000, 70)
+        bin_width = x[1] - x[0]
+        intensity = (
+            6119
+            * np.exp(-0.5 * ((x - 2495) / 320) ** 2)
+            / (320 * np.sqrt(2 * np.pi))
+            * bin_width
+            + 11816
+            * np.exp(-0.5 * ((x - 4724) / 523) ** 2)
+            / (523 * np.sqrt(2 * np.pi))
+            * bin_width
+        )
+        y = rng.poisson(np.clip(intensity, 0.01, None)).astype(float)
+        return x, y
+
+    def test_well_separated_bimodal_finds_a_crossing_between_the_means(self):
+        x, y = self._bimodal_histogram()
+        popt = np.array([868.0, 2491.0, 313.0, 1017.0, 4722.0, 520.0])
+        result = self.pf._fit_double_gaussian_bounded_at_valley(x, y, 3524.0, popt)
+        self.assertIsNotNone(result)
+        fit, crossing = result
+        self.assertEqual(len(fit), 6)
+        lower_mean, higher_mean = fit[1], fit[4]
+        self.assertLess(lower_mean, 3524.0)
+        self.assertGreater(higher_mean, 3524.0)
+        self.assertGreater(crossing, min(lower_mean, higher_mean))
+        self.assertLess(crossing, max(lower_mean, higher_mean))
+
+    def test_crossing_matches_gaussian_intersection_of_the_returned_fit(self):
+        x, y = self._bimodal_histogram()
+        popt = np.array([868.0, 2491.0, 313.0, 1017.0, 4722.0, 520.0])
+        result = self.pf._fit_double_gaussian_bounded_at_valley(x, y, 3524.0, popt)
+        self.assertIsNotNone(result)
+        fit, crossing = result
+        recomputed = PeakFinder._gaussian_intersection(*fit)
+        self.assertAlmostEqual(crossing, recomputed, places=6)
+
+    def test_split_point_outside_histogram_range_declines(self):
+        x, y = self._bimodal_histogram()
+        popt = np.array([868.0, 2491.0, 313.0, 1017.0, 4722.0, 520.0])
+        result = self.pf._fit_double_gaussian_bounded_at_valley(x, y, 50000.0, popt)
+        self.assertIsNone(result)
+
+    def test_heavily_imbalanced_populations_decline_rather_than_collapse(self):
+        # One population 100x the other's amplitude: forcing both means to
+        # opposite sides of a valley that barely separates them can only be
+        # satisfied by collapsing a component. That must be declined, not
+        # reported as a usable fit - see the docstring's dominance-constraint
+        # discussion.
+        rng = np.random.default_rng(2)
+        x = np.linspace(300, 8000, 90)
+        intensity = 300 * np.exp(-0.5 * ((x - 2600) / 300) ** 2) + 30000 * np.exp(
+            -0.5 * ((x - 4200) / 900) ** 2
+        )
+        y = rng.poisson(np.clip(intensity, 0.01, None)).astype(float)
+        popt = np.array([300.0, 2600.0, 300.0, 30000.0, 4200.0, 900.0])
+        result = self.pf._fit_double_gaussian_bounded_at_valley(x, y, 3400.0, popt)
+        self.assertIsNone(result)
+
+
+# ---------------------------------------------------------------------------
+# _fit_least_smoothed_spline
+# ---------------------------------------------------------------------------
+
+
+def _noisy_bimodal_histogram(seed=5, scale=1.0):
+    """Poisson-noisy two-population histogram; `scale` rescales the x axis."""
+    rng = np.random.default_rng(seed)
+    x = np.linspace(300, 8000, 70)
+    bw = x[1] - x[0]
+    intensity = (
+        6119 * np.exp(-0.5 * ((x - 2495) / 320) ** 2) / (320 * np.sqrt(2 * np.pi)) * bw
+        + 11816
+        * np.exp(-0.5 * ((x - 4724) / 523) ** 2)
+        / (523 * np.sqrt(2 * np.pi))
+        * bw
+    )
+    y = rng.poisson(np.clip(intensity, 0.01, None)).astype(float)
+    return x * scale, y
+
+
+def _count_minima(spline, lo, hi, n=1000):
+    grid = np.linspace(lo, hi, n)
+    diffs = np.diff(spline(grid))
+    return int(np.sum((diffs[:-1] < 0) & (diffs[1:] > 0)))
+
+
+class TestFitLeastSmoothedSpline(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def test_result_respects_the_minima_budget(self):
+        x, y = _noisy_bimodal_histogram()
+        spline = self.pf._fit_least_smoothed_spline(x, y, 2495.0, 4724.0)
+        self.assertIsNotNone(spline)
+        self.assertLessEqual(
+            _count_minima(spline, 2495.0, 4724.0), PeakFinder.SPLINE_MAX_MINIMA
+        )
+
+    def test_is_quieter_than_generalized_cross_validation(self):
+        # The reason this method exists: GCV optimizes predictive error, not
+        # shape, and leaves spurious Poisson wiggles the valley search can
+        # return instead of the real boundary.
+        from scipy.interpolate import make_smoothing_spline
+
+        x, y = _noisy_bimodal_histogram(seed=11)
+        gcv = make_smoothing_spline(x, y)
+        ladder = self.pf._fit_least_smoothed_spline(x, y, 2495.0, 4724.0)
+        self.assertIsNotNone(ladder)
+        self.assertLessEqual(
+            _count_minima(ladder, 2495.0, 4724.0), _count_minima(gcv, 2495.0, 4724.0)
+        )
+
+    def test_is_invariant_to_the_x_axis_unit(self):
+        # A raw lambda is not scale-free (the penalty carries 1/(x-range)**3),
+        # which is the whole reason the ladder is expressed in a shape
+        # parameter. The same data relabelled pA -> nA must fit identically.
+        x_pa, y = _noisy_bimodal_histogram()
+        x_na = x_pa / 1000.0
+        s_pa = self.pf._fit_least_smoothed_spline(x_pa, y, 2495.0, 4724.0)
+        s_na = self.pf._fit_least_smoothed_spline(x_na, y, 2.495, 4.724)
+        self.assertIsNotNone(s_pa)
+        self.assertIsNotNone(s_na)
+        probe = np.linspace(400, 7900, 50)
+        np.testing.assert_allclose(s_pa(probe), s_na(probe / 1000.0), rtol=1e-6)
+
+    def test_declines_on_too_few_bins_or_an_empty_bracket(self):
+        x, y = _noisy_bimodal_histogram()
+        self.assertIsNone(
+            self.pf._fit_least_smoothed_spline(x[:3], y[:3], 2495.0, 4724.0)
+        )
+        self.assertIsNone(self.pf._fit_least_smoothed_spline(x, y, 4724.0, 2495.0))
+        self.assertIsNone(self.pf._fit_least_smoothed_spline(x, y, 3000.0, 3000.0))
+
+    def test_margin_steps_is_zero(self):
+        # Not a style assertion: two steps of "safety margin" past the first
+        # acceptable lambda was measured to wash out the real valley, driving
+        # mode bias from +22 pA to +685 pA and failing 5 of 24 fits.
+        self.assertEqual(PeakFinder.SPLINE_LAMBDA_MARGIN_STEPS, 0)
+
+
+# ---------------------------------------------------------------------------
+# _trim_to_populated_core
+# ---------------------------------------------------------------------------
+
+
+class TestTrimToPopulatedCore(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def _heavy_tailed_histogram(self, seed=0):
+        """One tight population plus a long, sparse decaying tail of
+        outlier-like counts, reproducing the shape a single genuine
+        population's histogram takes once outlier peaks are included."""
+        rng = np.random.default_rng(seed)
+        main = rng.normal(1850, 220, size=6323)
+        tail = rng.exponential(1500, size=609) + 2500
+        data = np.clip(np.concatenate([main, tail]), 1, None)
+        counts, edges, centers = self.pf._histogram_for_fit(data)
+        return centers, counts
+
+    def test_drops_the_sparse_tail(self):
+        bins, amplitude = self._heavy_tailed_histogram()
+        trimmed_bins, trimmed_amplitude = self.pf._trim_to_populated_core(
+            bins, amplitude
+        )
+        self.assertLess(trimmed_bins.size, bins.size)
+        self.assertLess(trimmed_bins[-1] - trimmed_bins[0], bins[-1] - bins[0])
+        # the core is still centred on the dense population, not clipped away
+        self.assertLess(trimmed_bins[0], 1850.0)
+        self.assertGreater(trimmed_bins[-1], 1850.0)
+
+    def test_removes_the_negative_dip_the_untrimmed_range_produces(self):
+        # This is the measured defect the trim exists to fix: fit across the
+        # full sparse tail and the spline dips deeply negative out there,
+        # since "quiet" (few local minima) does not forbid overshoot.
+        from scipy.interpolate import make_smoothing_spline
+
+        bins, amplitude = self._heavy_tailed_histogram()
+        full_x_range = float(bins[-1] - bins[0])
+        untrimmed = make_smoothing_spline(bins, amplitude, lam=1.0 * full_x_range**3)
+        grid_full = np.linspace(bins[0], bins[-1], 1000)
+        untrimmed_min = untrimmed(grid_full).min()
+
+        trimmed_bins, trimmed_amplitude = self.pf._trim_to_populated_core(
+            bins, amplitude
+        )
+        spline = self.pf._fit_least_smoothed_spline(
+            trimmed_bins, trimmed_amplitude, trimmed_bins[0], trimmed_bins[-1]
+        )
+        self.assertIsNotNone(spline)
+        grid_trimmed = np.linspace(trimmed_bins[0], trimmed_bins[-1], 1000)
+        trimmed_min = spline(grid_trimmed).min()
+
+        self.assertLess(untrimmed_min, -5.0)
+        self.assertGreater(trimmed_min, untrimmed_min)
+
+    def test_unchanged_on_too_few_bins_or_no_counts(self):
+        bins = np.array([1.0, 2.0, 3.0])
+        amplitude = np.array([1.0, 2.0, 3.0])
+        out_bins, out_amplitude = self.pf._trim_to_populated_core(bins, amplitude)
+        np.testing.assert_array_equal(out_bins, bins)
+        np.testing.assert_array_equal(out_amplitude, amplitude)
+
+        bins2 = np.arange(10.0)
+        zero_amplitude = np.zeros(10)
+        out_bins2, out_amplitude2 = self.pf._trim_to_populated_core(
+            bins2, zero_amplitude
+        )
+        np.testing.assert_array_equal(out_bins2, bins2)
+        np.testing.assert_array_equal(out_amplitude2, zero_amplitude)
+
+    def test_inert_on_a_well_separated_symmetric_bimodal_histogram(self):
+        # Where there is no sparse tail to drop, trimming at
+        # SPLINE_FIT_DOMAIN_COVERAGE should barely touch the histogram.
+        rng = np.random.default_rng(3)
+        data = np.concatenate(
+            [rng.normal(2000.0, 300.0, 6000), rng.normal(3500.0, 300.0, 5000)]
+        )
+        counts, edges, centers = self.pf._histogram_for_fit(data)
+        trimmed_bins, _ = self.pf._trim_to_populated_core(centers, counts)
+        kept_fraction = trimmed_bins.size / centers.size
+        self.assertGreater(kept_fraction, 0.9)
+
+
+# ---------------------------------------------------------------------------
+# VALLEY_SEPARATION_SIGMA
+# ---------------------------------------------------------------------------
+
+
+class TestValleySeparationConstraint(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+
+    def _skewed(self, s_lower=0.30, seed=1):
+        """Right-skewed lower population whose shoulder reaches the valley."""
+        rng = np.random.default_rng(seed)
+        lower = rng.lognormal(np.log(1830) + s_lower**2, s_lower, 6500)
+        upper = rng.lognormal(np.log(3350) + 0.24**2, 0.24, 4600)
+        return np.concatenate([lower, upper])
+
+    def test_returned_fit_satisfies_the_separation_constraint(self):
+        data = self._skewed()
+        counts, edges, centers = self.pf._histogram_for_fit(data)
+        popt, one_pop = self.pf._fit_and_check_double_gaussian(centers, counts)
+        self.assertIsNotNone(popt)
+        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt)
+        valley, _, _ = self.pf._threshold_between_populations(
+            data, centers, counts, m1, s1, m2, s2, one_pop
+        )
+        result = self.pf._fit_double_gaussian_bounded_at_valley(
+            centers, counts, valley, popt
+        )
+        self.assertIsNotNone(result)
+        fit, _ = result
+        k = PeakFinder.VALLEY_SEPARATION_SIGMA
+        # the valley must sit at least k sigma outside BOTH fitted means
+        self.assertGreaterEqual(fit[4] - valley, k * fit[5] - 1e-6)
+        self.assertGreaterEqual(valley - fit[1], k * fit[2] - 1e-6)
+
+    def test_higher_component_is_not_left_sitting_on_the_valley(self):
+        # The failure this constraint exists for: without it the higher mean
+        # parks on its box bound, i.e. its summit lands on the valley.
+        data = self._skewed()
+        counts, edges, centers = self.pf._histogram_for_fit(data)
+        popt, one_pop = self.pf._fit_and_check_double_gaussian(centers, counts)
+        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt)
+        valley, _, _ = self.pf._threshold_between_populations(
+            data, centers, counts, m1, s1, m2, s2, one_pop
+        )
+        fit, _ = self.pf._fit_double_gaussian_bounded_at_valley(
+            centers, counts, valley, popt
+        )
+        self.assertGreater(fit[4] - valley, 1.0)
+
+    def test_inert_on_symmetric_well_separated_populations(self):
+        # The property that makes this safe to apply to all three classifiers:
+        # where the valley already sits well clear of both means the constraint
+        # never binds, so a currently-good fit is unchanged.
+        rng = np.random.default_rng(3)
+        data = np.concatenate(
+            [rng.normal(2000.0, 300.0, 6000), rng.normal(3500.0, 300.0, 5000)]
+        )
+        counts, edges, centers = self.pf._histogram_for_fit(data)
+        popt, one_pop = self.pf._fit_and_check_double_gaussian(centers, counts)
+        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt)
+        valley, _, _ = self.pf._threshold_between_populations(
+            data, centers, counts, m1, s1, m2, s2, one_pop
+        )
+        fit, _ = self.pf._fit_double_gaussian_bounded_at_valley(
+            centers, counts, valley, popt
+        )
+        # slack, not tight against, the constraint - and still on the true mean
+        self.assertGreater(fit[4] - valley, PeakFinder.VALLEY_SEPARATION_SIGMA * fit[5])
+        self.assertAlmostEqual(fit[4], 3500.0, delta=60.0)
+
+
+# ---------------------------------------------------------------------------
+# _warn_if_fitted_means_are_off_their_peaks
+# ---------------------------------------------------------------------------
+
+
+class TestMeansOffTheirPeaksWarning(unittest.TestCase):
+    def setUp(self):
+        self.pf = _make_pf()
+        rng = np.random.default_rng(0)
+        lower = rng.lognormal(np.log(2495) + 0.13**2, 0.13, 6119)
+        upper = rng.lognormal(np.log(4724) + 0.11**2, 0.11, 11816)
+        self.data = np.concatenate([lower, upper])
+        self.counts, _, self.centers = self.pf._histogram_for_fit(self.data)
+
+    def test_warns_when_a_mean_is_not_on_its_own_peak(self):
+        # The failure it exists for: a higher component pulled down into the
+        # lower population's shoulder, well away from the mode it should be on.
+        params = (900.0, 2495.0, 320.0, 1000.0, 3400.0, 900.0)
+        with self.assertLogs(PeakFinder.logger, level="WARNING") as captured:
+            self.pf._warn_if_fitted_means_are_off_their_peaks(
+                self.centers, self.counts, params
+            )
+        self.assertTrue(
+            any("half-maximum span" in line for line in captured.output),
+            captured.output,
+        )
+        self.assertTrue(any("higher component" in line for line in captured.output))
+
+    def test_silent_on_a_well_centred_fit(self):
+        popt, _ = self.pf._fit_and_check_double_gaussian(self.centers, self.counts)
+        self.assertIsNotNone(popt)
+        with self.assertNoLogs(PeakFinder.logger, level="WARNING"):
+            self.pf._warn_if_fitted_means_are_off_their_peaks(
+                self.centers, self.counts, tuple(float(p) for p in popt)
+            )
+
+    def test_silent_on_single_population_data(self):
+        # A single population has no second peak, and its higher component
+        # correctly describes a sparse region rather than a mode - documented
+        # behaviour, so warning about it would be crying wolf.
+        rng = np.random.default_rng(9)
+        data = rng.lognormal(np.log(1900) + 0.18**2, 0.18, 8000)
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        with self.assertNoLogs(PeakFinder.logger, level="WARNING"):
+            self.pf._warn_if_fitted_means_are_off_their_peaks(
+                centers, counts, (400.0, 1900.0, 250.0, 10.0, 3400.0, 800.0)
+            )
+
+    def test_span_is_reported_in_current_not_bin_indices(self):
+        # peak_widths returns left_ips/right_ips in bin-INDEX units. Left
+        # unconverted they are small numbers that would place every span near
+        # the histogram's left edge and make this warning fire constantly.
+        params = (900.0, 2495.0, 320.0, 1000.0, 3400.0, 900.0)
+        with self.assertLogs(PeakFinder.logger, level="WARNING") as captured:
+            self.pf._warn_if_fitted_means_are_off_their_peaks(
+                self.centers, self.counts, params
+            )
+        numbers = [
+            float(token.strip("[],"))
+            for line in captured.output
+            for token in line.replace("(", " ").replace(")", " ").split()
+            if token.strip("[],").replace(".", "", 1).replace("-", "", 1).isdigit()
+        ]
+        span_scale = [n for n in numbers if n > float(self.centers[0])]
+        self.assertTrue(span_scale, f"no pA-scale numbers in {captured.output}")
+
+    def test_does_not_raise_on_degenerate_input(self):
+        flat = np.zeros_like(self.counts)
+        params = (1.0, 2495.0, 320.0, 1.0, 4724.0, 520.0)
+        self.pf._warn_if_fitted_means_are_off_their_peaks(self.centers, flat, params)
+        self.pf._warn_if_fitted_means_are_off_their_peaks(
+            self.centers[:2], self.counts[:2], params
+        )
 
 
 if __name__ == "__main__":
