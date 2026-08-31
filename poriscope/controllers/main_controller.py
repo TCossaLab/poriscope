@@ -855,6 +855,11 @@ class MainController(QObject):
         Session" (``file_name=None``, the last saved session) route through
         this same method.
 
+        A message naming what was loaded is left on the status/log panel,
+        since ``reset_session()`` above already leaves one there of its own -
+        without this, the user would see that the workspace was cleared but
+        not what, if anything, replaced it.
+
         :param file_name: Path to the session file to load, or None to
             restore the last saved session.
         :type file_name: Optional[Union[str, Path]]
@@ -897,6 +902,12 @@ class MainController(QObject):
                     self.logger.error(
                         f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
+
+        if file_name:
+            message = f"Loaded session from {file_name}."
+        else:
+            message = "Restored last saved session."
+        self.main_view.add_text_to_display(message, "MainController")
 
     @log(logger=logger)
     @Slot()

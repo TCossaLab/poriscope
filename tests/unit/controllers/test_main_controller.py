@@ -1458,6 +1458,51 @@ def test_load_session_resets_before_applying_the_loaded_history(
     assert controller.plugin_history == loaded_history
 
 
+def test_load_session_displays_the_loaded_file_name(
+    controller: MainController,
+    mock_main_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Name the loaded file on the status/log panel, since reset_session()
+    already left its own message there clearing the previous workspace.
+
+    :param controller: Controller under test.
+    :param mock_main_view: Mocked main view.
+    :param mocker: Pytest-mock fixture.
+    """
+    mocker.patch.object(controller, "reset_session")
+    controller.main_model.load_session = mocker.Mock(return_value={})
+
+    controller.load_session("my_session.json")
+
+    mock_main_view.add_text_to_display.assert_called_once_with(
+        "Loaded session from my_session.json.", "MainController"
+    )
+
+
+def test_load_session_displays_a_restored_message_with_no_file_name(
+    controller: MainController,
+    mock_main_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Report "Restore Session" (file_name=None) distinctly from a chosen file.
+
+    :param controller: Controller under test.
+    :param mock_main_view: Mocked main view.
+    :param mocker: Pytest-mock fixture.
+    """
+    mocker.patch.object(controller, "reset_session")
+    controller.main_model.load_session = mocker.Mock(return_value={})
+
+    controller.load_session(None)
+
+    mock_main_view.add_text_to_display.assert_called_once_with(
+        "Restored last saved session.", "MainController"
+    )
+
+
 def test_load_session_logs_error_on_analysis_tab_failure(
     controller: MainController,
     mocker: MockerFixture,
