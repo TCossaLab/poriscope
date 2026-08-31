@@ -63,13 +63,14 @@ two left behind are under "Still queued" below. **High is now the top of this se
   folding into compliance-gate block 4 below.
 - **Finished `Worker`/`WorkerThread` objects are retained for the whole session.**
   `MetaModel.py:129-140` assigns them; nothing ever pops them - there is no `pop` or `del`
-  against `self.workers`/`self.threads` anywhere under `poriscope/`. `reset_lock` clears
+  against `self.workers`/`self.threads` anywhere under `poriscope/`. `discard_generator` clears
   only `thread_running` and `generators`, so every dead `QThread` stays alive holding the
   generator closure and the data it touched. Also why `handle_kill_worker` reports
   "Stopping worker for channel N" for runs that finished hours ago (harmless -
   `stop_workers` skips them on `thread_running`, but the log misleads). Pop both entries in
-  `reset_lock` and `deleteLater()` the thread. While there: `reset_lock` resets no lock, it
-  clears run state - rename it.
+  `discard_generator` and `deleteLater()` the thread. (The rename half of this item is
+  done: `reset_lock` is now `discard_generator`, and it closes the spent generator as well
+  as dropping it. Popping the worker and thread is still open.)
 
 ### Moderate
 

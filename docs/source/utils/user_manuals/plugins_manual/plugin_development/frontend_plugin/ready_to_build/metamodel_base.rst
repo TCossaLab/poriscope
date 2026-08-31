@@ -15,7 +15,9 @@ You don’t have to manually manage threads or signals. ``MetaModel`` handles:
 
 - Spawning and tracking worker threads (``WorkerThread``)
 - Connecting signals for progress updates
-- Running generators in parallel or serial mode per channel
+- Running one generator per channel, each on its own worker thread. Whether a plugin's
+  channels may overlap is decided by the plugin itself, not here - see
+  :ref:`serial_channel_operations`
 
 **Signals and communication**
 

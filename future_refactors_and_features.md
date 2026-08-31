@@ -1111,11 +1111,12 @@ further than that pattern requires, not the pattern itself.
    break them.
 
 8. **Repeated "ensure nested dict key exists" boilerplate across
-   `MetaModel`** (`:105-186`, in `set_generator`/`run_generators`/
-   `reset_lock`/`set_force_serial_channel_operations`) — the
+   `MetaModel`** (in `set_generator`/`run_generators`/`discard_generator`) — the
    `if key not in self.<dict>: self.<dict>[key] = {}` pattern appears with
-   minor variations across 4 methods operating on 5 parallel per-key/channel
-   dicts. A tiny `self._ensure_nested(d, key)` (`d.setdefault(key, {})`)
+   minor variations across those methods, operating on parallel per-key/channel
+   dicts. Smaller than when this was written: `set_force_serial_channel_operations`
+   and the `serial_ops` dict it maintained are both gone, and `reset_lock` is now
+   `discard_generator`. A tiny `self._ensure_nested(d, key)` (`d.setdefault(key, {})`)
    helper would collapse each occurrence to one line. Low-medium value,
    low risk.
 
