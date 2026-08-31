@@ -78,6 +78,12 @@ class MainController(QObject):
         self.plugin_history: Dict[str, Any] = {}
         self.tab_action_history: Dict[str, Any] = {}
 
+        # Both histories persist themselves on every change. Reset Session
+        # empties them on its way to a clean workspace, and without this guard
+        # that teardown would write an empty session over the file the user
+        # expects Restore Session to read back.
+        self._suppress_session_save: bool = False
+
         previous_plugin_history = self.main_model.load_session(None)
         self.previous_plugin_history: Dict[str, Any] = (
             previous_plugin_history if previous_plugin_history is not None else {}
@@ -122,6 +128,7 @@ class MainController(QObject):
         )
         self.main_view.clear_cache.connect(self.main_model.clear_cache)
         self.main_view.reset_app_config.connect(self.reset_app_config)
+        self.main_view.reset_session.connect(self.reset_session)
         self.main_view.request_analysis_tabs.connect(self.send_analysis_tabs)
 
     @log(logger=logger)
@@ -227,6 +234,121 @@ class MainController(QObject):
         self.main_view.set_data_server(defaults["Parent Folder"])
         self.main_view.set_user_plugin_location(defaults["User Plugin Folder"])
         self.main_view.set_logging_level(defaults["Log Level"])
+
+    @log(logger=logger)
+    @Slot()
+    def reset_session(self) -> None:
+        """
+        Return the application to the state it has when launched from scratch.
+
+        Deletes every instantiated data plugin, closes every analysis tab, drops
+        both in-memory histories and returns to the landing page - so the user
+        gets a clean workspace without quitting and starting the app again.
+
+        The saved session files are deliberately left on disk, because that is
+        what launching from scratch does: ``load_session`` reads them at startup
+        and nothing applies them until the user chooses Restore Session. Leaving
+        them means this is reversible - reset, then Restore, and the workspace
+        comes back.
+
+        Keeping them takes active effort. Both histories save themselves on every
+        change, and deleting a plugin emits a history update per plugin, so the
+        teardown below would otherwise write an empty session over the file
+        before the user ever got the chance to restore it. ``_suppress_session_save``
+        holds that off for the duration.
+
+        Anything that refuses to delete is reported rather than passed over, so
+        a partial clear is never announced as a complete one.
+
+        The Settings page, if it was open, is removed too rather than kept
+        around - a freshly launched application has never opened it either.
+        Its widget is a singleton rather than something disposable, though, so
+        ``close_settings_page()`` detaches it first; see that method for why.
+
+        Running workers are stopped first, as they are on quit - deleting a
+        plugin closes its resources, so a worker still running against one would
+        be reading from a handle that has just been closed.
+
+        The sidebar highlight, the sidebar layout, the status/log panel and the
+        floating Help window are reset too. None of those follow from tearing
+        down tabs and plugins on their own: the sidebar only ever gains a
+        checked button, never loses one; an expanded sidebar stays expanded;
+        the log panel only ever grows; and Help is a separate top-level window
+        that closing tabs never touches. Left alone, the landing page would
+        still show whichever section was last open, whichever sidebar layout
+        was last chosen, everything logged before the reset, and a Help window
+        a fresh launch would never have open.
+
+        The plugin menus are re-scanned too, the same way changing the user
+        plugin folder already does. ``populate_available_plugins()`` otherwise
+        only ever runs once, in ``MainModel``'s constructor, so a plugin file
+        dropped into the plugin folder mid-session would be invisible in the
+        menus after a reset even though a genuine relaunch would pick it up.
+        """
+        self._suppress_session_save = True
+        try:
+            # Stop workers before deleting anything they run against. exiting=True
+            # blocks until each thread actually finishes, which is needed here for
+            # a stronger reason than on quit: the teardown below closes every
+            # plugin's resources, and a worker still reading a file handle that
+            # has just been closed is a use-after-close. The flag is named for the
+            # exit path, but the semantics wanted are simply "wait for the thread".
+            for tab_key, tab in list(self.analysis_tabs.items()):
+                if tab:
+                    tab.handle_kill_all_workers(tab_key, exiting=True)
+
+            undeleted = self.data_plugin_controller.delete_all_plugins()
+
+            self.analysis_tabs.clear()
+            self.plugin_history.clear()
+            self.tab_action_history.clear()
+        finally:
+            self._suppress_session_save = False
+
+        # A walkthrough or milestone in progress makes switch_to_page refuse to
+        # move, so the return to the landing page below would be silently ignored
+        # and the user left on a page that has just been destroyed. A freshly
+        # launched application has neither active.
+        self.main_view.cancel_walkthrough()
+        # Settings' widget is a singleton, not a disposable per-open instance
+        # like an analysis tab's view, so it has to be detached from its page
+        # wrapper before that wrapper is destroyed below - otherwise Qt would
+        # destroy the singleton along with it. A freshly launched application
+        # has never opened Settings, so this is a no-op if it wasn't open.
+        self.main_view.close_settings_page()
+        # Everything but the landing page is an analysis tab or Settings, both
+        # of which a freshly launched application starts without.
+        self.main_view.remove_pages_except(["MainView"])
+        self.main_view.received_analysis_tabs.emit(self.analysis_tabs)
+        self.main_view.switch_to_page("MainView")
+        # switch_to_page only ever checks a sidebar button, it never unchecks
+        # the one it replaces, so whichever section was open before the reset
+        # would otherwise stay highlighted on a landing page with nothing open.
+        self.main_view.clear_sidebar_highlight()
+        # An expanded sidebar stays expanded otherwise - nothing about tearing
+        # down tabs collapses it back to the default icon-only layout.
+        self.main_view.reset_sidebar_layout()
+        # A fresh launch starts with an empty panel; without this the reset
+        # message would just be appended under everything logged before it.
+        self.main_view.clear_display()
+        # Help is a separate top-level window; closing tabs never touches it,
+        # and a fresh launch never has it open.
+        self.main_view.close_help_window()
+        # populate_available_plugins() otherwise only ever runs once, at
+        # startup, so a plugin file added since would stay invisible in the
+        # menus here even though a genuine relaunch would pick it up.
+        self.refresh_available_plugins()
+
+        if undeleted:
+            message = (
+                f"Partial reset - {', '.join(undeleted)} could not be removed "
+                "and are still loaded. Everything else was cleared."
+            )
+            self.logger.warning(message)
+        else:
+            message = "Session reset. Saved session files are untouched."
+            self.logger.info(message)
+        self.main_view.add_text_to_display(message, "MainController")
 
     @log(logger=logger)
     @Slot(str, str, object)
@@ -559,7 +681,8 @@ class MainController(QObject):
                     new_history[key] = val
             self.plugin_history = new_history
         self._sync_tab_session_state_into_history()
-        self.main_model.save_session(self.plugin_history)
+        if not self._suppress_session_save:
+            self.main_model.save_session(self.plugin_history)
 
     @log(logger=logger)
     def _sync_tab_session_state_into_history(self) -> None:
@@ -594,7 +717,8 @@ class MainController(QObject):
     @Slot(str, object)
     def update_tab_action_history(self, key: str, history: Any) -> None:
         self.tab_action_history[key] = history
-        self.main_model.save_tab_actions(self.tab_action_history)
+        if not self._suppress_session_save:
+            self.main_model.save_tab_actions(self.tab_action_history)
 
     @log(logger=logger)
     @Slot(str)
@@ -733,9 +857,9 @@ class MainController(QObject):
         self.logger.debug("Sending instantiated analysis tabs to MainView.")
 
         if not self.analysis_tabs:
-            self.logger.warning(
-                "No instantiated analysis tabs found in MainController."
-            )
+            # Normal at startup and after a session reset, so not a warning:
+            # QtHandler promotes WARNING to a modal dialog.
+            self.logger.debug("No instantiated analysis tabs in MainController.")
 
         # Emit the correct signal with the current analysis tabs
         self.main_view.received_analysis_tabs.emit(self.analysis_tabs)

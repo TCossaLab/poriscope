@@ -327,6 +327,32 @@ class IconTextMenuWidget(QWidget):
     def setExitChecked(self, checked: bool) -> None:
         self.exit_text_button.setChecked(checked)
 
+    @log(logger=logger)
+    def uncheckAll(self) -> None:
+        """
+        Uncheck whichever sidebar menu button is currently highlighted, if any.
+
+        These buttons are all ``autoExclusive`` and share this widget as their
+        parent, so Qt treats them as one radio-button-style group: a plain
+        ``setChecked(False)`` is a no-op on the sole checked member, since Qt
+        refuses to leave an autoExclusive group with nothing checked once
+        anything has been. Toggling ``autoExclusive`` off just long enough to
+        release it is the standard workaround.
+        """
+        for button in (
+            self.raw_data_text_button,
+            self.event_analysis_text_button,
+            self.metadata_text_button,
+            self.plugins_text_button,
+            self.help_text_button,
+            self.settings_text_button,
+            self.exit_text_button,
+        ):
+            if button.isChecked():
+                button.setAutoExclusive(False)
+                button.setChecked(False)
+                button.setAutoExclusive(True)
+
     def setHelpUnchecked(self) -> None:
         self.help_text_button.setChecked(False)
         self.help_text_button.repaint()
