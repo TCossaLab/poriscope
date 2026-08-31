@@ -51,7 +51,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-METADATA_DB_NAME = os.getenv("E2E_METADATA_DB", "DB.db")
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 
 E2E_TIMEOUT_S = int(os.getenv("E2E_TIMEOUT", "120"))
@@ -142,13 +141,13 @@ def _wait_for_stable_export(
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
-def test_metadata_csv_export(qtbot, tmp_path, monkeypatch, caplog):
-    metadata_db = (
-        REPO_ROOT / "tests" / "data" / METADATA_DB_NAME
-        if (REPO_ROOT / "tests" / "data" / METADATA_DB_NAME).exists()
-        else REPO_ROOT / "data" / METADATA_DB_NAME
-    )
-    assert metadata_db.exists(), f"Missing test file: {metadata_db}"
+def test_metadata_csv_export(
+    qtbot, tmp_path, monkeypatch, caplog, synthetic_metadata_database
+):
+    # A generated metadata database, so this test carries no dependency on a
+    # checked-in fixture file. Only the path is used - it is handed to the file
+    # dialog - so the database's shape is irrelevant here.
+    metadata_db = synthetic_metadata_database.db_path
 
     export_folder = tmp_path / "csv_export"
     export_folder.mkdir(exist_ok=True)

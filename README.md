@@ -1,6 +1,6 @@
 ## SETUP
 Note: Conda is not supported. You can make it work, but you're on your own. 
-Make sure you have Python 3.12.10 installed (python --version) to avoid dependencies compatibility issues.
+Make sure you have Python 3.12.10 or newer installed (python --version) to avoid dependencies compatibility issues.
 
 For regular users, you can install the latest stable release of poriscope directly from PyPi using pip or similar. Simply run_
 
@@ -39,4 +39,4 @@ https://tcossalab.github.io/poriscope/
 https://youtube.com/@tcossalab?si=A8Wy8yHOXiwSXu5F 
 
 ## Data
-Tutorial Series data is available on FRDR: https://doi.org/10.20383/103.01599
+Tutorial Series data is available on FRDR: https://doi.org/10.20383/103.01695

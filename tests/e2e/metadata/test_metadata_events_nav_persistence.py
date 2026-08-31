@@ -61,7 +61,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs --------------------------------------------------------
-METADATA_DB_NAME = os.getenv("E2E_METADATA_DB", "DB.db")
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 
 E2E_TIMEOUT_S = int(os.getenv("E2E_TIMEOUT", "180"))
@@ -145,13 +144,23 @@ def _get_legend_labels(fig):
 
 @pytest.mark.e2e_ux
 @pytest.mark.timeout(E2E_TIMEOUT_S)
-def test_metadata_events_and_filters(qtbot, tmp_path, monkeypatch, caplog):
-    metadata_db = (
-        REPO_ROOT / "tests" / "data" / METADATA_DB_NAME
-        if (REPO_ROOT / "tests" / "data" / METADATA_DB_NAME).exists()
-        else REPO_ROOT / "data" / METADATA_DB_NAME
-    )
-    assert metadata_db.exists(), f"Missing test file: {metadata_db}"
+def test_metadata_events_and_filters(
+    qtbot, tmp_path, monkeypatch, caplog, make_synthetic_metadata_database
+):
+    # A generated metadata database, so this test carries no dependency on a
+    # checked-in fixture file. Only the path is used - it is handed to the file
+    # dialog - so the database's shape is irrelevant here.
+    # One experiment, one channel: this test drives event navigation, which
+    # needs an unambiguous single-channel scope. The shared
+    # synthetic_metadata_database fixture deliberately has three
+    # experiment/channel leaves for exercising the Scope dialog, which is a
+    # different concern. 25 events is comfortably more than the 5 this
+    # navigates through.
+    metadata_db = make_synthetic_metadata_database(
+        experiments=[
+            {"name": "solo", "channels": [{"channel_id": 0, "num_events": 25}]}
+        ],
+    ).db_path
 
     filters_json_path = tmp_path / "saved_filters.json"
     plot_config_json_path = tmp_path / "saved_plot_config.json"

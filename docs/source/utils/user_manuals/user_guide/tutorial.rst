@@ -5,6 +5,15 @@ Tutorial and Documentation
 
 A **built-in tutorial** is available for each tab or for the full workflow. To initiate it, go to the **Help → Tutorial** menu.
 
+.. note:: Data to follow along with
+
+   The built-in tutorial walks you through the interface, but you will need data
+   loaded to actually perform the steps it describes. The dataset used in the
+   YouTube tutorial series is archived on the Federated Research Data Repository
+   (FRDR):
+
+   `DOI: 10.20383/103.01695 <https://doi.org/10.20383/103.01695>`_
+
 .. image:: /_static/images/help_tutorial_menu.png
    :alt: Help -> Tutorial Menu
    :align: center

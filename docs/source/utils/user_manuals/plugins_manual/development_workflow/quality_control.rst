@@ -351,6 +351,11 @@ exclusions, and ``mypy.ini`` enforces that:
   checker cannot fully resolve their types.
 - ``strict_equality = True`` — catches comparisons between types that can never be
   equal, such as a display string compared against an integer channel id.
+- ``python_version = 3.12`` — fixes the language and standard-library level mypy checks
+  against. Without it mypy assumes whatever interpreter happens to run it, so a
+  contributor on a newer Python could see a different verdict from CI. Only
+  ``MAJOR.MINOR`` is valid here; the patch-level floor is ``requires-python`` in
+  ``pyproject.toml``, which is a separate concern.
 
 .. note::
 
