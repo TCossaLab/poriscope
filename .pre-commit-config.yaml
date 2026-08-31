@@ -48,6 +48,21 @@ repos:
         types: [python]
         files: ^poriscope/
 
+  # Plugin settings-schema self-consistency (runs during default commit stage).
+  # Scoped to poriscope/plugins/** rather than all of poriscope/: this only needs
+  # to re-run when a plugin's get_empty_settings() could have changed, and it is
+  # meant to run ahead of the far more expensive behavioural conformance suite
+  # under tests/unit/plugins/conformance/, not duplicate what that already covers.
+  # See scripts/check_settings_schema.py and poriscope/utils/settings_schema.py.
+  - repo: local
+    hooks:
+      - id: settings-schema
+        name: settings-schema (get_empty_settings self-consistency)
+        entry: python scripts/check_settings_schema.py
+        language: system
+        pass_filenames: false
+        files: ^poriscope/plugins/
+
   # File Size Guard (runs during default commit stage)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

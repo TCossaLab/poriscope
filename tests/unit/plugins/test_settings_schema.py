@@ -32,6 +32,11 @@ Why this is not already covered:
 That last point is why these checks matter despite the app working: the defaults
 are only reachable un-coerced by a programmatic caller - a script, a headless
 flow, or the settings-filling layer a behavioural conformance suite needs.
+
+The static (schema-only) half of what this module checks lives in
+:py:mod:`poriscope.utils.settings_schema` as ``validate_settings_schema()``, so it
+is reusable outside pytest - see ``scripts/check_settings_schema.py``, which the
+``settings-schema`` pre-commit hook runs on every ``poriscope/plugins/**`` change.
 """
 
 import importlib
@@ -43,6 +48,7 @@ import pytest
 
 import poriscope.plugins as plugins_pkg
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.settings_schema import FILE_PARAM_KEYS, validate_settings_schema
 
 # Import everything under poriscope.plugins so that __subclasses__() below sees
 # every plugin. Same approach, and same reason, as test_plugin_compliance.py.
@@ -51,16 +57,6 @@ for _finder, _modname, _ispkg in pkgutil.walk_packages(
 ):
     importlib.import_module(_modname)
 
-
-# Keys the get_empty_settings() docstring defines.
-DOCUMENTED_KEYS: Set[str] = {"Type", "Value", "Options", "Min", "Max"}
-
-# "Units" is consumed as real data - SQLiteEventWriter and SQLiteDBWriter both
-# read base_settings["Voltage"]["Units"] when writing channel metadata - but it
-# appears in neither the docstring contract above nor the Setting TypedDict.
-# Tolerated here rather than failed on, because the fix is to the contract
-# (docstring + TypedDict), not to the plugins that already rely on it.
-UNDOCUMENTED_KEYS: Set[str] = {"Units"}
 
 # Parameters whose value is a live plugin instance rather than a scalar. They are
 # keyed by the name of the Meta* family they accept, and BaseDataPlugin's direct
@@ -75,12 +71,6 @@ UNDOCUMENTED_KEYS: Set[str] = {"Units"}
 PLUGIN_DEPENDENCY_KEYS: Set[str] = {
     cls.__name__ for cls in BaseDataPlugin.__subclasses__()
 }
-
-# Options on a file parameter is a Qt file-dialog filter glob
-# (e.g. ['Chimera Logfiles (*.log)']), not the set of permitted values.
-# BaseDataPlugin._validate_param_ranges exempts exactly these two keys from its
-# Options membership check; this mirrors that exemption.
-FILE_PARAM_KEYS: Set[str] = {"Input File", "Output File"}
 
 
 def get_concrete_data_plugins() -> List[Type[BaseDataPlugin]]:
@@ -134,65 +124,17 @@ def test_settings_schema_shape(plugin_cls: Type[BaseDataPlugin]) -> None:
     """
     Every parameter declares the keys the contract requires, and no others.
 
-    Checks, per parameter:
-
-    1. ``Type`` and ``Value`` are both present. The docstring calls both
-       required and ``Setting`` declares both non-optional. A missing ``Value``
-       is not merely undocumented: ``_validate_param_types`` subscripts
-       ``val["Value"]`` unguarded, so an unfilled parameter raises
-       ``KeyError: 'Value'`` instead of a message naming the parameter.
-    2. ``Type`` is actually a type, since both the validators and
-       ``DictDialog.on_ok`` call it.
-    3. No unrecognised keys, so a typo'd ``Minimum`` cannot silently disable a
-       range check.
+    Delegates to :py:func:`poriscope.utils.settings_schema.validate_settings_schema`
+    - see its docstring for exactly what is checked. Keeping the check itself in
+    ``poriscope/utils/`` rather than here is what lets
+    ``scripts/check_settings_schema.py`` (and the pre-commit hook that runs it)
+    reuse it without needing pytest.
 
     :param plugin_cls: The plugin class under test.
     :type plugin_cls: Type[BaseDataPlugin]
     """
     settings = get_empty_settings_for(plugin_cls)
-    errors: List[str] = []
-    allowed = DOCUMENTED_KEYS | UNDOCUMENTED_KEYS
-
-    for param, entry in settings.items():
-        if not isinstance(entry, dict):
-            errors.append(f"{param!r}: entry is {type(entry).__name__}, not a dict")
-            continue
-
-        for required in ("Type", "Value"):
-            if required not in entry:
-                errors.append(
-                    f"{param!r}: missing required key {required!r} "
-                    f"(has {sorted(entry)})"
-                )
-
-        if "Type" in entry and not isinstance(entry["Type"], type):
-            errors.append(f"{param!r}: Type is {entry['Type']!r}, which is not a class")
-
-        unknown = set(entry) - allowed
-        if unknown:
-            errors.append(f"{param!r}: unrecognised keys {sorted(unknown)}")
-
-        minimum, maximum = entry.get("Min"), entry.get("Max")
-        if minimum is not None and maximum is not None and minimum > maximum:
-            errors.append(f"{param!r}: Min={minimum!r} exceeds Max={maximum!r}")
-
-        # An option the declared Type cannot hold can never be selected, so the
-        # parameter is unsatisfiable. File parameters are exempt: their Options
-        # hold Qt dialog filter globs rather than permitted values, and those are
-        # strings under a str Type, so they pass this check on their own terms.
-        declared = entry.get("Type")
-        options = entry.get("Options")
-        if options is not None and isinstance(declared, type):
-            mistyped = [
-                opt
-                for opt in options
-                if declared in (int, float, bool, str) and not isinstance(opt, declared)
-            ]
-            if mistyped:
-                errors.append(
-                    f"{param!r}: Options {mistyped!r} are not {declared.__name__}"
-                )
-
+    errors = validate_settings_schema(settings)
     assert not errors, f"{plugin_cls.__name__} settings schema:\n  " + "\n  ".join(
         errors
     )
