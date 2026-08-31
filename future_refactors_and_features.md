@@ -1236,6 +1236,75 @@ immediately after teardown, without restarting) actually depends on
 only because a hang there is much less noticeable to a user who already
 expects the app to be closing.
 
+### Attempt at mitigation #1 (2026-08-31): built, then reverted - not a dead end, but not this shape
+
+Mitigation #1 above was implemented in a live session immediately after this
+addendum was first written: `DataPluginModel.unregister_plugin` ran
+`close_resources()` on a `threading.Thread`, joined with a new
+`CLOSE_RESOURCES_TIMEOUT_S` (10s default), logging a named failure and
+still proceeding with deletion if the thread didn't finish in time - matching
+how an exception there has always been handled, and for the same reason
+(the caller has already unregistered this plugin from its parents'
+dependent lists by that point, so leaving the registry entry in place on a
+timeout would make that inconsistent). 3 tests were added and passing, the
+full suite (2716 tests) passed, and the pre-commit gate was clean.
+
+**It was reverted before committing, for a real reason found by a
+before-commit audit, not a hypothetical one.** Running `close_resources()`
+on a new thread breaks any plugin holding a persistent, thread-affine
+resource created on a different thread than the one now closing it. A
+read-only audit across every `close_resources()` implementation in the tree
+(17 concrete overrides, 9 base-class abstracts) found this is narrower than
+it could have been, but real:
+
+- **Exactly two plugins are affected**, and they are the only ones with any
+  persistent state in `close_resources()` at all - everything else in the
+  tree is a no-op `pass`: `poriscope/plugins/dbwriters/SQLiteDBWriter.py`
+  (`self.conn = sqlite3.connect(...)` at `:243`, touched at `:119,123-124`
+  with **no try/except** - the connection and its file lock would leak
+  silently) and `poriscope/plugins/datawriters/SQLiteEventWriter.py`
+  (`self.conn` at `:496`, touched at `:298,306-307`, wrapped in try/except
+  logging at `.info()` - would silently fail to commit/close while looking
+  fine in the logs).
+- **Correction to the initial assumption:** these connections are not opened
+  on the GUI thread. `MetaWriter.commit_events`/`MetaDatabaseWriter.write_events`
+  are generators driven by a `WorkerThread(QThread)` (`EventWorker.py:34,55,132,145-149`),
+  and the connection is normally closed on that same worker thread via the
+  `last_call` branch and a `finally: self.close_resources(channel)`
+  (`MetaWriter.py:477`). `unregister_plugin` only ever finds a live
+  connection if a run aborted or errored before reaching `last_call`. This
+  narrows *when* the problem is hit, but does not remove it - a spawned
+  closer thread is a third thread relative to whichever thread actually
+  created the connection, regardless of whether that was the GUI thread or
+  a worker thread.
+- Python's `sqlite3` connections default to `check_same_thread=True`, which
+  raises `sqlite3.ProgrammingError` on cross-thread use. Since `.join()`
+  already guarantees the calling thread isn't touching the connection while
+  the closer thread runs, `check_same_thread=False` on these two connections
+  specifically would be safe (no real concurrency introduced, just relaxing
+  an overcautious check for an access pattern already serialized by
+  construction) - but that's a change to two plugin files beyond the
+  original scope of "add a timeout," and was not made.
+- **Two more coverage gaps, found by the same audit, not yet addressed
+  either way:** `DataPluginModel.handle_exit` (the quit path) and
+  `BaseDataPlugin.__exit__` (the context-manager path) both still call
+  `close_resources()` directly, unguarded - so even the reverted version
+  would have left quit exactly as exposed as before, undermining half the
+  point of building this.
+
+**For whoever picks this up next:** the fix is not "don't do this," it's
+"do this *and* fix the two plugins in the same change," specifically:
+(a) add `check_same_thread=False` to both `sqlite3.connect()` calls above,
+(b) route `handle_exit`/`__exit__` through the same timeout-guarded call
+`unregister_plugin` would use rather than calling `close_resources()`
+directly, and (c) add "must tolerate being closed from a different thread
+than the one that created your resources" to the `close_resources()`
+contract discussion in mitigation #3 above, since this attempt is exactly
+the reason that constraint would exist. Re-running the same read-only audit
+first is not necessary - the two-plugin finding above is exhaustive for the
+codebase as it stands - but re-confirm it if new writer plugins have been
+added since 2026-08-31.
+
 ---
 
 # Part 7: `MetaReader` / `MetaFilter` / `MetaEventLoader` / `MetaWriter`
