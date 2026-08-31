@@ -36,6 +36,7 @@ from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventFitter import MetaEventFitter
+from poriscope.utils.SerializeDecorator import serialize_channels
 
 
 @inherit_docstrings
@@ -95,13 +96,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
         """
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
-        By default, writer plugins are assumed to not be threadsafe and will run in serial mode when called from the poriscope GUI. If you want to change this, you must also ensure that the parent eventfitter object is threadsafe for pulling data from it. You can play it safe by calling ``self.eventfitter.force_serial_channel_operations()``.
+        By default, writer plugins are assumed to not be threadsafe and will run in serial mode when called from the poriscope GUI. If you want to change this, you must also ensure that the parent eventfitter object is threadsafe for pulling data from it. You can play it safe by calling ``self.eventfitter.force_serial_channel_operations()``. **How this is enforced:** returning ``True`` means *this plugin instance's* channel operations must not overlap each other; different instances still run concurrently. The guard is taken by the plugin itself, inside its own generator, via :py:func:`~poriscope.utils.SerializeDecorator.serialize_channels` and :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.serialize_channel_operations`, and the lock is held for the whole run of that generator. It used to be enforced by the analysis tab's model using a lock scoped to the model rather than to the plugin, which meant two tabs driving the same plugin took different locks and did not serialize at all.
 
         :return: True if only one channel can run at a time, False otherwise
         :rtype: bool
         """
         return True
 
+    @serialize_channels
     @log(logger=logger)
     def write_events(self, channel: int) -> Generator[float, Optional[bool], None]:
         """

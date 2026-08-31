@@ -34,7 +34,7 @@ Built-in signals allow your model to communicate with the view, controller, or e
 **Helper functions you don’t need to write yourself**
 
 - ``stop_workers()`` to gracefully terminate long-running tasks
-- ``reset_lock()`` to clean up when threads complete
+- ``discard_generator()`` to clean up when threads complete
 - ``set_generator()`` and ``run_generators()`` to queue and execute background operations
 
 What You Need to Implement

@@ -35,6 +35,7 @@ from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaReader import MetaReader
+from poriscope.utils.SerializeDecorator import serialize_channels
 
 
 @inherit_docstrings
@@ -133,7 +134,7 @@ class MetaEventFinder(BaseDataPlugin):
         """
         **Purpose:** Indicate whether operations on different channels must be serialized (not run in parallel).
 
-        By default, eventfinder plugins defer to the thread safety of their child :ref:`MetaReader` instance. If any operation in your event finder is not thread-safe independent of the child reader object, this function should be overridden to simply return ``True``. Most event finders are thread-safe since reading from a file on disk is usually so, and therefore no override is necessary. Take care to verify that the :ref:`MetaReader`: subclass instance on which this object depends is also threadsafe by calling ``self.reader.force_serial_channel_operations()`` to check.
+        By default, eventfinder plugins defer to the thread safety of their child :ref:`MetaReader` instance. If any operation in your event finder is not thread-safe independent of the child reader object, this function should be overridden to simply return ``True``. Most event finders are thread-safe since reading from a file on disk is usually so, and therefore no override is necessary. Take care to verify that the :ref:`MetaReader`: subclass instance on which this object depends is also threadsafe by calling ``self.reader.force_serial_channel_operations()`` to check. **How this is enforced:** returning ``True`` means *this plugin instance's* channel operations must not overlap each other; different instances still run concurrently. The guard is taken by the plugin itself, inside its own generator, via :py:func:`~poriscope.utils.SerializeDecorator.serialize_channels` and :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.serialize_channel_operations`, and the lock is held for the whole run of that generator. It used to be enforced by the analysis tab's model using a lock scoped to the model rather than to the plugin, which meant two tabs driving the same plugin took different locks and did not serialize at all.
 
         :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :return: True if only one channel can run at a time, False otherwise
@@ -223,6 +224,7 @@ class MetaEventFinder(BaseDataPlugin):
                 "Eventfinders need an attached MetaReader object to function"
             )
 
+    @serialize_channels
     @log(logger=logger)
     def find_events(
         self,
