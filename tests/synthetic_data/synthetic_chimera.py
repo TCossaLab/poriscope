@@ -6,6 +6,14 @@ whose contents are known exactly: a flat baseline with Gaussian noise,
 into which blockage events of chosen depth and duration have been placed
 at chosen positions.
 
+Two writers live here, for the two Chimera log-file variants ChimeraReader20240101
+and ChimeraReader20240501 read: ChimeraRecordingWriter (a sidecar .json) and
+Chimera20240101RecordingWriter (the same metadata embedded in the .log file's own
+header, terminated by a literal ``<END HEADER>`` marker - see
+ChimeraReader20240101._get_configs for the exact parsing this must satisfy). Both
+share the same ADC code / gain-stack conversion and the same picoamp signal
+construction; only how the metadata reaches the reader differs.
+
 File format
 -----------
 A recording is one pair of files sharing a stem:
@@ -133,10 +141,64 @@ def _scale_offset(
     return scale, offset
 
 
+def _encode_codes(config: ChimeraRecordingConfig, trace: np.ndarray) -> np.ndarray:
+    """
+    Invert the reader's ADC-code-to-picoamp conversion to get codes to write.
+
+    :param config: Recording parameters carrying the gain stack.
+    :type config: ChimeraRecordingConfig
+    :param trace: The ground-truth signal, in picoamps.
+    :type trace: numpy.ndarray
+
+    :return: int16 ADC codes, clipped to the representable range.
+    :rtype: numpy.ndarray
+    """
+    scale, offset = _scale_offset(config.tia_gain, config.i_offset, config.filter_gain)
+    codes_f = (trace - offset) / scale
+    return np.clip(np.round(codes_f), -32768, 32767).astype(np.int16)
+
+
+def _build_metadata_dict(config: ChimeraRecordingConfig, channel: int) -> dict:
+    """
+    Build the "log"/"global"/"channel" metadata block both formats share.
+
+    ChimeraReader20240501 reads this from a sidecar .json; ChimeraReader20240101
+    reads the identical structure embedded in the .log file's own header. Both
+    readers' _get_configs index this same set of keys.
+
+    :param config: Recording parameters for this channel.
+    :type config: ChimeraRecordingConfig
+    :param channel: Headstage number.
+    :type channel: int
+
+    :return: The metadata dict, ready for json.dump.
+    :rtype: dict
+    """
+    return {
+        "log": {
+            "version": config.version,
+            "HS": channel,
+            "timestamp": config.timestamp,
+        },
+        "global": {
+            "f_sampling": config.samplerate,
+            "f_adc": config.resolved_adc_samplerate,
+            "filter_gain": config.filter_gain,
+            "bandwidth": config.bandwidth,
+            "decimate": config.decimate,
+        },
+        "channel": {
+            "tia_gain": config.tia_gain,
+            "i_offset": config.i_offset,
+            "voffset": config.voffset,
+        },
+    }
+
+
 class ChimeraRecordingWriter(BaseSyntheticRecordingWriter[ChimeraRecordingConfig]):
     """
     Subclass of BaseSyntheticRecordingWriter for writing Chimera VC400
-    .log/.json file pairs.
+    .log/.json file pairs, for ChimeraReader20240501.
     """
 
     def _write(
@@ -167,14 +229,7 @@ class ChimeraRecordingWriter(BaseSyntheticRecordingWriter[ChimeraRecordingConfig
         :return: Dataset describing the .log/.json pair that was written.
         :rtype: SyntheticDataset
         """
-        scale, offset = _scale_offset(
-            config.tia_gain, config.i_offset, config.filter_gain
-        )
-
-        # Convert picoamps back to the ADC codes stored on disk, clipping
-        # to the representable int16 range.
-        codes_f = (trace - offset) / scale
-        codes = np.clip(np.round(codes_f), -32768, 32767).astype(np.int16)
+        codes = _encode_codes(config, trace)
 
         stem = f"{config.base_name}_HS{channel}_{config.timestamp}"
         log_path = out_dir / f"{stem}.log"
@@ -182,31 +237,74 @@ class ChimeraRecordingWriter(BaseSyntheticRecordingWriter[ChimeraRecordingConfig
 
         codes.tofile(log_path)
 
-        metadata = {
-            "log": {
-                "version": config.version,
-                "HS": channel,
-                "timestamp": config.timestamp,
-            },
-            "global": {
-                "f_sampling": config.samplerate,
-                "f_adc": config.resolved_adc_samplerate,
-                "filter_gain": config.filter_gain,
-                "bandwidth": config.bandwidth,
-                "decimate": config.decimate,
-            },
-            "channel": {
-                "tia_gain": config.tia_gain,
-                "i_offset": config.i_offset,
-                "voffset": config.voffset,
-            },
-        }
         with open(json_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(_build_metadata_dict(config, channel), f, indent=2)
 
         return SyntheticDataset(
             data_path=log_path,
             metadata_path=json_path,
+            channel=channel,
+            config=config,
+            events=events,
+        )
+
+
+class Chimera20240101RecordingWriter(
+    BaseSyntheticRecordingWriter[ChimeraRecordingConfig]
+):
+    """
+    Subclass of BaseSyntheticRecordingWriter for writing Chimera VC400 .log
+    files in the 2024-01 format, for ChimeraReader20240101.
+
+    Same ADC codes and metadata schema as ChimeraRecordingWriter, but the
+    metadata is JSON embedded at the start of the .log file itself, terminated
+    by a literal ``<END HEADER>`` marker, rather than a sidecar .json - see
+    ChimeraReader20240101._get_configs, which reads up to the first 10000
+    bytes of the file looking for that marker.
+    """
+
+    def _write(
+        self,
+        out_dir: Path,
+        config: ChimeraRecordingConfig,
+        channel: int,
+        trace: np.ndarray,
+        events: List[SyntheticEvent],
+    ) -> SyntheticDataset:
+        """
+        Encode a picoamp trace as int16 ADC codes behind an embedded JSON header.
+
+        :param out_dir: Directory to write into. Already created by the
+            time this is called.
+        :type out_dir: Path
+        :param config: Recording parameters for this channel.
+        :type config: ChimeraRecordingConfig
+        :param channel: Headstage number, embedded in the filename and
+            metadata.
+        :type channel: int
+        :param trace: The ground-truth signal, in picoamps.
+        :type trace: numpy.ndarray
+        :param events: Events already planted in trace.
+        :type events: List[SyntheticEvent]
+
+        :return: Dataset describing the .log file that was written.
+        :rtype: SyntheticDataset
+        """
+        codes = _encode_codes(config, trace)
+
+        stem = f"{config.base_name}_HS{channel}_{config.timestamp}"
+        log_path = out_dir / f"{stem}.log"
+
+        header = (
+            json.dumps(_build_metadata_dict(config, channel)).encode("ascii")
+            + b"<END HEADER>"
+        )
+        with open(log_path, "wb") as f:
+            f.write(header)
+            codes.tofile(f)
+
+        return SyntheticDataset(
+            data_path=log_path,
             channel=channel,
             config=config,
             events=events,
@@ -242,6 +340,41 @@ def generate_chimera_dataset(
     :rtype: SyntheticDataset
     """
     return ChimeraRecordingWriter().generate(
+        out_dir, config, channel=channel, num_events=num_events, seed=seed
+    )
+
+
+def generate_chimera_20240101_dataset(
+    out_dir: Path,
+    config: ChimeraRecordingConfig,
+    *,
+    channel: int = 3,
+    num_events: int = 5,
+    seed: int = 42,
+) -> SyntheticDataset:
+    """
+    Write a single-channel Chimera 2024-01 recording, for ChimeraReader20240101.
+
+    Convenience wrapper around Chimera20240101RecordingWriter().generate(...).
+    Unlike generate_chimera_dataset, the returned dataset has no
+    metadata_path - this format's metadata is embedded in the .log file.
+
+    :param out_dir: Directory to write the .log file into. Created if it
+        does not already exist.
+    :type out_dir: Path
+    :param config: Recording parameters for this channel.
+    :type config: ChimeraRecordingConfig
+    :param channel: Headstage number, embedded in the filename and metadata.
+    :type channel: int
+    :param num_events: How many events to plant on this channel.
+    :type num_events: int
+    :param seed: Random seed, making this channel's noise reproducible.
+    :type seed: int
+
+    :return: Dataset describing the file and its contents.
+    :rtype: SyntheticDataset
+    """
+    return Chimera20240101RecordingWriter().generate(
         out_dir, config, channel=channel, num_events=num_events, seed=seed
     )
 
