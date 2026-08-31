@@ -72,10 +72,10 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         ] = {}
         self.threads: Dict[str, Dict[int, WorkerThread]] = (
             {}
-        )  # Holds worker objects per key/channel
+        )  # Holds worker threads per key/channel
         self.workers: Dict[str, Dict[int, Worker]] = (
             {}
-        )  # Holds worker threads per key/channel
+        )  # Holds worker objects per key/channel
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
@@ -185,6 +185,15 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         error. ``close()`` is a harmless no-op on a generator that already ran to
         completion.
 
+        The finished ``Worker``/``WorkerThread`` pair is also popped out of
+        ``self.workers``/``self.threads`` and scheduled for deletion here, for the same
+        reason: leaving them in the dicts kept every generator closure and the channel
+        data it touched alive for the rest of the session, and made
+        ``stop_workers``/``handle_kill_worker`` log "Stopping worker for channel N" for
+        runs that had finished hours earlier. Both are ``QObject``s created on (and never
+        moved from) this thread, so ``deleteLater()`` is the correct way to release them
+        rather than waiting on Python's reference counting.
+
         :param channel: the channel whose run has finished
         :type channel: int
         :param key: the plugin key whose run has finished
@@ -196,6 +205,16 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         except KeyError:
             return
         generator.close()
+
+        # workers/threads[key][channel] are always created together with
+        # generators[key][channel] in run_generators, so the pop above succeeding
+        # guarantees both of these exist too.
+        worker = self.workers[key].pop(channel)
+        thread = self.threads[key].pop(channel)
+        thread.wait()  # run() has already returned by the time this queued slot
+        # fires from workerthread_finished; this confirms it rather than blocking.
+        thread.deleteLater()
+        worker.deleteLater()
 
     @log(logger=logger)
     @Slot(int, str)
