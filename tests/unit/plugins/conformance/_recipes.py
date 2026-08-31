@@ -114,6 +114,17 @@ EVENTS_CHANNEL = 0
 EVENTS_COUNT = 25
 EVENTS_SAMPLERATE_HZ = 500_000.0
 
+# A second events database, for peak-based fitters only (Basic_PeakFinder). A
+# flat blockage has no resolvable local extremum for scipy.signal.find_peaks to
+# find, so those fitters need a smooth sublevel dip inside the blockage - see
+# generate_events_database's sublevel_dip_pA/sublevel_dip_width_samples and
+# _build_event_trace's docstring for why the dip is a smooth taper rather than
+# a rectangle. Kept as a separate database rather than added to the shared one
+# above so the five fitters that already pass against a flat blockage are not
+# put at any risk of a behaviour change from this.
+PEAKED_EVENTS_DIP_PA = -150.0
+PEAKED_EVENTS_DIP_WIDTH_SAMPLES = 60
+
 # Chimera recording: event finders (and the reader they hang off)
 CHIMERA_CHANNEL = 3
 CHIMERA_EVENTS = 5
@@ -173,15 +184,41 @@ EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
     ),
     "NanoTrees": {"Smallest Significant Sublevel": 200.0},
     "NoFitter": {},
+    # Against the peaked-events database (PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES,
+    # FITTERS_USING_PEAKED_EVENTS below), not the shared flat one.
+    "Basic_PeakFinder": {
+        "Min Height": 100.0,
+        "Min Prominence": 50.0,
+        "Min Distance": 5.0,
+    },
 }
 
-# Fitters the shared events fixture cannot exercise. tests/synthetic_data's
-# _build_event_trace plants one flat rectangular blockage per event and offers no
-# knob for intra-event structure, so a peak-based fitter has nothing to find:
-# PeakFinder rejects all 25 events as "No Peaks Found", and Basic_PeakFinder fits
-# 1 of 25. Both need a fixture that plants resolvable peaks inside the blockage
-# before a pass/fail here would mean anything about the plugin.
-FITTERS_NEEDING_PEAKED_EVENTS = frozenset({"Basic_PeakFinder", "PeakFinder"})
+# Fitters that need the peaked-events database (a smooth intra-event dip, per
+# PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES) rather than the shared flat one. A flat
+# blockage has no resolvable local extremum for a peak-based fitter to find.
+FITTERS_USING_PEAKED_EVENTS = frozenset({"Basic_PeakFinder"})
+
+# PeakFinder has no recipe above and is skipped, with the reason below
+# surfaced by pytest_generate_tests. It was tried against the same peaked-events
+# database Basic_PeakFinder uses and rejected all 25 events as "No Peaks Found"
+# under every setting combination attempted - not a missing-fixture problem in
+# the same sense as the other five originally were. Its internal minimum peak
+# prominence, in PeakFinder._locate_sublevel_transitions, is derived from
+# carrier_blockage - the depth of the blockage itself, ~400 pA here - not from
+# the "Min Carrier Blockage" setting, which only gates whether the blockage
+# qualifies as a carrier at all. A sublevel needs prominence comparable to the
+# *full blockage depth* to register, so a modest internal dip can never clear
+# it regardless of tuning. Making PeakFinder fit needs a structurally different
+# fixture - something closer to a genuine two-level signal with both levels
+# comparable in depth - and even that would only reach the entry point to its
+# own downstream folded/unfolded and translocation-direction classification
+# stages, which are unexplored.
+FITTERS_SKIPPED = {
+    "PeakFinder": (
+        "needs a two-level signal comparable to the full blockage depth, not "
+        "a modest intra-event dip - see FITTERS_SKIPPED in _recipes.py"
+    ),
+}
 
 
 def build_event_loader(db_path: str) -> SQLiteEventLoader:
@@ -224,9 +261,11 @@ def build_event_fitter(
     name = fitter_cls.__name__
     if name not in EVENT_FITTER_SETTINGS:
         raise KeyError(
-            f"No conformance recipe for {name}. Add one to EVENT_FITTER_SETTINGS, "
-            f"or to FITTERS_NEEDING_PEAKED_EVENTS if the shared events fixture "
-            f"cannot exercise it."
+            f"No conformance recipe for {name}. Add one to EVENT_FITTER_SETTINGS "
+            f"(add its name to FITTERS_USING_PEAKED_EVENTS too if it needs a "
+            f"resolvable intra-event dip rather than a flat blockage), or to "
+            f"FITTERS_SKIPPED with a reason if the fixtures genuinely cannot "
+            f"exercise it yet."
         )
     overrides = EVENT_FITTER_SETTINGS[name]
 

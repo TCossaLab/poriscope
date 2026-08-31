@@ -25,7 +25,8 @@ from poriscope.utils.MetaEventFitter import MetaEventFitter
 from tests.unit.plugins.conformance._recipes import (
     EVENTS_CHANNEL,
     EVENTS_COUNT,
-    FITTERS_NEEDING_PEAKED_EVENTS,
+    FITTERS_SKIPPED,
+    FITTERS_USING_PEAKED_EVENTS,
     INJECTED_EVENT_COLUMNS,
     INJECTED_SUBLEVEL_COLUMNS,
     build_event_fitter,
@@ -37,19 +38,32 @@ EVENT_FITTERS: List[Type[MetaEventFitter]] = discover_concrete(MetaEventFitter)
 
 
 @pytest.fixture
-def fitter(request, events_db_path) -> MetaEventFitter:
+def fitter(request, events_db_path, peaked_events_db_path) -> MetaEventFitter:
     """
     Build the fitter under test, attached to a fresh loader, and close it after.
+
+    Fitters in ``FITTERS_USING_PEAKED_EVENTS`` (peak-based fitters, which need a
+    resolvable local extremum inside the blockage) are attached to
+    ``peaked_events_db_path`` instead of the shared flat ``events_db_path`` -
+    see that fixture and ``_recipes.py``'s ``PEAKED_EVENTS_DIP_PA``.
 
     :param request: Pytest request, carrying the parametrised fitter class.
     :type request: pytest.FixtureRequest
     :param events_db_path: Path to the shared synthetic events database.
     :type events_db_path: str
+    :param peaked_events_db_path: Path to the events database with a
+        resolvable intra-event dip.
+    :type peaked_events_db_path: str
     :return: A configured fitter, ready to fit.
     :rtype: MetaEventFitter
     """
     fitter_cls = request.param
-    loader = build_event_loader(events_db_path)
+    db_path = (
+        peaked_events_db_path
+        if fitter_cls.__name__ in FITTERS_USING_PEAKED_EVENTS
+        else events_db_path
+    )
+    loader = build_event_loader(db_path)
     instance = build_event_fitter(fitter_cls, loader)
     yield instance
     instance.close_resources()
@@ -60,8 +74,9 @@ def pytest_generate_tests(metafunc):
     """
     Parametrise the ``fitter`` fixture over every discovered fitter class.
 
-    Classes the shared events fixture cannot exercise are parametrised as skips
-    rather than dropped, so they stay visible in the report.
+    Classes in ``FITTERS_SKIPPED`` are parametrised as skips rather than
+    dropped, so they stay visible in the report, each with the specific reason
+    recorded for it rather than a generic one.
 
     :param metafunc: Pytest's per-function collection hook argument.
     :type metafunc: pytest.Metafunc
@@ -71,15 +86,8 @@ def pytest_generate_tests(metafunc):
     params = []
     for cls in EVENT_FITTERS:
         marks = []
-        if cls.__name__ in FITTERS_NEEDING_PEAKED_EVENTS:
-            marks.append(
-                pytest.mark.skip(
-                    reason=(
-                        f"{cls.__name__} is peak-based and the shared events fixture "
-                        "plants flat rectangular blockages with no intra-event peaks"
-                    )
-                )
-            )
+        if cls.__name__ in FITTERS_SKIPPED:
+            marks.append(pytest.mark.skip(reason=FITTERS_SKIPPED[cls.__name__]))
         params.append(pytest.param(cls, marks=marks, id=cls.__name__))
     metafunc.parametrize("fitter", params, indirect=True)
 
