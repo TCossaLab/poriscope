@@ -1015,6 +1015,20 @@ the facts.
   already run synchronously by the time execution resumed. It now calls a
   constructor-injected `history_lookup` callable directly and uses its return value -
   see `changelog.md` and `future_fixes.md`'s structural-audit entry.
+- **`sys.path` only ever grows** (surfaced 2026-08-31, comparing Reset Session
+  against an actual relaunch, not from a targeted audit of this file).
+  `MainController.update_user_plugin_location` (`main_controller.py:177-179`)
+  and the equivalent startup path in `main_app.py` (`:127-128`) both append
+  the plugin folder's parent directory to `sys.path` if it is not already
+  present, but nothing ever removes an entry once the folder is pointed
+  somewhere else. Across a long session that changes the plugin folder
+  several times - directly, or via repeated Settings resets - `sys.path`
+  keeps every location it was ever pointed at, where a relaunch always
+  starts with exactly the one currently in `config.json`. Not observed to
+  cause any actual problem (Python does not care how long `sys.path` is),
+  and no `isinstance`/lookup anywhere depends on stale entries being absent
+  either - this is tidiness, not a correctness risk. Low value, low risk;
+  worth a look only if this area is being touched for another reason.
 
 None of these change the overall value/risk conclusions already reached for
 this part; fold them in whenever findings #1-#3 above are next revisited.
