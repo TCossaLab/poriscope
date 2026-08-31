@@ -1,7 +1,16 @@
 # Docs Render Check
 # -----------------
-# Verifies that the Sphinx documentation still builds cleanly on every pull
-# request, with warnings treated as errors.
+# Verifies that the Sphinx documentation still builds cleanly, with warnings treated as
+# errors, on every pull request and on every push to a hotfix branch.
+#
+# Why hotfix/* is on the push trigger and no other branch is:
+# every other branch reaches main or develop through a pull request, which this workflow
+# already covers. A hotfix does not - it branches off main and `git flow hotfix finish`
+# merges it back into main locally - so without a push trigger the first docs build a
+# hotfix ever gets is build_and_deploy_docs.yml running against main after the fact,
+# which is exactly the failure this workflow exists to prevent. If a hotfix branch also
+# has a pull request open, both triggers fire and the branch renders twice; that is a few
+# wasted minutes on a rare branch type, not a correctness problem.
 #
 # Why this exists separately from the docs deploy workflow:
 # build_and_deploy_docs.yml only runs on push to main, i.e. after merge, so a
@@ -18,9 +27,9 @@
 # The .rst generators under scripts/autodoc/ are pure ast parsers that never import
 # the package, and no wavelet binary is required. Qt, however, IS required. conf.py no
 # longer mocks PySide6 (it never effectively did - see the comment there), so autodoc
-# imports the real modules and QtGui/QtWidgets/QtSvg have to load. That needs libEGL and
-# libGL, installed below. Xvfb and the XCB libs that ci-branches.yml installs are only
-# needed to instantiate a QApplication, which a docs build never does.
+# imports the real modules and QtGui/QtWidgets/QtSvg have to load. That needs libEGL,
+# libGL and libxkbcommon, installed below. Xvfb and the XCB libs that ci-branches.yml
+# installs are only needed to instantiate a QApplication, which a docs build never does.
 
 name: Docs Render Check
 
@@ -28,6 +37,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main, develop, 'release/*']
+  push:
+    branches: ['hotfix/*']
   workflow_dispatch:
 
 permissions:
