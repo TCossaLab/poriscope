@@ -37,11 +37,17 @@ The following tools are used in Poriscope:
 
 All five are managed through the **pre-commit** framework.
 
-Alongside these, a dedicated automated test — :ref:`plugin_compliance_testing` below —
-checks that any plugin you add or modify actually implements the interface its base
-class requires. It isn't a pre-commit hook (it runs as part of the normal test suite),
-but for anyone contributing a plugin, it is just as much a compliance gate as the
-tools above, and often the one that matters most.
+Two further gates are not pre-commit hooks but are enforced just as strictly:
+
+- a dedicated automated test — :ref:`plugin_compliance_testing` below — checks that any
+  plugin you add or modify actually implements the interface its base class requires. It
+  runs as part of the normal test suite, but for anyone contributing a plugin it is just
+  as much a compliance gate as the tools above, and often the one that matters most.
+- the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
+  Sphinx documentation on every pull request with warnings treated as errors. pydoclint
+  checks that a docstring *describes the right things*; it does not check that the
+  docstring is valid reStructuredText. Those are different failure modes, and only this
+  gate catches the second one.
 
 Pre-commit Hooks (Validation)
 -----------------------------
@@ -191,6 +197,37 @@ Run individual validation tools:
    stubs, and it will report several hundred additional messages that the gate does
    not care about. Those are not failures you need to fix — they are a different tool
    configuration answering a different question. **The hook is the gate.**
+
+.. _docs_render_check:
+
+Checking That the Documentation Still Renders
+---------------------------------------------
+
+Most of Poriscope's documentation is generated from the docstrings you write, so a
+malformed directive or a broken cross-reference in a docstring is a documentation bug.
+``pydoclint`` will not catch it: it verifies that the parameters, return type and
+exceptions a docstring documents match the real function, not that the surrounding
+reStructuredText is well formed. Sphinx catches it, so Sphinx is a gate.
+
+Every pull request targeting ``main``, ``develop`` or a ``release/*`` branch runs the
+**Docs Render Check** workflow, which regenerates the autodoc ``.rst`` files and builds
+the HTML with ``-W`` — warnings are errors. To run exactly what it runs:
+
+.. code-block:: bash
+
+   python scripts/generate_all_autodoc_rst.py
+   sphinx-build -W --keep-going -b html docs/source docs/build
+
+``--keep-going`` reports every warning in one pass instead of stopping at the first, so
+you can fix them all in a single edit. The ``post-merge`` git hook uses the same flags
+(see :doc:`post_merge_automation`), so if hooks are installed you will usually see a
+rendering problem the moment you merge rather than when you open a pull request.
+
+.. note::
+
+   The generator step is not optional. ``docs/source/autodoc/`` is git-ignored and
+   regenerated from the source tree, so a build without it fails on missing table-of-
+   contents entries rather than on anything you did.
 
 Running Auto-fix Hooks Manually
 -------------------------------
@@ -475,7 +512,17 @@ tests included.
 For per-marker counts and mean
 durations, run ``pytest --marker-stats``.
 
-☐ **5. Update the changelog.**
+☐ **5. Check that the documentation still renders.**
+
+.. code-block:: bash
+
+   python scripts/generate_all_autodoc_rst.py
+   sphinx-build -W --keep-going -b html docs/source docs/build
+
+Warnings are errors here, and the same build runs on your pull request. See
+:ref:`docs_render_check` above for why this is a separate gate from ``pydoclint``.
+
+☐ **6. Update the changelog.**
 
 Add a short, plain-language entry to ``changelog.md`` describing what changed, under
 the appropriate existing heading.
@@ -483,14 +530,14 @@ the appropriate existing heading.
 .. warning::
 
    **If you are contributing from a fork** (the typical path for an external/
-   community contribution), steps 1–4 above must be completed *before you push*.
+   community contribution), steps 1–5 above must be completed *before you push*.
    Fork-originated pull requests run in a restricted, read-only CI workflow that
    performs strict validation and the full test suite — it deliberately cannot
    auto-fix formatting or push corrections back to your branch, for security reasons.
    If you skip step 1 or 2 locally, CI will simply fail on something a maintainer has
    no way to fix for you, and you'll need to push a follow-up commit anyway.
 
-Once all five boxes are checked, you're ready to open (or re-request review on) your
+Once all six boxes are checked, you're ready to open (or re-request review on) your
 pull request.
 
 Summary for New Developers
@@ -506,4 +553,6 @@ Summary for New Developers
   :ref:`type_checking_policy`
 - New or modified plugins must also pass ``test_plugin_compliance.py`` — see
   :ref:`plugin_compliance_testing`
+- Docstrings must render, not just describe the right parameters — every pull request
+  rebuilds the docs with warnings as errors; see :ref:`docs_render_check`
 - Before opening a pull request, work through :ref:`pre_pr_checklist` in full

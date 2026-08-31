@@ -138,11 +138,6 @@ two left behind are under "Still queued" below. **High is now the top of this se
   `"Output File"` and `"Input File"` - plugin-specific knowledge in the universal validator.
   A `"Validate Options": False` flag in the settings schema expresses it without the base
   class knowing any names.
-- **The docs workflow triggers on `main` while its comments say `develop`.**
-  `.github/workflows/build_and_deploy_docs.yml:5-12,27` - header comment "Run automatically
-  on pushes to develop", step named "Checkout (develop)", trigger `branches: ["main"]`.
-  Under git flow publishing from `main` is very likely correct, so fix the comments; left
-  alone, someone will eventually "fix" the trigger instead.
 - **Two dead conditions in the plugin loader.** `main_model.py:190` filters
   `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
   `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
@@ -168,21 +163,23 @@ order:
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
-Ranked, cheapest real value first:
+**Block 6 (the docs-render CI gate) is done** (2026-08-31), along with the two
+one-line items that used to sit at 3 and the docs-workflow comment fix - see
+`changelog.md`. What remains, ranked cheapest real value first:
 
-1. **Block 6, the Sphinx docs-render check in CI.** Pure workflow config, no test
-   writing. Highest value-per-effort item in this file - see the block for why.
-2. **The abort-with-no-panel-message bug** in "Still queued" below. The only open item
-   a user would actually notice, and the routing is already worked out.
-3. **The duplicated `QTimer.singleShot`** in "Still queued" - one line.
-4. **Block 2's validator half only**: `validate_settings_schema()` as a real module
+1. **The `QtHandler` severity/modality split and the abort-with-no-panel-message bug.**
+   Fix them together, as the `QtHandler` entry above explains. The only open items a
+   user would actually notice, and the routing is already worked out.
+2. **Block 2's validator half only**: `validate_settings_schema()` as a real module
    under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
    harness that is out of scope.
-5. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
+3. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
    Well-motivated: no-nested-functions, no-bare-except and explicit sqlite cleanup were
    all enforced by hand during the 2026-08-25 lint sweep.
-6. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
+4. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
+   Note the docs-render gate added in block 6 also wants marking as a required status
+   check in branch protection, which is the same out-of-repo admin step block 5 needs.
 
 Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
 
@@ -198,14 +195,6 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
   currently surface, as modal dialogs, while the `info` ones do not - so fix the two
   together rather than routing more traffic into a handler that pops a dialog per record.
-- **`RawDataView.commit_events` never fires for a single non-list channel.**
-  Around `RawDataView.py:903`, `if not isinstance(channels, list): channels = [channels]`
-  normalises the argument, but the loop that emits `commit_events` sits in that `if`'s
-  `else` branch - so the normalised single channel is built and then never iterated.
-  Only a caller that already passed a list commits anything. Found while correcting the
-  `call_args` payload at that emit site; the payload fix is unrelated to and does not
-  mask this. Not fixed there because it is a behavioural change to the commit path that
-  wants its own look at what the callers actually pass.
 - **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
   `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
   `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
@@ -252,9 +241,6 @@ Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
   guards `progress_bars` in `remove_progress_bar` only; the other three accesses
   (`:282`, `:287`, `:325`) are unguarded, so the lock does not actually establish the
   invariant it looks like it establishes.
-- **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
-  `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
-  harmless, but plainly a copy-paste artifact.
 
 ## Handoff: the application-wide event-filter leak (2026-08-31)
 
@@ -597,6 +583,7 @@ infrastructure) → 6/7/8 (rounding out coverage). That sequence assumed blocks 
 could be built first, and both are pytest suites, which are owned by another developer
 and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone
 with nothing built before them, and they are the order given at the top of this file.
+**Block 6 is now done** (2026-08-31), leaving 8 then 5.
 Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
 from a blank file, so building 3 while they do not exist loses most of its value.
 
@@ -794,35 +781,24 @@ repo, so plugin review isn't enforced by GitHub at all today.
 safety — don't add anything to this workflow that needs write access (e.g. auto-fix
 commits); that's what `ci-internal-pr.yml` is for, and it isn't fork-safe.
 
-## 6. Docs-render check in CI (Sphinx warnings-as-errors)
+## 6. Docs-render check in CI (Sphinx warnings-as-errors) - DONE 2026-08-31
 
-**Goal.** Catch a plugin whose docstrings are pydoclint-compliant but still break
-Sphinx rendering, before merge rather than after.
+Landed as `.github/workflows/docs-check.yml`, running the autodoc generator plus
+`sphinx-build -W --keep-going` on every pull request targeting `main`, `develop` or
+`release/*`, with the same flags added to the deploy workflow and the local `post-merge`
+hook. Full narrative in `changelog.md`.
 
-**Why.** `.github/workflows/build_and_deploy_docs.yml` only runs
-`scripts/generate_all_autodoc_rst.py` + `sphinx-build -b html docs/source docs/build`
-on push to `main` (or manual dispatch) — never on a PR, and without `-W`
-(warnings-as-errors), so a bad cross-reference or malformed directive in a new
-plugin's docstring currently surfaces, if at all, only after it's already merged and
-deployed.
+Two notes worth keeping. The block's Gotcha - "expect an initial cleanup pass, grandfather
+via a suppression list if the initial warning count is large" - **did not apply**: the
+count was 18, in five causes, twelve of them from a single bug in
+`plugins_generate_autodoc.py`, so all were fixed outright and no baseline was built. And
+`nitpicky` was measured at 1170 warnings (1152 `reference target not found` for
+numpy/pandas/matplotlib types missing from the intersphinx inventories) and deliberately
+left off; enabling it needs an extended inventory map plus a `nitpick_ignore_regex` and is
+its own piece of work.
 
-**Implementation plan.**
-1. Add a `docs-check` job to `ci-fork-pr.yml`/`ci-internal-pr.yml` (or a new dedicated
-   PR-triggered workflow) that runs the same two commands
-   (`python scripts/generate_all_autodoc_rst.py` then
-   `sphinx-build -b html docs/source docs/build`) but with `-W --keep-going` so
-   warnings fail the build and all of them are reported in one pass rather than
-   stopping at the first.
-2. This job doesn't need the full Qt/Xvfb system dependency set that the test jobs
-   need (autodoc generation and Sphinx build don't launch the app) — keep it as a
-   lighter, faster job so it doesn't slow down the PR feedback loop.
-3. No need to deploy anything from this job — it's a build-only check; reuse
-   `actions/upload-artifact` only if reviewers want a preview of the rendered docs.
-
-**Gotchas.** Turning on `-W` will likely surface pre-existing warnings from plugins
-already in the repo, not just future ones — expect an initial cleanup pass (grandfather
-via a suppression list keyed by warning text, mirroring the `.pydoclint-baseline.txt`
-pattern, if the initial warning count is large) before this can be made blocking.
+The remaining follow-through belongs to block 5: marking the new check as a required
+status check in branch protection for `main`/`develop` is an out-of-repo, admin-only step.
 
 ## 7. Fuzz / malformed-input testing for data readers
 

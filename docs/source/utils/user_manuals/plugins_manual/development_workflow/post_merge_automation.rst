@@ -93,10 +93,18 @@ This process:
 
 - Removes previous Sphinx build artifacts
 - Regenerates autodoc ``.rst`` files
-- Builds the HTML documentation using Sphinx
+- Builds the HTML documentation using Sphinx, with ``-W --keep-going`` so warnings are
+  errors and all of them are reported in one pass
 - Opens the generated documentation in a web browser
 
 This ensures that documentation always reflects the current codebase.
+
+.. note::
+
+   The ``-W`` flag matches the **Docs Render Check** workflow that runs on every pull
+   request, so a rendering problem introduced by a merge surfaces here rather than
+   waiting for CI. If the hook fails at this step, the docs genuinely do not build —
+   see :ref:`docs_render_check` for how to reproduce and fix it.
 
 
 Building the Wavelet Native Library
