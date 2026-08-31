@@ -65,7 +65,7 @@ def _assert_db_schema_sqlite_dbwriter(
 def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path):
     """
     Integration (no GUI):
-    (Specifically for events.sqlite3 in tests/data/)
+    (Against the synthetic events database built by the sample_events_db fixture.)
 
       SQLiteEventLoader -> CUSUM -> SQLiteDBWriter
 
@@ -107,7 +107,9 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     if "Rise Time" in fitter_settings:
         fitter_settings["Rise Time"]["Value"] = 10.0
     if "Step Size" in fitter_settings:
-        fitter_settings["Step Size"]["Value"] = 1000.0
+        # 100.0 fits every planted event; 1000.0 rejects them all as "too few
+        # levels", which tests/e2e/event_analysis pins as a parametrized case.
+        fitter_settings["Step Size"]["Value"] = 100.0
     if "Sensitivity" in fitter_settings:
         fitter_settings["Sensitivity"]["Value"] = 1.0
     fitter.apply_settings(fitter_settings)

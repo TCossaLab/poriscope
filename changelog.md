@@ -1,5 +1,13 @@
 ## Poriscope 1.7: In Progress
 
+* **The integration flows and two metadata e2e tests now build their own data; `tests/data/` is gone**
+    * `tests/integration/conftest.py`'s three fixtures copied checked-in files out of `tests/data/`. They now generate what they need through `tests/synthetic_data/`, the same builders the e2e suite already uses, so no test in the repo depends on a committed recording or database any more.
+    * The plugin settings had been tuned to the old recording and did not transfer: the finder's `Threshold` was 2000.0 pA against events that are 400 pA deep, `Min Duration` 1.0 us against events 500 us long, and the fitter's `Step Size` 1000.0 - which `tests/e2e/event_analysis` pins as the *"too few levels"* case, and which duly rejected all 25 events. They are now 200.0, 100.0 and 100.0, matching the values the e2e suites already establish against this signal.
+    * Assertions now check what the fixture planted rather than counts remembered from a file: `"Ch3: Found 5 events"` became `f"Ch{channel}: Found {planted} events"`. Two were removed rather than adapted - `"Too Short: 3"` described how one recording's noise fell relative to the duration floor, and `"Rejected Events:"` cannot appear at all when nothing is rejected. The finder is instead checked for having scanned the whole recording.
+    * `test_metadata_csv_export` and `test_metadata_events_nav_persistence` also read `tests/data/DB.db` directly, and **failed** rather than skipped once it was removed. Both now take synthetic databases. `nav_persistence` needs the single-channel factory rather than the shared three-leaf fixture, because event navigation needs an unambiguous scope; that file's directory dropped from 92s to 41s as a side effect.
+    * Also removed: two `METADATA_DB_NAME` constants left unused, and the three `!tests/data/*` exceptions in `.gitignore`.
+    * Verified: 2,650 passed, 2 skipped - the same counts as before the data was removed, so no coverage was traded for the migration.
+
 * **Fixed: every dataset link in the documentation pointed at a retired FRDR record**
     * The tutorial dataset DOI in the docs, `10.20383/103.01599`, is Version 1. It was superseded on 2026-06-01 by `10.20383/103.01695` ("Adding a second dataset and README to extend the testing functionality of the dataset"). 11 occurrences across 6 files now point at the current DOI.
     * Added the DOI to the two pages where a new user first needs data and it was missing: `raw_data_tab.rst`, at the **Select Input File** step and naming `ChimeraReader20240501` for the deposit's `.log` files, and `tutorial.rst`, worded to keep the built-in Help -> Tutorial walkthrough distinct from the YouTube tutorial series that shares the dataset.

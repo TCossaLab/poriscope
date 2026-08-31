@@ -177,9 +177,6 @@ __pycache__/
 *.kate-swp
 
 
-# DON'T ignore .json and .log in tests/data/
-!tests/data/*.json
-!tests/data/*.log
 
 # ALLOW platform-specific wavelet builds
 !poriscope/cdlls/wavelet/dist/
