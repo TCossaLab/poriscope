@@ -139,16 +139,18 @@ two left behind are under "Still queued" below. **High is now the top of this se
 
 ## What to pick up next (order revised 2026-08-25)
 
-The structural audit section above outranks this list until it is cleared. Two standing
-constraints also reshape the queue below, so read this before working down it in file
+The structural audit section above outranks this list until it is cleared. One standing
+constraint also reshapes the queue below, so read this before working down it in file
 order:
 
-- **Test-writing is owned by another developer.** New pytest suites are out of scope
-  here, which pushes compliance-gate blocks 1 and 7 down the queue indefinitely, and
-  splits block 2 (its validator module is in scope; its discovery-and-assert harness is
-  not). Editing or deleting existing tests as part of a cleanup is fine.
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
+
+(Test-writing was out of scope here as of 2026-08-25, which had pushed blocks 1 and 7
+down the queue indefinitely and split block 2. That restriction no longer holds - block
+1's pytest harness has since landed in full, across all eight `Meta*` families, and
+block 2's harness half has landed too, as `test_settings_schema.py`. Block 7 is still
+open.)
 
 Ranked, cheapest real value first:
 
@@ -463,77 +465,150 @@ module, and (via `BASE_CLASS_DATA`) knows which concrete classes implement which
 calls the plugin. A community-contributed plugin can satisfy every signature check and
 still crash immediately on real data, leak resources, or silently produce garbage.
 
-**Implementation plan.**
-1. Add `tests/unit/plugins/test_plugin_conformance.py`, structured like
-   `test_plugin_compliance.py` (reuse its discovery loop and `META_CLASSES` set) but
-   parametrized over *concrete* plugin classes rather than base classes.
+**All eight families have landed** as `tests/unit/plugins/conformance/`, with the
+`conformance` marker and a `_recipes.py` holding per-plugin settings, per-format
+fixture builders, and the discovery helper. All 24 concrete data plugins are now
+driven against real data; see `changelog.md` for what each family checks and what it
+found. The notes below are what is still open, plus the findings that reshaped the
+plan.
+
+**Still open: a fixture that plants intra-event structure.** `_build_event_trace` in
+`tests/synthetic_data/synthetic_events_db.py` plants one flat rectangular blockage per
+event, so peak-based fitters have nothing to find - `PeakFinder` rejects all 25 events
+and `Basic_PeakFinder` fits 1. Both are skipped in the conformance suite with that
+reason recorded. Adding a knob for resolvable peaks (or multiple sublevels) inside the
+blockage would bring them in, and would also let the CUSUM family be tested against a
+known sublevel count rather than only a known event count.
+
+**Landed, and worth extending: the resource-leak check.** `psutil` was never needed - on
+Windows an open handle blocks `os.unlink`, so unlinking a plugin's output after
+`close_resources()` *is* a leak assertion, and this project is Windows-focused. Both
+writer families are checked this way and both pass. It only covers plugins that own an
+output *file*; extending it to the input side (readers hold a `numpy.memmap`, loaders a
+SQLite connection) means unlinking a per-test copy of the fixture rather than the shared
+session one. On POSIX the check degrades to a no-op, where diffing
+`len(os.listdir('/proc/self/fd'))` would cover it.
+
+**Rejected: running conformance only for changed plugin files in CI.** Block 5 proposed
+this. CI runs the entire suite on every branch push, fork PR, internal PR and release,
+with no subset and no marker filter, so a changed-files-only job is a new CI pattern
+rather than a filter on the existing one. The marker exists for local runs
+(`pytest -m conformance`), not to carve up CI.
+
+**Findings worth keeping (these cost real time to discover).**
+1. Reuse `test_plugin_compliance.py`'s discovery approach - parametrize over *concrete*
+   plugin classes rather than base classes.
 2. For each `Meta*` family, define one canonical synthetic fixture already present
    under `tests/synthetic_data/` (`synthetic_chimera.py`/`multichannel_chimera.py` for
    readers, `synthetic_events_db.py` for db loaders/writers, `synthetic_metadata_db.py`
-   for metadata-consuming plugins) and a minimal valid `settings` dict built from each
-   plugin's own `get_empty_settings()` (fill required `Value`s with the midpoint of
-   `Min`/`Max` or the first `Options` entry — this doubles as a smoke test that
-   `get_empty_settings()` itself returns a self-consistent schema, see block 2 below).
-3. Write one generic conformance check per `Meta*` family (not per plugin) that:
-   - instantiates the plugin with the synthetic settings dict,
-   - drives it through its family's real lifecycle (e.g. for `MetaEventFinder`: find
-     events on a synthetic trace and assert the returned event boundaries are
-     monotonic, in-bounds, and non-overlapping; for `MetaReader`: `load_data` on a
-     synthetic channel and assert dtype/shape match `get_raw_dtype()`/declared
-     channel count; for `MetaEventFitter`: fit a synthetic event and assert
-     `_populate_event_metadata`'s return dict has the keys the base class documents),
-   - calls `close_resources()` afterward and asserts no exception and no dangling
-     open file handles/db connections (e.g. via `psutil.Process().open_files()` diffed
-     before/after, if `psutil` is already a dependency, otherwise skip this specific
-     assertion rather than adding a new dependency just for it).
-4. Register this as its own pytest marker (e.g. `conformance`) so it can be run
-   standalone in CI for exactly the plugin file(s) that changed in a PR (see block 5).
+   for metadata-consuming plugins) and a minimal valid `settings` dict per family.
+   **Not** by auto-filling from the schema: that was the original plan and it cannot
+   work. `Options` on a file parameter is a Qt dialog filter glob, not a value domain
+   (`_validate_param_ranges` exempts `Input File`/`Output File` from its Options check
+   for exactly this reason); most numeric parameters have `Max=None`, so no midpoint
+   exists; and a parent-plugin parameter declares `Type` `str` while the family
+   validator requires a live instance inheriting the `Meta*` base, with `Type` reset to
+   `None` - so every finder, fitter and writer needs a real parent chain built first.
+   Use a declarative per-family recipe plus a generic filler for leftover scalars.
+   Two traps: `apply_settings` mutates the dict passed to it (it rewrites plugin values
+   to `get_key()`), so hand each plugin a fresh deepcopy; and it discards
+   `Type`/`Min`/`Max`/`Options`, keeping only `Value`, so post-apply assertions must
+   read `get_raw_settings()`. Schema self-consistency is block 2's job, now landed.
+3. Write one generic conformance check per `Meta*` family (not per plugin), driving it
+   through that family's real lifecycle. For `MetaEventFinder`: assert boundaries are
+   monotonic, in-bounds and non-overlapping, and that the count matches what the
+   fixture planted. For `MetaReader`, the argument order is
+   `(start, length, channel, raw_data)` with both times in seconds - but see finding 10
+   below before writing the raw-data assertion; the pairing originally planned here
+   (`load_data(raw_data=True).dtype == get_raw_dtype()`) is not a real per-plugin check.
+4. **Separate what the base class produces from what the subclass owes.** The fitter
+   check needed this and the first version of the assertion was wrong without it:
+   `MetaEventFitter.fit_events` injects `channel_id`/`event_id` into event metadata and
+   `event_id`/`channel_id`/`level_id`/`levels_left` into sublevel metadata, while
+   `_define_metadata_types` declares only `event_id`, `start_time` and `num_sublevels`.
+   Comparing produced against declared naively flags all five working fitters.
+5. **Assert against planted ground truth, not just "did not raise".** A fitter that
+   rejects every event still completes cleanly; `tests/e2e/event_analysis` pins
+   `step_size_1000_too_few_levels` as exactly that outcome from plausible settings.
+6. **Units differ between siblings in a family.** `ClassicCUSUM`'s `Step Size` and
+   `ThresholdBlockageFinder`'s `Threshold` are in sigma while their siblings' are in pA,
+   so one recipe value cannot serve a whole family. Read the `Units` entry; do not copy
+   a sibling's number. Both cases were invisible until the plugin was driven on data.
+7. **Assert positions by containment, not equality.** `ClassicBlockageFinder` backtracks
+   its boundaries to the local baseline and reports a start a few samples before the
+   planted index; `ThresholdBlockageFinder` reports it exactly. Both are correct.
+8. **A margin above the noise floor is not the same as a margin below the signal.**
+   `ThresholdBlockageFinder` at 3 sigma trips on noise excursions; each is discarded as
+   Too Short or Too Close, but one landing beside a real event costs that event too, so
+   it found 4 of 5. Pick a threshold clear of the noise, not merely under the signal.
+9. **`with sqlite3.connect(...)` commits but does not close.** A test that inspects a
+   writer's output that way holds the handle open and looks like the leaking party
+   itself - this cost real time to attribute. Close explicitly in a `finally`.
+10. **`load_data(raw_data=True).dtype == get_raw_dtype()` is a tautology, not a check.**
+    `MetaReader.load_data` finishes its raw-data branch with
+    `.astype(self.get_raw_dtype())` right before returning, so this equality holds for
+    every reader by construction - it would pass even if `_set_raw_dtype()` returned
+    something with no relationship to the file's actual on-disk type. Caught by tracing
+    `load_data`'s full body, not by trusting the docstring. What's actually worth
+    asserting: `get_raw_dtype()` resolves to a usable dtype, and the raw path returns
+    the same sample count as the non-raw path.
+11. **A reconstruct-via-scale-and-offset check is not valid across the whole
+    `MetaReader` family, and this needed empirical proof, not just a read of the
+    contract.** `ChimeraReaderVC100._convert_data` reinterprets the raw code through a
+    bitmask/uint16 step before applying `(scale, offset)`, so `raw*scale+offset` alone
+    reproduces the non-raw value only for readers with no such step. A literal
+    `raw.astype(float64)*scale+offset` check against a hand-verification script first
+    looked like a real bug (off by exactly one offset term, uniformly) before turning
+    out to be the verification script's own bug: it skipped the `uint16` reinterpretation
+    `_scale_data` applies. Confirmed by fixing the script, not by assuming either side.
+12. **A reader plugin can disagree with itself about the channel a file is on, and only
+    an end-to-end check against the real reader catches it.** The ABF2 writer built for
+    `TCossaLabABFReader` set `SyntheticDataset.channel = 0` while hardcoding `CH003` in
+    the filename; `_get_file_channel_stamps` parses the channel back out of that exact
+    token, so the real reader reported channel 3, not 0 - a `KeyError` two calls later,
+    not where the actual mistake was. Fixed by deriving the filename's channel token
+    from the same `channel` value the dataset object claims, so the two cannot drift
+    apart. `LegacyElementsReader`, by contrast, hardcodes channel 0 unconditionally
+    regardless of filename - the fix does not generalise to it and does not need to.
 
 **Gotchas.** This will only be as strong as the synthetic fixtures are representative —
 keep the fixtures' parameters (trace length, noise level, event count) realistic enough
 that a finder/fitter can't trivially pass by doing nothing. Don't try to make one
 mega-fixture cover every family; a small dedicated fixture per family, reused across
 all plugins in that family, is easier to reason about and keeps failures attributable
-to the plugin under test rather than the fixture.
+to the plugin under test rather than the fixture. Note the fitter family shows one
+fixture per *family* is not always enough either: step/level fitters and peak fitters
+need structurally different events.
 
-**Verification.** Run against every *existing* in-repo plugin first (they should all
-pass, since they're already trusted) before treating a conformance failure on a new
-contribution as meaningful signal.
+**Verification.** Run against every *existing* in-repo plugin first before treating a
+conformance failure on a new contribution as meaningful signal — but do not expect a
+clean sweep. The fitter pass needed `ClassicCUSUM` retuned and two plugins skipped for
+want of a fixture, and neither was a plugin defect.
 
 ## 2. Settings-schema linter for `get_empty_settings()`
 
-**Goal.** A static (no I/O, no instantiation-with-real-data-required) check that a
-plugin's declared settings schema is internally self-consistent.
+**The pytest half has landed** as `tests/unit/plugins/test_settings_schema.py`: it walks
+every concrete `BaseDataPlugin` subclass and checks `Type`/`Value` presence, `Min <= Max`,
+`Options` element types, `isinstance(Value, Type)` for shipped defaults, and `Value in
+Options`. The 21 violations it found are fixed - see `changelog.md`. Two pieces remain.
 
-**Why.** `BaseDataPlugin.get_empty_settings()` (see `poriscope/utils/BaseDataPlugin.py`)
-returns `Dict[str, Dict[str, Any]]` entries shaped `{"Type", "Value", "Options", "Min",
-"Max"}`, and `_validate_param_types`/`_validate_param_ranges` check a *supplied*
-settings dict against this schema at runtime, per-instantiation. Nothing currently
-checks the schema itself for self-consistency independent of any particular value
-supplied — e.g. `Min > Max`, a `Value`/`Options` list mixing incompatible `Type`s, or a
-`Type` that doesn't match the Python type of `Value`. These are exactly the kind of
-copy-paste mistake a first-time contributor adapting an existing plugin would make.
+**Still open: the reusable validator.** The checks currently live in the test, and the
+default-value half delegates to the plugin's own `_validate_param_types` /
+`_validate_param_ranges` rather than reimplementing them. Extracting
+`poriscope/utils/settings_schema.py::validate_settings_schema(schema: dict) -> list[str]`
+returning human-readable problems (empty list = clean) would make the same check usable
+from a script or a hook without pytest. Note the delegation is deliberate and worth
+keeping in the test: it cannot drift from the rules it enforces.
 
-**Implementation plan.**
-1. Add a small pure-Python validator, e.g.
-   `poriscope/utils/settings_schema.py::validate_settings_schema(schema: dict) -> list[str]`
-   returning a list of human-readable problems (empty list = clean), checking per
-   parameter entry: `Type` and `Value` keys are present; if `Value is not None`,
-   `isinstance(Value, Type)`; if both `Min` and `Max` are set, `Min <= Max`; if
-   `Options` is set, every option's type matches `Type` and (if `Value is not None`)
-   `Value in Options`.
-2. Add a fast, no-fixture-needed pytest test (can live in `test_plugin_compliance.py`
-   itself, right next to the existing structural checks, or as a new
-   `test_settings_schema.py`) that calls `plugin_cls().get_empty_settings()` for every
-   discovered concrete plugin class and runs it through `validate_settings_schema`,
-   asserting an empty problem list. (Most plugins' `get_empty_settings()` should be
-   callable without a fully-populated `settings` dict — confirm this holds for all
-   existing plugins first; a few may need `standalone=True` passed.)
-3. This is cheap enough to run as a blocking pre-commit/CI check on every PR touching
-   `poriscope/plugins/**`, well before the more expensive conformance suite in block 1.
+**Still open: the gate.** Cheap enough to run as a blocking pre-commit/CI check on every
+PR touching `poriscope/plugins/**`, well before the more expensive conformance suite in
+block 1. Needs the validator module above first.
 
-**Gotchas.** `Options`/`Min`/`Max` are explicitly optional (can be `None`) per the
-existing docstring — don't require them, only check consistency *when present*.
+**Open contract question surfaced by the above.** `Units` is a sixth schema field that
+`SQLiteEventWriter` and `SQLiteDBWriter` both read (`base_settings["Voltage"]["Units"]`)
+but which appears in neither the `get_empty_settings()` docstring contract nor the
+`Setting` TypedDict. The test tolerates it rather than failing, since the fix is to the
+contract - document it and add it to `Setting` - not to the plugins relying on it.
 
 ## 3. Contribution scaffold / template generator
 

@@ -412,6 +412,171 @@ how good the underlying science is.
    test, and fix any interface mismatches immediately. It is much cheaper to fix a
    wrong argument name before you've written 200 lines of logic around it than after.
 
+.. _plugin_settings_schema_testing:
+
+Settings Schema Checking
+-------------------------
+
+The inspector above reads the blueprint. ``tests/unit/plugins/test_settings_schema.py``
+reads the *parts list*: the dict your plugin returns from
+:py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings`.
+
+That method's docstring is a contract, not a suggestion. ``Min``, ``Max`` and
+``Options`` are optional, but **``Type`` and ``Value`` are required on every
+parameter, and any value you supply must be consistent with its ``Type``.** This test
+instantiates each plugin, asks it for its schema, and checks that:
+
+* every parameter declares both ``Type`` and ``Value``, and ``Type`` is a real class,
+* ``Min <= Max`` wherever both are given,
+* every entry in ``Options`` is an instance of the declared ``Type``,
+* any default you *do* ship would survive your own plugin's validators - it is fed
+  straight to ``_validate_param_types`` and ``_validate_param_ranges``.
+
+Two mistakes this catches that nothing else does, because both are invisible through
+the GUI - the settings dialog reads values with ``.get("Value")`` and coerces each one
+through its declared ``Type`` before you ever see it:
+
+* **Omitting ``Value``** for a parameter the user must fill in. Write
+  ``"Value": None`` explicitly. Leaving the key out raises a bare
+  ``KeyError: 'Value'`` from the validator instead of a message naming your
+  parameter, and it breaks any script that drives your plugin without the GUI.
+* **An ``int`` default on a ``float`` parameter** - ``{"Type": float, "Value": 500}``.
+  The validator uses ``isinstance``, under which ``isinstance(500, float)`` is
+  ``False``, so your plugin rejects its own default. Write ``500.0``.
+
+.. code-block:: bash
+
+   pytest tests/unit/plugins/test_settings_schema.py
+
+.. _plugin_conformance_testing:
+
+Behavioural Conformance Testing
+--------------------------------
+
+Compliance and schema checking are both static: they never run your algorithm. A
+plugin can satisfy each of them completely and still fail on the first real event.
+
+``tests/unit/plugins/conformance/`` closes that gap. It builds your plugin the way the
+application does - real settings, a real parent plugin, a real file - drives it over
+synthetic data from ``tests/synthetic_data/``, and checks it behaves like a
+well-formed member of its family. All eight families are covered, each with checks
+written for what that family's output is actually used for:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - Family
+     - What conformance asks of it
+   * - ``MetaReader``
+     - Agrees with the recording about channels, sample rate and length; ``load_data``
+       recovers the planted baseline and event depth in picoamps, not just a plausible
+       shape; ``get_raw_dtype()`` resolves to a real dtype and the raw-data path returns
+       the same sample count as the normal one.
+   * - ``MetaFilter``
+     - Shape and dtype preserved, output finite, the data actually changed but the
+       blockage still detectable, and ``get_callable_filter()`` agreeing with
+       ``filter_data()``.
+   * - ``MetaEventFinder``
+     - Locates exactly the planted events - neither missing any nor reporting noise -
+       with boundaries ordered, in-bounds and non-overlapping, landing on the
+       plantings, and ``get_single_event_data()`` carrying the documented keys.
+   * - ``MetaEventFitter``
+     - Fits every planted event rather than silently rejecting them all, and every
+       metadata column it produces is declared in ``get_event_metadata_types()``
+       **and** ``get_event_metadata_units()`` so the database writer has a type for
+       it. Also ``get_single_event_metadata()`` returning usable arrays.
+   * - ``MetaEventLoader``
+     - Agrees with the database about channels, event count and sample rate, and every
+       loaded event carries the exact keys ``get_event_generator``'s docstring
+       specifies, with padding that leaves room for a blockage.
+   * - ``MetaWriter``, ``MetaDatabaseWriter``
+     - Driven through a real chain, then the output is checked for SQLite integrity,
+       the expected row count, and - the part that matters - being readable back by
+       the matching loader.
+   * - ``MetaDatabaseLoader``
+     - Reports its experiments, channels and per-channel event counts correctly, can
+       type every column it lists, and discriminates a valid filter query from an
+       invalid one.
+
+Every family is also asked that ``reset_channel`` and ``close_resources`` are safe
+after use, including twice; the writers additionally have to release their output file,
+which on Windows is a genuine handle-leak check because an open handle blocks
+``os.unlink``.
+
+Like the compliance test, it is parametrised over *discovered* classes, so your plugin
+is covered the moment you drop the file in. The suite cannot guess valid settings on
+its own - ``Options`` on a file parameter is a dialog filter glob rather than a list of
+values, most numeric parameters declare no ``Max`` to interpolate against, and a
+parameter naming a parent plugin needs a live instance - so whether *you* need to add
+anything depends on which family your plugin belongs to:
+
+* **``MetaFilter``, ``MetaEventFinder``, ``MetaEventFitter``: yes, always.** Each of
+  these is looked up by class name in a dict in ``_recipes.py``
+  (``FILTER_SETTINGS``, ``EVENT_FINDER_SETTINGS``, ``EVENT_FITTER_SETTINGS``).
+  A new subclass with no entry fails immediately with
+  ``KeyError: No conformance recipe for YourPlugin. Add one to ...`` - add one entry
+  covering just the parameters your plugin adds beyond its base.
+* **``MetaWriter``, ``MetaDatabaseWriter``, ``MetaDatabaseLoader``, ``MetaEventLoader``:
+  usually nothing.** These build generically from the file parameter every plugin in
+  the family already has, plus (for the two writers) the four experiment-metadata
+  parameters every writer shares. If your plugin needs nothing beyond that, it is
+  covered with zero recipe work. If it declares an extra required parameter with no
+  default, you will see
+  ``ValueError: YourPlugin's conformance recipe leaves ['Your Param'] unset`` -
+  extend that family's override in ``_recipes.py`` to cover it.
+* **``MetaReader``: always, and it is the one real piece of work.** A reader's
+  "recipe" is not settings - it is a synthetic file in its actual on-disk format,
+  since that is the entire thing a reader varies over. Every existing format lives
+  under ``tests/synthetic_data/`` (``synthetic_chimera.py``,
+  ``synthetic_chimera_vc100.py``, ``synthetic_binary.py``, ``synthetic_abf2.py``),
+  each a subclass of ``BaseSyntheticRecordingWriter`` that only has to implement
+  ``_write()``, and each derived directly from the real parsing code rather than
+  guessed - see each module's docstring for that derivation. A new reader for an
+  existing format needs nothing; a new reader for a new format needs a new writer
+  module and an entry in ``READER_DATASET_BUILDERS`` in ``_recipes.py``, which fails
+  the same way the other families do if missing.
+
+The recipe values themselves are deliberately kept in test code rather than on the
+plugin class. They are only meaningful against the specific synthetic signal the
+fixtures build (2000 pA baseline, 15 pA noise, -400 pA events) - a value like
+``Threshold: 200.0`` is a statement about that fixture, not about your plugin, and it
+would need retuning the moment the fixture's noise or amplitude changed. Keeping every
+family's values in one file also made two of the three unit traps below easy to
+spot - they show up as one outlying line next to its siblings, which they would not if
+scattered across plugin files.
+
+.. code-block:: bash
+
+   pytest -m conformance
+
+.. note::
+
+   One gap remains, limited by a synthetic fixture rather than by the harness.
+   ``tests/synthetic_data`` plants flat rectangular blockages, which suits step- and
+   level-based fitters but gives a peak-based one nothing to find, so ``PeakFinder``
+   and ``Basic_PeakFinder`` are skipped with that reason recorded.
+
+.. tip::
+
+   Watch the units. Two plugins in this codebase declare a parameter in sigma where
+   their siblings use picoamps - ``ThresholdBlockageFinder``'s ``Threshold`` and
+   ``ClassicCUSUM``'s ``Step Size`` - so a recipe value copied from a sibling silently
+   detects nothing. Read the parameter's ``Units`` entry rather than the sibling's
+   number. Declaring ``Units`` on your own parameters is what makes this checkable.
+
+.. tip::
+
+   If you're implementing a new ``MetaReader``, don't try to assert
+   ``load_data(raw_data=True).dtype == get_raw_dtype()``. It looks like the obvious
+   check, but ``MetaReader.load_data`` itself finishes the raw-data branch with
+   ``.astype(self.get_raw_dtype())`` right before returning, so that equality holds by
+   construction for every reader - it would pass even if your ``_set_raw_dtype()``
+   declared something with no relationship to the file's actual on-disk type. What
+   conformance checks instead is that ``get_raw_dtype()`` resolves to a real, usable
+   dtype and that the raw-data call returns the same number of samples as the normal
+   one - the parts that genuinely can go wrong per plugin.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
@@ -453,14 +618,20 @@ what mypy expects of new code.
    unannotated function you add will fail here even though it would once have been
    skipped.
 
-☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the plugin
-compliance suite.**
+☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the three
+plugin gates.**
 
 .. code-block:: bash
 
-   pytest tests/unit/plugins/test_plugin_compliance.py
+   pytest tests/unit/plugins
 
-See :ref:`plugin_compliance_testing` above for what this actually checks.
+That covers all three: interface compliance, settings-schema consistency, and
+behavioural conformance. See :ref:`plugin_compliance_testing`,
+:ref:`plugin_settings_schema_testing` and :ref:`plugin_conformance_testing` above for
+what each one actually checks. A new filter, event finder or event fitter needs a
+settings recipe added to ``tests/unit/plugins/conformance/_recipes.py`` - conformance
+fails with a message telling you exactly where; the other plugin families usually need
+nothing added. See :ref:`plugin_conformance_testing` above for the full breakdown.
 
 ☐ **4. Run the test suite** — the same suite continuous integration runs on every
 branch push:
