@@ -370,6 +370,78 @@ class DataPluginController(QObject):
             )
 
     @log(logger=logger)
+    def set_available_plugins(
+        self, available_plugin_classes: Mapping[str, Mapping[str, type]]
+    ) -> None:
+        """
+        Pass a re-scanned set of plugin classes down to the model.
+
+        :param available_plugin_classes: Dict of available plugin classes, keyed
+            by metaclass then subclass name.
+        :type available_plugin_classes: Mapping[str, Mapping[str, type]]
+        """
+        self.model.set_available_plugins(available_plugin_classes)
+
+    def _instantiated_keys(self) -> List[Tuple[str, str]]:
+        """
+        Every instantiated plugin as (metaclass, key) pairs.
+
+        :return: One pair per live plugin instance.
+        :rtype: List[Tuple[str, str]]
+        """
+        return [
+            (metaclass, key)
+            for metaclass, keys in self.model.get_instantiated_plugins_list().items()
+            for key in keys
+        ]
+
+    @log(logger=logger)
+    def delete_all_plugins(self) -> List[str]:
+        """
+        Delete every instantiated plugin, dependents before their parents.
+
+        Order is not optional: :py:meth:`delete_plugin` refuses any plugin that
+        still has dependents, so a single pass in arbitrary order would leave
+        most of the graph behind. Each round deletes whatever currently has no
+        dependents, which frees the next layer up, until nothing is left.
+
+        The loop stops when a round removes nothing, and returns whatever is
+        left so the caller can report a partial clear rather than announce
+        success. Three things can leave survivors: a dependency cycle, a stale
+        registration leaving a parent holding a dependent that no longer exists,
+        and a key listed with no instance behind it.
+
+        That last case is why the guard counts what was actually removed rather
+        than what looked removable. A key whose instance is missing reports no
+        dependents, so it appears deletable every round, while delete_plugin
+        declines it and leaves the key in place - a guard watching for "nothing
+        looks deletable" would never fire and the loop would spin forever.
+
+        :return: Keys of any plugins that could not be deleted, empty if all were.
+        :rtype: List[str]
+        """
+
+        while True:
+            before = self._instantiated_keys()
+            if not before:
+                break
+            for metaclass, key in before:
+                instance = self.model.get_plugin_instance(metaclass, key)
+                if instance is not None and not instance.get_dependents():
+                    self.delete_plugin(metaclass, key)
+            if self._instantiated_keys() == before:
+                break  # nothing came off this round; it will not on the next
+
+        survivors = [
+            key
+            for keys in self.model.get_instantiated_plugins_list().values()
+            for key in keys
+        ]
+        if survivors:
+            self.logger.warning(f"Unable to delete plugins: {survivors}")
+        return survivors
+
+    @log(logger=logger)
     def handle_exit(self) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit

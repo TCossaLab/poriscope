@@ -126,6 +126,25 @@ class DataPluginModel(QObject):
         return self.available_plugins[metaclass][subclass]()
 
     @log(logger=logger)
+    def set_available_plugins(
+        self, available_plugin_classes: Mapping[str, Mapping[str, Type[BaseDataPlugin]]]
+    ) -> None:
+        """
+        Replace the set of plugin classes available for instantiation.
+
+        Instances already created are untouched: they hold their own class
+        reference, and a re-scan returns the same class objects for anything
+        still on disk.
+
+        :param available_plugin_classes: Dict of available plugin classes, keyed
+            by metaclass then subclass name.
+        :type available_plugin_classes: Mapping[str, Mapping[str, Type[BaseDataPlugin]]]
+        """
+        self.available_plugins = available_plugin_classes
+        for metaclass in available_plugin_classes:
+            self.plugins.setdefault(metaclass, {})
+
+    @log(logger=logger)
     def get_instantiated_plugins_list(self) -> Dict[str, List[str]]:
         """
         Get a dict keyed by metaclass with a list of all keys for plugins that have been instantiated

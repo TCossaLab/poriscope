@@ -368,3 +368,41 @@ def test_populate_available_plugins_load_plugin_fails(main_model):
     # Ensure the plugin was not added due to load_plugin failure
     assert isinstance(available_plugin_classes, dict)
     assert all(not v for v in available_plugin_classes.values())
+
+
+class TestResetAppConfig:
+    """Reset of the three stored settings, and what it leaves alone."""
+
+    def test_restores_defaults_in_memory(self, main_model):
+        main_model.update_app_config("Parent Folder", "/somewhere/else")
+        main_model.update_app_config("Log Level", logging.DEBUG)
+
+        defaults = main_model.reset_app_config()
+
+        assert main_model.get_app_config("Parent Folder") == str(Path.home())
+        assert main_model.get_app_config("Log Level") == logging.WARNING
+        assert defaults["Parent Folder"] == str(Path.home())
+
+    def test_persists_to_config_file(self, main_model):
+        main_model.update_app_config("Parent Folder", "/somewhere/else")
+        main_model.reset_app_config()
+
+        config_file = Path(main_model.config_path, "config.json")
+        with open(config_file) as f:
+            written = json.load(f)
+        assert written["Parent Folder"] == str(Path.home())
+        assert written["Log Level"] == logging.WARNING
+
+    def test_returns_a_fresh_dict_each_call(self, main_model):
+        first = main_model.reset_app_config()
+        first["Parent Folder"] = "mutated"
+        second = main_model.reset_app_config()
+        assert second["Parent Folder"] == str(Path.home())
+
+    def test_leaves_the_saved_session_alone(self, main_model):
+        session_file = Path(main_model.session_path, "plugin_history.json")
+        session_file.write_text('{"kept": true}', encoding="utf-8")
+
+        main_model.reset_app_config()
+
+        assert session_file.exists(), "resetting settings must not touch the session"

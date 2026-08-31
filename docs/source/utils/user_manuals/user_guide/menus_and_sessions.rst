@@ -18,8 +18,11 @@ Session Options Overview
 - **Load Session**  
   Opens a previously saved session JSON file and restores its state.
 
-- **Save Session**  
+- **Save Session**
   Stores the current state — including datasets, filters, readers, writers, and analysis results — into a `.json` file.
+
+- **Reset Session**
+  Closes every open analysis tab and removes every configured plugin, returning the workspace to the same clean state as a fresh launch — without restarting Poriscope. Your saved session files are left untouched, so **Restore Session** still brings the workspace back, as long as it is the next thing you do; opening a tab or adding a plugin afterward replaces what Restore would have loaded.
 
 .. image:: /_static/images/jsonFIle.png
    :alt: Saving Session as JSON

@@ -1251,3 +1251,98 @@ def test_edit_plugin_rename_resolves_metaclass_references_in_app_settings(
     assert applied["MetaLoader"]["Value"] is loader_instance
     assert applied["MetaLoader"]["Type"] is None
     assert applied["MetaLoader"]["Options"] is None
+
+
+class _FakePlugin:
+    """A plugin whose dependency edges can be wired by hand."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        self.deps: list = []
+        self.parents: list = []
+
+    def get_dependents(self) -> list:
+        return list(self.deps)
+
+    def get_parents(self) -> list:
+        return list(self.parents)
+
+    def unregister_dependent(self, metaclass: str, key: str) -> None:
+        self.deps = [d for d in self.deps if d[1] != key]
+
+
+def _wire_store(controller: DataPluginController, store: dict) -> None:
+    """
+    Point the controller's mocked model at an in-memory plugin store.
+
+    get_instantiated_plugins_list keeps every metaclass key with an empty list
+    once drained, matching the real DataPluginModel - delete_plugin indexes that
+    dict by metaclass after deleting, so a fake that dropped drained keys would
+    raise KeyError where the real one does not.
+    """
+    controller.model.get_instantiated_plugins_list.side_effect = lambda: {
+        m: list(d) for m, d in store.items()
+    }
+    controller.model.get_plugin_instance.side_effect = lambda m, k: store.get(
+        m, {}
+    ).get(k)
+    controller.model.unregister_plugin.side_effect = lambda m, k: store[m].pop(k, None)
+
+
+class TestDeleteAllPlugins:
+    """
+    Bulk teardown for Reset Session.
+
+    delete_plugin refuses any plugin that still has dependents, so ordering is
+    the whole problem: a single pass in arbitrary order leaves most of a
+    dependency graph behind.
+    """
+
+    def test_drains_a_dependency_chain(self, controller):
+        reader, finder, writer = _FakePlugin("r"), _FakePlugin("f"), _FakePlugin("w")
+        reader.deps = [("MetaEventFinder", "f")]
+        finder.deps = [("MetaWriter", "w")]
+        finder.parents = [("MetaReader", "r")]
+        writer.parents = [("MetaEventFinder", "f")]
+        store = {
+            "MetaReader": {"r": reader},
+            "MetaEventFinder": {"f": finder},
+            "MetaWriter": {"w": writer},
+        }
+        _wire_store(controller, store)
+
+        survivors = controller.delete_all_plugins()
+
+        assert survivors == []
+        assert all(not plugins for plugins in store.values())
+
+    def test_reports_a_graph_it_cannot_drain(self, controller):
+        # A cycle can never present a dependent-free plugin. The loop must stop
+        # and name the survivors rather than spin forever or claim success.
+        a, b = _FakePlugin("a"), _FakePlugin("b")
+        a.deps = [("M", "b")]
+        b.deps = [("M", "a")]
+        store = {"M": {"a": a, "b": b}}
+        _wire_store(controller, store)
+
+        survivors = controller.delete_all_plugins()
+
+        assert sorted(survivors) == ["a", "b"]
+
+    def test_reports_a_key_with_no_instance_behind_it(self, controller):
+        # A missing instance reports no dependents, so it looks deletable every
+        # round, while delete_plugin declines it and leaves the key in place. A
+        # guard watching for "nothing looks deletable" would spin forever here,
+        # so the loop has to measure what was actually removed.
+        store = {"MetaReader": {"ghost": None}}
+        _wire_store(controller, store)
+
+        survivors = controller.delete_all_plugins()
+
+        assert survivors == ["ghost"]
+
+    def test_is_a_no_op_when_nothing_is_instantiated(self, controller):
+        store: dict = {"MetaReader": {}}
+        _wire_store(controller, store)
+
+        assert controller.delete_all_plugins() == []

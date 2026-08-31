@@ -1193,12 +1193,16 @@ def test_send_analysis_tabs_emits_to_view(
     )
 
 
-def test_send_analysis_tabs_logs_warning_when_empty(
+def test_send_analysis_tabs_does_not_warn_when_empty(
     controller: MainController,
     mock_main_view: MagicMock,
 ) -> None:
     """
-    Log a warning and still emit when no analysis tabs are present.
+    Having no analysis tabs is a normal state, so it must not log a warning.
+
+    It is what the application looks like at startup and after a session reset.
+    QtHandler promotes WARNING to a modal dialog, so warning here would pop a
+    dialog at both of those moments.
 
     :param controller: Controller under test.
     :param mock_main_view: Mocked main view.
@@ -1207,7 +1211,7 @@ def test_send_analysis_tabs_logs_warning_when_empty(
 
     controller.send_analysis_tabs()
 
-    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+    controller.logger.warning.assert_not_called()  # type: ignore[attr-defined]
     mock_main_view.received_analysis_tabs.emit.assert_called_once_with({})
 
 
@@ -1520,3 +1524,210 @@ def test_update_plugin_history_rename_preserves_other_entries(
     # Unrelated entry preserved via the else branch
     assert "other_key" in controller.plugin_history
     mock_main_model.save_session.assert_called()
+
+
+class TestResetSession:
+    """
+    Returning the workspace to its freshly-launched state.
+
+    The saved session surviving is the whole point: Reset Session is meant to be
+    reversible via Restore Session. Both histories persist themselves on every
+    change, and teardown emits one history update per deleted plugin, so without
+    a guard the reset writes an empty session over the file it is supposed to
+    leave alone.
+    """
+
+    def test_clears_the_in_memory_workspace(self, controller):
+        controller.plugin_history = {"reader_1": {"metaclass": "MetaReader"}}
+        controller.tab_action_history = {"RawDataController": ["action"]}
+        controller.analysis_tabs = {"RawDataController": MagicMock()}
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        assert controller.plugin_history == {}
+        assert controller.tab_action_history == {}
+        assert controller.analysis_tabs == {}
+
+    def test_does_not_overwrite_the_saved_session(self, controller):
+        controller.plugin_history = {"reader_1": {"metaclass": "MetaReader"}}
+        # deleting a plugin emits a history update, exactly as delete_plugin does
+        controller.data_plugin_controller.delete_all_plugins.side_effect = lambda: (
+            controller.update_plugin_history(None, "reader_1"),
+            [],
+        )[1]
+
+        controller.reset_session()
+
+        assert not controller.main_model.save_session.called
+        assert not controller.main_model.save_tab_actions.called
+
+    def test_saving_resumes_after_the_reset(self, controller):
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+        controller.reset_session()
+
+        controller.update_plugin_history({"key": "reader_1"}, None)
+
+        assert controller.main_model.save_session.called
+        assert controller._suppress_session_save is False
+
+    def test_guard_is_released_even_if_teardown_raises(self, controller):
+        controller.data_plugin_controller.delete_all_plugins.side_effect = RuntimeError(
+            "boom"
+        )
+
+        with pytest.raises(RuntimeError):
+            controller.reset_session()
+
+        assert controller._suppress_session_save is False
+
+    def test_stops_workers_before_deleting_the_plugins_they_run_against(
+        self, controller
+    ):
+        # Ordering is the whole point: deleting a plugin closes its resources, so
+        # a worker still running against one would be reading from a handle that
+        # has just been closed. Killing workers afterwards would be useless.
+        order = []
+        tab = MagicMock()
+        tab.handle_kill_all_workers.side_effect = lambda *a, **k: order.append("kill")
+        controller.analysis_tabs = {"RawDataController": tab}
+        controller.data_plugin_controller.delete_all_plugins.side_effect = lambda: (
+            order.append("delete"),
+            [],
+        )[1]
+
+        controller.reset_session()
+
+        assert order == ["kill", "delete"]
+
+    def test_waits_for_workers_rather_than_only_signalling_them(self, controller):
+        # exiting=True is what blocks until the thread actually finishes.
+        # Signalling without waiting would let a worker outlive the plugin.
+        tab = MagicMock()
+        controller.analysis_tabs = {"RawDataController": tab}
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        tab.handle_kill_all_workers.assert_called_once_with(
+            "RawDataController", exiting=True
+        )
+
+    def test_cancels_a_walkthrough_before_returning_to_the_landing_page(
+        self, controller
+    ):
+        # Ordering matters: switch_to_page is refused while a walkthrough is
+        # active, so cancelling afterwards would leave the user on a page the
+        # teardown had already destroyed.
+        order = []
+        controller.main_view.cancel_walkthrough.side_effect = lambda: order.append(
+            "cancel"
+        )
+        controller.main_view.switch_to_page.side_effect = lambda _p: order.append(
+            "switch"
+        )
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        assert order == ["cancel", "switch"]
+
+    def test_returns_to_the_landing_page(self, controller):
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        controller.main_view.remove_pages_except.assert_called_once_with(["MainView"])
+        controller.main_view.switch_to_page.assert_called_once_with("MainView")
+
+    def test_closes_settings_before_removing_its_page(self, controller):
+        # Settings' widget is a singleton, not disposable like an analysis
+        # tab's view - it has to be detached before remove_pages_except would
+        # otherwise destroy it along with its wrapper.
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+        order = []
+        controller.main_view.close_settings_page.side_effect = lambda: order.append(
+            "detach"
+        )
+        controller.main_view.remove_pages_except.side_effect = (
+            lambda _keep: order.append("remove")
+        )
+
+        controller.reset_session()
+
+        assert order == ["detach", "remove"]
+
+    def test_clears_the_sidebar_highlight_and_the_display_panel(self, controller):
+        # A landing page with nothing open should not still show whichever
+        # section, or whichever logged messages, were there before the reset.
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        assert controller.main_view.clear_sidebar_highlight.called
+        assert controller.main_view.clear_display.called
+
+    def test_collapses_the_sidebar_and_closes_the_help_window(self, controller):
+        # Neither follows from tearing down tabs and plugins: an expanded
+        # sidebar and an open Help window are untouched by that teardown.
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        assert controller.main_view.reset_sidebar_layout.called
+        assert controller.main_view.close_help_window.called
+
+    def test_rescans_the_plugin_menus(self, controller):
+        # populate_available_plugins() otherwise only ever runs once, at
+        # startup, so a plugin file added mid-session would stay invisible
+        # in the menus after a reset unless this re-scans too.
+        controller.data_plugin_controller.delete_all_plugins.return_value = []
+
+        controller.reset_session()
+
+        assert controller.main_model.refresh_available_plugins.called
+        assert controller.data_plugin_controller.set_available_plugins.called
+        assert controller.main_view.refresh_available_plugins.called
+
+    def test_names_plugins_it_could_not_delete(self, controller):
+        controller.data_plugin_controller.delete_all_plugins.return_value = ["stuck_1"]
+
+        controller.reset_session()
+
+        message = controller.main_view.add_text_to_display.call_args.args[0]
+        assert "stuck_1" in message
+
+
+class TestRefreshAvailablePlugins:
+    """
+    Propagating a re-scan to everyone holding a copy of the plugin list.
+
+    The scan runs once in MainModel's constructor and its results are copied into
+    three places, so refreshing the model alone changes nothing a user can see.
+    """
+
+    def test_changing_the_plugin_folder_triggers_a_rescan(self, controller):
+        controller.update_user_plugin_location("/some/new/folder")
+
+        assert controller.main_model.refresh_available_plugins.called
+
+    def test_rescan_reaches_the_data_plugin_controller_and_the_view(self, controller):
+        controller.refresh_available_plugins()
+
+        assert controller.data_plugin_controller.set_available_plugins.called
+        assert controller.main_view.refresh_available_plugins.called
+
+    def test_rescan_happens_after_the_config_is_written(self, controller):
+        # The scan reads "User Plugin Folder" back out of the config, so writing
+        # it afterwards would re-scan the old location.
+        order = []
+        controller.main_model.update_app_config.side_effect = lambda *a: order.append(
+            "config"
+        )
+        controller.main_model.refresh_available_plugins.side_effect = (
+            lambda: order.append("scan")
+        )
+
+        controller.update_user_plugin_location("/some/new/folder")
+
+        assert order == ["config", "scan"]

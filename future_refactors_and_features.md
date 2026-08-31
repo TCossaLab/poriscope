@@ -1015,6 +1015,20 @@ the facts.
   already run synchronously by the time execution resumed. It now calls a
   constructor-injected `history_lookup` callable directly and uses its return value -
   see `changelog.md` and `future_fixes.md`'s structural-audit entry.
+- **`sys.path` only ever grows** (surfaced 2026-08-31, comparing Reset Session
+  against an actual relaunch, not from a targeted audit of this file).
+  `MainController.update_user_plugin_location` (`main_controller.py:177-179`)
+  and the equivalent startup path in `main_app.py` (`:127-128`) both append
+  the plugin folder's parent directory to `sys.path` if it is not already
+  present, but nothing ever removes an entry once the folder is pointed
+  somewhere else. Across a long session that changes the plugin folder
+  several times - directly, or via repeated Settings resets - `sys.path`
+  keeps every location it was ever pointed at, where a relaunch always
+  starts with exactly the one currently in `config.json`. Not observed to
+  cause any actual problem (Python does not care how long `sys.path` is),
+  and no `isinstance`/lookup anywhere depends on stale entries being absent
+  either - this is tidiness, not a correctness risk. Low value, low risk;
+  worth a look only if this area is being touched for another reason.
 
 None of these change the overall value/risk conclusions already reached for
 this part; fold them in whenever findings #1-#3 above are next revisited.
@@ -1124,6 +1138,172 @@ small, self-contained, and rarely called with large `n`. `MetaModel.stop_workers
 self-recursion for the "all keys / all channels / one channel" cases reads
 fine as written. `MetaController.__init__`'s dozen-plus signal connections
 are a flat, unavoidable enumeration of wiring, not complexity to simplify.
+
+## Addendum (2026-08-31): Reset Session's correctness is only as good as every plugin's own `close_resources()`
+
+Not from the original audit — surfaced while reviewing the new Reset Session
+feature (`MainController.reset_session`) and discussing, in a live session,
+how it differs from an actual quit-and-relaunch.
+
+**The gap.** `DataPluginModel.unregister_plugin` (called once per plugin by
+`DataPluginController.delete_all_plugins`, which `reset_session` drives) does:
+
+```python
+try:
+    self.plugins[metaclass][key].close_resources()
+except Exception as e:
+    self.logger.error(f"Error closing resources for plugin {key} in {metaclass}: {e}")
+del self.plugins[metaclass][key]
+```
+
+This protects against a plugin's `close_resources()` *raising* - the error is
+logged and teardown moves on. It does **not** protect against one that
+*hangs*. `close_resources()` is declared per `Meta*` base (`BaseDataPlugin.py:134`
+and overridden in `MetaReader`/`MetaWriter`/`MetaFilter`/`MetaEventLoader`/
+`MetaEventFinder`/`MetaEventFitter`/`MetaDatabaseLoader`/`MetaDatabaseWriter`),
+so this is every plugin category, not a specific one. Reset Session's own
+worker-killing loop already blocks with `thread.wait()` before this point
+(see `main_controller.py:276-284` and its own `future_fixes.md`-adjacent
+reasoning), so the app-owned half of teardown is provably bounded - but
+`close_resources()` runs *after* that, and nothing bounds it. A plugin whose
+`close_resources()` blocks forever (a socket read with no timeout, a lock
+never released, a hung native call) freezes Reset Session - and, on today's
+code, quit too, since `MainController.handle_about_to_quit` /
+`DataPluginModel.handle_exit` call the same method the same way - with no
+diagnostic naming which plugin caused it.
+
+**Why a relaunch doesn't have this problem:** quitting the process and
+starting a new one reclaims every resource unconditionally, regardless of
+whether any plugin's cleanup code is correct. Reset Session, by design, keeps
+the process alive and asks each plugin to clean up after itself - so its
+correctness is bounded by the weakest `close_resources()` implementation
+among every plugin ever instantiated in that session, built-in or
+community-contributed. This is structural, not a bug in today's `close_resources()`
+implementations specifically - none were audited here as suspect - it's a
+property of the design that only becomes visible once a "come back to a
+clean state without restarting" feature exists to depend on it.
+
+**Is there a way to actually guarantee this? No - and worth saying plainly
+why, rather than chasing it.** Verifying that arbitrary third-party cleanup
+code releases everything it opened is not something reflection or a
+signature check can do - this is the same category of limit already
+acknowledged elsewhere in this codebase (`test_plugin_compliance.py` checks
+that `close_resources()` *exists* with the right signature, never that it
+*works*; pydoclint checks docstring/signature agreement, never behavior).
+What's realistic is defense-in-depth, roughly in order of value for the
+effort:
+
+1. **A timeout around the `close_resources()` call itself, scoped to Reset
+   Session specifically.** This is the highest-value, most concretely
+   buildable piece: run each plugin's `close_resources()` with a bounded wait
+   (e.g. on a worker thread, joined with a timeout) so a hung plugin becomes
+   a *named, logged, reported* failure - "plugin X did not finish closing
+   within N seconds" - added to the same `undeleted`/"partial reset" reporting
+   path `delete_all_plugins()` already has, instead of an unexplained frozen
+   UI. Reset Session specifically (more than quit) needs this, because the
+   whole point is that the app stays open and responsive afterward - a hang
+   here is a much worse outcome than a hang during quit, where the user is
+   already leaving anyway. Quit could reuse the same mechanism for the same
+   reason, once it exists.
+2. **A post-teardown diagnostic, not a hard gate.** After a round of deletes,
+   compare `threading.enumerate()` (or similar) before and after; if the
+   count hasn't returned to baseline, log a warning naming what's still
+   running. Inherently approximate - legitimate Qt/GUI threads exist
+   regardless of plugins, so this needs a calibrated baseline and will have
+   false positives/negatives - but as a warning surfaced to whoever's
+   debugging a leak report, it beats nothing.
+3. **Write the contract down, and give plugin authors a way to check their
+   own work.** Nothing today documents what `close_resources()` is actually
+   promising - "must join any thread you started," "must close any file/DB
+   handle/socket you opened," "must be safe to call at most once." Stating
+   that explicitly on `BaseDataPlugin.close_resources()`'s docstring (which
+   every override then inherits the contract from) is close to free. Pairing
+   it with a reusable test pattern in the plugin-authoring docs - "instantiate,
+   run something that opens a resource, call `close_resources()`, assert no
+   extra live threads and nothing still open" - moves the check into the
+   *contributor's* own test suite, where a mistake is caught before it ships,
+   rather than being discovered later as an unexplained hang in someone
+   else's running app. This is the same "cheap and mechanical vs. the actual
+   hazard is harder to catch mechanically" split Part 2 already draws for
+   `@register_action` - don't oversell either piece as sufficient alone.
+
+None of this needs to happen before Reset Session ships - the feature's own
+teardown is solid, and this is a pre-existing structural property of the
+plugin system, not something Reset Session introduced. It's recorded here
+because Reset Session is the first feature whose UX (a responsive app,
+immediately after teardown, without restarting) actually depends on
+`close_resources()` finishing promptly - quit's teardown gets a "pass" today
+only because a hang there is much less noticeable to a user who already
+expects the app to be closing.
+
+### Attempt at mitigation #1 (2026-08-31): built, then reverted - not a dead end, but not this shape
+
+Mitigation #1 above was implemented in a live session immediately after this
+addendum was first written: `DataPluginModel.unregister_plugin` ran
+`close_resources()` on a `threading.Thread`, joined with a new
+`CLOSE_RESOURCES_TIMEOUT_S` (10s default), logging a named failure and
+still proceeding with deletion if the thread didn't finish in time - matching
+how an exception there has always been handled, and for the same reason
+(the caller has already unregistered this plugin from its parents'
+dependent lists by that point, so leaving the registry entry in place on a
+timeout would make that inconsistent). 3 tests were added and passing, the
+full suite (2716 tests) passed, and the pre-commit gate was clean.
+
+**It was reverted before committing, for a real reason found by a
+before-commit audit, not a hypothetical one.** Running `close_resources()`
+on a new thread breaks any plugin holding a persistent, thread-affine
+resource created on a different thread than the one now closing it. A
+read-only audit across every `close_resources()` implementation in the tree
+(17 concrete overrides, 9 base-class abstracts) found this is narrower than
+it could have been, but real:
+
+- **Exactly two plugins are affected**, and they are the only ones with any
+  persistent state in `close_resources()` at all - everything else in the
+  tree is a no-op `pass`: `poriscope/plugins/dbwriters/SQLiteDBWriter.py`
+  (`self.conn = sqlite3.connect(...)` at `:243`, touched at `:119,123-124`
+  with **no try/except** - the connection and its file lock would leak
+  silently) and `poriscope/plugins/datawriters/SQLiteEventWriter.py`
+  (`self.conn` at `:496`, touched at `:298,306-307`, wrapped in try/except
+  logging at `.info()` - would silently fail to commit/close while looking
+  fine in the logs).
+- **Correction to the initial assumption:** these connections are not opened
+  on the GUI thread. `MetaWriter.commit_events`/`MetaDatabaseWriter.write_events`
+  are generators driven by a `WorkerThread(QThread)` (`EventWorker.py:34,55,132,145-149`),
+  and the connection is normally closed on that same worker thread via the
+  `last_call` branch and a `finally: self.close_resources(channel)`
+  (`MetaWriter.py:477`). `unregister_plugin` only ever finds a live
+  connection if a run aborted or errored before reaching `last_call`. This
+  narrows *when* the problem is hit, but does not remove it - a spawned
+  closer thread is a third thread relative to whichever thread actually
+  created the connection, regardless of whether that was the GUI thread or
+  a worker thread.
+- Python's `sqlite3` connections default to `check_same_thread=True`, which
+  raises `sqlite3.ProgrammingError` on cross-thread use. Since `.join()`
+  already guarantees the calling thread isn't touching the connection while
+  the closer thread runs, `check_same_thread=False` on these two connections
+  specifically would be safe (no real concurrency introduced, just relaxing
+  an overcautious check for an access pattern already serialized by
+  construction) - but that's a change to two plugin files beyond the
+  original scope of "add a timeout," and was not made.
+- **Two more coverage gaps, found by the same audit, not yet addressed
+  either way:** `DataPluginModel.handle_exit` (the quit path) and
+  `BaseDataPlugin.__exit__` (the context-manager path) both still call
+  `close_resources()` directly, unguarded - so even the reverted version
+  would have left quit exactly as exposed as before, undermining half the
+  point of building this.
+
+**For whoever picks this up next:** the fix is not "don't do this," it's
+"do this *and* fix the two plugins in the same change," specifically:
+(a) add `check_same_thread=False` to both `sqlite3.connect()` calls above,
+(b) route `handle_exit`/`__exit__` through the same timeout-guarded call
+`unregister_plugin` would use rather than calling `close_resources()`
+directly, and (c) add "must tolerate being closed from a different thread
+than the one that created your resources" to the `close_resources()`
+contract discussion in mitigation #3 above, since this attempt is exactly
+the reason that constraint would exist. Re-running the same read-only audit
+first is not necessary - the two-plugin finding above is exhaustive for the
+codebase as it stands - but re-confirm it if new writer plugins have been
+added since 2026-08-31.
 
 ---
 
@@ -1471,6 +1651,53 @@ not a recommended action, given the regression risk of touching a guided-
 tour feature that's easy to subtly break. `SettingsWindow`'s per-widget
 stylesheet strings are already centralized through the `Theme` class with
 an explanatory docstring — working as intended.
+
+## Addendum (2026-08-31): Abort Analysis only ever targets one hardcoded tab
+
+Not from the original audit — surfaced while reviewing the new Reset Session
+feature (`MainController.reset_session`), whose own worker-killing loop
+became the point of comparison.
+
+**`MainView.on_abort_analysis_click`** (`main_view.py:928-930`) does:
+
+```python
+def on_abort_analysis_click(self) -> None:
+    self.logger.info("Aborting Analysis")
+    self.kill_all_workers.emit("RawDataController")
+```
+
+`kill_all_workers` is a plain `Signal(str)`; every instantiated
+`MetaController` connects it to its own `handle_kill_all_workers`, which
+only acts `if subclass == self.__class__.__name__`. Emitting a single
+hardcoded `"RawDataController"` therefore only ever asks the RawData tab to
+stop its workers — regardless of which tab (if any) actually has one
+running, and regardless of which tab the user currently has focused.
+
+**Worth checking before treating this as a bug to fix:** per
+`CLAUDE.md`/Part 8-9's context, worker-driven generators aren't RawData-
+exclusive — `MetaWriter.commit_events`, `MetaDatabaseWriter.write_events`,
+`MetaEventFinder.find_events`, `MetaEventFitter.fit_events`, and
+`MetaDatabaseLoader.export_subset_to_csv` all route through the same
+`Worker`/`WorkerThread` machinery and can be triggered from Clustering,
+Metadata, or Protein tabs, not just RawData. If a user starts a long DB
+export from the Metadata tab and clicks **Abort Analysis**, nothing stops
+it — the click silently does nothing for that tab. Whether that's
+deliberate (the button was perhaps only ever meant to abort RawData's own
+event-finding/fitting workflow, matching its place in the UI) or an
+oversight from an era when RawData was the only tab that ran workers isn't
+established here; confirm the intent (check git history / ask before
+assuming) before changing the behavior.
+
+**If it is a gap worth closing**, `MainController.reset_session`
+(`main_controller.py:276-284`, added in the same feature this was found
+while reviewing) already establishes the pattern to mirror: iterate
+`self.analysis_tabs.items()` and call `handle_kill_all_workers` on each tab
+that exists, rather than hardcoding one subclass name. The one open
+question a fix would need to settle: should Abort Analysis stop *every*
+open tab's workers (matching Reset Session's breadth), or only the
+currently-focused/visible tab's (closer to what "abort *this* analysis"
+implies)? The current code does neither consistently — it always targets
+RawData specifically, whether or not RawData is the visible tab.
 
 ---
 
