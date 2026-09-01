@@ -153,7 +153,10 @@ def stripped_signature(func: Any) -> inspect.Signature:
     :rtype: inspect.Signature
     """
     signature = inspect.signature(func)
-    parameters = [p.replace(annotation=inspect.Parameter.empty) for p in signature.parameters.values()]
+    parameters = [
+        p.replace(annotation=inspect.Parameter.empty)
+        for p in signature.parameters.values()
+    ]
     return signature.replace(
         parameters=parameters, return_annotation=inspect.Signature.empty
     )
@@ -247,11 +250,14 @@ class TestGeneratedPluginsAreCompliant:
                 body = [
                     s
                     for s in node.body
-                    if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))
+                    if not (
+                        isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)
+                    )
                 ]
                 pass_only = len(body) == 1 and isinstance(body[0], ast.Pass)
                 none_return = node.returns is None or (
-                    isinstance(node.returns, ast.Constant) and node.returns.value is None
+                    isinstance(node.returns, ast.Constant)
+                    and node.returns.value is None
                 )
                 assert not (pass_only and not none_return), f"{name}.{node.name}"
 
@@ -271,9 +277,9 @@ class TestGeneratedPluginsAreCompliant:
             base_cls = cls.__mro__[1]
             for method_name, func in own_methods(cls).items():
                 _, original = script.resolve_definition(base_cls, method_name)
-                assert stripped_signature(func) == stripped_signature(original), (
-                    f"{name}.{method_name} does not match {base_cls.__name__}"
-                )
+                assert stripped_signature(func) == stripped_signature(
+                    original
+                ), f"{name}.{method_name} does not match {base_cls.__name__}"
 
     def test_every_method_has_a_docstring(self, script, tmp_path):
         """The compliance suite requires one on the class and on every method in it."""
@@ -338,20 +344,28 @@ class TestVariants:
     """A variant inherits a working plugin, so its overrides delegate rather than raise."""
 
     def test_overrides_delegate_to_super(self, script, tmp_path):
-        path = generate(script, "ClassicBlockageFinder", "Delegating", tmp_path, ["_filter_events"])
+        path = generate(
+            script, "ClassicBlockageFinder", "Delegating", tmp_path, ["_filter_events"]
+        )
         text = path.read_text(encoding="utf-8")
         assert "return super()._filter_events(" in text
         assert "NotImplementedError" not in text
 
     def test_only_the_named_methods_are_stubbed(self, script, tmp_path):
-        path = generate(script, "ClassicBlockageFinder", "Narrow", tmp_path, ["_filter_events"])
+        path = generate(
+            script, "ClassicBlockageFinder", "Narrow", tmp_path, ["_filter_events"]
+        )
         cls = load_generated(path, "Narrow")
         assert set(own_methods(cls)) == {"_filter_events", "get_empty_settings"}
 
     def test_an_unknown_override_is_refused(self, script, tmp_path, capsys):
         argv = [
-            "ClassicBlockageFinder", "Bad", "--output-dir", str(tmp_path),
-            "--override", "no_such_method",
+            "ClassicBlockageFinder",
+            "Bad",
+            "--output-dir",
+            str(tmp_path),
+            "--override",
+            "no_such_method",
         ]
         assert script.main(argv) == 1
         assert not Path(tmp_path, "Bad.py").exists()
@@ -365,7 +379,10 @@ class TestRefusals:
         assert list(tmp_path.glob("*.py")) == []
 
     def test_an_invalid_class_name_is_refused(self, script, tmp_path):
-        assert script.main(["MetaFilter", "not a name", "--output-dir", str(tmp_path)]) == 1
+        assert (
+            script.main(["MetaFilter", "not a name", "--output-dir", str(tmp_path)])
+            == 1
+        )
         assert list(tmp_path.glob("*.py")) == []
 
     def test_a_python_keyword_is_refused(self, script, tmp_path):
@@ -374,7 +391,10 @@ class TestRefusals:
 
     def test_a_name_a_shipped_plugin_already_has_is_refused(self, script, tmp_path):
         """Plugin names are unique across every family; the app only says so at startup."""
-        assert script.main(["MetaFilter", "BesselFilter", "--output-dir", str(tmp_path)]) == 1
+        assert (
+            script.main(["MetaFilter", "BesselFilter", "--output-dir", str(tmp_path)])
+            == 1
+        )
         assert list(tmp_path.glob("*.py")) == []
 
     def test_an_existing_file_is_never_overwritten(self, script, tmp_path):
@@ -403,7 +423,9 @@ class TestInteractive:
 
     def test_it_asks_its_way_to_a_new_plugin(self, script, tmp_path, monkeypatch):
         families = sorted(script.FAMILIES)
-        self._answers(monkeypatch, ["1", str(families.index("MetaFilter") + 1), "Asked"])
+        self._answers(
+            monkeypatch, ["1", str(families.index("MetaFilter") + 1), "Asked"]
+        )
         assert script.main(["--output-dir", str(tmp_path)]) == 0
         cls = load_generated(Path(tmp_path, "Asked.py"), "Asked")
         assert cls.__mro__[1] is script.family_base("MetaFilter")
@@ -412,7 +434,12 @@ class TestInteractive:
         names = sorted(shipped)
         self._answers(
             monkeypatch,
-            ["2", str(names.index("BesselFilter") + 1), "_apply_filter", "AskedVariant"],
+            [
+                "2",
+                str(names.index("BesselFilter") + 1),
+                "_apply_filter",
+                "AskedVariant",
+            ],
         )
         assert script.main(["--output-dir", str(tmp_path)]) == 0
         cls = load_generated(Path(tmp_path, "AskedVariant.py"), "AskedVariant")

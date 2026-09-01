@@ -505,7 +505,9 @@ def insert_prose(doc_lines: List[str], prose: List[str], indent: str) -> List[st
     block = [f"{indent}{line}" if line else "" for line in prose]
     for index, line in enumerate(doc_lines):
         if _FIELD.match(line):
-            return splice_lines(doc_lines[:index], block, doc_lines[index:], blank_after=True)
+            return splice_lines(
+                doc_lines[:index], block, doc_lines[index:], blank_after=True
+            )
     return splice_lines(doc_lines[:-1], block, doc_lines[-1:], blank_after=False)
 
 
@@ -1175,7 +1177,9 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("base", nargs="?", help="a Meta* base class or a shipped plugin")
+    parser.add_argument(
+        "base", nargs="?", help="a Meta* base class or a shipped plugin"
+    )
     parser.add_argument("name", nargs="?", help="the new plugin's class name")
     parser.add_argument(
         "--list", action="store_true", help="show the families and the shipped plugins"
