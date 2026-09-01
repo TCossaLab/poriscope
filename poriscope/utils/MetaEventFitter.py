@@ -174,7 +174,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         Your Eventfitter MUST include at least the "MetaEventLoader" key, which can be ensured by calling ``settings = super().get_empty_settings(globally_available_plugins, standalone)`` before adding any additional settings keys
 

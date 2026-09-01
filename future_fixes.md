@@ -118,15 +118,16 @@ blocks "What to pick up next".
 
 ### Minor
 
-- **`_validate_param_ranges` raises the exception its docstring rules out.**
-  `BaseDataPlugin.py:437-455`. The bound comparisons run before any `None` check, so
-  `Value: None` with a `Min` set raises `TypeError: '<' not supported between instances of
-  'NoneType' and 'float'` (confirmed) where the docstring promises `ValueError`. The caller
-  reports every failure with one generic message, so the user sees a type error instead of
-  "Threshold is required". Same method: the `Options` check special-cases the literal names
-  `"Output File"` and `"Input File"` - plugin-specific knowledge in the universal validator.
-  A `"Validate Options": False` flag in the settings schema expresses it without the base
-  class knowing any names.
+- ~~**`_validate_param_ranges` raises the exception its docstring rules out**, plus the
+  missing-`Value` `KeyError` and the `Folder` carve-out.~~ **All three fixed 2026-09-01**;
+  see `changelog.md`. What remains of this entry is the design question it also raised, and
+  that is genuinely still open: the `Options` carve-out is still **three literal parameter
+  names in a universal validator**, which is plugin-specific knowledge the base class should
+  not need. A `"Validate Options": False` flag in the settings schema would express it
+  without the base class knowing any names. The names are at least defined once now -
+  `poriscope/utils/settings_schema.py::FILE_DIALOG_PARAMS`, which `_validate_param_ranges`
+  imports - so the runtime and static checks can no longer drift apart, but that is
+  containment rather than a solution.
 - **Two dead conditions in the plugin loader.** `main_model.py:190` filters
   `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
   `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
@@ -144,26 +145,30 @@ blocks "What to pick up next".
 Two standing constraints reshape the queue below, so read this before working down it in
 file order:
 
-- **Test-writing is owned by another developer.** New pytest suites are out of scope
-  here, which pushes compliance-gate blocks 1 and 7 down the queue indefinitely, and
-  splits block 2 (its validator module is in scope; its discovery-and-assert harness is
-  not). Editing or deleting existing tests as part of a cleanup is fine.
+- **Another developer owns the existing test suites - do not edit them.** This is about
+  avoiding conflicts in her files, **not** a ban on writing tests. A new test file that
+  overlaps no existing suite is in scope and should be written rather than deferred; check
+  the overlap first. **Corrected 2026-09-01**, having previously read as "new pytest suites
+  are out of scope here", which is what wrongly pushed compliance-gate blocks 1, 2 and 7
+  down the queue. Block 2 was completed in full under the corrected reading; **blocks 1 and
+  7 are worth re-examining against it** rather than left parked.
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
-1. **Block 2's validator half only**: `validate_settings_schema()` as a real module
-   under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
-   harness that is out of scope.
-2. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
+1. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
    Note the docs-render gate (block 6, landed 2026-08-31) also wants marking as a required
    status check in branch protection, which is the same out-of-repo admin step block 5
    needs.
+2. **Blocks 1 and 7**, re-scoped against the corrected constraint above - both are pytest
+   suites that were parked only because of the old reading. Block 1 (behavioural
+   conformance) is the larger and the more valuable; block 7 (reader fuzzing) is narrow.
+   Neither would touch an existing test file.
 
 Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
 
-**Block 8 is closed as of 2026-09-01** and is no longer in this queue; see its section
-below for the evidence.
+**Blocks 2 and 8 are closed as of 2026-09-01** and are no longer in this queue; see their
+sections below for what was done and the evidence.
 
 ## Still queued
 
@@ -384,18 +389,23 @@ plugin family) be verified as safe and correct to merge with a bounded amount of
 review, instead of relying entirely on a reviewer reading the diff. Each block below is
 independently actionable and can be picked up in its own future session.
 
-**The set's original order no longer applies.** It was 1 → 2 (cheap, static, highest
-signal) → 3 (makes 1/2 easy to satisfy from the start) → 4/5 (merge-gating
-infrastructure) → 6/7/8 (rounding out coverage). That sequence assumed blocks 1 and 2
-could be built first, and both are pytest suites, which are owned by another developer
-and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone with
-nothing built before them; **block 6 landed on 2026-08-31** as
-`.github/workflows/docs-check.yml` (narrative in `changelog.md`, and its one piece of
-follow-through - marking the check as required in branch protection - is folded into
-block 5), and **block 8 closed on 2026-09-01** without needing to be built, leaving
-block 5 as the only free-standing one still open.
-Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
-from a blank file, so building 3 while they do not exist loses most of its value.
+**The set's original order was 1 → 2** (cheap, static, highest signal) **→ 3** (makes 1/2
+easy to satisfy from the start) **→ 4/5** (merge-gating infrastructure) **→ 6/7/8**
+(rounding out coverage). Three blocks are now closed and the rest largely follow that
+order again:
+
+- **Block 6 landed 2026-08-31** as `.github/workflows/docs-check.yml`. Its one piece of
+  follow-through - marking the check as required in branch protection - is folded into
+  block 5.
+- **Block 8 closed 2026-09-01** without needing to be built; see its section.
+- **Block 2 landed 2026-09-01**, in full rather than the validator half. It had been split
+  on the reading that its pytest harness was out of scope, which was wrong - see the
+  corrected constraint at the top of this file.
+
+That leaves **5** (free-standing), then **1** and **7**, which are pytest suites that were
+parked only under the old reading of that constraint and should now be re-scoped. Note
+that block 3 exists largely to make blocks 1 and 2 easy to satisfy from a blank file; with
+2 built, a scaffold generator is worth more than it was, not less.
 
 ## 1. Behavioral conformance suite (not just signature compliance)
 
@@ -447,40 +457,30 @@ to the plugin under test rather than the fixture.
 pass, since they're already trusted) before treating a conformance failure on a new
 contribution as meaningful signal.
 
-## 2. Settings-schema linter for `get_empty_settings()`
+## 2. Settings-schema linter for `get_empty_settings()` - DONE 2026-09-01
 
-**Goal.** A static (no I/O, no instantiation-with-real-data-required) check that a
-plugin's declared settings schema is internally self-consistent.
+Landed in full, not just the validator half; narrative and measurements in `changelog.md`.
+`poriscope/utils/settings_schema.py` holds the pure validator,
+`poriscope/utils/plugin_schemas.py` the discovery and retrieval,
+`tests/unit/utils/test_settings_schema.py` and
+`tests/unit/plugins/test_plugin_settings_schema.py` the tests, and
+`scripts/check_plugin_schemas.py` the standalone runner. All 24 plugins report clean.
 
-**Why.** `BaseDataPlugin.get_empty_settings()` (see `poriscope/utils/BaseDataPlugin.py`)
-returns `Dict[str, Dict[str, Any]]` entries shaped `{"Type", "Value", "Options", "Min",
-"Max"}`, and `_validate_param_types`/`_validate_param_ranges` check a *supplied*
-settings dict against this schema at runtime, per-instantiation. Nothing currently
-checks the schema itself for self-consistency independent of any particular value
-supplied — e.g. `Min > Max`, a `Value`/`Options` list mixing incompatible `Type`s, or a
-`Type` that doesn't match the Python type of `Value`. These are exactly the kind of
-copy-paste mistake a first-time contributor adapting an existing plugin would make.
+Two things about it are worth carrying forward:
 
-**Implementation plan.**
-1. Add a small pure-Python validator, e.g.
-   `poriscope/utils/settings_schema.py::validate_settings_schema(schema: dict) -> list[str]`
-   returning a list of human-readable problems (empty list = clean), checking per
-   parameter entry: `Type` and `Value` keys are present; if `Value is not None`,
-   `isinstance(Value, Type)`; if both `Min` and `Max` are set, `Min <= Max`; if
-   `Options` is set, every option's type matches `Type` and (if `Value is not None`)
-   `Value in Options`.
-2. Add a fast, no-fixture-needed pytest test (can live in `test_plugin_compliance.py`
-   itself, right next to the existing structural checks, or as a new
-   `test_settings_schema.py`) that calls `plugin_cls().get_empty_settings()` for every
-   discovered concrete plugin class and runs it through `validate_settings_schema`,
-   asserting an empty problem list. (Most plugins' `get_empty_settings()` should be
-   callable without a fully-populated `settings` dict — confirm this holds for all
-   existing plugins first; a few may need `standalone=True` passed.)
-3. This is cheap enough to run as a blocking pre-commit/CI check on every PR touching
-   `poriscope/plugins/**`, well before the more expensive conformance suite in block 1.
+- **No pre-commit hook was wired**, though step 3 of the original plan called for one. The
+  test suite covers it on every branch push, and a hook would have made the six owner-held
+  `Basic_PeakFinder` findings block commits before the owning developer had seen them.
+  Revisit once block 5's `CODEOWNERS` exists.
+- **The rules were derived by measurement, not from the docstring**, and one docstring
+  claim turned out to be false: "Value and Type are required" was contradicted by 27 of the
+  91 shipped parameter entries, the base classes' own included. A missing `Value` is
+  therefore treated as unset rather than flagged, and the sentence was corrected in all 31
+  files carrying it. If the rule set is ever extended, measure the candidate rule against
+  every shipped plugin first - it is a few lines of script and it is what stopped this from
+  shipping 27 false positives.
 
-**Gotchas.** `Options`/`Min`/`Max` are explicitly optional (can be `None`) per the
-existing docstring — don't require them, only check consistency *when present*.
+Nothing is left open from this block.
 
 ## 3. Contribution scaffold / template generator
 

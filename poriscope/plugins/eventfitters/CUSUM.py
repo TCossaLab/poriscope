@@ -60,7 +60,7 @@ class CUSUM(MetaEventFitter):
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         Your Eventfinder MUST include at least the "MetaReader" key, which can be ensured by calling super().get_empty_settings(globally_available_plugins, standalone) before adding any additional settings keys
 
@@ -104,7 +104,7 @@ class CUSUM(MetaEventFitter):
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "pA"}
-        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
+        settings["Sensitivity"] = {"Type": float, "Value": 1.0, "Min": 1.0, "Max": 5.0}
         settings["Rise Time"] = {"Type": float, "Min": 0.0, "Units": "us"}
         settings["Max Sublevels"] = {"Type": int, "Value": 0, "Min": 0}
         return settings
