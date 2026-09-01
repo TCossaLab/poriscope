@@ -119,15 +119,13 @@ blocks "What to pick up next".
 ### Minor
 
 - ~~**`_validate_param_ranges` raises the exception its docstring rules out**, plus the
-  missing-`Value` `KeyError` and the `Folder` carve-out.~~ **All three fixed 2026-09-01**;
-  see `changelog.md`. What remains of this entry is the design question it also raised, and
-  that is genuinely still open: the `Options` carve-out is still **three literal parameter
-  names in a universal validator**, which is plugin-specific knowledge the base class should
-  not need. A `"Validate Options": False` flag in the settings schema would express it
-  without the base class knowing any names. The names are at least defined once now -
-  `poriscope/utils/settings_schema.py::FILE_DIALOG_PARAMS`, which `_validate_param_ranges`
-  imports - so the runtime and static checks can no longer drift apart, but that is
-  containment rather than a solution.
+  missing-`Value` `KeyError` and the `Folder` carve-out.~~ **Closed 2026-09-01.** Three of
+  the four defects were fixed (see `changelog.md`); the fourth - that the `Options`
+  carve-out is three literal parameter names in a universal validator - is **settled as
+  won't-fix**, and the `"Validate Options": False` flag this entry used to propose is
+  rejected rather than deferred. See `DECISIONS.md`, which also records the better design
+  should it ever be needed and the one thing that would justify it: someone needing a
+  plugin with more than one file input.
 - **Two dead conditions in the plugin loader.** `main_model.py:190` filters
   `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
   `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the

@@ -15,6 +15,71 @@ they date the decision.
 
 ---
 
+## 2026-09-01 - The three reserved file-parameter names stay as they are
+
+**Context.** `BaseDataPlugin._validate_param_ranges` skips its `Value in Options` check for
+three literal parameter names - `Input File`, `Output File`, `Folder` - because for those
+the `Options` list holds file-dialog filters (`"ABF2 Files (*.abf)"`) rather than
+permissible values. This was recorded in `future_fixes.md` as "plugin-specific knowledge in
+the universal validator", with a proposed fix: a `"Validate Options": False` flag in the
+settings schema, so the base class would not need to know any names. The question came up
+again on 2026-09-01 when the three other defects in that same entry were fixed and the
+names were consolidated into `settings_schema.FILE_DIALOG_PARAMS`.
+
+**Decision.** Keep the three literal names and the shared constant. **The
+`"Validate Options": False` flag is rejected outright rather than deferred.** No code
+changes.
+
+**Reasoning.** The proposal aims at the wrong site. The names appear at roughly 20 places,
+and **17 of them are in `views/widgets/dict_dialog_widget.py`** - the widget dispatch at
+`:131`/`:150`/`:169`, the picker write-backs at `:277`/`:318`/`:343`, the
+`key not in [...]` tests at `:216`/`:370`, and the three `check_validity` clauses at
+`:356-363`. One is the `FILE_DIALOG_PARAMS` constant, one is `DataPluginController:517-524`'s
+`Folder` default, and the validator itself now holds none, since it imports the constant.
+So the flag would clear the single site that is already contained behind a shared
+definition and leave every load-bearing one untouched.
+
+It is also the wrong *shape* of key. `"Validate Options": False` describes what not to
+check. A schema key that described what the parameter **is** could drive both the
+validator and the dialog's widget selection; a suppression flag can only ever do the
+former. Adopting it would foreclose the better fix by spending the schema-contract change
+on the lesser one.
+
+**The better fix, if it is ever needed**, recorded so it does not have to be rediscovered:
+an optional `"Kind"` key taking `"input file"`, `"output file"` or `"folder"`. Every site
+that currently asks "is this key named `Input File`?" asks "is this parameter of kind
+`input file`?" instead. The five bases that create these entries (`MetaReader:311`,
+`MetaWriter:168`, `MetaEventLoader:160`, `MetaDatabaseLoader:351`,
+`MetaDatabaseWriter:460`) declare the kind, and since every plugin is required to build its
+schema from `super().get_empty_settings()`, all 24 shipped plugins inherit it with no edit
+of their own. A `kind = entry.get("Kind") or _legacy_kind_for_name(key)` fallback keeps a
+hand-rolled user plugin working and confines the literal names to one function.
+
+**Consequences worth knowing.** Each picker callback hardcodes the key it writes to
+(`self.params["Input File"]["Value"] = input_file`), so **a plugin can have at most one
+file input, one file output and one folder**, and a file parameter cannot be given a
+descriptive name - not "Calibration File", only "Input File". A reader taking a data file
+*and* a separate calibration file cannot be expressed today. That limitation is accepted
+here; it is the real cost of the design, and it is what the revisit trigger below is about.
+
+Also worth knowing before anyone attempts this: **`dict_dialog_widget.py` has no unit
+tests.** `tests/unit/views/test_data_plugin_view.py` patches `DictDialog` out wholesale,
+and nothing in the repository references `get_input_file`, `get_output_file` or
+`get_folder`; the e2e tests construct the real dialog but only ever touch `name_entry`. So
+the widget dispatch, the three picker callbacks, `check_validity` and `on_ok` are
+unverified by anything, on a path every plugin creation traverses. Writing
+`tests/unit/views/widgets/test_dict_dialog_widget.py` against the *current* behaviour is a
+prerequisite for the refactor, not part of it, and would be most of the work.
+
+**Revisit if.** Someone expresses a need for a plugin that takes **more than one file
+input** - or more than one output, or more than one folder. That is the capability this
+design forecloses, and it is the only thing that makes the change worth its risk. Removing
+plugin-specific names from the universal validator is explicitly **not** a reason to
+revisit: that was the original motivation, it was measured, and it turned out to be worth
+far less than it sounded.
+
+---
+
 ## 2026-09-01 - The multiselect popups' event filter stays on the application
 
 **Context.** `MultiSelectFilterComboBox` and `MultiSelectComboBox` closed their popup when
