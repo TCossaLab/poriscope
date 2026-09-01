@@ -29,8 +29,9 @@ its sibling's test suite:
 import sys
 import unittest
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QApplication, QWidget
 
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
 
@@ -398,6 +399,111 @@ class TestPopup(unittest.TestCase):
         self.c.hidePopup()
         app.processEvents()
         self.assertFalse(self.c.containerWidget.isVisible())
+
+
+class TestOutsideClickFilter(unittest.TestCase):
+    """
+    The application-wide filter that closes the popup must exist only while
+    the popup is open.
+
+    Installing it in ``__init__`` and never removing it leaked one filter per
+    widget for the lifetime of the process, and left filters running after the
+    C++ object behind them was destroyed - which surfaced as an intermittent
+    ``RuntimeError: Internal C++ object ... already deleted`` somewhere else
+    entirely in the suite.
+    """
+
+    def setUp(self):
+        self.calls = 0
+        outer = self
+
+        class CountingCombo(MultiSelectComboBox):
+            def eventFilter(self, obj, event):
+                outer.calls += 1
+                return super().eventFilter(obj, event)
+
+        self.c = CountingCombo()
+        self.c.addItems(["a", "b"])
+        self.probe = QWidget()
+
+    def tearDown(self):
+        dispose(self.probe)
+        dispose(self.c)
+
+    def _send_unrelated_event(self) -> None:
+        QApplication.sendEvent(self.probe, QEvent(QEvent.Type.User))
+
+    def _press_at(self, point: QPoint) -> QMouseEvent:
+        return QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(0.0, 0.0),
+            QPointF(point),
+            Qt.LeftButton,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+
+    def test_no_filter_installed_at_rest(self):
+        self.calls = 0
+        self._send_unrelated_event()
+        self.assertEqual(self.calls, 0)
+
+    def test_filter_installed_while_popup_open(self):
+        self.c.showPopup()
+        app.processEvents()
+        self.calls = 0
+        self._send_unrelated_event()
+        self.assertGreater(self.calls, 0)
+
+    def test_filter_removed_after_hide_popup(self):
+        self.c.showPopup()
+        app.processEvents()
+        self.c.hidePopup()
+        app.processEvents()
+        self.calls = 0
+        self._send_unrelated_event()
+        self.assertEqual(self.calls, 0)
+
+    def test_outside_press_closes_popup(self):
+        self.c.showPopup()
+        app.processEvents()
+        geo = self.c.containerWidget.geometry()
+        outside = QPoint(geo.right() + 50, geo.bottom() + 50)
+        consumed = QApplication.sendEvent(self.probe, self._press_at(outside))
+        app.processEvents()
+        self.assertFalse(self.c.containerWidget.isVisible())
+        self.assertTrue(consumed)
+
+    def test_inside_press_leaves_popup_open(self):
+        self.c.showPopup()
+        app.processEvents()
+        inside = QPoint(self.c.containerWidget.geometry().center())
+        QApplication.sendEvent(self.probe, self._press_at(inside))
+        app.processEvents()
+        self.assertTrue(self.c.containerWidget.isVisible())
+
+    def test_self_heals_when_popup_hidden_externally(self):
+        """A close that bypasses hidePopup() must still drop the filter."""
+        self.c.showPopup()
+        app.processEvents()
+        self.c.containerWidget.hide()
+        app.processEvents()
+        self._send_unrelated_event()  # the event that triggers the self-heal
+        self.calls = 0
+        self._send_unrelated_event()
+        self.assertEqual(self.calls, 0)
+
+    def test_non_mouse_event_is_inert(self):
+        """
+        The fall-through must not call up into the base class.
+
+        ``QComboBox`` does not reimplement ``eventFilter``, so the inherited
+        implementation is just ``return false`` - but reaching it needs a live
+        C++ ``self``, and that is the line that raised on a stale filter.
+        """
+        self.c.showPopup()
+        app.processEvents()
+        self.assertIs(self.c.eventFilter(self.probe, QEvent(QEvent.Type.User)), False)
 
 
 if __name__ == "__main__":

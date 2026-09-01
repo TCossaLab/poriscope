@@ -121,8 +121,6 @@ class MultiSelectComboBox(QComboBox):
         self._line_edit.setPlaceholderText("Select channels...")
         self.setInsertPolicy(QComboBox.NoInsert)
 
-        QApplication.instance().installEventFilter(self)
-
     def addItem(self, text: str) -> None:
         item = QListWidgetItem(text, self.listWidget)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
@@ -240,8 +238,12 @@ class MultiSelectComboBox(QComboBox):
             QRect(popup_x, popup_y, popup_width, popup_height)
         )
         self.containerWidget.show()
+        self._set_outside_click_filter(True)
 
     def hidePopup(self) -> None:
+        # Drop the filter before hiding: it is only meaningful while the popup
+        # is up, and this is the single path every close goes through.
+        self._set_outside_click_filter(False)
         # Hide the container widget when it should be closed
         self.containerWidget.hide()
 
@@ -252,14 +254,62 @@ class MultiSelectComboBox(QComboBox):
             self.showPopup()
         super().mousePressEvent(event)
 
+    def _set_outside_click_filter(self, active: bool) -> None:
+        """
+        Install or remove the application-wide filter that closes the popup.
+
+        The filter must sit on the application, not on ``containerWidget``. On
+        Windows and macOS the container is built as a ``QDialog`` with
+        ``Qt.Popup`` OR-ed into its flags, and ``Qt.Dialog | Qt.Popup``
+        evaluates to ``Qt.Tool`` (window type is a value in the low byte, not
+        a set of independent flags), so it is a tool window rather than a real
+        popup and Qt's popup mouse grab never engages. Only the Linux branch,
+        which *replaces* the flags, produces a genuine popup.
+
+        It is installed only while the popup is open. Installing it in
+        ``__init__`` instead is what previously leaked one filter per widget
+        for the lifetime of the process, and let a filter outlive the C++
+        object behind it.
+
+        :param active: True to install the filter, False to remove it.
+        :type active: bool
+        """
+        app = QApplication.instance()
+        if app is None:
+            return
+        if active:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
+
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Close the popup when the user clicks outside it.
+
+        :param obj: The object receiving the event; unused, since a click
+            anywhere in the application is of interest.
+        :type obj: QObject
+        :param event: The event being delivered.
+        :type event: QEvent
+        :return: True if the event was consumed, False otherwise.
+        :rtype: bool
+        """
+        if not self.containerWidget.isVisible():
+            # Reached when the popup was closed by a path that does not run
+            # hidePopup(). Drop the filter so it cannot outlive the popup.
+            self._set_outside_click_filter(False)
+            return False
         if event.type() == QEvent.MouseButtonPress:
-            # Only hide if the popup is visible and the click is outside it
-            if self.containerWidget.isVisible():
-                if not self.containerWidget.geometry().contains(event.globalPos()):
-                    self.hidePopup()
-                    return True  # Event handled
-        return super().eventFilter(obj, event)
+            # Only hide if the click is outside the popup
+            global_pos = event.globalPosition().toPoint()
+            if not self.containerWidget.geometry().contains(global_pos):
+                self.hidePopup()
+                return True  # Event handled
+        # QComboBox does not reimplement eventFilter, so the inherited
+        # QObject::eventFilter is `return false` - which is all this needs to
+        # be. Calling up into it requires a live C++ `self` and was the line
+        # that raised "Internal C++ object already deleted" on a stale filter.
+        return False
 
     def refreshDisplayText(self) -> None:
         self._line_edit.setText(", ".join(self.getSelectedItems()))

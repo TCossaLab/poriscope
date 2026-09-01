@@ -15,6 +15,59 @@ they date the decision.
 
 ---
 
+## 2026-09-01 - The multiselect popups' event filter stays on the application
+
+**Context.** `MultiSelectFilterComboBox` and `MultiSelectComboBox` closed their popup when
+the user clicked outside it, using a filter installed on the `QApplication` singleton and
+never removed - a leak that caused an intermittent `RuntimeError: Internal C++ object ...
+already deleted` in the test suite. The obvious fix, and the one the handoff note in
+`future_fixes.md` recommended, was to scope the filter to `containerWidget` or to `self`
+instead of the application, following the `walkthrough.py`/`help.py` precedent.
+
+**Decision.** The filter stays **on the application**. Only its *lifetime* was narrowed: it
+is installed in `showPopup()` and removed in `hidePopup()`, so it exists only while a popup
+is open.
+
+**Reasoning.** Scoping it to the container would have silently broken click-outside-to-close
+on Windows and macOS. `Qt::WindowType` is a value in the low byte of the flags word, not a
+set of independent bits, and `Tool == Popup | Dialog == 11`. Both widgets build their
+container as a `QDialog` and then OR `Qt.Popup` into the existing flags - which already
+include `Qt::Dialog` - so `windowType()` comes out as **`Qt::Tool`**, not `Qt::Popup`.
+Verified against the installed PySide6 6.9.0 with the real construction pattern:
+
+```
+Dialog=3  Popup=9  Tool=11
+Dialog|Popup == Tool          -> True
+(Dialog|Popup) & Mask == Popup -> False
+QDialog(...) + windowFlags()|Qt.Popup  ->  windowType=11 (Tool)
+```
+
+A tool window is not a popup: `isPopup()` is false, Qt never enters popup mode for it, there
+is no implicit mouse grab, and a press elsewhere in the application is delivered to whatever
+is under the cursor and never routed to the container. A filter installed on the container
+would therefore never see the click it exists to detect. Qt also does **not** auto-close even
+a genuine popup on an outside press - `QWidgetWindow::handleMouseEvent` only closes *disabled*
+popups; the familiar behaviour is implemented by `QMenu` in its own `mousePressEvent`.
+
+Only `multiselect.py`'s Linux branch produces a real popup, because it calls
+`setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)`, which *replaces* the flags rather than
+OR-ing into them. That asymmetry is very likely why the application-wide filter was written
+in the first place, and why the Linux path was special-cased.
+
+**Consequences worth knowing.** The Linux/offscreen CI run cannot exercise the load-bearing
+path, because there the container really is a popup. Anything that changes this filter needs
+a manual check on Windows. The `walkthrough.py`/`help.py` precedent of scoping a filter to a
+narrower object is still the right default - it just does not apply to a widget whose whole
+purpose is to observe events aimed at *other* widgets.
+
+**Revisit if.** The containers are converted to genuine `Qt::Popup` windows on every platform
+(`setWindowFlags` rather than OR-ing), which would let Qt's grab do the routing and unify the
+two platform paths. That was considered and deliberately not bundled into a crash fix: it is a
+visible UX change on the primary platform, since the popup would lose its title bar, its
+"Select Filter"/"Select Channel" caption, its close button and its movability.
+
+---
+
 ## 2026-08-25 - The audited `bugbear`/`bandit` rules stay off as gates
 
 *Settled 2026-08-25; moved here from `future_fixes.md` on 2026-09-01, where it had been
