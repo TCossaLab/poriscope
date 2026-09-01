@@ -19,14 +19,19 @@ Coverage targets:
 - _fit_double_gaussian_bounded_at_valley
 - _fit_least_smoothed_spline
 - _warn_if_fitted_means_are_off_their_peaks
+- _ClassificationWarningCollector
 """
 
+import logging
 import unittest
 from unittest.mock import MagicMock
 
 import numpy as np
 
-from poriscope.plugins.eventfitters.PeakFinder import PeakFinder
+from poriscope.plugins.eventfitters.PeakFinder import (
+    PeakFinder,
+    _ClassificationWarningCollector,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,6 +61,7 @@ def _make_pf(**setting_overrides):
         "Lower Filter Threshold": {"Value": -3},
         "Higher Filter Threshold": {"Value": 3},
         "Number of peaks": {"Value": 1},
+        "Peak to Peak Distance Ratio": {"Value": 5.0},
         "Plot Features": {"Value": "Some"},
     }
     for k, v in setting_overrides.items():
@@ -253,16 +259,20 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
 
 
 class TestFilterPeaksBarcode(unittest.TestCase):
-    def _props(self, left_bases, right_bases, prominences=None):
+    def _props(self, left_bases, right_bases, prominences=None, peak_loc=None):
         n = len(left_bases)
         if prominences is None:
             prominences = [200.0] * n
+        if peak_loc is None:
+            peak_loc = [float(i) for i in range(n)]
         return {
             "filtered": [0] * n,
             "prominences": np.array(prominences, dtype=float),
             "left_bases": list(left_bases),
             "right_bases": list(right_bases),
             "peak_heights": np.array([700.0] * n),
+            # microseconds, as _populate_sublevel_metadata stores it
+            "peak_loc": list(peak_loc),
         }
 
     def test_type1_classification(self):
@@ -320,6 +330,97 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
         )
         self.assertEqual(result["filtered"][0], 2)
+
+    def test_most_prominent_cluster_is_chosen_over_an_earlier_one(self):
+        """
+        Two separated, non-adjacent type-1 clusters of equal size: the run
+        with the higher summed prominence must be promoted to type 3, not
+        whichever run happens to be found first.
+
+        Regression guard for a bug where clustering candidates were
+        pre-filtered down to the `num_peaks` most prominent peaks *globally*,
+        before any run was ever looked for. Here the two globally most
+        prominent peaks belong to different, non-adjacent clusters, so that
+        pre-filter left no two candidates close enough to cluster at all and
+        no barcode was found anywhere in the event - even though a real,
+        more-prominent two-peak run (cluster A) exists.
+        """
+        pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
+        # Cluster A: peaks 0-1, 10 us apart, prominences 90/90 (sum 180).
+        # Cluster B: peaks 2-3, 10 us apart, prominences 95/1 (sum 96).
+        # A and B are 490 us apart - far beyond the 50 us (5%) limit - so they
+        # never merge. B's first peak (95) is more prominent than either of
+        # A's, but A's run has the higher total.
+        props = self._props(
+            [100.0, 100.0, 100.0, 100.0],
+            [100.0, 100.0, 100.0, 100.0],
+            prominences=[90.0, 90.0, 95.0, 1.0],
+            peak_loc=[0.0, 10.0, 500.0, 510.0],
+        )
+        result = pf.filter_peaks(
+            np.array([0, 10, 500, 510]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
+        self.assertEqual(list(result["filtered"]), [3, 3, 1, 1])
+
+    def test_cluster_distance_is_independent_of_sample_rate(self):
+        """
+        The peak-to-peak limit is a percentage of event length, and both sides
+        of that comparison are in microseconds - so identical event geometry
+        must cluster identically however fast it was sampled.
+
+        Regression guard for a unit bug: max_distance was converted to samples
+        while peak_loc stayed in microseconds, so the effective limit scaled
+        with the sample rate in MHz. It was invisible at exactly 1 MHz, which
+        is the only rate every other test in this class uses.
+        """
+        results = []
+        for samplerate in (250e3, 1e6, 4e6):
+            pf = _make_pf(
+                **{
+                    "Event Type": "Barcode",
+                    "Number of peaks": 2,
+                    "Peak to Peak Distance Ratio": 5.0,
+                }
+            )
+            # Two carrier-level peaks 40 us apart in a 1000 us event. The 5%
+            # limit is 50 us, so they are one cluster at any sample rate.
+            props = self._props(
+                [100.0, 100.0], [100.0, 100.0], peak_loc=[0.0, 40.0]
+            )
+            out = pf.filter_peaks(
+                np.array([0, 40]),
+                props,
+                200.0,
+                None,
+                10.0,
+                100.0,
+                samplerate,
+                1000.0,
+            )
+            results.append(list(out["filtered"]))
+
+        self.assertEqual(results[0], results[1], "250 kHz disagreed with 1 MHz")
+        self.assertEqual(results[1], results[2], "4 MHz disagreed with 1 MHz")
+        for filtered in results:
+            self.assertEqual(filtered, [3, 3])
+
+    def test_peaks_beyond_the_distance_limit_do_not_cluster(self):
+        """
+        60 us apart against the same 50 us limit: no cluster, and a fast
+        sample rate must not buy them one.
+        """
+        pf = _make_pf(
+            **{
+                "Event Type": "Barcode",
+                "Number of peaks": 2,
+                "Peak to Peak Distance Ratio": 5.0,
+            }
+        )
+        props = self._props([100.0, 100.0], [100.0, 100.0], peak_loc=[0.0, 60.0])
+        out = pf.filter_peaks(
+            np.array([0, 60]), props, 200.0, None, 10.0, 100.0, 4e6, 1000.0
+        )
+        self.assertEqual(list(out["filtered"]), [1, 1])
 
     def test_empty_peaks_no_crash(self):
         """No peaks at all → filter_peaks should return properties intact."""
@@ -1954,6 +2055,66 @@ class TestClassifyBoundStar(unittest.TestCase):
             pf.sublevel_metadata[0]["ev"]["filtered"],
             np.array(filtered, dtype=float),
         )
+
+
+# ---------------------------------------------------------------------------
+# _ClassificationWarningCollector
+# ---------------------------------------------------------------------------
+
+
+class TestClassificationWarningCollector(unittest.TestCase):
+    """
+    _post_process_events attaches a _ClassificationWarningCollector to
+    self.logger for the duration of the classifier stages, so their
+    WARNING-level messages can be surfaced in the saved report instead of
+    living only in the log file. It is plain logging.Handler machinery with
+    no PeakFinder state, so it is exercised directly against a throwaway
+    logger rather than through _make_pf() and the full classification chain.
+    """
+
+    def setUp(self):
+        self.logger = logging.getLogger("test._ClassificationWarningCollector")
+        self.logger.setLevel(logging.DEBUG)
+        self.collector = _ClassificationWarningCollector()
+        self.logger.addHandler(self.collector)
+
+    def tearDown(self):
+        self.logger.removeHandler(self.collector)
+
+    def test_captures_warning_level_messages(self):
+        self.logger.warning("folding classification declined")
+        self.assertEqual(self.collector.records, ["folding classification declined"])
+
+    def test_ignores_info_and_debug(self):
+        self.logger.debug("verbose detail")
+        self.logger.info("starting post-processing")
+        self.assertEqual(self.collector.records, [])
+
+    def test_ignores_error_and_above(self):
+        # Scoped to exactly WARNING, not "WARNING and up" - an ERROR-level
+        # failure is already surfaced through _classification_results, so it
+        # must not also be duplicated into the warnings section.
+        self.logger.error("double-Gaussian fit failed")
+        self.logger.critical("unrecoverable")
+        self.assertEqual(self.collector.records, [])
+
+    def test_preserves_order_and_duplicates(self):
+        self.logger.warning("a")
+        self.logger.warning("b")
+        self.logger.warning("a")
+        self.assertEqual(self.collector.records, ["a", "b", "a"])
+
+    def test_message_is_formatted_without_level_or_logger_name(self):
+        self.logger.warning("plain message %s", "with args")
+        self.assertEqual(self.collector.records, ["plain message with args"])
+
+    def test_removed_handler_stops_collecting(self):
+        self.logger.removeHandler(self.collector)
+        self.logger.warning("after removal")
+        self.assertEqual(self.collector.records, [])
+        # so tearDown's removeHandler on an already-removed handler is a
+        # harmless no-op, matching what logging.Logger.removeHandler does
+        self.logger.addHandler(self.collector)
 
 
 if __name__ == "__main__":

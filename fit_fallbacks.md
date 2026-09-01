@@ -5,6 +5,10 @@ can degrade, what it degrades to, and how each of the three classifiers responds
 
 Traced from the code, not summarised from `changelog.md`. Line-level behaviour.
 
+For the stages *around* this chain — how peaks are found, typed and turned into
+sequences, directions and stars — see [`peak_finding_pipeline.md`](peak_finding_pipeline.md).
+This file covers stage 5 of that document in detail and nothing else.
+
 ## How to read this
 
 All three classifiers — `_classify_folded_unfolded`, `_classify_peak_prominences`,
@@ -50,7 +54,7 @@ of more than one problem downstream.
 
 | | Condition | Result |
 |---|---|---|
-| degrades | FD suggests fewer than `MIN_FIT_BINS` bins | Raised to the 30-bin floor, debug log. Six free parameters are underdetermined below that — the rule alone gives 3 bins at n=60 and 7 at n=600 |
+| degrades | FD suggests fewer than `MIN_FIT_BINS` bins | Raised to the 30-bin floor, debug log. Six free parameters are underdetermined below that — on two-population data the rule alone can give single-digit bin counts well into the thousands of points |
 | **aborts** | Fewer than 3 data points | `ValueError`, propagates out of `fit_threshold` to the classifier's own `try`/`except` |
 
 The floor only ever *raises* the bin count. It cannot help when the count is high but the two
@@ -139,9 +143,9 @@ flowchart TD
   it is not empty. Beside a tall peak the spline wiggles on counting noise alone, and the
   search will happily return one of those wiggles.
 - **`spline_valley_above_floor`** takes the *first* minimum above the floor, not the deepest.
-  Past the bulk of the data every wiggle is a local minimum: one real 6261-peak dataset had 43
-  in total and 30 above the floor, the deepest sitting at a spline value of −0.29 — below zero
-  counts, out in the noise.
+  Past the bulk of the data every wiggle is a local minimum — typically dozens of them above
+  the floor — and the deepest is invariably far out in that noise, at a negative spline value,
+  cutting off a fraction of a percent of the data.
 - **`fallback`** and **`fallback_degenerate`** are not read off any feature of the curve, which
   is why stage 5 refuses to constrain against them.
 - `fallback_degenerate` is the only rung in the whole chain that logs at warning level.
@@ -172,8 +176,8 @@ Note the conjunction on the third row. A solution flagged unsuccessful but in fa
 is accepted**: SLSQP reports a spurious `Positive directional derivative for linesearch` when
 the optimum sits exactly on a constraint boundary, which is precisely where this fit is
 expected to land whenever `_valley_separation` is what holds the higher component off the
-valley. Seeding infeasibly threw away 3 of 12 otherwise-fine fits on skewed data before the
-seed was walked into the feasible region first.
+valley. Seeding infeasibly threw away a quarter of otherwise-fine fits on skewed data in
+benchmarking, before the seed was walked into the feasible region first.
 
 `_gaussian_intersection` itself returns `None` when either amplitude is non-positive, when the
 equal-variance case degenerates (both quadratic and linear coefficients vanish), when the
@@ -240,11 +244,11 @@ gets a direction — only what the fit is estimated from.
 |---|---|---|
 | degrades | The percentile core comes out below `MIN_FIT_BINS` | No trim; the whole array is fitted. A degenerate distribution piled on one value does this, and trimming there swaps one bad fit for another. This is the only gate the trim needs — the core is ~90% of the sample, so reaching the floor already requires 34 events |
 
-This exists because stage 1's bin *range* is not outlier-robust while its bin *width* is.
-Measured on a real distribution (n=690, centres −0.307 and 0.385): the two populations span 25
-bins clean, 11.8 with one event two decades out, and 6.8 with three — landing squarely in the
-regime `_histogram_for_fit`'s own docstring records as underdetermined, where the fit can
-converge with both Gaussians on the same mode while passing every convergence check.
+This exists because stage 1's bin *range* is not outlier-robust while its bin *width* is. A
+single event two decades out roughly halves the number of bins the two populations span, and
+three events three decades out cut it by about four — landing squarely in the regime
+`_histogram_for_fit`'s own docstring records as underdetermined, where the fit can converge
+with both Gaussians on the same mode while passing every convergence check.
 
 ## Guards that cannot fire
 
@@ -278,7 +282,7 @@ their own comments.
 | `SPLINE_LAMBDA_SHAPE_MIN` | 1e-12 | Bottom of the ladder (almost no smoothing) |
 | `SPLINE_LAMBDA_SHAPE_MAX` | 1e2 | Top of the ladder |
 | `SPLINE_LAMBDA_CANDIDATES` | 50 | Log-spaced rungs between those two |
-| `SPLINE_LAMBDA_MARGIN_STEPS` | 0 | Extra smoothing past the first acceptable rung. Kept at zero deliberately — two steps of "safety margin" drove the higher component's mode bias from +22 pA to +685 pA and made 5 of 24 fits fail outright. The constant exists so the finding is not rediscovered |
+| `SPLINE_LAMBDA_MARGIN_STEPS` | 0 | Extra smoothing past the first acceptable rung. Kept at zero deliberately — two steps of "safety margin" moved the higher component's mode bias by an order of magnitude and made a fifth of fits fail outright. The constant exists so the finding is not rediscovered |
 | `SPLINE_FIT_DOMAIN_COVERAGE` | 0.995 | Fraction of counts the populated-core trim must retain |
 | `DIRECTION_FIT_PERCENTILES` | (5.0, 95.0) | The core the direction fit is estimated from — never what gets classified |
 
