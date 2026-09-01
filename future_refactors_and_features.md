@@ -1839,11 +1839,12 @@ Read-only audit (2026-08) of `poriscope/views/widgets/multiselect_filter.py`,
    in `SelectionTree`, folding the `total == 0` case into the same `else`)
    is low risk, modest readability win.
 
-5. **`multiselect_filter.py:299-306` nests a function inside a method**
-   (`open_dialog_then_reopen` inside `_handle_internal_edit`), violating this
-   project's no-nested-functions convention — a plain closure capturing only
-   `self` and `name`, easily hoisted to a private method called via a
-   lambda. Low risk, direct convention compliance.
+5. ~~**`multiselect_filter.py` nests a function inside a method**~~
+   (`open_dialog_then_reopen` inside `_handle_internal_edit`). **Withdrawn
+   2026-09-01.** Its only justification was the no-nested-functions convention,
+   and that convention was relaxed: a short, simple closure handed to a
+   callback is now explicitly fine. Hoisting this three-line closure to a
+   private method plus `functools.partial` is more code for no gain. Leave it.
 
 6. **`TimeWidget.FloatRangeValidator.validate`** (`time_widget.py:18-95`,
    ~75 lines) independently re-derives the same "0-0"/open-ended special
@@ -1912,13 +1913,21 @@ blocks (Part 10 #3); `SettingsWindow`'s ~8x-repeated row pattern (Part 10
 ~90%-duplicate classes (Part 12 #1).
 
 **Recurring pattern: nested functions, several of which are also duplicated
-copies of each other** — violating this project's own stated convention.
-`MetaWriter._commit_events`'s `lookahead_generator` (Part 7 #1),
-`MetaDatabaseWriter.write_events`'s near-identically-named `lookahead_generator`
-(Part 9 #1), `MetaDatabaseLoader`'s `tuple_builder` copy-pasted 3 times plus
-`_qualify_conditions_for_events_sublevels_join` (Part 9 #1, #5), and
-`multiselect_filter.py`'s `open_dialog_then_reopen` (Part 12 #5). Hoisting
-these fixes a convention violation and a duplication finding simultaneously.
+copies of each other.** `MetaWriter._commit_events`'s `lookahead_generator`
+(Part 7 #1), `MetaDatabaseWriter.write_events`'s near-identically-named
+`lookahead_generator` (Part 9 #1), and `MetaDatabaseLoader`'s `tuple_builder`
+copy-pasted 3 times plus `_qualify_conditions_for_events_sublevels_join`
+(Part 9 #1, #5).
+
+**Read these for the duplication, not for convention compliance.** As of
+2026-09-01 `CLAUDE.md` no longer prohibits nesting outright - a short, simple
+closure is fine where it is the simpler option - so "it is nested" is no longer
+by itself a reason to hoist anything, and the parenthetical convention
+references in Part 9 #1/#5 and Part 11 are stale in that respect. What still
+justifies these entries is that the same function is defined several times over,
+so a fix applied to one copy silently misses the others. `multiselect_filter.py`'s
+`open_dialog_then_reopen` was withdrawn outright (Part 12 #5): it is a three-line
+closure with no duplicate, which is exactly what the revised convention permits.
 
 **Recurring pattern: exception-driven dispatch used where an explicit check
 would be clearer.** Two are correctness-relevant (`BaseDataPlugin.apply_settings`,

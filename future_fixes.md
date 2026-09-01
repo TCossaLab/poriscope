@@ -155,8 +155,9 @@ file order:
    under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
    harness that is out of scope.
 2. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
-   Well-motivated: no-nested-functions, no-bare-except and explicit sqlite cleanup were
-   all enforced by hand during the 2026-08-25 lint sweep.
+   Now smaller than it was: the no-nested-functions half was dropped on 2026-09-01 when
+   that convention was relaxed. What remains is no-bare-except and explicit sqlite
+   cleanup, both enforced by hand during the 2026-08-25 lint sweep.
 3. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
    Note the docs-render gate (block 6, landed 2026-08-31) also wants marking as a required
@@ -248,9 +249,12 @@ things were deliberately left:
   Replacing them with a single application-owned watcher would remove the leak outright
   rather than defusing it, but it is a new class and a breaking change to something
   re-exported from `exposed.py`.
-- **`_handle_internal_edit` in `multiselect_filter.py` nests a function**
-  (`open_dialog_then_reopen`), which `CLAUDE.md` forbids outside decorators. Noticed while
-  working next to it; unrelated to the leak, so not folded in.
+- ~~**`_handle_internal_edit` nests a function.**~~ **Closed 2026-09-01, not a defect.**
+  `open_dialog_then_reopen` is a three-line closure that captures `name` so it can be
+  handed to `QTimer.singleShot`, which is exactly the case the revised `CLAUDE.md`
+  convention now permits. Hoisting it to a method plus `functools.partial` was considered
+  and rejected as strictly more code for no gain. It is covered by
+  `test_edit_filter_callback_called`, which passes.
 
 ## Exclusions (standing project policy)
 
@@ -322,10 +326,9 @@ were closed by decision rather than by code (the four `None`-placeholder `type: 
 and not consolidating the double-Gaussian fits) and are recorded in `DECISIONS.md`. What
 is still open:
 
-- **Three nested function definitions** remain: `dgfit` inside `bitthresh`, and formerly
-  `Gauss`/`Gauss_2` inside the now-deleted `fit_2_gauss`. `CLAUDE.md` forbids nested
-  functions but nothing enforces it (that is block 8 below). Annotated in place and left
-  nested, on instruction.
+- ~~**Three nested function definitions.**~~ **Closed 2026-09-01**, by the convention
+  changing rather than the code: `CLAUDE.md` no longer prohibits nesting outright, so
+  `dgfit` inside `bitthresh` is not a violation to be carried. Nothing to do.
 - **The histogram low-end cut-off in the classifier plots.** Diagnosed but not fixed, and
   parked pending the double-Gaussian rewrite: the "All Events (incl. outliers)" bar chart
   is binned against edges `bitthresh` computed from a *filtered subset*, and
@@ -639,18 +642,17 @@ memory conventions mechanically enforced, so they don't depend on a human review
 remembering to check for them on every plugin PR.
 
 **Why.** Several patterns are currently enforced only by convention and review
-attentiveness: no nested function definitions, no bare `except:` (narrow to
-`except Exception:` at minimum so a `Raises` docstring section is even possible), and
-explicit `finally`-block cleanup of sqlite3 cursors/connections. These are exactly the
-kind of thing a first-time community contributor won't know to do unless a machine
-tells them.
+attentiveness: no bare `except:` (narrow to `except Exception:` at minimum so a `Raises`
+docstring section is even possible), and explicit `finally`-block cleanup of sqlite3
+cursors/connections. These are exactly the kind of thing a first-time community
+contributor won't know to do unless a machine tells them.
 
 **Implementation plan.**
-1. No nested functions: a straightforward `ast`-based check (walk each `FunctionDef`
-   node's body for a nested `FunctionDef`/`AsyncFunctionDef`) — add as a `ruff`
-   custom rule if ruff's plugin API supports it cleanly for this project's ruff
-   version, otherwise a small standalone script run as a `pre-commit` `repo: local`
-   hook (same pattern as the pydoclint hook), scoped to `files: ^poriscope/`.
+1. ~~No nested functions.~~ **Dropped 2026-09-01.** `CLAUDE.md` no longer prohibits
+   nesting outright: a short, simple nested function is fine where it is genuinely the
+   simpler option, which is a judgement an `ast` walk cannot make. A checker would have
+   to encode a line-count or complexity threshold to approximate it, and would flag
+   exactly the small callback closures the convention now permits. Do not build it.
 2. Bare `except:`: `ruff` already has a built-in rule for this
    (`E722`/`BLE001`-family, depending on ruleset naming in the installed ruff
    version) — check whether it's already enabled in this project's `pyproject.toml`

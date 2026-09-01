@@ -207,10 +207,15 @@ of every session, so it should stay a short list of standing rules.
 
 ## General Instructions
 
-- Do not nest functions inside other functions. **Decorators are the standing exception**,
-  because they require a closure: `utils/LogDecorator.py` and `utils/SerializeDecorator.py`
-  are the two that exist today. Do not "flatten" either, and if you add a decorator module,
-  say in a comment that this is why it nests.
+- Prefer module- or class-level functions over nesting one function inside another, but
+  **a nested function is fine where it is genuinely the simpler option and the nested
+  function is short and simple** - typically a small closure that captures a local so it
+  can be handed to a callback, a timer or a signal. Reach for a hoisted method plus
+  `functools.partial` when the closure grows, is reused, or needs testing on its own; do
+  not hoist a three-line callback just to avoid nesting, and do not "flatten" an existing
+  one that reads well. Decorators always nest, because they require a closure -
+  `utils/LogDecorator.py` and `utils/SerializeDecorator.py` are the two modules that exist
+  today; if you add another, say in a comment that this is why it nests.
 - **Never add `@overload` or `cast()` to work around an over-broad return union.** Verify
   every incoming call and delete the dead branch instead. If both arms are genuinely live,
   flag it for review rather than overloading - the fix is usually to change the callers.
