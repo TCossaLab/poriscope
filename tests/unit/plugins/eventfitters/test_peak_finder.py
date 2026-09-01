@@ -384,9 +384,7 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             )
             # Two carrier-level peaks 40 us apart in a 1000 us event. The 5%
             # limit is 50 us, so they are one cluster at any sample rate.
-            props = self._props(
-                [100.0, 100.0], [100.0, 100.0], peak_loc=[0.0, 40.0]
-            )
+            props = self._props([100.0, 100.0], [100.0, 100.0], peak_loc=[0.0, 40.0])
             out = pf.filter_peaks(
                 np.array([0, 40]),
                 props,
@@ -1473,9 +1471,7 @@ class TestTranslocationDirectionFitSample(unittest.TestCase):
 
     def _run(self, log_ratios):
         pf = _make_pf()
-        pf.sublevel_metadata = {
-            0: {i: _ecd_event(r) for i, r in enumerate(log_ratios)}
-        }
+        pf.sublevel_metadata = {0: {i: _ecd_event(r) for i, r in enumerate(log_ratios)}}
         pf.event_metadata = {0: {i: {} for i in range(len(log_ratios))}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
         pf._classify_translocation_direction([0])
@@ -1524,9 +1520,13 @@ class TestTranslocationDirectionFitSample(unittest.TestCase):
         ratios = low + core + high
         pf = self._run(ratios)
         for i in range(len(low)):
-            self.assertEqual(pf.event_metadata[0][i]["translocation_direction"], "backward")
+            self.assertEqual(
+                pf.event_metadata[0][i]["translocation_direction"], "backward"
+            )
         for i in range(len(ratios) - len(high), len(ratios)):
-            self.assertEqual(pf.event_metadata[0][i]["translocation_direction"], "forward")
+            self.assertEqual(
+                pf.event_metadata[0][i]["translocation_direction"], "forward"
+            )
 
     def test_small_samples_are_fitted_whole(self):
         # Same gate as the case below, reached from the other direction:
@@ -1570,9 +1570,7 @@ class TestPlotFeatureLabels(unittest.TestCase):
             "peak_height": np.full(4, 500.0),
             "filtered": np.array(filtered, dtype=float),
             "classified": np.array([self.NAN, self.NAN, 0.0, self.NAN]),
-            "classification_confidence": np.array(
-                [self.NAN, self.NAN, 0.87, self.NAN]
-            ),
+            "classification_confidence": np.array([self.NAN, self.NAN, 0.87, self.NAN]),
         }
         for key in drop:
             del data[key]
@@ -1652,9 +1650,7 @@ class TestPlotFeatureLabels(unittest.TestCase):
         # Classification never ran, so the arrays are missing entirely rather
         # than full of NaN. That must not take the whole figure down with it.
         _, _, _, _, _, plabel = self._run(
-            sublevel=self._sublevel(
-                drop=("classified", "classification_confidence")
-            )
+            sublevel=self._sublevel(drop=("classified", "classification_confidence"))
         )
         self.assertTrue(plabel)
         for entry in plabel:
