@@ -46,6 +46,23 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
 
     logger = logging.getLogger(__name__)
 
+    #: Event columns this plot uses that a database may predate. An unknown
+    #: column is a hard error in SQLite, not a NULL, so naming one
+    #: unconditionally would take the whole plot down on any file written
+    #: before that column existed - ``bound_star`` being the newest. Each is
+    #: added to the query only once the database is known to carry it, and the
+    #: label simply omits the field otherwise.
+    OPTIONAL_EVENT_COLUMNS = (
+        "unfolded_level",
+        "sequence",
+        "translocation_direction",
+        "translocation_confidence",
+        "bound_star",
+    )
+
+    #: The same, for sublevel columns.
+    OPTIONAL_SUBLEVEL_COLUMNS = ("classified", "classification_confidence")
+
     @log(logger=logger)
     @override
     def get_plot_features(self, experiment: int, channel: int, index: int) -> Tuple[
@@ -71,7 +88,47 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
         """
 
         try:
-            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, e.baseline_current, e.unfolded_level, e.baseline_stdev, s.right_ips, s.peak_id, s.left_base, s.right_base, s.peak_loc, s.peak_height, s.right_ips, s.filtered, s.classified, e.sequence, e.translocation_direction, s.sublevel_start_times                        FROM sublevels s
+            # Ask the database which optional columns it actually has. When
+            # introspection returns nothing we cannot tell "absent" from
+            # "unknown", so every optional column is requested and a genuinely
+            # missing one fails loudly - better than silently dropping fields
+            # from a database that does carry them.
+            event_columns = self.get_column_names_by_table("events")
+            sublevel_columns = self.get_column_names_by_table("sublevels")
+            event_optional = [
+                name
+                for name in self.OPTIONAL_EVENT_COLUMNS
+                if event_columns is None or name in event_columns
+            ]
+            sublevel_optional = [
+                name
+                for name in self.OPTIONAL_SUBLEVEL_COLUMNS
+                if sublevel_columns is None or name in sublevel_columns
+            ]
+
+            selected = (
+                [
+                    "s.id",
+                    "s.experiment_id",
+                    "s.channel_id",
+                    "s.event_id",
+                    "s.peak_id",
+                    "s.peak_loc",
+                    "s.peak_height",
+                    "s.left_base",
+                    "s.right_base",
+                    "s.right_ips",
+                    "s.filtered",
+                    "s.sublevel_start_times",
+                    "e.baseline_current",
+                    "e.baseline_stdev",
+                ]
+                + [f"s.{name}" for name in sublevel_optional]
+                + [f"e.{name}" for name in event_optional]
+            )
+
+            query = f"""SELECT {", ".join(selected)}
+                        FROM sublevels s
                         JOIN events e
                         ON e.id = s.event_db_id
                         WHERE s.experiment_id={experiment} AND s.channel_id={channel} AND s.event_id={index}"""
@@ -134,18 +191,46 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             if "translocation_direction" in first_row
             else None
         )
+        translocation_confidence = (
+            first_row["translocation_confidence"]
+            if "translocation_confidence" in first_row
+            else None
+        )
+        bound_star = first_row["bound_star"] if "bound_star" in first_row else None
         event_start = event_first["sublevel_start_times"]
         event_end = event_last["sublevel_start_times"]
         # std = first_row["baseline_std"]
         sign = np.sign(baseline)
 
-        if sequence is not None:
-            if direction == "forward":
-                peaks_filtered.append(event_start)
-                vlabel.append(f"Forward translocation.\n Sequence: {sequence}")
-            elif direction == "backward":
-                peaks_filtered.append(event_end)
-                vlabel.append(f"Backward translocation.\n Sequence: {sequence}")
+        # Only fields the row actually carries are written into the label. An
+        # event the classifiers never reached should read as having no value
+        # there, not as having a value of nan, which looks like a
+        # classification that ran and failed. Keyed off the direction rather
+        # than the sequence, since the direction is what the branch below
+        # actually needs. Mirrors PeakFinder.get_plot_features - the two draw
+        # the same event, one from live fit state and one from a saved
+        # database, so they should read identically.
+        if direction in ("forward", "backward"):
+            peaks_filtered.append(event_start if direction == "forward" else event_end)
+
+            # bound_star shares the direction's line: it is the same
+            # long-end/short-end question answered from the star's position
+            # rather than from the ECD ratio, so the two belong side by side.
+            label = f"{direction.capitalize()} translocation."
+            if pd.notna(bound_star) and bound_star:
+                label += f" Bound star: {bound_star}"
+
+            fields = []
+            if pd.notna(sequence) and sequence:
+                fields.append(f"Sequence: {sequence}")
+            if pd.notna(translocation_confidence):
+                fields.append(
+                    f"Confidence: {round(float(translocation_confidence), 3)}"
+                )
+            if fields:
+                label += "\n " + " ".join(fields)
+
+            vlabel.append(label)
 
         bases.append(baseline)
         hlabel.append("Baseline")
@@ -179,14 +264,24 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                 # hlabel.append(f"Left base #{j}")
 
                 peaks.append((row.peak_loc, baseline - sign * row.peak_height))
-                plabel.append(
-                    "Peak #"
-                    + str(j)
-                    + " Filter: "
-                    + str(row.filtered)
-                    + " Class: "
-                    + str(row.classified)
-                )
+
+                # Same rule as the event label above: a peak no classifier
+                # acted on - every filter type -1 among them - carries NaN in
+                # "classified" and "classification_confidence", and those are
+                # left out rather than printed as nan. getattr because the
+                # column may not have been selected at all on an older
+                # database.
+                peak_label = "Peak #" + str(j)
+                filtered_value = getattr(row, "filtered", None)
+                if pd.notna(filtered_value):
+                    peak_label += f" Filter: {filtered_value}"
+                class_value = getattr(row, "classified", None)
+                if pd.notna(class_value):
+                    peak_label += f" Class: {class_value}"
+                confidence_value = getattr(row, "classification_confidence", None)
+                if pd.notna(confidence_value):
+                    peak_label += f" Confidence: {round(float(confidence_value), 3)}"
+                plabel.append(peak_label)
 
                 # Filter logic
                 # if row.filtered not in (0, -1):

@@ -1329,5 +1329,632 @@ class TestMeansOffTheirPeaksWarning(unittest.TestCase):
         )
 
 
+# ---------------------------------------------------------------------------
+# _classify_translocation_direction - fit sample vs classified set
+# ---------------------------------------------------------------------------
+
+
+def _ecd_event(log_ratio):
+    """
+    Build one event's sublevel metadata with a chosen log10 ECD ratio.
+
+    A single type-3 peak at index 1 makes the pre-peak ECD `csum[0]` and the
+    post-peak ECD `csum[-1] - csum[1]`, so fixing the latter at 1 makes the
+    ratio - and its log - whatever `csum[0]` is set to.
+    """
+    before = 10.0**log_ratio
+    return {
+        "filtered": np.array([np.nan, 3.0, np.nan]),
+        "sublevel_cumulative_ecd": np.array([before, before + 1.0, before + 2.0]),
+    }
+
+
+class TestTranslocationDirectionFitSample(unittest.TestCase):
+    """
+    The fit is estimated from the percentile core, but every event with a
+    usable ECD ratio must still be classified against the threshold it yields.
+
+    Fitting the untrimmed array is what broke this pass: `_histogram_for_fit`
+    takes its bin width from the IQR but its range from the extremes, so a few
+    events several decades out leave the two real populations sharing a handful
+    of bins, the six-parameter fit collapses onto one mode, and `n_components`
+    coming back 1 declines the whole pass - every event ends up with no
+    direction at all.
+    """
+
+    FIT_RESULT = {
+        "threshold": 0.05,
+        "centers": np.array([-0.3, 0.4]),
+        "params": (100.0, -0.3, 0.1, 100.0, 0.4, 0.08),
+        "n_components": 2,
+        "hist": (None, None),
+    }
+
+    def _run(self, log_ratios):
+        pf = _make_pf()
+        pf.sublevel_metadata = {
+            0: {i: _ecd_event(r) for i, r in enumerate(log_ratios)}
+        }
+        pf.event_metadata = {0: {i: {} for i in range(len(log_ratios))}}
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_translocation_direction([0])
+        return pf
+
+    @staticmethod
+    def _core_and_extremes():
+        # 90 events in a tight bimodal core, plus 5 extreme events at each end
+        # standing in for near-zero pre- or post-barcode ECDs.
+        core = list(np.linspace(-0.4, -0.2, 45)) + list(np.linspace(0.3, 0.5, 45))
+        low = [-4.0, -3.9, -3.8, -3.7, -3.6]
+        high = [3.6, 3.7, 3.8, 3.9, 4.0]
+        return core, low, high
+
+    def test_extremes_are_kept_out_of_the_fit(self):
+        core, low, high = self._core_and_extremes()
+        pf = self._run(low + core + high)
+        fitted = pf.fit_threshold.call_args[0][0]
+        self.assertEqual(fitted.size, len(core))
+        self.assertGreater(float(np.min(fitted)), max(low))
+        self.assertLess(float(np.max(fitted)), min(high))
+
+    def test_every_event_is_still_classified(self):
+        core, low, high = self._core_and_extremes()
+        ratios = low + core + high
+        pf = self._run(ratios)
+        directions = [
+            pf.event_metadata[0][i].get("translocation_direction")
+            for i in range(len(ratios))
+        ]
+        self.assertEqual(len(directions), len(ratios))
+        for i, direction in enumerate(directions):
+            self.assertIn(
+                direction,
+                ("forward", "backward"),
+                f"event {i} (log ratio {ratios[i]:.2f}) was left unclassified",
+            )
+        self.assertEqual(
+            pf._translocation_direction_results["total_events"], len(ratios)
+        )
+
+    def test_the_extremes_land_on_the_side_the_threshold_puts_them(self):
+        # The trim must not change which side of the threshold an event falls
+        # on - it only changes what the threshold was estimated from.
+        core, low, high = self._core_and_extremes()
+        ratios = low + core + high
+        pf = self._run(ratios)
+        for i in range(len(low)):
+            self.assertEqual(pf.event_metadata[0][i]["translocation_direction"], "backward")
+        for i in range(len(ratios) - len(high), len(ratios)):
+            self.assertEqual(pf.event_metadata[0][i]["translocation_direction"], "forward")
+
+    def test_small_samples_are_fitted_whole(self):
+        # Same gate as the case below, reached from the other direction:
+        # six events cannot yield a core anywhere near the bin floor.
+        ratios = [-0.3, -0.28, 0.4, 0.42, -4.0, 4.0]
+        pf = self._run(ratios)
+        fitted = pf.fit_threshold.call_args[0][0]
+        self.assertEqual(fitted.size, len(ratios))
+
+    def test_a_core_too_small_to_fit_falls_back_to_the_whole_array(self):
+        # 25 events: the core would come out under the MIN_FIT_BINS floor, so
+        # trimming would trade one bad fit for another. The full array is
+        # used instead.
+        ratios = list(np.linspace(-0.4, 0.5, 25))
+        pf = self._run(ratios)
+        fitted = pf.fit_threshold.call_args[0][0]
+        self.assertEqual(fitted.size, len(ratios))
+
+
+# ---------------------------------------------------------------------------
+# get_plot_features - label contents
+# ---------------------------------------------------------------------------
+
+
+class TestPlotFeatureLabels(unittest.TestCase):
+    """
+    The legend must not claim a value the metadata does not carry: an
+    unclassified peak has no class, and printing "Class: nan" reads as a
+    classification that ran and failed rather than one never attempted.
+    """
+
+    NAN = np.nan
+
+    def _sublevel(self, drop=()):
+        filtered = [self.NAN, -1.0, 3.0, self.NAN]
+        data = {
+            "sublevel_start_times": np.array([0.0, 10.0, 20.0, 30.0]),
+            "right_ips": np.zeros(4),
+            "peak_id": [None, 1, 2, None],
+            "peak_loc": np.array([0.0, 10.0, 20.0, 30.0]),
+            "peak_height": np.full(4, 500.0),
+            "filtered": np.array(filtered, dtype=float),
+            "classified": np.array([self.NAN, self.NAN, 0.0, self.NAN]),
+            "classification_confidence": np.array(
+                [self.NAN, self.NAN, 0.87, self.NAN]
+            ),
+        }
+        for key in drop:
+            del data[key]
+        return data
+
+    def _event(self, **overrides):
+        event = {
+            "baseline_current": -16000.0,
+            "baseline_stdev": 50.0,
+            "unfolded_level": 400.0,
+            "translocation_direction": "forward",
+            "translocation_confidence": 1.0,
+            "sequence": "1010",
+            "bound_star": "long end",
+        }
+        event.update(overrides)
+        return event
+
+    def _run(self, event=None, sublevel=None):
+        pf = _make_pf()
+        pf.eventfitting_status = {0: True}
+        pf.event_metadata = {0: {0: self._event() if event is None else event}}
+        pf.sublevel_metadata = {
+            0: {0: self._sublevel() if sublevel is None else sublevel}
+        }
+        return pf.get_plot_features(0, 0)
+
+    def test_bound_star_shares_the_translocation_line(self):
+        _, _, _, vlabel, _, _ = self._run()
+        self.assertEqual(len(vlabel), 1)
+        first_line = vlabel[0].split("\n")[0]
+        self.assertIn("Forward translocation.", first_line)
+        self.assertIn("Bound star: long end", first_line)
+
+    def test_bound_star_omitted_when_absent(self):
+        _, _, _, vlabel, _, _ = self._run(event=self._event(bound_star=None))
+        self.assertNotIn("Bound star", vlabel[0])
+        self.assertIn("Forward translocation.", vlabel[0])
+
+    def test_bound_star_absent_key_does_not_raise(self):
+        event = self._event()
+        del event["bound_star"]
+        _, _, _, vlabel, _, _ = self._run(event=event)
+        self.assertNotIn("Bound star", vlabel[0])
+
+    def test_missing_translocation_confidence_is_omitted_not_nan(self):
+        _, _, _, vlabel, _, _ = self._run(
+            event=self._event(translocation_confidence=None)
+        )
+        self.assertNotIn("Confidence", vlabel[0])
+        self.assertNotIn("nan", vlabel[0])
+        self.assertIn("Sequence: 1010", vlabel[0])
+
+    def test_no_direction_yields_no_translocation_label(self):
+        _, _, _, vlabel, _, _ = self._run(
+            event=self._event(translocation_direction=None)
+        )
+        self.assertEqual(vlabel, [])
+
+    def test_unclassified_peak_omits_class_and_confidence(self):
+        _, _, _, _, _, plabel = self._run()
+        # Peak #1 is the filter -1 peak: no classifier ever acted on it.
+        unclassified = next(p for p in plabel if p.startswith("Peak #1"))
+        self.assertIn("Filter: -1.0", unclassified)
+        self.assertNotIn("Class", unclassified)
+        self.assertNotIn("Confidence", unclassified)
+        self.assertNotIn("nan", unclassified)
+
+    def test_classified_peak_keeps_class_and_confidence(self):
+        _, _, _, _, _, plabel = self._run()
+        classified = next(p for p in plabel if p.startswith("Peak #2"))
+        self.assertIn("Filter: 3.0", classified)
+        self.assertIn("Class: 0.0", classified)
+        self.assertIn("Confidence: 0.87", classified)
+
+    def test_absent_classification_arrays_do_not_break_the_plot(self):
+        # Classification never ran, so the arrays are missing entirely rather
+        # than full of NaN. That must not take the whole figure down with it.
+        _, _, _, _, _, plabel = self._run(
+            sublevel=self._sublevel(
+                drop=("classified", "classification_confidence")
+            )
+        )
+        self.assertTrue(plabel)
+        for entry in plabel:
+            self.assertNotIn("Class", entry)
+            self.assertNotIn("nan", entry)
+
+
+# ---------------------------------------------------------------------------
+# _classify_bound_star
+# ---------------------------------------------------------------------------
+
+
+def _star_event(
+    filtered,
+    prominence,
+    direction,
+    sequence="0000",
+    max_blockage=None,
+    unfolded_level=500.0,
+    baseline_stdev=10.0,
+):
+    """
+    Build the (sublevel, event) metadata pair for one synthetic event.
+
+    `filtered`, `prominence` and `max_blockage` are per-sublevel and
+    index-aligned, NaN on sublevels that are not peaks, exactly as
+    _populate_sublevel_metadata builds them.
+
+    Blockages default far clear of the floor - 2 × unfolded level + 3σ =
+    1030 pA with these defaults and the fixture's Higher Filter Threshold of
+    3 - so tests about position and prominence are not silently testing the
+    depth criterion as well.
+    """
+    sublevel = {
+        "filtered": np.array(filtered, dtype=float),
+        "prominence": np.array(prominence, dtype=float),
+        "max_blockage": np.array(
+            [5000.0] * len(filtered) if max_blockage is None else max_blockage,
+            dtype=float,
+        ),
+    }
+    event = {
+        "translocation_direction": direction,
+        "sequence": sequence,
+        "bound_star": None,
+        "unfolded_level": unfolded_level,
+        "baseline_stdev": baseline_stdev,
+    }
+    return sublevel, event
+
+
+class TestClassifyBoundStar(unittest.TestCase):
+    NAN = np.nan
+
+    def _run(self, **cases):
+        pf = _make_pf()
+        pf.sublevel_metadata = {0: {k: v[0] for k, v in cases.items()}}
+        pf.event_metadata = {0: {k: v[1] for k, v in cases.items()}}
+        pf._classify_bound_star([0])
+        return pf
+
+    def _label(self, pf, key):
+        return pf.event_metadata[0][key]["bound_star"]
+
+    def test_star_before_barcode_on_forward_event_is_long_end(self):
+        # The star entered the pore first and the trace runs in molecule order,
+        # so no correction applies.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "forward",
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "long end")
+
+    def test_star_after_barcode_on_backward_event_is_long_end(self):
+        # A backward event ran the construct through in reverse, so a star seen
+        # last in the trace went through the pore first. Same molecular end as
+        # the case above, and the label must agree with it.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 1.1, 1.0, 1.9, self.NAN],
+                "backward",
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "long end")
+
+    def test_star_before_barcode_on_backward_event_is_short_end(self):
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "backward",
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "short end")
+
+    def test_most_prominent_candidate_decides(self):
+        # Candidates either side of the barcode; the taller one at the end wins
+        # and, on a backward event, reads as having gone through first.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 0.65, 1.10, 1.05, 1.08, 1.02, 1.90, self.NAN],
+                "backward",
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "long end")
+        self.assertEqual(pf._bound_star_results["multi_candidate"], 1)
+
+    def test_equally_prominent_candidates_resolve_to_the_earlier_peak(self):
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 5.0, 1.0, 1.0, 5.0, self.NAN],
+                "forward",
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "long end")
+
+    def test_peak_inside_the_barcode_is_not_a_candidate(self):
+        # A -1 peak between type-3 peaks has no first/last reading, so it is
+        # ignored however prominent it is.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, 3.0, -1.0, 3.0, self.NAN],
+                [self.NAN, 1.0, 9.9, 1.0, self.NAN],
+                "forward",
+            )
+        )
+        self.assertIsNone(self._label(pf, "ev"))
+        self.assertEqual(pf._bound_star_results["no_star"], 1)
+
+    def test_event_without_type3_peaks_gets_no_label(self):
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 1.0, self.NAN],
+                [self.NAN, 2.0, 1.0, self.NAN],
+                "forward",
+                sequence="",
+            )
+        )
+        self.assertIsNone(self._label(pf, "ev"))
+
+    def test_star_without_a_direction_is_left_unlabelled_and_counted(self):
+        # Events dropped by the percentile filter in
+        # _classify_translocation_direction have no direction to correct
+        # against, so they are reported separately rather than as "no star".
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                None,
+            )
+        )
+        self.assertIsNone(self._label(pf, "ev"))
+        self.assertEqual(pf._bound_star_results["unresolved_direction"], 1)
+        self.assertEqual(pf._bound_star_results["no_star"], 0)
+
+    def test_counts_cover_only_sequence_bearing_events(self):
+        pf = self._run(
+            with_seq=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                "forward",
+            ),
+            without_seq=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                "forward",
+                sequence="",
+            ),
+        )
+        results = pf._bound_star_results
+        self.assertEqual(results["total_events"], 2)
+        self.assertEqual(results["sequence_events"], 1)
+        self.assertEqual(results["with_star"], 1)
+        # The label itself is still written for the event with no sequence.
+        self.assertEqual(self._label(pf, "without_seq"), "long end")
+
+    def test_opposite_observations_agree_once_corrected(self):
+        # A star seen first on a forward event and last on a backward one sit
+        # on the same molecular end, and must come out with the same label.
+        pf = self._run(
+            fwd=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                "forward",
+            ),
+            bwd=_star_event(
+                [self.NAN, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 1.0, 1.0, 2.0, self.NAN],
+                "backward",
+            ),
+        )
+        results = pf._bound_star_results
+        self.assertEqual(results["long_end"], 2)
+        self.assertEqual(results["short_end"], 0)
+
+    def test_peak_below_the_depth_floor_is_not_a_star(self):
+        # Floor is 2 × unfolded level + 3σ = 1030; a 900 pA peak is a short
+        # fold, not a bound star.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "forward",
+                max_blockage=[self.NAN, 900.0, 400.0, 400.0, self.NAN],
+            )
+        )
+        self.assertIsNone(self._label(pf, "ev"))
+        self.assertEqual(pf._bound_star_results["no_star"], 1)
+        self.assertEqual(pf._bound_star_results["no_height_reference"], 0)
+
+    def test_peak_above_the_depth_floor_is_a_star(self):
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "forward",
+                max_blockage=[self.NAN, 1031.0, 400.0, 400.0, self.NAN],
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "long end")
+
+    def test_the_floor_follows_the_event_unfolded_level(self):
+        # Identical peak, two events: the floor is per-event, so the same
+        # blockage clears one unfolded level and not the other.
+        pf = self._run(
+            shallow=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "forward",
+                max_blockage=[self.NAN, 1500.0, 400.0, 400.0, self.NAN],
+                unfolded_level=500.0,
+            ),
+            deep=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "forward",
+                max_blockage=[self.NAN, 1500.0, 400.0, 400.0, self.NAN],
+                unfolded_level=1000.0,
+            ),
+        )
+        self.assertEqual(self._label(pf, "shallow"), "long end")
+        self.assertIsNone(self._label(pf, "deep"))
+
+    def test_prominence_decides_only_among_peaks_clearing_the_floor(self):
+        # The most prominent candidate is too shallow to be a star, so the
+        # shorter-prominence peak that does clear the floor wins - and it sits
+        # on the other side of the barcode, so the label turns on it.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 9.0, 1.0, 1.0, 2.0, self.NAN],
+                "forward",
+                max_blockage=[self.NAN, 900.0, 400.0, 400.0, 5000.0, self.NAN],
+            )
+        )
+        self.assertEqual(self._label(pf, "ev"), "short end")
+        # Only one candidate survived the floor, so nothing was collapsed.
+        self.assertEqual(pf._bound_star_results["multi_candidate"], 0)
+
+    def test_missing_unfolded_level_is_counted_apart_from_no_star(self):
+        # Folding classification declined, so no event has an unfolded level
+        # and none can be judged. That is not the same as having no star.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.8, 1.2, 1.0, self.NAN],
+                "forward",
+                unfolded_level=None,
+            )
+        )
+        self.assertIsNone(self._label(pf, "ev"))
+        self.assertEqual(pf._bound_star_results["no_height_reference"], 1)
+        self.assertEqual(pf._bound_star_results["no_star"], 0)
+
+    def test_no_candidates_outranks_a_missing_floor(self):
+        # An event with no candidate peaks at all is starless regardless of
+        # whether a floor could have been computed.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, 3.0, 3.0, self.NAN],
+                [self.NAN, 1.2, 1.0, self.NAN],
+                "forward",
+                unfolded_level=None,
+            )
+        )
+        self.assertEqual(pf._bound_star_results["no_star"], 1)
+        self.assertEqual(pf._bound_star_results["no_height_reference"], 0)
+
+    def test_per_sequence_buckets_split_by_sequence(self):
+        pf = self._run(
+            a_star=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                "forward",
+                sequence="1010",
+            ),
+            a_bare=_star_event(
+                [self.NAN, 3.0, 3.0, self.NAN],
+                [self.NAN, 1.0, 1.0, self.NAN],
+                "forward",
+                sequence="1010",
+            ),
+            b_star=_star_event(
+                [self.NAN, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 1.0, 1.0, 2.0, self.NAN],
+                "forward",
+                sequence="0000",
+            ),
+        )
+        per_sequence = pf._bound_star_results["per_sequence"]
+        self.assertEqual(set(per_sequence), {"1010", "0000"})
+
+        first = per_sequence["1010"]
+        self.assertEqual(first["events"], 2)
+        self.assertEqual(first["with_star"], 1)
+        self.assertEqual(first["long_end"], 1)
+        self.assertEqual(first["short_end"], 0)
+        self.assertEqual(first["no_star"], 1)
+
+        second = per_sequence["0000"]
+        self.assertEqual(second["events"], 1)
+        self.assertEqual(second["with_star"], 1)
+        self.assertEqual(second["long_end"], 0)
+        self.assertEqual(second["short_end"], 1)
+        self.assertEqual(second["no_star"], 0)
+
+    def test_per_sequence_buckets_reconcile_with_the_totals(self):
+        pf = self._run(
+            starred=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                "forward",
+                sequence="11",
+            ),
+            bare=_star_event(
+                [self.NAN, 3.0, 3.0, self.NAN],
+                [self.NAN, 1.0, 1.0, self.NAN],
+                "forward",
+                sequence="00",
+            ),
+            no_direction=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                None,
+                sequence="00",
+            ),
+            # No sequence, so it must not appear in any bucket.
+            unsequenced=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 2.0, 1.0, 1.0, self.NAN],
+                "forward",
+                sequence="",
+            ),
+        )
+        results = pf._bound_star_results
+        per_sequence = results["per_sequence"]
+        self.assertEqual(set(per_sequence), {"11", "00"})
+        for key in ("events", "with_star", "long_end", "short_end", "no_star"):
+            total_key = "sequence_events" if key == "events" else key
+            self.assertEqual(
+                sum(row[key] for row in per_sequence.values()),
+                results[total_key],
+                f"{key} does not reconcile with the overall total",
+            )
+        for key in ("unresolved_direction", "no_height_reference"):
+            self.assertEqual(
+                sum(row[key] for row in per_sequence.values()),
+                results[key],
+            )
+        # Each bucket's own columns account for every event in it.
+        for row in per_sequence.values():
+            self.assertEqual(
+                row["with_star"]
+                + row["no_star"]
+                + row["unresolved_direction"]
+                + row["no_height_reference"],
+                row["events"],
+            )
+
+    def test_losing_candidates_keep_their_labels(self):
+        # Selection only: the pass must not relabel the peaks it did not pick,
+        # or the peak-filtering statistics would shift under it.
+        filtered = [self.NAN, -1.0, 3.0, 3.0, -1.0, self.NAN]
+        pf = self._run(
+            ev=_star_event(
+                filtered,
+                [self.NAN, 0.5, 1.0, 1.0, 4.0, self.NAN],
+                "forward",
+            )
+        )
+        np.testing.assert_array_equal(
+            pf.sublevel_metadata[0]["ev"]["filtered"],
+            np.array(filtered, dtype=float),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

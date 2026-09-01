@@ -57,6 +57,30 @@ class PeakFinder(MetaEventFitter):
     #: constrained; see ``_histogram_for_fit`` for the measurements behind this.
     MIN_FIT_BINS = 30
 
+    #: Percentile core of the log-ECD-ratio distribution that the translocation
+    #: direction fit is run on. ``_histogram_for_fit`` takes its bin width from
+    #: the IQR, which is outlier-robust, but its range from the extremes, which
+    #: is not - so a few events whose pre- or post-barcode ECD is near zero, and
+    #: whose log ratio is therefore several decades out, stretch the histogram
+    #: until the two real populations share a handful of bins. Measured on this
+    #: dataset's own distribution (n=690, centres -0.307 and 0.385): the two
+    #: populations span 25 bins clean, 11.8 with one event two decades out, and
+    #: 6.8 with three events three decades out - at which point the six
+    #: parameters are underdetermined and, per ``_histogram_for_fit``, the fit
+    #: can converge with both Gaussians on the same mode while passing every
+    #: convergence check. ``n_components`` then comes back 1 and the whole pass
+    #: declines, leaving every event with no direction at all.
+    #:
+    #: The threshold this fit produces is applied to *every* event regardless,
+    #: so unlike the pre-filter this replaces, the window never decides which
+    #: events get classified - only which ones the fit is estimated from.
+    #:
+    #: The trim is skipped when the core comes out below ``MIN_FIT_BINS``, which
+    #: is the only gate it needs: the core is about 90% of the sample, so
+    #: reaching that floor already requires 34 events, and a separate
+    #: minimum-event count in front of it could never be the binding test.
+    DIRECTION_FIT_PERCENTILES = (5.0, 95.0)
+
     #: Minimum separation, in units of the dominant peak's FWHM, that two
     #: histogram maxima must have before they are accepted as seeds for the two
     #: components of the double-Gaussian fit. Two maxima closer than this are
@@ -405,39 +429,39 @@ class PeakFinder(MetaEventFitter):
             )
             hlabel.append(f"unfolded level {t1_std:+d}σ")
 
-            if self.event_metadata[channel][index]["sequence"] is not None:
-                translocation_confidence = self.event_metadata[channel][index].get(
-                    "translocation_confidence"
+            # Only fields that are actually populated are written into the
+            # label. An event the classifiers never reached should read as
+            # having no value there, not as having a value of nan, which looks
+            # like a classification that ran and failed.
+            event_data = self.event_metadata[channel][index]
+            direction = event_data.get("translocation_direction")
+            if direction in ("forward", "backward"):
+                start_times = self.sublevel_metadata[channel][index][
+                    "sublevel_start_times"
+                ]
+                peaks_filtered.append(
+                    start_times[1] if direction == "forward" else start_times[-1]
                 )
-                confidence_label = (
-                    "nan"
-                    if translocation_confidence is None
-                    else str(round(translocation_confidence, 3))
-                )
-                if (
-                    self.event_metadata[channel][index]["translocation_direction"]
-                    == "forward"
-                ):
-                    peaks_filtered.append(
-                        self.sublevel_metadata[channel][index]["sublevel_start_times"][
-                            1
-                        ]
-                    )
-                    vlabel.append(
-                        f"Forward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']} Confidence: {confidence_label}"
-                    )
-                elif (
-                    self.event_metadata[channel][index]["translocation_direction"]
-                    == "backward"
-                ):
-                    peaks_filtered.append(
-                        self.sublevel_metadata[channel][index]["sublevel_start_times"][
-                            -1
-                        ]
-                    )
-                    vlabel.append(
-                        f"Backward translocation.\n Sequence: {self.event_metadata[channel][index]['sequence']} Confidence: {confidence_label}"
-                    )
+
+                # bound_star shares the direction's line: it is the same
+                # forward/backward question answered from the star's position
+                # rather than from the ECD ratio, so the two belong side by side.
+                label = f"{direction.capitalize()} translocation."
+                bound_star = event_data.get("bound_star")
+                if bound_star:
+                    label += f" Bound star: {bound_star}"
+
+                fields = []
+                sequence = event_data.get("sequence")
+                if sequence:
+                    fields.append(f"Sequence: {sequence}")
+                translocation_confidence = event_data.get("translocation_confidence")
+                if translocation_confidence is not None:
+                    fields.append(f"Confidence: {round(translocation_confidence, 3)}")
+                if fields:
+                    label += "\n " + " ".join(fields)
+
+                vlabel.append(label)
 
             for i in range(len(self.sublevel_metadata[channel][index]["right_ips"])):
 
@@ -466,23 +490,43 @@ class PeakFinder(MetaEventFitter):
                             + baseline,
                         )
                     )
-                    plabel.append(
-                        "Peak #"
-                        + str(j)
-                        + " Filter: "
-                        + str(self.sublevel_metadata[channel][index]["filtered"][i])
-                        + " Class: "
-                        + str(self.sublevel_metadata[channel][index]["classified"][i])
-                        + " Confidence: "
-                        + str(
-                            round(
-                                self.sublevel_metadata[channel][index][
-                                    "classification_confidence"
-                                ][i],
-                                3,
-                            )
-                        )
-                    )
+                    # Same rule as the event label above: a peak no classifier
+                    # acted on - every filter type -1 among them - carries NaN
+                    # in "classified" and "classification_confidence", and those
+                    # are left out rather than printed as nan. The arrays
+                    # themselves are absent entirely when classification never
+                    # ran, so their presence is checked before their contents.
+                    sublevel = self.sublevel_metadata[channel][index]
+                    peak_label = "Peak #" + str(j)
+
+                    filter_values = sublevel.get("filtered")
+                    if (
+                        filter_values is not None
+                        and i < len(filter_values)
+                        and filter_values[i] is not None
+                        and not np.isnan(filter_values[i])
+                    ):
+                        peak_label += f" Filter: {filter_values[i]}"
+
+                    class_values = sublevel.get("classified")
+                    if (
+                        class_values is not None
+                        and i < len(class_values)
+                        and class_values[i] is not None
+                        and not np.isnan(class_values[i])
+                    ):
+                        peak_label += f" Class: {class_values[i]}"
+
+                    confidence_values = sublevel.get("classification_confidence")
+                    if (
+                        confidence_values is not None
+                        and i < len(confidence_values)
+                        and confidence_values[i] is not None
+                        and not np.isnan(confidence_values[i])
+                    ):
+                        peak_label += f" Confidence: {round(confidence_values[i], 3)}"
+
+                    plabel.append(peak_label)
 
                     j += 1
 
@@ -1550,6 +1594,7 @@ class PeakFinder(MetaEventFitter):
         event_metadata["translocation_direction"] = None  # type: ignore[assignment]
         event_metadata["translocation_confidence"] = None  # type: ignore[assignment]
         event_metadata["sequence"] = None  # type: ignore[assignment]
+        event_metadata["bound_star"] = None  # type: ignore[assignment]
 
         return event_metadata
 
@@ -1589,6 +1634,7 @@ class PeakFinder(MetaEventFitter):
             "translocation_direction": str,
             "translocation_confidence": float,
             "sequence": str,
+            "bound_star": str,
         }
 
         return metadata_types
@@ -1664,6 +1710,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units["translocation_direction"] = None
         metadata_units["translocation_confidence"] = None
         metadata_units["sequence"] = None
+        metadata_units["bound_star"] = None
 
         return metadata_units
 
@@ -1900,6 +1947,11 @@ class PeakFinder(MetaEventFitter):
                         sequence = sequence[::-1]
                     self.event_metadata[ch][event_index]["sequence"] = sequence
 
+        # Bound-star detection runs last: it needs the translocation direction
+        # to put each star's observed position into the molecule's frame, and
+        # the sequence strings its report section counts against.
+        self._classify_bound_star(channels)
+
         # Save classification report after all post-processing is complete
         self._save_classification_report()
 
@@ -2102,9 +2154,23 @@ class PeakFinder(MetaEventFitter):
         :rtype: str
         :raises RuntimeError: if the channel's peak statistics cannot be assembled
         """
-        # Get the base fitting report from parent class
-
-        base_report = super().report_channel_status(channel, init)
+        # Get the base fitting report from parent class.
+        #
+        # NOTE: when channel is None, MetaEventFitter.report_channel_status()
+        # loops over every channel and calls `self.report_channel_status(ch,
+        # init)` for each one. Because `self` is this PeakFinder instance,
+        # that inner call dispatches back to *this* override rather than the
+        # base per-channel branch, so the classification section below would
+        # get appended once per channel plus once more here - producing a
+        # report duplicated N+1 times for N channels. Build the per-channel
+        # base text ourselves via explicit super() calls so the classification
+        # section is only ever appended once, right below.
+        if channel is None:
+            base_report = ""
+            for ch in self.get_channels():
+                base_report += super().report_channel_status(ch, init)
+        else:
+            base_report = super().report_channel_status(channel, init)
         # event_total = loader.get_num_events(channel)
         # fitted_total = len(self.event_metadata.get(channel, {}))
         # base_report = f"\nCh{channel}: {fitted_total}/{event_total} good fits\n"
@@ -2155,11 +2221,6 @@ class PeakFinder(MetaEventFitter):
             unfolded_count = cast(int, results["unfolded_count"])
 
             classification_report += f"\n  Total classified: {total_events} events"
-            if "ecd_filtered_events" in results:
-                ecd_filtered = cast(int, results["ecd_filtered_events"])
-                classification_report += (
-                    f"\n  ECD-filtered outliers: {ecd_filtered} events"
-                )
             classification_report += (
                 f"\n  Lower center (unfolded): {lower_center:.2f} pA"
             )
@@ -2356,6 +2417,117 @@ class PeakFinder(MetaEventFitter):
                     pct = count / total_with_sequence * 100
                     classification_report += f"\n  '{seq}': {count} ({pct:.1f}%)"
 
+        # Bound-star classification across all channels
+        if hasattr(self, "_bound_star_results"):
+            star_stats = self._bound_star_results
+            classification_report += "\n\nBound Star Classification:"
+
+            sequence_events = star_stats.get("sequence_events", 0)
+            with_star = star_stats.get("with_star", 0)
+            star_long_end = star_stats.get("long_end", 0)
+            star_short_end = star_stats.get("short_end", 0)
+            no_star = star_stats.get("no_star", 0)
+            no_height_reference = star_stats.get("no_height_reference", 0)
+
+            classification_report += (
+                f"\n  Events with an assigned sequence: {sequence_events}"
+            )
+
+            if sequence_events > 0:
+                classification_report += (
+                    f"\n  With a bound star: {with_star} "
+                    f"({with_star/sequence_events:.1%})"
+                )
+                if with_star > 0:
+                    classification_report += (
+                        f"\n    Long end (star translocates first): "
+                        f"{star_long_end} ({star_long_end/with_star:.1%})"
+                    )
+                    classification_report += (
+                        f"\n    Short end (star translocates last): "
+                        f"{star_short_end} ({star_short_end/with_star:.1%})"
+                    )
+                classification_report += (
+                    f"\n  Without a bound star: {no_star} "
+                    f"({no_star/sequence_events:.1%})"
+                )
+                # Only surfaced when it actually fires, which means folding
+                # classification declined and no event could be judged at all.
+                # Silence here would report a whole run as starless.
+                if no_height_reference:
+                    classification_report += (
+                        f"\n  Candidate peaks but no unfolded level to size "
+                        f"them against: {no_height_reference} "
+                        f"({no_height_reference/sequence_events:.1%})"
+                    )
+            else:
+                classification_report += "\n  No sequences assigned; nothing to report"
+
+            # Per-sequence breakdown. The three whole-event columns are shares
+            # of that sequence's own events; long end and short end are shares
+            # of its starred events, matching the denominators used above.
+            per_sequence = star_stats.get("per_sequence", {})
+            if per_sequence:
+                show_unresolved = any(
+                    row.get("unresolved_direction", 0) > 0
+                    for row in per_sequence.values()
+                )
+                show_no_floor = any(
+                    row.get("no_height_reference", 0) > 0
+                    for row in per_sequence.values()
+                )
+                seq_width = max(
+                    [len("sequence")] + [len(seq) for seq in per_sequence]
+                )
+                classification_report += "\n\n  Breakdown by sequence:"
+                header = (
+                    f"\n    {'sequence':<{seq_width}}  {'events':>7}  "
+                    f"{'with star':>16}  {'long end':>15}  {'short end':>15}  "
+                    f"{'unbound':>16}"
+                )
+                if show_unresolved:
+                    header += f"  {'no direction':>15}"
+                if show_no_floor:
+                    header += f"  {'no floor':>15}"
+                classification_report += header
+
+                for seq, row in sorted(
+                    per_sequence.items(),
+                    key=lambda item: (-item[1]["events"], item[0]),
+                ):
+                    events = row["events"]
+                    row_star = row["with_star"]
+                    row_long_end = row["long_end"]
+                    row_short_end = row["short_end"]
+                    row_unbound = row["no_star"]
+                    star_text = f"{row_star} ({row_star/events:.1%})"
+                    unbound_text = f"{row_unbound} ({row_unbound/events:.1%})"
+                    # A sequence with no starred events has no denominator for
+                    # the long/short split, so it reports the count alone
+                    # rather than a percentage of nothing.
+                    if row_star > 0:
+                        long_text = f"{row_long_end} ({row_long_end/row_star:.1%})"
+                        short_text = f"{row_short_end} ({row_short_end/row_star:.1%})"
+                    else:
+                        long_text = f"{row_long_end} (-)"
+                        short_text = f"{row_short_end} (-)"
+                    line = (
+                        f"\n    {seq:<{seq_width}}  {events:>7}  "
+                        f"{star_text:>16}  {long_text:>15}  "
+                        f"{short_text:>15}  {unbound_text:>16}"
+                    )
+                    if show_unresolved:
+                        row_unresolved = row["unresolved_direction"]
+                        unresolved_text = (
+                            f"{row_unresolved} ({row_unresolved/events:.1%})"
+                        )
+                        line += f"  {unresolved_text:>15}"
+                    if show_no_floor:
+                        row_no_floor = row["no_height_reference"]
+                        no_floor_text = f"{row_no_floor} ({row_no_floor/events:.1%})"
+                        line += f"  {no_floor_text:>15}"
+                    classification_report += line
+
         return base_report + classification_report
 
     ###################################################################################################################
@@ -2531,9 +2703,6 @@ class PeakFinder(MetaEventFitter):
             "higher_center": higher_center,
             "threshold": threshold,
             "ratio": ratio,
-            # No ECD pre-filter is applied any more, so nothing is excluded from
-            # the fit. Key retained because report_channel_status reads it.
-            "ecd_filtered_events": 0,
         }
 
         # Plotting: always create and save plot using the fit's histogram bins
@@ -2572,7 +2741,7 @@ class PeakFinder(MetaEventFitter):
                         width=widths,
                         alpha=0.5,
                         color="gray",
-                        label="All Events (incl. outliers)",
+                        label="All Events",
                     )
                     hist_bins = bins
                 except Exception:
@@ -2582,7 +2751,7 @@ class PeakFinder(MetaEventFitter):
                         density=False,
                         alpha=0.5,
                         color="gray",
-                        label="All Events (incl. outliers)",
+                        label="All Events",
                     )
                     hist_bins = None
             else:
@@ -2592,7 +2761,7 @@ class PeakFinder(MetaEventFitter):
                     density=False,
                     alpha=0.5,
                     color="gray",
-                    label="All Events (incl. outliers)",
+                    label="All Events",
                 )
                 hist_bins = None
 
@@ -2601,9 +2770,6 @@ class PeakFinder(MetaEventFitter):
             higher_count = int(np.sum(class_mask))
             lower_count = int(len(arr) - higher_count)
             total_events_plot = len(arr)
-            # Outliers = events present in full data but not in filtered data used for fit
-            n_outliers = int(max(0, arr_all.size - arr.size))
-            pct_outliers = n_outliers / arr_all.size if arr_all.size > 0 else 0.0
 
             # Plot per-class histograms using same bins when available
             try:
@@ -2662,9 +2828,6 @@ class PeakFinder(MetaEventFitter):
                 "folded/unfolded classification",
             )
 
-            # The curve the threshold below was actually chosen from
-            self._overlay_smoothing_spline(ax, bt)
-
             # Vertical threshold line (value shown in info textbox)
             ax.axvline(
                 threshold,
@@ -2682,14 +2845,10 @@ class PeakFinder(MetaEventFitter):
                 pct_high = (
                     higher_count / total_events_plot if total_events_plot > 0 else 0.0
                 )
-                pct_outliers = (
-                    n_outliers / total_events_plot if total_events_plot > 0 else 0.0
-                )
                 info_text = (
-                    f"Total Events (used for fit): {total_events_plot}\n"
+                    f"Total Events: {total_events_plot}\n"
                     f"Unfolded: {lower_count} ({pct_low:.1%})\n"
                     f"Folded: {higher_count} ({pct_high:.1%})\n"
-                    f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
                 ax.text(
                     0.02,
@@ -2707,7 +2866,6 @@ class PeakFinder(MetaEventFitter):
                     exc_info=True,
                 )
 
-            # Outlier info shown in textbox; do not add legend entry
 
             ax.set_xlabel("Longest Blockage Level (pA)")
             ax.set_ylabel("Counts")
@@ -2910,7 +3068,7 @@ class PeakFinder(MetaEventFitter):
                         width=widths,
                         alpha=0.5,
                         color="gray",
-                        label="All Peaks (incl. outliers)",
+                        label="All Peaks",
                     )
                     hist_bins = bins
                 except Exception:
@@ -2920,7 +3078,7 @@ class PeakFinder(MetaEventFitter):
                         density=False,
                         alpha=0.5,
                         color="gray",
-                        label="All Peaks (incl. outliers)",
+                        label="All Peaks",
                     )
                     hist_bins = None
             else:
@@ -2930,18 +3088,13 @@ class PeakFinder(MetaEventFitter):
                     density=False,
                     alpha=0.5,
                     color="gray",
-                    label="All Peaks (incl. outliers)",
+                    label="All Peaks",
                 )
                 hist_bins = None
 
             lower_count = int(np.sum(class_labels == 0))
             higher_count = int(np.sum(class_labels == 1))
             total_peaks = len(arr)
-            # Every peak handed to the fit is also plotted - jittering a
-            # degenerate array preserves its length - so nothing is excluded.
-            # The count is still reported so the plot states that explicitly
-            # rather than leaving the reader to assume it.
-            n_outliers = 0
 
             self._overlay_fitted_gaussians(
                 ax,
@@ -2991,12 +3144,6 @@ class PeakFinder(MetaEventFitter):
                         label=label,
                     )
 
-            # The curve the threshold below was actually chosen from. Drawn
-            # even in the single-population case, where there is no threshold
-            # line to justify: the spline is then the clearest evidence on the
-            # plot that the distribution has no valley to split on.
-            self._overlay_smoothing_spline(ax, bt)
-
             # Vertical threshold line
             if threshold is not None:
                 ax.axvline(
@@ -3011,13 +3158,11 @@ class PeakFinder(MetaEventFitter):
             try:
                 pct_low = lower_count / total_peaks if total_peaks > 0 else 0.0
                 pct_high = higher_count / total_peaks if total_peaks > 0 else 0.0
-                pct_outliers = n_outliers / total_peaks if total_peaks > 0 else 0.0
                 info_text = (
-                    f"Total Peaks (used for fit): {total_peaks}\n"
+                    f"Total Peaks: {total_peaks}\n"
                     f"Selected populations: {n_components}\n"
                     f"Class 0: {lower_count} ({pct_low:.1%})\n"
                     f"Class 1: {higher_count} ({pct_high:.1%})\n"
-                    f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
                 ax.text(
                     0.02,
@@ -3035,7 +3180,6 @@ class PeakFinder(MetaEventFitter):
                     exc_info=True,
                 )
 
-            # Outlier info shown in textbox; do not add legend entry
 
             ax.set_xlabel("Peak Prominence (pA)")
             ax.set_ylabel("Counts")
@@ -3143,29 +3287,39 @@ class PeakFinder(MetaEventFitter):
 
         log_ecds_arr = np.asarray(log_ecds, dtype=float)
 
-        # ECD outlier filtering: restrict to 5th-95th percentile to avoid extreme ratios
-        try:
-            p5 = np.percentile(log_ecds_arr, 5)
-            p95 = np.percentile(log_ecds_arr, 95)
-            mask = (log_ecds_arr >= p5) & (log_ecds_arr <= p95)
-            if np.sum(mask) < 2:
-                # not enough data after filtering
-                self.logger.warning(
-                    "Translocation direction: insufficient events after ECD percentile filtering"
-                )
-                self._translocation_direction_results = {
-                    "skipped": True,
-                    "reason": "insufficient events after ECD filtering",
-                }
-                return
-            filtered_log_ecds = log_ecds_arr[mask]
-            filtered_refs = [event_refs[i] for i, m in enumerate(mask) if m]
-        except Exception:
-            filtered_log_ecds = log_ecds_arr
-            filtered_refs = event_refs
+        # Estimate the fit from the percentile core, then classify everything
+        # with the threshold it produces. See DIRECTION_FIT_PERCENTILES for why
+        # the untrimmed array cannot be fitted reliably: a few near-zero ECDs
+        # stretch the histogram until the two populations share too few bins and
+        # the fit collapses onto one mode, declining the pass outright.
+        #
+        # This is deliberately not the old pre-filter, which trimmed the fit and
+        # the classification together and so left the excluded events with no
+        # direction at all. Only the estimate is trimmed here.
+        fit_sample = log_ecds_arr
+        low, high = np.percentile(log_ecds_arr, self.DIRECTION_FIT_PERCENTILES)
+        core = log_ecds_arr[(log_ecds_arr >= low) & (log_ecds_arr <= high)]
+        # A core below the bin floor cannot be fitted any better than the whole
+        # array - a degenerate distribution piled on one value does this - so
+        # the trim is skipped there and the untrimmed array is the better of two
+        # bad options. That single test also covers a small sample, and there is
+        # deliberately no separate minimum-event count in front of it: the core
+        # is about 90% of n, so reaching MIN_FIT_BINS points already requires
+        # n >= 34, and any threshold below that could never be the binding one.
+        if core.size >= self.MIN_FIT_BINS:
+            fit_sample = core
+            self.logger.info(
+                f"Translocation direction: fitting on the "
+                f"{self.DIRECTION_FIT_PERCENTILES[0]:g}-"
+                f"{self.DIRECTION_FIT_PERCENTILES[1]:g} percentile core "
+                f"({core.size} of {log_ecds_arr.size} events, "
+                f"log-ECD ratio {low:.3f} to {high:.3f}); all "
+                f"{log_ecds_arr.size} are classified against the resulting "
+                f"threshold"
+            )
 
         try:
-            bt = self.fit_threshold(filtered_log_ecds)
+            bt = self.fit_threshold(fit_sample)
         except Exception as e:
             self.logger.error(
                 f"double-Gaussian fit failed for translocation direction: {e}"
@@ -3231,8 +3385,7 @@ class PeakFinder(MetaEventFitter):
             )
         threshold = float(fit_threshold_value)
 
-        # Classify only the filtered events, then map results back to original event refs
-        class_labels = (filtered_log_ecds >= threshold).astype(int)
+        class_labels = (log_ecds_arr >= threshold).astype(int)
         forward_count = int(np.sum(class_labels == 1))
         backward_count = int(np.sum(class_labels == 0))
 
@@ -3241,11 +3394,11 @@ class PeakFinder(MetaEventFitter):
         # as fit, which already reflects the constrained refit (and its
         # Gaussian-crossing threshold) when params_method is "constrained".
         confidence_values = self._classification_confidence(
-            filtered_log_ecds, bt["params"], class_labels.astype(bool)
+            log_ecds_arr, bt["params"], class_labels.astype(bool)
         )
 
         for label, confidence_value, (ch, event_index) in zip(
-            class_labels, confidence_values, filtered_refs
+            class_labels, confidence_values, event_refs
         ):
             direction = "forward" if int(label) == 1 else "backward"
             if ch in self.event_metadata and event_index in self.event_metadata[ch]:
@@ -3257,19 +3410,18 @@ class PeakFinder(MetaEventFitter):
                 )
 
         self.logger.info(
-            f"Forward: {forward_count} ({forward_count/len(filtered_refs):.1%}), "
-            f"Backward: {backward_count} ({backward_count/len(filtered_refs):.1%})"
+            f"Forward: {forward_count} ({forward_count/len(event_refs):.1%}), "
+            f"Backward: {backward_count} ({backward_count/len(event_refs):.1%})"
         )
 
         self._translocation_direction_results = {
-            "total_events": len(filtered_refs),
+            "total_events": len(event_refs),
             "n_components": n_components,
             "forward_count": forward_count,
             "backward_count": backward_count,
             "lower_center": float(lower_center),
             "higher_center": float(higher_center),
             "threshold": float(threshold),
-            "ecd_filtered_events": int(len(event_refs) - len(filtered_refs)),
         }
 
         # Plotting: always save plot using the fit's histogram
@@ -3285,8 +3437,7 @@ class PeakFinder(MetaEventFitter):
             matplotlib.use("Agg")
 
             counts, bins = bt.get("hist", (None, None))
-            # Full and filtered arrays: full includes outliers; filtered was used for fit
-            arr_all = np.asarray(filtered_log_ecds, dtype=float)
+            arr_all = np.asarray(log_ecds_arr, dtype=float)
             arr = arr_all
             fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -3308,7 +3459,7 @@ class PeakFinder(MetaEventFitter):
                         width=widths,
                         alpha=0.5,
                         color="gray",
-                        label="All Events (incl. outliers)",
+                        label="All Events",
                     )
                     hist_bins = bins
                 except Exception:
@@ -3318,7 +3469,7 @@ class PeakFinder(MetaEventFitter):
                         density=False,
                         alpha=0.5,
                         color="gray",
-                        label="All Events (incl. outliers)",
+                        label="All Events",
                     )
                     hist_bins = None
             else:
@@ -3328,17 +3479,15 @@ class PeakFinder(MetaEventFitter):
                     density=False,
                     alpha=0.5,
                     color="gray",
-                    label="All Events (incl. outliers)",
+                    label="All Events",
                 )
                 hist_bins = None
 
-            # Per-class masks and counts (use filtered array so counts align with bt)
+            # Per-class masks and counts
             class_mask = arr >= threshold
             forward_count = int(np.sum(class_mask))
             backward_count = int(len(arr) - forward_count)
             total_events_plot = len(arr)
-            n_outliers = int(max(0, arr_all.size - arr.size))
-            pct_outliers = n_outliers / arr_all.size if arr_all.size > 0 else 0.0
 
             # Plot per-class histograms using the same bins when available
             try:
@@ -3401,13 +3550,10 @@ class PeakFinder(MetaEventFitter):
                 "translocation direction classification",
             )
 
-            # The curve the threshold below was actually chosen from
-            self._overlay_smoothing_spline(ax, bt)
-
             # Vertical threshold line (not added to legend; value shown in info textbox)
             ax.axvline(threshold, color="black", linestyle="-", linewidth=2)
 
-            # Info textbox (include outlier counts)
+            # Info textbox
             try:
                 pct_fwd = (
                     forward_count / total_events_plot if total_events_plot > 0 else 0.0
@@ -3416,10 +3562,9 @@ class PeakFinder(MetaEventFitter):
                     backward_count / total_events_plot if total_events_plot > 0 else 0.0
                 )
                 info_text = (
-                    f"Total Events (used for fit): {total_events_plot}\n"
+                    f"Total Events: {total_events_plot}\n"
                     f"Forward: {forward_count} ({pct_fwd:.1%})\n"
                     f"Backward: {backward_count} ({pct_bwd:.1%})\n"
-                    f"Outliers excluded from fit: {n_outliers} ({pct_outliers:.1%})\n"
                 )
                 ax.text(
                     0.02,
@@ -3440,7 +3585,6 @@ class PeakFinder(MetaEventFitter):
             ax.set_xlabel("log10(ECD ratio)")
             ax.set_ylabel("Counts")
             ax.set_title("Translocation Direction Classification")
-            # Outlier info shown in textbox; do not add legend entry
             ax.legend()
             plt.tight_layout()
             if plot_path is not None:
@@ -3449,6 +3593,273 @@ class PeakFinder(MetaEventFitter):
             plt.close(fig)
         except Exception as e:
             self.logger.error(f"Error saving translocation direction plot: {e}")
+
+    @log(logger=logger)
+    def _classify_bound_star(self, channels: list[int]) -> None:
+        """
+        Identify the bound-star peak in each event and record which end of the
+        molecule carried it through the pore.
+
+        A bound star shows up as a filter type -1 peak lying outside the type-3
+        barcode - the tall spike that makes the pre- or post-barcode ECD large,
+        and so the same feature ``_classify_translocation_direction`` reads a
+        direction off. Only -1 peaks strictly before the first or strictly after
+        the last type-3 peak are candidates: one sitting between them has no
+        "first or last through the pore" reading. Where an event has several
+        candidates the most prominent one wins, ties going to the earlier peak;
+        the losing peaks keep their labels, so peak-filtering statistics are
+        untouched by this pass.
+
+        A candidate must also be *deeper than a fold*: its modal blockage has
+        to clear the folded level - twice that event's unfolded level - by the
+        higher filter threshold, in units of the local baseline noise. Position
+        alone admits any unclassified blip at the edge of an event, and a -1
+        label means only "no carrier band fits this", which a short fold
+        satisfies as readily as a bound star does.
+
+        The comparison is level against level: ``max_blockage`` is the modal
+        blockage of the peak's own span and the unfolded level is the modal
+        blockage of the event, both from ``find_mode_blockage_level``. Using
+        the peak's raw extremum (``peak_height``) here does not work, and not
+        marginally - on a measured event it sat 150-200 pA deeper than that
+        peak's own level, roughly 2-2.7σ, which swallows the entire +3σ
+        tolerance and admits exactly the folds this is meant to reject.
+
+        An event whose unfolded level was never determined - which is every
+        event at once when folding classification declines - has no floor to
+        test against and is counted apart rather than reported as starless.
+
+        The label written to ``bound_star`` names the end of the construct the
+        star is bound to - ``"long end"`` or ``"short end"`` - and is in the
+        molecule's frame rather than the trace's: the observed temporal
+        position is flipped for ``translocation_direction == "backward"``
+        events, exactly as ``sequence`` is reversed for them, so ``"long end"``
+        always means the star end entered the pore first however that event
+        happened to thread. A star bound to one consistent end of the construct
+        should therefore give one dominant label.
+
+        This deliberately does not reuse the forward/backward vocabulary that
+        ``translocation_direction`` owns. The two fields answer different
+        questions - which way the construct threaded, and which end carries the
+        star - and sharing one pair of words for both invited reading a
+        disagreement between them where none exists.
+
+        Counts are tallied both overall and per sequence, since which end
+        carries the star is a property of the construct and a sequence that
+        breaks the dominant pattern is the thing worth finding.
+
+        The correction needs a direction, so an event carrying a star but no
+        assigned ``translocation_direction`` - one whose pre- or post-barcode
+        ECD was unusable, or every event if that pass declined outright - keeps
+        ``bound_star`` as None. Those are counted separately rather than being
+        folded in with the events that genuinely have no star.
+
+        :param channels: List of channel indices to process
+        :type channels: list[int]
+        """
+        results: Dict[str, Any] = {
+            "total_events": 0,
+            "sequence_events": 0,
+            "with_star": 0,
+            "long_end": 0,
+            "short_end": 0,
+            "multi_candidate": 0,
+            "no_star": 0,
+            "unresolved_direction": 0,
+            "no_height_reference": 0,
+        }
+        # One bucket of the same counters per distinct sequence. `bucket` below
+        # is None exactly when the event has no sequence to attribute it to,
+        # which is also when the per-sequence totals must not move.
+        per_sequence: Dict[str, Dict[str, int]] = {}
+        results["per_sequence"] = per_sequence
+
+        # The height floor is per-event (it scales with that event's own folded
+        # level and baseline noise) but the multiplier is a setting, so it is
+        # read once here.
+        higher_threshold = float(
+            self.settings.get("Higher Filter Threshold", {}).get("Value", 0)
+        )
+
+        for ch in channels:
+            if ch not in self.sublevel_metadata:
+                continue
+
+            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
+                results["total_events"] += 1
+
+                event_data = self.event_metadata.get(ch, {}).get(event_index)
+                sequence = ""
+                if event_data is not None and event_data.get("sequence"):
+                    sequence = str(event_data["sequence"])
+
+                bucket: Optional[Dict[str, int]] = None
+                if sequence:
+                    results["sequence_events"] += 1
+                    bucket = per_sequence.setdefault(
+                        sequence,
+                        {
+                            "events": 0,
+                            "with_star": 0,
+                            "long_end": 0,
+                            "short_end": 0,
+                            "no_star": 0,
+                            "unresolved_direction": 0,
+                            "no_height_reference": 0,
+                        },
+                    )
+                    bucket["events"] += 1
+
+                filtered_arr = np.asarray(
+                    sublevel_data.get("filtered", []), dtype=float
+                )
+                if filtered_arr.size == 0:
+                    continue
+
+                type3_indices = np.where(
+                    (~np.isnan(filtered_arr)) & (filtered_arr == 3)
+                )[0]
+                if type3_indices.size == 0:
+                    # No barcode, so nothing for a star to be before or after.
+                    if bucket is not None:
+                        results["no_star"] += 1
+                        bucket["no_star"] += 1
+                    continue
+
+                first_type3_idx = int(type3_indices[0])
+                last_type3_idx = int(type3_indices[-1])
+
+                prominences = np.asarray(
+                    sublevel_data.get("prominence", []), dtype=float
+                )
+                blockages = np.asarray(
+                    sublevel_data.get("max_blockage", []), dtype=float
+                )
+
+                # A -1 label only ever lands on a peak sublevel, and a peak
+                # sublevel always carries a prominence and a blockage, so the
+                # length and NaN guards here are defensive rather than expected
+                # to fire.
+                positional_candidates = [
+                    int(idx)
+                    for idx in np.where(
+                        (~np.isnan(filtered_arr)) & (filtered_arr == -1)
+                    )[0]
+                    if (idx < first_type3_idx or idx > last_type3_idx)
+                    and idx < prominences.size
+                    and not np.isnan(prominences[idx])
+                    and idx < blockages.size
+                    and not np.isnan(blockages[idx])
+                ]
+
+                if not positional_candidates:
+                    if bucket is not None:
+                        results["no_star"] += 1
+                        bucket["no_star"] += 1
+                    continue
+
+                # A star is deeper than a fold, not merely an unclassified
+                # peak: its blockage must clear the folded level - twice this
+                # event's unfolded level - by the higher filter threshold.
+                #
+                # Both sides of this comparison are modal blockage *levels*
+                # from `find_mode_blockage_level`, which is what makes the
+                # margin mean anything. Comparing the peak's raw extremum
+                # (`peak_height`) against a level instead does not work: on a
+                # measured event the extremum sat 150-200 pA below the peak's
+                # own level, around 2-2.7σ, which swallows the whole +3σ
+                # tolerance and passes folds the criterion is meant to reject.
+                height_floor = None
+                if event_data is not None:
+                    unfolded_level = event_data.get("unfolded_level")
+                    baseline_stdev = event_data.get("baseline_stdev")
+                    if (
+                        isinstance(unfolded_level, (int, float))
+                        and not isinstance(unfolded_level, bool)
+                        and isinstance(baseline_stdev, (int, float))
+                        and not isinstance(baseline_stdev, bool)
+                        and not np.isnan(unfolded_level)
+                        and not np.isnan(baseline_stdev)
+                    ):
+                        height_floor = 2.0 * float(
+                            unfolded_level
+                        ) + higher_threshold * float(baseline_stdev)
+
+                if height_floor is None:
+                    # The event has candidate peaks but no unfolded level to
+                    # size them against, so whether any is a star cannot be
+                    # decided. Counted apart from the events that genuinely
+                    # have none: this fires for every event at once when
+                    # folding classification declines, and that is worth
+                    # seeing.
+                    if bucket is not None:
+                        results["no_height_reference"] += 1
+                        bucket["no_height_reference"] += 1
+                    continue
+
+                candidate_indices = [
+                    idx
+                    for idx in positional_candidates
+                    if blockages[idx] > height_floor
+                ]
+
+                if not candidate_indices:
+                    if bucket is not None:
+                        results["no_star"] += 1
+                        bucket["no_star"] += 1
+                    continue
+
+                if bucket is not None and len(candidate_indices) > 1:
+                    results["multi_candidate"] += 1
+
+                # max() keeps the first of any equally prominent candidates, and
+                # candidate_indices is in ascending sublevel order, so a tie
+                # resolves to the earlier peak.
+                star_index = max(
+                    candidate_indices, key=lambda idx: float(prominences[idx])
+                )
+                star_is_before = star_index < first_type3_idx
+
+                direction = None
+                if event_data is not None:
+                    raw_direction = event_data.get("translocation_direction")
+                    if raw_direction in ("forward", "backward"):
+                        direction = str(raw_direction)
+
+                if direction is None:
+                    if bucket is not None:
+                        results["unresolved_direction"] += 1
+                        bucket["unresolved_direction"] += 1
+                    continue
+
+                # A backward event ran the construct through in reverse, so a
+                # star seen last in the trace went through the pore first.
+                star_went_first = star_is_before == (direction == "forward")
+                bound_star = "long end" if star_went_first else "short end"
+
+                if event_data is not None:
+                    event_data["bound_star"] = bound_star
+
+                if bucket is not None:
+                    results["with_star"] += 1
+                    bucket["with_star"] += 1
+                    if star_went_first:
+                        results["long_end"] += 1
+                        bucket["long_end"] += 1
+                    else:
+                        results["short_end"] += 1
+                        bucket["short_end"] += 1
+
+        self._bound_star_results: Dict[str, Any] = results
+
+        self.logger.info(
+            f"Bound star: {results['with_star']} of {results['sequence_events']} "
+            f"sequence-bearing events carry one "
+            f"(long end: {results['long_end']}, "
+            f"short end: {results['short_end']}); "
+            f"{results['unresolved_direction']} found a star but had no "
+            f"translocation direction to correct against"
+        )
 
     @log(logger=logger)
     def _collect_peak_statistics(self, channels: List[int]) -> None:
@@ -3642,8 +4053,7 @@ class PeakFinder(MetaEventFitter):
         """
         Draw the two fitted Gaussian components as dashed curves.
 
-        One implementation, three call sites, following the
-        ``_overlay_smoothing_spline`` precedent. The only thing that differs
+        One implementation, three call sites. The only thing that differs
         between the classifiers is what the two populations are called.
 
         The components are ordered by mean here rather than trusted to arrive
@@ -3733,81 +4143,6 @@ class PeakFinder(MetaEventFitter):
         except Exception as e:
             self.logger.debug(
                 f"{context}: failed to draw the fitted-Gaussian overlay: {e}",
-                exc_info=True,
-            )
-
-    def _overlay_smoothing_spline(self, ax: Any, bt: Dict[str, Any]) -> None:
-        """
-        Draw the smoothing spline ``fit_threshold`` searched for a valley on.
-
-        Shared by all three classifier plots. The spline is what actually
-        chooses the threshold (see ``_threshold_between_populations``), so
-        without it on the plot the threshold line has no visible justification -
-        and in the fallback case, no visible explanation for why the valley
-        search came up empty.
-
-        Evaluated only across ``"spline_domain"`` - the populated core the
-        spline was actually fit over (see ``_trim_to_populated_core``) - never
-        the plot's full x-range: ``make_smoothing_spline`` returns a ``BSpline``
-        that extrapolates without bound outside its knots, and a heavy-tailed
-        histogram's full range reaches far past them.
-
-        Like the fitted-Gaussian overlays this sits alongside, the curve is in
-        the fit histogram's count units. That matches the plotted bars whenever
-        the plot could reuse the fit's bin edges, which is the normal path; on
-        the fallback path where the plot re-bins at 50 or 100 bins instead, this
-        curve is on the same mismatched scale as those overlays already are.
-
-        Nothing here rejects or raises: a plot that cannot draw the spline is
-        still a useful plot, so a failure is logged at debug and the rest of the
-        figure is left intact.
-
-        :param ax: the matplotlib axes to draw on
-        :type ax: Any
-        :param bt: the dict returned by ``fit_threshold``, read for its
-            ``"spline"``, ``"spline_domain"``, and ``"hist"`` entries
-        :type bt: Dict[str, Any]
-        :return: None; the spline is drawn onto ``ax`` in place
-        :rtype: None
-        """
-        spline = bt.get("spline")
-        if spline is None:
-            return
-
-        domain = bt.get("spline_domain")
-        if domain is None:
-            # No populated-core domain on hand (an older result dict, or one
-            # built by hand rather than by `fit_threshold`) - fall back to the
-            # full histogram range rather than not drawing anything.
-            hist = bt.get("hist")
-            if not hist or hist[1] is None:
-                return
-            edges = np.asarray(hist[1], dtype=float)
-            if edges.size < 3:
-                return
-            centers = (edges[:-1] + edges[1:]) / 2.0
-            domain = (float(centers[0]), float(centers[-1]))
-
-        try:
-            x_spline = np.linspace(domain[0], domain[1], 1000)
-            # Clipped at zero for display only: a bin count can never be
-            # negative, so a dip below it is a natural-spline boundary
-            # artifact, not a feature of the data, and left unclipped it reads
-            # on the plot as the curve inventing negative counts. This does
-            # not touch the threshold search, which is run on the unclipped
-            # spline before this method ever sees it.
-            ax.plot(
-                x_spline,
-                np.clip(spline(x_spline), 0.0, None),
-                "-",
-                color="green",
-                linewidth=1.5,
-                alpha=0.9,
-                label="Smoothing spline (threshold search)",
-            )
-        except Exception as e:
-            self.logger.debug(
-                f"failed to draw the smoothing-spline overlay: {e}",
                 exc_info=True,
             )
 
@@ -4509,8 +4844,11 @@ class PeakFinder(MetaEventFitter):
             two), ``"threshold_method"`` (how the valley/floor point that
             anchored the fit was picked - see ``_threshold_between_populations``;
             unaffected by whether the constrained refit below ran), ``"spline"``
-            (the smoothing spline that search was run on, for plotting, or
-            None), and ``"params_method"`` (``"constrained"`` if the components
+            (the smoothing spline that search was run on, or None) paired with
+            ``"spline_domain"`` (the populated core it was fit over; the
+            returned ``BSpline`` extrapolates without bound outside those
+            knots, so any consumer must clip to it), and
+            ``"params_method"`` (``"constrained"`` if the components
             were re-fit jointly with their means bounded at that point and
             ``"threshold"`` replaced by their crossing, ``"joint"`` if
             ``"params"`` and ``"threshold"`` are straight from the
@@ -4718,7 +5056,7 @@ class PeakFinder(MetaEventFitter):
         :return: the least-smoothed ``BSpline`` meeting the criterion, or None
             if the histogram is too small, the bracket is empty, or no
             candidate on the ladder was quiet enough - in which case the caller
-            falls back to plain GCV
+            has no spline at all and places its threshold from the data instead
         :rtype: Optional[BSpline]
         """
         if bins.size < 4 or search_hi <= search_lo:
@@ -4752,8 +5090,8 @@ class PeakFinder(MetaEventFitter):
             self.logger.debug(
                 "no smoothing-spline lambda on the ladder brought the curve "
                 f"down to {self.SPLINE_MAX_MINIMA} or fewer local minima "
-                f"between {search_lo:.4g} and {search_hi:.4g}; falling back to "
-                "generalized cross-validation."
+                f"between {search_lo:.4g} and {search_hi:.4g}; no spline will "
+                "be used and the threshold will come from the data instead."
             )
             return None
 
@@ -4829,12 +5167,17 @@ class PeakFinder(MetaEventFitter):
         the first raw data point above the floor, and finally to the midpoint of
         the two means.
 
-        The fitted spline is returned alongside the threshold so the classifiers
-        can draw it on their plots. It is fit whenever the histogram has enough
-        bins, even when the valley search is then skipped or comes up empty, so
-        that a plot showing a fallback threshold still shows the curve that
-        failed to find a valley - which is the evidence for why the fallback was
-        used.
+        The fitted spline is returned alongside the threshold. Nothing consumes
+        it today - it is kept because the curve and its local minima are the
+        natural starting point for improving the fits themselves, which is a
+        better use for it than the plot overlay it was originally added for.
+
+        It is fit whenever the histogram has enough bins, even when the valley
+        search is then skipped, but there is no fallback curve: if
+        ``_fit_least_smoothed_spline`` declines, the spline is None and the
+        threshold comes from the data-driven rungs. Substituting a
+        cross-validated curve there would hand the valley search exactly the
+        noise the ladder was built to remove.
 
         :param data: the raw 1-D data the histogram was built from
         :type data: npt.NDArray[np.float64]
@@ -4894,14 +5237,17 @@ class PeakFinder(MetaEventFitter):
                 search_lo = max(fallback_floor, float(spline_bins[0]))
                 search_hi = float(spline_bins[-1])
             try:
+                # No fallback to plain generalized cross-validation when the
+                # ladder declines. GCV is the thing the ladder exists to
+                # replace - it under-smooths on counting data, leaving Poisson
+                # wiggles that the valley search below cannot tell from a real
+                # boundary - so placing a threshold from a GCV curve is not a
+                # degraded answer but a wrong one wearing the good rung's
+                # label. A declined ladder means no spline, and the threshold
+                # comes from the data-driven rungs instead.
                 spline = self._fit_least_smoothed_spline(
                     spline_bins, spline_amplitude, search_lo, search_hi
                 )
-                if spline is None:
-                    # The ladder declined; generalized cross-validation is
-                    # still better than no curve at all, for the plot if
-                    # nothing else.
-                    spline = make_smoothing_spline(spline_bins, spline_amplitude)
             except Exception as e:
                 self.logger.debug(
                     "threshold spline fit failed, falling back to the "
