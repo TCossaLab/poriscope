@@ -267,8 +267,15 @@ After running:
 
 .. note::
 
-   **Which rules are enabled.** On top of Ruff's default rule set,
-   ``pyproject.toml`` selects:
+   **Which rules are enabled.** Ruff's default rule set is in force and
+   ``pyproject.toml`` uses ``extend-select``, which adds to those defaults rather
+   than replacing them. That matters more than it looks: several conventions this
+   project cares about are already enforced without appearing anywhere in the
+   config. The one worth knowing is ``E722``, **no bare** ``except:`` -- narrow to
+   ``except Exception:`` at minimum, so that the exceptions you are actually
+   swallowing can be named in a ``:raises:`` docstring section.
+
+   On top of the defaults, ``pyproject.toml`` selects:
 
    - ``I`` -- import ordering (isort).
    - ``B006`` -- a mutable data structure used as an argument default. A ``[]`` or

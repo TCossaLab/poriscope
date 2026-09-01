@@ -154,17 +154,16 @@ file order:
 1. **Block 2's validator half only**: `validate_settings_schema()` as a real module
    under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
    harness that is out of scope.
-2. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
-   Now smaller than it was: the no-nested-functions half was dropped on 2026-09-01 when
-   that convention was relaxed. What remains is no-bare-except and explicit sqlite
-   cleanup, both enforced by hand during the 2026-08-25 lint sweep.
-3. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
+2. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
    Note the docs-render gate (block 6, landed 2026-08-31) also wants marking as a required
    status check in branch protection, which is the same out-of-repo admin step block 5
    needs.
 
 Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
+
+**Block 8 is closed as of 2026-09-01** and is no longer in this queue; see its section
+below for the evidence.
 
 ## Still queued
 
@@ -393,7 +392,8 @@ and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand a
 nothing built before them; **block 6 landed on 2026-08-31** as
 `.github/workflows/docs-check.yml` (narrative in `changelog.md`, and its one piece of
 follow-through - marking the check as required in branch protection - is folded into
-block 5), leaving 8 then 5, which is the order given at the top of this file.
+block 5), and **block 8 closed on 2026-09-01** without needing to be built, leaving
+block 5 as the only free-standing one still open.
 Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
 from a blank file, so building 3 while they do not exist loses most of its value.
 
@@ -635,39 +635,37 @@ gracefully (raise a clear, caught exception) rather than crash or hang.
 to every plugin family — event finders/fitters/filters operate on already-validated
 in-memory arrays, not raw external files, so this specific risk doesn't apply to them.
 
-## 8. Custom lint rules encoding existing tribal knowledge
+## 8. Custom lint rules encoding existing tribal knowledge - CLOSED 2026-09-01
 
-**Goal.** Make the project's already-established-but-only-documented-in-CLAUDE.md/
-memory conventions mechanically enforced, so they don't depend on a human reviewer
-remembering to check for them on every plugin PR.
+**Nothing here is left to build.** The block proposed mechanically enforcing three
+conventions that were held by review attentiveness alone. All three are now resolved,
+none of them by writing the checker this block asked for:
 
-**Why.** Several patterns are currently enforced only by convention and review
-attentiveness: no bare `except:` (narrow to `except Exception:` at minimum so a `Raises`
-docstring section is even possible), and explicit `finally`-block cleanup of sqlite3
-cursors/connections. These are exactly the kind of thing a first-time community
-contributor won't know to do unless a machine tells them.
-
-**Implementation plan.**
 1. ~~No nested functions.~~ **Dropped 2026-09-01.** `CLAUDE.md` no longer prohibits
    nesting outright: a short, simple nested function is fine where it is genuinely the
    simpler option, which is a judgement an `ast` walk cannot make. A checker would have
    to encode a line-count or complexity threshold to approximate it, and would flag
    exactly the small callback closures the convention now permits. Do not build it.
-2. Bare `except:`: `ruff` already has a built-in rule for this
-   (`E722`/`BLE001`-family, depending on ruleset naming in the installed ruff
-   version) — check whether it's already enabled in this project's `pyproject.toml`
-   ruff config before writing a custom check; if not, this is a one-line config
-   addition, not new code.
-3. Explicit sqlite3 resource cleanup in a `finally` block: harder to express as a
-   generic AST rule (requires tracking whether a `sqlite3.connect`/`.cursor()` call's
-   result is closed on every exit path) — likely not worth a fully general static
-   checker; instead, cover this via the block-1 conformance suite's open-file-handle
-   check for `MetaDatabaseLoader`/`MetaDatabaseWriter`/`MetaWriter` plugins
-   specifically, which catches the same defect empirically rather than syntactically.
-4. Document whichever of these become real automated checks in `CLAUDE.md`'s
-   "General Instructions" section, replacing the current prose-only statement of the
-   rule with a note that it's now enforced by `<tool>`.
+2. ~~Bare `except:`.~~ **Already enforced; there was never anything to add.** The block
+   asked whether `ruff` had a built-in rule for this and whether it was enabled, and the
+   answer to both is yes: `E722` is in Ruff's **default** rule set, which
+   `pyproject.toml`'s `extend-select` adds to rather than replaces, so the gate has been
+   catching bare `except:` all along even though no line of config names it. Measured
+   rather than reasoned - a throwaway file containing a bare `except:` was put under
+   `poriscope/` and `pre-commit run ruff --files ...` failed it with
+   `E722 Do not use bare except`. The one-line config addition the block held in reserve
+   would have been a no-op.
+3. ~~Explicit sqlite3 resource cleanup in a `finally` block.~~ **Deferred by design, not
+   queued here.** It is a semantic rather than syntactic pattern - a general checker would
+   have to track whether a `sqlite3.connect`/`.cursor()` result is closed on every exit
+   path - and the block itself concluded the right home for it is block 1's conformance
+   suite, whose open-file-handle check catches the same defect empirically. Block 1 is a
+   pytest suite and so is owned by another developer; this rides along with it whenever it
+   is built, and is not separate work.
 
-**Gotchas.** Don't over-invest in generalized static analysis for the sqlite3-cleanup
-rule specifically — it's a narrow, semantic (not syntactic) pattern where a runtime
-conformance check is a better cost/benefit trade than a bespoke AST checker.
+The block's step 4, documenting whichever of these became real automated checks, is done
+in `quality_control.rst`, whose "Which rules are enabled" note now says that Ruff's
+defaults are in force on top of the selected rules and names `E722` as the example that
+matters here. It is deliberately **not** added to `CLAUDE.md`: that file is loaded in full
+every session and should carry rules a human has to remember, and a rule the gate enforces
+on every commit is not one of those.
