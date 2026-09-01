@@ -223,7 +223,9 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
             fields = []
             if pd.notna(sequence) and sequence:
                 fields.append(f"Sequence: {sequence}")
-            if pd.notna(translocation_confidence):
+            if translocation_confidence is not None and pd.notna(
+                translocation_confidence
+            ):
                 fields.append(
                     f"Confidence: {round(float(translocation_confidence), 3)}"
                 )
@@ -279,7 +281,7 @@ class SQLitePeakDBLoader(SQLiteDBLoader):
                 if pd.notna(class_value):
                     peak_label += f" Class: {class_value}"
                 confidence_value = getattr(row, "classification_confidence", None)
-                if pd.notna(confidence_value):
+                if confidence_value is not None and pd.notna(confidence_value):
                     peak_label += f" Confidence: {round(float(confidence_value), 3)}"
                 plabel.append(peak_label)
 

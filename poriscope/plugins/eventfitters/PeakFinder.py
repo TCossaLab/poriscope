@@ -2612,7 +2612,9 @@ class PeakFinder(MetaEventFitter):
             bt = self.fit_threshold(all_longest_levels_array)
         except Exception as e:
             self.logger.error(f"folding double-Gaussian fit failed: {e}")
-            self._classification_results = {"error": "double-Gaussian fit failed"}
+            self._classification_results: Dict[str, Any] = {
+                "error": "double-Gaussian fit failed"
+            }
             self._collect_peak_statistics(channels)
             return
 
