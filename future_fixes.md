@@ -163,10 +163,12 @@ file order:
    conformance) is the larger and the more valuable; block 7 (reader fuzzing) is narrow.
    Neither would touch an existing test file.
 
-Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
+Then block 4, block 3's remaining analysis-tab half, the `hist_data` refactor, and the
+parked histogram cut-off.
 
-**Blocks 2 and 8 are closed as of 2026-09-01** and are no longer in this queue; see their
-sections below for what was done and the evidence.
+**Blocks 2 and 8 are closed as of 2026-09-01**, and **block 3 is closed for data plugins**
+the same day, leaving only its analysis-tab half. See their sections below for what was
+done and the evidence.
 
 ## Still queued
 
@@ -399,11 +401,14 @@ order again:
 - **Block 2 landed 2026-09-01**, in full rather than the validator half. It had been split
   on the reading that its pytest harness was out of scope, which was wrong - see the
   corrected constraint at the top of this file.
+- **Block 3 landed 2026-09-01 for data plugins**, as `scripts/new_plugin.py`. Only its
+  analysis-tab half is left, and that is recorded in its own section rather than here.
 
 That leaves **5** (free-standing), then **1** and **7**, which are pytest suites that were
-parked only under the old reading of that constraint and should now be re-scoped. Note
-that block 3 exists largely to make blocks 1 and 2 easy to satisfy from a blank file; with
-2 built, a scaffold generator is worth more than it was, not less.
+parked only under the old reading of that constraint and should now be re-scoped. Block 1
+is worth slightly less than it was: the generated skeleton is now the thing a conformance
+suite would be run against first, and block 3's tests already assert that every family's
+skeleton instantiates and declares a self-consistent schema.
 
 ## 1. Behavioral conformance suite (not just signature compliance)
 
@@ -480,40 +485,38 @@ Two things about it are worth carrying forward:
 
 Nothing is left open from this block.
 
-## 3. Contribution scaffold / template generator
+## 3. Contribution scaffold / template generator - DONE 2026-09-01 (data plugins)
 
-**Goal.** Shift compliance left: a new plugin should start out already satisfying
-pydoclint, mypy, `test_plugin_compliance.py`, and (once built) blocks 1 and 2 above,
-rather than a contributor discovering violations only after opening a PR.
+Landed as `scripts/new_plugin.py`, with `tests/unit/scripts/test_new_plugin.py` covering
+it; the narrative, the measurements and the two defects the real gates caught are in
+`changelog.md`. All eight data plugin families and both variant shapes generate output
+that passes `pre-commit run --all-files`, the compliance suite and the schema check
+untouched.
 
-**Why.** Every plugin family's abstract method list, docstring style (sphinx-style,
-per `[tool.pydoclint] style = "sphinx"`), and settings-schema shape is already fully
-determined by its `Meta*` base — there's no reason a contributor should hand-write
-this from a blank file when it can be generated correctly the first time.
+Three things about it are worth carrying forward:
 
-**Implementation plan.**
-1. Add `scripts/new_plugin.py`, invoked like
-   `python scripts/new_plugin.py --family MetaEventFinder --name MyEventFinder`.
-2. For the given `--family`, use `inspect` on the corresponding `Meta*` class (same
-   introspection `test_plugin_compliance.py` already does via
-   `get_required_methods`/`__abstractmethods__`) to generate a stub subclass in the
-   right `poriscope/plugins/<category>/` folder, with:
-   - one method stub per abstract method, each with a sphinx-style docstring skeleton
-     whose `:param:`/`:return:`/`:rtype:` entries are pre-filled from the base method's
-     own signature and docstring (so pydoclint passes on the stub immediately),
-   - a `get_empty_settings()` stub returning one example parameter entry with a comment
-     showing the full `{"Type", "Value", "Options", "Min", "Max"}` shape,
-   - a matching `tests/unit/plugins/<category>/test_my_event_finder.py` stub that
-     imports the new class (so `test_plugin_compliance.py`'s discovery picks it up
-     immediately) and includes a placeholder for the block-1 conformance test.
-3. Document the script in `CLAUDE.md` under "Where to add a new plugin" as the
-   recommended starting point (the existing prose there, pointing at "an existing tab
-   (e.g. `Protein*`) as a template," is a weaker substitute for a scaffold that's
-   guaranteed to already pass every check).
-
-**Gotchas.** Keep the generated stub minimal (raise `NotImplementedError` in method
-bodies) — the goal is a compliant skeleton, not a working plugin; don't try to
-generate real algorithmic logic.
+- **The analysis-tab half is not built and is the open remainder of this block.** A
+  Controller/Model/View triad is 8 abstract methods across three files
+  (`MetaController` 2, `MetaModel` 1, `MetaView` 5) plus the class-name-equals-filename
+  rule and `_init` assigning `self.view`/`self.model`; nothing else needs registering,
+  which is why a ~100-line triad is a valid runnable tab. `FAMILIES` in the script is
+  shaped so the three can be added to it without rework. Worth knowing when it is picked
+  up: **the `HelloWorld` example under `docs/source/_static/images/examples/` is stale**
+  and would not instantiate today - it implements 4 of `MetaView`'s 5 abstract methods,
+  missing `notify_plugin_state_changed`, and imports `from utils.MetaView import MetaView`
+  rather than `poriscope.utils.MetaView`. A generator would replace it with something that
+  works.
+- **No generated test stub, and the plan's reason for wanting one was wrong.** Step 2
+  asked for a `tests/unit/plugins/<category>/` stub "so `test_plugin_compliance.py`'s
+  discovery picks it up immediately"; that discovery is `pkgutil.walk_packages` over
+  `poriscope.plugins` and needs no test file at all. If a stub is ever added it needs a
+  better justification than that one.
+- **The body policy is measured, not chosen**, and re-deriving it is a few minutes of
+  probing: `pass` under a non-`None` return is mypy `empty-body`, a copied
+  `:raises X:` above a `pass` body is pydoclint DOC502, the same field above a
+  `raise NotImplementedError` is DOC503, and raising with no field is DOC501. Anyone
+  changing what the stubs emit should re-run those four probes rather than reasoning
+  about them.
 
 ## 4. Static security review for module-level plugin code
 

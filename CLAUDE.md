@@ -145,10 +145,16 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
 
 ### Where to add a new plugin
 
-- New data-processing algorithm: pick the matching `plugins/<category>/` folder,
-  subclass the matching `Meta*` base from `poriscope/utils/`, implement the abstract
-  methods it requires (check `__abstractmethods__` / the compliance test for the
-  authoritative list), and drop the file in — no other registration needed.
+- New data plugin: **generate it, don't hand-write it.**
+  `python scripts/new_plugin.py MetaEventFinder MyFinder` (or with no arguments, to be
+  asked) writes a stub in the right folder that already passes ruff, mypy, pydoclint,
+  the compliance suite and the schema check. `--list` shows the eight families and every
+  shipped plugin, since the same command also produces a *variant* of an existing plugin
+  (`--override <methods>`, bodies delegating to `super()`). Signatures and docstrings are
+  copied verbatim from the base, which is what the compliance test's exact-equality
+  comparison requires. Hand-writing one still works: pick the matching
+  `plugins/<category>/` folder, subclass the matching `Meta*` base, implement its
+  `__abstractmethods__`, and drop the file in — no registration needed.
 - New analysis tab: add a Controller/Model/View triad under
   `poriscope/plugins/analysistabs/` following an existing tab (e.g. `Protein*`) as a
   template, subclassing `MetaController`/`MetaModel`/`MetaView`.

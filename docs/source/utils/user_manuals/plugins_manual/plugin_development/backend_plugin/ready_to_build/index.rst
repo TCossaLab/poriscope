@@ -12,6 +12,81 @@ To build a data plugin, you must:
 3. Provide an implementation for all abstract classes required by that base classes that respects the API defined in the base class
 4. Comply exactly with the API (argument names, order of arguments, and return types) required by the base class
 
+.. _new_plugin_script:
+
+Start From a Generated Skeleton
+-------------------------------
+
+You do not have to do any of the four steps above by hand. ``scripts/new_plugin.py``
+writes a skeleton that already satisfies all four, and which passes ``ruff``, ``mypy``,
+``pydoclint``, the plugin compliance suite and the settings-schema check *before you have
+filled in a single method*. Every failure you see after that is one you introduced, which
+is a much easier position to work from than discovering a signature mismatch when a
+reviewer runs the suite on your pull request.
+
+Run it with no arguments and it will ask what you are building:
+
+.. code-block:: bash
+
+   python scripts/new_plugin.py
+
+Or say so directly. The first argument is what you are subclassing and the second is the
+name of your plugin:
+
+.. code-block:: bash
+
+   python scripts/new_plugin.py --list                     # show what you can subclass
+   python scripts/new_plugin.py MetaEventFinder MyFinder   # a new plugin from a base class
+   python scripts/new_plugin.py MetaFilter MyFilter --user # into your user plugin folder
+
+There are two things you might be doing, and the tool covers both.
+
+**A new plugin** subclasses one of the eight base classes and gets a stub for every
+abstract method that base declares — between 6 and 21 of them depending on the family.
+``--list`` prints the count for each, which is worth looking at before you commit to one.
+
+**A variant of a plugin that already ships** subclasses that plugin instead, and inherits
+a fully working implementation. Name the methods you want to change with ``--override``
+and only those are stubbed, each one delegating to ``super()`` so your plugin behaves
+exactly like its parent until you start narrowing it:
+
+.. code-block:: bash
+
+   python scripts/new_plugin.py --list ClassicBlockageFinder
+   python scripts/new_plugin.py ClassicBlockageFinder MyFinder --override _filter_events
+
+What you get either way is a file in the right folder, named after its class, carrying the
+MIT header, with each method's **signature and docstring copied verbatim out of the base
+class**. That copying is not a convenience — the compliance suite compares signatures for
+exact equality and generic annotations such as ``Tuple[List[int], List[int], bool]`` by
+equality too, so retyping one by hand is a coin flip. The docstrings come along because
+they are the contract: what your method is handed, what it must give back, and what it
+must raise.
+
+Methods where doing nothing is a legitimate implementation are stubbed with ``pass``;
+methods that owe a return value raise ``NotImplementedError``. That split is deliberate,
+and it means your plugin **instantiates and appears in the Poriscope menus immediately** —
+you can confirm the plumbing works before writing any of the algorithm.
+
+.. note::
+
+   ``get_empty_settings`` is stubbed for you even though seven of the eight families do
+   not declare it abstract, and the stub calls ``super()`` before adding anything. This
+   matters more than it looks: those seven base implementations seed mandatory keys — the
+   ``MetaReader`` an event finder depends on, the ``Output File`` a writer needs — and an
+   override that forgets the ``super()`` call silently drops them. Nothing checks for it.
+
+.. warning::
+
+   Plugin names must be unique across **every** family, not just within one, because the
+   menus and the plugin key registry both rely on that. The generator refuses a name that
+   is already taken; without it, the first sign of a clash is an error dialog at app
+   startup telling you your file was ignored.
+
+The generator covers data plugins only. Analysis tab plugins are a
+Controller/Model/View triad rather than a single file — see
+:ref:`build_frontend_plugin` for those.
+
 .. important::
 
    One decision is easy to overlook and expensive to get wrong: Poriscope runs **one worker

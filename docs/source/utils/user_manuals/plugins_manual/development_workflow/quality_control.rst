@@ -538,6 +538,15 @@ Pre-Pull-Request Compliance Checklist
    means CI should pass too, and a maintainer won't send your PR back with something
    you could have caught yourself in thirty seconds.
 
+.. tip::
+
+   If you are *starting* a data plugin rather than finishing one, generate it with
+   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script`. Every step below
+   passes against the generated skeleton before you have written any of your own code,
+   which means the first failure you see is one you actually caused. Getting a signature
+   or a docstring field wrong by hand is by far the most common reason a first plugin PR
+   comes back, and the generator copies both verbatim out of the base class.
+
 ☐ **1. Apply automatic formatting and safe fixes.**
 
 .. code-block:: bash
