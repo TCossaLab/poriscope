@@ -42,7 +42,9 @@ Two further gates are not pre-commit hooks but are enforced just as strictly:
 - a dedicated automated test — :ref:`plugin_compliance_testing` below — checks that any
   plugin you add or modify actually implements the interface its base class requires. It
   runs as part of the normal test suite, but for anyone contributing a plugin it is just
-  as much a compliance gate as the tools above, and often the one that matters most.
+  as much a compliance gate as the tools above, and often the one that matters most. A
+  companion test, :ref:`settings_schema_checking`, does the same for the settings schema
+  your plugin declares.
 - the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
   Sphinx documentation on every pull request with warnings treated as errors. pydoclint
   checks that a docstring *describes the right things*; it does not check that the
@@ -476,6 +478,53 @@ how good the underlying science is.
    test, and fix any interface mismatches immediately. It is much cheaper to fix a
    wrong argument name before you've written 200 lines of logic around it than after.
 
+.. _settings_schema_checking:
+
+Settings-Schema Checking
+-------------------------
+
+Interface compliance above checks the *methods* your plugin implements. A separate check
+covers the *settings schema* it declares — the dict your ``get_empty_settings()`` returns,
+where each parameter carries a ``Type`` and optionally a ``Value``, ``Options``, ``Min``,
+``Max`` and ``Units``.
+
+The reason this needs its own check is that nothing else looks at the schema until a user
+tries to use your plugin. ``BaseDataPlugin`` validates a *supplied* settings dict at
+instantiation, so a contradiction baked into the schema itself — a ``Min`` above its
+``Max``, an ``Options`` list whose entries are not of the declared ``Type``, a default that
+is not among its own ``Options`` — surfaces as a ``TypeError`` or ``ValueError`` raised
+from inside the base class, with nothing pointing at your schema as the cause.
+
+The single most common version of this, and the one that caught real plugins in the
+codebase when the check was introduced, is declaring ``"Type": float`` and then writing an
+int default:
+
+.. code-block:: python
+
+   settings["Min Height"] = {"Type": float, "Value": 500}     # wrong
+   settings["Min Height"] = {"Type": float, "Value": 500.0}   # right
+
+The runtime check is a bare ``isinstance``, and ``isinstance(500, float)`` is ``False``.
+
+Run the check over every plugin, or just yours:
+
+.. code-block:: bash
+
+   python scripts/check_plugin_schemas.py
+   python scripts/check_plugin_schemas.py MyEventFinder
+
+It is also part of the normal test suite, as
+``tests/unit/plugins/test_plugin_settings_schema.py``, so CI enforces it whether or not
+you run the script. To call the check on a schema directly — from your own test, say —
+use ``poriscope.utils.settings_schema.validate_settings_schema()``, which takes a schema
+and returns a list of human-readable problems.
+
+.. note::
+
+   Omitting ``Value`` entirely is fine and means the same as ``Value: None``: no default,
+   the user must supply one. Most shipped readers do exactly this. What is *not* fine is
+   supplying a ``Value`` that contradicts the ``Type`` beside it.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
@@ -518,13 +567,16 @@ what mypy expects of new code.
    skipped.
 
 ☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the plugin
-compliance suite.**
+compliance suite and the settings-schema check.**
 
 .. code-block:: bash
 
    pytest tests/unit/plugins/test_plugin_compliance.py
+   python scripts/check_plugin_schemas.py
 
-See :ref:`plugin_compliance_testing` above for what this actually checks.
+See :ref:`plugin_compliance_testing` and :ref:`settings_schema_checking` above for what
+these actually check. The first covers the methods your plugin implements, the second the
+settings schema it declares; they catch different mistakes.
 
 ☐ **4. Run the test suite** — the same suite continuous integration runs on every
 branch push:

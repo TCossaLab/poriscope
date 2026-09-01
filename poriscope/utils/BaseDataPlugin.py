@@ -159,7 +159,7 @@ class BaseDataPlugin(ABC):
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         .. code-block:: python
 
@@ -171,6 +171,15 @@ class BaseDataPlugin(ABC):
                                           },
                           ...
                           }
+
+        The base implementations here do omit Value - a reader's schema is literally
+        ``{"Input File": {"Type": str}}``. Note that a settings dict *supplied back* to
+        ``apply_settings()`` does need every Value present, because ``_validate_param_types``
+        reads it by subscript; the GUI's settings dialog fills them in before that point.
+
+        Run ``python scripts/check_plugin_schemas.py`` to check a schema you have written for
+        self-consistency, or see ``poriscope.utils.settings_schema`` to call the same check
+        directly.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[ Dict[str, List[str]]]

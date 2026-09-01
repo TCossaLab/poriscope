@@ -60,7 +60,7 @@ class Basic_PeakFinder(MetaEventFitter):
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         Your Eventfinder MUST include at least the "MetaReader" key, which can be ensured by calling super().get_empty_settings(globally_available_plugins, standalone) before adding any additional settings keys
 
@@ -109,35 +109,44 @@ class Basic_PeakFinder(MetaEventFitter):
             "Value": "Some",
             "Options": ["All", "Some", "None"],
         }
+        # NOTE (integration): the six defaults below declared "Type": float but gave an
+        # int literal as their "Value" (500, 100, 25, 0, 1, 0). BaseDataPlugin's
+        # _validate_param_types checks with a bare isinstance, and isinstance(500, float)
+        # is False, so any path handing this schema straight to apply_settings raised
+        # "Min Height must have type <class 'float'>". The settings dialog coerces the
+        # field before it gets there, which is why the GUI never showed it. Only the
+        # literals changed - the numeric values are identical and every consumer already
+        # uses them in float arithmetic. Found by tests/unit/plugins/
+        # test_plugin_settings_schema.py, which is new.
         settings["Min Height"] = {
             "Type": float,
-            "Value": 500,
+            "Value": 500.0,
             "Min": 0.0,
             "Units": "pA",
         }
         settings["Min Prominence"] = {
             "Type": float,
-            "Value": 100,
+            "Value": 100.0,
             "Min": 0.0,
             "Units": "pA",
         }
-        settings["Relative Height"] = {"Type": float, "Value": 0.5, "Min": 0}
+        settings["Relative Height"] = {"Type": float, "Value": 0.5, "Min": 0.0}
         settings["Window Length"] = {
             "Type": float,
-            "Value": 25,
+            "Value": 25.0,
             "Min": 0.0,
             "Units": "μs",
         }
-        settings["Width"] = {"Type": float, "Value": 0, "Min": 0.0, "Units": "μs"}
+        settings["Width"] = {"Type": float, "Value": 0.0, "Min": 0.0, "Units": "μs"}
         settings["Min Distance"] = {
             "Type": float,
-            "Value": 1,
+            "Value": 1.0,
             "Min": 0.0,
             "Units": "μs",
         }
         settings["Plateau Size"] = {
             "Type": float,
-            "Value": 0,
+            "Value": 0.0,
             "Min": 0.0,
             "Units": "μs",
         }
