@@ -15,6 +15,82 @@ they date the decision.
 
 ---
 
+## 2026-08-25 - The audited `bugbear`/`bandit` rules stay off as gates
+
+*Settled 2026-08-25; moved here from `future_fixes.md` on 2026-09-01, where it had been
+sitting as a mostly-closed backlog table.*
+
+**Context.** Adopting the rest of ruff's `flake8-bugbear` (B) and `bandit` (S) rule sets
+was proposed on the grounds that both check real code logic and so complement pydoclint's
+docstring/signature checking. Measured on `poriscope/`: **B = 104, S = 54**. `B006` and
+`B020` were adopted outright and are enforced through `extend-select` in `pyproject.toml`.
+The rest were audited rule by rule.
+
+**Decision.** Every remaining audited rule - `B905`, `B904`, `B007`, `S110`, `S112`,
+`S101` - was run as a **one-time audit**, its findings in our own code fixed, and the rule
+then left **unselected**. None is a gate. What each surfaced is in `changelog.md`; the
+short version is that the audits were worth running and the gates are not worth keeping.
+
+**Reasoning.** Two separate reasons, and it matters which applies to which rule.
+
+- **For `B904`, `B007`, `S110`, `S112` and `S101`, every site that remains is in an
+  owner-held file** (`PeakFinder.py`, `Basic_PeakFinder.py`, `NanoTrees.py` - see the
+  standing exclusion policy in `future_fixes.md`). Enabling any of them would therefore
+  require a `per-file-ignores` entry for those files, which *hides* a real check rather
+  than satisfying it - a worse state than not selecting the rule, because it looks
+  enforced.
+- **For `B905` (`zip` without `strict=`) the rule itself is the problem.** 54 sites would
+  each need their own `strict=` judgement, and at least one - the list-against-generator
+  zip in `MetaDatabaseLoader`'s CSV export - cannot be proven equal-length in advance. Three
+  in `ClusteringView` depend on truncation deliberately and would raise on every clustering
+  run. A rule that cannot be satisfied without per-site analysis is an audit, not a gate.
+
+The audit half genuinely earned its keep: `B905` found `MetadataView` silently dropping
+plot features that had no label, `B904` found the six data readers discarding the name of
+the missing file from `FileNotFoundError`, and `S110` found `apply_settings` swallowing a
+failed `get_key()` and leaving the dependency graph incomplete.
+
+**Consequences worth knowing.** What is left unfixed is 2 `B010` sites in
+`LogDecorator.py` and 1 `B028` in `MetaWriter.py`, all cosmetic. There is no further
+bug-finding value in this block - treat it as finished rather than as a backlog.
+
+**Revisit if.** The owner-held fitter files change hands, which would remove the
+`per-file-ignores` objection for the five rules it applies to. Note this is *not* the same
+question as the `bandit` proposal scoped to `poriscope/plugins/` as a trust boundary for
+unvetted community contributions, which is still open (block 4 in `future_fixes.md`).
+
+---
+
+## 2026-08-25 - Interpolated SQL in the database plugins is accepted (`S608`)
+
+*Settled 2026-08-25; moved here from `future_fixes.md` on 2026-09-01.*
+
+**Context.** `bandit`'s `S608` (hardcoded-sql-expression) reports **25 sites** under
+`poriscope/`, where query strings are built by f-string interpolation rather than by
+parameter binding. `SQLitePeakDBLoader` in particular no longer casts its interpolated
+values to `int`, which was raised in review as worth real scrutiny.
+
+**Decision.** Accepted as-is. Not fixed, and `S608` is not enabled.
+
+**Reasoning.** There is no privilege boundary for an injection to cross. The database is a
+local SQLite file, opened by the desktop application, owned by and running as the user who
+launched it. An attacker who can supply a malicious experiment name or channel id to that
+application already has the ability to run code as that user, so nothing is gained by
+escaping it. Injection is a defence against a *less*-privileged input reaching a *more*-
+privileged executor, and that gradient does not exist here.
+
+**Consequences worth knowing.** Correctness bugs from interpolation are a different matter
+and *have* been fixed on their merits - `MetadataView`/`ProteinView` converting
+experiment/channel values once at the derivation site, and the earlier quote-escaping so
+legitimate experiment names stop breaking queries (both in `changelog.md`). Accepting
+`S608` is not a licence to leave interpolation that produces *wrong results*.
+
+**Revisit if.** The database is ever opened over a network path with multiple users at
+different privilege levels, exposed through a service, or fed by a file the user did not
+create - any of which introduces the privilege gradient this decision says does not exist.
+
+---
+
 ## 2026-08-31 - Plugin name collisions are the user's to rename, not ours to accommodate
 
 **Context.** Plugin discovery walks `poriscope/plugins/` and then the user plugin folder

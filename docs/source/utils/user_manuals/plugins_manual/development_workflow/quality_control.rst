@@ -280,9 +280,15 @@ After running:
      assignment, but it makes the original sequence unreachable for the rest of the
      loop body and forces the parameter to be annotated loosely.
 
-   The other ``flake8-bugbear`` rules are deliberately **not** enabled yet. The
-   measured backlog and the case for adopting them are recorded in
-   ``future_fixes.md``.
+   The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled,
+   and this is settled rather than pending. Each of ``B905``, ``B904``, ``B007``,
+   ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
+   maintained code fixed; every site that still reports sits in a file owned by another
+   developer, so enabling the rule would require a ``per-file-ignores`` entry that hides
+   a real check rather than satisfying it. The reasoning, and the separate acceptance of
+   the ``S608`` hardcoded-SQL sites, are recorded in ``DECISIONS.md``; what each audit
+   found is in ``changelog.md``. Please do not re-propose them without reading that
+   entry first.
 
 
 Skipping Hooks (Advanced Use Only)

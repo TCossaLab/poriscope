@@ -5,84 +5,52 @@ items as they land rather than leaving completed-work narrative behind. Reasonin
 things deliberately *not* done lives in `DECISIONS.md`; what changed lives in
 `changelog.md`.
 
-**The full-codebase type-annotation pass is complete (2026-08-26).** Every function
-under `poriscope/` is annotated with no exclusions, `.pydoclint-baseline.txt` is a
-zero-byte file, and `mypy.ini` enforces `disallow_untyped_defs`, `check_untyped_defs`
-and `strict_equality`. All four pre-commit gates are green. The step-by-step plan, the
-batch tables and the retrospective that used to fill this file have been removed now
-that they describe finished work; the narrative is in `changelog.md` and the standing
-rules that came out of it are in `CLAUDE.md` and `DECISIONS.md`. What remains below is
-only what is still open.
+The full-codebase type-annotation pass is complete (2026-08-26) and its narrative has been
+pruned from this file; see `changelog.md` for what was done and `CLAUDE.md` for the
+standing rules it left behind. What remains below is only what is still open.
 
 ## Structural audit findings (2026-08-25)
 
 A read of the app shell, plugin contract and threading layer - the paths every analysis
-tab traverses. None of these were already recorded here or in `DECISIONS.md`. Full
-write-up with per-finding reasoning:
+tab traverses. Full write-up with per-finding reasoning:
 <https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>
 
-Everything here is a logic change, so it needs an approved plan first. **This section
-outranks "What to pick up next" below until it is cleared.** The common thread: the app's
-main control path is a method name passed as a string and resolved with `getattr`, which
-none of the four pre-commit gates can see.
+Everything here is a logic change, so it needs an approved plan first. The common thread:
+the app's main control path is a method name passed as a string and resolved with
+`getattr`, which none of the four pre-commit gates can see.
 
-**All four Critical items are cleared** (2026-08-31): the signal dispatcher's `TypeError`
-retries, CI's marker filter, the generator failure reported as success, and the
-serial-channel lock granularity. What they had in common is that each failed silently in
-the `getattr` blind spot; the narrative is in `changelog.md` and the limitations the last
-two left behind are under "Still queued" below.
-
-**High is now cleared too** (2026-08-31), except for one item held open by decision. The
-plugin-shadowing and routine-ERROR items both landed; the remaining High entry is the
-emit-then-read-an-attribute pattern in the analysis-tab Views, which is **deferred
-deliberately** rather than queued: the explicit `Qt.ConnectionType.DirectConnection` on
-that bus already makes those reads deterministic, so what is left is structural clarity
-and not behaviour. Do not treat it as blocking "What to pick up next" below.
+**All four Critical items landed over 2026-08-25/31**, as did three of the four High ones -
+the narrative is in `changelog.md`. What survives below is the open remainder of the High
+tier (the fourth item, deferred by decision, plus the parts of two landed ones that were
+deliberately left out of them) and the untouched Moderate and Minor tiers. None of it
+blocks "What to pick up next".
 
 ### High - working today, but for reasons nothing records or tests
 
-- **Closed, but undercounted at "two sites" - the real pattern recurred roughly a dozen
-  more times.** The `MetaModel.py`/`self.serial_ops` site was already gone (per-plugin-
-  locks work). The `DataPluginController.get_settings_from_history`/
-  `self.historical_settings` site is now fixed the same way: `DataPluginController`
-  takes a `history_lookup` callable at construction (`MainController._lookup_historical_settings`)
-  and calls it directly instead of emitting a signal and reading an attribute back -
-  correct now by construction, not by an assumption about connection type.
-  **What's still open**: the same shape of bug - emit `global_signal`/
-  `data_plugin_controller_signal` with a `return_function_name` callback, then read the
-  result off an attribute on the very next statement, trusting the callback already ran -
-  recurs in the analysis-tab View layer, uncounted by the original audit:
+- **Emit-then-read-an-attribute, in the analysis-tab View layer.** The pattern - emit
+  `global_signal`/`data_plugin_controller_signal` with a `return_function_name` callback,
+  then read the result off an attribute on the very next statement, trusting the callback
+  already ran - was fixed at the two sites the audit counted, but recurs roughly a dozen
+  more times in the Views, uncounted:
   `RawDataView._apply_filter` (`RawDataView.py:1416-1443`); `MetadataView.py:2021-2030`,
   `:2063-2072`, `:2306-2330`, `:2340-2348`, `:1411-1445`, `:1472-1490`; `ProteinView.py:1583-1592`,
   `:1770-1779`, `:1872-1881`, `:421`; `ClusteringView.py:286-295`, `:579-601`;
-  `EventAnalysisView.py:940-964`. These can't be fixed the same way as the
-  `DataPluginController` site: `MetaController`/`MetaView` deliberately hold no reference
-  back to `MainController` (that's what keeps analysis tabs pluggable, resolved purely by
-  `(metaclass, subclass_key)` string), and a real `Signal.emit()` cannot hand back a
-  return value even over a direct connection - which is exactly why this attribute/callback
-  side-channel exists here at all. As a bounded mitigation (not a fix), the six
-  `.connect()` calls that carry this bus now pass
+  `EventAnalysisView.py:940-964`. **This is deferred deliberately rather than queued**, and
+  is not a correctness problem today: the six `.connect()` calls that carry this bus pass
   `type=Qt.ConnectionType.DirectConnection` explicitly
   (`MetaController._connect_global_signal`'s four, `MainController.instantiate_analysis_tab`'s
-  two), so a future refactor that moves one of these objects onto a `QThread` fails loudly
-  (or at least deterministically synchronously) instead of silently degrading to a stale
-  read. Restructuring the View-layer sites into a genuine synchronous-call abstraction that
-  preserves the plugin-decoupling property remains open - a real multi-file refactor
-  touching Views with heavy existing test coverage.
-- **Fixed** (2026-08-31): every `WARNING` and `ERROR` record used to raise a modal
-  dialog. `QtHandler` now defaults to `ERROR`, is skipped by
-  `MainModel.update_logging_level`'s handler loop (which was the only place its level was
-  ever set, and would have silently undone a static floor the first time a user changed
-  the log level), carries a `"%(message)s"` formatter instead of the shared log-line one,
-  and queues records that arrive while a dialog is up rather than discarding them. See
-  `changelog.md`.
-  **The ERROR half is also now closed** (2026-08-31): 19 routine conditions logged at
-  `ERROR`, and therefore raising a dialog each, were re-levelled or moved to the
-  `add_text_to_display` panel - the six parse/empty-input sites in
-  `float_range_line_edit.py` and `BaseValidator`'s per-keystroke blanket `except`, two
-  per-channel loop notes in `RawDataView`, and nine empty-state guards across the five
-  analysis tabs. See `changelog.md`.
-  **What's still open** is the `WARNING` half. Roughly 109 `logger.warning` +
+  two), so the callback is guaranteed to have run before the attribute is read, and a
+  future refactor that moves one of these objects onto a `QThread` fails loudly instead of
+  silently degrading to a stale read. What is left is structural clarity.
+  It also can't be fixed the way the two counted sites were: `MetaController`/`MetaView`
+  deliberately hold no reference back to `MainController` (that's what keeps analysis tabs
+  pluggable, resolved purely by `(metaclass, subclass_key)` string), and a real
+  `Signal.emit()` cannot hand back a return value even over a direct connection - which is
+  exactly why this attribute/callback side-channel exists here at all. Restructuring the
+  View-layer sites into a genuine synchronous-call abstraction that preserves the
+  plugin-decoupling property is a real multi-file refactor touching Views with heavy
+  existing test coverage.
+- **Routine states still logged at `WARNING`.** Roughly 109 `logger.warning` +
   16 `logger.exception` sites under `poriscope/` still record routine states at a level
   that reads as a problem. **None of them interrupts anyone**, since `QtHandler` floors at
   `ERROR`, so this is purely a log-signal and tidiness problem and is deliberately not
@@ -103,30 +71,13 @@ and not behaviour. Do not treat it as blocking "What to pick up next" below.
   `main_model.py`'s plugin-import failure (a broken plugin is worth interrupting for, and
   with no pre-import check it is the only signal the user gets), `ClusteringView.py:530`'s
   empty dataframe, and `SQLiteDBLoader.py:605`'s missing `id` column.
-- **Fixed** (2026-08-31): a user plugin used to silently replace a built-in of the same
-  filename. Discovery walks `poriscope/plugins/` and then the user folder into one flat
-  `{subclass_name: class}` map, and both the assignment and the menu-list `append` were
-  unconditional, so a user `ClassicBlockageFinder.py` overwrote the shipped one with no
-  warning and no way to tell which ran. `populate_available_plugins` now keeps a set of
-  plugin names already claimed and logs at ERROR, which is a dialog, for the second and
-  any subsequent file claiming a name; the first one found wins, so a built-in can no
-  longer be displaced. See `changelog.md`.
-  **What's still open** in the same code, deliberately left out of that fix to keep it
-  proportionate: `load_plugin` calls `exec_module` on every `.py` file *before* checking
-  whether it holds a plugin at all, so a helper module that was never a plugin executes
-  during discovery and reports as a plugin failure if it raises (see the log-level item
-  above); and it never registers modules in `sys.modules`, so two plugins importing a
-  shared helper by file each get their own copy. Worth folding into compliance-gate
-  block 4 below.
-- **Fixed** (2026-08-31): finished `Worker`/`WorkerThread` objects used to be retained for
-  the whole session - `discard_generator` cleared only `thread_running` and `generators`,
-  never popping `self.workers[key][channel]`/`self.threads[key][channel]`, so every dead
-  `QThread` stayed alive holding its generator closure and the data it touched, and
-  `handle_kill_worker`/`stop_workers` logged "Stopping worker for channel N" for runs that
-  had finished hours earlier. `discard_generator` now pops both and calls `deleteLater()`
-  on each - see `changelog.md`. Verified with a throwaway script, the same way as the two
-  fixes immediately below it in this file; `EventWorker.py`/`MetaModel.py` still have no
-  real test coverage (see "Still queued").
+- **The plugin loader executes modules before knowing they are plugins.** Left out of the
+  2026-08-31 name-collision fix to keep it proportionate: `load_plugin` calls `exec_module`
+  on every `.py` file *before* checking whether it holds a plugin at all, so a helper
+  module that was never a plugin executes during discovery and reports as a plugin failure
+  if it raises (see the log-level item above); and it never registers modules in
+  `sys.modules`, so two plugins importing a shared helper by file each get their own copy.
+  Worth folding into compliance-gate block 4 below.
 
 ### Moderate
 
@@ -188,11 +139,10 @@ and not behaviour. Do not treat it as blocking "What to pick up next" below.
   `KeyError` before any handler exists to record it. Backfill every key from
   `default_app_config`, or read through `.get()` with a default.
 
-## What to pick up next (order revised 2026-08-25)
+## What to pick up next (order revised 2026-09-01)
 
-The structural audit section above outranks this list until it is cleared. Two standing
-constraints also reshape the queue below, so read this before working down it in file
-order:
+Two standing constraints reshape the queue below, so read this before working down it in
+file order:
 
 - **Test-writing is owned by another developer.** New pytest suites are out of scope
   here, which pushes compliance-gate blocks 1 and 7 down the queue indefinitely, and
@@ -201,12 +151,11 @@ order:
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
-**Block 6 (the docs-render CI gate) is done** (2026-08-31), along with the two one-line
-items that used to sit at 3, the docs-workflow comment fix, and the `QtHandler`
-severity/modality split paired with the abort-feedback bug - see `changelog.md`. What
-remains, ranked cheapest real value first:
-
-1. **Block 2's validator half only**: `validate_settings_schema()` as a real module
+1. **The application-wide event-filter leak**, written up in full below. Selected as the
+   next piece of work on 2026-09-01. It is the only item in this file that is a live bug
+   with observed failures rather than a latent or tidiness problem, and it is what makes
+   `pytest tests/unit` intermittently error at setup.
+2. **Block 2's validator half only**: `validate_settings_schema()` as a real module
    under `poriscope/utils/`. Useful from a script or pre-commit hook without the pytest
    harness that is out of scope.
 3. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
@@ -214,8 +163,9 @@ remains, ranked cheapest real value first:
    all enforced by hand during the 2026-08-25 lint sweep.
 4. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
-   Note the docs-render gate added in block 6 also wants marking as a required status
-   check in branch protection, which is the same out-of-repo admin step block 5 needs.
+   Note the docs-render gate (block 6, landed 2026-08-31) also wants marking as a required
+   status check in branch protection, which is the same out-of-repo admin step block 5
+   needs.
 
 Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
 
@@ -332,25 +282,42 @@ Fixing only the site originally recorded leaves the failure alive via the others
 | --- | --- | --- |
 | `views/widgets/multiselect_filter.py:125`, `eventFilter` at `:127-135` | `MultiSelectFilterComboBox` | `metadatacontrols.py:411`, `proteincontrols.py:410` |
 | `views/widgets/multiselect.py:124`, `eventFilter` at `:255-262` | `MultiSelectComboBox` | `rawdatacontrols.py:177`, `eventAnalysisControls.py:197` |
-| `utils/BaseLineEdit.py:45` | `BaseLineEdit` | 13 construction sites across the controls widgets |
+| `utils/BaseLineEdit.py:45` | `BaseLineEdit` | `rawdatacontrols.py:110`, `:237`, `eventAnalysisControls.py:241` |
+
+All four combobox sites pass a real Qt parent to the *combobox*; it is the internal
+`containerWidget` that is parentless, not the widget itself.
+
+**Corrected 2026-09-01, re-verified against the code**: this table previously said
+`BaseLineEdit` had "13 construction sites across the controls widgets". It has **3**. The
+only two subclasses in the tree are `FloatRangeLineEdit` and `IntegerRangeLineEdit`, and a
+repo-wide search for their constructors finds the three sites above plus one inside a
+`if __name__ == "__main__":` demo block in `float_range_line_edit.py:210`. That materially
+lowers `BaseLineEdit`'s share of the leak - it is 3 registrations per controls build, not
+13 - though it does not change the conclusion below that it has never been observed to
+crash.
 
 The first two bodies are near-identical - `multiselect.py` calls `self.hidePopup()` where
 `multiselect_filter.py` calls `self.containerWidget.close()` - and are already recorded as
-~90% duplicates and a merge candidate in `future_refactors_and_features.md:1591-1592`.
+~90% duplicates and a merge candidate in `future_refactors_and_features.md:1789-1795`
+(also corrected 2026-09-01; the old citation, `:1591-1592`, points at the unrelated
+`MainView.connect_signals` dead-branch item).
 `BaseLineEdit` is much less crash-prone, because its `eventFilter` does check `obj`
-(`isinstance(obj, QMessageBox)`) and touches no C++ member of `self`, but it leaks at far
-the highest rate: ~13 more registrations per controls-widget build. It also connects
+(`isinstance(obj, QMessageBox)`) and touches no C++ member of `self`. It also connects
 `QApplication.instance().aboutToQuit` to a bound method per instance, a second permanent
 application-lifetime reference, and mutates the *class*-level `suspend_validation` /
 `app_closing` flags, so its instances interfere with each other globally.
 
 `removeEventFilter` appears **zero** times anywhere in the repository.
 
-### A second defect in the same constructor
+### A second defect in the same constructor - in both widgets
 
 `multiselect_filter.py:68` does `self.containerWidget = QDialog(None)` - parentless. So the
 popup is a top-level widget owned by nobody, it is not destroyed when the combobox is
 destroyed, and it is precisely the object `eventFilter` dereferences.
+**`multiselect.py:61-79` has the same defect on both of its platform branches**
+(`QWidget(None)` on Linux, `QDialog(None)` elsewhere) - added 2026-09-01, having been
+missed when this was first written up as a `multiselect_filter.py`-only problem. Any fix
+must parent or explicitly delete `containerWidget` in *both* files.
 `tests/unit/views/conftest.py::_close_leftover_widgets` walks
 `QApplication.topLevelWidgets()` and `close()`/`deleteLater()`s exactly these, which can
 kill `containerWidget` while its combobox - or a stale filter pointing at it - is still
@@ -362,7 +329,7 @@ registered. **Fixing the filter without also parenting or explicitly deleting
 `MainController.instantiate_analysis_tab:527-553` reuses an existing tab of the same
 subclass and never removes an entry from `self.analysis_tabs`, so the app constructs at most
 one Metadata and one Protein tab per session and never destroys either. The real app
-therefore caps at ~2 registrations for these two classes (plus ~13 per controls build from
+therefore caps at ~2 registrations for these two classes (plus 3 per controls build from
 `BaseLineEdit`), and the `RuntimeError` is effectively unreachable there because nothing
 dies. Note the repopulation path mutates the existing combobox (`clear()` + `addItems()`,
 e.g. `proteincontrols.py:1044-1052`) rather than constructing a new one, so filters do not
@@ -379,9 +346,13 @@ The suite is the opposite. Every one of these builds a real widget with no dispo
   blocking-dialog protections apply.
 - `tests/unit/views/test_protein_view.py` - `real_view` fixture (`:79-105`), referenced 92
   times.
-- `tests/unit/views/widgets/test_multiselect_filter.py` - ~34 comboboxes, each *correctly*
-  disposed in `tearDown` via `deleteLater()` + a drained loop. This is the worst case
-  precisely because it does the right thing: it manufactures ~34 **stale** registrations.
+- `tests/unit/views/widgets/test_multiselect_filter.py` - 34 comboboxes (8 `TestCase`
+  classes, one built per `setUp`), each *correctly* disposed in `tearDown` via a module-level
+  `dispose()` helper that calls `deleteLater()` + `processEvents()`. This is the worst case
+  precisely because it does the right thing: it manufactures 34 **stale** registrations.
+- `tests/unit/views/widgets/test_multiselect.py` - added to this list 2026-09-01; it was
+  missed originally. Same shape exactly: 7 classes, 32 tests, its own identical `dispose()`
+  helper, so it manufactures another 32 stale registrations for `MultiSelectComboBox`.
 - `tests/e2e/metadata/*` and `tests/e2e/protein/*` build real views too.
 
 Order of magnitude for a full `pytest tests/unit`: 150-200+ registrations on one
@@ -500,62 +471,13 @@ narrow `# type: ignore` and a `NOTE:` comment at the site.
 ## Open against the PeakFinder integration (2026-08-26)
 
 Found while merging `feature_Peakfinder_classifier` into the docstring/type work. The
-defects below were **authorised for repair** and have been fixed - each carries a
+defects that were authorised for repair have all been fixed - each carries a
 `NOTE (integration):` comment at the site explaining what changed and why, so the owning
-developer can see it when she re-branches. What remains open is listed under "Still open"
-at the end of this section.
+developer can see it when she re-branches; the list is in `changelog.md`. Two questions
+were closed by decision rather than by code (the four `None`-placeholder `type: ignore`s,
+and not consolidating the double-Gaussian fits) and are recorded in `DECISIONS.md`. What
+is still open:
 
-### Fixed during the integration
-
-- **`fit_2_gauss` could never succeed.** Its nested `Gauss` declared four parameters
-  (`x, Amplitude, mean, stdev`) but was called with five in both places inside `Gauss_2`,
-  so every call raised `TypeError`; the `curve_fit` call is wrapped in a bare
-  `except Exception`, which swallowed it and took the `popt is None` path forever. Since
-  the return statement unpacks `popt` in two groups of four, four parameters per Gaussian
-  is the intended shape, so `Gauss` gained an `offset` term and `Gauss_2`'s parameters
-  were renamed from `A/x/m/s` to `A/u/s/c` to say which is which.
-- **`find_mode_blockage_level` used `baseline_mean` unguarded.** Now raises `RuntimeError`
-  up front. Its `baseline_std` handling was also a `float()` inside a bare
-  `except Exception`, which made a legitimately-`None` value indistinguishable from a
-  conversion failure; the `None` case now selects the `'auto'` binning path explicitly.
-- **`redefine_padding` divided by `2 * baseline_std` with no `None` check.** Now raises.
-- **`filter_peaks` scaled every threshold by a possibly-`None` `baseline_std`** at seven
-  sites. Guarded once at function entry with a raise.
-- **`_populate_event_metadata` passed metadata-dict values straight into
-  `find_mode_blockage_level`**, where the base contract's
-  `Union[int, float, str, bool]` is wider than the `Optional[float]` accepted. Now
-  narrowed with explicit `isinstance` checks that raise on a non-numeric value, and the
-  returned primary level is checked for `None` before being stored.
-- **A dead `None` test in `_save_classification_report`.** It called
-  `float(prominence_stats.get("threshold"))` and only *then* tested
-  `threshold is not None` - a test that can never fire, since `float()` either returns a
-  float or raises. A missing key therefore raised `TypeError` instead of skipping the
-  line. The check now guards the conversion, and the `cast()` it needed is gone.
-- **Two `float(bt.get("midpoint"))` calls** on an `Optional` lookup, in
-  `_classify_peak_prominences` and `_classify_translocation_direction`. Both now raise.
-- **`test_cluster_of_type1_labeled_type3` deleted** as out of date, on instruction: it
-  asserted that two nearby type-2 peaks both become type 3, which the current clustering
-  logic does not do.
-
-### Closed by decision, not by code
-
-Both settled 2026-08-25; the reasoning is in `DECISIONS.md`. Recorded here only so they
-are not re-raised as open work.
-
-- The four `# type: ignore[assignment]` on the deliberate `None` placeholder writes in
-  `_populate_event_metadata` **stay**. They are safe and correct; clearing them would mean
-  widening a `Meta*` ABC across six fitter plugins.
-- The **double-Gaussian consolidation is not being pursued here.** The owning developer is
-  rewriting that fitting code from scratch, which supersedes it. `fit_2_gauss`, the dead
-  third implementation, has already been deleted.
-
-### Still open
-
-- **`SQLitePeakDBLoader` no longer casts its interpolated SQL values to `int`.** Reviewed
-  and **deliberately accepted**: the database is a local file owned by the user running
-  the app, so there is no privilege boundary for an injection to cross. Recorded here
-  only so the same finding is not re-raised. This also downgrades the `S608` item in the
-  bandit proposal below, which described these sites as "worth real scrutiny".
 - **Three nested function definitions** remain: `dgfit` inside `bitthresh`, and formerly
   `Gauss`/`Gauss_2` inside the now-deleted `fit_2_gauss`. `CLAUDE.md` forbids nested
   functions but nothing enforces it (that is block 8 below). Annotated in place and left
@@ -585,38 +507,21 @@ are not re-raised as open work.
   adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
   the `IntroDialog` entry.
 
-- **Adopt the rest of ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the
-  grounds that both run against real code logic and so complement pydoclint's
-  docstring/signature checking for catching silent bugs. `B006` and `B020` are **done**
-  and are now enforced through `extend-select` in `pyproject.toml`; everything below is
-  what is left. Re-measured on `poriscope/` (2026-08-25): **B = 104, S = 54**. `tests/`
-  adds 10 more B hits, one of which is a `B023` closure-over-a-loop-variable - a real
-  bug class, but test code belongs to another developer.
+- **Adopting the rest of ruff `bugbear` (B) and `bandit` (S) is closed.** `B006`/`B020`
+  are enforced through `extend-select` in `pyproject.toml`; `B905`, `B904`, `B007`,
+  `S110`, `S112` and `S101` were each run as a one-time audit, their findings in our own
+  code fixed, and then left unselected. The reasoning for not enabling them - every
+  remaining site sits in an owner-held file, so a gate would need a `per-file-ignores`
+  entry that hides a real check - is in `DECISIONS.md`, as is the acceptance of the 25
+  `S608` sites. What each audit surfaced is in `changelog.md`.
 
-  | Rule | Hits | Character |
-  | --- | --- | --- |
-  | `B905` zip-without-explicit-strict | 54 | **Audited and closed 2026-08-25; deliberately not enabled as a gate.** 50 sites were in scope (the other 7 are in owner-held fitter files); 43 zipped sequences that are built together and need nothing. The 4 that mattered are fixed: 3 in `MetadataView` were silently dropping plot features that had no label, and `ClusteringView` no longer mutates `columns`, so its two zips now assert their alignment with `strict=True` rather than depending on truncation to hide the appended `"id"`. `SQLiteDBWriter`'s sublevel transpose was verified equal-length upstream and now says so with `strict=True`. Not enabled because the 54 remaining sites would each need their own `strict=` decision, and at least one - the list-against-generator zip in `MetaDatabaseLoader` CSV export - cannot be proven equal-length in advance. The rule earned its keep as a one-time audit. |
-  | `B904` raise-without-from-inside-except | 1 | **Done 2026-08-25; not enabled as a gate.** All 23 in-scope sites now chain with `from e`; the one remaining is in `PeakFinder.py` (owner-held), so enabling the rule would need a `per-file-ignores` entry that hides a real check rather than satisfying it. Worth recording that this was not purely cosmetic: the 12 data-reader sites were discarding the name of the missing file, leaving the user with "at least one of the input raw data files is missing" and no way to tell which. |
-  | `B007` unused-loop-control-variable | 3 | **Done 2026-08-25.** 17 of 20 cleared: 13 `dict.items()` loops became `.values()` or plain key iteration, one pointless `enumerate` dropped, and 3 `zip` sites underscore-prefixed rather than restructured so their iteration count is untouched. The 3 remaining are in `PeakFinder.py`. |
-  | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
-  | `B028` no-explicit-stacklevel | 1 | one `warnings.warn` in `MetaWriter.py`; cosmetic |
-  | `S608` hardcoded-sql-expression | 25 | **downgraded.** The database is a local file owned by the user running the app, so there is no privilege boundary for an injection to cross. Settled - see the `SQLitePeakDBLoader` note above. |
-  | `S110` try-except-pass | 13 | **Triaged 2026-08-25; all 13 remaining are in `PeakFinder.py`.** The 6 that were in our own code are fixed: two `set.remove()` handlers became `set.discard()`, one settings-value type test narrowed to `except AttributeError`, and three cosmetic `tight_layout` handlers now log at debug. Enabling the rule would need either the owner to fix hers or a `per-file-ignores` entry for `PeakFinder.py` - the latter hides a real check rather than satisfying it, so it is not proposed. |
-  | `S101` assert | 7 | **Done 2026-08-25.** The one site in non-owner code, `ClassicBlockageFinder._filter_events`, now raises `RuntimeError` rather than asserting - asserts vanish under `python -O`, which would have left an opaque `AttributeError` instead. The 7 remaining are all in `NanoTrees.py`, owner-held and a deprecation candidate. |
-  | `S112` try-except-continue | 1 | the single site is in `PeakFinder.py` (`_classify_folded_unfolded`, a bare `continue` on an array index); see the `S110` row. |
+  **All that is left open is 3 cosmetic sites**: 2 `B010` in `LogDecorator.py` and 1
+  `B028` (`warnings.warn` without `stacklevel`) in `MetaWriter.py`. There is no further
+  bug-finding value here; treat the block as done unless the owner-held files change hands.
 
-  Almost every remaining fix is a logic change, so this is unclaimed rather than
-  blocked. **This block is now essentially finished.** `B905`, `S110`, `S112`, `B904`,
-  `S101` and `B007` are all closed (see their rows above): what each surfaced in our own
-  code is fixed, and every site that remains sits in an owner-held file - which is also
-  why none of them is enabled as a gate. What is left is `S608` (25, accepted: the
-  database is a local file owned by the user running the app) and 3 cosmetic
-  `B010`/`B028` sites. There is no further bug-finding value in this block; treat it as
-  done unless the owner-held files change hands.
-
-  Note this overlaps, but is not the same as, the bandit proposal in the
-  community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
-  boundary for unvetted contributions, this one is codebase-wide as a bug-catcher.
+  Note this is *not* the same as the bandit proposal in the community-plugin block below:
+  that one is scoped to `poriscope/plugins/` as a trust boundary for unvetted
+  contributions, this one was codebase-wide as a bug-catcher.
 
 - **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,
@@ -637,9 +542,11 @@ independently actionable and can be picked up in its own future session.
 signal) → 3 (makes 1/2 easy to satisfy from the start) → 4/5 (merge-gating
 infrastructure) → 6/7/8 (rounding out coverage). That sequence assumed blocks 1 and 2
 could be built first, and both are pytest suites, which are owned by another developer
-and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone
-with nothing built before them, and they are the order given at the top of this file.
-**Block 6 is now done** (2026-08-31), leaving 8 then 5.
+and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone with
+nothing built before them; **block 6 landed on 2026-08-31** as
+`.github/workflows/docs-check.yml` (narrative in `changelog.md`, and its one piece of
+follow-through - marking the check as required in branch protection - is folded into
+block 5), leaving 8 then 5, which is the order given at the top of this file.
 Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
 from a blank file, so building 3 while they do not exist loses most of its value.
 
@@ -839,22 +746,10 @@ commits); that's what `ci-internal-pr.yml` is for, and it isn't fork-safe.
 
 ## 6. Docs-render check in CI (Sphinx warnings-as-errors) - DONE 2026-08-31
 
-Landed as `.github/workflows/docs-check.yml`, running the autodoc generator plus
-`sphinx-build -W --keep-going` on every pull request targeting `main`, `develop` or
-`release/*`, with the same flags added to the deploy workflow and the local `post-merge`
-hook. Full narrative in `changelog.md`.
-
-Two notes worth keeping. The block's Gotcha - "expect an initial cleanup pass, grandfather
-via a suppression list if the initial warning count is large" - **did not apply**: the
-count was 18, in five causes, twelve of them from a single bug in
-`plugins_generate_autodoc.py`, so all were fixed outright and no baseline was built. And
-`nitpicky` was measured at 1170 warnings (1152 `reference target not found` for
-numpy/pandas/matplotlib types missing from the intersphinx inventories) and deliberately
-left off; enabling it needs an extended inventory map plus a `nitpick_ignore_regex` and is
-its own piece of work.
-
-The remaining follow-through belongs to block 5: marking the new check as a required
-status check in branch protection for `main`/`develop` is an out-of-repo, admin-only step.
+Landed as `.github/workflows/docs-check.yml`; see `changelog.md`. The one open remainder is
+block 5's out-of-repo admin step: marking the check as a required status check in branch
+protection for `main`/`develop`. Enabling `nitpicky` was measured (1170 warnings) and
+deliberately left off - that is its own piece of work, not follow-through from this block.
 
 ## 7. Fuzz / malformed-input testing for data readers
 
