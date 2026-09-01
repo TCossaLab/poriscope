@@ -118,36 +118,16 @@ blocks "What to pick up next".
 
 ### Minor
 
-- **`_validate_param_ranges` raises the exception its docstring rules out.**
-  `BaseDataPlugin.py:437-455`. The bound comparisons run before any `None` check, so
-  `Value: None` with a `Min` set raises `TypeError: '<' not supported between instances of
-  'NoneType' and 'float'` (confirmed) where the docstring promises `ValueError`. The caller
-  reports every failure with one generic message, so the user sees a type error instead of
-  "Threshold is required". Same method: the `Options` check special-cases the literal names
-  `"Output File"` and `"Input File"` - plugin-specific knowledge in the universal validator.
-  A `"Validate Options": False` flag in the settings schema expresses it without the base
-  class knowing any names.
-  **Reachability corrected 2026-09-01**: for that same entry `_validate_param_types` runs
-  first in `apply_settings` and raises its own `TypeError` (`isinstance(None, float)` is
-  False), so the ranges bug is only reachable when a subclass overrides the types check.
-  Both were confirmed by calling the two methods directly. The fix is still worth making -
-  the message a user gets today is wrong either way - but this is not the live crash the
-  entry used to imply.
-- **`_validate_param_types` raises `KeyError: 'Value'` on an entry that has no `Value`
-  key** - which 27 of the 91 parameter entries shipped today are, the base classes' own
-  included (`{"Input File": {"Type": str}}`). So `get_empty_settings()` output cannot be
-  handed straight to `apply_settings()`; the settings dialog fills the values in first
-  (`DataPluginController.py:510-530`). A scripting user following the docstring hits the
-  `KeyError`. Found while building the settings-schema validator (block 2); reading it
-  through `.get("Value")` the way `_validate_param_ranges` already does is probably the
-  whole fix, but it is a logic change on the universal validation path and wants its own
-  look.
-- **`_validate_param_ranges`'s reserved-name carve-out is missing `Folder`.** It skips the
-  `Value in Options` check for `"Input File"` and `"Output File"`, but `MetaReader`'s
-  docstring reserves three names, and `DataPluginController.py:517-524` special-cases
-  `"Folder"` explicitly when pre-populating the dialog. Latent: no shipped plugin declares a
-  `Folder` parameter today (measured). `poriscope/utils/settings_schema.py` already carves
-  out all three, so the two disagree until this is fixed.
+- ~~**`_validate_param_ranges` raises the exception its docstring rules out**, plus the
+  missing-`Value` `KeyError` and the `Folder` carve-out.~~ **All three fixed 2026-09-01**;
+  see `changelog.md`. What remains of this entry is the design question it also raised, and
+  that is genuinely still open: the `Options` carve-out is still **three literal parameter
+  names in a universal validator**, which is plugin-specific knowledge the base class should
+  not need. A `"Validate Options": False` flag in the settings schema would express it
+  without the base class knowing any names. The names are at least defined once now -
+  `poriscope/utils/settings_schema.py::FILE_DIALOG_PARAMS`, which `_validate_param_ranges`
+  imports - so the runtime and static checks can no longer drift apart, but that is
+  containment rather than a solution.
 - **Two dead conditions in the plugin loader.** `main_model.py:190` filters
   `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
   `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the

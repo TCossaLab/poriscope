@@ -35,10 +35,14 @@ ALLOWED_KEYS = frozenset({"Type", "Value", "Options", "Min", "Max", "Units"})
 
 #: Parameter names whose ``Options`` list holds file-dialog filters
 #: (``"ABF2 Files (*.abf)"``) rather than permissible values, so a ``Value`` is not
-#: expected to appear in it. ``BaseDataPlugin._validate_param_ranges`` carves out the
-#: first two for the same reason; ``Folder`` is included here because
-#: :class:`~poriscope.utils.MetaReader.MetaReader` documents all three as reserved and
-#: ``DataPluginController`` special-cases it when pre-populating the settings dialog.
+#: expected to appear in it. These are the three names
+#: :class:`~poriscope.utils.MetaReader.MetaReader` documents as reserved.
+#:
+#: ``BaseDataPlugin._validate_param_ranges`` imports this rather than keeping its own
+#: list. It used to hardcode ``"Input File"`` and ``"Output File"`` and omit ``"Folder"``,
+#: which meant the runtime check and this one disagreed about a name the GUI already
+#: treats specially (``DataPluginController`` pre-populates ``Folder`` from the data
+#: server). Defining it once is what stops them drifting apart again.
 FILE_DIALOG_PARAMS = frozenset({"Input File", "Output File", "Folder"})
 
 #: Types for which ``Value`` and ``Options`` entries can be checked against ``Type``.
