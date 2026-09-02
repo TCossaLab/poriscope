@@ -107,6 +107,7 @@ class MainController(QObject):
         self.data_plugin_controller.add_text_to_display.connect(
             self.main_view.add_text_to_display
         )
+        self.main_model.add_text_to_display.connect(self.main_view.add_text_to_display)
 
         # main component connections
         self.main_view.instantiate_analysis_tab.connect(self.instantiate_analysis_tab)

@@ -109,14 +109,25 @@ blocks "What to pick up next".
   `save_session` to serialise. Fix the ordering first, then the alias.
   Also noticed while tracing it: **`DataPluginModel.get_plugin_details` has no production
   callers** - only two tests - so it is dead code carried as public API.
-- **`save_session` has no error handling, unlike `update_app_config` beside it.**
-  `main_model.py:307-316` opens a user-supplied path and calls `json.dump` bare, from a Qt
-  slot - and PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
-  read-only destination can take the process down. It also re-serializes the whole history
-  on the GUI thread on every plugin change. Contrast the 161 `except Exception` handlers
-  elsewhere: `validate_and_instantiate_plugin` alone has six sequential
+- **Fixed** (2026-09-02): `save_session` opened a user-supplied path and called
+  `json.dump` bare, from a Qt slot, so a read-only destination could take the process
+  down. **It was two sites, not one** - `save_tab_actions` beside it is the identical
+  shape and had not been recorded. Both now catch, and report according to who asked:
+  WARNING plus a status-panel message for an autosave, ERROR - and therefore a dialog -
+  for a save to a path the user chose. See `changelog.md`.
+  **What's still open** in the same entry: `save_session` re-serializes the whole history
+  on the GUI thread on every plugin change. Also unaddressed, and recorded here only so it
+  is not re-derived: the 161 `except Exception` handlers elsewhere are inconsistent about
+  what they leave behind - `validate_and_instantiate_plugin` alone has six sequential
   try/except/log/return blocks, so a failure leaves the UI partially updated with no
   indication of which stage failed.
+- **`MainModel.errorOccurred` is emitted but connected to nothing.** `main_model.py:180`
+  emits it on a plugin-load failure and no `.connect` for it exists anywhere, so that
+  message reaches no one; the `logger.error` on the line above is the only reason the
+  user hears about it. `configUpdated`, `dataReadInstancesUpdated` and `fileLoaded` are
+  declared on the same class and never emitted at all. Noticed 2026-09-02 while wiring
+  `MainModel.add_text_to_display`, which is connected in `MainController.setup_connections`
+  the way the rest of the app does it.
 - **Oversized units, measured.** Five functions exceed 300 lines:
   `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
   `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
@@ -171,8 +182,8 @@ file order:
 2. **Block 4, the static security review for module-level plugin code.** Untouched,
    self-contained, and the next unblocked item in the compliance-gate arc.
 
-Then `save_session`'s missing error handling and the rest of the Moderate/Minor audit
-tiers, the `hist_data` refactor, and the parked histogram cut-off.
+Then the rest of the Moderate/Minor audit tiers, the `hist_data` refactor, and the
+parked histogram cut-off.
 
 **Block 3's analysis-tab half is deferred** (2026-09-02) until the planned frontend
 refactoring has landed, to avoid generating triads against a layout that is about to
