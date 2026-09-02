@@ -340,6 +340,18 @@ table.
   `_classify_translocation_direction`). The fix is to build the histogram once from the
   full data and pass it into the fit, rather than letting the fit dictate the plot's bins.
 
+- **A log-normal higher component in `PeakFinder.fit_threshold`.** The upper population
+  of a real prominence dataset is right-skewed (skew +2.09), and a log-normal beat a
+  Gaussian on it by 24% RMS (12.4 vs 16.4) when both were fit to the same data above the
+  valley. Peeling the two components apart (landed 2026-08-27) removed the worst symptom
+  by stopping the higher component from absorbing the lower population's shoulder, but a
+  symmetric Gaussian still cannot represent a skewed population's tail. Deferred because
+  it breaks the six-element `params` contract that both the plotting code and all three
+  `_classify_*` methods unpack; needs a decision on how a mixed Gaussian/log-normal
+  result should be reported. Do **not** revisit Poisson-weighted `curve_fit` alongside
+  it without re-reading the changelog entry: measured on the same data, it makes the fit
+  worse unless paired with tail trimming, and the pairing is cliff-edged.
+
 ## Also queued
 
 - **`pydoclint` class-attribute bug - filed upstream, now awaiting a fix.** Reported to
