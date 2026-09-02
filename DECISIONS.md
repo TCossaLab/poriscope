@@ -15,6 +15,33 @@ they date the decision.
 
 ---
 
+## 2026-09-02 - `LogDecorator`'s two `setattr` calls stay; they are what satisfies mypy
+
+**Context.** `future_fixes.md` listed 2 `B010` (set-attr-with-constant) findings in
+`LogDecorator.py` among "three cosmetic lint sites ... all that is left of the
+`bugbear`/`bandit` sweep". Both are `setattr(logger.root, "ignore_exceptions", True)`,
+the one-shot latch that stops the decorator reporting the same logger fault forever.
+`B010`'s advice is to write the plain assignment.
+
+**Decision.** They stay as `setattr`, and they are not cosmetic. `ignore_exceptions` is
+not an attribute of `logging.RootLogger`; it is a flag this module invents and hangs off
+the root logger so that all 977 decorated methods share one latch. mypy accepts the
+*read* two lines above it, because `hasattr(logger.root, "ignore_exceptions")` in the
+same condition narrows the type - but that narrowing does not extend to a write.
+
+**Evidence.** Probed directly against `mypy.ini`: the plain assignment reports
+``"RootLogger" has no attribute "ignore_exceptions"  [attr-defined]``, while the
+`setattr` form is clean. So "fixing" `B010` means adding a `# type: ignore[attr-defined]`
+to satisfy a rule that is not enabled as a gate in the first place - trading a real
+checker's silence for a disabled linter's approval.
+
+**Revisit if** the latch is ever moved off the root logger onto something this codebase
+declares - a small module-level state object, say - at which point the attribute becomes
+typed, the `setattr` becomes genuinely unnecessary, and both findings disappear on their
+own rather than being suppressed.
+
+---
+
 ## 2026-09-02 - The plugin trust boundary is checked with ruff, not bandit, and is not a sandbox
 
 **Context.** Plugin discovery executes every file it walks:
@@ -307,9 +334,11 @@ plot features that had no label, `B904` found the six data readers discarding th
 the missing file from `FileNotFoundError`, and `S110` found `apply_settings` swallowing a
 failed `get_key()` and leaving the dependency graph incomplete.
 
-**Consequences worth knowing.** What is left unfixed is 2 `B010` sites in
-`LogDecorator.py` and 1 `B028` in `MetaWriter.py`, all cosmetic. There is no further
-bug-finding value in this block - treat it as finished rather than as a backlog.
+**Consequences worth knowing.** What is left unfixed is 1 `B028` in `MetaWriter.py`,
+which is cosmetic. The 2 `B010` sites in `LogDecorator.py` that this entry also called
+cosmetic turned out not to be: `setattr` is what gets them past mypy, so they are settled
+rather than outstanding - see the 2026-09-02 entry at the top of this file. There is no
+further bug-finding value in this block - treat it as finished rather than as a backlog.
 
 **Revisit if.** The owner-held fitter files change hands, which would remove the
 `per-file-ignores` objection for the five rules it applies to. Note this is *not* the same

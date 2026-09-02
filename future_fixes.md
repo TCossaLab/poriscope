@@ -75,15 +75,31 @@ pick up next".
 
 ### Moderate
 
-- **`@log`'s debug gate reads the root logger's exact level.** `LogDecorator.py:106,128`:
-  `if logger.root.level == logging.DEBUG`. Testing the root rather than the decorated
-  module's effective level makes per-module debug logging impossible, and `==` disables
-  argument logging at any level that is not exactly 10 (confirmed at level 5).
-  `logger.isEnabledFor(logging.DEBUG)` fixes both. Separately, across 949 decorated
-  methods the per-call cost is paid whether logging is on or not - `log_call` builds the
-  f-string name before the level is consulted. Build it lazily inside the check, and
-  consider dropping the decorator from `get_key()` and `WaveletFilter._apply_filter`,
-  which run per dependency-wiring call and per data chunk respectively.
+- **`@log` costs roughly 291 ns per call above an undecorated method, with logging off.**
+  Measured 2026-09-02 over 300,000 calls of a trivial decorated method: 330 ns/call
+  against 39 ns/call undecorated, after the lazy-name fix. Almost all of that is the
+  wrapper's own call machinery rather than anything a level check can skip, so the only
+  remaining lever is not decorating the hottest methods at all - `get_key()`, which runs
+  once per dependency-wiring step, and `WaveletFilter._apply_filter`, which runs per data
+  chunk, are the two candidates. Profile a real analysis run before removing either;
+  291 ns only matters at a call rate nothing has yet demonstrated.
+- **Per-module DEBUG is reachable from scripting but not from the running app.** The
+  `@log` gate now reads the decorated module's own effective level, so raising one
+  plugin's logger works - measured in the shape `scripting.rst` documents. It does *not*
+  work in the GUI, for two independent reasons. There is no UI for it: the Settings
+  window's combobox sets one application-wide level and nothing else. And
+  `MainModel.update_logging_level` calls `handler.setLevel(level)` on every non-`QtHandler`
+  handler, so once the user has touched that combobox even once, the console and file
+  handlers are pinned to the app-wide level and a raised module's DEBUG records are
+  dropped at the handler rather than at the logger. Measured 2026-09-02: identical probes
+  pass under the scripting setup, where the handlers are left at `NOTSET`, and produce
+  nothing once the handlers are pinned. Whether the app should expose per-module levels
+  at all is the open question; if it should, the handler pinning has to go with it.
+- **`@log`'s `debug_only` parameter does nothing.** It is declared in both `@overload`s
+  and in the real signature, and documented in the docstring, but the body never reads
+  it and no call site anywhere passes it. Removing it narrows a decorator applied 977
+  times and re-exported for plugin authors, so it is a breaking change to a public API
+  and wants calling out as one.
 - **`apply_settings` aliases the settings dict it is handed, and session history holds the
   same object.** `BaseDataPlugin.apply_settings`: `self.raw_settings = settings`. Do **not**
   fix this by copying there - measured, the alias is load-bearing. `DictDialog.__init__`
@@ -355,11 +371,12 @@ table.
   adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
   the `IntroDialog` entry.
 
-- **Three cosmetic lint sites are all that is left of the `bugbear`/`bandit` sweep**:
-  2 `B010` (set-attr-with-constant) in `LogDecorator.py` and 1 `B028` (`warnings.warn`
-  without `stacklevel`) in `MetaWriter.py`. There is no further bug-finding value in that
-  sweep unless the owner-held files change hands; `DECISIONS.md` records why the audited
-  rules stay off as gates. Not to be confused with the bandit proposal in block 4 below,
+- **One cosmetic lint site is all that is left of the `bugbear`/`bandit` sweep**:
+  1 `B028` (`warnings.warn` without `stacklevel`) in `MetaWriter.py`. The two `B010`
+  sites in `LogDecorator.py` that used to be listed here are **not** cosmetic and are no
+  longer open - `setattr` is what gets them past mypy; see `DECISIONS.md`. There is no
+  further bug-finding value in that sweep unless the owner-held files change hands;
+  `DECISIONS.md` records why the audited rules stay off as gates. Not to be confused with the bandit proposal in block 4 below,
   which is scoped to `poriscope/plugins/` as a trust boundary rather than codebase-wide as
   a bug-catcher.
 

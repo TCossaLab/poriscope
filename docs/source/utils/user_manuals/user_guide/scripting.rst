@@ -46,7 +46,7 @@ First, we need to import all the plugins we are going use. For this example we'l
     root_logger.addHandler(consoleHandler)
 
 .. note::
-    Poriscope uses the python logging module for error handling and information exchange with the user. If you do not configure the logger properly, it is likely that errors will pass silently, making it much more difficult to debug. The logging configuration above will suffice for the vast majority of scripting tasks. We suggest using log level``WARNING`` in most cases. ``DEBUG`` mode can be used for the obvious purpose, but the density of logged output will significantly slow down execution of your script.
+    Poriscope uses the python logging module for error handling and information exchange with the user. If you do not configure the logger properly, it is likely that errors will pass silently, making it much more difficult to debug. The logging configuration above will suffice for the vast majority of scripting tasks. We suggest using log level``WARNING`` in most cases. ``DEBUG`` mode can be used for the obvious purpose, but the density of logged output will significantly slow down execution of your script. If you only want to trace one plugin, raise that module's own logger instead of the root logger - ``logging.getLogger("poriscope.plugins.eventfinders.ClassicBlockageFinder").setLevel(logging.DEBUG)`` - which gives you the argument and return logging for that module alone and leaves everything else at ``WARNING``. Handlers get the final say: the configuration above adds its ``StreamHandler`` without a level of its own, so it passes whatever the loggers allow. Call ``setLevel`` on a handler and that becomes a second floor, and records from the module you raised will not get past it.
 
 
 Loading raw data
