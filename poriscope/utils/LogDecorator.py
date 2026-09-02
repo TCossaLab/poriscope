@@ -37,20 +37,17 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 @overload
-def log(_func: F, *, logger: logging.Logger, debug_only: bool = False) -> F: ...
+def log(_func: F, *, logger: logging.Logger) -> F: ...
 
 
 @overload
-def log(
-    _func: None = None, *, logger: logging.Logger, debug_only: bool = False
-) -> Callable[[F], F]: ...
+def log(_func: None = None, *, logger: logging.Logger) -> Callable[[F], F]: ...
 
 
 def log(
     _func: Optional[F] = None,
     *,
     logger: logging.Logger,
-    debug_only: bool = False,
 ) -> Union[F, Callable[[F], F]]:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
@@ -99,8 +96,6 @@ def log(
     :type _func: Optional[F]
     :param logger: The logger instance used for logging.
     :type logger: logging.Logger
-    :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
-    :type debug_only: bool
     :return: The decorated function or the decorator itself.
     :rtype: Union[F, Callable[[F], F]]
     """

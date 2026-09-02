@@ -752,7 +752,7 @@ and may drift — re-check the citation before acting on it.
 
 ## Findings, roughly in order of expected value if pursued
 
-1. **`LogDecorator.py:96-104` and `111-119` — duplicated exception-suppression
+1. **`LogDecorator.py:120-128` and `135-143` — duplicated exception-suppression
    logic.** The inner `log_call` and `log_return` closures inside `log()`
    each carry an identical try/except that swallows a logging failure and
    sets a one-shot `logger.root.ignore_exceptions` flag (via `hasattr`/
@@ -762,18 +762,7 @@ and may drift — re-check the citation before acting on it.
    whoever picks this up should scope how wide `@log`'s usage actually is
    before touching it.
 
-2. **`LogDecorator.py:34,79-80` — `debug_only` parameter looks dead.**
-   `log(_func=None, *, logger, debug_only=False)` documents `debug_only` as
-   controlling whether the decorator "is only to run in debug mode," but
-   nothing in `decorator_log`/`log_call`/`log_return`/`generator_wrapper`/
-   `wrapper` ever reads it, and a repo-wide search found no call site passing
-   `debug_only=True`. Unlike `register_action`'s reserved-for-extension
-   no-arg factory (Part 3 above), nothing in this file or elsewhere
-   documents `debug_only` as an intentional future hook. Worth confirming
-   it's genuinely unused (not, say, read by something outside this file via
-   introspection) before deciding whether to delete it or wire it up.
-
-3. **`EventWorker.py:70-84` — three near-identical `except` clauses in
+2. **`EventWorker.py:70-84` — three near-identical `except` clauses in
    `Worker.process_generator`.** `RuntimeError`, `ValueError`, and `IOError`
    each get their own clause doing the same thing (log at `error`, `break`),
    differing only in which exception type the log message names. (Also note
@@ -781,7 +770,7 @@ and may drift — re-check the citation before acting on it.
    whether that aliasing was intentional or just how the list grew over
    time.) Candidate for collapsing into one tuple-based `except` clause.
 
-4. **`EventWorker.py:85-90` vs. `run()`'s `finally` at line 112 — possibly
+3. **`EventWorker.py:85-90` vs. `run()`'s `finally` at line 112 — possibly
    redundant progress-bar emission.** The catch-all `except Exception`
    branch inside `process_generator` explicitly emits
    `update_progressbar.emit(100, ...)` before breaking, but `run()` (the
@@ -792,13 +781,13 @@ and may drift — re-check the citation before acting on it.
    of `process_generator` that doesn't go through `run()`) before removing
    it — a grep for direct callers of `process_generator` would settle it.
 
-5. **`EventWorker.py:103-110` — `except Exception: raise` inside `run()`
+4. **`EventWorker.py:103-110` — `except Exception: raise` inside `run()`
    appears to be a no-op.** It catches every exception only to re-raise it
    unchanged, which reads as behaviorally identical to omitting the
    `except` clause and keeping just `try`/`finally`. Cheap to verify and
    cheap to remove if confirmed inert.
 
-6. **`EventWorker.py:57-61` — `send`-vs-`next` dispatch via catching
+5. **`EventWorker.py:57-61` — `send`-vs-`next` dispatch via catching
    `TypeError`.**
    ```python
    try:
@@ -817,12 +806,12 @@ and may drift — re-check the citation before acting on it.
    finder/fitter's generator, so any change here needs real test coverage,
    not just a read-through.
 
-7. **`QObjectABCMeta.py:34` / `QWidgetABCMeta.py:34` — leftover commented-out
+6. **`QObjectABCMeta.py:34` / `QWidgetABCMeta.py:34` — leftover commented-out
    line.** Both files contain the identical dead comment
    `# abc._abc_init(cls)` inside `__new__`. Trivial to remove; flagged only
    for completeness.
 
-8. **`QObjectABCMeta.py` / `QWidgetABCMeta.py` — duplicated `__call__`/
+7. **`QObjectABCMeta.py` / `QWidgetABCMeta.py` — duplicated `__call__`/
    `__new__` across two files.** The two metaclasses are identical except
    for which Qt base (`QObject` vs `QWidget`) they combine with. Real
    duplication, but these are two of the most foundational, most widely
@@ -831,7 +820,7 @@ and may drift — re-check the citation before acting on it.
    that against the blast radius of touching either file, not just the
    line count saved.
 
-9. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
+8. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
    class attributes mutated as de facto process-wide globals**, toggled by
    a `QApplication`-wide event filter that reacts to *any* `QMessageBox`
    shown anywhere in the app (lines 91-97). Not a concurrency bug (Qt event

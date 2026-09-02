@@ -95,11 +95,6 @@ pick up next".
   pass under the scripting setup, where the handlers are left at `NOTSET`, and produce
   nothing once the handlers are pinned. Whether the app should expose per-module levels
   at all is the open question; if it should, the handler pinning has to go with it.
-- **`@log`'s `debug_only` parameter does nothing.** It is declared in both `@overload`s
-  and in the real signature, and documented in the docstring, but the body never reads
-  it and no call site anywhere passes it. Removing it narrows a decorator applied 977
-  times and re-exported for plugin authors, so it is a breaking change to a public API
-  and wants calling out as one.
 - **`apply_settings` aliases the settings dict it is handed, and session history holds the
   same object.** `BaseDataPlugin.apply_settings`: `self.raw_settings = settings`. Do **not**
   fix this by copying there - measured, the alias is load-bearing. `DictDialog.__init__`
