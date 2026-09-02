@@ -15,6 +15,43 @@ they date the decision.
 
 ---
 
+## 2026-09-02 - Per-module log levels are a scripting facility; the app keeps one global level
+
+**Context.** Fixing `@log`'s debug gate to read the decorated module's own effective
+level - it previously tested `logger.root.level` - made per-module DEBUG possible for the
+first time. The obvious follow-on question was whether the application should expose it,
+since the Settings window's **Logging Level** dropdown sets one application-wide level and
+nothing else.
+
+**Decision.** It should not. The app keeps a single global level, and per-module control
+stays a scripting-mode facility, documented on the Scripting page with the Settings page
+pointing at it. Nothing in the GUI changes.
+
+**What that means concretely**, because two separate things would have had to move. There
+is no UI for a per-module level, and adding one means designing an interface for an
+open-ended list of dotted module names - a developer's tool wearing a general user's
+interface. Independently, `MainModel.update_logging_level` calls `handler.setLevel(level)`
+on every handler except `QtHandler`, so once the user has touched the dropdown even once
+in a session, the console and file handlers are pinned to the app-wide level and a raised
+module's DEBUG records are dropped at the handler rather than at the logger. Exposing
+per-module levels therefore requires unpinning the handlers as well, which would change
+what the dropdown means for everyone in order to serve a case that scripting already
+serves better.
+
+**Evidence.** Measured 2026-09-02 with identical probes against the real handler set
+`App.configure_logger` installs: raising one plugin's logger works in the shape
+`scripting.rst` documents, where handlers are left at `NOTSET`, and produces nothing once
+the handlers are pinned the way `update_logging_level` pins them. The global path is
+unaffected either way - driving the real `SettingsWindow.update_logging_level(1)` through
+`MainModel.update_logging_level` still turns on argument and return logging for every
+decorated method, with `QtHandler` holding its `ERROR` floor.
+
+**Revisit if** someone is regularly debugging a single plugin from inside the GUI and
+cannot reasonably drive it from a script instead. The scripting path exists precisely
+because that is the better place for this.
+
+---
+
 ## 2026-09-02 - `LogDecorator`'s two `setattr` calls stay; they are what satisfies mypy
 
 **Context.** `future_fixes.md` listed 2 `B010` (set-attr-with-constant) findings in

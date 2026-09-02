@@ -46,7 +46,52 @@ First, we need to import all the plugins we are going use. For this example we'l
     root_logger.addHandler(consoleHandler)
 
 .. note::
-    Poriscope uses the python logging module for error handling and information exchange with the user. If you do not configure the logger properly, it is likely that errors will pass silently, making it much more difficult to debug. The logging configuration above will suffice for the vast majority of scripting tasks. We suggest using log level``WARNING`` in most cases. ``DEBUG`` mode can be used for the obvious purpose, but the density of logged output will significantly slow down execution of your script. If you only want to trace one plugin, raise that module's own logger instead of the root logger - ``logging.getLogger("poriscope.plugins.eventfinders.ClassicBlockageFinder").setLevel(logging.DEBUG)`` - which gives you the argument and return logging for that module alone and leaves everything else at ``WARNING``. Handlers get the final say: the configuration above adds its ``StreamHandler`` without a level of its own, so it passes whatever the loggers allow. Call ``setLevel`` on a handler and that becomes a second floor, and records from the module you raised will not get past it.
+    Poriscope uses the python logging module for error handling and information exchange with the user. If you do not configure the logger properly, it is likely that errors will pass silently, making it much more difficult to debug. The logging configuration above will suffice for the vast majority of scripting tasks. We suggest using log level``WARNING`` in most cases. ``DEBUG`` mode can be used for the obvious purpose, but the density of logged output will significantly slow down execution of your script.
+
+
+Debug logging, one plugin at a time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Nearly every method on every plugin is decorated with ``@log``, which records the
+arguments it was called with and the value it returned. Those records are emitted at
+``DEBUG``, so raising the root logger turns them all on at once:
+
+.. code:: python
+
+    root_logger.setLevel(logging.DEBUG)
+
+That is exhaustive, and correspondingly slow: a single analysis run writes a line for
+each of hundreds of decorated calls across every plugin in your pipeline. This is the
+only granularity the GUI offers, through the **Logging Level** dropdown described under
+:ref:`settings`, which sets one application-wide level.
+
+In a script you can be much more precise. Each plugin module owns its own logger, so
+raise just the one you are investigating and leave the root logger at ``WARNING``:
+
+.. code:: python
+
+    #trace one plugin, leaving everything else quiet
+    logging.getLogger("poriscope.plugins.eventfinders.ClassicBlockageFinder").setLevel(logging.DEBUG)
+
+The string to pass is the plugin module's dotted import path, which is also what its
+class reports as ``ClassicBlockageFinder.__module__`` if you would rather not type it
+out. Logger names nest, so naming a package turns on a whole family at once while its
+siblings stay quiet:
+
+.. code:: python
+
+    #trace every event finder, but no readers, filters or fitters
+    logging.getLogger("poriscope.plugins.eventfinders").setLevel(logging.DEBUG)
+
+You can raise as many as you like, at whatever levels you like, and set them back to
+``logging.NOTSET`` to hand control of a module back to the root logger.
+
+.. note::
+    Handlers have the final say. The configuration above adds its ``StreamHandler``
+    without a level of its own, so the handler passes whatever the loggers allow, which
+    is what makes the per-module levels above take effect. If you call ``setLevel`` on a
+    handler, that becomes a second floor and records from the module you raised will not
+    get past it, no matter how low you set the module's own level.
 
 
 Loading raw data

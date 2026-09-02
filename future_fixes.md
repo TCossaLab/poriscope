@@ -83,18 +83,6 @@ pick up next".
   once per dependency-wiring step, and `WaveletFilter._apply_filter`, which runs per data
   chunk, are the two candidates. Profile a real analysis run before removing either;
   291 ns only matters at a call rate nothing has yet demonstrated.
-- **Per-module DEBUG is reachable from scripting but not from the running app.** The
-  `@log` gate now reads the decorated module's own effective level, so raising one
-  plugin's logger works - measured in the shape `scripting.rst` documents. It does *not*
-  work in the GUI, for two independent reasons. There is no UI for it: the Settings
-  window's combobox sets one application-wide level and nothing else. And
-  `MainModel.update_logging_level` calls `handler.setLevel(level)` on every non-`QtHandler`
-  handler, so once the user has touched that combobox even once, the console and file
-  handlers are pinned to the app-wide level and a raised module's DEBUG records are
-  dropped at the handler rather than at the logger. Measured 2026-09-02: identical probes
-  pass under the scripting setup, where the handlers are left at `NOTSET`, and produce
-  nothing once the handlers are pinned. Whether the app should expose per-module levels
-  at all is the open question; if it should, the handler pinning has to go with it.
 - **`apply_settings` aliases the settings dict it is handed, and session history holds the
   same object.** `BaseDataPlugin.apply_settings`: `self.raw_settings = settings`. Do **not**
   fix this by copying there - measured, the alias is load-bearing. `DictDialog.__init__`
