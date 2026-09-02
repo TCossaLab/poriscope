@@ -125,11 +125,6 @@ pick up next".
   code ignores, so the clause has never excluded anything. `main_model.py:55`'s
   `_JSON_CLASS_NAMES` maps `"null"` to `None`, but the writer emits `type.__name__`, which
   for `None`'s type is `"NoneType"` - the entry can never match.
-- **A missing config key at startup is fatal before logging exists.** `main_app.py:31`
-  reads `self.app_config["Log Level"]` by subscript, but the backfill at `:96-104` covers
-  only `"User Plugin Folder"`. A hand-edited or older `config.json` therefore dies with a
-  `KeyError` before any handler exists to record it. Backfill every key from
-  `default_app_config`, or read through `.get()` with a default.
 
 ## What to pick up next
 
