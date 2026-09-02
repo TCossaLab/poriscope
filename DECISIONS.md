@@ -15,6 +15,48 @@ they date the decision.
 
 ---
 
+## 2026-09-02 - `CODEOWNERS` stays advisory; code-owner review is not enforced
+
+**Context.** `.github/CODEOWNERS` landed in 1.8.0, mapping each subsystem and plugin
+family to its maintainer so a pull request automatically requests review from the right
+person. GitHub offers a branch-protection setting, *Require review from Code Owners*,
+that turns the same file into a merge block. `future_fixes.md` block 5 had assumed from
+the start that the file was only worth having with that setting on, describing the goal as
+"no plugin file merges without ... a human sign-off" and calling the toggle the thing that
+would give the file "teeth".
+
+**Decision. The toggle stays off, on every branch.** The file is a guideline for routing
+attention, not a hard edit limit and not a barrier to contribution. Block 5's wording was
+corrected rather than implemented, so the enforcement step is not left looking like
+unfinished work.
+
+**Evidence and reasoning.**
+
+- **Team size.** Three people have commits in the last six months, and five have ever been
+  named as contributors. Enforced review is a coordination mechanism for a team large
+  enough that the right reviewer is not obvious; at this size everyone already knows who
+  maintains what, and the file exists to spare them having to remember to tag each other,
+  not to referee them.
+- **Fork contributions are a first-class path.** `.github/workflows/ci-fork-pr.yml` exists
+  specifically for pull requests from forks, which is the realistic route for a community
+  plugin. A required-owner-review rule would put one named individual in front of every
+  such contribution.
+- **Some owners cannot answer.** Two contributors named in `# Contributors:` headers have
+  left the lab, and one of them has no GitHub handle at all. GitHub silently ignores a
+  `CODEOWNERS` line naming anyone without write access, so under enforcement the gate
+  would be unpredictable as well as unwelcome - blocking on some paths and quietly not on
+  others.
+- **The checks that matter already block.** Correctness is gated by the automated hooks
+  and CI described in `quality_control.rst`, which every pull request must pass. Owner
+  review adds judgement, which is worth requesting and not worth requiring.
+
+**Revisit if the contributor list grows past six people.** That is the user's stated
+trigger, and it is a scale judgement rather than an objection to enforcement in principle
+- so the question is genuinely open again at that point, and only at that point. Nothing
+else reopens it: not a bad merge, and not the arrival of the scoped plugin CI gate in
+block 5, whose step 3 concerns required *status checks* and explicitly does not extend to
+code-owner review.
+
 ## 2026-09-01 - No custom lint rules for the three conventions `CLAUDE.md` documents
 
 Proposed as block 8 of the community-plugin compliance gate: write `ast`-based checkers

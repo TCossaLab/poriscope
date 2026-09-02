@@ -515,7 +515,9 @@ Owners" branch protection is switched **off** on every branch on purpose, becaus
 Poriscope accepts plugin contributions through fork PRs and a required-owner-review rule
 would put a named individual in front of each one. **Do not read the remaining CI work
 below as gated on turning that toggle on, and do not "finish" this block by doing so.**
-The rationale is in `changelog.md` under 1.8.0 and in
+The reasoning and the single condition that would reopen it - the contributor list growing
+past six people - are recorded in `DECISIONS.md` under 2026-09-02; the contributor-facing
+version is in
 `docs/source/utils/user_manuals/plugins_manual/development_workflow/code_ownership.rst`.
 
 **Why.** `.github/workflows/ci-fork-pr.yml` already exists specifically for
