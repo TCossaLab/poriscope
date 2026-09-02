@@ -72,6 +72,13 @@ jobs:
       # plugin, and a docs build never instantiates a QApplication.
       - name: Install Qt native libs
         run: |
+          # The runner image ships apt sources for packages.microsoft.com, which this project
+          # never installs from. A 403 there fails `apt-get update` with exit 100 even when
+          # every Ubuntu repo fetched fine, which took the whole job down on 2026-09-02.
+          # Matches on the repo host, not the filename, so an image rename cannot silently
+          # reinstate it. `grep` exits 1 when it matches nothing and steps run under `bash -e`,
+          # so the `|| true` is load-bearing - without it the guard fails the step it protects.
+          sudo grep -rl packages.microsoft.com /etc/apt/sources.list.d/ | sudo xargs -r rm -f || true
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon0
 
