@@ -15,6 +15,64 @@ they date the decision.
 
 ---
 
+## 2026-09-02 - The plugin trust boundary is checked with ruff, not bandit, and is not a sandbox
+
+**Context.** Plugin discovery executes every file it walks:
+`MainModel.populate_available_plugins()` runs from the constructor and `load_plugin` calls
+`spec.loader.exec_module`, so module-level code in any `.py` file under
+`poriscope/plugins/` or the user's plugin folder runs at app start, before any compliance
+check has inspected the class. Block 4 in `future_fixes.md` proposed policing that. Two
+gates now do - `ruff-plugin-security` and `plugin-module-level` - and three parts of the
+original proposal were deliberately dropped.
+
+**Decision 1: no `bandit`.** Block 4 step 1 called for adding `bandit` to
+`requirements-dev.txt` as its own hook. It was not added. Ruff `0.12.11` is already
+pinned in `.pre-commit-config.yaml`, already implements flake8-bandit's `S` rules, and
+already runs in CI; a second tool would mean a second config, a second pinned version,
+overlapping findings on the same files, and an edit to both `requirements-dev.txt` and
+`pyproject.toml`'s `[dev]` extra, which
+`scripts/hooks/post-merge-update_requirements.py` keeps byte-identical.
+
+The gaps that leaves are known rather than guessed. `S403`/`S404` - importing `pickle` or
+`subprocess` without calling them - require ruff preview mode and are not available as
+stable rules, so they are not in the selection. `__import__("os")` is flagged by neither
+ruff nor bandit; verified against a probe file. A module-level `__import__` is caught by
+`plugin-module-level` instead, but one inside a method body is invisible to both.
+
+**Revisit if** a submission actually turns up a dangerous pattern that ruff structurally
+cannot see. Adding bandit to close a hypothetical gap is not worth a second toolchain;
+adding it to close a real one would be.
+
+**Decision 2: the module-level check skips `analysistabs/`.** It is scoped to the eight
+data-plugin families, which is what an outside contribution realistically adds - nobody
+submits an unreviewed Controller/Model/View triad from a fork. Measured: those 34 files
+have zero module-level statements outside imports, constants, classes and functions, so
+the rule needs no exceptions at all. Extending it to `analysistabs/` would require
+permitting three further patterns for six benign sites - `warnings.filterwarnings` (3),
+an `os.environ` write under a `sys.platform` guard (1), and `if __name__ == "__main__":`
+demo blocks (2) - and a rule with carve-outs is weaker than a rule with none, because the
+carve-outs are what an attacker writes against. Those files remain covered by
+`ruff-plugin-security`, which is scoped to the whole plugin tree and needs no exemptions
+anywhere.
+
+**Decision 3: this is not a sandbox, and no CI workflow was touched.** Block 4's own
+gotcha said as much and it is worth restating, because the checks are easy to mistake for
+more than they are. Anything inside a method body that only runs once the plugin is
+instantiated is beyond a static pass, and **neither check sees the runtime path at all** -
+a user dropping a `.py` file into `%LOCALAPPDATA%/Poriscope/user_plugins` gets it executed
+with no pull request and no CI in between. Plugins are reviewed by a human before they
+merge, and that review is the real gate; these hooks raise the bar against a careless
+submission.
+
+No workflow file changed, and no changed-file computation was built, because
+`ci-fork-pr.yml` and `ci-branches.yml` already run `pre-commit run --all-files` - so a
+pre-commit hook is already enforced on every incoming PR. Block 5 step 2's
+`git diff --name-only` machinery is unnecessary for a check that reports zero.
+
+**Revisit if** true isolation is ever wanted (subprocess isolation, restricted execution).
+That is a much larger architectural change and belongs in its own design discussion, not
+as an increment on this one.
+
 ## 2026-09-02 - `CODEOWNERS` stays advisory; code-owner review is not enforced
 
 **Context.** `.github/CODEOWNERS` landed in 1.8.0, mapping each subsystem and plugin

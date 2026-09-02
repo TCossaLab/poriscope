@@ -34,8 +34,13 @@ The following tools are used in Poriscope:
   raised exceptions actually match the function's real signature and body (see
   :ref:`docstring_consistency` below)
 - **check-added-large-files** – prevents accidental commits of large files
+- **Ruff security rules** – a second, separately scoped Ruff pass over
+  ``poriscope/plugins/`` only, flagging code execution, unsafe deserialization and
+  process spawning; see :ref:`plugin_trust_boundary` below
+- **plugin module-level code check** – rejects code that runs when a plugin is merely
+  discovered; see :ref:`plugin_trust_boundary` below
 
-All five are managed through the **pre-commit** framework.
+All seven are managed through the **pre-commit** framework.
 
 Two further gates are not pre-commit hooks but are enforced just as strictly:
 
@@ -60,12 +65,16 @@ When committing code (either via the command line or GitHub Desktop), the follow
 run automatically:
 
 - ``ruff`` (strict mode) – validates code without modifying files
+- ``ruff-plugin-security`` – security-relevant rules, plugin tree only
 - ``mypy`` – validates static typing
 - ``pydoclint`` – validates that docstrings match real signatures and behavior
+- ``plugin-module-level`` – blocks import-time code in a data plugin
 - ``check-added-large-files`` – blocks files larger than 123 KB
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
-``tests/``. Everything else runs against every tracked file.
+``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/`` and
+``plugin-module-level`` more narrowly still, to the eight data-plugin families.
+Everything else runs against every tracked file.
 
 These checks **never modify files**.
 
@@ -289,15 +298,68 @@ After running:
      assignment, but it makes the original sequence unreachable for the rest of the
      loop body and forces the parameter to be annotated loosely.
 
-   The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled,
-   and this is settled rather than pending. Each of ``B905``, ``B904``, ``B007``,
-   ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
+   The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled
+   *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
+   ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
    maintained code fixed; every site that still reports sits in a file owned by another
    developer, so enabling the rule would require a ``per-file-ignores`` entry that hides
    a real check rather than satisfying it. The reasoning, and the separate acceptance of
    the ``S608`` hardcoded-SQL sites, are recorded in ``DECISIONS.md``; what each audit
    found is in ``changelog.md``. Please do not re-propose them without reading that
    entry first.
+
+   **This is a different question from the security rules that do run on the plugin
+   tree.** ``ruff-plugin-security`` selects a separate, narrower set of ``S`` rules and
+   applies them only under ``poriscope/plugins/`` -- see
+   :ref:`plugin_trust_boundary`. The two do not overlap: none of the audited-and-declined
+   rules above is in that selection, and ``S608`` is not either.
+
+.. _plugin_trust_boundary:
+
+Plugin Code Runs on Your Machine
+--------------------------------
+
+Two of the hooks exist for one reason: **plugin discovery executes every Python file it
+finds.** ``MainModel.populate_available_plugins()`` walks ``poriscope/plugins/`` and your
+configured user-plugin folder recursively, and for each file it calls
+``spec.loader.exec_module()``. Python runs module-level code unconditionally, before
+anything has inspected the class -- so a plugin file is a code-execution boundary in a way
+that the rest of the application is not.
+
+For code written inside the lab that is an accepted convenience. For a plugin arriving in
+a pull request from outside it is worth a check, so two hooks police it:
+
+``ruff-plugin-security``
+   A second Ruff pass over ``poriscope/plugins/``, selecting only rules a
+   nanopore-analysis plugin has no legitimate reason to trip: ``exec`` and ``eval``
+   (``S102``, ``S307``), unsafe deserialization (``S301`` pickle, ``S302`` marshal,
+   ``S506`` yaml), process spawning (``S601``--``S607``, ``S609``), and network or
+   temp-file risks (``S310`` urlopen, ``S306`` mktemp).
+
+``plugin-module-level``
+   Rejects any module-level statement in a data plugin that runs code. The rule is that
+   **module-level assignment is fine but module-level invocation is not**, so a type alias
+   such as ``Numeric = Union[int, float, np.number]`` passes while
+   ``logger = logging.getLogger(__name__)`` does not -- move that kind of thing into a
+   method. Only imports, constants, classes and functions belong at the top level of a
+   plugin. Decorators on a class or function are not examined, since ``@log`` is part of
+   the plugin pattern.
+
+   Run it yourself on the plugin you are writing::
+
+      python scripts/check_plugin_module_level.py poriscope/plugins/eventfinders/MyFinder.py
+
+Both are measured at zero findings on the shipped tree, so neither has a baseline or any
+exemptions -- if one fires on your plugin, it has found something real.
+
+.. important::
+
+   These checks raise the bar against a careless submission. They are **not** a sandbox
+   and not a defence against a determined adversary: a plugin can still do as it likes
+   inside a method body that only runs once the plugin is instantiated, and neither hook
+   sees a file you drop straight into your user-plugin folder without a pull request.
+   Plugins are reviewed by a human before they are merged, and that review remains the
+   real gate.
 
 
 Skipping Hooks (Advanced Use Only)

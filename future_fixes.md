@@ -148,11 +148,13 @@ file order:
    here is the CI half. Marking the Docs Render Check
    (`.github/workflows/docs-check.yml`) as a required status check is still outstanding
    and is an admin-only step outside the repo. Block 5's step 2 wants block 1's
-   conformance suite, which is now the test developer's, so only the schema-check half of
-   that step can be built today. Note that the required-review toggle that used to be
-   listed here is **not** outstanding work - advisory-only was chosen deliberately.
-2. **Block 4, the static security review for module-level plugin code.** Untouched,
-   self-contained, and the next unblocked item in the compliance-gate arc.
+   conformance suite, which is now the test developer's. **The schema-check half of that
+   step needs nothing built either**, contrary to what this item used to say:
+   `tests/unit/plugins/test_plugin_settings_schema.py` already sweeps all 24 plugins and
+   `ci-fork-pr.yml` runs `pytest -q` with no marker filter, so every plugin-touching PR
+   already runs it in full - a scoped duplicate step would add nothing. Note also that the
+   required-review toggle that used to be listed here is **not** outstanding work -
+   advisory-only was chosen deliberately.
 
 Then the rest of the Moderate/Minor audit tiers, the `hist_data` refactor, and the
 parked histogram cut-off.
@@ -464,44 +466,6 @@ Two things to know before starting:
   non-`None` return is mypy `empty-body`; a copied `:raises X:` above a `pass` body is
   pydoclint DOC502; the same field above a `raise NotImplementedError` is DOC503; and
   raising with no field is DOC501.
-
-## 4. Static security review for module-level plugin code
-
-**Goal.** Reduce the trust risk inherent in blindly executing arbitrary community-
-submitted `.py` files inside a desktop app running with the user's full privileges.
-
-**Why.** Per `MainModel.populate_available_plugins()`'s documented behavior, plugin
-discovery imports *every* `.py` file found under `poriscope/plugins/` (and the user
-plugin folder) — and Python import always executes module-level code unconditionally,
-before any of `test_plugin_compliance.py`'s reflection even runs. For in-house
-contributors this is an accepted, low-risk convenience; for unvetted community
-submissions landing in the same discovery path, it's a real code-execution trust
-boundary that none of the current tooling (ruff/mypy/pydoclint) is designed to police.
-
-**Implementation plan.**
-1. Add `bandit` to `requirements-dev.txt` and run it as a `pre-commit` `repo: local`
-   hook scoped to `files: ^poriscope/plugins/` (mirroring how the pydoclint hook is
-   already scoped), using a conservative rule subset first (e.g. flag
-   `subprocess`/`eval`/`exec`/`pickle.load`/dynamic `importlib` calls, network access,
-   and filesystem writes outside of an expected data directory) to avoid a noisy
-   first run.
-2. Additionally add a narrow, purpose-built AST check (simpler and more targeted than
-   general-purpose `bandit` rules) that flags any *module-level* statement in a plugin
-   file other than imports, constants, and class/function definitions — since a
-   compliant plugin should never need top-level side effects, and "module-level code
-   that does something when merely imported" is the single highest-risk pattern for
-   this specific discovery mechanism.
-3. Triage findings as blocking (network/subprocess/eval/exec) vs. advisory (everything
-   else) — don't try to make `bandit`'s full default rule set blocking on day one, or
-   it will generate enough noise to undermine trust in the check.
-
-**Gotchas.** This is a deliberately narrow first pass, not a sandbox — it raises the
-bar for a careless or lazy submission but is not a defense against a determined
-adversary (a plugin can still do plenty of damage inside a legitimate-looking method
-body that only runs once instantiated). True sandboxing (subprocess isolation,
-restricted execution) is a much larger architectural change and is explicitly out of
-scope here; if that level of isolation is ever wanted, treat it as a separate,
-much larger design discussion, not an incremental addition to this one.
 
 ## 5. Scoped CI gate for `poriscope/plugins/**` (CODEOWNERS half done)
 
