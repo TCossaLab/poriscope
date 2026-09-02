@@ -572,6 +572,18 @@ Deleting a dead third implementation does not conflict with a rewrite. `bitthres
 **Revisit if.** The rewrite lands and still leaves two divergent implementations, at which
 point the ProteinView port is the obvious target and the scoping above still holds.
 
+**Outcome (2026-08-25).** Resolved as scoped. The rewrite landed and *is* the ProteinView
+port: `bitthresh` and its nested `dgfit` are deleted, and `PeakFinder`'s three classifiers
+now call a `fit_threshold` built on ported copies of `_double_gaussian` and
+`_fit_double_gaussian`. Two divergent implementations remain in the codebase only in the
+sense that ProteinView still owns the originals; the fitting *logic* is now shared by
+copy rather than by import, because the two live in different plugin families with no
+common base. Folding that into one shared helper is a further step, not a blocker. Note
+the port keeps only the convergence checks from
+`_fit_and_sanity_check_double_gaussian` - the perr, t-test and amplitude-ratio rejections
+were dropped on purpose so the fit's failure rate stays observable, and the reasoning is
+recorded at the method and in `changelog.md`.
+
 ---
 
 ## 2026-08-24 - Leave two of the three unguarded `Optional` Qt accessors alone
@@ -890,3 +902,43 @@ https://github.com/jsh9/pydoclint/issues/304.** Nothing further is needed from t
 `check-class-attributes` stays `false` until a `pydoclint` release fixes the parser, per
 the revisit condition above. The one-line fix and a reproduction are kept in
 `future_fixes.md` in case the report needs to be restated.
+
+---
+
+## 2026-08-26 - Do not use GMM/BIC to decide whether a `PeakFinder` dataset has one population or two
+
+**Context.** A real dataset that `fit_threshold` fit as two populations (centres 1786/2087)
+turned out, on inspection of the source data, to be one - a single decaying population, not
+a fitting bug (the entry above this one already reached that conclusion independently). The
+classifiers need to tell that case apart from a genuine two-population dataset, and BIC
+model selection was the obvious first candidate: `sklearn.mixture.GaussianMixture` is already
+imported and used elsewhere in `PeakFinder.py` (`classify_1d_distribution`), and comparing a
+1-component and a 2-component fit's BIC is the standard tool for exactly this question.
+
+**Decision.** Do not use it. Comparing `GaussianMixture(n_components=1).bic()` against
+`GaussianMixture(n_components=2).bic()` on the raw samples **decisively picks 2 components
+on the real single-population dataset this feature exists for.** Measured on a tuned
+reconstruction of that dataset (sharp Gaussian core plus a decaying right shoulder, n=6233):
+BIC 88,198 at k=2 versus 90,936 at k=1 in linear space - a drop of ~2,700, past any
+conventional "decisive" threshold - and log-space fares no better (-16,771 vs -15,519). The
+reason is structural, not a tuning problem: a skewed, non-Gaussian single population is
+genuinely closer in likelihood to two Gaussians than to one, since the second component buys
+real flexibility to capture the skew, and BIC's five-extra-parameter penalty does not
+overcome that gain at this sample size. No BIC margin fixes this in general, since the
+margin needed depends on how skewed the true population is and how much data there is.
+
+**What was done instead.** The one-vs-two decision reuses the collapsed-component and
+centres-not-separated diagnostics already computed by `_fit_and_check_double_gaussian` for
+the double-Gaussian fit `fit_threshold` performs anyway - they were added as warnings in the
+entry above and are now acted on via a new `"n_components"` key. This works because it is
+evaluated against the fit to *this* data's actual (possibly non-Gaussian) shape, not against
+an idealised Gaussian standing in for a single population that may not look like one. It also
+costs nothing extra: the double-Gaussian fit already runs in every one of the three
+classifiers, where a from-scratch BIC comparison would be a second fit paid for up front.
+
+**Revisit if.** A dataset shape turns up where the fit-diagnostic approach itself gets the
+population count wrong - e.g. two genuinely separate but heavily overlapping populations that
+still pass the centres-not-separated check. At that point BIC on the raw samples is still
+worth reconsidering, but only alongside a term that accounts for how non-Gaussian a single
+population may legitimately look (e.g. comparing against a skew-normal or gamma null rather
+than a plain Gaussian), not as a drop-in replacement with a tuned margin.
