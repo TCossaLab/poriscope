@@ -144,13 +144,13 @@ file order:
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
-1. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
-   the per-file ownership this project actually operates under is enforced by nothing.
-   Two caveats: the file needs real GitHub usernames, and it has no teeth until "Require
-   review from Code Owners" is turned on in branch protection - an admin-only step outside
-   the repo, which also covers marking the Docs Render Check
-   (`.github/workflows/docs-check.yml`) as a required status check. Its step 2 wants block 1's conformance suite, which is now the
-   test developer's, so only the schema-check half of that step can be built today.
+1. **Block 5, the scoped CI gate.** `CODEOWNERS` has landed (see block 5); what remains
+   here is the CI half. Marking the Docs Render Check
+   (`.github/workflows/docs-check.yml`) as a required status check is still outstanding
+   and is an admin-only step outside the repo. Block 5's step 2 wants block 1's
+   conformance suite, which is now the test developer's, so only the schema-check half of
+   that step can be built today. Note that the required-review toggle that used to be
+   listed here is **not** outstanding work - advisory-only was chosen deliberately.
 2. **Block 4, the static security review for module-level plugin code.** Untouched,
    self-contained, and the next unblocked item in the compliance-gate arc.
 
@@ -162,6 +162,20 @@ landed, to avoid generating triads against a layout that is about to change.
 
 ## Still queued
 
+- **The "owned by another developer" justification for the declined lint rules is now
+  partly stale.**
+  `docs/source/utils/user_manuals/plugins_manual/development_workflow/quality_control.rst`
+  and several `DECISIONS.md` entries decline `B905`, `B904`, `B007`, `S110`, `S112` and
+  `S101` on the grounds that every site that still reports "sits in a file owned by
+  another developer", so enabling the rule would need a `per-file-ignores` entry that
+  hides a real check.
+  With `NanoTrees.py` no longer owner-held (its co-author has left the lab; see the
+  exclusions section), that is no longer true of every remaining site. The conclusion may
+  well survive - `NanoTrees.py` is still a deprecation candidate, which is an independent
+  reason not to spend effort there, and `PeakFinder.py`/`Basic_PeakFinder.py` really are
+  owner-held - but the *stated reasoning* wants re-checking, and if it changes, so does
+  the wording in both places. **This is a bookkeeping task, not licence to re-propose the
+  rules**; read the `DECISIONS.md` entry first.
 - **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
   `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
   `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
@@ -271,9 +285,16 @@ the fix to the owning developer.
 
 Policy as of 2026-08-25: `NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` are
 **in scope for docstring, signature and type-hint work but never for logic changes**,
-even when annotating surfaces a real bug. The logic in these files belongs to another
-developer. Everything below was found while annotating and left in place, marked with a
-narrow `# type: ignore` and a `NOTE:` comment at the site.
+even when annotating surfaces a real bug. Everything below was found while annotating and
+left in place, marked with a narrow `# type: ignore` and a `NOTE:` comment at the site.
+
+The reason differs by file, and as of 1.8.0 they are no longer the same reason. The logic
+in `PeakFinder.py` and `Basic_PeakFinder.py` belongs to another developer, who is active -
+that exclusion is unchanged. `NanoTrees.py` is excluded because it is a **deprecation
+candidate**, not because of ownership: its co-author has left the lab and `CODEOWNERS`
+now assigns it to `@shadowk29` along with the rest of `eventfitters/`. Fixing anything in
+it is therefore permitted but still not worth the effort while deprecation is on the
+table.
 
 - **`find_mode_blockage_level` guards two of its three Optional parameters.** The body
   explicitly handles `data is None` and `baseline_std is None`, then computes
@@ -482,27 +503,33 @@ restricted execution) is a much larger architectural change and is explicitly ou
 scope here; if that level of isolation is ever wanted, treat it as a separate,
 much larger design discussion, not an incremental addition to this one.
 
-## 5. Required, scoped CI gate + CODEOWNERS for `poriscope/plugins/**`
+## 5. Scoped CI gate for `poriscope/plugins/**` (CODEOWNERS half done)
 
-**Goal.** No plugin file merges without both automated checks (scoped to just the
-changed plugin) and a human sign-off — formalizing, for everyone, the informal
-per-plugin "ownership" that already exists for a few plugins today.
+**Goal.** A plugin-touching PR gets automated checks scoped to just the changed plugin,
+and automatically reaches the person who maintains it. The ownership half is done and is
+**advisory by design**; the CI half is what remains.
+
+**Ownership: done, and deliberately not a gate.** `.github/CODEOWNERS` exists as of
+1.8.0. It routes review requests and nothing more: GitHub's "Require review from Code
+Owners" branch protection is switched **off** on every branch on purpose, because
+Poriscope accepts plugin contributions through fork PRs and a required-owner-review rule
+would put a named individual in front of each one. **Do not read the remaining CI work
+below as gated on turning that toggle on, and do not "finish" this block by doing so.**
+The rationale is in `changelog.md` under 1.8.0 and in
+`docs/source/utils/user_manuals/plugins_manual/development_workflow/code_ownership.rst`.
 
 **Why.** `.github/workflows/ci-fork-pr.yml` already exists specifically for
 fork-originated PRs (the realistic path for a community contribution) and already runs
 strict `pre-commit run --all-files` plus the full `pytest` suite with `contents: read`
 fork-safe permissions — this is the right place to add plugin-specific gating rather
-than inventing a parallel workflow. There is currently no `CODEOWNERS` file in the
-repo, so plugin review isn't enforced by GitHub at all today.
+than inventing a parallel workflow.
 
 **Implementation plan.**
-1. Add a `CODEOWNERS` file at the repo root mapping each
-   `poriscope/plugins/<category>/` folder (and, once it exists, `poriscope/utils/Meta*`)
-   to the relevant maintainer(s)/owner(s) — this only takes effect as a *required*
-   review gate once "Require review from Code Owners" is turned on for the target
-   branch's protection rule in repo Settings (an out-of-repo, admin-only config step;
-   note it explicitly here so it isn't forgotten as "already handled" just because the
-   file exists).
+1. ~~Add a `CODEOWNERS` file mapping each `poriscope/plugins/<category>/` folder to its
+   maintainer(s).~~ **Done in 1.8.0**, at `.github/CODEOWNERS` rather than the repo root.
+   No separate `poriscope/utils/Meta*` rule was added: `/poriscope/utils/` already
+   resolves to the same owner, so the line would be a no-op. Add one if `Meta*` ownership
+   ever diverges from the rest of `utils/`.
 2. In `ci-fork-pr.yml`, add a step after checkout that computes the changed files
    (`git diff --name-only origin/${{ github.base_ref }}...HEAD`) and, if any match
    `poriscope/plugins/**`, runs the block-2 settings-schema check and block-1
@@ -512,7 +539,8 @@ repo, so plugin review isn't enforced by GitHub at all today.
    scrutiny than a non-plugin PR, without slowing down every PR with the full
    conformance suite.
 3. Mark this new step (and the existing strict `pre-commit` step) as required status
-   checks in branch protection for `main`/`develop`.
+   checks in branch protection for `main`/`develop`. This is about *automated* checks
+   only - it does not extend to code-owner review, which stays advisory.
 
 **Gotchas.** `ci-fork-pr.yml`'s permissions are deliberately `contents: read` for fork
 safety — don't add anything to this workflow that needs write access (e.g. auto-fix
@@ -521,8 +549,10 @@ commits); that's what `ci-internal-pr.yml` is for, and it isn't fork-safe.
 **Gated on this block:** `scripts/check_plugin_schemas.py` has no pre-commit hook. One was
 deliberately not wired, because it would have blocked commits on the six owner-held
 `Basic_PeakFinder` findings before the owning developer had seen them. The test suite covers
-the same ground on every branch push in the meantime. Wire the hook once `CODEOWNERS` exists
-and those findings have an owner.
+the same ground on every branch push in the meantime. **`CODEOWNERS` landing does not
+release this**, despite the earlier wording here: the file is advisory and changes nothing
+about whether those findings have been acted on. Wire the hook once the owner has ruled on
+the six findings.
 
 ## 7. Fuzz / malformed-input testing for data readers
 
