@@ -58,7 +58,6 @@ class IconTextMenuWidget(QWidget):
     pluginsToggled = Signal(bool)
     helpToggled = Signal(bool)
     settingsToggled = Signal(bool)
-    exitToggled = Signal(bool)
     menuToggled = Signal()
 
     switchToRawData = Signal()
@@ -67,7 +66,6 @@ class IconTextMenuWidget(QWidget):
     switchToPlugins = Signal()
     switchToHelp = Signal()
     switchToSettings = Signal()
-    switchToExit = Signal()
     logger = logging.getLogger(__name__)
 
     def __init__(self, main_view: "MainView", parent: Optional[QWidget] = None) -> None:
@@ -97,7 +95,6 @@ class IconTextMenuWidget(QWidget):
         self.plugins_text_button.clicked.connect(self.switchToPlugins.emit)
         self.settings_text_button.clicked.connect(self.switchToSettings.emit)
         self.help_text_button.clicked.connect(self.switchToHelp.emit)
-        self.exit_text_button.clicked.connect(self.switchToExit.emit)
 
         # Connect to main view's signal
         main_view.help_window_closed.connect(self.setHelpUnchecked)
@@ -167,14 +164,6 @@ class IconTextMenuWidget(QWidget):
             os.path.join(self.icon_path, "settings-black.png"),
             25,
         )
-        self.exit_text_button = self.createTextButton(
-            layout,
-            "exit",
-            "     Exit",
-            os.path.join(self.icon_path, "exit-black.svg"),
-            25,
-        )
-
         layout.addItem(QSpacerItem(20, 5, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     @log(logger=logger)
@@ -292,7 +281,6 @@ class IconTextMenuWidget(QWidget):
             "add": self.pluginsToggled,
             "help": self.helpToggled,
             "settings": self.settingsToggled,
-            "exit": self.exitToggled,
         }
         if buttonName in signals:
             signals[buttonName].emit(checked)
@@ -323,10 +311,6 @@ class IconTextMenuWidget(QWidget):
         self.settings_text_button.setChecked(checked)
 
     @log(logger=logger)
-    def setExitChecked(self, checked: bool) -> None:
-        self.exit_text_button.setChecked(checked)
-
-    @log(logger=logger)
     def uncheckAll(self) -> None:
         """
         Uncheck whichever sidebar menu button is currently highlighted, if any.
@@ -345,7 +329,6 @@ class IconTextMenuWidget(QWidget):
             self.plugins_text_button,
             self.help_text_button,
             self.settings_text_button,
-            self.exit_text_button,
         ):
             if button.isChecked():
                 button.setAutoExclusive(False)

@@ -68,10 +68,6 @@ class MainModel(QObject):
     App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
     """
 
-    configUpdated = Signal()
-    errorOccurred = Signal(str)
-    dataReadInstancesUpdated = Signal(dict)
-    fileLoaded = Signal(object)
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
@@ -177,8 +173,16 @@ class MainModel(QObject):
             else:
                 return plugin_class
         except Exception as e:
+            # Logged at ERROR on purpose: QtHandler raises that as a dialog, and on
+            # the startup scan - which runs from MainModel's constructor, before
+            # MainController exists to connect anything - it is the only signal the
+            # user can get. The panel message below lands on the runtime re-scans
+            # (changing the user plugin folder, resetting the session), where today
+            # the dialog is likewise all there is.
             self.logger.error(f"Error loading plugin {plugin_key}: {e}", exc_info=True)
-            self.errorOccurred.emit(f"Error loading plugin {plugin_key}: {e}")
+            self.add_text_to_display.emit(
+                f"Error loading plugin {plugin_key}: {e}", self.__class__.__name__
+            )
             return None
 
     @log(logger=logger)

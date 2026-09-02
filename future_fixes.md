@@ -121,13 +121,21 @@ blocks "What to pick up next".
   what they leave behind - `validate_and_instantiate_plugin` alone has six sequential
   try/except/log/return blocks, so a failure leaves the UI partially updated with no
   indication of which stage failed.
-- **`MainModel.errorOccurred` is emitted but connected to nothing.** `main_model.py:180`
-  emits it on a plugin-load failure and no `.connect` for it exists anywhere, so that
-  message reaches no one; the `logger.error` on the line above is the only reason the
-  user hears about it. `configUpdated`, `dataReadInstancesUpdated` and `fileLoaded` are
-  declared on the same class and never emitted at all. Noticed 2026-09-02 while wiring
-  `MainModel.add_text_to_display`, which is connected in `MainController.setup_connections`
-  the way the rest of the app does it.
+- **Fixed** (2026-09-02): a sweep of all 126 declared signals found nine genuinely dead
+  ones, all now removed, plus one real bug behind them - the sidebar Exit button did
+  nothing in the expanded text sidebar. See `changelog.md`.
+  **What's left over from that sweep**, both minor and neither worth a branch on its own:
+  - **`scripts/autodoc/` never deletes the `.rst` for a module that no longer exists.**
+    Removing `PluginManagerPopup.py` left `docs/source/autodoc/plugins/analysistabs/utils/
+    pluginmanager.rst` behind, dropped from its `utils_index.rst` TOC but still on disk
+    and still `automethod`-ing a module that is gone. Harmless on CI, which builds from a
+    clean checkout where `docs/source/autodoc/` (gitignored) is regenerated from nothing,
+    but locally it is an orphan document that fails `sphinx-build -W` until deleted by
+    hand. The generators should prune output for modules they no longer find.
+  - **Two docs screenshots now show a sidebar that no longer exists**:
+    `_static/images/sidebar_with_tabs.png` and `_static/images/MainView.png` both show the
+    Exit entry. Nothing fails - they are images - but they are now wrong. Needs someone to
+    retake them.
 - **Oversized units, measured.** Five functions exceed 300 lines:
   `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
   `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
