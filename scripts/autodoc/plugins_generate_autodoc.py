@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import ast
+import shutil
 from pathlib import Path
 from typing import Dict, List
 
@@ -37,12 +38,25 @@ FOLDER_ORIGIN = PROJECT_ROOT / "poriscope" / "plugins"
 
 # Where generated .rst documentation should be written
 OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "autodoc" / "plugins"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Optional: generate .rst files for a single category like "filters"
 ONLY_CATEGORY = (
     None  # Set to "filters" to restrict to just one, or leave as None for all
 )
+
+# This directory is generated output, gitignored, and owned entirely by this
+# script - every file in it is rewritten on every run. Clearing it first is what
+# prunes the .rst for a plugin that no longer exists: writing is unconditional,
+# so a stale file would otherwise survive forever, dropped from its index but
+# still on disk and still autodoc-ing a module that is gone, which fails
+# sphinx-build -W. CI never saw this because it builds from a clean checkout.
+#
+# Scoped to the one category when ONLY_CATEGORY is set: that mode deliberately
+# leaves every other category ungenerated, so wiping the whole tree would delete
+# sibling docs this run is not going to rewrite.
+PRUNE_ROOT = OUTPUT_DIR if ONLY_CATEGORY is None else OUTPUT_DIR / ONLY_CATEGORY
+shutil.rmtree(PRUNE_ROOT, ignore_errors=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Base package used for internal references
 BASE_PACKAGE = "poriscope.plugins"

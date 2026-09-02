@@ -125,13 +125,9 @@ blocks "What to pick up next".
   ones, all now removed, plus one real bug behind them - the sidebar Exit button did
   nothing in the expanded text sidebar. See `changelog.md`.
   **What's left over from that sweep**, both minor and neither worth a branch on its own:
-  - **`scripts/autodoc/` never deletes the `.rst` for a module that no longer exists.**
-    Removing `PluginManagerPopup.py` left `docs/source/autodoc/plugins/analysistabs/utils/
-    pluginmanager.rst` behind, dropped from its `utils_index.rst` TOC but still on disk
-    and still `automethod`-ing a module that is gone. Harmless on CI, which builds from a
-    clean checkout where `docs/source/autodoc/` (gitignored) is regenerated from nothing,
-    but locally it is an orphan document that fails `sphinx-build -W` until deleted by
-    hand. The generators should prune output for modules they no longer find.
+  - ~~**`scripts/autodoc/` never deletes the `.rst` for a module that no longer exists.**~~
+    **Fixed 2026-09-02**: both generators now clear their own output directory before
+    writing. See `changelog.md`.
   - **Two docs screenshots now show a sidebar that no longer exists**:
     `_static/images/sidebar_with_tabs.png` and `_static/images/MainView.png` both show the
     Exit entry. Nothing fails - they are images - but they are now wrong. Needs someone to

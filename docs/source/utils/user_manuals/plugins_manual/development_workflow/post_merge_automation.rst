@@ -92,7 +92,11 @@ After a merge, the documentation build directories are cleaned and regenerated.
 This process:
 
 - Removes previous Sphinx build artifacts
-- Regenerates autodoc ``.rst`` files
+- Regenerates autodoc ``.rst`` files. Each generator clears its own output directory
+  first, so a page for a module that has since been deleted is pruned rather than left
+  behind as an orphan document that would fail the ``-W`` build below. Everything under
+  ``docs/source/autodoc/`` is generated and gitignored — do not hand-edit it, and do not
+  expect anything you put there to survive a run
 - Builds the HTML documentation using Sphinx, with ``-W --keep-going`` so warnings are
   errors and all of them are reported in one pass
 - Opens the generated documentation in a web browser
