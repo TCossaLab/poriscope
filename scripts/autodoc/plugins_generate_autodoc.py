@@ -256,8 +256,12 @@ def write_class_rst(category_dir, class_node, import_path, class_name, exclusion
             base_refs.append(f":class:`~{BASE_PACKAGE}.{base}`")
 
     with open(rst_file, "w", encoding="utf-8") as f:
-        # Anchor and title
-        f.write(f".. _{class_name}:\n\n")
+        # Anchor and title. A private class's leading underscore cannot survive into
+        # the anchor: ".. __Name:" parses as a malformed anonymous target rather than
+        # as a label. The title below still carries the real name. Two classes whose
+        # names differ only by leading underscores would collide here, and Sphinx
+        # fails the -W build on a duplicate label rather than resolving it silently.
+        f.write(f".. _{class_name.lstrip('_')}:\n\n")
         f.write(f"{class_name}\n{'=' * len(class_name)}\n\n")
 
         # Bold class signature

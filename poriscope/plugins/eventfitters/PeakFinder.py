@@ -84,11 +84,9 @@ class PeakFinder(MetaEventFitter):
     finished, because each of them fits a distribution that only exists
     across the whole run.
 
-    Two companion documents at the repository root describe the behaviour
-    that is too large to carry in docstrings: ``peak_finding_pipeline.md``
-    for the stage-by-stage flow and the filters applied at each stage, and
-    ``fit_fallbacks.md`` for every fallback path in the double-Gaussian
-    threshold fit.
+    ``fit_fallbacks.md`` at the repository root describes the behaviour that
+    is too large to carry in docstrings: every fallback path in the
+    double-Gaussian threshold fit.
     """
 
     logger = logging.getLogger(__name__)
@@ -5763,7 +5761,7 @@ class PeakFinder(MetaEventFitter):
         :param is_higher_class: boolean array, same length as ``values``,
             True where the caller assigned the higher-mean class (i.e.
             ``values >= threshold``)
-        :type is_higher_class: npt.NDArray[np.bool_]
+        :type is_higher_class: ``npt.NDArray[np.bool_]``
         :return: array of confidence scores in (0, 1], same length as
             ``values``; 1.0 wherever both fitted curves numerically underflow
             to zero, since a point that far from both means is unambiguously
