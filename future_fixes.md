@@ -90,15 +90,25 @@ blocks "What to pick up next".
   f-string name before the level is consulted. Build it lazily inside the check, and
   consider dropping the decorator from `get_key()` and `WaveletFilter._apply_filter`,
   which run per dependency-wiring call and per data chunk respectively.
-- **`get_raw_settings()` hands out live internal state and callers write to it.**
-  `DataPluginController.py:169-185`. On rename, `edit_plugin` mutates each dependent's dict
-  directly (`dsettings[metaclass]["Value"] = key`, `Options.remove(...)`) *and* calls
-  `update_raw_settings`, which does the same write through the accessor - drop the direct
-  one. Worse, `dhistory["settings"] = dsettings` stores a live reference to plugin-internal
-  state in session history, so a later mutation retroactively changes what is persisted.
-  `BaseDataPlugin.apply_settings:266` compounds it by aliasing rather than copying
-  (`self.raw_settings = settings`). Return a copy; make `update_raw_settings` the only
-  writer.
+- **Fixed** (2026-09-02): `get_raw_settings()` returned `self.raw_settings` itself, and
+  `edit_plugin`'s dependent-rename loop wrote through it while also storing it into session
+  history, so history and plugin internals were one object. The accessor now returns a
+  two-level snapshot (outer dict, each parameter dict, and any list-valued entry such as
+  `Options`), the redundant direct `Value` write is gone, and the `Options` maintenance it
+  used to do by mutating the handed-out dict is now
+  `BaseDataPlugin.replace_raw_settings_option`. See `changelog.md`.
+  **What's still open** is the `apply_settings` half, which that entry used to bundle in and
+  which is **not** simply "copy there too" - measured, `self.raw_settings = settings` is
+  load-bearing. `DictDialog.__init__` aliases the dict it is handed and `get_result` returns
+  that same object, so in `edit_plugin` `new_settings is app_settings`; `history["settings"]`
+  therefore holds `app_settings`, which `MainController.update_plugin_history` files into
+  `plugin_history` by reference. `edit_plugin` then swaps plugin-typed `Value`s for live
+  plugin instances, and it is `apply_settings` writing the keys back *through the alias* that
+  repairs the dict history is holding. Copying there without first fixing that
+  instance-resolution ordering leaves session history holding live `QObject`s for
+  `save_session` to serialise. Fix the ordering first, then the alias.
+  Also noticed while tracing it: **`DataPluginModel.get_plugin_details` has no production
+  callers** - only two tests - so it is dead code carried as public API.
 - **`save_session` has no error handling, unlike `update_app_config` beside it.**
   `main_model.py:307-316` opens a user-supplied path and calls `json.dump` bare, from a Qt
   slot - and PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
@@ -143,28 +153,30 @@ blocks "What to pick up next".
 Two standing constraints reshape the queue below, so read this before working down it in
 file order:
 
-- **Another developer owns the existing test suites - do not edit them.** This is about
-  avoiding conflicts in her files, **not** a ban on writing tests. A new test file that
-  overlaps no existing suite is in scope and should be written rather than deferred; check
-  the overlap first. **Corrected 2026-09-01**, having previously read as "new pytest suites
-  are out of scope here", which is what wrongly pushed compliance-gate blocks 1, 2 and 7
-  down the queue. Block 2 was completed in full under the corrected reading; **blocks 1 and
-  7 are worth re-examining against it** rather than left parked.
+- **Another developer owns test-writing.** Do not edit her existing suites; a new test
+  file that overlaps no existing suite is acceptable for covering tooling you have just
+  built (as `tests/unit/scripts/test_new_plugin.py` does), but **taking on a test suite as
+  the piece of work itself is hers**. Blocks 1 and 7 were handed to her on 2026-09-02 and
+  are no longer in this queue.
 - **Logic changes need a plan the user approves first.** Read-only investigation and
   measurement do not.
 
 1. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
    the per-file ownership this project actually operates under is enforced by nothing.
-   Note the docs-render gate (block 6, landed 2026-08-31) also wants marking as a required
-   status check in branch protection, which is the same out-of-repo admin step block 5
-   needs.
-2. **Blocks 1 and 7**, re-scoped against the corrected constraint above - both are pytest
-   suites that were parked only because of the old reading. Block 1 (behavioural
-   conformance) is the larger and the more valuable; block 7 (reader fuzzing) is narrow.
-   Neither would touch an existing test file.
+   Two caveats: the file needs real GitHub usernames, and it has no teeth until "Require
+   review from Code Owners" is turned on in branch protection - an admin-only step outside
+   the repo, which also covers marking the docs-render gate (block 6, landed 2026-08-31) as
+   a required status check. Its step 2 wants block 1's conformance suite, which is now the
+   test developer's, so only the schema-check half of that step can be built today.
+2. **Block 4, the static security review for module-level plugin code.** Untouched,
+   self-contained, and the next unblocked item in the compliance-gate arc.
 
-Then block 4, block 3's remaining analysis-tab half, the `hist_data` refactor, and the
-parked histogram cut-off.
+Then `save_session`'s missing error handling and the rest of the Moderate/Minor audit
+tiers, the `hist_data` refactor, and the parked histogram cut-off.
+
+**Block 3's analysis-tab half is deferred** (2026-09-02) until the planned frontend
+refactoring has landed, to avoid generating triads against a layout that is about to
+change.
 
 **Blocks 2 and 8 are closed as of 2026-09-01**, and **block 3 is closed for data plugins**
 the same day, leaving only its analysis-tab half. See their sections below for what was
@@ -227,6 +239,18 @@ done and the evidence.
   `stop_requested`, which is read on the generator's next turn, so a channel queued behind a
   serial-mode lock keeps waiting until it acquires. Pre-existing and unrelated to the
   granularity fix; per-instance locks shorten the queues but do not change this.
+- **`tests/unit/plugins/` has no `conftest.py`, so its widget tests leak real windows.**
+  Observed 2026-09-02 on Windows during a routine `tests/unit/{controllers,models,plugins,utils}`
+  run: dialogs and console windows flash on screen throughout, and a `StepDialog` from
+  `plugins/analysistabs/utils/walkthrough.py` built with the walkthrough tests' placeholder
+  steps ("Title"/"Msg") outlived the run as a ghost window. Nothing sets
+  `QT_QPA_PLATFORM=offscreen` locally - `pytest.ini` leaves it to CI, where Linux sets it
+  alongside `xvfb-run` - so on Windows every test widget is a genuine on-screen window, and
+  this tree gets none of the teardown `tests/unit/views/conftest.py::_close_leftover_widgets`
+  provides. Cosmetic rather than a correctness problem, and it belongs to whoever owns the
+  test suites; mirroring the views conftest is the obvious fix. Setting the offscreen
+  platform in `pytest.ini` would silence it globally but should be measured against the full
+  suite first, since it can change widget behaviour.
 - **`MetaView.lock` is a class attribute shared by every tab view.** `MetaView.py:90`. It
   guards `progress_bars` in `remove_progress_bar` only; the other three accesses
   (`:282`, `:287`, `:325`) are unguarded, so the lock does not actually establish the

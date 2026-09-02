@@ -1106,7 +1106,7 @@ def test_edit_plugin_rename_with_dependents_updates_them(
     Cover the dependent re-registration loop during a key rename.
 
     Lines: dinstance.unregister_parent, register_parent, update_raw_settings,
-    dsettings Options append/remove, update_plugin_history.emit(dhistory).
+    replace_raw_settings_option, update_plugin_history.emit(dhistory).
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
