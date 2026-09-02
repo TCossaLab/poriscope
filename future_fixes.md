@@ -1,13 +1,12 @@
 # Future Fixes
 
-Queued work and standing policy for the Poriscope codebase. Keep this terse: prune
-items as they land rather than leaving completed-work narrative behind. Reasoning about
-things deliberately *not* done lives in `DECISIONS.md`; what changed lives in
-`changelog.md`.
+Queued work and standing policy for the Poriscope codebase.
 
-The full-codebase type-annotation pass is complete (2026-08-26) and its narrative has been
-pruned from this file; see `changelog.md` for what was done and `CLAUDE.md` for the
-standing rules it left behind. What remains below is only what is still open.
+**Only future-facing work belongs here.** When something lands, delete its entry rather
+than annotating it as done - the narrative belongs in `changelog.md`. When something is
+settled as deliberately not worth doing, move the reasoning to `DECISIONS.md` and delete
+the entry. Keep a sentence of finished-work context only where an item still open cannot
+be understood without it.
 
 ## Structural audit findings (2026-08-25)
 
@@ -17,13 +16,8 @@ tab traverses. Full write-up with per-finding reasoning:
 
 Everything here is a logic change, so it needs an approved plan first. The common thread:
 the app's main control path is a method name passed as a string and resolved with
-`getattr`, which none of the four pre-commit gates can see.
-
-**All four Critical items landed over 2026-08-25/31**, as did three of the four High ones -
-the narrative is in `changelog.md`. What survives below is the open remainder of the High
-tier (the fourth item, deferred by decision, plus the parts of two landed ones that were
-deliberately left out of them) and the untouched Moderate and Minor tiers. None of it
-blocks "What to pick up next".
+`getattr`, which none of the four pre-commit gates can see. None of it blocks "What to
+pick up next".
 
 ### High - working today, but for reasons nothing records or tests
 
@@ -90,48 +84,30 @@ blocks "What to pick up next".
   f-string name before the level is consulted. Build it lazily inside the check, and
   consider dropping the decorator from `get_key()` and `WaveletFilter._apply_filter`,
   which run per dependency-wiring call and per data chunk respectively.
-- **Fixed** (2026-09-02): `get_raw_settings()` returned `self.raw_settings` itself, and
-  `edit_plugin`'s dependent-rename loop wrote through it while also storing it into session
-  history, so history and plugin internals were one object. The accessor now returns a
-  two-level snapshot (outer dict, each parameter dict, and any list-valued entry such as
-  `Options`), the redundant direct `Value` write is gone, and the `Options` maintenance it
-  used to do by mutating the handed-out dict is now
-  `BaseDataPlugin.replace_raw_settings_option`. See `changelog.md`.
-  **What's still open** is the `apply_settings` half, which that entry used to bundle in and
-  which is **not** simply "copy there too" - measured, `self.raw_settings = settings` is
-  load-bearing. `DictDialog.__init__` aliases the dict it is handed and `get_result` returns
-  that same object, so in `edit_plugin` `new_settings is app_settings`; `history["settings"]`
-  therefore holds `app_settings`, which `MainController.update_plugin_history` files into
-  `plugin_history` by reference. `edit_plugin` then swaps plugin-typed `Value`s for live
-  plugin instances, and it is `apply_settings` writing the keys back *through the alias* that
-  repairs the dict history is holding. Copying there without first fixing that
-  instance-resolution ordering leaves session history holding live `QObject`s for
-  `save_session` to serialise. Fix the ordering first, then the alias.
-  Also noticed while tracing it: **`DataPluginModel.get_plugin_details` has no production
-  callers** - only two tests - so it is dead code carried as public API.
-- **Fixed** (2026-09-02): `save_session` opened a user-supplied path and called
-  `json.dump` bare, from a Qt slot, so a read-only destination could take the process
-  down. **It was two sites, not one** - `save_tab_actions` beside it is the identical
-  shape and had not been recorded. Both now catch, and report according to who asked:
-  WARNING plus a status-panel message for an autosave, ERROR - and therefore a dialog -
-  for a save to a path the user chose. See `changelog.md`.
-  **What's still open** in the same entry: `save_session` re-serializes the whole history
-  on the GUI thread on every plugin change. Also unaddressed, and recorded here only so it
-  is not re-derived: the 161 `except Exception` handlers elsewhere are inconsistent about
-  what they leave behind - `validate_and_instantiate_plugin` alone has six sequential
-  try/except/log/return blocks, so a failure leaves the UI partially updated with no
-  indication of which stage failed.
-- **Fixed** (2026-09-02): a sweep of all 126 declared signals found nine genuinely dead
-  ones, all now removed, plus one real bug behind them - the sidebar Exit button did
-  nothing in the expanded text sidebar. See `changelog.md`.
-  **What's left over from that sweep**, both minor and neither worth a branch on its own:
-  - ~~**`scripts/autodoc/` never deletes the `.rst` for a module that no longer exists.**~~
-    **Fixed 2026-09-02**: both generators now clear their own output directory before
-    writing. See `changelog.md`.
-  - **Two docs screenshots now show a sidebar that no longer exists**:
-    `_static/images/sidebar_with_tabs.png` and `_static/images/MainView.png` both show the
-    Exit entry. Nothing fails - they are images - but they are now wrong. Needs someone to
-    retake them.
+- **`apply_settings` aliases the settings dict it is handed, and session history holds the
+  same object.** `BaseDataPlugin.apply_settings`: `self.raw_settings = settings`. Do **not**
+  fix this by copying there - measured, the alias is load-bearing. `DictDialog.__init__`
+  aliases the dict it is handed and `get_result` returns that same object, so in
+  `edit_plugin` `new_settings is app_settings`; `history["settings"]` therefore holds
+  `app_settings`, which `MainController.update_plugin_history` files into `plugin_history`
+  by reference. `edit_plugin` then swaps plugin-typed `Value`s for live plugin instances,
+  and it is `apply_settings` writing the keys back *through the alias* that repairs the dict
+  history is holding. Copy there without first fixing that instance-resolution ordering and
+  session history is left holding live `QObject`s for `save_session` to serialise. Fix the
+  ordering first, then the alias.
+- **`DataPluginModel.get_plugin_details` has no production callers** - only two tests - so
+  it is dead code carried as public API. Removing it narrows `DataPluginModel`'s surface,
+  which is not re-exported from `exposed.py`.
+- **`save_session` re-serializes the whole history on the GUI thread on every plugin
+  change.** Every plugin-history event deep-copies and rewrites the entire session file
+  from the GUI thread, whether or not the change touched most of it.
+- **The 161 `except Exception` handlers are inconsistent about what they leave behind.**
+  `validate_and_instantiate_plugin` alone has six sequential try/except/log/return blocks,
+  so a failure leaves the UI partially updated with no indication of which stage failed.
+- **Two docs screenshots show a sidebar that no longer exists.**
+  `_static/images/sidebar_with_tabs.png` and `_static/images/MainView.png` both still show
+  the Exit entry, removed 2026-09-02. Nothing fails - they are images - but they are wrong.
+  Needs someone who can drive the UI to retake them.
 - **Oversized units, measured.** Five functions exceed 300 lines:
   `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
   `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
@@ -143,14 +119,6 @@ blocks "What to pick up next".
 
 ### Minor
 
-- ~~**`_validate_param_ranges` raises the exception its docstring rules out**, plus the
-  missing-`Value` `KeyError` and the `Folder` carve-out.~~ **Closed 2026-09-01.** Three of
-  the four defects were fixed (see `changelog.md`); the fourth - that the `Options`
-  carve-out is three literal parameter names in a universal validator - is **settled as
-  won't-fix**, and the `"Validate Options": False` flag this entry used to propose is
-  rejected rather than deferred. See `DECISIONS.md`, which also records the better design
-  should it ever be needed and the one thing that would justify it: someone needing a
-  plugin with more than one file input.
 - **Two dead conditions in the plugin loader.** `main_model.py:190` filters
   `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
   `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
@@ -163,7 +131,7 @@ blocks "What to pick up next".
   `KeyError` before any handler exists to record it. Backfill every key from
   `default_app_config`, or read through `.get()` with a default.
 
-## What to pick up next (order revised 2026-09-01)
+## What to pick up next
 
 Two standing constraints reshape the queue below, so read this before working down it in
 file order:
@@ -180,8 +148,8 @@ file order:
    the per-file ownership this project actually operates under is enforced by nothing.
    Two caveats: the file needs real GitHub usernames, and it has no teeth until "Require
    review from Code Owners" is turned on in branch protection - an admin-only step outside
-   the repo, which also covers marking the docs-render gate (block 6, landed 2026-08-31) as
-   a required status check. Its step 2 wants block 1's conformance suite, which is now the
+   the repo, which also covers marking the Docs Render Check
+   (`.github/workflows/docs-check.yml`) as a required status check. Its step 2 wants block 1's conformance suite, which is now the
    test developer's, so only the schema-check half of that step can be built today.
 2. **Block 4, the static security review for module-level plugin code.** Untouched,
    self-contained, and the next unblocked item in the compliance-gate arc.
@@ -189,13 +157,8 @@ file order:
 Then the rest of the Moderate/Minor audit tiers, the `hist_data` refactor, and the
 parked histogram cut-off.
 
-**Block 3's analysis-tab half is deferred** (2026-09-02) until the planned frontend
-refactoring has landed, to avoid generating triads against a layout that is about to
-change.
-
-**Blocks 2 and 8 are closed as of 2026-09-01**, and **block 3 is closed for data plugins**
-the same day, leaving only its analysis-tab half. See their sections below for what was
-done and the evidence.
+**Block 3's analysis-tab half is deferred** until the planned frontend refactoring has
+landed, to avoid generating triads against a layout that is about to change.
 
 ## Still queued
 
@@ -213,10 +176,6 @@ done and the evidence.
   swallowed by the dispatcher. A finder without a reader raises `AttributeError` from
   `find_events` anyway, two lines later, so this is a change of messenger and not of
   outcome - but it is the guard that speaks first now.
-- **Fixed** (2026-09-01): application-wide event filters installed and never removed, which
-  was what made `pytest tests/unit` intermittently error at setup. See `changelog.md`, and
-  "Left behind by the event-filter fix" below for the three small things deliberately not
-  bundled into it.
 - **Placeholder guards on UI-supplied plugin keys are applied inconsistently.** A scan of
   every `global_signal` emit in the analysis-tab views whose plugin key is a
   UI-supplied parameter found 19 sites with no placeholder check in the emitting method.
@@ -271,12 +230,10 @@ done and the evidence.
   (`:282`, `:287`, `:325`) are unguarded, so the lock does not actually establish the
   invariant it looks like it establishes.
 
-## Left behind by the event-filter fix (2026-09-01)
+## Widget ownership left over from the event-filter work
 
-The application-wide event-filter leak is **fixed** - see `changelog.md` for what changed and
-`DECISIONS.md` for why the filter stays on the application rather than being scoped to the
-popup. The handoff write-up that used to sit here has been removed with it. Three small
-things were deliberately left:
+Neither is a crash risk; both are ownership tidiness that had no place in a crash fix.
+`DECISIONS.md` records why the filter itself stays on the application.
 
 - **`containerWidget` is still parentless** in both comboboxes (`QDialog(None)`;
   `QWidget(None)` on the Linux branch), so it is owned by nobody and is not destroyed with
@@ -292,12 +249,6 @@ things were deliberately left:
   Replacing them with a single application-owned watcher would remove the leak outright
   rather than defusing it, but it is a new class and a breaking change to something
   re-exported from `exposed.py`.
-- ~~**`_handle_internal_edit` nests a function.**~~ **Closed 2026-09-01, not a defect.**
-  `open_dialog_then_reopen` is a three-line closure that captures `name` so it can be
-  handed to `QTimer.singleShot`, which is exactly the case the revised `CLAUDE.md`
-  convention now permits. Hoisting it to a method plus `functools.partial` was considered
-  and rejected as strictly more code for no gain. It is covered by
-  `test_edit_filter_callback_called`, which passes.
 
 ## Exclusions (standing project policy)
 
@@ -359,19 +310,8 @@ narrow `# type: ignore` and a `NOTE:` comment at the site.
   `List[Any]` to match what it has always actually produced - but it is worth knowing
   that the parameter name still says "starts" while the payload is per-sublevel records.
 
-## Open against the PeakFinder integration (2026-08-26)
+## Open against the PeakFinder integration
 
-Found while merging `feature_Peakfinder_classifier` into the docstring/type work. The
-defects that were authorised for repair have all been fixed - each carries a
-`NOTE (integration):` comment at the site explaining what changed and why, so the owning
-developer can see it when she re-branches; the list is in `changelog.md`. Two questions
-were closed by decision rather than by code (the four `None`-placeholder `type: ignore`s,
-and not consolidating the double-Gaussian fits) and are recorded in `DECISIONS.md`. What
-is still open:
-
-- ~~**Three nested function definitions.**~~ **Closed 2026-09-01**, by the convention
-  changing rather than the code: `CLAUDE.md` no longer prohibits nesting outright, so
-  `dgfit` inside `bitthresh` is not a violation to be carried. Nothing to do.
 - **The histogram low-end cut-off in the classifier plots.** Diagnosed but not fixed, and
   parked pending the double-Gaussian rewrite: the "All Events (incl. outliers)" bar chart
   is binned against edges `bitthresh` computed from a *filtered subset*, and
@@ -383,7 +323,7 @@ is still open:
   `_classify_translocation_direction`). The fix is to build the histogram once from the
   full data and pass it into the fit, rather than letting the fit dictate the plot's bins.
 
-## Also queued - found during the type-annotation pass, not part of it
+## Also queued
 
 - **`pydoclint` class-attribute bug - filed upstream, now awaiting a fix.** Reported to
   the maintainer as https://github.com/jsh9/pydoclint/issues/304; jsh9 maintains both
@@ -397,21 +337,13 @@ is still open:
   adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
   the `IntroDialog` entry.
 
-- **Adopting the rest of ruff `bugbear` (B) and `bandit` (S) is closed.** `B006`/`B020`
-  are enforced through `extend-select` in `pyproject.toml`; `B905`, `B904`, `B007`,
-  `S110`, `S112` and `S101` were each run as a one-time audit, their findings in our own
-  code fixed, and then left unselected. The reasoning for not enabling them - every
-  remaining site sits in an owner-held file, so a gate would need a `per-file-ignores`
-  entry that hides a real check - is in `DECISIONS.md`, as is the acceptance of the 25
-  `S608` sites. What each audit surfaced is in `changelog.md`.
-
-  **All that is left open is 3 cosmetic sites**: 2 `B010` in `LogDecorator.py` and 1
-  `B028` (`warnings.warn` without `stacklevel`) in `MetaWriter.py`. There is no further
-  bug-finding value here; treat the block as done unless the owner-held files change hands.
-
-  Note this is *not* the same as the bandit proposal in the community-plugin block below:
-  that one is scoped to `poriscope/plugins/` as a trust boundary for unvetted
-  contributions, this one was codebase-wide as a bug-catcher.
+- **Three cosmetic lint sites are all that is left of the `bugbear`/`bandit` sweep**:
+  2 `B010` (set-attr-with-constant) in `LogDecorator.py` and 1 `B028` (`warnings.warn`
+  without `stacklevel`) in `MetaWriter.py`. There is no further bug-finding value in that
+  sweep unless the owner-held files change hands; `DECISIONS.md` records why the audited
+  rules stay off as gates. Not to be confused with the bandit proposal in block 4 below,
+  which is scoped to `poriscope/plugins/` as a trust boundary rather than codebase-wide as
+  a bug-catcher.
 
 - **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,
@@ -428,28 +360,17 @@ plugin family) be verified as safe and correct to merge with a bounded amount of
 review, instead of relying entirely on a reviewer reading the diff. Each block below is
 independently actionable and can be picked up in its own future session.
 
-**The set's original order was 1 → 2** (cheap, static, highest signal) **→ 3** (makes 1/2
-easy to satisfy from the start) **→ 4/5** (merge-gating infrastructure) **→ 6/7/8**
-(rounding out coverage). Three blocks are now closed and the rest largely follow that
-order again:
-
-- **Block 6 landed 2026-08-31** as `.github/workflows/docs-check.yml`. Its one piece of
-  follow-through - marking the check as required in branch protection - is folded into
-  block 5.
-- **Block 8 closed 2026-09-01** without needing to be built; see its section.
-- **Block 2 landed 2026-09-01**, in full rather than the validator half. It had been split
-  on the reading that its pytest harness was out of scope, which was wrong - see the
-  corrected constraint at the top of this file.
-- **Block 3 landed 2026-09-01 for data plugins**, as `scripts/new_plugin.py`. Only its
-  analysis-tab half is left, and that is recorded in its own section rather than here.
-
-That leaves **5** (free-standing), then **1** and **7**, which are pytest suites that were
-parked only under the old reading of that constraint and should now be re-scoped. Block 1
-is worth slightly less than it was: the generated skeleton is now the thing a conformance
-suite would be run against first, and block 3's tests already assert that every family's
-skeleton instantiates and declares a self-consistent schema.
+Blocks 2, 6 and 8, and block 3 for data plugins, are done and their sections are gone;
+what is left is **5** (free-standing), **4**, block 3's analysis-tab half, and **1** and
+**7**, which are pytest suites and so the test developer's. Block 1 is worth slightly less
+than it was: the generated skeleton from `scripts/new_plugin.py` is now the first thing a
+conformance suite would run against, and that script's own tests already assert every
+family's skeleton instantiates and declares a self-consistent schema.
 
 ## 1. Behavioral conformance suite (not just signature compliance)
+
+**Owner: the test developer** - this is a pytest suite. The plan is kept here because
+block 5 wants to run it scoped to changed plugin files.
 
 **Goal.** A test suite that instantiates every discovered plugin and actually runs its
 core method(s) against small synthetic data, asserting it behaves like a well-formed
@@ -499,63 +420,29 @@ to the plugin under test rather than the fixture.
 pass, since they're already trusted) before treating a conformance failure on a new
 contribution as meaningful signal.
 
-## 2. Settings-schema linter for `get_empty_settings()` - DONE 2026-09-01
+## 3. Contribution scaffold: the analysis-tab half
 
-Landed in full, not just the validator half; narrative and measurements in `changelog.md`.
-`poriscope/utils/settings_schema.py` holds the pure validator,
-`poriscope/utils/plugin_schemas.py` the discovery and retrieval,
-`tests/unit/utils/test_settings_schema.py` and
-`tests/unit/plugins/test_plugin_settings_schema.py` the tests, and
-`scripts/check_plugin_schemas.py` the standalone runner. All 24 plugins report clean.
+`scripts/new_plugin.py` generates data plugins for all eight families. The analysis-tab
+half is not built, and is **deferred until the planned frontend refactoring has landed**
+so that triads are not generated against a layout about to change.
 
-Two things about it are worth carrying forward:
+A Controller/Model/View triad is 8 abstract methods across three files (`MetaController`
+2, `MetaModel` 1, `MetaView` 5) plus the class-name-equals-filename rule and `_init`
+assigning `self.view`/`self.model`; nothing else needs registering, which is why a
+~100-line triad is a valid runnable tab. `FAMILIES` in the script is shaped so the three
+can be added without rework.
 
-- **No pre-commit hook was wired**, though step 3 of the original plan called for one. The
-  test suite covers it on every branch push, and a hook would have made the six owner-held
-  `Basic_PeakFinder` findings block commits before the owning developer had seen them.
-  Revisit once block 5's `CODEOWNERS` exists.
-- **The rules were derived by measurement, not from the docstring**, and one docstring
-  claim turned out to be false: "Value and Type are required" was contradicted by 27 of the
-  91 shipped parameter entries, the base classes' own included. A missing `Value` is
-  therefore treated as unset rather than flagged, and the sentence was corrected in all 31
-  files carrying it. If the rule set is ever extended, measure the candidate rule against
-  every shipped plugin first - it is a few lines of script and it is what stopped this from
-  shipping 27 false positives.
+Two things to know before starting:
 
-Nothing is left open from this block.
-
-## 3. Contribution scaffold / template generator - DONE 2026-09-01 (data plugins)
-
-Landed as `scripts/new_plugin.py`, with `tests/unit/scripts/test_new_plugin.py` covering
-it; the narrative, the measurements and the two defects the real gates caught are in
-`changelog.md`. All eight data plugin families and both variant shapes generate output
-that passes `pre-commit run --all-files`, the compliance suite and the schema check
-untouched.
-
-Three things about it are worth carrying forward:
-
-- **The analysis-tab half is not built and is the open remainder of this block.** A
-  Controller/Model/View triad is 8 abstract methods across three files
-  (`MetaController` 2, `MetaModel` 1, `MetaView` 5) plus the class-name-equals-filename
-  rule and `_init` assigning `self.view`/`self.model`; nothing else needs registering,
-  which is why a ~100-line triad is a valid runnable tab. `FAMILIES` in the script is
-  shaped so the three can be added to it without rework. Worth knowing when it is picked
-  up: **the `HelloWorld` example under `docs/source/_static/images/examples/` is stale**
-  and would not instantiate today - it implements 4 of `MetaView`'s 5 abstract methods,
-  missing `notify_plugin_state_changed`, and imports `from utils.MetaView import MetaView`
-  rather than `poriscope.utils.MetaView`. A generator would replace it with something that
-  works.
-- **No generated test stub, and the plan's reason for wanting one was wrong.** Step 2
-  asked for a `tests/unit/plugins/<category>/` stub "so `test_plugin_compliance.py`'s
-  discovery picks it up immediately"; that discovery is `pkgutil.walk_packages` over
-  `poriscope.plugins` and needs no test file at all. If a stub is ever added it needs a
-  better justification than that one.
-- **The body policy is measured, not chosen**, and re-deriving it is a few minutes of
-  probing: `pass` under a non-`None` return is mypy `empty-body`, a copied
-  `:raises X:` above a `pass` body is pydoclint DOC502, the same field above a
-  `raise NotImplementedError` is DOC503, and raising with no field is DOC501. Anyone
-  changing what the stubs emit should re-run those four probes rather than reasoning
-  about them.
+- **The `HelloWorld` example under `docs/source/_static/images/examples/` is stale** and
+  would not instantiate today: it implements 4 of `MetaView`'s 5 abstract methods, missing
+  `notify_plugin_state_changed`, and imports `from utils.MetaView import MetaView` rather
+  than `poriscope.utils.MetaView`. A generator should replace it with something that works.
+- **The generator's stub-body policy was measured, not chosen**, and anyone changing what
+  it emits should re-run the four probes rather than reason about them: `pass` under a
+  non-`None` return is mypy `empty-body`; a copied `:raises X:` above a `pass` body is
+  pydoclint DOC502; the same field above a `raise NotImplementedError` is DOC503; and
+  raising with no field is DOC501.
 
 ## 4. Static security review for module-level plugin code
 
@@ -631,14 +518,15 @@ repo, so plugin review isn't enforced by GitHub at all today.
 safety — don't add anything to this workflow that needs write access (e.g. auto-fix
 commits); that's what `ci-internal-pr.yml` is for, and it isn't fork-safe.
 
-## 6. Docs-render check in CI (Sphinx warnings-as-errors) - DONE 2026-08-31
-
-Landed as `.github/workflows/docs-check.yml`; see `changelog.md`. The one open remainder is
-block 5's out-of-repo admin step: marking the check as a required status check in branch
-protection for `main`/`develop`. Enabling `nitpicky` was measured (1170 warnings) and
-deliberately left off - that is its own piece of work, not follow-through from this block.
+**Gated on this block:** `scripts/check_plugin_schemas.py` has no pre-commit hook. One was
+deliberately not wired, because it would have blocked commits on the six owner-held
+`Basic_PeakFinder` findings before the owning developer had seen them. The test suite covers
+the same ground on every branch push in the meantime. Wire the hook once `CODEOWNERS` exists
+and those findings have an owner.
 
 ## 7. Fuzz / malformed-input testing for data readers
+
+**Owner: the test developer** - this is a pytest suite.
 
 **Goal.** Catch unhandled crashes in community-contributed parsers on truncated,
 corrupted, or otherwise malformed binary input — the single most likely crash surface
@@ -674,38 +562,3 @@ gracefully (raise a clear, caught exception) rather than crash or hang.
 **Gotchas.** This only meaningfully applies to `MetaReader`; don't try to generalize it
 to every plugin family — event finders/fitters/filters operate on already-validated
 in-memory arrays, not raw external files, so this specific risk doesn't apply to them.
-
-## 8. Custom lint rules encoding existing tribal knowledge - CLOSED 2026-09-01
-
-**Nothing here is left to build.** The block proposed mechanically enforcing three
-conventions that were held by review attentiveness alone. All three are now resolved,
-none of them by writing the checker this block asked for:
-
-1. ~~No nested functions.~~ **Dropped 2026-09-01.** `CLAUDE.md` no longer prohibits
-   nesting outright: a short, simple nested function is fine where it is genuinely the
-   simpler option, which is a judgement an `ast` walk cannot make. A checker would have
-   to encode a line-count or complexity threshold to approximate it, and would flag
-   exactly the small callback closures the convention now permits. Do not build it.
-2. ~~Bare `except:`.~~ **Already enforced; there was never anything to add.** The block
-   asked whether `ruff` had a built-in rule for this and whether it was enabled, and the
-   answer to both is yes: `E722` is in Ruff's **default** rule set, which
-   `pyproject.toml`'s `extend-select` adds to rather than replaces, so the gate has been
-   catching bare `except:` all along even though no line of config names it. Measured
-   rather than reasoned - a throwaway file containing a bare `except:` was put under
-   `poriscope/` and `pre-commit run ruff --files ...` failed it with
-   `E722 Do not use bare except`. The one-line config addition the block held in reserve
-   would have been a no-op.
-3. ~~Explicit sqlite3 resource cleanup in a `finally` block.~~ **Deferred by design, not
-   queued here.** It is a semantic rather than syntactic pattern - a general checker would
-   have to track whether a `sqlite3.connect`/`.cursor()` result is closed on every exit
-   path - and the block itself concluded the right home for it is block 1's conformance
-   suite, whose open-file-handle check catches the same defect empirically. Block 1 is a
-   pytest suite and so is owned by another developer; this rides along with it whenever it
-   is built, and is not separate work.
-
-The block's step 4, documenting whichever of these became real automated checks, is done
-in `quality_control.rst`, whose "Which rules are enabled" note now says that Ruff's
-defaults are in force on top of the selected rules and names `E722` as the example that
-matters here. It is deliberately **not** added to `CLAUDE.md`: that file is loaded in full
-every session and should carry rules a human has to remember, and a rule the gate enforces
-on every commit is not one of those.

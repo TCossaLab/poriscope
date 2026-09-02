@@ -15,6 +15,45 @@ they date the decision.
 
 ---
 
+## 2026-09-01 - No custom lint rules for the three conventions `CLAUDE.md` documents
+
+Proposed as block 8 of the community-plugin compliance gate: write `ast`-based checkers
+enforcing three conventions that were held by review attentiveness alone. **Nothing was
+built, and nothing should be.** All three resolved without a checker.
+
+**No nested functions - dropped, because the convention itself changed.** `CLAUDE.md` no
+longer prohibits nesting outright: a short, simple nested function is fine where it is
+genuinely the simpler option, typically a small closure captured for a callback or timer.
+That is a judgement an `ast` walk cannot make. A checker would have to approximate it with
+a line-count or complexity threshold and would flag exactly the small callback closures the
+revised convention permits. Do not build it.
+
+**Bare `except:` - already enforced, and always was.** The block asked whether Ruff had a
+built-in rule and whether it was enabled; the answer to both is yes. `E722` is in Ruff's
+**default** rule set, and `pyproject.toml`'s `extend-select` adds to that set rather than
+replacing it, so the gate has been catching bare `except:` all along even though no line of
+config names it. Measured rather than reasoned: a throwaway file containing a bare `except:`
+was placed under `poriscope/` and `pre-commit run ruff --files ...` failed it with
+`E722 Do not use bare except`. The one-line config addition the block held in reserve would
+have been a no-op.
+
+**Explicit sqlite3 cleanup in a `finally` block - deferred by design, not queued.** This is
+a semantic rather than syntactic pattern: a general checker would have to track whether a
+`sqlite3.connect`/`.cursor()` result is closed on every exit path. The block itself
+concluded the right home for it is the behavioural conformance suite (block 1), whose
+open-file-handle check catches the same defect empirically. That suite is owned by the test
+developer, so this rides along with it whenever it is built rather than being separate work.
+
+Documenting whichever of these became real automated checks is done: `quality_control.rst`'s
+"Which rules are enabled" note says Ruff's defaults are in force on top of the selected
+rules and names `E722` as the example that matters. It is deliberately **not** added to
+`CLAUDE.md`, which is loaded in full every session and should carry rules a human has to
+remember - a rule the gate enforces on every commit is not one of those.
+
+**What would reopen this:** the owner-held fitter files changing hands would not; only a
+convention that is genuinely syntactic, and that review keeps missing, would justify a
+custom checker.
+
 ## 2026-09-01 - The three reserved file-parameter names stay as they are
 
 **Context.** `BaseDataPlugin._validate_param_ranges` skips its `Value in Options` check for
