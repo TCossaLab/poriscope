@@ -5,10 +5,6 @@ can degrade, what it degrades to, and how each of the three classifiers responds
 
 Traced from the code, not summarised from `changelog.md`. Line-level behaviour.
 
-For the stages *around* this chain — how peaks are found, typed and turned into
-sequences, directions and stars — see [`peak_finding_pipeline.md`](peak_finding_pipeline.md).
-This file covers stage 5 of that document in detail and nothing else.
-
 ## How to read this
 
 All three classifiers — `_classify_folded_unfolded`, `_classify_peak_prominences`,
