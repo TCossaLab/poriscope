@@ -10,6 +10,47 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-03 - `SQLiteEventWriter`'s two-connection commit split stays; tests must wait on rows, not tables
+
+**Context.** `commit_events` calls `_initialize_database`, which opens its own short-lived
+connection, creates `channels`/`events`/`columns`, and commits and closes immediately. It
+then writes event rows on a second, longer-lived connection (`self.conn`) that only commits
+once at `last_call`, at the end of the whole batch. `test_commit_events_writes_exact_schema`
+polled `sqlite_has_tables(out_db, {...})` as its `qtbot.waitUntil` predicate - satisfied the
+moment the first connection commits, which can be well before the batch's event rows are
+written and committed on the second. This read 0 rows instead of 5 in one CD run
+(`33438867072`, `release/1.7.0`, 2026-08-31) under full-suite CPU contention; it did not
+reproduce in isolation or in the paired tag-push run of the identical commit seconds later.
+
+**Decision.** Keep the two-connection design in `SQLiteEventWriter` as-is - it is not a bug,
+the writer is correct regardless of when its tables become visible to an external reader.
+Fixed the test instead: added `sqlite_row_count()` alongside `sqlite_has_tables()` in
+`tests/e2e/_helpers.py` and made the wait predicate require
+`sqlite_row_count(out_db, "events") == ds.num_events` too, so the test cannot observe a
+"done" state before the batch's final commit lands.
+
+**Why this is a standing risk, not a one-off.** The gap exists because commit happens on a
+background `EventWorker`/`WorkerThread` fired via `run_generators`, decoupled from the click
+that starts it, and nothing in `MetaWriter`/`MetaModel` exposes a "commit finished" signal a
+test can await - so any e2e test against a writer plugin is reduced to polling the output
+file for a proxy condition. `sqlite_has_tables` was already a fix for an *earlier* version
+of this same race (it replaced polling on file existence); it still wasn't sufficient, since
+table creation and row insertion are two different commits. The same shape of bug can
+recur wherever a test infers "the write finished" from a partial signal instead of the
+actual final state.
+
+**Revisit if / check for when touching this area:**
+- A new e2e test is added against `SQLiteEventWriter`, `SQLiteDBWriter`, or any other
+  `MetaWriter` subclass that writes through more than one connection or commits - reuse
+  `sqlite_row_count`, don't reintroduce a `sqlite_has_tables`-only wait.
+- `MetaModel.run_generators`/`discard_generator` ever gains a real "batch finished" signal -
+  tests should switch to awaiting that instead of polling the database file at all.
+- Anyone consolidates `_initialize_database` and `_write_data` onto a single connection -
+  re-check whether the race actually closes (it narrows the window but a background-thread
+  write is still async relative to a polling test) before relying on it.
+
+---
+
 ## 2026-09-03 - The metadata query derives its FROM clause instead of enumerating seven branches
 
 **Context.** `construct_metadata_query` hand-wrote seven query branches, one per

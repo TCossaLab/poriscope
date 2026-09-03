@@ -407,6 +407,40 @@ def sqlite_has_tables(path: Path, tables: Iterable[str]) -> bool:
     return expected.issubset(found)
 
 
+def sqlite_row_count(path: Path, table: str) -> int:
+    """
+    Report the row count of a table in a SQLite file, or ``-1`` if it cannot be read.
+
+    Intended as a ``qtbot.waitUntil`` predicate alongside ``sqlite_has_tables``:
+    ``SQLiteEventWriter`` creates its tables and commits them on one
+    short-lived connection, then writes and commits event rows on a second,
+    longer-lived connection that only commits once the whole batch is done -
+    so a table existing is not proof its rows have landed yet. Returns
+    ``-1`` rather than raising while the database is absent, the table
+    doesn't exist yet, or the file is momentarily locked by the writer, so
+    polling simply continues.
+
+    :param path: the database file being written.
+    :param table: the table whose row count to report.
+    :return: the row count, or ``-1`` if it cannot currently be read.
+    """
+    if not path.exists():
+        return -1
+    try:
+        with sqlite3.connect(str(path)) as conn:
+            found = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if table not in found:
+                return -1
+            return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    except sqlite3.Error:
+        return -1
+
+
 def json_file_ready(path: Path) -> bool:
     """
     Report whether a JSON file exists *and* parses as complete JSON.
