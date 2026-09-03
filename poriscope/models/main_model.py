@@ -59,7 +59,6 @@ _JSON_CLASS_NAMES: Mapping[str, Any] = {
     "int": int,
     "float": float,
     "bool": bool,
-    "null": None,
 }
 
 
@@ -68,10 +67,7 @@ class MainModel(QObject):
     App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
     """
 
-    configUpdated = Signal()
-    errorOccurred = Signal(str)
-    dataReadInstancesUpdated = Signal(dict)
-    fileLoaded = Signal(object)
+    add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
     def __init__(self, app_config: Dict[str, Any]) -> None:
@@ -176,8 +172,16 @@ class MainModel(QObject):
             else:
                 return plugin_class
         except Exception as e:
+            # Logged at ERROR on purpose: QtHandler raises that as a dialog, and on
+            # the startup scan - which runs from MainModel's constructor, before
+            # MainController exists to connect anything - it is the only signal the
+            # user can get. The panel message below lands on the runtime re-scans
+            # (changing the user plugin folder, resetting the session), where today
+            # the dialog is likewise all there is.
             self.logger.error(f"Error loading plugin {plugin_key}: {e}", exc_info=True)
-            self.errorOccurred.emit(f"Error loading plugin {plugin_key}: {e}")
+            self.add_text_to_display.emit(
+                f"Error loading plugin {plugin_key}: {e}", self.__class__.__name__
+            )
             return None
 
     @log(logger=logger)
@@ -231,9 +235,7 @@ class MainModel(QObject):
             for root_dir, _, files in os.walk(base_path):
                 try:
                     files = [
-                        f
-                        for f in files
-                        if f.endswith(".py") and f not in ("__init__.py", "__pycache__")
+                        f for f in files if f.endswith(".py") and f != "__init__.py"
                     ]
                 except Exception as e:
                     self.logger.warning(f"Error reading files in {root_dir}: {e}")
@@ -352,12 +354,49 @@ class MainModel(QObject):
         plugin_history: Dict[str, Any],
         save_file: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Write the plugin history to disk as JSON
+
+        A write failure is logged rather than raised. Every caller is a Qt slot, and
+        PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
+        read-only or otherwise unwritable destination would take the process down.
+        ``except Exception`` rather than ``except OSError`` because ``json.dump`` also
+        raises ``TypeError`` for a value it cannot serialize.
+
+        The level depends on who asked for the save. An autosave - ``save_file`` is
+        ``None``, which includes the app-shutdown path - logs at WARNING, which
+        ``QtHandler`` does not raise a dialog for; a modal dialog during
+        ``aboutToQuit`` would be its own bug. It also emits ``add_text_to_display``,
+        so the status panel says autosaving has stopped: the failure is rare and
+        non-blocking, but a user whose work is no longer being persisted needs to know
+        they are operating unprotected. A save to a path the user chose logs at ERROR
+        instead, and therefore does raise a dialog, so that a Save Session which did
+        not happen is not mistaken for one that did.
+
+        :param plugin_history: the session state to persist
+        :type plugin_history: Dict[str, Any]
+        :param save_file: path to write to, or None to use the default session file
+        :type save_file: Optional[Union[str, Path]]
+        """
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
+        user_specified = save_file is not None
         if save_file is None:
             save_file = Path(self.session_path, "plugin_history.json")
-        with open(save_file, "w") as jf:
-            json.dump(json_dump, jf, indent=4)
+        try:
+            with open(save_file, "w") as jf:
+                json.dump(json_dump, jf, indent=4)
+        except Exception as e:
+            message = f"Unable to save session to {save_file}: {e}"
+            if user_specified:
+                self.logger.error(message)
+            else:
+                self.logger.warning(message)
+                self.add_text_to_display.emit(
+                    f"Session autosave failed: {e}. Your session is no longer being "
+                    "saved automatically until this is resolved.",
+                    self.__class__.__name__,
+                )
 
     @log(logger=logger)
     def save_tab_actions(
@@ -365,12 +404,38 @@ class MainModel(QObject):
         plugin_history: Dict[str, Any],
         save_file: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Write the tab action history to disk as JSON
+
+        Failures are handled exactly as in :py:meth:`save_session`, and for the same
+        reasons: logged rather than raised because the callers are Qt slots, at
+        WARNING plus a status-panel message for an autosave, and at ERROR for a save
+        to a path the user chose.
+
+        :param plugin_history: the tab action history to persist
+        :type plugin_history: Dict[str, Any]
+        :param save_file: path to write to, or None to use the default session file
+        :type save_file: Optional[Union[str, Path]]
+        """
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
+        user_specified = save_file is not None
         if save_file is None:
             save_file = Path(self.session_path, "tab_action_history.json")
-        with open(save_file, "w") as jf:
-            json.dump(json_dump, jf, indent=4)
+        try:
+            with open(save_file, "w") as jf:
+                json.dump(json_dump, jf, indent=4)
+        except Exception as e:
+            message = f"Unable to save tab action history to {save_file}: {e}"
+            if user_specified:
+                self.logger.error(message)
+            else:
+                self.logger.warning(message)
+                self.add_text_to_display.emit(
+                    f"Tab action autosave failed: {e}. Tab state is no longer being "
+                    "saved automatically until this is resolved.",
+                    self.__class__.__name__,
+                )
 
     @log(logger=logger)
     def load_session(

@@ -29,7 +29,6 @@ import importlib.resources
 import logging
 import os
 import platform
-import threading
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -49,8 +48,6 @@ class WaveletFilter(MetaFilter):
     """
 
     logger = logging.getLogger(__name__)
-    # Process-wide, deliberately: see the comment in _apply_filter.
-    _dll_lock = threading.Lock()
 
     @log(logger=logger)
     @override
@@ -88,18 +85,7 @@ class WaveletFilter(MetaFilter):
         padlen = 100
         data = np.pad(data, padlen, mode="edge")
         wavelet = self.settings["Wavelet"]["Value"].encode("utf-8")
-        # Filters are invoked as plain callables from within other plugins' own channel
-        # loops rather than being dispatched through the channel-management system, so
-        # force_serial_channel_operations() is never consulted for them; guard the shared
-        # DLL handle directly instead.
-        #
-        # This must stay _dll_lock (class-level, process-wide) rather than self.lock
-        # (per-instance): LoadLibrary is called once per WaveletFilter instance but returns
-        # a shared module handle, and the wavelet C library's internal state is not
-        # reentrant, so two instances filtering at once would corrupt each other. Do not
-        # "simplify" this to the per-instance lock.
-        with self._dll_lock:
-            self.fun(data, len(data), wavelet)
+        self.fun(data, len(data), wavelet)
         return data[padlen:-padlen]
 
     @log(logger=logger)
@@ -134,7 +120,7 @@ class WaveletFilter(MetaFilter):
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         .. code-block:: python
 

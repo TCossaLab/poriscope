@@ -92,7 +92,11 @@ After a merge, the documentation build directories are cleaned and regenerated.
 This process:
 
 - Removes previous Sphinx build artifacts
-- Regenerates autodoc ``.rst`` files
+- Regenerates autodoc ``.rst`` files. Each generator clears its own output directory
+  first, so a page for a module that has since been deleted is pruned rather than left
+  behind as an orphan document that would fail the ``-W`` build below. Everything under
+  ``docs/source/autodoc/`` is generated and gitignored — do not hand-edit it, and do not
+  expect anything you put there to survive a run
 - Builds the HTML documentation using Sphinx, with ``-W --keep-going`` so warnings are
   errors and all of them are reported in one pass
 - Opens the generated documentation in a web browser
@@ -135,6 +139,29 @@ Windows
 - Installs missing toolchains if required
 - Uses MinGW to build native extensions
 - Ensures the correct Python interpreter is used
+
+.. note::
+
+   **Which Python the hook picks, and why it checks so carefully.** The hook is a
+   ``/bin/sh`` shim that tries ``python3``, then ``python``, then ``py -3``, and
+   selects the first one that can run ``import poriscope.exposed``. Everything
+   downstream inherits that choice through ``sys.executable``, so getting it wrong
+   affects the whole pipeline.
+
+   Two checks that look sufficient are not. Testing whether the candidate merely
+   starts is not enough: if you have MSYS2 installed - which this same hook may
+   have installed for you, to build the wavelet library - then under Git Bash
+   ``python3`` resolves to the MSYS2 interpreter, which runs perfectly well but
+   has none of the project's dependencies. Testing ``import poriscope`` is not
+   enough either, because ``poriscope/__init__.py`` deliberately swallows a failed
+   ``from .exposed import *`` so that a half-installed dependency set cannot break
+   ``pip install``; the import succeeds even when numpy is missing. Importing the
+   submodule directly is what actually proves the dependencies are present.
+
+   If no candidate passes, the hook prints what it skipped and exits without
+   running anything, which is the intended outcome - install the project with
+   ``pip install -e ".[dev]"`` and run ``python scripts/hooks/post-merge.py`` by
+   hand to catch up.
 
 Linux and macOS
 ^^^^^^^^^^^^^^^

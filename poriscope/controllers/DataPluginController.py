@@ -177,15 +177,13 @@ class DataPluginController(QObject):
                         dhistory["key"] = dinstance.get_key()
                         dhistory["metaclass"] = dmetaclass
                         dhistory["subclass"] = dinstance.__class__.__name__
-                        dsettings = dinstance.get_raw_settings()
-                        dhistory["settings"] = dsettings
-                        dsettings[metaclass]["Value"] = key
+                        # Update the dependent itself first, then snapshot it into
+                        # history. get_raw_settings() returns a copy, so writing
+                        # through what it hands back would update history while
+                        # leaving the plugin's own Value and Options untouched.
                         dinstance.update_raw_settings(metaclass, key)
-                        if dsettings[metaclass]["Options"] is not None:
-                            if old_key in dsettings[metaclass]["Options"]:
-                                dsettings[metaclass]["Options"].remove(old_key)
-                            if key not in dsettings[metaclass]["Options"]:
-                                dsettings[metaclass]["Options"].append(key)
+                        dinstance.replace_raw_settings_option(metaclass, old_key, key)
+                        dhistory["settings"] = dinstance.get_raw_settings()
                         self.update_plugin_history.emit(dhistory, "")
                     except Exception as e:
                         self.logger.error(

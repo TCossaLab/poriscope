@@ -87,7 +87,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     cache_plot_data = Signal(list, list)
     create_plugin = Signal(str, str)  # metaclass, subclass
     logger = logging.getLogger(__name__)
-    save_requested = Signal(str)
     export_plot_data = Signal()
     run_generators = Signal(str)
     add_text_to_display = Signal(str, str)

@@ -137,21 +137,3 @@ def test_get_plugin_instance(plugin_model, dummy_plugin):
     plugin_model.register_plugin(dummy_plugin, "MetaExample", "abc")
     instance = plugin_model.get_plugin_instance("MetaExample", "abc")
     assert instance == dummy_plugin
-
-
-def test_get_plugin_details_success(plugin_model, dummy_plugin):
-    """
-    Test retrieving settings for an instantiated plugin.
-    """
-    plugin_model.register_plugin(dummy_plugin, "MetaExample", "abc")
-    settings = plugin_model.get_plugin_details("MetaExample", "abc")
-    assert settings == {"param": "value"}
-
-
-def test_get_plugin_details_not_found_returns_none(plugin_model, caplog):
-    """
-    Test that requesting plugin details for an unknown key returns None.
-    """
-    result = plugin_model.get_plugin_details("MetaExample", "missing")
-    assert result is None
-    assert "No plugin instance found" in caplog.text

@@ -77,8 +77,9 @@ class App(QApplication):
 
         # default_app_config() is the single definition of these defaults,
         # shared with the settings reset so the two cannot drift apart. Called
-        # twice deliberately: the fallback below needs a dict that later edits
-        # to self.app_config cannot have mutated.
+        # afresh at each of its three sites deliberately: the backfill and the
+        # fallback below each need a dict that later edits to self.app_config
+        # cannot have mutated.
         self.app_config: Dict[str, Any] = default_app_config(self.user_plugin_path)
 
         if not self.config_path.exists():
@@ -96,8 +97,20 @@ class App(QApplication):
             try:
                 with open(config_file_path, "r") as f:
                     self.app_config = json.load(f)
-                if "User Plugin Folder" not in self.app_config.keys():
-                    self.app_config["User Plugin Folder"] = str(self.user_plugin_path)
+                # Backfill every default, not just the key added most recently.
+                # A config written by an older version, or hand-edited, can be
+                # missing any of them, and "Log Level" is read by subscript in
+                # __init__ before configure_logger has installed a handler - so
+                # a missing key there is a KeyError that nothing can record.
+                defaults = default_app_config(self.user_plugin_path)
+                missing = [key for key in defaults if key not in self.app_config]
+                if missing:
+                    for key in missing:
+                        self.app_config[key] = defaults[key]
+                    self.logger.warning(
+                        f"Config file {config_file_path} was missing "
+                        f"{', '.join(missing)}; restored to default"
+                    )
                     try:
                         with open(config_file_path, "w") as f:
                             json.dump(

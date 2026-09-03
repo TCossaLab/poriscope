@@ -24,6 +24,28 @@ repos:
         exclude: ^tests/slow/
         stages: [pre-commit]
 
+      # Security-relevant bandit (S) rules, plugin tree only. Plugin discovery
+      # executes every .py file it walks - MainModel.load_plugin calls
+      # spec.loader.exec_module - so a plugin file is a code-execution trust
+      # boundary in a way the rest of the app is not.
+      #
+      # Scoped here rather than added to pyproject.toml's extend-select because
+      # scripts/ (33 findings) and tests/ (2) use subprocess legitimately, so a
+      # global rule would fail the strict hook above on day one. Measured at zero
+      # across all of poriscope/, which is why it needs no per-file-ignores.
+      #
+      # Note --select REPLACES the configured selection for this invocation, so I,
+      # B006 and B020 are not re-run here; the strict hook covers them. S608 and
+      # S101/S110/S112 are deliberately absent - both are settled in DECISIONS.md.
+      - id: ruff
+        alias: ruff-plugin-security
+        name: ruff (plugin security rules)
+        # No --force-exclude here: the hook's own entry already passes it, and ruff
+        # rejects the flag given twice.
+        args: ["--select", "S102,S301,S302,S306,S307,S310,S506,S601,S602,S603,S604,S605,S606,S607,S609,S612"]
+        files: ^poriscope/plugins/
+        stages: [pre-commit]
+
   # Static Type Checking (runs during default commit stage).
   # Scoped to ^poriscope/ to match mypy.ini's `exclude = ^tests/`. That exclude
   # governs directory *discovery* only, so without this the hook hands mypy the
@@ -47,6 +69,21 @@ repos:
         language: system
         types: [python]
         files: ^poriscope/
+
+      # Module-level code in a plugin runs at discovery, before any compliance
+      # check reflects on the class, so the rule is that module-level assignment
+      # is fine but module-level invocation is not. Scoped to the eight
+      # data-plugin families - what an outside contribution actually adds.
+      # analysistabs/ is excluded because its six module-level statements are
+      # benign (warnings filters, an os.environ guard, __main__ demo blocks) and
+      # a rule with carve-outs is worse than a rule with none; those files are
+      # still covered by ruff-plugin-security above.
+      - id: plugin-module-level
+        name: plugin module-level code check
+        entry: python scripts/check_plugin_module_level.py
+        language: system
+        types: [python]
+        files: ^poriscope/plugins/(datareaders|datawriters|db_loaders|dbwriters|eventfinders|eventfitters|eventloaders|filters)/
 
   # File Size Guard (runs during default commit stage)
   - repo: https://github.com/pre-commit/pre-commit-hooks

@@ -25,6 +25,7 @@
 
 import ast
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -38,6 +39,14 @@ FOLDER_ORIGIN = PROJECT_ROOT / "poriscope" / "utils"
 # Where generated .rst documentation should be written
 
 OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "autodoc" / "metaclasses"
+
+# This directory is generated output, gitignored, and owned entirely by this
+# script - every file in it is rewritten on every run. Clearing it first is what
+# prunes the .rst for a module that no longer exists: writing is unconditional,
+# so a stale file would otherwise survive forever, dropped from the index below
+# but still on disk and still autodoc-ing a module that is gone, which fails
+# sphinx-build -W. CI never saw this because it builds from a clean checkout.
+shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 INDEX_RST = OUTPUT_DIR / "metaclasses_index.rst"

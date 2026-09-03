@@ -233,25 +233,3 @@ class DataPluginModel(QObject):
         :rtype: Optional[BaseDataPlugin]
         """
         return self.plugins[metaclass].get(key)
-
-    @log(logger=logger)
-    def get_plugin_details(self, metaclass: str, key: str) -> Optional[dict]:
-        """
-        Retrieve the raw settings associated to an already-instantiated plugin by metaclass and key.
-
-        :param metaclass: The metaclass of the plugin.
-        :type metaclass: str
-        :param key: The key of the plugin instance to remove.
-        :type key: str
-
-        :return: the dict that must be filled in to initialize the plugin, or None on failure
-        :rtype: Optional[dict]
-        """
-        plugin_instance = self.get_plugin_instance(metaclass, key)
-        if not plugin_instance:
-            self.logger.error(
-                f"No plugin instance found for key {key} in metaclass {metaclass}."
-            )
-            return None
-        settings = plugin_instance.get_raw_settings()
-        return settings

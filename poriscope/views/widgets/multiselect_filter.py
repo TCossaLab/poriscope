@@ -122,17 +122,63 @@ class MultiSelectFilterComboBox(QComboBox):
         self._line_edit.setPlaceholderText("Select filters...")
         self.setInsertPolicy(QComboBox.NoInsert)
 
-        QApplication.instance().installEventFilter(self)
+    def _set_outside_click_filter(self, active: bool) -> None:
+        """
+        Install or remove the application-wide filter that closes the popup.
+
+        The filter must sit on the application, not on ``containerWidget``:
+        ``Qt.Dialog | Qt.Popup`` evaluates to ``Qt.Tool`` (window type is a
+        value in the low byte, not a set of independent flags), so the
+        container is a tool window rather than a real popup. Qt's popup mouse
+        grab therefore never engages, and a click elsewhere in the application
+        is never routed to the container.
+
+        It is installed only while the popup is open. Installing it in
+        ``__init__`` instead is what previously leaked one filter per widget
+        for the lifetime of the process, and let a filter outlive the C++
+        object behind it.
+
+        :param active: True to install the filter, False to remove it.
+        :type active: bool
+        """
+        app = QApplication.instance()
+        if app is None:
+            return
+        if active:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Close the popup when the user clicks outside it.
+
+        :param obj: The object receiving the event; unused, since a click
+            anywhere in the application is of interest.
+        :type obj: QObject
+        :param event: The event being delivered.
+        :type event: QEvent
+        :return: True if the event was consumed, False otherwise.
+        :rtype: bool
+        """
+        if not self.containerWidget.isVisible():
+            # Reached when the popup was closed by a path that does not run
+            # hidePopup(), such as its own title-bar close button. Drop the
+            # filter here so it cannot outlive the popup it serves.
+            self._set_outside_click_filter(False)
+            return False
         if event.type() == QEvent.MouseButtonPress:
-            if self.containerWidget.isVisible():
-                # Check if the click was outside the dialog
-                if not self.containerWidget.geometry().contains(event.globalPos()):
-                    self.logger.debug("Clicked outside containerWidget - closing")
-                    self.containerWidget.close()
-                    return True  # Event handled
-        return super().eventFilter(obj, event)
+            # Check if the click was outside the dialog
+            global_pos = event.globalPosition().toPoint()
+            if not self.containerWidget.geometry().contains(global_pos):
+                self.logger.debug("Clicked outside containerWidget - closing")
+                self.hidePopup()
+                return True  # Event handled
+        # QComboBox does not reimplement eventFilter, so the inherited
+        # QObject::eventFilter is `return false` - which is all this needs to
+        # be. Calling up into it requires a live C++ `self` and was the line
+        # that raised "Internal C++ object already deleted" on a stale filter.
+        return False
 
     def addItem(self, name: str) -> None:
         item_widget = QWidget()
@@ -300,8 +346,12 @@ class MultiSelectFilterComboBox(QComboBox):
             QRect(popup_x, popup_y, popup_width, popup_height)
         )
         self.containerWidget.show()
+        self._set_outside_click_filter(True)
 
     def hidePopup(self) -> None:
+        # Drop the filter before hiding: it is only meaningful while the popup
+        # is up, and this is the single path every close goes through.
+        self._set_outside_click_filter(False)
         # Hide the container widget when it should be closed
         self.containerWidget.hide()
 

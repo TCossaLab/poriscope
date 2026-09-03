@@ -72,7 +72,6 @@ class MainView(QMainWindow, WalkthroughMixin):
     """
 
     # Signals
-    rawdata_toggled = Signal()
     instantiate_plugin = Signal(str, str)
     instantiate_analysis_tab = Signal(str)
     help_window_closed = Signal()
@@ -88,7 +87,6 @@ class MainView(QMainWindow, WalkthroughMixin):
     abort_all_analysis = Signal()
     reset_app_config = Signal()
     reset_session = Signal()
-    update_thread_status = Signal(int, str, float)
     request_analysis_tabs = Signal()
     received_analysis_tabs = Signal(dict)
 
@@ -221,7 +219,6 @@ class MainView(QMainWindow, WalkthroughMixin):
             ("pluginsToggled", self.text_menu_widget.setPluginsChecked),
             ("helpToggled", self.text_menu_widget.setHelpChecked),
             ("settingsToggled", self.text_menu_widget.setSettingsChecked),
-            ("exitToggled", self.text_menu_widget.setExitChecked),
             ("menuToggled", self.toggle_menu_widgets),
         ]
 

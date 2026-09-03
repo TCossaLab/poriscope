@@ -50,6 +50,14 @@ that contain at least one sublevel longer than 200 µs. Poriscope detects that
 ``sublevel_duration`` belongs to the ``sublevels`` table and automatically joins it
 with the ``events`` table to apply the filter.
 
+**Example 5 — Filter by a property of the experiment:**
+
+Filter: ``voltage > 50``
+
+Then select **Histogram**, x-axis: ``duration`` → events from the experiments run above
+50 mV. Poriscope joins the ``experiments`` table automatically, the same way it joins
+``sublevels`` in Example 4.
+
 Saved as: ``<subset_name>_assisted``
 
 .. note::
@@ -58,6 +66,15 @@ Saved as: ``<subset_name>_assisted``
    aggregations (``GROUP BY``, ``HAVING``) or return computed columns
    (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
    for those cases.
+
+   Text compared against a column is left exactly as you type it, so
+   ``sequence = 'duration'`` matches the literal value ``duration`` and is not
+   confused with the ``duration`` column.
+
+   ``id`` on its own is rejected, because every table has one and they mean different
+   rows. Write ``e.id`` for an event, ``s.id`` for a sublevel or ``exp.id`` for an
+   experiment. ``experiment_id``, ``channel_id`` and ``event_id`` need no qualifier -
+   they mean the same thing in every table.
 
 Raw SQL
 ~~~~~~~

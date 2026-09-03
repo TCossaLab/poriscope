@@ -25,7 +25,6 @@
 # Alejandra Carolina González González
 
 import logging
-import traceback
 from abc import abstractmethod
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -112,7 +111,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
         :param channel: the index of the channel to commit
         :type channel: int
-        :raises Exception: if writing experiment or channel metadata fails unexpectedly
+        :raises Exception: if the output file cannot be opened, or if writing experiment or channel metadata fails unexpectedly
         :raises ValueError: if event fitting has not completed on the given channel
         :raises IOError: if an event cannot be written because it would overwrite an existing one
         :yield: the progress of the generator, normalized to [0,1]
@@ -137,13 +136,22 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
         try:
             self._initialize_database(channel)
-        except Exception as e:
+        except Exception:
+            # Raised rather than reported as a finished run. This used to log at
+            # INFO and then `yield 1.0; return`, which EventWorker turns into a
+            # 100% progress bar and "Generator finished." at INFO - so a writer
+            # that could not open its output file was indistinguishable from one
+            # that had written everything, and the user was left with an empty
+            # database and no indication anything had gone wrong. The sibling
+            # handlers below, for experiment- and channel-metadata failures, have
+            # always raised; EventWorker's own `except Exception` arm reports a
+            # raised failure with a traceback and still emits the progress-bar
+            # completion value.
             self.close_resources(channel)
-            self.logger.info(
-                f"Unable to open file: {type(e).__name__}: {e}, Traceback: {traceback.format_exc()}"
+            self.logger.error(
+                f"Unable to open output file for channel {channel}", exc_info=True
             )
-            yield 1.0
-            return
+            raise
 
         try:
             self._write_experiment_metadata(channel)
@@ -229,9 +237,31 @@ class MetaDatabaseWriter(BaseDataPlugin):
             pass
         finally:
             if abort is True:
-                self.reset_channel(channel)
-                self.written[channel] = 0
-            self.close_resources(channel)
+                # Guarded because reset_channel now raises on failure and this is a
+                # finally block, where an unguarded raise would replace whatever
+                # exception was already propagating. written is left as it stands
+                # on failure rather than zeroed, so it does not claim a clean slate
+                # the database never got.
+                try:
+                    self.reset_channel(channel)
+                    self.written[channel] = 0
+                except Exception:
+                    self.logger.error(
+                        f"Abort requested but channel {channel} could not be reset; "
+                        "the database still holds its partial events.",
+                        exc_info=True,
+                    )
+            # Guarded for the same reason: close_resources commits, and for a batch
+            # that ends here that is the only commit, so a failure must be reported
+            # without masking an in-flight exception.
+            try:
+                self.close_resources(channel)
+            except Exception:
+                self.logger.error(
+                    f"Failed to finalize the database for channel {channel}; events "
+                    "written in this batch may not have been saved.",
+                    exc_info=True,
+                )
 
     # Public API continued, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
@@ -398,7 +428,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         .. code-block:: python
 

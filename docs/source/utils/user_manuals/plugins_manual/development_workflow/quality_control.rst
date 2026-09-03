@@ -34,15 +34,22 @@ The following tools are used in Poriscope:
   raised exceptions actually match the function's real signature and body (see
   :ref:`docstring_consistency` below)
 - **check-added-large-files** – prevents accidental commits of large files
+- **Ruff security rules** – a second, separately scoped Ruff pass over
+  ``poriscope/plugins/`` only, flagging code execution, unsafe deserialization and
+  process spawning; see :ref:`plugin_trust_boundary` below
+- **plugin module-level code check** – rejects code that runs when a plugin is merely
+  discovered; see :ref:`plugin_trust_boundary` below
 
-All five are managed through the **pre-commit** framework.
+All seven are managed through the **pre-commit** framework.
 
 Two further gates are not pre-commit hooks but are enforced just as strictly:
 
 - a dedicated automated test — :ref:`plugin_compliance_testing` below — checks that any
   plugin you add or modify actually implements the interface its base class requires. It
   runs as part of the normal test suite, but for anyone contributing a plugin it is just
-  as much a compliance gate as the tools above, and often the one that matters most.
+  as much a compliance gate as the tools above, and often the one that matters most. A
+  companion test, :ref:`settings_schema_checking`, does the same for the settings schema
+  your plugin declares.
 - the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
   Sphinx documentation on every pull request with warnings treated as errors. pydoclint
   checks that a docstring *describes the right things*; it does not check that the
@@ -58,12 +65,16 @@ When committing code (either via the command line or GitHub Desktop), the follow
 run automatically:
 
 - ``ruff`` (strict mode) – validates code without modifying files
+- ``ruff-plugin-security`` – security-relevant rules, plugin tree only
 - ``mypy`` – validates static typing
 - ``pydoclint`` – validates that docstrings match real signatures and behavior
+- ``plugin-module-level`` – blocks import-time code in a data plugin
 - ``check-added-large-files`` – blocks files larger than 123 KB
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
-``tests/``. Everything else runs against every tracked file.
+``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/`` and
+``plugin-module-level`` more narrowly still, to the eight data-plugin families.
+Everything else runs against every tracked file.
 
 These checks **never modify files**.
 
@@ -267,8 +278,15 @@ After running:
 
 .. note::
 
-   **Which rules are enabled.** On top of Ruff's default rule set,
-   ``pyproject.toml`` selects:
+   **Which rules are enabled.** Ruff's default rule set is in force and
+   ``pyproject.toml`` uses ``extend-select``, which adds to those defaults rather
+   than replacing them. That matters more than it looks: several conventions this
+   project cares about are already enforced without appearing anywhere in the
+   config. The one worth knowing is ``E722``, **no bare** ``except:`` -- narrow to
+   ``except Exception:`` at minimum, so that the exceptions you are actually
+   swallowing can be named in a ``:raises:`` docstring section.
+
+   On top of the defaults, ``pyproject.toml`` selects:
 
    - ``I`` -- import ordering (isort).
    - ``B006`` -- a mutable data structure used as an argument default. A ``[]`` or
@@ -280,9 +298,73 @@ After running:
      assignment, but it makes the original sequence unreachable for the rest of the
      loop body and forces the parameter to be annotated loosely.
 
-   The other ``flake8-bugbear`` rules are deliberately **not** enabled yet. The
-   measured backlog and the case for adopting them are recorded in
-   ``future_fixes.md``.
+   The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled
+   *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
+   ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
+   maintained code fixed. What keeps each one from becoming a gate differs by rule.
+   ``S101`` would flag every ``assert`` in the test suite, where 2,243 of its 2,250 sites
+   are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
+   per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
+   advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
+   spread across the test suite, the ``scripts/autodoc/`` generators and the fitter
+   plugins another developer maintains. In each case enabling the rule would require a
+   ``per-file-ignores`` entry that hides a real check rather than satisfying it. The
+   reasoning, and the separate acceptance of the ``S608`` hardcoded-SQL sites, are
+   recorded in ``DECISIONS.md``; what each audit found is in ``changelog.md``. Please do
+   not re-propose them without reading that entry first.
+
+   **This is a different question from the security rules that do run on the plugin
+   tree.** ``ruff-plugin-security`` selects a separate, narrower set of ``S`` rules and
+   applies them only under ``poriscope/plugins/`` -- see
+   :ref:`plugin_trust_boundary`. The two do not overlap: none of the audited-and-declined
+   rules above is in that selection, and ``S608`` is not either.
+
+.. _plugin_trust_boundary:
+
+Plugin Code Runs on Your Machine
+--------------------------------
+
+Two of the hooks exist for one reason: **plugin discovery executes every Python file it
+finds.** ``MainModel.populate_available_plugins()`` walks ``poriscope/plugins/`` and your
+configured user-plugin folder recursively, and for each file it calls
+``spec.loader.exec_module()``. Python runs module-level code unconditionally, before
+anything has inspected the class -- so a plugin file is a code-execution boundary in a way
+that the rest of the application is not.
+
+For code written inside the lab that is an accepted convenience. For a plugin arriving in
+a pull request from outside it is worth a check, so two hooks police it:
+
+``ruff-plugin-security``
+   A second Ruff pass over ``poriscope/plugins/``, selecting only rules a
+   nanopore-analysis plugin has no legitimate reason to trip: ``exec`` and ``eval``
+   (``S102``, ``S307``), unsafe deserialization (``S301`` pickle, ``S302`` marshal,
+   ``S506`` yaml), process spawning (``S601``--``S607``, ``S609``), and network or
+   temp-file risks (``S310`` urlopen, ``S306`` mktemp).
+
+``plugin-module-level``
+   Rejects any module-level statement in a data plugin that runs code. The rule is that
+   **module-level assignment is fine but module-level invocation is not**, so a type alias
+   such as ``Numeric = Union[int, float, np.number]`` passes while
+   ``logger = logging.getLogger(__name__)`` does not -- move that kind of thing into a
+   method. Only imports, constants, classes and functions belong at the top level of a
+   plugin. Decorators on a class or function are not examined, since ``@log`` is part of
+   the plugin pattern.
+
+   Run it yourself on the plugin you are writing::
+
+      python scripts/check_plugin_module_level.py poriscope/plugins/eventfinders/MyFinder.py
+
+Both are measured at zero findings on the shipped tree, so neither has a baseline or any
+exemptions -- if one fires on your plugin, it has found something real.
+
+.. important::
+
+   These checks raise the bar against a careless submission. They are **not** a sandbox
+   and not a defence against a determined adversary: a plugin can still do as it likes
+   inside a method body that only runs once the plugin is instantiated, and neither hook
+   sees a file you drop straight into your user-plugin folder without a pull request.
+   Plugins are reviewed by a human before they are merged, and that review remains the
+   real gate.
 
 
 Skipping Hooks (Advanced Use Only)
@@ -463,6 +545,53 @@ how good the underlying science is.
    test, and fix any interface mismatches immediately. It is much cheaper to fix a
    wrong argument name before you've written 200 lines of logic around it than after.
 
+.. _settings_schema_checking:
+
+Settings-Schema Checking
+-------------------------
+
+Interface compliance above checks the *methods* your plugin implements. A separate check
+covers the *settings schema* it declares — the dict your ``get_empty_settings()`` returns,
+where each parameter carries a ``Type`` and optionally a ``Value``, ``Options``, ``Min``,
+``Max`` and ``Units``.
+
+The reason this needs its own check is that nothing else looks at the schema until a user
+tries to use your plugin. ``BaseDataPlugin`` validates a *supplied* settings dict at
+instantiation, so a contradiction baked into the schema itself — a ``Min`` above its
+``Max``, an ``Options`` list whose entries are not of the declared ``Type``, a default that
+is not among its own ``Options`` — surfaces as a ``TypeError`` or ``ValueError`` raised
+from inside the base class, with nothing pointing at your schema as the cause.
+
+The single most common version of this, and the one that caught real plugins in the
+codebase when the check was introduced, is declaring ``"Type": float`` and then writing an
+int default:
+
+.. code-block:: python
+
+   settings["Min Height"] = {"Type": float, "Value": 500}     # wrong
+   settings["Min Height"] = {"Type": float, "Value": 500.0}   # right
+
+The runtime check is a bare ``isinstance``, and ``isinstance(500, float)`` is ``False``.
+
+Run the check over every plugin, or just yours:
+
+.. code-block:: bash
+
+   python scripts/check_plugin_schemas.py
+   python scripts/check_plugin_schemas.py MyEventFinder
+
+It is also part of the normal test suite, as
+``tests/unit/plugins/test_plugin_settings_schema.py``, so CI enforces it whether or not
+you run the script. To call the check on a schema directly — from your own test, say —
+use ``poriscope.utils.settings_schema.validate_settings_schema()``, which takes a schema
+and returns a list of human-readable problems.
+
+.. note::
+
+   Omitting ``Value`` entirely is fine and means the same as ``Value: None``: no default,
+   the user must supply one. Most shipped readers do exactly this. What is *not* fine is
+   supplying a ``Value`` that contradicts the ``Type`` beside it.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
@@ -475,6 +604,15 @@ Pre-Pull-Request Compliance Checklist
    these steps in order. They mirror exactly what CI will check, so a clean run here
    means CI should pass too, and a maintainer won't send your PR back with something
    you could have caught yourself in thirty seconds.
+
+.. tip::
+
+   If you are *starting* a data plugin rather than finishing one, generate it with
+   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script`. Every step below
+   passes against the generated skeleton before you have written any of your own code,
+   which means the first failure you see is one you actually caused. Getting a signature
+   or a docstring field wrong by hand is by far the most common reason a first plugin PR
+   comes back, and the generator copies both verbatim out of the base class.
 
 ☐ **1. Apply automatic formatting and safe fixes.**
 
@@ -505,13 +643,16 @@ what mypy expects of new code.
    skipped.
 
 ☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the plugin
-compliance suite.**
+compliance suite and the settings-schema check.**
 
 .. code-block:: bash
 
    pytest tests/unit/plugins/test_plugin_compliance.py
+   python scripts/check_plugin_schemas.py
 
-See :ref:`plugin_compliance_testing` above for what this actually checks.
+See :ref:`plugin_compliance_testing` and :ref:`settings_schema_checking` above for what
+these actually check. The first covers the methods your plugin implements, the second the
+settings schema it declares; they catch different mistakes.
 
 ☐ **4. Run the test suite** — the same suite continuous integration runs on every
 branch push:
@@ -538,8 +679,13 @@ Warnings are errors here, and the same build runs on your pull request. See
 
 ☐ **6. Update the changelog.**
 
-Add a short, plain-language entry to ``changelog.md`` describing what changed, under
-the appropriate existing heading.
+Add a plain-language entry to ``changelog.md`` describing what changed, under the
+appropriate existing heading — **one line per change, and no more**. The changelog is
+written for users, so it carries the essential user-facing information and nothing else:
+no sub-bullets, no measurements, and no explanation of why the change was made or what was
+rejected along the way. A breaking change is still called out explicitly as breaking,
+because that *is* user-facing. Reasoning that needs preserving belongs in ``DECISIONS.md``
+instead.
 
 .. warning::
 

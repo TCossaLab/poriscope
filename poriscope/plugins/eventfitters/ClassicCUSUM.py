@@ -55,7 +55,7 @@ class ClassicCUSUM(CUSUM):
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
         EventFinder objects MUST include a MetaReader object in settings
 
         .. code-block:: python
@@ -78,7 +78,7 @@ class ClassicCUSUM(CUSUM):
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "σ"}
-        settings["Sensitivity"] = {"Type": float, "Value": 1, "Min": 1, "Max": 5}
+        settings["Sensitivity"] = {"Type": float, "Value": 1.0, "Min": 1.0, "Max": 5.0}
         return settings
 
     @log(logger=logger)
@@ -227,7 +227,14 @@ class ClassicCUSUM(CUSUM):
                         gneg[0 : len(gneg)] = 0
                         mean = data[anchor]
                         varM = data[anchor]
-            varS = 0
+                        # Welford's accumulator restarts with the new anchor, the
+                        # same way varM does. Carrying varS over from the previous
+                        # anchor while the divisor (k - anchor) restarts at 1
+                        # inflates the variance estimate, and logp/logn scale as
+                        # 1/variance, so the decision functions are suppressed
+                        # across exactly the window where the next transition is
+                        # most likely.
+                        varS = 0
             edges = np.append(edges, length)  # mark the end of the event as an edge
             num_states += 1
 

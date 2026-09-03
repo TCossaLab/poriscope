@@ -1,9 +1,9 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below. To cite all versions, use the concept DOI 10.5281/zenodo.17860299. Version-specific DOIs can be found at https://doi.org/10.5281/zenodo.17860299"
 title: "Poriscope"
-version: "1.7.1"
+version: "1.8.0"
 doi: "10.5281/zenodo.17860299"
-date-released: "2026-08-31"
+date-released: "2026-09-03"
 authors:
   - family-names: "Briggs"
     given-names: "Kyle"

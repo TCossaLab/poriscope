@@ -61,6 +61,10 @@ The **Advanced Settings** section provides power users and developers with the f
   you choose here, and never for warnings, so turning the level up to `Debug` will not start
   interrupting you with dialogs about routine states. Messages meant for you, rather than for
   the log, appear in the message panel on the right-hand side of the main window.
+  This level applies to the whole application; there is deliberately no way to turn up
+  the logging for a single plugin from here. If you need that, run the plugin from a
+  script, where each module's logger can be raised on its own - see
+  :ref:`scripting`.
 
 - **Clear Cache**:  
   Click this red button to remove temporary files and cached analysis results.

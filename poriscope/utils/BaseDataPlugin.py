@@ -43,6 +43,7 @@ from typing import (
 )
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.settings_schema import FILE_DIALOG_PARAMS
 
 
 class Setting(TypedDict):
@@ -159,7 +160,7 @@ class BaseDataPlugin(ABC):
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         .. code-block:: python
 
@@ -171,6 +172,15 @@ class BaseDataPlugin(ABC):
                                           },
                           ...
                           }
+
+        The base implementations here do omit Value - a reader's schema is literally
+        ``{"Input File": {"Type": str}}``. Note that a settings dict *supplied back* to
+        ``apply_settings()`` does need every Value present, because ``_validate_param_types``
+        reads it by subscript; the GUI's settings dialog fills them in before that point.
+
+        Run ``python scripts/check_plugin_schemas.py`` to check a schema you have written for
+        self-consistency, or see ``poriscope.utils.settings_schema`` to call the same check
+        directly.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[ Dict[str, List[str]]]
@@ -304,12 +314,30 @@ class BaseDataPlugin(ABC):
     @log(logger=logger)
     def get_raw_settings(self) -> dict:
         """
-        Get the settings that were applied during initialization of the instance
+        Get a copy of the settings that were applied during initialization of the instance
 
-        :return: the dict that must be filled in to initialize the plguin
+        The returned dict is a snapshot rather than a view: the outer dict, each
+        parameter's dict, and any list-valued entry within one - notably ``Options`` -
+        are all copied. A caller that mutates what it gets back therefore cannot write
+        into this plugin's internal state. :py:meth:`update_raw_settings` and
+        :py:meth:`replace_raw_settings_option` are the only supported writers.
+
+        The copy is deliberately shallow below that level rather than a
+        :py:func:`copy.deepcopy`: ``Type`` entries hold classes, and ``Value`` can
+        transiently hold a live plugin instance while settings are being applied,
+        neither of which is safe or meaningful to deep-copy.
+
+        :return: a copy of the dict that must be filled in to initialize the plugin
         :rtype: dict
         """
-        return self.raw_settings
+        snapshot = {}
+        for key, setting in self.raw_settings.items():
+            entry = dict(setting)
+            for field, val in entry.items():
+                if isinstance(val, list):
+                    entry[field] = list(val)
+            snapshot[key] = entry
+        return snapshot
 
     @log(logger=logger)
     def update_raw_settings(self, key: str, val: Any) -> None:
@@ -323,6 +351,40 @@ class BaseDataPlugin(ABC):
         """
         if self.raw_settings and key in self.raw_settings:
             self.raw_settings[key]["Value"] = val
+
+    @log(logger=logger)
+    def replace_raw_settings_option(
+        self, key: str, old_value: Any, new_value: Any
+    ) -> None:
+        """
+        Replace one entry in a setting's list of allowed options
+
+        Needed when a parent plugin is renamed: a dependent carries the parent's key
+        both as the ``Value`` and in the ``Options`` list of the setting named after
+        the parent's metaclass, and the list must track the rename or
+        :py:meth:`_validate_param_ranges` will later reject the new key as not being
+        an allowed option. This exists as a method because :py:meth:`get_raw_settings`
+        hands out a copy, so a caller cannot maintain the list by mutating what it
+        gets back.
+
+        Does nothing if the setting is absent or declares no options.
+
+        :param key: the settings key whose options should be updated
+        :type key: str
+        :param old_value: the option to remove, if it is present
+        :type old_value: Any
+        :param new_value: the option to add, if it is not already present
+        :type new_value: Any
+        """
+        if not self.raw_settings or key not in self.raw_settings:
+            return
+        options = self.raw_settings[key].get("Options")
+        if options is None:
+            return
+        if old_value in options:
+            options.remove(old_value)
+        if new_value not in options:
+            options.append(new_value)
 
     def _resolve_metaclass_name(self, cls: type) -> str:
         """
@@ -453,6 +515,12 @@ class BaseDataPlugin(ABC):
         Validate that the filter_params dict contains correct data types, but only checks primitives.
         More detailed parameter checking should follow a call to super() in an override.
 
+        A parameter with no value at all - either no ``Value`` key or ``Value: None`` - is
+        left for :py:meth:`_validate_param_ranges` to reject, which reports it as a missing
+        required value rather than as a type error. Reading the key with ``.get`` matters:
+        a schema straight out of ``get_empty_settings()`` legitimately omits ``Value``, and
+        subscripting it raised ``KeyError`` where the caller expected ``TypeError``.
+
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
@@ -460,7 +528,9 @@ class BaseDataPlugin(ABC):
         if settings:
             for param, val in settings.items():
                 setting_type = cast(Type[Any], val["Type"])
-                setting_value = val["Value"]
+                setting_value = val.get("Value")
+                if setting_value is None:
+                    continue
                 if setting_type in (int, float, bool, str):
                     if not isinstance(setting_value, setting_type):
                         raise TypeError(f"{param} must have type {val['Type']}")
@@ -468,11 +538,17 @@ class BaseDataPlugin(ABC):
     @log(logger=logger)
     def _validate_param_ranges(self, settings: dict) -> None:
         """
-        Validate that the filter_params dict contains correct data types
+        Validate that every parameter has a value and that it lies within any declared bounds
+
+        A parameter with no value - no ``Value`` key, or ``Value: None`` - is rejected here
+        rather than in :py:meth:`_validate_param_types`, so that the user is told the value
+        is required instead of being told it has the wrong type. This also keeps ``None``
+        away from the bound comparisons below, which would otherwise raise ``TypeError``
+        from a method whose contract promises ``ValueError``.
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: dict
-        :raises ValueError: If the filter_params parameters are out of range or not an allowed option
+        :raises ValueError: If a required value is missing, out of range, or not an allowed option
         """
         if settings:
             for param, val in settings.items():
@@ -480,13 +556,15 @@ class BaseDataPlugin(ABC):
                 max_val = val.get("Max", None)
                 options = val.get("Options", None)
                 value = val.get("Value")
+                if value is None:
+                    raise ValueError(f"{param} requires a value")
                 if min_value is not None and value < min_value:
                     raise ValueError(f"{param} must be larger than {min_value}")
                 if max_val is not None and value > max_val:
                     raise ValueError(f"{param} must be smaller than {max_val}")
                 if (
                     options is not None
-                    and param not in ["Output File", "Input File"]
+                    and param not in FILE_DIALOG_PARAMS
                     and value not in options
                 ):
                     raise ValueError(f"{param} must be one of {options}")
