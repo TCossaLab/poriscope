@@ -10,6 +10,39 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-03 - Condition qualification skips string literals rather than parsing SQL
+
+**Context.** `construct_metadata_query`'s qualification pass prefixed bare column names by
+regex over the whole condition text, so `sequence = 'sublevel_duration'` became
+`sequence = 's.sublevel_duration'` - valid SQL returning the wrong rows with no error. The
+same blindness made the join-detection scan force a join on a column name that only
+appeared as a value.
+
+**Decision.** Split the condition on single-quoted literals and rewrite only the code
+segments, rather than tokenizing or parsing SQL. Both the qualification pass and the
+detection scan use the same split, so they cannot disagree about what a column reference
+is. Experiments columns are no longer qualified at all in the events/sublevels join
+branch, since that FROM clause has no `experiments` table.
+
+**Evidence.** Reproduced against `ConcreteDatabaseLoader`: `name = 'sublevel_duration' AND
+sublevel_duration < 100` produced `exp.name = 's.sublevel_duration' AND
+s.sublevel_duration < 100`, and `sublevel_duration < 100 AND date > 50` produced
+`exp.date > 50` against `FROM events e JOIN sublevels s`. Doubled-quote escapes
+(`'it''s sublevel_duration'`) are covered by the split.
+
+**Not done.** Filtering on an experiment column (`voltage > 50`) still fails, now as a
+plain `no such column: voltage`. Making it work means forcing an `experiments` join in
+four of the seven query branches, two of which are unaliased single-table queries; that is
+a restructure of the branch tree, queued in `future_fixes.md`. Aliasing those branches
+would be safe downstream - SQLite reports `SELECT e.id FROM events e` as column `id`,
+verified - so the DataFrame column names would not change.
+
+**Revisit if** conditions ever need to carry double-quoted identifiers or bracket-quoted
+names, which the literal split does not handle, or if the branch tree is consolidated for
+another reason - the experiments-join gap should be closed in the same pass.
+
+---
+
 ## 2026-09-03 - `WaveletFilter` takes no lock; the wavelet library is thread-safe for the entry point we call
 
 **Context.** A review flagged that `WaveletFilter._dll_lock` was class-level for a

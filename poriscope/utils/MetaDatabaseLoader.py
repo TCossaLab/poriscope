@@ -652,6 +652,44 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 report += f"Channel: {ch}: {num} events\n"
         return report.rstrip("\n")
 
+    def _split_on_sql_string_literals(self, fragment: str) -> List[str]:
+        """
+        Split a SQL fragment into alternating code and string-literal segments.
+
+        Even indices hold code, odd indices hold single-quoted literals with their
+        quotes intact, and ``"".join`` of the result reproduces the input exactly.
+        Callers rewrite the even segments and leave the odd ones alone, so a column
+        name that also appears as a value - ``sequence = 'sublevel_current'`` - is
+        not rewritten along with the real column references.
+
+        :param fragment: A fragment of SQL, typically a WHERE clause body.
+        :type fragment: str
+        :return: The alternating code and string-literal segments of the fragment.
+        :rtype: List[str]
+        """
+        # The literal is a capturing group so that re.split returns the literals
+        # interleaved with the code around them. "''" is SQL's escape for a quote
+        # inside a literal, so it must not be read as the end of one.
+        return re.split(r"('(?:[^']|'')*')", fragment)
+
+    def _references_column(self, fragment: str, column: str) -> bool:
+        """
+        Report whether a SQL fragment refers to a column outside of any string literal.
+
+        Matches a qualified reference (``s.duration``) as well as a bare one, since
+        the column name is sought on a word boundary rather than a token boundary.
+
+        :param fragment: A fragment of SQL, typically a WHERE clause body.
+        :type fragment: str
+        :param column: The column name to look for.
+        :type column: str
+        :return: True if the fragment refers to the column outside a string literal.
+        :rtype: bool
+        """
+        pattern = rf"(?<!\w){re.escape(column)}(?!\w)"
+        segments = self._split_on_sql_string_literals(fragment)
+        return any(re.search(pattern, segment) for segment in segments[::2])
+
     @log(logger=logger)
     def construct_metadata_query(
         self,
@@ -718,25 +756,48 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 sublevel_duration < 100 AND experiment_id = 2
             and it will work in a query that has:
                 FROM events e JOIN sublevels s ...
+
+            Only the code parts of the condition are rewritten; anything inside a
+            single-quoted string literal is left exactly as the user typed it.
+
+            Experiments columns are deliberately not qualified here. This runs only
+            for the events/sublevels join, whose FROM clause has no experiments
+            table, so prefixing one would emit a reference to a table the query
+            does not contain.
             """
             # Only qualify if not already qualified with a dot (e.g. "e.id", "s.sublevel_duration")
             sub_cols = self.get_column_names_by_table("sublevels") or []
             evt_cols = self.get_column_names_by_table("events") or []
-            exp_cols = self.get_column_names_by_table("experiments") or []
 
-            # Qualify sublevels columns first
-            for col in sorted(set(sub_cols), key=len, reverse=True):
-                cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"s.{col}", cond)
+            # These structural columns are never registered in the "columns" table
+            # but exist in both joined tables, so a bare reference to one is
+            # ambiguous. Anchor them to events, which is where the query already
+            # takes its id, experiment_id, channel_id and event_id outputs from.
+            ambiguous_cols = [
+                "id",
+                "experiment_id",
+                "channel_db_id",
+                "channel_id",
+                "event_id",
+            ]
 
-            # Then events columns
-            for col in sorted(set(evt_cols), key=len, reverse=True):
-                cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"e.{col}", cond)
+            # Sublevels first, then events: a registered column belongs to exactly
+            # one table, and the (?<!\.) guard keeps each pass off the previous
+            # pass's output.
+            segments = self._split_on_sql_string_literals(cond)
+            for index in range(0, len(segments), 2):
+                for cols, prefix in (
+                    (sub_cols, "s."),
+                    (list(evt_cols) + ambiguous_cols, "e."),
+                ):
+                    for col in sorted(set(cols), key=len, reverse=True):
+                        segments[index] = re.sub(
+                            rf"(?<!\.)\b{re.escape(col)}\b",
+                            f"{prefix}{col}",
+                            segments[index],
+                        )
 
-            # Then experiments columns (if present in condition text)
-            for col in sorted(set(exp_cols), key=len, reverse=True):
-                cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"exp.{col}", cond)
-
-            return cond
+            return "".join(segments)
 
         # Validate input
         if not columns:
@@ -792,16 +853,17 @@ class MetaDatabaseLoader(BaseDataPlugin):
             sub_cols = self.get_column_names_by_table("sublevels") or []
             evt_cols = self.get_column_names_by_table("events") or []
 
+            # _references_column ignores string literals, so it agrees with the
+            # qualification pass above about what counts as a column reference.
             if events_columns and not sublevels_columns:
                 for col in sub_cols:
-                    # match word boundaries; also catches "s.col" because it contains "col"
-                    if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
+                    if self._references_column(conditions, col):
                         force_events_sublevels_join = True
                         break
 
             elif sublevels_columns and not events_columns:
                 for col in evt_cols:
-                    if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
+                    if self._references_column(conditions, col):
                         force_events_sublevels_join = True
                         break
 

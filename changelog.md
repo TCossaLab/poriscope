@@ -1,5 +1,7 @@
 ## Poriscope 1.8.0: in progress
 
+* **Fixed assisted metadata filters silently returning the wrong rows.** A quoted value matching a column name was rewritten as a column reference, and a filter on an experiment column emitted a table the query did not join; filtering on `experiment_id`, `channel_id` or `event_id` now works where it previously failed as ambiguous
+
 * Removed `WaveletFilter`'s internal lock; wavelet filtering now runs in parallel across channels and instances instead of one at a time
 
 * **Fixed three ways event writing could lose data silently**

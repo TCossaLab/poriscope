@@ -59,6 +59,16 @@ Saved as: ``<subset_name>_assisted``
    (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
    for those cases.
 
+   It also cannot filter on a per-experiment property - ``voltage``, ``thickness``
+   or ``conductivity`` - unless one of those is also plotted on an axis. A filter
+   such as ``voltage > 50`` is rejected as an invalid query otherwise. Use Raw SQL,
+   or scope the plot to the experiments you want with the experiment and channel
+   selectors instead.
+
+   Text compared against a column is left exactly as you type it, so
+   ``sequence = 'duration'`` matches the literal value ``duration`` and is not
+   confused with the ``duration`` column.
+
 Raw SQL
 ~~~~~~~
 
