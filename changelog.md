@@ -1,6 +1,8 @@
 ## Poriscope 1.8.0: in progress
 
-* **Fixed assisted metadata filters silently returning the wrong rows.** A quoted value matching a column name was rewritten as a column reference, and a filter on an experiment column emitted a table the query did not join; filtering on `experiment_id`, `channel_id` or `event_id` now works where it previously failed as ambiguous
+* **Fixed assisted metadata filters silently returning the wrong rows**, and they now work on experiment voltage, thickness and conductivity and on `experiment_id`/`channel_id`/`event_id` in every plot and when loading event data
+    * A quoted value matching a column name was rewritten as a column reference; a filter on an experiment column emitted a table the query did not join
+    * A bare `id` is still rejected, since it means a different row in each table, but now with instructions naming the qualifier to use
 
 * Removed `WaveletFilter`'s internal lock; wavelet filtering now runs in parallel across channels and instances instead of one at a time
 

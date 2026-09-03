@@ -25,17 +25,6 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 ### High
 
-- **A filter on an experiment column only works if an experiment column is also selected.**
-  `construct_metadata_query` never forces an `experiments` join, so `voltage > 50` fails as
-  `no such column: voltage` in four of its seven branches - yet the filter dialog validates
-  against `["sublevel_current", "voltage", "duration"]` (`MetadataView.py:3151`), a branch
-  that does join `experiments`, so such a filter saves green and fails when used. Needs a
-  `force_experiments_join` flag plus aliasing of the two unaliased branches; aliasing is
-  safe, SQLite still names `SELECT e.id FROM events e` as `id`.
-- **Bare `experiment_id`/`channel_id`/`event_id` is ambiguous in the two-table branch.**
-  `construct_metadata_query`'s `events_columns and sublevels_columns` branch passes
-  `condition_clause` unqualified into `FROM events e JOIN sublevels s`. Route it through
-  `_qualify_conditions_for_events_sublevels_join`, as the forced-join branch does.
 - **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection reason.**
   `SQLiteDBWriter._insert_event`/`_insert_sublevels` infer failure from `cursor.rowcount`,
   so a `NOT NULL` violation surfaces as `IOError("Cannot Overwrite Existing Event")`. Hit

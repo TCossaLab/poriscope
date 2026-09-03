@@ -10,6 +10,42 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-03 - The metadata query derives its FROM clause instead of enumerating seven branches
+
+**Context.** `construct_metadata_query` hand-wrote seven query branches, one per
+combination of selected tables. Each rolled its own FROM clause and its own qualification,
+so they drifted: only one qualified the condition at all, none forced an `experiments`
+join, and a filter on an events column against a sublevels+experiments plot hit a branch
+with no `events` table. The literal-rewriting fix earlier the same day had to be applied to
+one branch and left the other six wrong.
+
+**Decision.** Compute the joined tables once as an ordered `aliases` map and derive the
+SELECT list, FROM clause and `DISTINCT` from it. `_qualify_conditions(cond, aliases)`
+qualifies against whatever the query actually joins, so the same filter text means the same
+thing in every shape, and in `construct_event_data_query` too. An `experiments` join is
+forced when the condition needs one, matching the existing events/sublevels forcing.
+
+**Bare `id` stays an error.** `experiment_id`, `channel_db_id`, `channel_id` and `event_id`
+are anchored automatically because a sublevel row carries its parent event's value for each
+(`SQLiteDBWriter._insert_sublevels`, `MetaEventFitter` fills `event_id`/`channel_id`), so
+the anchor cannot change which rows match. `id` is the events row id in one table and the
+sublevels row id in the other, so guessing would silently filter the wrong thing.
+`_find_ambiguous_id` rejects it with instructions naming the aliases that query offers, and
+`relay_query` puts that text on the display panel as well as in the modal.
+
+**Evidence.** Generated SQL diffed across all seven branch shapes plus experiment/channel
+scoping: `table_name` identical everywhere, and the only deltas are the intended ones -
+two unaliased branches gained aliases, three branches' shared identity columns moved
+between equivalent tables, and conditions became qualified. Executed against a database on
+the production schema, the four cases that failed before (three `voltage > 50` shapes and
+`experiment_id` on an events+sublevels plot) now return the right rows, and the other seven
+are unchanged.
+
+**Revisit if** a query shape needs a FROM clause the alias map cannot express - an outer
+join, or the same table joined twice.
+
+---
+
 ## 2026-09-03 - Condition qualification skips string literals rather than parsing SQL
 
 **Context.** `construct_metadata_query`'s qualification pass prefixed bare column names by
@@ -30,16 +66,11 @@ s.sublevel_duration < 100`, and `sublevel_duration < 100 AND date > 50` produced
 `exp.date > 50` against `FROM events e JOIN sublevels s`. Doubled-quote escapes
 (`'it''s sublevel_duration'`) are covered by the split.
 
-**Not done.** Filtering on an experiment column (`voltage > 50`) still fails, now as a
-plain `no such column: voltage`. Making it work means forcing an `experiments` join in
-four of the seven query branches, two of which are unaliased single-table queries; that is
-a restructure of the branch tree, queued in `future_fixes.md`. Aliasing those branches
-would be safe downstream - SQLite reports `SELECT e.id FROM events e` as column `id`,
-verified - so the DataFrame column names would not change.
+**Superseded in part.** The experiments-join gap this entry left open was closed the same
+day; see the entry above. The literal-splitting decision stands.
 
 **Revisit if** conditions ever need to carry double-quoted identifiers or bracket-quoted
-names, which the literal split does not handle, or if the branch tree is consolidated for
-another reason - the experiments-join gap should be closed in the same pass.
+names, which the literal split does not handle.
 
 ---
 
