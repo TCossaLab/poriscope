@@ -60,6 +60,8 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
         :type channel: Optional[int]
         :raises RuntimeError: if the configured experiment cannot be found in the database
+        :raises sqlite3.Error: if the delete fails, so that the caller cannot treat an
+            unreset channel as a clean slate
         """
         conn = None
         cursor = None
@@ -93,9 +95,19 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if conn:
                 conn.execute("ROLLBACK TO SAVEPOINT reset_channel")
                 conn.rollback()
-            self.logger.warning(
+            # Raised rather than swallowed, and at ERROR rather than WARNING. This
+            # is a destructive operation the caller relies on having happened -
+            # MetaDatabaseWriter.write_events follows an abort with
+            # `self.written[channel] = 0`, which claims a clean slate - so
+            # returning normally after a failed delete left the writer's
+            # bookkeeping disagreeing with the database, and at WARNING the user
+            # was never told, since QtHandler floors at ERROR. The abort path that
+            # calls this guards against the raise so it cannot mask an in-flight
+            # error.
+            self.logger.error(
                 f"Failed to delete (experiment_id={experiment_id}, channel_id={channel}): {e}, channel not reset"
             )
+            raise
         else:
             conn.execute("RELEASE SAVEPOINT reset_channel")
             conn.commit()
@@ -116,12 +128,39 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :type channel: Optional[int]
         """
         if self.cursor:
-            self.cursor.close()
+            # Guarded like the commit below, and for the same reason: closing a
+            # cursor whose connection has already gone raises, and this method is
+            # called inline just before the errors its callers actually want
+            # reported. SQLiteEventWriter.close_resources already guarded this.
+            try:
+                self.cursor.close()
+            except Exception:
+                self.logger.info(f"Failed to close cursor cleanly for channel {channel}")
             self.cursor = None
         if self.conn:
             self.logger.debug("Closing database connection.")
-            self.conn.commit()  # Ensure all writes are committed
-            self.conn.close()  # Close the connection to release the lock
+            try:
+                self.conn.commit()  # Ensure all writes are committed
+                self.conn.close()  # Close the connection to release the lock
+            except Exception:
+                # Reported at ERROR rather than raised, matching
+                # SQLiteEventWriter.close_resources. For a batch that ends via
+                # write_events' `finally` this is the only commit, so a failure
+                # here means the batch was not saved and the user has to be told;
+                # QtHandler floors at ERROR, so this is what surfaces it.
+                #
+                # It must not raise: several callers invoke close_resources inline
+                # immediately before raising the error they actually want reported
+                # (the early-exit arms of MetaDatabaseWriter.write_events), and an
+                # unguarded commit here replaced those errors rather than adding to
+                # them - measured, a failing commit surfaced as sqlite3's
+                # ProgrammingError in place of the ValueError explaining that
+                # eventfitting had not completed.
+                self.logger.error(
+                    f"Failed to commit and close the database for channel {channel}; "
+                    "events written in this batch may not have been saved.",
+                    exc_info=True,
+                )
             self.conn = None
         else:
             self.logger.debug("Database connection not open to close.")

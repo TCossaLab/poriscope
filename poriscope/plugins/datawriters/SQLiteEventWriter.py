@@ -254,6 +254,8 @@ class SQLiteEventWriter(MetaWriter):
         :type channel: Optional[int]
         :raises ValueError: if settings have not been initialized or the output
             file path is not set in settings
+        :raises sqlite3.Error: if the delete fails, so that the caller cannot treat an
+            unreset channel as a clean slate
         """
         conn: Optional[sqlite3.Connection] = None
         cursor: Optional[sqlite3.Cursor] = None
@@ -286,9 +288,16 @@ class SQLiteEventWriter(MetaWriter):
             if conn is not None:
                 conn.execute("ROLLBACK TO SAVEPOINT reset_channel")
                 conn.rollback()
+            # Raised rather than swallowed. This is a destructive operation the
+            # caller relies on having happened - MetaWriter.commit_events follows
+            # an abort with `self.written[channel] = 0`, which claims a clean slate
+            # - so returning normally after a failed delete left the writer's
+            # bookkeeping disagreeing with the database. The abort path that calls
+            # this guards against the raise so it cannot mask an in-flight error.
             self.logger.error(
                 f"Failed to delete channel_id={channel}: {e}, channel not reset"
             )
+            raise
         else:
             if conn is not None:
                 conn.execute("RELEASE SAVEPOINT reset_channel")
@@ -321,8 +330,26 @@ class SQLiteEventWriter(MetaWriter):
                 self.conn.commit()
                 self.conn.close()
                 self.logger.info("SQLiteEventWriter: connection closed.")
-            except Exception as e:
-                self.logger.info(f"Failed to close connection cleanly: {e}")
+            except Exception:
+                # ERROR rather than INFO, but deliberately not re-raised. For a
+                # batch that ends via commit_events' `finally` this is the only
+                # commit, so a failure here discards every event in the batch -
+                # which the user has to be told about, and at INFO they never were.
+                # ERROR is what surfaces it, since QtHandler floors there.
+                #
+                # It stays non-raising because close_resources is a cleanup method
+                # with many callers, several of which invoke it inline immediately
+                # before raising the error they actually want reported (see the
+                # early-exit arms of MetaDatabaseWriter.write_events). Raising here
+                # replaced those errors rather than adding to them - measured - and
+                # guarding all of them would be a lot of machinery for no gain the
+                # user can see, since the ERROR dialog already says the data was
+                # not saved.
+                self.logger.error(
+                    f"Failed to commit and close the output for channel {channel}; "
+                    "events written in this batch may not have been saved.",
+                    exc_info=True,
+                )
             self.conn = None
 
     @log(logger=logger)
