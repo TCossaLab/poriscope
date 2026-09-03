@@ -84,7 +84,16 @@ Three rules apply regardless:
 
 ## Testing conventions
 
-- `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`.
+- **Run the whole suite before every commit: plain `pytest`, no path arguments and no
+  marker filter.** A full run is ~2.5 minutes, so there is no reason to select a subset,
+  and choosing one is itself the error-prone step — a scoped run that skipped
+  `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
+  failing test while debugging is fine; the gate is a full green run immediately before
+  the commit. Documentation-only changes (docstrings, comments, markdown) need no run.
+- `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`, with one
+  exception: the analysis-tab triads under `poriscope/plugins/analysistabs/` are tested in
+  `tests/unit/views/` and `tests/unit/controllers/`, while `tests/unit/plugins/analysistabs/`
+  covers only the `utils/` helpers.
 - `tests/unit/plugins/test_plugin_compliance.py` recursively imports every module
   under `poriscope.plugins` and asserts each plugin subclass implements all abstract
   methods of its `Meta*`/`BaseDataPlugin` base — this is the guardrail that keeps the
@@ -94,13 +103,14 @@ Three rules apply regardless:
   base method's annotation breaks every subclass whose override does not match it
   exactly. Annotate a plugin method by copying the base signature verbatim rather than
   inferring it from the body.
-- **Never pass test paths in a hand-picked order.** Pytest runs explicitly listed paths
-  in the order given, and inverting natural collection order (e.g.
-  `pytest tests/unit/views tests/unit/plugins`) has reliably segfaulted the interpreter
-  from leaked Qt state. Pass directories, or list paths alphabetically. Relatedly, never
-  pipe a test run through `tail`/`grep` as its only record — a faulthandler dump names
-  the crashing test at the *top* of its output, which is exactly what a tail discards —
-  and never call a run green from a progress line; read the real summary line.
+- **Never pass test paths in a hand-picked order** on the rare occasion you pass any.
+  Pytest runs explicitly listed paths in the order given, and inverting natural collection
+  order (e.g. `pytest tests/unit/views tests/unit/plugins`) has reliably segfaulted the
+  interpreter from leaked Qt state, and makes `test_plugin_compliance` audit test doubles
+  that natural order never exposes it to. Relatedly, never pipe a test run through
+  `tail`/`grep` as its only record — a faulthandler dump names the crashing test at the
+  *top* of its output, which is exactly what a tail discards — and never call a run green
+  from a progress line; read the real summary line.
 - `tests/integration/flows/` instantiate real controller/model/view stacks
   "no_gui" (headless) for cross-plugin flows; `tests/e2e/` drive actual Qt widgets
   (`e2e_ux` marker) end-to-end. **CI runs the entire suite on every branch push,
