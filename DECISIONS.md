@@ -339,7 +339,8 @@ visible UX change on the primary platform, since the popup would lose its title 
 ## 2026-08-25 - The audited `bugbear`/`bandit` rules stay off as gates
 
 *Settled 2026-08-25; moved here from `future_fixes.md` on 2026-09-01, where it had been
-sitting as a mostly-closed backlog table.*
+sitting as a mostly-closed backlog table. Reasoning re-measured and corrected 2026-09-02 -
+the decision is unchanged, the stated reasons were wrong for most of the rules.*
 
 **Context.** Adopting the rest of ruff's `flake8-bugbear` (B) and `bandit` (S) rule sets
 was proposed on the grounds that both check real code logic and so complement pydoclint's
@@ -354,12 +355,33 @@ short version is that the audits were worth running and the gates are not worth 
 
 **Reasoning.** Two separate reasons, and it matters which applies to which rule.
 
-- **For `B904`, `B007`, `S110`, `S112` and `S101`, every site that remains is in an
-  owner-held file** (`PeakFinder.py`, `Basic_PeakFinder.py`, `NanoTrees.py` - see the
-  standing exclusion policy in `future_fixes.md`). Enabling any of them would therefore
-  require a `per-file-ignores` entry for those files, which *hides* a real check rather
-  than satisfying it - a worse state than not selecting the rule, because it looks
-  enforced.
+- **For `B904`, `B007`, `S110`, `S112` and `S101` the remaining sites are somewhere this
+  work does not get to change - but the reason differs by rule, and the single
+  "every site is in an owner-held fitter file" explanation this entry gave originally was
+  wrong for most of them.** Re-measured 2026-09-02 across ruff's *actual* scope, which is
+  the whole repository minus `tests/slow/` - only mypy is scoped to `poriscope/`, and
+  measuring these rules there is what produced the wrong answer the first time:
+  - **`S101` - 2,250 sites, of which 7 are in `NanoTrees.py` and 2,243 in `tests/`.**
+    Ownership is not the obstacle here at all. `assert` is the test suite's fundamental
+    idiom, so a `per-file-ignores` entry for `tests/` would suppress 99.7% of the
+    findings, which is not a gate in any meaningful sense. **This stays true however the
+    `NanoTrees.py` ownership question resolves and whether or not it is ever deprecated**,
+    which is the opposite of what this entry used to imply.
+  - **`B904` - 3 sites, all in `tests/e2e/_helpers.py`.** These belong to the test
+    developer, not to the fitter plugins. Zero sites remain under `poriscope/`.
+  - **`B007` - 5 sites: 3 in `PeakFinder.py`, 2 in `tests/`.** Only the first three are
+    the owner-held case.
+  - **`S112` - 2 sites: 1 in `PeakFinder.py`, 1 in `scripts/autodoc/`.**
+  - **`S110` - 3 sites: 2 in `scripts/autodoc/`, 1 in `tests/unit/views/`.** None is
+    owner-held.
+  So the original objection describes `B007` and `S112` accurately and nothing else. In
+  every case enabling the rule would still require a `per-file-ignores` entry, which
+  *hides* a real check rather than satisfying it - a worse state than not selecting the
+  rule, because it looks enforced. The conclusion is unchanged; only the reasons are.
+  **The three `scripts/autodoc/` sites (2 `S110`, 1 `S112`) are ours and are fixable**,
+  and are the only part of this sweep that is. Fixing them would leave `S110` blocked by
+  one test file and `S112` by one `PeakFinder` line - still short of enabling either,
+  which is why it has not been done.
 - **For `B905` (`zip` without `strict=`) the rule itself is the problem.** 54 sites would
   each need their own `strict=` judgement, and at least one - the list-against-generator
   zip in `MetaDatabaseLoader`'s CSV export - cannot be proven equal-length in advance. Three
@@ -378,8 +400,10 @@ that this entry also called cosmetic turned out not to be: `setattr` is what get
 rather than outstanding - see the 2026-09-02 entry at the top of this file. There is no
 further bug-finding value in this block - treat it as finished rather than as a backlog.
 
-**Revisit if.** The owner-held fitter files change hands, which would remove the
-`per-file-ignores` objection for the five rules it applies to. Note this is *not* the same
+**Revisit if.** The owner-held fitter files change hands - but that removes the
+`per-file-ignores` objection for `B007` and `S112` only. It does nothing for `B904` or
+`S110`, whose sites are in the test suite and the autodoc scripts, and nothing at all for
+`S101`, which is blocked by the test suite's use of `assert` rather than by ownership. Note this is *not* the same
 question as the `bandit` proposal scoped to `poriscope/plugins/` as a trust boundary for
 unvetted community contributions, which is still open (block 4 in `future_fixes.md`).
 

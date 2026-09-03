@@ -301,12 +301,17 @@ After running:
    The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled
    *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
    ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
-   maintained code fixed; every site that still reports sits in a file owned by another
-   developer, so enabling the rule would require a ``per-file-ignores`` entry that hides
-   a real check rather than satisfying it. The reasoning, and the separate acceptance of
-   the ``S608`` hardcoded-SQL sites, are recorded in ``DECISIONS.md``; what each audit
-   found is in ``changelog.md``. Please do not re-propose them without reading that
-   entry first.
+   maintained code fixed. What keeps each one from becoming a gate differs by rule.
+   ``S101`` would flag every ``assert`` in the test suite, where 2,243 of its 2,250 sites
+   are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
+   per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
+   advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
+   spread across the test suite, the ``scripts/autodoc/`` generators and the fitter
+   plugins another developer maintains. In each case enabling the rule would require a
+   ``per-file-ignores`` entry that hides a real check rather than satisfying it. The
+   reasoning, and the separate acceptance of the ``S608`` hardcoded-SQL sites, are
+   recorded in ``DECISIONS.md``; what each audit found is in ``changelog.md``. Please do
+   not re-propose them without reading that entry first.
 
    **This is a different question from the security rules that do run on the plugin
    tree.** ``ruff-plugin-security`` selects a separate, narrower set of ``S`` rules and

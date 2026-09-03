@@ -146,20 +146,14 @@ landed, to avoid generating triads against a layout that is about to change.
 
 ## Still queued
 
-- **The "owned by another developer" justification for the declined lint rules is now
-  partly stale.**
-  `docs/source/utils/user_manuals/plugins_manual/development_workflow/quality_control.rst`
-  and several `DECISIONS.md` entries decline `B905`, `B904`, `B007`, `S110`, `S112` and
-  `S101` on the grounds that every site that still reports "sits in a file owned by
-  another developer", so enabling the rule would need a `per-file-ignores` entry that
-  hides a real check.
-  With `NanoTrees.py` no longer owner-held (its co-author has left the lab; see the
-  exclusions section), that is no longer true of every remaining site. The conclusion may
-  well survive - `NanoTrees.py` is still a deprecation candidate, which is an independent
-  reason not to spend effort there, and `PeakFinder.py`/`Basic_PeakFinder.py` really are
-  owner-held - but the *stated reasoning* wants re-checking, and if it changes, so does
-  the wording in both places. **This is a bookkeeping task, not licence to re-propose the
-  rules**; read the `DECISIONS.md` entry first.
+- **Three `scripts/autodoc/` lint sites are ours to fix, and are the only part of the
+  declined-rules sweep that is.** Two `S110` (`try`/`except`/`pass`) in
+  `metaclasses_generate_autodoc.py` and `plugins_generate_autodoc.py`, and one `S112`
+  (`try`/`except`/`continue`) in the latter. Fixing them would not enable either rule -
+  `S110` would still be blocked by one test file and `S112` by one `PeakFinder.py` line -
+  so this is worth doing for the scripts' own sake, if at all, and not as a step towards
+  a gate. **Not licence to re-propose the rules**; `DECISIONS.md` records why all six stay
+  off, per rule.
 - **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
   `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
   `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
