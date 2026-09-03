@@ -59,7 +59,6 @@ _JSON_CLASS_NAMES: Mapping[str, Any] = {
     "int": int,
     "float": float,
     "bool": bool,
-    "null": None,
 }
 
 
@@ -236,9 +235,7 @@ class MainModel(QObject):
             for root_dir, _, files in os.walk(base_path):
                 try:
                     files = [
-                        f
-                        for f in files
-                        if f.endswith(".py") and f not in ("__init__.py", "__pycache__")
+                        f for f in files if f.endswith(".py") and f != "__init__.py"
                     ]
                 except Exception as e:
                     self.logger.warning(f"Error reading files in {root_dir}: {e}")

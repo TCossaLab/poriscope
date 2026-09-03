@@ -534,7 +534,8 @@ class MetaWriter(BaseDataPlugin):
                 data = (data - offset) / scale
             else:
                 warnings.warn(
-                    "Rescaling data to ADC codes without providing a gain setting may result in loss of precision!"
+                    "Rescaling data to ADC codes without providing a gain setting may result in loss of precision!",
+                    stacklevel=2,
                 )
                 data_max = np.max(data)
                 data_min = np.min(data)

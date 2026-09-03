@@ -94,9 +94,6 @@ pick up next".
   history is holding. Copy there without first fixing that instance-resolution ordering and
   session history is left holding live `QObject`s for `save_session` to serialise. Fix the
   ordering first, then the alias.
-- **`DataPluginModel.get_plugin_details` has no production callers** - only two tests - so
-  it is dead code carried as public API. Removing it narrows `DataPluginModel`'s surface,
-  which is not re-exported from `exposed.py`.
 - **`save_session` re-serializes the whole history on the GUI thread on every plugin
   change.** Every plugin-history event deep-copies and rewrites the entire session file
   from the GUI thread, whether or not the change touched most of it.
@@ -115,15 +112,6 @@ pick up next".
   1,344 lines, which is the real implementation burden behind the community-plugin gate
   below. The mechanical win is the `setupUi` methods - straight-line widget construction,
   extractable into per-panel builders without touching behaviour.
-
-### Minor
-
-- **Two dead conditions in the plugin loader.** `main_model.py:190` filters
-  `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
-  `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
-  code ignores, so the clause has never excluded anything. `main_model.py:55`'s
-  `_JSON_CLASS_NAMES` maps `"null"` to `None`, but the writer emits `type.__name__`, which
-  for `None`'s type is `"NoneType"` - the entry can never match.
 
 ## What to pick up next
 
@@ -150,8 +138,8 @@ file order:
    required-review toggle that used to be listed here is **not** outstanding work -
    advisory-only was chosen deliberately.
 
-Then the rest of the Moderate/Minor audit tiers, the `hist_data` refactor, and the
-parked histogram cut-off.
+Then the rest of the Moderate audit tier, the `hist_data` refactor, and the
+parked histogram cut-off. The Minor tier is empty - both of its items landed.
 
 **Block 3's analysis-tab half is deferred** until the planned frontend refactoring has
 landed, to avoid generating triads against a layout that is about to change.
@@ -365,15 +353,6 @@ table.
   `.. attribute::` directive plus any `:param:` block reports `DOC601` + `DOC603`;
   adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
   the `IntroDialog` entry.
-
-- **One cosmetic lint site is all that is left of the `bugbear`/`bandit` sweep**:
-  1 `B028` (`warnings.warn` without `stacklevel`) in `MetaWriter.py`. The two `B010`
-  sites in `LogDecorator.py` that used to be listed here are **not** cosmetic and are no
-  longer open - `setattr` is what gets them past mypy; see `DECISIONS.md`. There is no
-  further bug-finding value in that sweep unless the owner-held files change hands;
-  `DECISIONS.md` records why the audited rules stay off as gates. Not to be confused with the bandit proposal in block 4 below,
-  which is scoped to `poriscope/plugins/` as a trust boundary rather than codebase-wide as
-  a bug-catcher.
 
 - **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
   receives 1-D arrays from the histogram path, whole DataFrames from the density path,

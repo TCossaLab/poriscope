@@ -371,9 +371,10 @@ plot features that had no label, `B904` found the six data readers discarding th
 the missing file from `FileNotFoundError`, and `S110` found `apply_settings` swallowing a
 failed `get_key()` and leaving the dependency graph incomplete.
 
-**Consequences worth knowing.** What is left unfixed is 1 `B028` in `MetaWriter.py`,
-which is cosmetic. The 2 `B010` sites in `LogDecorator.py` that this entry also called
-cosmetic turned out not to be: `setattr` is what gets them past mypy, so they are settled
+**Consequences worth knowing.** Nothing from this sweep is left unfixed. The 1 `B028` in
+`MetaWriter.py` that this entry recorded as the cosmetic remainder was fixed on 2026-09-02
+(`stacklevel=2`), so that rule now reports zero. The 2 `B010` sites in `LogDecorator.py`
+that this entry also called cosmetic turned out not to be: `setattr` is what gets them past mypy, so they are settled
 rather than outstanding - see the 2026-09-02 entry at the top of this file. There is no
 further bug-finding value in this block - treat it as finished rather than as a backlog.
 
