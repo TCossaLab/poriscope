@@ -26,41 +26,14 @@ fresh counts rather than superseding them; work them from the existing entries.
 
 ### Critical - silent data loss or wrong results, each reproduced
 
-1. **`reset_channel` can delete unrelated experiments.** `SQLiteDBWriter.py:535-548`
-   installs `delete_childless_channels`/`delete_childless_experiments` triggers that are
-   not scoped to the deleted row, so *any* event deletion sweeps every childless channel
-   in the file and then cascades away every childless experiment. Reproduced against the
-   real DDL: resetting one channel emptied both tables. Empty channel rows are routine -
-   `MetaDatabaseWriter.write_events:159` writes channel metadata before the
-   `num_events == 0` return at `:176-182`, so any channel that fitted zero events arms it.
-2. **A failed event write discards the whole batch and still counts it as written.**
-   `SQLiteDBWriter._write_event` takes `SAVEPOINT write_event` once, when it first opens
-   the connection (`:246`), then its error path (`:301-312`) does
-   `ROLLBACK TO SAVEPOINT` *followed by* `self.conn.rollback()` - which rolls back the
-   outer transaction and destroys the savepoint, so the next error raises
-   `no such savepoint` from inside the `except` and masks the real cause.
-   `MetaDatabaseWriter.py:223-226` files that as a per-event rejection while
-   `MetaWriter.py:465` still counts the destroyed events.
-   `SQLiteEventWriter._write_data:499,527-528` is the same shape. Also: no event is
-   atomic - `events`/`sublevels`/`data` are written sequentially and later steps are
-   skipped on a `False` return (`:282-299`), committing orphaned rows at `last_call`.
-3. **Three paths report a failed write as a completed one.**
-   `MetaWriter.py:376-384` logs an `_initialize_database` failure at `logger.info`, then
-   `yield 1.0` - which `EventWorker.py:91-93` turns into a 100% progress bar and
-   "Generator finished." at INFO. The block below it (`:394-399`) handles the same class of
-   failure correctly, by raising. Separately `SQLiteEventWriter.close_resources:309-310`
-   swallows a failed commit at INFO, and that is the only commit for a batch that ended via
-   the `finally`; and `reset_channel:270-276` logs and returns normally, so
-   `MetaWriter.py:473-475` sets `self.written[channel] = 0` believing a destructive reset
-   happened.
-4. **Condition qualification rewrites SQL string literals.**
+1. **Condition qualification rewrites SQL string literals.**
    `MetaDatabaseLoader._qualify_conditions_for_events_sublevels_join:715-739` prefixes bare
    column names by regex, so `sequence = 'sublevel_current' AND ...` becomes
    `e.sequence = 's.sublevel_current'` - valid SQL that runs and returns the wrong rows
    with no error. It also emits `exp.voltage` into a query whose FROM clause has no
    `experiments` join unless an experiments column was *selected* (`:854`), so a legitimate
    `voltage > 50` filter fails as "Invalid query".
-5. **A plugin re-scan silently breaks `WaveletFilter`'s process-wide DLL lock.**
+2. **A plugin re-scan silently breaks `WaveletFilter`'s process-wide DLL lock.**
    `_dll_lock` is class-level precisely because `LoadLibrary` returns a shared handle to a
    non-reentrant library (`WaveletFilter.py:96-97`), but `MainModel` re-executes every
    plugin module without registering it in `sys.modules`, so each scan yields a new class
@@ -70,6 +43,22 @@ fresh counts rather than superseding them; work them from the existing entries.
 
 ### High
 
+- **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection reason.**
+  `SQLiteDBWriter._insert_event` and `_insert_sublevels` both use `INSERT OR IGNORE` and
+  infer failure from `cursor.rowcount`, so a `NOT NULL` violation - an event whose metadata
+  is missing a column the table requires - is silently ignored and surfaces to the user as
+  `IOError("Cannot Overwrite Existing Event")` from `MetaDatabaseWriter`, which is not what
+  happened. Hit twice while building the reproduction harnesses for the writer fixes: a
+  metadata dict missing `channel_id`, and a sublevel dict missing `levels_left`, both
+  reported as overwrite rejections. `OR IGNORE` is there to make a genuine re-write of an
+  existing event a no-op, so the fix is to distinguish the two rather than drop it -
+  either check the required columns up front or use `INSERT` with an explicit
+  `ON CONFLICT ... DO NOTHING` on the uniqueness constraint only.
+- **Neither writer has any unit tests.** There is no `tests/unit/plugins/dbwriters/` and no
+  test file for `MetaWriter` or `MetaDatabaseWriter`, so the component that owns the entire
+  database schema is unverified by the suite; the three data-integrity fixes on 2026-09-03
+  were checked with throwaway harnesses driving the real methods. Test authoring is another
+  developer's remit - this is recorded as a coverage gap, not as work to pick up here.
 - **`zip()` without `strict=` over plugin-supplied sequences.** `MetadataView.py:2577`
   zips seven sequences a fitter returns while `num_events = len(event_data)` two lines
   above sizes the subplot grid, so a fitter returning 20 events' data but 18 sets of vlines
