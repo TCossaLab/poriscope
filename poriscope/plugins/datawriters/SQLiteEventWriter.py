@@ -117,12 +117,27 @@ class SQLiteEventWriter(MetaWriter):
                 units TEXT
             );
             """,
+            # Dropped and recreated rather than CREATE IF NOT EXISTS: earlier
+            # versions installed an unscoped form, and IF NOT EXISTS is a no-op
+            # against a database that already carries one, so every existing file
+            # would keep it. _initialize_database runs against existing databases
+            # too, so this migrates them in place.
             """
-            CREATE TRIGGER IF NOT EXISTS delete_childless_channels
+            DROP TRIGGER IF EXISTS delete_childless_channels;
+            """,
+            # Scoped to OLD.channel_db_id. The unscoped form this replaces deleted
+            # every childless channel in the file on any event deletion, so
+            # resetting one channel could remove channels belonging to unrelated
+            # runs that happened to hold no events.
+            """
+            CREATE TRIGGER delete_childless_channels
             AFTER DELETE ON events
             BEGIN
                 DELETE FROM channels
-                WHERE id NOT IN (SELECT DISTINCT channel_db_id FROM events);
+                WHERE id = OLD.channel_db_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM events WHERE channel_db_id = OLD.channel_db_id
+                  );
             END;
             """,
         ]
