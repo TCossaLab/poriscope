@@ -1,4 +1,4 @@
-## Poriscope 1.8.0: in progress
+## Poriscope 1.8.0: 2026-09-03
 
 * **Fixed assisted metadata filters silently returning the wrong rows**, and they now work on experiment voltage, thickness and conductivity and on `experiment_id`/`channel_id`/`event_id` in every plot and when loading event data
     * A quoted value matching a column name was rewritten as a column reference; a filter on an experiment column emitted a table the query did not join
