@@ -25,6 +25,11 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 ### High
 
+- **`test_plugin_compliance` parametrizes from `__subclasses__()` at import time**, so which
+  test doubles it audits depends on module import order. `pytest tests/unit/utils
+  tests/unit/plugins` (inverted) picks up `ConcreteDatabaseLoader`, `ConcreteEventFitter`
+  and `MockEventLoader` and reports 4 failures that natural order never sees. Skip classes
+  defined under `tests/`.
 - **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection reason.**
   `SQLiteDBWriter._insert_event`/`_insert_sublevels` infer failure from `cursor.rowcount`,
   so a `NOT NULL` violation surfaces as `IOError("Cannot Overwrite Existing Event")`. Hit
