@@ -679,8 +679,13 @@ Warnings are errors here, and the same build runs on your pull request. See
 
 ☐ **6. Update the changelog.**
 
-Add a short, plain-language entry to ``changelog.md`` describing what changed, under
-the appropriate existing heading.
+Add a plain-language entry to ``changelog.md`` describing what changed, under the
+appropriate existing heading — **one line per change, and no more**. The changelog is
+written for users, so it carries the essential user-facing information and nothing else:
+no sub-bullets, no measurements, and no explanation of why the change was made or what was
+rejected along the way. A breaking change is still called out explicitly as breaking,
+because that *is* user-facing. Reasoning that needs preserving belongs in ``DECISIONS.md``
+instead.
 
 .. warning::
 

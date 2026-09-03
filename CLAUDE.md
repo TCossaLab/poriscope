@@ -114,8 +114,19 @@ the `post-merge` git hook. Published at https://tcossalab.github.io/poriscope/.
 
 ## Changelog
 
-Any time you make changes to the code, update `changelog.md` with a terse explanation under 
-the appropriate header/subheader, respecting formatting ceonventions already present in that file.
+Any time you make changes to the code, update `changelog.md` under the appropriate
+header/subheader, respecting the formatting conventions already present in that file.
+
+**One line per change, and no more.** `changelog.md` is written for *users*: it carries the
+essential user-facing information and nothing else. No sub-bullets, no evidence, no
+measurements, no explanation of why the change was made or what was rejected on the way
+there. Breaking changes are still called out explicitly as breaking, because that is
+user-facing.
+
+Everything you would otherwise have put in those sub-bullets goes in `DECISIONS.md`, which
+is written for devs and for Claude: the reasoning behind a choice, the alternatives scoped
+and rejected, the measurements that settled a question, and what would make it worth
+revisiting.
 
 ## Where things are written down
 
@@ -137,6 +148,14 @@ the appropriate header/subheader, respecting formatting ceonventions already pre
   **Update it whenever the tooling or its configuration changes** (`mypy.ini`,
   `.pre-commit-config.yaml`, `[tool.pydoclint]`, the baseline policy), or it will go on
   telling contributors a policy that no longer holds.
+
+**All three of `changelog.md`, `DECISIONS.md` and `future_fixes.md` should be as terse as
+possible.** Two of them are written for Claude, so every needless sentence is context spent
+on a future read. Cut the prose, keep the facts: a `future_fixes.md` entry is one to three
+lines carrying the `file:line` and the measured number, and a `DECISIONS.md` entry keeps its
+context/decision/evidence/revisit shape in as few sentences as the reasoning survives in.
+Never drop the measurement itself — a queued finding without its number has to be
+re-measured before it can be worked.
 
 Depth belongs in those files, not in this one: this file is loaded in full at the start
 of every session, so it should stay a short list of standing rules.

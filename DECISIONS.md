@@ -1,557 +1,391 @@
 # Decisions
 
-Short records of choices made deliberately, especially choices *not* to do something.
-The point is to stop the same question being re-litigated from scratch. Each entry is
-context, the decision, the evidence behind it, and what would make it worth revisiting.
+Short records of choices made deliberately, especially choices *not* to do something, so
+the same question is not re-litigated from scratch. Each entry is context, the decision,
+the evidence, and what would make it worth revisiting. Detail about work that *was* done
+lives in `changelog.md` and git history.
 
-Detail about work that *was* done lives in `changelog.md` and in git history; this file
-is only for the reasoning that would otherwise be lost.
-
-Several entries below refer to "step 3", "step 4", "step 6" or "step 7". Those were the
-numbered stages of the full-codebase type-annotation pass, which ran through August 2026
-and is now complete; the plan they refer to has been pruned from `future_fixes.md` and
-the outcome is summarised in `changelog.md`. The step numbers are kept here only because
-they date the decision.
+Entries referring to "step 3/4/6/7" mean stages of the full-codebase type-annotation pass,
+which ran through August 2026 and is complete. The step numbers only date the decision.
 
 ---
 
 ## 2026-09-03 - `WaveletFilter` takes no lock; the wavelet library is thread-safe for the entry point we call
 
-**Context.** A code review flagged that `WaveletFilter._dll_lock` was class-level
-"process-wide, deliberately" because `LoadLibrary` returns a shared module handle, and
-that a plugin re-scan (`update_user_plugin_location`, which leaves instances alive)
-re-executes the module and produces a new class with a *new* `threading.Lock()` - so the
-process-wide guarantee the comment claimed silently did not hold. The proposed fix was to
-stabilise the class object across re-scans.
+**Context.** A review flagged that `WaveletFilter._dll_lock` was class-level for a
+process-wide guarantee, but a plugin re-scan re-executes the module and produces a new
+class with a new lock - so the guarantee did not hold. The proposal was to stabilise the
+class object across re-scans.
 
-**Decision.** The lock is removed instead, restoring the code to its pre-`b679954` form.
-The library needs no serialization, so there is no guarantee to preserve and nothing for
-a re-scan to break. The re-scan behaviour is left alone.
+**Decision.** The lock is removed instead, restoring the pre-`b679954` form. The library
+needs no serialization, so there is nothing to guarantee and nothing for a re-scan to
+break. Re-scan behaviour is left alone.
 
-**Evidence.** Two independent lines, both against the real library:
+**Evidence.**
 
-- *Source.* `filter_signal_wt` (`cdlls/wavelet/src/wavelet_filter.c`) holds no state
-  across calls: the `wdenoise_object` and the scratch buffer are created per call with
-  `wdenoise_init`/`malloc` and released before return. Every `static` in the denoise
-  sources is either a function or a `static const` filter-coefficient table. The library
-  has exactly one mutable global, `int errorcode` in `utils.c`, and one non-reentrant call,
-  `strtok` at `utils.c:510` - both inside DAQ settings-file code that `filter_signal_wt`
-  never reaches. (`utils.c` *is* compiled into the binary, so the symbols are present;
-  they are simply not on the path.)
-- *Measurement.* `ctypes.cdll` releases the GIL - verified, 8 threads ran 8 calls 3.5x
-  faster than serial, so the calls genuinely overlap. Under that: 128 concurrent calls of
-  200k samples with identical length and wavelet, 768 concurrent calls mixing both
-  wavelets and eight lengths, and 384 calls through two live plugin instances' own
-  `get_callable_filter()` - **all bit-identical to the serial reference**. The library is
-  also deterministic across repeated serial calls, which is what makes that comparison
-  meaningful.
+- *Source.* `filter_signal_wt` holds no state across calls: the `wdenoise_object` and
+  scratch buffer are created and freed per call, and every `static` on the denoise path is
+  a function or a `static const` coefficient table. The library's one mutable global
+  (`int errorcode`) and one non-reentrant call (`strtok`) are both in `utils.c`'s DAQ
+  settings code, which `filter_signal_wt` never reaches.
+- *Measurement.* `ctypes.cdll` genuinely releases the GIL (8 threads, 3.5x faster than
+  serial). Under real concurrency, 128 calls of 200k samples at one length/wavelet, 768
+  calls mixing both wavelets and eight lengths, and 384 calls through two live plugin
+  instances' `get_callable_filter()` were **all bit-identical to the serial reference**.
 
-Supporting facts: `force_serial_channel_operations()` returns `False` for this plugin
-anyway, so nothing was declaring a serialization requirement through the channel-management
-system either; and the filter ran unlocked from the project's start until `b679954` on
-2026-08-18 with no reported corruption, which the measurement now explains rather than
-attributes to luck.
+`force_serial_channel_operations()` returns `False` here anyway, and the filter ran
+unlocked from the project's start until 2026-08-18 with no reported corruption.
 
-**Rejected alternative: load a private copy of the library per instance.** Scoped and not
-worth it even if a lock were needed. `LoadLibrary` refcounts by path - verified, the same
-path twice returns the identical `HMODULE`, and only a copy at a *different* path gets a
-distinct handle - so a private copy means writing a 658 KB DLL to a unique temp path per
-instance, plus temp-file lifetime and crash-cleanup handling, to buy parallelism the
-library already provides. It would also give each copy its own `errorcode`, which is the
-one piece of global state, so it is the correct shape of fix for a genuinely non-reentrant
-library. Keep it in mind only if that changes.
+**Rejected: a private copy of the library per instance.** `LoadLibrary` refcounts by path,
+so a private copy means writing a 658 KB DLL to a unique temp path per instance plus
+lifetime and crash-cleanup handling - to buy parallelism the library already provides. It
+*would* give each copy its own `errorcode`, so it is the right shape of fix if the library
+ever becomes genuinely non-reentrant.
 
-**What would make this worth revisiting.** A change to `filter_signal_wt` that introduces
-state across calls; a new entry point into the library that touches `utils.c`'s
-`errorcode` or `strtok` paths; or a rebuild against a wavelib version whose denoise path
-adds caching. Any of those should be met by re-running the concurrency measurement before
-reaching for a lock - and if a lock is needed, note that the class-level form is the one
-a plugin re-scan breaks, so the private-copy approach above is the more robust answer.
+**Revisit if** `filter_signal_wt` gains state across calls, a new entry point touches
+`utils.c`'s `errorcode`/`strtok` paths, or a rebuild against a newer wavelib adds caching
+on the denoise path. Re-run the concurrency measurement before reaching for a lock; if one
+is needed, use the private-copy shape, since the class-level lock is what a re-scan breaks.
 
 ---
 
 ## 2026-09-02 - Per-module log levels are a scripting facility; the app keeps one global level
 
-**Context.** Fixing `@log`'s debug gate to read the decorated module's own effective
-level - it previously tested `logger.root.level` - made per-module DEBUG possible for the
-first time. The obvious follow-on question was whether the application should expose it,
-since the Settings window's **Logging Level** dropdown sets one application-wide level and
-nothing else.
+**Context.** Fixing `@log`'s debug gate to read the decorated module's own effective level
+made per-module DEBUG possible for the first time, raising the question of whether the
+Settings window should expose it.
 
-**Decision.** It should not. The app keeps a single global level, and per-module control
-stays a scripting-mode facility, documented on the Scripting page with the Settings page
-pointing at it. Nothing in the GUI changes.
+**Decision.** No. The app keeps one global level; per-module control stays a scripting
+facility, documented on the Scripting page with the Settings page pointing at it.
 
-**What that means concretely**, because two separate things would have had to move. There
-is no UI for a per-module level, and adding one means designing an interface for an
-open-ended list of dotted module names - a developer's tool wearing a general user's
-interface. Independently, `MainModel.update_logging_level` calls `handler.setLevel(level)`
-on every handler except `QtHandler`, so once the user has touched the dropdown even once
-in a session, the console and file handlers are pinned to the app-wide level and a raised
-module's DEBUG records are dropped at the handler rather than at the logger. Exposing
-per-module levels therefore requires unpinning the handlers as well, which would change
-what the dropdown means for everyone in order to serve a case that scripting already
-serves better.
+**Why.** Two things would have to move. A UI would mean designing an interface for an
+open-ended list of dotted module names - a developer's tool in a general user's interface.
+Independently, `MainModel.update_logging_level` pins every non-`QtHandler` handler to the
+app-wide level, so once the dropdown is touched a raised module's records are dropped at
+the handler rather than the logger. Exposing per-module levels therefore also requires
+unpinning the handlers, changing what the dropdown means for everyone.
 
-**Evidence.** Measured 2026-09-02 with identical probes against the real handler set
-`App.configure_logger` installs: raising one plugin's logger works in the shape
-`scripting.rst` documents, where handlers are left at `NOTSET`, and produces nothing once
-the handlers are pinned the way `update_logging_level` pins them. The global path is
-unaffected either way - driving the real `SettingsWindow.update_logging_level(1)` through
-`MainModel.update_logging_level` still turns on argument and return logging for every
-decorated method, with `QtHandler` holding its `ERROR` floor.
+**Evidence.** Measured 2026-09-02: raising one plugin's logger works in the shape
+`scripting.rst` documents (handlers at `NOTSET`) and produces nothing once handlers are
+pinned. The global path is unaffected either way, with `QtHandler` holding its `ERROR` floor.
 
-**Revisit if** someone is regularly debugging a single plugin from inside the GUI and
-cannot reasonably drive it from a script instead. The scripting path exists precisely
-because that is the better place for this.
+**Revisit if** someone regularly debugs a single plugin from inside the GUI and cannot
+drive it from a script instead.
 
 ---
 
 ## 2026-09-02 - `LogDecorator`'s two `setattr` calls stay; they are what satisfies mypy
 
-**Context.** `future_fixes.md` listed 2 `B010` (set-attr-with-constant) findings in
-`LogDecorator.py` among "three cosmetic lint sites ... all that is left of the
-`bugbear`/`bandit` sweep". Both are `setattr(logger.root, "ignore_exceptions", True)`,
+**Context.** Two `B010` findings, both `setattr(logger.root, "ignore_exceptions", True)` -
 the one-shot latch that stops the decorator reporting the same logger fault forever.
-`B010`'s advice is to write the plain assignment.
+`B010` advises the plain assignment.
 
-**Decision.** They stay as `setattr`, and they are not cosmetic. `ignore_exceptions` is
-not an attribute of `logging.RootLogger`; it is a flag this module invents and hangs off
-the root logger so that all 977 decorated methods share one latch. mypy accepts the
-*read* two lines above it, because `hasattr(logger.root, "ignore_exceptions")` in the
-same condition narrows the type - but that narrowing does not extend to a write.
+**Decision.** They stay, and they are not cosmetic. `ignore_exceptions` is a flag this
+module invents and hangs off the root logger so all 977 decorated methods share one latch.
+mypy accepts the *read* two lines above (narrowed by `hasattr`), but that narrowing does
+not extend to a write.
 
-**Evidence.** Probed directly against `mypy.ini`: the plain assignment reports
-``"RootLogger" has no attribute "ignore_exceptions"  [attr-defined]``, while the
-`setattr` form is clean. So "fixing" `B010` means adding a `# type: ignore[attr-defined]`
-to satisfy a rule that is not enabled as a gate in the first place - trading a real
-checker's silence for a disabled linter's approval.
+**Evidence.** Probed against `mypy.ini`: the plain assignment reports
+``"RootLogger" has no attribute "ignore_exceptions" [attr-defined]``; `setattr` is clean.
+So "fixing" `B010` means adding a `# type: ignore` to satisfy a rule that is not a gate.
 
-**Revisit if** the latch is ever moved off the root logger onto something this codebase
-declares - a small module-level state object, say - at which point the attribute becomes
-typed, the `setattr` becomes genuinely unnecessary, and both findings disappear on their
-own rather than being suppressed.
+**Revisit if** the latch moves onto something this codebase declares - a small module-level
+state object - at which point both findings disappear on their own.
 
 ---
 
 ## 2026-09-02 - The plugin trust boundary is checked with ruff, not bandit, and is not a sandbox
 
-**Context.** Plugin discovery executes every file it walks:
-`MainModel.populate_available_plugins()` runs from the constructor and `load_plugin` calls
-`spec.loader.exec_module`, so module-level code in any `.py` file under
-`poriscope/plugins/` or the user's plugin folder runs at app start, before any compliance
-check has inspected the class. Block 4 in `future_fixes.md` proposed policing that. Two
-gates now do - `ruff-plugin-security` and `plugin-module-level` - and three parts of the
-original proposal were deliberately dropped.
+**Context.** Plugin discovery executes every file it walks, so module-level code in any
+`.py` file under `poriscope/plugins/` or the user plugin folder runs at app start, before
+any compliance check inspects the class. `ruff-plugin-security` and `plugin-module-level`
+now police that; three parts of the original proposal were dropped.
 
-**Decision 1: no `bandit`.** Block 4 step 1 called for adding `bandit` to
-`requirements-dev.txt` as its own hook. It was not added. Ruff `0.12.11` is already
-pinned in `.pre-commit-config.yaml`, already implements flake8-bandit's `S` rules, and
-already runs in CI; a second tool would mean a second config, a second pinned version,
-overlapping findings on the same files, and an edit to both `requirements-dev.txt` and
-`pyproject.toml`'s `[dev]` extra, which
-`scripts/hooks/post-merge-update_requirements.py` keeps byte-identical.
-
-The gaps that leaves are known rather than guessed. `S403`/`S404` - importing `pickle` or
-`subprocess` without calling them - require ruff preview mode and are not available as
-stable rules, so they are not in the selection. `__import__("os")` is flagged by neither
-ruff nor bandit; verified against a probe file. A module-level `__import__` is caught by
-`plugin-module-level` instead, but one inside a method body is invisible to both.
-
-**Revisit if** a submission actually turns up a dangerous pattern that ruff structurally
-cannot see. Adding bandit to close a hypothetical gap is not worth a second toolchain;
-adding it to close a real one would be.
+**Decision 1: no `bandit`.** Ruff is already pinned, already implements flake8-bandit's
+`S` rules and already runs in CI. A second tool means a second config, a second pinned
+version, overlapping findings, and edits to both `requirements-dev.txt` and
+`pyproject.toml`'s `[dev]` extra, which the post-merge hook keeps byte-identical. Known
+gaps: `S403`/`S404` need ruff preview and are not stable rules; `__import__("os")` is
+flagged by neither tool (verified against a probe), though a module-level `__import__` is
+caught by `plugin-module-level`. **Revisit if** a submission turns up a dangerous pattern
+ruff structurally cannot see.
 
 **Decision 2: the module-level check skips `analysistabs/`.** It is scoped to the eight
-data-plugin families, which is what an outside contribution realistically adds - nobody
-submits an unreviewed Controller/Model/View triad from a fork. Measured: those 34 files
-have zero module-level statements outside imports, constants, classes and functions, so
-the rule needs no exceptions at all. Extending it to `analysistabs/` would require
-permitting three further patterns for six benign sites - `warnings.filterwarnings` (3),
-an `os.environ` write under a `sys.platform` guard (1), and `if __name__ == "__main__":`
-demo blocks (2) - and a rule with carve-outs is weaker than a rule with none, because the
-carve-outs are what an attacker writes against. Those files remain covered by
-`ruff-plugin-security`, which is scoped to the whole plugin tree and needs no exemptions
-anywhere.
+data-plugin families, which is what an outside contribution realistically adds. Measured:
+those 34 files have zero module-level statements outside imports, constants, classes and
+functions, so the rule needs no exceptions. Extending it would mean permitting three
+further patterns for six benign sites (`warnings.filterwarnings` x3, an `os.environ` write
+under a `sys.platform` guard, two `__main__` demo blocks), and a rule with carve-outs is
+weaker than one with none. Those files stay covered by `ruff-plugin-security`.
 
-**Decision 3: this is not a sandbox, and no CI workflow was touched.** Block 4's own
-gotcha said as much and it is worth restating, because the checks are easy to mistake for
-more than they are. Anything inside a method body that only runs once the plugin is
-instantiated is beyond a static pass, and **neither check sees the runtime path at all** -
-a user dropping a `.py` file into `%LOCALAPPDATA%/Poriscope/user_plugins` gets it executed
-with no pull request and no CI in between. Plugins are reviewed by a human before they
-merge, and that review is the real gate; these hooks raise the bar against a careless
-submission.
+**Decision 3: this is not a sandbox, and no workflow was touched.** Anything inside a
+method body is beyond a static pass, and neither check sees the runtime path - a file
+dropped into `%LOCALAPPDATA%/Poriscope/user_plugins` is executed with no PR and no CI.
+Human review is the real gate. No changed-file computation was built because
+`ci-fork-pr.yml` and `ci-branches.yml` already run `pre-commit run --all-files`.
 
-No workflow file changed, and no changed-file computation was built, because
-`ci-fork-pr.yml` and `ci-branches.yml` already run `pre-commit run --all-files` - so a
-pre-commit hook is already enforced on every incoming PR. Block 5 step 2's
-`git diff --name-only` machinery is unnecessary for a check that reports zero.
+**Revisit if** true isolation is wanted (subprocess isolation, restricted execution) -
+that is its own design discussion, not an increment on this one.
 
-**Revisit if** true isolation is ever wanted (subprocess isolation, restricted execution).
-That is a much larger architectural change and belongs in its own design discussion, not
-as an increment on this one.
+---
 
 ## 2026-09-02 - `CODEOWNERS` stays advisory; code-owner review is not enforced
 
-**Context.** `.github/CODEOWNERS` landed in 1.8.0, mapping each subsystem and plugin
-family to its maintainer so a pull request automatically requests review from the right
-person. GitHub offers a branch-protection setting, *Require review from Code Owners*,
-that turns the same file into a merge block. `future_fixes.md` block 5 had assumed from
-the start that the file was only worth having with that setting on, describing the goal as
-"no plugin file merges without ... a human sign-off" and calling the toggle the thing that
-would give the file "teeth".
+**Context.** `.github/CODEOWNERS` maps each subsystem and plugin family to its maintainer
+so a PR requests the right reviewer automatically. GitHub's *Require review from Code
+Owners* branch protection would turn the same file into a merge block.
 
-**Decision. The toggle stays off, on every branch.** The file is a guideline for routing
-attention, not a hard edit limit and not a barrier to contribution. Block 5's wording was
-corrected rather than implemented, so the enforcement step is not left looking like
-unfinished work.
+**Decision. The toggle stays off, on every branch.** The file routes attention; it is not
+an edit limit or a barrier to contribution.
 
-**Evidence and reasoning.**
+**Why.**
 
-- **Team size.** Three people have commits in the last six months, and five have ever been
-  named as contributors. Enforced review is a coordination mechanism for a team large
-  enough that the right reviewer is not obvious; at this size everyone already knows who
-  maintains what, and the file exists to spare them having to remember to tag each other,
-  not to referee them.
-- **Fork contributions are a first-class path.** `.github/workflows/ci-fork-pr.yml` exists
-  specifically for pull requests from forks, which is the realistic route for a community
-  plugin. A required-owner-review rule would put one named individual in front of every
-  such contribution.
-- **Some owners cannot answer.** Two contributors named in `# Contributors:` headers have
-  left the lab, and one of them has no GitHub handle at all. GitHub silently ignores a
-  `CODEOWNERS` line naming anyone without write access, so under enforcement the gate
-  would be unpredictable as well as unwelcome - blocking on some paths and quietly not on
-  others.
-- **The checks that matter already block.** Correctness is gated by the automated hooks
-  and CI described in `quality_control.rst`, which every pull request must pass. Owner
-  review adds judgement, which is worth requesting and not worth requiring.
+- **Team size.** Three people have commits in the last six months. Enforced review is a
+  coordination mechanism for a team large enough that the right reviewer is not obvious.
+- **Fork contributions are a first-class path** (`ci-fork-pr.yml` exists for them), and
+  enforcement would put one named individual in front of every community plugin.
+- **Some owners cannot answer.** Two named contributors have left the lab and one has no
+  GitHub handle. GitHub silently ignores a line naming anyone without write access, so
+  enforcement would block on some paths and quietly not on others.
+- **The checks that matter already block** - the hooks and CI in `quality_control.rst`.
+  Owner review adds judgement, worth requesting and not worth requiring.
 
-**Revisit if the contributor list grows past six people.** That is the user's stated
-trigger, and it is a scale judgement rather than an objection to enforcement in principle
-- so the question is genuinely open again at that point, and only at that point. Nothing
-else reopens it: not a bad merge, and not the arrival of the scoped plugin CI gate in
-block 5, whose step 3 concerns required *status checks* and explicitly does not extend to
-code-owner review.
+**Revisit if the contributor list grows past six people.** That is the stated trigger and
+the only one. Not a bad merge, and not block 5's scoped plugin CI gate, whose step 3
+concerns required *status checks* and does not extend to code-owner review.
+
+---
 
 ## 2026-09-01 - No custom lint rules for the three conventions `CLAUDE.md` documents
 
-Proposed as block 8 of the community-plugin compliance gate: write `ast`-based checkers
-enforcing three conventions that were held by review attentiveness alone. **Nothing was
-built, and nothing should be.** All three resolved without a checker.
+Proposed as block 8 of the compliance gate: `ast` checkers for three conventions held by
+review attentiveness. **Nothing was built, and nothing should be.**
 
-**No nested functions - dropped, because the convention itself changed.** `CLAUDE.md` no
-longer prohibits nesting outright: a short, simple nested function is fine where it is
-genuinely the simpler option, typically a small closure captured for a callback or timer.
-That is a judgement an `ast` walk cannot make. A checker would have to approximate it with
-a line-count or complexity threshold and would flag exactly the small callback closures the
-revised convention permits. Do not build it.
+- **No nested functions - the convention itself changed.** A short, simple nested function
+  is now fine where it is genuinely simpler, typically a closure captured for a callback or
+  timer. That is a judgement an `ast` walk cannot make; a line-count or complexity
+  threshold would flag exactly the closures the revised convention permits.
+- **Bare `except:` - already enforced, and always was.** `E722` is in Ruff's *default* rule
+  set and `pyproject.toml` uses `extend-select`, which adds to the defaults. Measured: a
+  throwaway file with a bare `except:` under `poriscope/` fails the existing ruff hook.
+- **Explicit sqlite3 cleanup - semantic, not syntactic.** A checker would have to track
+  whether every `connect`/`cursor()` result is closed on every exit path. Its home is the
+  behavioural conformance suite (block 1), whose open-file-handle check catches the same
+  defect empirically; that suite belongs to the test developer.
 
-**Bare `except:` - already enforced, and always was.** The block asked whether Ruff had a
-built-in rule and whether it was enabled; the answer to both is yes. `E722` is in Ruff's
-**default** rule set, and `pyproject.toml`'s `extend-select` adds to that set rather than
-replacing it, so the gate has been catching bare `except:` all along even though no line of
-config names it. Measured rather than reasoned: a throwaway file containing a bare `except:`
-was placed under `poriscope/` and `pre-commit run ruff --files ...` failed it with
-`E722 Do not use bare except`. The one-line config addition the block held in reserve would
-have been a no-op.
+`quality_control.rst` records that Ruff's defaults are in force on top of the selected
+rules, naming `E722`. Deliberately **not** added to `CLAUDE.md`, which should carry rules a
+human has to remember rather than ones the gate enforces every commit.
 
-**Explicit sqlite3 cleanup in a `finally` block - deferred by design, not queued.** This is
-a semantic rather than syntactic pattern: a general checker would have to track whether a
-`sqlite3.connect`/`.cursor()` result is closed on every exit path. The block itself
-concluded the right home for it is the behavioural conformance suite (block 1), whose
-open-file-handle check catches the same defect empirically. That suite is owned by the test
-developer, so this rides along with it whenever it is built rather than being separate work.
+**Revisit if** a convention turns up that is genuinely syntactic and that review keeps
+missing. The owner-held fitter files changing hands would not reopen this.
 
-Documenting whichever of these became real automated checks is done: `quality_control.rst`'s
-"Which rules are enabled" note says Ruff's defaults are in force on top of the selected
-rules and names `E722` as the example that matters. It is deliberately **not** added to
-`CLAUDE.md`, which is loaded in full every session and should carry rules a human has to
-remember - a rule the gate enforces on every commit is not one of those.
-
-**What would reopen this:** the owner-held fitter files changing hands would not; only a
-convention that is genuinely syntactic, and that review keeps missing, would justify a
-custom checker.
+---
 
 ## 2026-09-01 - The three reserved file-parameter names stay as they are
 
-**Context.** `BaseDataPlugin._validate_param_ranges` skips its `Value in Options` check for
-three literal parameter names - `Input File`, `Output File`, `Folder` - because for those
-the `Options` list holds file-dialog filters (`"ABF2 Files (*.abf)"`) rather than
-permissible values. This was recorded in `future_fixes.md` as "plugin-specific knowledge in
-the universal validator", with a proposed fix: a `"Validate Options": False` flag in the
-settings schema, so the base class would not need to know any names. The question came up
-again on 2026-09-01 when the three other defects in that same entry were fixed and the
-names were consolidated into `settings_schema.FILE_DIALOG_PARAMS`.
+**Context.** `_validate_param_ranges` skips its `Value in Options` check for three literal
+names - `Input File`, `Output File`, `Folder` - because there `Options` holds file-dialog
+filters rather than permissible values. The proposed fix was a `"Validate Options": False`
+schema flag so the base class need not know any names.
 
-**Decision.** Keep the three literal names and the shared constant. **The
-`"Validate Options": False` flag is rejected outright rather than deferred.** No code
-changes.
+**Decision.** Keep the literal names and the shared `settings_schema.FILE_DIALOG_PARAMS`
+constant. **The flag is rejected outright rather than deferred.** No code changes.
 
-**Reasoning.** The proposal aims at the wrong site. The names appear at roughly 20 places,
-and **17 of them are in `views/widgets/dict_dialog_widget.py`** - the widget dispatch at
-`:131`/`:150`/`:169`, the picker write-backs at `:277`/`:318`/`:343`, the
-`key not in [...]` tests at `:216`/`:370`, and the three `check_validity` clauses at
-`:356-363`. One is the `FILE_DIALOG_PARAMS` constant, one is `DataPluginController:517-524`'s
-`Folder` default, and the validator itself now holds none, since it imports the constant.
-So the flag would clear the single site that is already contained behind a shared
-definition and leave every load-bearing one untouched.
+**Why.** It aims at the wrong site. The names appear at roughly 20 places, **17 of them in
+`views/widgets/dict_dialog_widget.py`** (widget dispatch, picker write-backs,
+`key not in [...]` tests, `check_validity` clauses); one is the constant, one is
+`DataPluginController`'s `Folder` default, and the validator itself now holds none. The
+flag would clear the one site already contained behind a shared definition.
 
-It is also the wrong *shape* of key. `"Validate Options": False` describes what not to
-check. A schema key that described what the parameter **is** could drive both the
-validator and the dialog's widget selection; a suppression flag can only ever do the
-former. Adopting it would foreclose the better fix by spending the schema-contract change
-on the lesser one.
+It is also the wrong *shape* of key: `"Validate Options": False` describes what not to
+check, whereas a key describing what the parameter **is** could drive both the validator
+and the dialog's widget selection. Adopting it would spend the schema-contract change on
+the lesser fix.
 
-**The better fix, if it is ever needed**, recorded so it does not have to be rediscovered:
-an optional `"Kind"` key taking `"input file"`, `"output file"` or `"folder"`. Every site
-that currently asks "is this key named `Input File`?" asks "is this parameter of kind
-`input file`?" instead. The five bases that create these entries (`MetaReader:311`,
-`MetaWriter:168`, `MetaEventLoader:160`, `MetaDatabaseLoader:351`,
-`MetaDatabaseWriter:460`) declare the kind, and since every plugin is required to build its
-schema from `super().get_empty_settings()`, all 24 shipped plugins inherit it with no edit
-of their own. A `kind = entry.get("Kind") or _legacy_kind_for_name(key)` fallback keeps a
-hand-rolled user plugin working and confines the literal names to one function.
+**The better fix, if ever needed:** an optional `"Kind"` key taking `"input file"`,
+`"output file"` or `"folder"`. Every site asking "is this key named `Input File`?" asks
+"is this parameter of kind `input file`?" instead. The five bases that create these entries
+(`MetaReader`, `MetaWriter`, `MetaEventLoader`, `MetaDatabaseLoader`, `MetaDatabaseWriter`)
+declare the kind, and since every plugin builds its schema from `super()`, all 24 shipped
+plugins inherit it unchanged. A `kind = entry.get("Kind") or _legacy_kind_for_name(key)`
+fallback keeps hand-rolled user plugins working.
 
-**Consequences worth knowing.** Each picker callback hardcodes the key it writes to
-(`self.params["Input File"]["Value"] = input_file`), so **a plugin can have at most one
-file input, one file output and one folder**, and a file parameter cannot be given a
-descriptive name - not "Calibration File", only "Input File". A reader taking a data file
-*and* a separate calibration file cannot be expressed today. That limitation is accepted
-here; it is the real cost of the design, and it is what the revisit trigger below is about.
+**Consequences.** Each picker callback hardcodes the key it writes, so **a plugin can have
+at most one file input, one file output and one folder**, and a file parameter cannot be
+given a descriptive name. A reader taking a data file *and* a calibration file cannot be
+expressed. That is the real cost of the design and is accepted here.
 
-Also worth knowing before anyone attempts this: **`dict_dialog_widget.py` has no unit
-tests.** `tests/unit/views/test_data_plugin_view.py` patches `DictDialog` out wholesale,
-and nothing in the repository references `get_input_file`, `get_output_file` or
-`get_folder`; the e2e tests construct the real dialog but only ever touch `name_entry`. So
-the widget dispatch, the three picker callbacks, `check_validity` and `on_ok` are
-unverified by anything, on a path every plugin creation traverses. Writing
-`tests/unit/views/widgets/test_dict_dialog_widget.py` against the *current* behaviour is a
+Also: **`dict_dialog_widget.py` has no unit tests.** `test_data_plugin_view.py` patches
+`DictDialog` out wholesale, nothing references `get_input_file`/`get_output_file`/
+`get_folder`, and the e2e tests only touch `name_entry`. Writing
+`tests/unit/views/widgets/test_dict_dialog_widget.py` against current behaviour is a
 prerequisite for the refactor, not part of it, and would be most of the work.
 
-**Revisit if.** Someone expresses a need for a plugin that takes **more than one file
-input** - or more than one output, or more than one folder. That is the capability this
-design forecloses, and it is the only thing that makes the change worth its risk. Removing
-plugin-specific names from the universal validator is explicitly **not** a reason to
-revisit: that was the original motivation, it was measured, and it turned out to be worth
-far less than it sounded.
+**Revisit if** someone needs a plugin taking **more than one file input** (or output, or
+folder). That is the capability this design forecloses. Removing plugin-specific names from
+the universal validator is explicitly *not* a reason - that was the original motivation and
+it measured out to be worth far less than it sounded.
 
 ---
 
 ## 2026-09-01 - The multiselect popups' event filter stays on the application
 
-**Context.** `MultiSelectFilterComboBox` and `MultiSelectComboBox` closed their popup when
-the user clicked outside it, using a filter installed on the `QApplication` singleton and
-never removed - a leak that caused an intermittent `RuntimeError: Internal C++ object ...
-already deleted` in the test suite. The obvious fix, and the one the handoff note in
-`future_fixes.md` recommended, was to scope the filter to `containerWidget` or to `self`
-instead of the application, following the `walkthrough.py`/`help.py` precedent.
+**Context.** Both multi-select combo boxes closed their popup on an outside click using a
+filter installed on the `QApplication` singleton and never removed - a leak causing an
+intermittent `RuntimeError: Internal C++ object ... already deleted`. The obvious fix was
+to scope the filter to `containerWidget` or `self`.
 
-**Decision.** The filter stays **on the application**. Only its *lifetime* was narrowed: it
-is installed in `showPopup()` and removed in `hidePopup()`, so it exists only while a popup
-is open.
+**Decision.** The filter stays **on the application**. Only its *lifetime* was narrowed:
+installed in `showPopup()`, removed in `hidePopup()`.
 
-**Reasoning.** Scoping it to the container would have silently broken click-outside-to-close
-on Windows and macOS. `Qt::WindowType` is a value in the low byte of the flags word, not a
-set of independent bits, and `Tool == Popup | Dialog == 11`. Both widgets build their
-container as a `QDialog` and then OR `Qt.Popup` into the existing flags - which already
-include `Qt::Dialog` - so `windowType()` comes out as **`Qt::Tool`**, not `Qt::Popup`.
-Verified against the installed PySide6 6.9.0 with the real construction pattern:
-
-```
-Dialog=3  Popup=9  Tool=11
-Dialog|Popup == Tool          -> True
-(Dialog|Popup) & Mask == Popup -> False
-QDialog(...) + windowFlags()|Qt.Popup  ->  windowType=11 (Tool)
-```
-
-A tool window is not a popup: `isPopup()` is false, Qt never enters popup mode for it, there
-is no implicit mouse grab, and a press elsewhere in the application is delivered to whatever
-is under the cursor and never routed to the container. A filter installed on the container
-would therefore never see the click it exists to detect. Qt also does **not** auto-close even
-a genuine popup on an outside press - `QWidgetWindow::handleMouseEvent` only closes *disabled*
-popups; the familiar behaviour is implemented by `QMenu` in its own `mousePressEvent`.
+**Why.** Scoping to the container would have silently broken click-outside-to-close on
+Windows and macOS. `Qt::WindowType` is a value in the low byte of the flags word, not
+independent bits, and `Tool == Popup | Dialog == 11`. Both widgets build their container as
+a `QDialog` and OR `Qt.Popup` into flags that already include `Qt::Dialog`, so
+`windowType()` comes out `Qt::Tool` - verified against PySide6 6.9.0 with the real
+construction pattern. A tool window is not a popup: `isPopup()` is false, there is no
+implicit mouse grab, and a press elsewhere is never routed to the container, so a filter
+there would never see the click it exists to detect. Qt also does not auto-close even a
+genuine popup on an outside press - that behaviour is `QMenu`'s own `mousePressEvent`.
 
 Only `multiselect.py`'s Linux branch produces a real popup, because it calls
-`setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)`, which *replaces* the flags rather than
-OR-ing into them. That asymmetry is very likely why the application-wide filter was written
-in the first place, and why the Linux path was special-cased.
+`setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)`, *replacing* the flags. That asymmetry
+is very likely why the application-wide filter was written.
 
-**Consequences worth knowing.** The Linux/offscreen CI run cannot exercise the load-bearing
-path, because there the container really is a popup. Anything that changes this filter needs
-a manual check on Windows. The `walkthrough.py`/`help.py` precedent of scoping a filter to a
-narrower object is still the right default - it just does not apply to a widget whose whole
-purpose is to observe events aimed at *other* widgets.
+**Consequences.** The Linux/offscreen CI run cannot exercise the load-bearing path, because
+there the container really is a popup. Any change to this filter needs a manual Windows
+check. Scoping a filter to a narrower object (the `walkthrough.py`/`help.py` precedent) is
+still the right default - it just does not apply to a widget whose purpose is to observe
+events aimed at *other* widgets.
 
-**Revisit if.** The containers are converted to genuine `Qt::Popup` windows on every platform
-(`setWindowFlags` rather than OR-ing), which would let Qt's grab do the routing and unify the
-two platform paths. That was considered and deliberately not bundled into a crash fix: it is a
-visible UX change on the primary platform, since the popup would lose its title bar, its
-"Select Filter"/"Select Channel" caption, its close button and its movability.
+**Revisit if** the containers are converted to genuine `Qt::Popup` windows on every
+platform. That was considered and deliberately not bundled into a crash fix: the popup
+would lose its title bar, caption, close button and movability on the primary platform.
 
 ---
 
 ## 2026-08-25 - The audited `bugbear`/`bandit` rules stay off as gates
 
-*Settled 2026-08-25; moved here from `future_fixes.md` on 2026-09-01, where it had been
-sitting as a mostly-closed backlog table. Reasoning re-measured and corrected 2026-09-02 -
-the decision is unchanged, the stated reasons were wrong for most of the rules.*
+*Settled 2026-08-25; reasons re-measured and corrected 2026-09-02 - the decision is
+unchanged, the stated reasons were wrong for most of the rules.*
 
-**Context.** Adopting the rest of ruff's `flake8-bugbear` (B) and `bandit` (S) rule sets
-was proposed on the grounds that both check real code logic and so complement pydoclint's
-docstring/signature checking. Measured on `poriscope/`: **B = 104, S = 54**. `B006` and
-`B020` were adopted outright and are enforced through `extend-select` in `pyproject.toml`.
-The rest were audited rule by rule.
+**Context.** Adopting the rest of ruff's `flake8-bugbear` and `bandit` sets was proposed as
+a complement to pydoclint. Measured on `poriscope/`: B = 104, S = 54. `B006` and `B020`
+were adopted outright; the rest were audited rule by rule.
 
-**Decision.** Every remaining audited rule - `B905`, `B904`, `B007`, `S110`, `S112`,
-`S101` - was run as a **one-time audit**, its findings in our own code fixed, and the rule
-then left **unselected**. None is a gate. What each surfaced is in `changelog.md`; the
-short version is that the audits were worth running and the gates are not worth keeping.
+**Decision.** `B905`, `B904`, `B007`, `S110`, `S112` and `S101` were each run as a one-time
+audit, their findings in our own code fixed, and the rule left **unselected**. None is a
+gate.
 
-**Reasoning.** Two separate reasons, and it matters which applies to which rule.
+**Why, per rule.** Ruff's actual scope is the whole repository minus `tests/slow/` - only
+mypy is scoped to `poriscope/`, and measuring these under `poriscope/` is what produced the
+wrong answer originally:
 
-- **For `B904`, `B007`, `S110`, `S112` and `S101` the remaining sites are somewhere this
-  work does not get to change - but the reason differs by rule, and the single
-  "every site is in an owner-held fitter file" explanation this entry gave originally was
-  wrong for most of them.** Re-measured 2026-09-02 across ruff's *actual* scope, which is
-  the whole repository minus `tests/slow/` - only mypy is scoped to `poriscope/`, and
-  measuring these rules there is what produced the wrong answer the first time:
-  - **`S101` - 2,250 sites, of which 7 are in `NanoTrees.py` and 2,243 in `tests/`.**
-    Ownership is not the obstacle here at all. `assert` is the test suite's fundamental
-    idiom, so a `per-file-ignores` entry for `tests/` would suppress 99.7% of the
-    findings, which is not a gate in any meaningful sense. **This stays true however the
-    `NanoTrees.py` ownership question resolves and whether or not it is ever deprecated**,
-    which is the opposite of what this entry used to imply.
-  - **`B904` - 3 sites, all in `tests/e2e/_helpers.py`.** These belong to the test
-    developer, not to the fitter plugins. Zero sites remain under `poriscope/`.
-  - **`B007` - 5 sites: 3 in `PeakFinder.py`, 2 in `tests/`.** Only the first three are
-    the owner-held case.
-  - **`S112` - 2 sites: 1 in `PeakFinder.py`, 1 in `scripts/autodoc/`.**
-  - **`S110` - 3 sites: 2 in `scripts/autodoc/`, 1 in `tests/unit/views/`.** None is
-    owner-held.
-  So the original objection describes `B007` and `S112` accurately and nothing else. In
-  every case enabling the rule would still require a `per-file-ignores` entry, which
-  *hides* a real check rather than satisfying it - a worse state than not selecting the
-  rule, because it looks enforced. The conclusion is unchanged; only the reasons are.
-  **The three `scripts/autodoc/` sites (2 `S110`, 1 `S112`) are ours and are fixable**,
-  and are the only part of this sweep that is. Fixing them would leave `S110` blocked by
-  one test file and `S112` by one `PeakFinder` line - still short of enabling either,
-  which is why it has not been done.
-- **For `B905` (`zip` without `strict=`) the rule itself is the problem.** 54 sites would
-  each need their own `strict=` judgement, and at least one - the list-against-generator
-  zip in `MetaDatabaseLoader`'s CSV export - cannot be proven equal-length in advance. Three
-  in `ClusteringView` depend on truncation deliberately and would raise on every clustering
-  run. A rule that cannot be satisfied without per-site analysis is an audit, not a gate.
+- **`S101` - 2,250 sites: 7 in `NanoTrees.py`, 2,243 in `tests/`.** Ownership is not the
+  obstacle at all; `assert` is the test suite's fundamental idiom, so a `per-file-ignores`
+  for `tests/` would suppress 99.7% of findings. **This stays true however `NanoTrees.py`'s
+  ownership resolves and whether or not it is deprecated.**
+- **`B904` - 3 sites, all `tests/e2e/_helpers.py`.** Zero under `poriscope/`.
+- **`B007` - 5 sites: 3 `PeakFinder.py`, 2 `tests/`.** Only the first three are owner-held.
+- **`S112` - 2 sites: 1 `PeakFinder.py`, 1 `scripts/autodoc/`.**
+- **`S110` - 3 sites: 2 `scripts/autodoc/`, 1 `tests/unit/views/`.** None owner-held.
 
-The audit half genuinely earned its keep: `B905` found `MetadataView` silently dropping
-plot features that had no label, `B904` found the six data readers discarding the name of
-the missing file from `FileNotFoundError`, and `S110` found `apply_settings` swallowing a
-failed `get_key()` and leaving the dependency graph incomplete.
+In every case enabling the rule still needs a `per-file-ignores` entry, which *hides* a
+real check rather than satisfying it - worse than not selecting it, because it looks
+enforced. **The three `scripts/autodoc/` sites are ours and are fixable**, and are the only
+part of this sweep that is; fixing them would still leave `S110` blocked by one test file
+and `S112` by one `PeakFinder` line.
 
-**Consequences worth knowing.** Nothing from this sweep is left unfixed. The 1 `B028` in
-`MetaWriter.py` that this entry recorded as the cosmetic remainder was fixed on 2026-09-02
-(`stacklevel=2`), so that rule now reports zero. The 2 `B010` sites in `LogDecorator.py`
-that this entry also called cosmetic turned out not to be: `setattr` is what gets them past mypy, so they are settled
-rather than outstanding - see the 2026-09-02 entry at the top of this file. There is no
-further bug-finding value in this block - treat it as finished rather than as a backlog.
+**`B905` (`zip` without `strict=`) is different: the rule itself is the problem.** 54 sites
+each need their own judgement, at least one (`MetaDatabaseLoader`'s CSV export, list against
+generator) cannot be proven equal-length in advance, and three in `ClusteringView` depend on
+truncation deliberately and would raise on every clustering run.
 
-**Revisit if.** The owner-held fitter files change hands - but that removes the
-`per-file-ignores` objection for `B007` and `S112` only. It does nothing for `B904` or
-`S110`, whose sites are in the test suite and the autodoc scripts, and nothing at all for
-`S101`, which is blocked by the test suite's use of `assert` rather than by ownership. Note this is *not* the same
-question as the `bandit` proposal scoped to `poriscope/plugins/` as a trust boundary for
-unvetted community contributions, which is still open (block 4 in `future_fixes.md`).
+**The audit half earned its keep**: `B905` found `MetadataView` silently dropping unlabelled
+plot features, `B904` found the six readers discarding the missing file's name from
+`FileNotFoundError`, and `S110` found `apply_settings` swallowing a failed `get_key()` and
+leaving the dependency graph incomplete.
+
+**Nothing from this sweep is left unfixed.** The 1 `B028` in `MetaWriter.py` was fixed
+2026-09-02 (`stacklevel=2`); the 2 `B010` in `LogDecorator.py` are settled above, not
+outstanding. Treat this block as finished, not as a backlog.
+
+**Revisit if** the owner-held fitter files change hands - but that only removes the
+objection for `B007` and `S112`, does nothing for `B904`/`S110` (test suite and autodoc
+scripts), and nothing at all for `S101`. This is *not* the same question as the
+plugins-scoped trust-boundary proposal, which is settled separately above.
 
 ---
 
 ## 2026-08-25 - Interpolated SQL in the database plugins is accepted (`S608`)
 
-*Settled 2026-08-25; moved here from `future_fixes.md` on 2026-09-01.*
-
-**Context.** `bandit`'s `S608` (hardcoded-sql-expression) reports **25 sites** under
-`poriscope/`, where query strings are built by f-string interpolation rather than by
-parameter binding. `SQLitePeakDBLoader` in particular no longer casts its interpolated
-values to `int`, which was raised in review as worth real scrutiny.
+**Context.** `S608` reports 25 sites under `poriscope/` where query strings are built by
+f-string interpolation rather than parameter binding.
 
 **Decision.** Accepted as-is. Not fixed, and `S608` is not enabled.
 
-**Reasoning.** There is no privilege boundary for an injection to cross. The database is a
-local SQLite file, opened by the desktop application, owned by and running as the user who
-launched it. An attacker who can supply a malicious experiment name or channel id to that
-application already has the ability to run code as that user, so nothing is gained by
-escaping it. Injection is a defence against a *less*-privileged input reaching a *more*-
-privileged executor, and that gradient does not exist here.
+**Why.** There is no privilege boundary for an injection to cross. The database is a local
+SQLite file, opened by a desktop app, owned by and running as the user who launched it. An
+attacker who can supply a malicious experiment name to that application can already run
+code as that user. Injection defends a privilege *gradient*, and there is none here.
 
-**Consequences worth knowing.** Correctness bugs from interpolation are a different matter
-and *have* been fixed on their merits - `MetadataView`/`ProteinView` converting
-experiment/channel values once at the derivation site, and the earlier quote-escaping so
-legitimate experiment names stop breaking queries (both in `changelog.md`). Accepting
-`S608` is not a licence to leave interpolation that produces *wrong results*.
+**Consequences.** Correctness bugs from interpolation are a different matter and have been
+fixed on their merits - `MetadataView`/`ProteinView` converting experiment/channel values
+once at the derivation site, and quote-escaping so legitimate experiment names stop breaking
+queries. Accepting `S608` is not a licence to leave interpolation that produces *wrong
+results*.
 
-**Revisit if.** The database is ever opened over a network path with multiple users at
+**Revisit if** the database is ever opened over a network path with multiple users at
 different privilege levels, exposed through a service, or fed by a file the user did not
-create - any of which introduces the privilege gradient this decision says does not exist.
+create.
 
 ---
 
 ## 2026-08-31 - Plugin name collisions are the user's to rename, not ours to accommodate
 
-**Context.** Plugin discovery walks `poriscope/plugins/` and then the user plugin folder
-into one flat map keyed by the plugin's class name, which is also its filename stem. Until
-2026-08-31 a collision was silent and last-writer-wins, so a user file named after a
-built-in replaced the shipped plugin with no way to tell which had run. Fixing that raised
-the question of what *should* happen, and several accommodating answers were on the table:
-let the user copy win and report the override, keep both under disambiguated names, or
-record provenance so a run could at least be attributed after the fact.
+**Context.** Discovery walks `poriscope/plugins/` then the user plugin folder into one flat
+map keyed by class name (also the filename stem). A collision used to be silent and
+last-writer-wins. Fixing it raised what *should* happen: let the user copy win and report
+the override, keep both under disambiguated names, or record provenance.
 
-**Decision.** None of those. `populate_available_plugins` keeps a set of the names already
-claimed and logs at `ERROR` - which `QtHandler` raises as a dialog - for any later file
-claiming a taken name, and skips it. The first file found wins, and built-ins are walked
-first, so **a built-in cannot be displaced by a user plugin of the same name**. The user is
-told which file was ignored and that renaming it will load it.
+**Decision.** None of those. Discovery keeps a set of claimed names and logs at `ERROR` -
+which `QtHandler` raises as a dialog - for any later file claiming a taken name, skipping
+it. The first file found wins and built-ins are walked first, so **a built-in cannot be
+displaced by a user plugin of the same name**. The user is told which file was ignored and
+that renaming it will load it.
 
-**Reasoning.** The goal is that people rename their collisions, not that the application
-manages collisions in a way that lets them persist. A name that resolves to two different
-implementations is ambiguous in the session history and in any discussion of a result, and
-an override mechanism - however well reported - is a way of living with that ambiguity
-rather than removing it. Making the failure loud and the remedy obvious (rename the file)
-costs the user one rename, once.
+**Why.** The goal is that people rename their collisions, not that the application manages
+collisions in a way that lets them persist. A name resolving to two implementations is
+ambiguous in session history and in any discussion of a result; an override mechanism -
+however well reported - lives with that ambiguity instead of removing it.
 
-**Consequences worth knowing.** There is deliberately no way to override a shipped plugin
-by shadowing its filename. Someone who wants to modify a built-in's behaviour must give
-their plugin its own name, which is also what makes the modification visible in the menus
-and in session history. The check is keyed on the plugin name alone rather than per
-metaclass, because plugin names are unique application-wide - the menus and
-`DataPluginController`'s key-uniqueness check both rely on it - and a collision across two
-different metaclasses was the quietest variant, leaving both classes live under one name in
-two different menus.
+**Consequences.** There is deliberately no way to override a shipped plugin by shadowing its
+filename; a modified built-in must have its own name, which also makes the modification
+visible in the menus and session history. The check is keyed on the name alone rather than
+per metaclass, because plugin names are unique application-wide.
 
-**Revisit if.** A concrete workflow appears that genuinely needs a built-in replaced in
-place and cannot use a differently-named plugin. Reporting the override more elaborately -
-a provenance map, a panel message, a startup summary - is *not* a reason to revisit; that
-was considered and rejected as machinery around a problem the rename already solves.
+**Revisit if** a concrete workflow needs a built-in replaced in place and cannot use a
+differently-named plugin. Reporting the override more elaborately - a provenance map, a
+panel message, a startup summary - is *not* a reason; that was considered and rejected as
+machinery around a problem the rename already solves.
 
 ---
 
 ## 2026-08-28 - The view-test GC sweep stays; it is generation-limited, not removed
 
-**Context.** `tests/unit/views/conftest.py`'s autouse `_close_leftover_widgets` fixture
-ends with a `gc.collect()`. Matplotlib figures wrapping PySide6 widgets segfault in C++
-when their Python wrappers are collected asynchronously after the Qt widgets are already
-destroyed, and the explicit sweep forces that collection to happen deterministically
-while Qt is still alive. This was not a theoretical hazard: it produced repeated
-segfaults in CI and was settle through - `06679373` (2026-08-14) titled "prevent Matplotlib/
-PySide GC segfaults in view tests".
+**Context.** `tests/unit/views/conftest.py`'s autouse teardown ends with `gc.collect()`.
+Matplotlib figures wrapping PySide6 widgets segfault in C++ when their Python wrappers are
+collected after the Qt widgets are destroyed, and the explicit sweep forces collection
+while Qt is still alive. Not theoretical - it took three commits to settle repeated CI
+segfaults (`06679373`, `cc2fd863`, `d829d688`). Profiling on 2026-08-28 found this one call
+was the largest cost in the suite: **193.0s across 1,494 tests, 129ms each, 95.9% of all
+teardown time**.
 
-Profiling the teardown on 2026-08-28 found that this one call was the single largest
-cost in the whole test suite: **193.0s across 1,494 tests, 129ms each, 95.9% of all
-teardown time and 55% of the view tree's wall clock** - roughly 30% of the entire suite.
+**Decision.** Keep the per-test sweep. Make it generation-limited - `gc.collect(1)` every
+test, full `gc.collect()` every 50 - rather than removing or de-frequencing it.
 
-**Decision.** Keep the per-test sweep. Make it generation-limited - `gc.collect(1)`
-after every test, with a full `gc.collect()` every 50 - rather than removing or
-de-frequencing it.
-
-**Evidence.** Measured on the full view tree, back to back, all variants 1,494 passed:
+**Evidence.** Full view tree, back to back, all variants 1,494 passed:
 
 | variant | wall clock |
 | --- | --- |
@@ -562,237 +396,154 @@ de-frequencing it.
 | `gc.collect(0)` every test | 184.9s |
 | no GC at all | 163.7s |
 
-Removing the sweep entirely is only 4.8s faster than the chosen option and gives up the
-property that fixed CI. Dropping to "full sweep every 50 only" is both slower *and* less
-safe, because it is the only fast variant that stops collecting after every test. The
-chosen option reaches 97% of the theoretical maximum while changing the cadence not at
-all: a collection still runs after every single test. The one behavioural difference is
-that an object promoted to generation 2 waits up to 50 tests for its full sweep instead
-of zero.
+Removing the sweep is only 4.8s faster and gives up the property that fixed CI. "Full every
+50 only" is both slower *and* less safe - the only fast variant that stops collecting after
+every test. The chosen option reaches 97% of the no-GC floor without changing the cadence
+at all. A full collect walks the long-lived generation holding PySide6, numpy, pandas,
+sklearn and matplotlib; that traversal is the 129ms, and per-test Qt garbage is not in it.
 
-Why generation-limiting is nearly free: a full collect walks every generation, including
-the long-lived one holding PySide6, numpy, pandas, sklearn and matplotlib. That old-
-generation traversal is the 129ms, and per-test Qt garbage is not in it. Note also that
-`gc.collect(0)` is *slower* than `gc.collect(1)`, and that the periodic full sweep makes
-the run faster than `gc.collect(1)` alone - leaving garbage uncollected costs more later
-than collecting it costs now.
+**Caveat.** All six runs are Windows; CI is Linux under Xvfb, where destruction ordering
+differs and the original segfaults appeared. One condition has genuinely changed: at the
+time of those segfaults teardown only called `widget.close()`, so wrappers accumulated and
+were swept in large unpredictable batches. As of `d2ac785b` widgets are destroyed
+deterministically. That lowers the risk; it does not eliminate it.
 
-**A caveat on the evidence.** All six runs above are Windows. CI is Linux under Xvfb,
-where Qt/Shiboken destruction ordering differs, and that is where the original segfaults
-appeared. Local green runs are not a substitute for a green CI run here.
-
-One condition has genuinely changed since those segfaults, which is why this was worth
-revisiting at all: when they occurred, the teardown only called `widget.close()`, which
-hides a widget without destroying it, so Shiboken wrappers accumulated for the life of
-the process and were swept in large unpredictable batches - the exact failure mode. As of
-`d2ac785b` widgets are destroyed deterministically at each teardown. That lowers the risk;
-it does not eliminate it.
-
-**Revisit if.** A segfault reappears in CI in the view tests. The first thing to try is
-restoring the unconditional full `gc.collect()` - a one-line change at the call site -
-before investigating anything else. Do not "simplify" `gc.collect(1)` to `gc.collect()`
-on the assumption it is a typo; it is deliberate and costs 172s.
+**Revisit if** a segfault reappears in CI in the view tests - first try restoring the
+unconditional full `gc.collect()`, a one-line change. Do **not** "simplify" `gc.collect(1)`
+to `gc.collect()` on the assumption it is a typo; it costs 172s.
 
 ---
 
 ## 2026-08-25 - Keep the four `None`-placeholder `type: ignore`s in `PeakFinder`
 
 **Context.** `PeakFinder._populate_event_metadata` deliberately stores `None` for
-`unfolded_level`, `folded_level`, `translocation_direction` and `sequence`, because those
-are decided globally in `_post_process_events` and cannot be known per event.
-`MetaEventFitter._populate_event_metadata` declares its return as
-`Dict[str, Union[int, float, str, bool]]`, and `_define_event_metadata_types` separately
-declares those same four keys as `float`/`float`/`str`/`str`, so both contracts disagree
-with the value actually written. Four narrow `# type: ignore[assignment]` mark the sites.
+`unfolded_level`, `folded_level`, `translocation_direction` and `sequence`, which are
+decided globally in `_post_process_events` and cannot be known per event. Both
+`MetaEventFitter._populate_event_metadata`'s declared return and
+`_define_event_metadata_types` disagree with the value written; four narrow
+`# type: ignore[assignment]` mark the sites.
 
 **Decision.** Leave them. Do not widen the ABC to clear them.
 
-**Evidence.** The behaviour is correct: `SQLiteDBWriter` maps the declared types through
-`pytype_to_sql_type` to build `REAL`/`TEXT` columns, and SQLite accepts `NULL` in any
-column without a `NOT NULL` constraint, so nothing fails at runtime. This is a
-type-contract mismatch, not a latent crash. Against that, clearing it means widening two
-`Meta*` ABC methods to `Optional[...]`, and because `test_plugin_compliance.py` compares
-annotations **by equality** every override has to move in lockstep - `CUSUM`,
-`IntraCUSUM`, `NoFitter`, `NanoTrees`, `PeakFinder` and `Basic_PeakFinder`, six files, two
-of which belong to another developer and one of which may be deprecated. It would also be
-a breaking change to the plugin contract requiring a changelog callout. Four documented
-suppressions are the smaller cost.
+**Evidence.** The behaviour is correct: `SQLiteDBWriter` maps declared types to
+`REAL`/`TEXT` columns and SQLite accepts `NULL` in any column without `NOT NULL`. This is a
+type-contract mismatch, not a latent crash. Clearing it means widening two `Meta*` ABC
+methods to `Optional[...]`, and because `test_plugin_compliance.py` compares annotations
+**by equality**, every override moves in lockstep - `CUSUM`, `IntraCUSUM`, `NoFitter`,
+`NanoTrees`, `PeakFinder`, `Basic_PeakFinder`: six files, two owned by another developer and
+one a deprecation candidate. It would also be a breaking change to the plugin contract.
 
-**The cheaper alternative if it is ever wanted.** Do not write the keys at all until
-post-processing fills them - absence rather than `None`. The columns still come from
-`_define_event_metadata_types`, so the schema is unaffected. That is a logic change in the
-owning developer's file and needs checking that the writer tolerates a row missing a
-declared key.
+**Cheaper alternative if ever wanted:** do not write the keys at all until post-processing
+fills them - absence rather than `None`. The schema still comes from
+`_define_event_metadata_types`. That is a logic change in the owning developer's file and
+needs checking that the writer tolerates a row missing a declared key.
 
-**Revisit if.** A third-party plugin ecosystem exists, or someone wants `NOT NULL`
+**Revisit if** a third-party plugin ecosystem exists, or someone wants `NOT NULL`
 constraints on those columns.
 
 ---
 
-## 2026-08-25 - Do not consolidate the double-Gaussian fits; the owner is rewriting them
+## 2026-08-25 - Do not consolidate the double-Gaussian fits (RESOLVED)
 
-**Context.** Three separate double-Gaussian implementations existed: `bitthresh`'s nested
-`dgfit`, `ProteinView._fit_double_gaussian`, and `PeakFinder.fit_2_gauss`. Consolidating
-onto the ProteinView implementation was scoped in detail - it is the only one with a
-sanity-check layer (covariance checks, a t-test on mean separation, an amplitude-ratio
-floor), and its normalization turned out to live in the caller rather than in the fit, so
-it is already scale-agnostic and portable as-is.
+Three implementations existed: `bitthresh`'s nested `dgfit`,
+`ProteinView._fit_double_gaussian`, and `PeakFinder.fit_2_gauss`. Consolidating onto the
+ProteinView one was deferred because the owner was rewriting the fitting code.
 
-**Decision.** Do not do it. The developer who owns the PeakFinder family is rewriting that
-fitting code from scratch, which supersedes the consolidation.
-
-**What was done instead.** `fit_2_gauss` was deleted. It had no call sites and could not
-have run: beyond a nested `Gauss` declared with four parameters and called with five, it
-passed a 1000-point linspace as `xdata` against the raw `(N, 1)` sample array as `ydata` -
-rejected by `curve_fit` unless an event is exactly 1000 samples, and not a distribution
-fit in any case, since both axes are current values rather than bin centres and counts.
-Deleting a dead third implementation does not conflict with a rewrite. `bitthresh` and
-`dgfit` are untouched and remain the live path.
-
-**Revisit if.** The rewrite lands and still leaves two divergent implementations, at which
-point the ProteinView port is the obvious target and the scoping above still holds.
-
-**Outcome (2026-08-25).** Resolved as scoped. The rewrite landed and *is* the ProteinView
-port: `bitthresh` and its nested `dgfit` are deleted, and `PeakFinder`'s three classifiers
-now call a `fit_threshold` built on ported copies of `_double_gaussian` and
-`_fit_double_gaussian`. Two divergent implementations remain in the codebase only in the
-sense that ProteinView still owns the originals; the fitting *logic* is now shared by
-copy rather than by import, because the two live in different plugin families with no
-common base. Folding that into one shared helper is a further step, not a blocker. Note
-the port keeps only the convergence checks from
-`_fit_and_sanity_check_double_gaussian` - the perr, t-test and amplitude-ratio rejections
-were dropped on purpose so the fit's failure rate stays observable, and the reasoning is
-recorded at the method and in `changelog.md`.
+**Outcome.** The rewrite landed and *is* the ProteinView port: `bitthresh` and `dgfit` are
+deleted and `PeakFinder`'s classifiers call a `fit_threshold` built on ported copies of
+`_double_gaussian`/`_fit_double_gaussian`. `fit_2_gauss` was deleted separately - it had no
+callers and could not have run. The logic is now shared by copy rather than by import,
+because the two live in different plugin families with no common base; folding them into
+one helper is a further step, not a blocker. The port keeps only the convergence checks and
+drops the perr, t-test and amplitude-ratio rejections on purpose, so the fit's failure rate
+stays observable.
 
 ---
 
 ## 2026-08-24 - Leave two of the three unguarded `Optional` Qt accessors alone
 
-**Context.** The type-annotation pass flagged three families of Qt accessor that return
-`Optional` and are used without a `None` check: `QApplication.instance()`,
-`QComboBox.lineEdit()`, and `QTreeWidgetItem.child(i)`/`topLevelItem(i)`.
+**Context.** The annotation pass flagged three Qt accessor families returning `Optional` and
+used without a `None` check: `QApplication.instance()`, `QComboBox.lineEdit()`, and
+`QTreeWidgetItem.child(i)`/`topLevelItem(i)`.
 
-**Decision.** Only `lineEdit()` was changed. It is now bound once in `__init__`,
-immediately after the `setEditable(True)` that makes it non-`None`, because that
-guarantee previously sat hundreds of lines away from the uses depending on it. The other
-two need no action and should not be "fixed" later:
+**Decision.** Only `lineEdit()` was changed - now bound once in `__init__` immediately after
+the `setEditable(True)` that makes it non-`None`, because that guarantee previously sat
+hundreds of lines from the uses depending on it. The other two need no action:
 
-- `QApplication.instance()` is called inside a `QWidget.__init__`. A `QWidget` cannot be
-  constructed before a `QApplication` exists, so `None` is unreachable there.
-- `item.child(j)` / `topLevelItem(i)` are always called inside
-  `for j in range(...childCount())`, so the index is always valid. This is mypy being
-  unable to connect `range(n)` with "valid index", not a defect.
+- `QApplication.instance()` is called inside a `QWidget.__init__`, and a `QWidget` cannot be
+  constructed before a `QApplication` exists.
+- `child(j)`/`topLevelItem(i)` are always called inside `for j in range(...childCount())`.
+  This is mypy being unable to connect `range(n)` with "valid index".
 
-**Revisit if.** Either call moves somewhere that is not a widget constructor, or an
-index stops being derived from the matching count.
+**Revisit if** either call moves outside a widget constructor, or an index stops being
+derived from the matching count.
 
 ---
 
-## 2026-08-24 - `@log` erases decorated signatures (RESOLVED 2026-08-26)
+## 2026-08-26 - `@log` no longer erases decorated signatures (RESOLVED)
 
-**Context.** `LogDecorator.log` is declared `-> Callable`, i.e. `Callable[..., Any]`.
-Applying it therefore replaces the decorated method's type with `Any` from the caller's
-point of view. Verified with `reveal_type` against the project mypy: for a method
-`decorated(self, x: int) -> str`, `reveal_type(p.decorated)` is `Any` and
-`reveal_type(p.decorated(1))` is `Any`, while the undecorated twin reveals
-`def (x: int) -> str` and `str`. A deliberately wrong call - `p.decorated("not an int")`
-- raises no error, where the same call on the undecorated twin does.
+`LogDecorator.log` was declared `-> Callable`, so applying it to its 935 call sites replaced
+each decorated method's type with `Any` from the caller's point of view. Fixed in `5a215d8`:
+`log` and `register_action` take a `TypeVar` bound to `Callable` and return the type they
+were handed. Runtime is unchanged.
 
-**Why it matters.** `@log(logger=logger)` is applied to **935 methods across 71 files**.
-So the type-annotation pass had made every *body* checkable, but call sites into any
-decorated method were still unchecked, and turning on `disallow_untyped_defs` would not
-have changed that. That is why this had to be fixed before the pass could be closed.
-
-**Original decision (2026-08-24).** Not fixed as part of the annotation pass, which was
-scoped to hints and docstrings. Recorded as a prerequisite for getting full value from
-step 7.
-
-**RESOLVED 2026-08-26 (commit `5a215d8`).** Fixed as written: `log` and `register_action`
-now take a `TypeVar` bound to `Callable` and return the type they were handed, with
-`@overload`s for `log`'s two calling conventions. `reveal_type` confirms the erasure is
-gone - a decorated `(x: int) -> str` reveals as `def (x: int) -> str` rather than `Any`,
-generator methods keep their `Generator[...]` type through the `yield from` wrapper, and
-deliberately wrong calls now error. Runtime is unchanged; the two `cast()` calls are
-no-ops and `functools.wraps` / `inspect.signature` / `isgeneratorfunction` all behave as
-before.
-
-**What it cost, which is the part worth knowing.** Turning it on surfaced **84 call-site
-errors** under a gate that had been reporting **clean**. 32 were annotation defects and
-were fixed in the same commit; **52 were genuine logic defects**, all since resolved -
-see `changelog.md` for what each of them was. So the pre-commit gate's clean history up
-to this point should not be read as evidence that call sites were ever checked - they
-were not. Treat any pre-`5a215d8` claim of "mypy clean" accordingly.
+**The part worth keeping:** turning it on surfaced **84 call-site errors** under a gate that
+had been reporting clean - 32 annotation defects and 52 genuine logic defects, all since
+resolved (see `changelog.md`). So any pre-`5a215d8` claim of "mypy clean" is not evidence
+that call sites were ever checked. They were not.
 
 ---
 
 ## 2026-08-26 - Never `@overload` around an over-broad return union
 
 **Context.** `MetaReader.get_channel_length` was
-`(self, channel: Optional[int] = None) -> int | Dict[int, int]` - one channel's sample
-count when given a channel, a dict of every channel when given nothing. Because mypy
-resolves a return type from the declaration and not from the argument passed, every caller
-saw the union, and 15 of the 84 errors above were arithmetic on `int | dict[int, int]`.
-The obvious typing fix is two `@overload` stubs.
+`(self, channel: Optional[int] = None) -> int | Dict[int, int]`. mypy resolves a return type
+from the declaration, not the argument, so every caller saw the union and 15 call-site
+errors were arithmetic on it. The obvious typing fix is two `@overload` stubs.
 
-**Decision.** Do not do that. When a return union makes a value unusable at its call
-sites, **verify every incoming call and delete the dead branch instead**. `cast()` at the
-call sites is equally rejected. If *both* arms turn out to be genuinely live, **flag it
-for review** rather than overloading - the preferred resolution is to change the incoming
-calls so the branch is unnecessary. In practice `@overload` is never the answer here.
+**Decision.** Do not. When a return union makes a value unusable at its call sites,
+**verify every incoming call and delete the dead branch instead**. `cast()` at the call
+sites is equally rejected. If both arms are genuinely live, **flag it for review** rather
+than overloading - the preferred resolution is to change the incoming calls.
 
-**Evidence.** The `get_channel_length` dict branch had **no callers anywhere**: all five
-call sites in `poriscope/` passed a channel, the `MetaReader` test double at
-`tests/unit/utils/test_meta_event_finder.py:48` has always declared `channel` as required,
-and internally the dict was reached through the `total_channel_samples` attribute directly
-rather than through the method. The union dated to the initial commit and no caller ever
-motivated it. Narrowing to `(self, channel: int) -> int` cleared all 15 errors with no
-casts and no overloads. `MainModel.get_available_plugins` had the identical shape and the
-identical outcome.
+**Evidence.** The dict branch had **no callers anywhere**: all five sites in `poriscope/`
+passed a channel, the `MetaReader` test double has always declared `channel` as required,
+and internally the dict was reached through `total_channel_samples` directly. Narrowing to
+`(self, channel: int) -> int` cleared all 15 errors with no casts.
+`MainModel.get_available_plugins` had the identical shape and outcome.
 
-**On breaking the plugin contract.** Both of those are public API - `MetaReader` is a
-`Meta*` ABC. This is acceptable: there are no third-party plugins in existence yet. The
-obligation that remains is that **the break is called out explicitly in `changelog.md`**,
-because the changelog is what a future plugin author will read.
+**On breaking the plugin contract.** Both are public API and `MetaReader` is a `Meta*` ABC.
+Acceptable, because no third-party plugins exist yet. The remaining obligation is that
+**the break is called out explicitly in `changelog.md`**.
 
-**When both arms are genuinely live.** `MainModel.get_plugin_classes` was the first case
-where neither branch was dead: `main_controller.py:64` used the no-argument dict-of-dicts
-form and `:405` used `get_plugin_classes("MetaController")[subclass]`. The resolution is
-**to delete the optional-argument arm, not the parameter** - make the argument required so
-the function has one job and one return shape, and let the single call site that wanted the
-aggregate rebuild it with a comprehension. The preference is for functions that do not take
-`None` as a mode switch, not merely for functions that avoid unions.
+**When both arms are genuinely live.** `MainModel.get_plugin_classes` was the first such
+case. The resolution is **to delete the optional-argument arm, not the parameter** - make
+the argument required so the function has one job and one return shape, and let the single
+call site wanting the aggregate rebuild it with a comprehension. First check whether that
+call site receives a *live reference* to a mutable attribute something else later mutates,
+since a comprehension hands over a fresh object; for `get_plugin_classes` it was safe.
 
-Check one thing before doing it: whether the call site currently receives a *live
-reference* to a mutable attribute that something else later mutates, since a comprehension
-hands over a fresh outer object instead. For `get_plugin_classes` that was safe -
-`available_plugin_classes` is populated exactly once in `MainModel.__init__` and never
-reassigned or mutated afterwards.
-
-**Revisit if.** A third-party plugin ecosystem actually exists, at which point the
-cost/benefit of narrowing an ABC changes and these become deprecation cycles instead.
+**Revisit if** a third-party plugin ecosystem exists, at which point narrowing an ABC
+becomes a deprecation cycle instead.
 
 ---
 
 ## 2026-08-26 - Scoping the mypy hook to `poriscope/` gives up type-checking of `tests/`
 
-**Context.** Step 6 scoped the pre-commit `mypy` hook with `files: ^poriscope/`, because
-it had been passing test files as explicit paths and `mypy.ini`'s `exclude = ^tests/`
-does not apply to explicitly listed paths - only to directory discovery.
+**Context.** The pre-commit `mypy` hook is scoped `files: ^poriscope/`, because it had been
+passing test files as explicit paths and `mypy.ini`'s `exclude = ^tests/` governs directory
+discovery only.
 
-**Decision.** Accept that test files are now unchecked by the gate.
+**Decision.** Accept that test files are unchecked by the gate.
 
-**Evidence, including the cost.** That blind spot was not purely noise: it caught a real
-defect once, the `{"MetaReader": []}` fixture shape in
-`tests/unit/controllers/test_data_plugin_controller.py` that should have been
-`{"MetaReader": {}}` (see `changelog.md`, "Type annotations for data-plugin management").
-So this trades away one genuine finding source. It is still right: `tests/` is excluded by
-project policy in `mypy.ini`, the hook was contradicting that policy by accident rather
-than by design, and leaving it would mean `disallow_untyped_defs` starts failing every
-commit on unannotated test code that nobody intends to annotate. If test type-checking is
-ever wanted, it should be a deliberate second hook with its own config, not a side effect
-of how pre-commit passes filenames.
+**Evidence, including the cost.** The blind spot caught a real defect once - the
+`{"MetaReader": []}` fixture shape in `test_data_plugin_controller.py` that should have been
+`{"MetaReader": {}}`. Still right: `tests/` is excluded by policy in `mypy.ini`, the hook
+was contradicting that policy by accident, and leaving it would mean `disallow_untyped_defs`
+failing every commit on unannotated test code nobody intends to annotate. If test
+type-checking is wanted, it should be a deliberate second hook with its own config.
 
-**Revisit if.** Someone decides `tests/` should be type-checked on purpose.
+**Revisit if** someone decides `tests/` should be type-checked on purpose.
 
 ---
 
@@ -800,225 +551,112 @@ of how pre-commit passes filenames.
 
 **Context.** A stub-aware `mypy poriscope` reports 191 `attr-defined` errors of the form
 `"type[QSizePolicy]" has no attribute "Expanding"` across ~11 files, because the bundled
-PySide6 stubs no longer declare the unscoped enum members.
+stubs no longer declare the unscoped enum members.
 
 **Decision.** Do not rewrite them to the scoped form (`QSizePolicy.Policy.Expanding`).
 
-**Evidence.** On the installed PySide6 6.9.0, `QSizePolicy.Expanding` emits no warning of
-any kind, and `QSizePolicy.Expanding is QSizePolicy.Policy.Expanding` is `True` - as is
-the equivalent for `Qt.AlignCenter`. These are the identical objects, not lookalike
-aliases, so this is a stub omission rather than a code defect. A 191-site mechanical
-rename with no behavioural change would make review harder, not easier: it buries real
-changes and rewrites `git blame` across eleven files. The tempting justification - that
-clearing them makes a stub-aware mypy usable as a review tool - does not hold either,
-because of the 377 errors that run reports, roughly 308 are noise from other sources
-(34 `import-untyped`, 38 `MetaController.view`/`model`, 34 numpy stub pedantry, 11
-known-accepted `sublevel_starts`), so clearing the enums alone still leaves ~117 noise
-items against a handful of real findings.
+**Evidence.** On PySide6 6.9.0, `QSizePolicy.Expanding` emits no warning and
+`QSizePolicy.Expanding is QSizePolicy.Policy.Expanding` is `True` - identical objects, so
+this is a stub omission, not a code defect. A 191-site mechanical rename would bury real
+changes and rewrite `git blame` across eleven files. The tempting justification - that
+clearing them makes a stub-aware mypy usable for review - does not hold: of the 377 errors
+that run reports, ~308 are noise from other sources (34 `import-untyped`, 38
+`MetaController.view`/`model`, 34 numpy stub pedantry, 11 known-accepted
+`sublevel_starts`), so clearing the enums still leaves ~117 noise items.
 
-**Revisit if.** PySide6 deprecates or removes forgiving-enum mode. Waiting costs nothing:
-on the day it changes, every site fails loudly at widget construction and the fix is a
-mechanical find-and-replace with the failures pointing at each location.
+**Revisit if** PySide6 removes forgiving-enum mode. Waiting costs nothing: every site would
+fail loudly at widget construction, pointing at its own location.
 
 ---
 
 ## 2026-08-24 - Accept that the pre-commit mypy hook cannot see project dependencies
 
 **Context.** The `mirrors-mypy` hook runs in an isolated virtualenv containing only mypy,
-with `additional_dependencies: []` and upstream default args
-`["--ignore-missing-imports", "--scripts-are-modules"]`. PySide6, numpy, pandas, scipy
-and sklearn therefore all resolve to `Any` under the gate. Concretely,
-`reveal_type(button_mapping.get(button_type, lambda: None))` where
-`button_mapping: Dict[str, QPushButton]` prints `Any` under the hook and
-`QPushButton | (def ())` under the project venv's mypy - which is why the gate could not
-see the `on_button_clicked` fallback bug.
+with `--ignore-missing-imports`, so PySide6, numpy, pandas, scipy and sklearn all resolve to
+`Any` under the gate. Concretely,
+`reveal_type(button_mapping.get(button_type, lambda: None))` prints `Any` under the hook and
+`QPushButton | (def ())` under the project venv - which is why the gate could not see the
+`on_button_clicked` fallback bug.
 
-**Decision.** Do not add stubs to the hook. Do not treat this as a blocker for flipping
-the type-policy flags.
+**Decision.** Do not add stubs to the hook, and do not treat this as a blocker for the
+type-policy flags.
 
-**Evidence.** See the composition breakdown in the entry above: the genuine signal was 11
-`union-attr` findings, all one narrow class (a Qt getter that can return `None`), of
-which three were the `button_mapping` bug and eight remain in `SelectionTree.py` and
-`MetaView.__init__`. Against that, closing the gap means suppressing or fixing ~191 enum
-sites first and then keeping pinned stub versions in sync with the runtime PySide6
-forever - and stub drift is what produced that noise in the first place. The hook still
-checks all first-party logic and the whole `Meta*` plugin contract, which is the
-load-bearing part of this architecture.
+**Evidence.** The genuine signal was 11 `union-attr` findings, all one narrow class (a Qt
+getter that can return `None`), three of which were the `button_mapping` bug and eight of
+which remain in `SelectionTree.py` and `MetaView.__init__`. Against that, closing the gap
+means suppressing or fixing ~191 enum sites first and then keeping pinned stub versions in
+sync with the runtime PySide6 forever - and stub drift produced that noise in the first
+place. The hook still checks all first-party logic and the whole `Meta*` plugin contract.
 
-**Cheaper alternative if wanted.** Run `mypy poriscope` in the dev venv periodically and
-review by hand - possible today with no config change - or add it to the pre-PR
-checklist, rather than making it block commits.
+**Cheaper alternative:** run `mypy poriscope` in the dev venv periodically and review by
+hand, or add it to the pre-PR checklist, rather than making it block commits.
 
-**Revisit if.** The `union-attr` class of bug starts recurring in production, or the enum
+**Revisit if** the `union-attr` class of bug starts recurring in production, or the enum
 noise is cleared for other reasons.
 
 ---
 
 ## 2026-08-24 - The walkthrough `moveEvent` hook is not the cause of the test-suite segfault
 
-**Context.** Running `pytest tests/unit/views tests/unit/plugins` (views first) segfaults
-the interpreter inside
-`test_walkthrough_mixin.py::test_no_valid_widgets_logs_error`. Commit `bc09de7` had just
-replaced a `moveEvent` monkey-patch with a real class-level override on `StepDialog`,
-which was a plausible cause: it puts a Python virtual on the move path, `StepDialog`
-starts a 300 ms `reposition_timer` that calls `move()`, and the file already carries a
-documented `Overlay`/`StepDialog` double-delete hazard (two tests are skipped for
-"Qt object lifetime makes this unreliable across platforms").
+Kept because this hook is exactly the kind of change the crash would be blamed on again.
+`bc09de7` (replacing a `moveEvent` monkey-patch with a real class-level override on
+`StepDialog`) was a plausible cause of the `pytest tests/unit/views tests/unit/plugins`
+segfault, and is **exonerated**: the same subset was re-run with `walkthrough.py` and
+`walkthrough_mixin.py` checked back to `0e9433c` (pre-`bc09de7`, `on_move` absent) and it
+crashed identically - same access violation, same test, same point in the run.
 
-**Decision.** `bc09de7` is exonerated. Do not revert it, and do not re-derive this
-theory.
-
-**Evidence.** The same subset was re-run with `walkthrough.py` and `walkthrough_mixin.py`
-checked back to `0e9433c` (pre-`bc09de7`, `on_move` absent from both files, verified) and
-the views-first ordering held constant. It crashed identically - same access violation,
-same test, same point in the run. The real cause is pre-existing Qt state leakage that
-only manifests when `tests/unit/views` runs before `tests/unit/plugins`; pytest executes
-explicitly listed paths in the order given, and natural alphabetical collection puts
-`plugins` first, which is why CI and the full suite never see it.
-
-**Revisit if.** The crash appears under natural collection order, which would mean it is
-a different problem.
-
-**Resolved 2026-08-24.** Bisected to `tests/unit/views/widgets/test_multiselect_filter.py`
--> `TestClearSelectionList` -> the single `listWidget.clear()` call, and fixed by disposing
-of widgets with `deleteLater()` plus a drained event loop instead of `QWidget.destroy()`.
-See `changelog.md`. The exoneration above stands and is kept because the `moveEvent` hook
-is exactly the kind of change this crash would be blamed on again.
+**Resolved 2026-08-24.** Bisected to `test_multiselect_filter.py` ->
+`TestClearSelectionList` -> a single `listWidget.clear()`, and fixed by disposing of widgets
+with `deleteLater()` plus a drained event loop instead of `QWidget.destroy()`.
 
 ---
 
-## 2026-08-25 - Leave `_load_filter`'s DOC501/DOC503 baselined; the `ValueError` never escapes
+## 2026-08-25 - `check-class-attributes` stays `false`; the pydoclint parser is broken upstream
 
-**Context.** Step 4 finished the in-scope pydoclint backlog and left five entries in the
-baseline. Four of them are a matched DOC501/DOC503 pair on `MetadataView._load_filter`
-(`MetadataView.py:1802`) and `ProteinView._load_filter` (`ProteinView.py:1295`): each body
-contains `raise ValueError("Invalid filter file format. Expected a dictionary.")` while the
-docstring has no `Raises` section.
+**Context.** `IntroDialog`'s class docstring documented its Qt signal as
+`.. attribute :: start_walkthrough` - with a space before the `::`, which docutils reads as
+a comment, so Sphinx rendered nothing for it. Correcting the RST turned one DOC605 into two
+findings (DOC601 + DOC603), as did every canonical field form (`:ivar:`, `:cvar:`, `:var:`)
+and every attribute-annotation variant - all measured directly rather than guessed.
 
-**Decision.** Do not add a `:raises ValueError:` line to either docstring. Leave both pairs
-baselined.
+**Cause.** `docstring_parser_fork/rest_attr_parser.py` hardcodes the literal
+`".. attribute ::"`, so pydoclint recognises **only** the form Sphinx ignores and ignores
+the form Sphinx renders. pydoclint's own documentation prescribes the invalid spelling. Both
+packages were at their latest release (`pydoclint` 0.9.1, `docstring_parser_fork` 0.0.16).
 
-**Evidence.** In both methods the `raise` sits inside a `try:` whose `except Exception as e:`
-is in the *same function* and merely logs (`self.logger.error(f"Failed to load filters: {e}")`).
-The exception cannot reach a caller, so documenting it would tell callers to handle something
-they will never see - strictly worse than the current silence. pydoclint's DOC501 counts
-`raise` statements syntactically and does no try/except reachability analysis, so it reports
-these regardless.
+**Decision.** The RST in `walkthrough.py` is corrected so Sphinx renders the signal, and
+`check-class-attributes = false` in `pyproject.toml` with the rationale recorded inline.
+Filed upstream as https://github.com/jsh9/pydoclint/issues/304.
 
-**What would actually fix it.** The `raise`/`except` pair is being used as a local goto: the
-honest form is to log the error and `return` at that point instead of raising into the
-function's own handler. That is a logic change, deliberately out of scope for the
-type-annotation pass, and it is queued in `future_fixes.md`.
-
-**Revisit if.** That control flow is straightened out, at which point both pairs disappear
-from the baseline on their own.
-
-**Resolved 2026-08-25.** The control flow was straightened out on request. The read and
-parse step keeps a narrow `except (OSError, json.JSONDecodeError)`, the shape check is a
-plain log-and-return, and the forty lines of combo-box and signal work below are no longer
-wrapped - so a genuine Qt failure there now surfaces instead of being swallowed. Both
-`DOC501`/`DOC503` pairs disappeared with the `raise`. See `changelog.md`.
-
----
-
-## 2026-08-25 - Leave `IntroDialog`'s DOC605 baselined rather than keep malformed RST to satisfy it
-
-**Context.** The fifth surviving in-scope baseline entry is DOC605 on `IntroDialog`
-(`plugins/analysistabs/utils/walkthrough.py:52`), whose class docstring documents its Qt
-signal as:
-
-```
-    .. attribute :: start_walkthrough
-        :type: Signal
-```
-
-against a bare `start_walkthrough = Signal()`. Note the space before the `::`.
-
-**Decision.** Leave it exactly as it is, and leave the DOC605 baselined.
-
-**Evidence.** Every combination was measured against pydoclint directly rather than guessed:
-
-| Docstring form | Attribute declaration | Result |
-| --- | --- | --- |
-| `.. attribute :: ` (as-is) | `= Signal()` | DOC605 - one entry |
-| `.. attribute:: ` (valid RST) | `= Signal()` | DOC601 + DOC603 - two entries |
-| `.. attribute:: ` | `: Signal = Signal()` | DOC601 + DOC603 |
-| `.. attribute:: ` | `: ClassVar[Signal] = Signal()` | DOC601 + DOC603 |
-| `:ivar:`/`:vartype:` | either | DOC601 + DOC603 |
-| `.. attribute :: ` (as-is) | `: Signal = Signal()` | clean |
-
-So the only form pydoclint accepts is the one that keeps the malformed directive. Correcting
-the reStructuredText makes the baseline *worse*, because pydoclint stops recognising the
-attribute at all.
-
-**The cost of leaving it.** `.. attribute :: name` is not a valid docutils directive - the
-space before `::` turns it into a comment - so Sphinx renders nothing for it either. This is
-the codebase's only use of the construct, so there is no convention at stake.
-
-**What would actually fix it.** Either set `check-class-attributes = false` under
-`[tool.pydoclint]`, which is defensible given that no sphinx-style attribute syntax appears to
-satisfy this version, or annotate the signal and switch the docstring to a form that both
-Sphinx and pydoclint read. The latter touches a PySide6 `Signal` declaration and so needs a
-test run; it is not a docstring-only change and was therefore out of scope for step 4.
-
-**Revisit if.** `pydoclint` fixes the parser, at which point the correct directive should
-start being recognised and the check can be turned back on.
-
-**Resolved 2026-08-25, and the cause is an upstream bug rather than a quirk.**
-`docstring_parser_fork/rest_attr_parser.py` hardcodes the literal `".. attribute ::"` -
-*with a space before the `::`* - in both `parse_attributes()` and `parse_attribute_block()`.
-That is not a valid reStructuredText directive: docutils requires `.. name:: arguments`, and
-the extra space makes the line a comment, which is why Sphinx rendered nothing for it. The
-correct `.. attribute::` form and every canonical field form (`:ivar:`, `:cvar:`, `:var:`)
-all parse to an empty attribute list, so under sphinx style the check could only ever fire
-against docstrings that were wrong. pydoclint's own documentation page prescribes the
-invalid spelling. Both packages were already at their latest release (`pydoclint` 0.9.1,
-`docstring_parser_fork` 0.0.16), so there was no upgrade to take.
-
-The resolution was therefore to correct the reStructuredText in `walkthrough.py` so Sphinx
-actually renders the signal, and set `check-class-attributes = false` in `pyproject.toml`
-with that rationale recorded inline. **The upstream bug has now been filed as
-https://github.com/jsh9/pydoclint/issues/304.** Nothing further is needed from this end;
-`check-class-attributes` stays `false` until a `pydoclint` release fixes the parser, per
-the revisit condition above. The one-line fix and a reproduction are kept in
-`future_fixes.md` in case the report needs to be restated.
+**Revisit if** a `pydoclint` release fixes the parser. Until then do not flip the setting
+back on; a one-line reproduction is kept in `future_fixes.md`.
 
 ---
 
 ## 2026-08-26 - Do not use GMM/BIC to decide whether a `PeakFinder` dataset has one population or two
 
 **Context.** A real dataset that `fit_threshold` fit as two populations (centres 1786/2087)
-turned out, on inspection of the source data, to be one - a single decaying population, not
-a fitting bug (the entry above this one already reached that conclusion independently). The
+turned out on inspection to be one - a single decaying population, not a fitting bug. The
 classifiers need to tell that case apart from a genuine two-population dataset, and BIC
-model selection was the obvious first candidate: `sklearn.mixture.GaussianMixture` is already
-imported and used elsewhere in `PeakFinder.py` (`classify_1d_distribution`), and comparing a
-1-component and a 2-component fit's BIC is the standard tool for exactly this question.
+model selection was the obvious candidate, since `GaussianMixture` is already imported.
 
-**Decision.** Do not use it. Comparing `GaussianMixture(n_components=1).bic()` against
-`GaussianMixture(n_components=2).bic()` on the raw samples **decisively picks 2 components
-on the real single-population dataset this feature exists for.** Measured on a tuned
-reconstruction of that dataset (sharp Gaussian core plus a decaying right shoulder, n=6233):
-BIC 88,198 at k=2 versus 90,936 at k=1 in linear space - a drop of ~2,700, past any
-conventional "decisive" threshold - and log-space fares no better (-16,771 vs -15,519). The
-reason is structural, not a tuning problem: a skewed, non-Gaussian single population is
-genuinely closer in likelihood to two Gaussians than to one, since the second component buys
-real flexibility to capture the skew, and BIC's five-extra-parameter penalty does not
-overcome that gain at this sample size. No BIC margin fixes this in general, since the
-margin needed depends on how skewed the true population is and how much data there is.
+**Decision.** Do not use it. Comparing 1-component against 2-component BIC on the raw
+samples **decisively picks 2 on the real single-population dataset this feature exists
+for.** Measured on a tuned reconstruction (sharp core plus decaying right shoulder,
+n=6233): BIC 88,198 at k=2 versus 90,936 at k=1 - a drop past any conventional "decisive"
+threshold - and log-space fares no better (-16,771 vs -15,519). The reason is structural: a
+skewed non-Gaussian single population is genuinely closer in likelihood to two Gaussians
+than to one, and BIC's five-parameter penalty does not overcome that at this sample size.
+No margin fixes this in general, since the margin needed depends on the skew and the sample
+size.
 
 **What was done instead.** The one-vs-two decision reuses the collapsed-component and
-centres-not-separated diagnostics already computed by `_fit_and_check_double_gaussian` for
-the double-Gaussian fit `fit_threshold` performs anyway - they were added as warnings in the
-entry above and are now acted on via a new `"n_components"` key. This works because it is
-evaluated against the fit to *this* data's actual (possibly non-Gaussian) shape, not against
-an idealised Gaussian standing in for a single population that may not look like one. It also
-costs nothing extra: the double-Gaussian fit already runs in every one of the three
-classifiers, where a from-scratch BIC comparison would be a second fit paid for up front.
+centres-not-separated diagnostics `_fit_and_check_double_gaussian` already computes, via a
+`"n_components"` key. This is evaluated against the fit to *this* data's actual shape rather
+than an idealised Gaussian, and costs nothing extra - the double-Gaussian fit already runs
+in all three classifiers, where a BIC comparison would be a second fit.
 
-**Revisit if.** A dataset shape turns up where the fit-diagnostic approach itself gets the
-population count wrong - e.g. two genuinely separate but heavily overlapping populations that
-still pass the centres-not-separated check. At that point BIC on the raw samples is still
-worth reconsidering, but only alongside a term that accounts for how non-Gaussian a single
-population may legitimately look (e.g. comparing against a skew-normal or gamma null rather
-than a plain Gaussian), not as a drop-in replacement with a tuned margin.
+**Revisit if** a dataset shape turns up where the fit-diagnostic approach itself gets the
+count wrong - e.g. two genuinely separate but heavily overlapping populations that still
+pass the centres-not-separated check. BIC would then be worth reconsidering only alongside a
+non-Gaussian null (skew-normal or gamma), not as a drop-in with a tuned margin.
