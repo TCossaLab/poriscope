@@ -15,6 +15,61 @@ they date the decision.
 
 ---
 
+## 2026-09-03 - `WaveletFilter` takes no lock; the wavelet library is thread-safe for the entry point we call
+
+**Context.** A code review flagged that `WaveletFilter._dll_lock` was class-level
+"process-wide, deliberately" because `LoadLibrary` returns a shared module handle, and
+that a plugin re-scan (`update_user_plugin_location`, which leaves instances alive)
+re-executes the module and produces a new class with a *new* `threading.Lock()` - so the
+process-wide guarantee the comment claimed silently did not hold. The proposed fix was to
+stabilise the class object across re-scans.
+
+**Decision.** The lock is removed instead, restoring the code to its pre-`b679954` form.
+The library needs no serialization, so there is no guarantee to preserve and nothing for
+a re-scan to break. The re-scan behaviour is left alone.
+
+**Evidence.** Two independent lines, both against the real library:
+
+- *Source.* `filter_signal_wt` (`cdlls/wavelet/src/wavelet_filter.c`) holds no state
+  across calls: the `wdenoise_object` and the scratch buffer are created per call with
+  `wdenoise_init`/`malloc` and released before return. Every `static` in the denoise
+  sources is either a function or a `static const` filter-coefficient table. The library
+  has exactly one mutable global, `int errorcode` in `utils.c`, and one non-reentrant call,
+  `strtok` at `utils.c:510` - both inside DAQ settings-file code that `filter_signal_wt`
+  never reaches. (`utils.c` *is* compiled into the binary, so the symbols are present;
+  they are simply not on the path.)
+- *Measurement.* `ctypes.cdll` releases the GIL - verified, 8 threads ran 8 calls 3.5x
+  faster than serial, so the calls genuinely overlap. Under that: 128 concurrent calls of
+  200k samples with identical length and wavelet, 768 concurrent calls mixing both
+  wavelets and eight lengths, and 384 calls through two live plugin instances' own
+  `get_callable_filter()` - **all bit-identical to the serial reference**. The library is
+  also deterministic across repeated serial calls, which is what makes that comparison
+  meaningful.
+
+Supporting facts: `force_serial_channel_operations()` returns `False` for this plugin
+anyway, so nothing was declaring a serialization requirement through the channel-management
+system either; and the filter ran unlocked from the project's start until `b679954` on
+2026-08-18 with no reported corruption, which the measurement now explains rather than
+attributes to luck.
+
+**Rejected alternative: load a private copy of the library per instance.** Scoped and not
+worth it even if a lock were needed. `LoadLibrary` refcounts by path - verified, the same
+path twice returns the identical `HMODULE`, and only a copy at a *different* path gets a
+distinct handle - so a private copy means writing a 658 KB DLL to a unique temp path per
+instance, plus temp-file lifetime and crash-cleanup handling, to buy parallelism the
+library already provides. It would also give each copy its own `errorcode`, which is the
+one piece of global state, so it is the correct shape of fix for a genuinely non-reentrant
+library. Keep it in mind only if that changes.
+
+**What would make this worth revisiting.** A change to `filter_signal_wt` that introduces
+state across calls; a new entry point into the library that touches `utils.c`'s
+`errorcode` or `strtok` paths; or a rebuild against a wavelib version whose denoise path
+adds caching. Any of those should be met by re-running the concurrency measurement before
+reaching for a lock - and if a lock is needed, note that the class-level form is the one
+a plugin re-scan breaks, so the private-copy approach above is the more robust answer.
+
+---
+
 ## 2026-09-02 - Per-module log levels are a scripting facility; the app keeps one global level
 
 **Context.** Fixing `@log`'s debug gate to read the decorated module's own effective

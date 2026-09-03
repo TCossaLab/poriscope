@@ -26,20 +26,13 @@ fresh counts rather than superseding them; work them from the existing entries.
 
 ### Critical - silent data loss or wrong results, each reproduced
 
-1. **Condition qualification rewrites SQL string literals.**
-   `MetaDatabaseLoader._qualify_conditions_for_events_sublevels_join:715-739` prefixes bare
-   column names by regex, so `sequence = 'sublevel_current' AND ...` becomes
-   `e.sequence = 's.sublevel_current'` - valid SQL that runs and returns the wrong rows
-   with no error. It also emits `exp.voltage` into a query whose FROM clause has no
-   `experiments` join unless an experiments column was *selected* (`:854`), so a legitimate
-   `voltage > 50` filter fails as "Invalid query".
-2. **A plugin re-scan silently breaks `WaveletFilter`'s process-wide DLL lock.**
-   `_dll_lock` is class-level precisely because `LoadLibrary` returns a shared handle to a
-   non-reentrant library (`WaveletFilter.py:96-97`), but `MainModel` re-executes every
-   plugin module without registering it in `sys.modules`, so each scan yields a new class
-   with a new `threading.Lock()` - verified. `reset_session` deletes plugins first and is
-   safe; `update_user_plugin_location` re-scans while explicitly leaving instances alive,
-   so two live filters can hold two different locks over the same DLL.
+- **Condition qualification rewrites SQL string literals.**
+  `MetaDatabaseLoader._qualify_conditions_for_events_sublevels_join:715-739` prefixes bare
+  column names by regex, so `sequence = 'sublevel_current' AND ...` becomes
+  `e.sequence = 's.sublevel_current'` - valid SQL that runs and returns the wrong rows
+  with no error. It also emits `exp.voltage` into a query whose FROM clause has no
+  `experiments` join unless an experiments column was *selected* (`:854`), so a legitimate
+  `voltage > 50` filter fails as "Invalid query".
 
 ### High
 
