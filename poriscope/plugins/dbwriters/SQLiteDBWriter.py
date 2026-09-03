@@ -135,7 +135,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             try:
                 self.cursor.close()
             except Exception:
-                self.logger.info(f"Failed to close cursor cleanly for channel {channel}")
+                self.logger.info(
+                    f"Failed to close cursor cleanly for channel {channel}"
+                )
             self.cursor = None
         if self.conn:
             self.logger.debug("Closing database connection.")
