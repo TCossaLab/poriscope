@@ -489,8 +489,10 @@ class SQLiteEventWriter(MetaWriter):
         :raises Exception: if an unexpected error occurs during the write
         """
         if abort is True:
+            # Discarding the channel's whole uncommitted batch is intended on
+            # abort; MetaWriter follows it with reset_channel() and written = 0.
+            # No ROLLBACK TO SAVEPOINT here because no event is in progress.
             if self.conn:
-                self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                 self.conn.rollback()
             if self.cursor:
                 self.cursor.close()
@@ -505,15 +507,26 @@ class SQLiteEventWriter(MetaWriter):
                 f"start_sample, padding_before, and padding_after must all be provided to write an event (got start_sample={start_sample}, padding_before={padding_before}, padding_after={padding_after})"
             )
 
+        # Tracks whether this call has an open savepoint to roll back to, so a
+        # failure raised before the SAVEPOINT below (connecting, say) does not try
+        # to roll back to a savepoint that was never taken.
+        savepoint_active = False
         try:
             success = False
             if self.conn is None:
                 self.conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
                 self.conn.execute("PRAGMA foreign_keys = ON;")
                 self.cursor = self.conn.cursor()
-                self.conn.execute("SAVEPOINT write_event")
             if self.conn is None or self.cursor is None:
                 raise ValueError("Unable to open database connection in _write_data")
+            # One savepoint per event, not one per batch. Previously this was taken
+            # only when the connection was first opened, so rolling back to it
+            # discarded every event written since - and the conn.rollback() that
+            # followed destroyed the savepoint, so the next failure raised "no such
+            # savepoint" from inside the handler and masked the real error. The
+            # batch is still a single transaction, committed once at last_call.
+            self.conn.execute("SAVEPOINT write_event")
+            savepoint_active = True
 
             data_blob = data.astype(self.output_dtype).tobytes()
 
@@ -538,16 +551,24 @@ class SQLiteEventWriter(MetaWriter):
             success = self.cursor.rowcount == 1
 
         except sqlite3.Error as e:
-            if self.conn:
+            # Undo only this event. Deliberately no conn.rollback() here - the
+            # caller files this as a per-event rejection and continues, so the
+            # events already written in this batch must survive.
+            if self.conn and savepoint_active:
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
-                self.conn.rollback()  # Rollback all changes if any operation fails
+                self.conn.execute("RELEASE SAVEPOINT write_event")
             raise e
         except Exception as e:  # Fallback for truly unexpected errors
-            if self.conn:
+            if self.conn and savepoint_active:
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
-                self.conn.rollback()
+                self.conn.execute("RELEASE SAVEPOINT write_event")
             raise e
         else:
+            # Released unconditionally: unlike SQLiteDBWriter, an event here is a
+            # single INSERT OR IGNORE, so success is False only when the statement
+            # wrote nothing at all and there is no partial state to undo.
+            if self.conn and savepoint_active:
+                self.conn.execute("RELEASE SAVEPOINT write_event")
             if self.conn and last_call is True:
                 self.conn.commit()
         finally:
