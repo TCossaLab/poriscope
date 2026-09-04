@@ -297,9 +297,9 @@ golden files are not generated over known bugs), Tier B2 (zero-risk deletions) a
 **Moved tests are re-pointed, test owner reviews the diff.** This stretches the standing "do
 not edit her suites" rule and **needs her explicit agreement before Step 2 starts**. *Put to
 her as a four-part ask on 2026-09-04 and agreed the same day; the wording and its measurements
-are in `refactor_2.0.0.md`. Her reply was a blanket go-ahead and did not split Step 2 authorship,
-so all five deliverables are ours to write - a scoped exception to the standing "test-writing is
-hers" rule, granted for this plan only.* The
+are in `refactor_2.0.0.md`. The whole plan is ours and she will not write any of it, so all five
+Step 2 deliverables are ours along with re-pointing the existing unit and e2e suites - a standing
+exception to "test-writing is hers" for this plan only.* The
 alternative considered was leaving a thin View facade per moved method, rejected because ~200
 facades would undercut the LOC and boundary-test metrics the refactor is measured by.
 

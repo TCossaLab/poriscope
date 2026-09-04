@@ -101,11 +101,14 @@ proceed with the plan.** Decision E is satisfied, so **Step 2 is no longer gated
 are Steps 3a and 3f. What was asked is recorded below, because the agreement is only as wide as
 the ask it answered.
 
-**One thing her reply did not settle:** part 1 asked which half of Step 2 she wanted to write.
-The answer was a blanket go-ahead rather than a split, so **we write all five deliverables,
-characterization goldens included**, and hand the goldens back if she says otherwise. Recorded
-as an assumption rather than as something she chose. This is a scoped exception to the standing
-"test-writing is hers" rule, granted for this plan; it does not generalise.
+**Confirmed on the Step 2 split: there is no split.** Part 1 asked which half she wanted to
+write; the answer is that **the whole plan is ours and she will not write any of it**. So all
+five Step 2 deliverables are ours - the characterization goldens over View methods, the SQL
+goldens, the `ast` boundary test, the duplication ratchet and the five no-GUI tab flows - as is
+re-pointing her existing unit and e2e suites in Steps 3d and 4a-4e. Do not offer test work back
+and do not treat a test-shaped deliverable as a reason to stop. This is a standing exception to
+the "test-writing is hers" rule **for this plan only**; compliance-gate blocks 1 and 7 in
+`future_fixes.md` remain hers.
 
 Decision E had been recorded as a one-line ask about tests and stalled for a day because nobody
 could state it precisely. It is one conversation with one person, in four parts, and three of

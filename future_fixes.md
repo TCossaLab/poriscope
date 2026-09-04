@@ -34,11 +34,11 @@ in `DECISIONS.md`.
   structural change in Steps 3-5.
 - **The person-blocker is cleared.** The four-part ask in `refactor_2.0.0.md` was sent
   2026-09-04 and **agreed the same day** - green light to proceed. Decision E is satisfied, so
-  Step 2 is unblocked and so are Steps 3a/3f in `analysistabs/utils/`. Her reply did not split
-  Step 2 authorship, so we write all five deliverables including the characterization goldens -
-  a scoped exception to "test-writing is hers", not a general one. The fitter owner still must be
-  consulted before any `MetaEventFitter` signature change, which moves all three owner-held
-  fitters in lockstep.
+  Step 2 is unblocked and so are Steps 3a/3f in `analysistabs/utils/`. **The whole plan is ours,
+  tests included** - all five Step 2 deliverables plus re-pointing the existing suites. A standing
+  exception to "test-writing is hers" for this plan only; blocks 1 and 7 below remain hers. The
+  fitter owner still must be consulted before any `MetaEventFitter` signature change, which moves
+  all three owner-held fitters in lockstep.
 - `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
 
 ## Review findings (2026-09-03)
