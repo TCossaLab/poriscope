@@ -465,14 +465,12 @@ class TestGenerateVmEnsemble:
     MMAX, SMAX, MMIN, SMIN = 0.30, 0.03, 0.10, 0.02
 
     def test_prolate_count(self, mock_view):
-        np.random.seed(0)
         V, m = mock_view._generate_vm_ensemble(
             20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
         )
         assert len(V) == 20 and len(m) == 20
 
     def test_oblate_count(self, mock_view):
-        np.random.seed(1)
         V, m = mock_view._generate_vm_ensemble(
             20,
             self.MMAX,
@@ -486,14 +484,12 @@ class TestGenerateVmEnsemble:
         assert len(V) == 20 and len(m) == 20
 
     def test_prolate_m_gt1(self, mock_view):
-        np.random.seed(2)
         _, m = mock_view._generate_vm_ensemble(
             20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
         )
         assert np.all(m >= 1.0)
 
     def test_oblate_m_lt1(self, mock_view):
-        np.random.seed(3)
         _, m = mock_view._generate_vm_ensemble(
             20,
             self.MMAX,
@@ -507,7 +503,6 @@ class TestGenerateVmEnsemble:
         assert np.all(m > 0) and np.all(m <= 1.0)
 
     def test_volumes_positive(self, mock_view):
-        np.random.seed(4)
         for p in (True, False):
             V, _ = mock_view._generate_vm_ensemble(
                 20,
@@ -522,19 +517,16 @@ class TestGenerateVmEnsemble:
             assert np.all(V > 0)
 
     def test_unphysical_bails_out(self, mock_view):
-        np.random.seed(5)
         V, m = mock_view._generate_vm_ensemble(50, 5.0, 0.01, 4.0, 0.01, self.D, self.L)
         assert len(V) < 50
 
     def test_zero_target(self, mock_view):
-        np.random.seed(6)
         V, m = mock_view._generate_vm_ensemble(
             0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
         )
         assert len(V) == 0 and len(m) == 0
 
     def test_accepted_within_cutoff(self, mock_view):
-        np.random.seed(7)
         cutoff = 4
         V, m = mock_view._generate_vm_ensemble(
             30,
@@ -1581,7 +1573,6 @@ class TestPipeline:
             pytest.skip("fit did not converge")
         means = sorted([popt[1], popt[4]])
         stds = [abs(popt[2]), abs(popt[5])]
-        np.random.seed(42)
         V, m = mock_view._generate_vm_ensemble(
             20, max(means), stds[1], min(means), stds[0], self.D, self.L
         )

@@ -3247,6 +3247,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         accepted_V: list[float] = []
         accepted_m: list[float] = []
+        # Seeded and local: the ensemble is reproducible for a given geometry,
+        # and drawing here no longer perturbs the global NumPy RNG for the rest
+        # of the process. 42 matches the convention already used in PeakFinder.
+        rng = np.random.default_rng(42)
         x = np.minimum(d, L)
         # --- Dynamic Bounds Calculation ---
         K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
@@ -3275,7 +3279,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         ):
             batches += 1
             # 1. Propose physically valid uniform samples
-            V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
+            V_prop_raw = rng.uniform(V_min, V_max, batch_size)
             ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
             if prolate:
                 m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
@@ -3291,7 +3295,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(1, m_upper_bounds)
+                m_prop = rng.uniform(1, m_upper_bounds)
 
             else:
                 m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
@@ -3307,7 +3311,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(m_lower_bounds, 1)
+                m_prop = rng.uniform(m_lower_bounds, 1)
 
             # 2. Forward Calculation
 
@@ -3359,7 +3363,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             prob_accept = likelihood / max_likelihood
 
             # 4. Accept / Reject
-            random_thresh = np.random.uniform(0, 1, len(prob_accept))
+            random_thresh = rng.uniform(0, 1, len(prob_accept))
             accepted_indices = random_thresh < prob_accept
 
             new_V = V_prop[accepted_indices]
@@ -4065,4 +4069,4 @@ def format_axis_label(label: str, unit: Optional[str]) -> str:
     Removes any existing trailing unit in parentheses.
     """
     label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-    return f"{label} ({unit})" if unit else label
+    return f"{label} ({unit})" if unit and unit.strip() else label

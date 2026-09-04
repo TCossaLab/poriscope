@@ -2584,6 +2584,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_rows, num_cols = self._factors(num_events)
         j = 0
         for i, (event, vlines, hlines, pts, vlabels, hlabels, plabels) in enumerate(
+            # strict: the caller appends to all seven lists once per event, so a
+            # length mismatch is structurally impossible and means the caller is
+            # broken. Silently truncating would instead leave the whole bottom
+            # row of subplots without an x-axis label, since labelnum below is
+            # computed from num_events rather than from the trip count.
             zip(
                 event_data,
                 vertical_lines,
@@ -2592,6 +2597,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 vertical_labels,
                 horizontal_labels,
                 point_labels,
+                strict=True,
             )
         ):
             color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]

@@ -238,17 +238,9 @@ class MainView(QMainWindow, WalkthroughMixin):
             ("switchToHelp", self.on_help_button_click),
             ("switchToPlugins", self.on_plugins_button_click),
         ]
-        for signal, page in page_switch_signals:
-            if isinstance(page, str):
-                getattr(self.text_menu_widget, signal).connect(
-                    lambda p=page: self.switch_to_page(p)
-                )
-                getattr(self.icon_menu_widget, signal).connect(
-                    lambda p=page: self.switch_to_page(p)
-                )
-            else:
-                getattr(self.text_menu_widget, signal).connect(page)
-                getattr(self.icon_menu_widget, signal).connect(page)
+        for signal, handler in page_switch_signals:
+            getattr(self.text_menu_widget, signal).connect(handler)
+            getattr(self.icon_menu_widget, signal).connect(handler)
 
         # Connect help window close event to emit signal
         self.help_window_closed.connect(self.icon_menu_widget.setHelpUnchecked)

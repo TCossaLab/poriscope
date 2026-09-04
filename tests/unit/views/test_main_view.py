@@ -87,37 +87,6 @@ def test_add_text_to_display(main_view):
     assert "Logger: Test message" in text
 
 
-def test_connect_signals_else_branch(main_view, mocker):
-    """Cover the else branch for non-string page switch signals."""
-    signal = Signal()
-    main_view.text_menu_widget.customSwitch = signal
-    main_view.icon_menu_widget.customSwitch = signal
-
-    with patch.object(main_view, "switch_to_page"):
-        main_view.connect_signals()
-
-
-def test_switch_to_page_str_signal_connections(main_view, qtbot):
-    """
-    Trigger page switch signals that connect via lambda with string pages (e.g. 'RawDataView').
-    Covers the conditional branch in connect_signals where isinstance(page, str).
-    """
-    # Add a dummy page to switch to
-    dummy_widget = QWidget()
-    main_view.add_page("RawDataView", dummy_widget)
-
-    # Emit the text menu signal
-    qtbot.wait(10)
-    main_view.text_menu_widget.switchToRawData.emit()
-    qtbot.wait(10)
-    assert main_view.page_title_label.text() == "RawDataView"
-
-    # Emit the icon menu signal
-    main_view.icon_menu_widget.switchToRawData.emit()
-    qtbot.wait(10)
-    assert main_view.page_title_label.text() == "RawDataView"
-
-
 def test_switch_to_page_signal_connected(main_view, qtbot):
     """
     Ensure switch_to_page is triggered by switchToRawData signals from both menus.
