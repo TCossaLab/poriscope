@@ -46,122 +46,54 @@ short-form enum accesses alone - see `DECISIONS.md`). **Always measure with the 
 The hook is scoped `files: ^poriscope/` because `mypy.ini`'s `exclude = ^tests/` governs
 directory discovery only and does not apply to explicitly listed paths.
 
-`mypy.ini` sets **`disallow_untyped_defs = True` and `check_untyped_defs = True`** as of
-2026-08-25, closing the type-annotation pass. An unannotated `def` under `poriscope/` now
-fails the hook rather than being silently skipped, so every function you add needs hints.
-`strict_equality` is on for the same reason. Do not relax any of the three to get a commit
-through.
+Every function you add under `poriscope/` needs type hints, and `mypy.ini` enforces that
+(read its own comments for which settings and why). Do not relax any of them to get a
+commit through.
 
-`pydoclint` checks that a docstring's documented parameters, return type, and raised
-exceptions actually match the real function signature/body. It does NOT require every
-function to have a docstring — functions with no docstring are skipped entirely — but it
-DOES require that a documented function's signature carry type hints, and that those
-hints agree with the docstring's `:type:`/`:rtype:`
-(`arg-type-hints-in-signature = true` in `pyproject.toml`). **Every function under
-`poriscope/` is annotated, with no exclusions**, and `mypy.ini` now enforces that, so new
-code is expected to be too.
+`pydoclint` checks a docstring's documented parameters, return type and raised exceptions
+against the real signature and body — see `[tool.pydoclint]` in `pyproject.toml` for the
+settings and the reasoning behind each. A function with no docstring is skipped entirely;
+a documented one must carry type hints that agree with its `:type:`/`:rtype:`. **Every
+function under `poriscope/` is annotated, with no exclusions.**
 
-**`.pydoclint-baseline.txt` is empty (0 bytes) as of 2026-08-25** — the ~1,090
-grandfathered violations this tool was adopted with are all cleared. Every violation
-from here on is a real one that fails the hook, so there is normally nothing to
-regenerate. If you ever do need to, `pydoclint --generate-baseline=True
---baseline=.pydoclint-baseline.txt poriscope` — but prefer fixing the violation, and do
-not let the file grow back silently.
+Keep `.pydoclint-baseline.txt` empty: prefer fixing the violation, and do not let the file
+grow back silently. `check-class-attributes` stays `false` until upstream fixes it — do
+not flip it back on (`pyproject.toml` and `DECISIONS.md` carry the evidence).
 
-`check-class-attributes` is deliberately `false`. It cannot work under sphinx style
-with the parser pydoclint 0.9.1 ships: only the *malformed* `.. attribute :: name`
-(note the space, which makes it a comment rather than a directive) is recognised, while
-the correct `.. attribute::` and every canonical field form parse to nothing. See
-`DECISIONS.md`. The bug is filed upstream as https://github.com/jsh9/pydoclint/issues/304,
-but **filing did not unblock it** - leave the setting `false` until a `pydoclint` release
-actually fixes `rest_attr_parser.py`. Do not flip it back on just because the issue exists.
-
-Qt-based tests need `qt_api = pyside6` (already set in `pytest.ini`) and, on Linux/CI,
-`QT_QPA_PLATFORM=offscreen` plus `xvfb-run`.
-
-Pytest markers (see `pytest.ini`): `compliance`, `integration`, `e2e`, `e2e_ux`,
-`smoke`. `e2e` and `integration` are applied **automatically by path** in
-`tests/conftest.py` - do not hand-apply them. `pytest --marker-stats` prints current
-per-marker counts and mean durations.
+The pytest markers are listed in `pytest.ini`. `e2e` and `integration` are applied
+**automatically by path** in `tests/conftest.py` - do not hand-apply them.
 
 ## Architecture
 
-Poriscope is built from two layers that use the *same* MVC pattern recursively:
+Two layers using the same MVC pattern recursively: an app-shell triad (`MainModel` /
+`MainView` / `MainController`) and a plugin system for everything else — analysis tabs and
+data plugins. **Load the `plugin-architecture` skill** before adding, moving or
+restructuring a plugin, a `Meta*` base or an analysis tab; it carries the two plugin
+families, the signal-relay bus, discovery, and the `BaseDataPlugin` settings lifecycle.
+Three rules apply regardless:
 
-1. **App shell MVC** — `main_app.py` builds `MainModel` / `MainView` / `MainController`
-   (`poriscope/models/main_model.py`, `poriscope/views/main_view.py`,
-   `poriscope/controllers/main_controller.py`). This owns app config
-   (`%LOCALAPPDATA%/Poriscope/config/config.json` via `platformdirs`), logging setup,
-   and session persistence (`session/plugin_history.json`,
-   `session/tab_action_history.json`).
+- Cross-tab behavior goes through the `MetaController` signal relay, never a direct import
+  of another tab's controller.
+- New data plugin: **generate it, don't hand-write it** —
+  `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the eight
+  families and every shipped plugin). Signatures and docstrings are copied from the base
+  verbatim, which is what the compliance test's exact-equality comparison requires.
+- New analysis tab: a Controller/Model/View triad under
+  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`
+  and following an existing tab as a template.
 
-2. **Plugin system** — everything else (analysis tabs, data readers/writers/filters/
-   finders/fitters/loaders) is a *plugin* discovered and loaded dynamically.
+## Testing conventions
 
-### Two distinct plugin families
-
-- **GUI/analysis-tab plugins** (`poriscope/plugins/analysistabs/`): each tab (RawData,
-  EventAnalysis, Clustering, Metadata, Protein) is its own Controller/Model/View triad
-  inheriting `MetaController`/`MetaModel`/`MetaView` (`poriscope/utils/Meta*.py`).
-  `MetaController` wires a `QObject`-based signal bus (`global_signal`,
-  `data_plugin_controller_signal`, etc.) so a tab can invoke methods on *another* tab's
-  plugin or on a data plugin without a direct reference — the call is relayed up
-  through `MainController`, which resolves `(metaclass, subclass_key)` to a live
-  instance. When adding cross-tab behavior, follow this signal-relay pattern rather
-  than importing another tab's controller directly.
-
-- **Data plugins** (`poriscope/plugins/{datareaders,datawriters,eventfinders,
-  eventfitters,eventloaders,filters,db_loaders,dbwriters}/`): algorithmic/IO plugins,
-  each inheriting one of the `Meta*` ABCs in `poriscope/utils/` (`MetaReader`,
-  `MetaFilter`, `MetaEventFinder`, `MetaEventFitter`, `MetaEventLoader`, `MetaWriter`,
-  `MetaDatabaseLoader`, `MetaDatabaseWriter`), which all ultimately inherit
-  `BaseDataPlugin`. These are managed generically by `DataPluginController`/
-  `DataPluginModel` (not per-plugin controllers) — instantiation, settings validation,
-  renaming, and deletion of any data plugin goes through that one shared controller.
-
-### Plugin discovery and instantiation
-
-- `MainModel.populate_available_plugins()` walks `poriscope/plugins/` **and** the
-  user plugin folder (`%LOCALAPPDATA%/Poriscope/user_plugins`, appended to `sys.path`),
-  importing every `.py` file and keeping only classes matching the module's own
-  filename that subclass one of the allowed `Meta*` base classes. A plugin is just a
-  Python file dropped in the right subfolder — no registry/manifest to update.
-- Each `Meta*` base uses `QObjectABCMeta`/`QWidgetABCMeta` (ABCMeta combined with the
-  Qt metaclass) so abstract methods are enforced *and* the class stays a valid
-  QObject/QWidget.
-- `BaseDataPlugin.__init__` -> `apply_settings()` drives a fixed lifecycle:
-  `_validate_param_types` -> `_validate_param_ranges` -> `_validate_settings` (subclass
-  hook) -> `_finalize_initialization` (subclass hook). Settings are dicts of
-  `{"Type":..., "Value":..., "Options":..., "Min":..., "Max":...}` per parameter
-  (see `get_empty_settings()` docstring in `BaseDataPlugin`).
-- Data plugins can depend on other data plugins (e.g. an event finder depends on a
-  reader). This is tracked explicitly via `register_parent`/`register_dependent`
-  (metaclass, key) pairs on `BaseDataPlugin`, and enforced when
-  `DataPluginController.delete_plugin`/`edit_plugin` refuse to delete/rename a plugin
-  that still has dependents.
-- Every plugin instance is keyed by a globally-unique string (`get_key()`/`set_key()`);
-  `DataPluginController` enforces uniqueness of that key across *all* metaclasses, not
-  just within one.
-
-### Where to add a new plugin
-
-- New data plugin: **generate it, don't hand-write it.**
-  `python scripts/new_plugin.py MetaEventFinder MyFinder` (or with no arguments, to be
-  asked) writes a stub in the right folder that already passes ruff, mypy, pydoclint,
-  the compliance suite and the schema check. `--list` shows the eight families and every
-  shipped plugin, since the same command also produces a *variant* of an existing plugin
-  (`--override <methods>`, bodies delegating to `super()`). Signatures and docstrings are
-  copied verbatim from the base, which is what the compliance test's exact-equality
-  comparison requires. Hand-writing one still works: pick the matching
-  `plugins/<category>/` folder, subclass the matching `Meta*` base, implement its
-  `__abstractmethods__`, and drop the file in — no registration needed.
-- New analysis tab: add a Controller/Model/View triad under
-  `poriscope/plugins/analysistabs/` following an existing tab (e.g. `Protein*`) as a
-  template, subclassing `MetaController`/`MetaModel`/`MetaView`.
-
-### Testing conventions
-
-- `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`.
+- **Run the whole suite before every commit: plain `pytest`, no path arguments and no
+  marker filter.** A full run is ~2.5 minutes, so there is no reason to select a subset,
+  and choosing one is itself the error-prone step — a scoped run that skipped
+  `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
+  failing test while debugging is fine; the gate is a full green run immediately before
+  the commit. Documentation-only changes (docstrings, comments, markdown) need no run.
+- `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`, with one
+  exception: the analysis-tab triads under `poriscope/plugins/analysistabs/` are tested in
+  `tests/unit/views/` and `tests/unit/controllers/`, while `tests/unit/plugins/analysistabs/`
+  covers only the `utils/` helpers.
 - `tests/unit/plugins/test_plugin_compliance.py` recursively imports every module
   under `poriscope.plugins` and asserts each plugin subclass implements all abstract
   methods of its `Meta*`/`BaseDataPlugin` base — this is the guardrail that keeps the
@@ -171,13 +103,14 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   base method's annotation breaks every subclass whose override does not match it
   exactly. Annotate a plugin method by copying the base signature verbatim rather than
   inferring it from the body.
-- **Never pass test paths in a hand-picked order.** Pytest runs explicitly listed paths
-  in the order given, and inverting natural collection order (e.g.
-  `pytest tests/unit/views tests/unit/plugins`) has reliably segfaulted the interpreter
-  from leaked Qt state. Pass directories, or list paths alphabetically. Relatedly, never
-  pipe a test run through `tail`/`grep` as its only record — a faulthandler dump names
-  the crashing test at the *top* of its output, which is exactly what a tail discards —
-  and never call a run green from a progress line; read the real summary line.
+- **Never pass test paths in a hand-picked order** on the rare occasion you pass any.
+  Pytest runs explicitly listed paths in the order given, and inverting natural collection
+  order (e.g. `pytest tests/unit/views tests/unit/plugins`) has reliably segfaulted the
+  interpreter from leaked Qt state, and makes `test_plugin_compliance` audit test doubles
+  that natural order never exposes it to. Relatedly, never pipe a test run through
+  `tail`/`grep` as its only record — a faulthandler dump names the crashing test at the
+  *top* of its output, which is exactly what a tail discards — and never call a run green
+  from a progress line; read the real summary line.
 - `tests/integration/flows/` instantiate real controller/model/view stacks
   "no_gui" (headless) for cross-plugin flows; `tests/e2e/` drive actual Qt widgets
   (`e2e_ux` marker) end-to-end. **CI runs the entire suite on every branch push,
@@ -191,17 +124,34 @@ the `post-merge` git hook. Published at https://tcossalab.github.io/poriscope/.
 
 ## Changelog
 
-Any time you make changes to the code, update `changelog.md` with a terse explanation under 
-the appropriate header/subheader, respecting formatting ceonventions already present in that file.
+Any time you make changes to the code, update `changelog.md` under the appropriate
+header/subheader, respecting the formatting conventions already present in that file.
+
+**One line per change, and no more.** `changelog.md` is written for *users*: it carries the
+essential user-facing information and nothing else. No sub-bullets, no evidence, no
+measurements, no explanation of why the change was made or what was rejected on the way
+there. Breaking changes are still called out explicitly as breaking, because that is
+user-facing.
+
+Everything you would otherwise have put in those sub-bullets goes in `DECISIONS.md`, which
+is written for devs and for Claude: the reasoning behind a choice, the alternatives scoped
+and rejected, the measurements that settled a question, and what would make it worth
+revisiting.
 
 ## Where things are written down
 
 - `changelog.md` — what changed, user-facing. Update it for any code change.
 - `future_fixes.md` — what is still queued. Keep it terse; prune items as they land
-  rather than leaving completed-work narrative behind.
+  rather than leaving completed-work narrative behind. Delete a landed entry outright —
+  do not mark it `**Fixed**`, strike it through with `~~`, or retitle its section
+  `DONE`/`CLOSED`; the history already lives in `changelog.md`. When only part of an
+  item lands, delete it and rewrite what remains as a forward-facing item.
 - `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
   would make it worth revisiting. Check here before re-litigating a settled question.
 - `future_refactors_and_features.md` — larger speculative work.
+- `refactor_2.0.0.md` — the approved plan for the 2.0.0 refactor: the eight steps, the
+  dependency graph and decisions A–E. **Read it before picking anything out of
+  `future_fixes.md`**, since it claims much of that queue. Delete it once 2.0.0 ships.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
@@ -211,6 +161,14 @@ the appropriate header/subheader, respecting formatting ceonventions already pre
   **Update it whenever the tooling or its configuration changes** (`mypy.ini`,
   `.pre-commit-config.yaml`, `[tool.pydoclint]`, the baseline policy), or it will go on
   telling contributors a policy that no longer holds.
+
+**All three of `changelog.md`, `DECISIONS.md` and `future_fixes.md` should be as terse as
+possible.** Two of them are written for Claude, so every needless sentence is context spent
+on a future read. Cut the prose, keep the facts: a `future_fixes.md` entry is one to three
+lines carrying the `file:line` and the measured number, and a `DECISIONS.md` entry keeps its
+context/decision/evidence/revisit shape in as few sentences as the reasoning survives in.
+Never drop the measurement itself — a queued finding without its number has to be
+re-measured before it can be worked.
 
 Depth belongs in those files, not in this one: this file is loaded in full at the start
 of every session, so it should stay a short list of standing rules.
@@ -252,7 +210,18 @@ of every session, so it should stay a short list of standing rules.
 
 - Poriscope uses git flow worksflows. feature branches are branched off `develop`, not `main`,
   keep that in mind when doing code review on feature branches or merging anything.
-- Release tags carry a `v` prefix (`v1.7.0`), because `.github/workflows/release.yml`
+- Release tags carry a `v` prefix (`v1.8.0`), because `.github/workflows/release.yml`
   triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
   to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
   so a fresh checkout needs that script run before cutting a release.
+- `git flow release finish` opens three editors by default — a merge commit message into
+  `main`, the tag annotation, and a merge commit message into `develop`. Prefix the command
+  with `GIT_MERGE_AUTOEDIT=no` to suppress the two merge editors. **Do not pass `-m` for the
+  tag message**: git flow appends its own text to it, which produced the annotation
+  `v1.8.0 v1.8.0` where every earlier tag reads just `v1.7.1`. Without `-m` the tag editor
+  still opens, so either accept the prefilled message or fix the annotation with
+  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` **before** pushing it.
+- **Allow at least five minutes for `git flow release finish` and `feature finish`.** The
+  `post-merge` hook regenerates the autodoc, which ran past a two-minute timeout during the
+  1.8.0 release. All the git work had already completed by then; only the release branch
+  deletion was left undone, so check `git branch` and `git tag` before re-running anything.

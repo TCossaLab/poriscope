@@ -397,7 +397,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                     f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
                 )
                 result = self.query_database_directly(query)
-                if result is not None:
+                if result is not None and not result.empty:
                     return result.at[0, "id"]
                 else:
                     return None
@@ -509,7 +509,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 f"Malformed events query:\n\n{self._format_debug_msg(debug)}"
             )
         events = self._load_metadata(events_query)
-        if events is None or len(events) == 0:
+        if events is None:
+            # Logged at ERROR here, not left to the worker: EventWorker reports a
+            # stopped run at WARNING on the status panel, so a genuine failure has to
+            # raise QtHandler's dialog from the place that knows it is one. See
+            # DECISIONS.md, 2026-09-04. The same applies to every guard below.
+            self.logger.error(f"Events query failed: {events_query}")
+            raise ValueError("Failed to load events table.")
+        if len(events) == 0:
             raise ValueError("No events found matching subset criteria")
 
         event_ids = [int(eid) for eid in events["id"].values.astype(int)]
@@ -521,6 +528,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         sublevels = self._load_metadata(sublevels_query)
         if sublevels is None:
+            self.logger.error(
+                f"Query failed, could not load sublevels data: {sublevels_query}"
+            )
             raise ValueError("Failed to load sublevels data.")
 
         unique_exp_ids = [int(exp_id) for exp_id in np.unique(events["experiment_id"])]
@@ -532,6 +542,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         experiments = self.query_database_directly(experiment_query)
         if experiments is None:
+            self.logger.error(
+                f"Query failed, could not load experiments table: {experiment_query}"
+            )
             raise ValueError("Failed to load experiments table.")
 
         channel_ids = [int(cid) for cid in events["channel_db_id"].values.astype(int)]
@@ -545,6 +558,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         channels = self.query_database_directly(channel_query)
         if channels is None:
+            self.logger.error(
+                f"Query failed, could not load channels table: {channel_query}"
+            )
             raise ValueError("Failed to load channels table.")
 
         columns_query = "SELECT cols.* FROM columns cols"
@@ -555,6 +571,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         columns = self.query_database_directly(columns_query)
         if columns is None:
+            self.logger.error(
+                f"Query failed, could not load columns table: {columns_query}"
+            )
             raise ValueError("Failed to load columns table.")
 
         data_query = f"SELECT d.experiment_id, d.channel_id, d.channel_db_id, d.event_id, d.event_db_id FROM data d WHERE d.event_db_id IN {tuple_builder(event_ids)}"
@@ -565,7 +584,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         data = self.query_database_directly(data_query)
         if data is None:
+            self.logger.error(f"Query failed, could not load data table: {data_query}")
             raise ValueError("Failed to load data table.")
+        if data.empty:
+            self.logger.error(
+                f"Inconsistent database: {len(event_ids)} events selected but the data "
+                "table holds no rows for any of them"
+            )
+            raise ValueError("No rows in the data table for the selected events.")
 
         append = f"{subset_name}_" if subset_name else ""
 
@@ -652,6 +678,201 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 report += f"Channel: {ch}: {num} events\n"
         return report.rstrip("\n")
 
+    def _end_of_subquery(self, fragment: str, start: int) -> int:
+        """
+        Find the offset just past the ``)`` that closes a subquery.
+
+        :param fragment: A fragment of SQL, typically a WHERE clause body.
+        :type fragment: str
+        :param start: Offset of the ``(`` that opens the subquery.
+        :type start: int
+        :return: The offset just past the matching ``)``, or the length of the
+            fragment if the parentheses never balance.
+        :rtype: int
+        """
+        depth = 0
+        in_literal = False
+        for index in range(start, len(fragment)):
+            char = fragment[index]
+            if in_literal:
+                # "''" leaves the literal and immediately re-enters it, which ends
+                # on the same state as reading it as an escape, so it needs no case.
+                if char == "'":
+                    in_literal = False
+            elif char == "'":
+                in_literal = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+        return len(fragment)
+
+    def _split_on_opaque_spans(self, fragment: str) -> List[str]:
+        """
+        Split a SQL fragment into alternating rewritable and opaque segments.
+
+        Even indices hold code that may be rewritten, odd indices hold spans that
+        must be passed through untouched, and ``"".join`` of the result reproduces
+        the input exactly. Two kinds of span are opaque:
+
+        * A single-quoted string literal, so a column name that also appears as a
+          value - ``sequence = 'sublevel_current'`` - is not rewritten along with
+          the real column references.
+        * A parenthesised subquery, from the ``(`` of ``(SELECT`` through its
+          matching ``)``. A subquery names its own tables, so its column references
+          resolve against those rather than against the outer query's aliases, and
+          rewriting them silently correlates the subquery to the outer row. A user
+          who wants a correlated subquery qualifies the reference with the outer
+          alias, which is what SQL requires of them anyway.
+
+        An unterminated literal or an unbalanced paren makes the rest of the
+        fragment opaque, which leaves malformed input for the query validator to
+        reject rather than rewriting it into something that parses.
+
+        :param fragment: A fragment of SQL, typically a WHERE clause body.
+        :type fragment: str
+        :return: The alternating rewritable and opaque segments of the fragment.
+        :rtype: List[str]
+        """
+        # "''" is SQL's escape for a quote inside a literal, so it must not be read
+        # as the end of one.
+        opaque = re.compile(r"'|\(\s*SELECT\b", re.IGNORECASE)
+        literal = re.compile(r"'(?:[^']|'')*'")
+
+        segments: List[str] = []
+        start = 0
+        index = 0
+        while True:
+            match = opaque.search(fragment, index)
+            if match is None:
+                break
+            index = match.start()
+            if fragment[index] == "'":
+                found = literal.match(fragment, index)
+                end = found.end() if found else len(fragment)
+            else:
+                end = self._end_of_subquery(fragment, index)
+            segments.append(fragment[start:index])
+            segments.append(fragment[index:end])
+            start = index = end
+        segments.append(fragment[start:])
+        return segments
+
+    def _references_column(self, fragment: str, column: str) -> bool:
+        """
+        Report whether a SQL fragment refers to a column in its own right.
+
+        Matches a qualified reference (``s.duration``) as well as a bare one, since
+        the column name is sought on a word boundary rather than a token boundary.
+        A reference inside a string literal or a subquery does not count, for the
+        reasons :meth:`_split_on_opaque_spans` gives, which is what keeps this in
+        agreement with :meth:`_qualify_conditions` about what the outer query
+        refers to.
+
+        :param fragment: A fragment of SQL, typically a WHERE clause body.
+        :type fragment: str
+        :param column: The column name to look for.
+        :type column: str
+        :return: True if the fragment refers to the column outside any opaque span.
+        :rtype: bool
+        """
+        pattern = rf"(?<!\w){re.escape(column)}(?!\w)"
+        segments = self._split_on_opaque_spans(fragment)
+        return any(re.search(pattern, segment) for segment in segments[::2])
+
+    def _qualify_conditions(self, conditions: str, aliases: Dict[str, str]) -> str:
+        """
+        Qualify bare column references against the tables a query actually joins.
+
+        Lets a user write ``sublevel_duration < 100 AND experiment_id = 2`` and have
+        it work against ``FROM events e JOIN sublevels s``. Only the rewritable
+        parts of the condition are touched; anything inside a string literal or a
+        subquery is left exactly as the user typed it, and a reference the user
+        already qualified is left alone.
+
+        :param conditions: A WHERE clause body, without the leading ``WHERE``.
+        :type conditions: str
+        :param aliases: Table name to alias, for every table in the FROM clause, in
+            join order. The first entry is the anchor.
+        :type aliases: Dict[str, str]
+        :return: The condition with its bare column references qualified.
+        :rtype: str
+        """
+        anchor = next(iter(aliases.values()))
+        passes = [
+            (self.get_column_names_by_table(table) or [], alias)
+            for table, alias in aliases.items()
+        ]
+
+        if len(aliases) > 1:
+            # These are never registered in the "columns" table but exist in more
+            # than one of the joined tables, so a bare reference is ambiguous to
+            # SQLite. A sublevel row carries its parent event's values for all four,
+            # so attributing them to the anchor cannot change which rows match.
+            # "id" is deliberately absent: it is the events row id in one table and
+            # the sublevels row id in the other, so only the user can say which.
+            passes.append(
+                (["experiment_id", "channel_db_id", "channel_id", "event_id"], anchor)
+            )
+
+        # A registered column belongs to exactly one table - "columns.name" is
+        # UNIQUE - so the order of the passes does not matter, and the (?<!\.)
+        # guard keeps each pass off the previous pass's output.
+        segments = self._split_on_opaque_spans(conditions)
+        for index in range(0, len(segments), 2):
+            for cols, alias in passes:
+                for col in sorted(set(cols), key=len, reverse=True):
+                    segments[index] = re.sub(
+                        rf"(?<!\.)\b{re.escape(col)}\b",
+                        f"{alias}.{col}",
+                        segments[index],
+                    )
+
+        return "".join(segments)
+
+    def _find_ambiguous_id(
+        self, conditions: str, aliases: Dict[str, str]
+    ) -> Optional[str]:
+        """
+        Explain how to disambiguate a bare ``id`` in a condition, if there is one.
+
+        ``id`` is the only column a joined query cannot resolve on the user's
+        behalf: it means a different row in every table, so guessing one would
+        silently filter against the wrong thing. Run this after
+        :meth:`_qualify_conditions`, since anything still bare at that point is
+        genuinely unqualified. An ``id`` inside a subquery belongs to that subquery
+        and is not reported, since it resolves against the tables the subquery
+        names.
+
+        :param conditions: A WHERE clause body that has already been qualified.
+        :type conditions: str
+        :param aliases: Table name to alias, for every table in the FROM clause.
+        :type aliases: Dict[str, str]
+        :return: Guidance to show the user, or None if there is nothing ambiguous.
+        :rtype: Optional[str]
+        """
+        if len(aliases) < 2:
+            return None
+
+        segments = self._split_on_opaque_spans(conditions)
+        if not any(
+            re.search(r"(?<![\w.])id(?!\w)", segment) for segment in segments[::2]
+        ):
+            return None
+
+        tables = list(aliases)
+        joined = f"{', '.join(tables[:-1])} and {tables[-1]}"
+        options = ", ".join(
+            f'"{alias}.id" for a row of {table}' for table, alias in aliases.items()
+        )
+        return (
+            'This filter uses "id" on its own, which is ambiguous: the query joins '
+            f"{joined}, and each of those has its own id column. "
+            f"Say which one you mean - write {options}."
+        )
+
     @log(logger=logger)
     def construct_metadata_query(
         self,
@@ -660,34 +881,34 @@ class MetaDatabaseLoader(BaseDataPlugin):
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
     ) -> Tuple[str, str, str]:
         """
-        The query to be constructed will take one of three forms, depending on the tables in which the metadata reside.
+        Build a SELECT over the metadata tables, joining whatever the request needs.
 
-        If all queries are in the events table, then the query executed will be:
-
-        .. code-block:: sql
-
-            SELECT id, experiment_id, channel_id, event_id, [[columns]]
-            FROM events
-            WHERE [[conditions]]
-
-        If all queries are in the sublevels table, then the query executed will be:
+        The shape is derived rather than enumerated. Every query is anchored on
+        ``events`` (or on ``sublevels``, when no events column is involved) and
+        aliased ``e``/``s``/``exp``; the other tables are joined only when the
+        selected columns or the conditions refer to them:
 
         .. code-block:: sql
 
-            SELECT id, experiment_id, channel_id, event_id, [[columns]]
-            FROM sublevels
-            WHERE [[conditions]]
-
-        If the columns are mixed between the tables, the query will be:
-
-        .. code-block:: sql
-
-            SELECT e.id, e.experiment_id, e.channel_id, e.event_id, [[events_columns]], [[sublevels_columns]]
+            SELECT [[DISTINCT]] a.id, a.experiment_id, a.channel_id, a.event_id, [[columns]]
             FROM events e
-            JOIN sublevels s on e.id = s.event_db_id
+            [[JOIN sublevels s ON e.id = s.event_db_id]]
+            [[JOIN experiments exp ON exp.id = e.experiment_id]]
             WHERE [[conditions]]
 
-        Note when constructing the conditions clause that it will need to take into account this structure.
+        ``DISTINCT`` appears when ``sublevels`` is joined purely to filter an events
+        plot, since that repeats each event once per sublevel. The returned id
+        column belongs to the returned table name, which callers rely on to write
+        derived columns back.
+
+        Conditions are qualified against the tables the query actually joins, so a
+        caller passes a plain WHERE clause body - ``sublevel_duration < 100 AND
+        voltage > 50`` - without knowing the shape. Text inside single-quoted
+        literals is never rewritten, and neither is a subquery, which names its own
+        tables and so needs nothing from the outer aliases - a condition whose only
+        reference to another table sits inside a subquery therefore joins nothing.
+        A bare ``id`` is refused, with guidance returned as the debug message,
+        because it means a different row in each table.
 
         :param columns: List of column names to retrieve.
         :type columns: List[str]
@@ -710,33 +931,6 @@ class MetaDatabaseLoader(BaseDataPlugin):
                     "Unable to build tuple from list with only None values"
                 )
             return f"({','.join(filtered_ids)})"
-
-        # Qualify conditions for joined queries to avoid "no such column" / ambiguity
-        def _qualify_conditions_for_events_sublevels_join(cond: str) -> str:
-            """
-            Qualify bare column references so a user can write:
-                sublevel_duration < 100 AND experiment_id = 2
-            and it will work in a query that has:
-                FROM events e JOIN sublevels s ...
-            """
-            # Only qualify if not already qualified with a dot (e.g. "e.id", "s.sublevel_duration")
-            sub_cols = self.get_column_names_by_table("sublevels") or []
-            evt_cols = self.get_column_names_by_table("events") or []
-            exp_cols = self.get_column_names_by_table("experiments") or []
-
-            # Qualify sublevels columns first
-            for col in sorted(set(sub_cols), key=len, reverse=True):
-                cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"s.{col}", cond)
-
-            # Then events columns
-            for col in sorted(set(evt_cols), key=len, reverse=True):
-                cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"e.{col}", cond)
-
-            # Then experiments columns (if present in condition text)
-            for col in sorted(set(exp_cols), key=len, reverse=True):
-                cond = re.sub(rf"(?<!\.)\b{re.escape(col)}\b", f"exp.{col}", cond)
-
-            return cond
 
         # Validate input
         if not columns:
@@ -782,28 +976,66 @@ class MetaDatabaseLoader(BaseDataPlugin):
             col for col, tbl in zip(columns, tables) if tbl == "experiments"
         ]
 
-        # "events" anchor to JOIN experiments via events.
+        # An experiments-only selection is anchored to events, so that the
+        # experiments table can be joined through events.experiment_id.
         if experiments_columns and not events_columns and not sublevels_columns:
             events_columns = ["event_id"]
 
-        # Detect whether we must force a JOIN for cross-table filtering
+        if not events_columns and not sublevels_columns and not experiments_columns:
+            raise ValueError(
+                "No valid table columns specified: You must select at least one column from either the events or sublevels tables"
+            )
+
+        # Detect the joins the conditions need on top of those the selected columns
+        # already imply. _references_column ignores string literals and subqueries,
+        # so this agrees with _qualify_conditions about what counts as a reference
+        # made by the outer query.
         force_events_sublevels_join = False
+        force_experiments_join = False
         if conditions:
             sub_cols = self.get_column_names_by_table("sublevels") or []
             evt_cols = self.get_column_names_by_table("events") or []
+            exp_cols = self.get_column_names_by_table("experiments") or []
 
             if events_columns and not sublevels_columns:
-                for col in sub_cols:
-                    # match word boundaries; also catches "s.col" because it contains "col"
-                    if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
-                        force_events_sublevels_join = True
-                        break
-
+                force_events_sublevels_join = any(
+                    self._references_column(conditions, col) for col in sub_cols
+                )
             elif sublevels_columns and not events_columns:
-                for col in evt_cols:
-                    if re.search(rf"(?<!\w){re.escape(col)}(?!\w)", conditions):
-                        force_events_sublevels_join = True
-                        break
+                force_events_sublevels_join = any(
+                    self._references_column(conditions, col) for col in evt_cols
+                )
+
+            if not experiments_columns:
+                force_experiments_join = any(
+                    self._references_column(conditions, col) for col in exp_cols
+                )
+
+        # The tables the query joins, in join order. The first is the anchor: it
+        # supplies the experiment_id, channel_id and event_id outputs, and the
+        # conditions' bare references to those are attributed to it. A sublevel row
+        # carries its parent event's values for all three, so which of the two is
+        # the anchor does not change the rows that match.
+        aliases: Dict[str, str] = {}
+        if events_columns:
+            aliases["events"] = "e"
+            if sublevels_columns or force_events_sublevels_join:
+                aliases["sublevels"] = "s"
+        else:
+            aliases["sublevels"] = "s"
+            if force_events_sublevels_join:
+                aliases["events"] = "e"
+        if experiments_columns or force_experiments_join:
+            aliases["experiments"] = "exp"
+
+        anchor_table = next(iter(aliases))
+        anchor = aliases[anchor_table]
+
+        # The id column and the table name travel together: callers write derived
+        # columns back with UPDATE <table_name> ... WHERE id = ?, so the id returned
+        # must belong to that table (see ClusteringView.commit_cluster_data).
+        table_name = "sublevels" if sublevels_columns else "events"
+        id_alias = aliases[table_name]
 
         # Normalize experiment names to IDs if necessary
         experiments = None
@@ -824,121 +1056,61 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if conditions:
             base_conditions.append(conditions)
 
-        # Experiment/channel conditions (OR logic between each)
+        # Experiment/channel conditions (OR logic between each). Left unqualified
+        # here; _qualify_conditions anchors them along with the user's own.
         experiment_conditions = []
         if experiments is not None:
-            # when JOINing events+sublevels (including forced join),
-            # always qualify experiment_id/channel_id as e.* to avoid ambiguity.
-            prefix = (
-                "e."
-                if (events_columns and sublevels_columns) or force_events_sublevels_join
-                else ""
-            )
-
             for exp, channel_list in zip(experiments, channels):
                 if channel_list:
-                    condition = f"({prefix}experiment_id = {exp} AND {prefix}channel_id IN {tuple_builder(channel_list)})"
+                    condition = f"(experiment_id = {exp} AND channel_id IN {tuple_builder(channel_list)})"
                 else:
-                    condition = f"({prefix}experiment_id = {exp})"
+                    condition = f"(experiment_id = {exp})"
                 experiment_conditions.append(condition)
 
-        # Combine all into final WHERE clause
         if experiment_conditions:
             base_conditions.append(f"({' OR '.join(experiment_conditions)})")
 
-        condition_clause = (
-            f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
-        )
+        condition_clause = ""
+        if base_conditions:
+            qualified = self._qualify_conditions(" AND ".join(base_conditions), aliases)
+            ambiguous_id = self._find_ambiguous_id(qualified, aliases)
+            if ambiguous_id is not None:
+                return "", ambiguous_id, table_name
+            condition_clause = f"WHERE {qualified}"
 
-        # Determine query type and build it
-        if force_events_sublevels_join and not experiments_columns:
-            # Qualify WHERE clause contents for e./s. usage
-            if condition_clause:
-                raw = condition_clause.replace("WHERE ", "", 1)
-                qualified_conditions = _qualify_conditions_for_events_sublevels_join(
-                    raw
-                )
-                qualified_where = f"WHERE {qualified_conditions}"
-            else:
-                qualified_where = ""
+        # A join to sublevels with no sublevel column selected repeats each event
+        # once per sublevel, so those rows have to be collapsed.
+        distinct = "DISTINCT " if force_events_sublevels_join else ""
 
-            if events_columns and not sublevels_columns:
-                # events plot filtered by sublevels column
-                events_str = ", ".join([f"e.{col}" for col in events_columns])
-                query = f"""SELECT DISTINCT e.id, e.experiment_id, e.channel_id, e.event_id, {events_str}
-                            FROM events e
-                            JOIN sublevels s ON e.id = s.event_db_id
-                            {qualified_where}"""
-                table_name = "events"
-            else:
-                # sublevels plot filtered by events column
-                sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
-                query = f"""SELECT DISTINCT s.id, e.experiment_id, e.channel_id, e.event_id, {sublevels_str}
-                            FROM sublevels s
-                            JOIN events e ON e.id = s.event_db_id
-                            {qualified_where}"""
-                table_name = "sublevels"
+        select_columns = [
+            f"{id_alias}.id",
+            f"{anchor}.experiment_id",
+            f"{anchor}.channel_id",
+            f"{anchor}.event_id",
+        ]
+        for table, table_columns in (
+            ("events", events_columns),
+            ("sublevels", sublevels_columns),
+            ("experiments", experiments_columns),
+        ):
+            select_columns += [f"{aliases[table]}.{col}" for col in table_columns]
 
-        elif events_columns and not sublevels_columns and not experiments_columns:
-            events_str = ", ".join(events_columns)
-            query = f"""SELECT id, experiment_id, channel_id, event_id, {events_str}
-                        FROM events
-                        {condition_clause}"""
-            table_name = "events"
-
-        elif sublevels_columns and not events_columns and not experiments_columns:
-            sublevels_str = ", ".join(sublevels_columns)
-            query = f"""SELECT id, experiment_id, channel_id, event_id, {sublevels_str}
-                        FROM sublevels
-                        {condition_clause}"""
-            table_name = "sublevels"
-
-        elif events_columns and sublevels_columns and not experiments_columns:
-            events_str = ", ".join([f"e.{col}" for col in events_columns])
-            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
-            query = f"""SELECT s.id, e.experiment_id, e.channel_id, e.event_id, {events_str}, {sublevels_str}
-                        FROM events e
-                        JOIN sublevels s
-                        ON e.id = s.event_db_id
-                        {condition_clause}"""
-            table_name = "sublevels"
-
-        elif events_columns and not sublevels_columns and experiments_columns:
-            events_str = ", ".join([f"e.{col}" for col in events_columns])
-            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
-            query = f"""SELECT e.id, e.experiment_id, e.channel_id, e.event_id, {events_str}, {experiments_str}
-                        FROM events e
-                        JOIN experiments exp
-                        ON exp.id = e.experiment_id
-                        {condition_clause}"""
-            table_name = "events"
-
-        elif sublevels_columns and not events_columns and experiments_columns:
-            sublevels_str = ", ".join(sublevels_columns)
-            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
-            query = f"""SELECT s.id, s.experiment_id, s.channel_id, s.event_id, {sublevels_str}, {experiments_str}
-                        FROM sublevels s
-                        JOIN experiments exp
-                        ON exp.id = s.experiment_id
-                        {condition_clause}"""
-            table_name = "sublevels"
-
-        elif events_columns and sublevels_columns and experiments_columns:
-            events_str = ", ".join([f"e.{col}" for col in events_columns])
-            sublevels_str = ", ".join([f"s.{col}" for col in sublevels_columns])
-            experiments_str = ", ".join([f"exp.{col}" for col in experiments_columns])
-            query = f"""SELECT s.id, e.experiment_id, e.channel_id, e.event_id, {events_str}, {sublevels_str}, {experiments_str}
-                        FROM events e
-                        JOIN sublevels s
-                        ON e.id = s.event_db_id
-                        JOIN experiments exp
-                        ON exp.id = s.experiment_id
-                        {condition_clause}"""
-            table_name = "sublevels"
-        else:
-            raise ValueError(
-                "No valid table columns specified: You must select at least one column from either the events or sublevels tables"
+        from_clause = f"FROM {anchor_table} {anchor}"
+        if "events" in aliases and "sublevels" in aliases:
+            joined = "sublevels" if anchor_table == "events" else "events"
+            from_clause += (
+                f"\n                        JOIN {joined} {aliases[joined]}"
+                "\n                        ON e.id = s.event_db_id"
             )
+        if "experiments" in aliases:
+            from_clause += (
+                "\n                        JOIN experiments exp"
+                f"\n                        ON exp.id = {anchor}.experiment_id"
+            )
+
+        query = f"""SELECT {distinct}{', '.join(select_columns)}
+                        {from_clause}
+                        {condition_clause}"""
 
         # Validate query
         valid, debug = self.validate_filter_query(query)
@@ -1008,9 +1180,17 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if experiment_conditions:
             base_conditions.append(f"({' OR '.join(experiment_conditions)})")
 
-        subquery_clause = (
-            f"WHERE {' AND '.join(base_conditions)}" if base_conditions else ""
-        )
+        # The subquery below always joins all three tables, so the same filter text
+        # has to be qualified against the same aliases it would get in
+        # construct_metadata_query.
+        aliases = {"events": "e", "sublevels": "s", "experiments": "exp"}
+        subquery_clause = ""
+        if base_conditions:
+            qualified = self._qualify_conditions(" AND ".join(base_conditions), aliases)
+            ambiguous_id = self._find_ambiguous_id(qualified, aliases)
+            if ambiguous_id is not None:
+                return "", ambiguous_id
+            subquery_clause = f"WHERE {qualified}"
 
         # Main query prefix
         start_clause = """
@@ -1062,14 +1242,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
     def load_metadata_raw(
         self,
         conditions: Optional[str] = None,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """
         Execute a raw SQL query directly, bypassing all query construction.
 
         :param conditions: A complete SQL query string.
         :type conditions: Optional[str]
-        :return: pandas dataframe containing retrieved data
-        :rtype: pd.DataFrame
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query failed or did not validate
+        :rtype: Optional[pd.DataFrame]
         """
         if not conditions:
             return self.query_database_directly("SELECT * FROM events")
@@ -1081,7 +1261,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         columns: List[str],
         conditions: Optional[str] = None,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """
         Fetch specified columns from the metadata database given a query
 
@@ -1093,8 +1273,8 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: pandas dataframe containing retrieved data
-        :rtype: pd.DataFrame
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query could not be built or run
+        :rtype: Optional[pd.DataFrame]
         """
         query, debug, table = self.construct_metadata_query(
             columns, conditions, experiments_and_channels
@@ -1212,24 +1392,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
         valid, debug = self.validate_filter_query(query)
         if valid and not debug:
             metadata_generator = self._load_metadata_generator(query)
-            if metadata_generator is not None:
-                abort = False
-                try:
-                    for event in metadata_generator:
-                        event = event.loc[:, ~event.columns.duplicated()]
-                        abort = yield event
-                        abort = bool(abort)
-                        if abort is True:
-                            break
-                finally:
-                    metadata_generator.close()
-                if abort is True:
-                    self.logger.info("Generator aborted")
-                    return
-            else:
-                self.logger.warning(
-                    "Unable to get events from subset generator that returned None"
-                )
+            abort = False
+            try:
+                for event in metadata_generator:
+                    event = event.loc[:, ~event.columns.duplicated()]
+                    abort = yield event
+                    abort = bool(abort)
+                    if abort is True:
+                        break
+            finally:
+                metadata_generator.close()
+            if abort is True:
+                self.logger.info("Generator aborted")
                 return
         else:
             self.logger.warning(
@@ -1249,13 +1423,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @abstractmethod
     def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
         """
-        **Purpose:** Load and return the data specified by a valid SQL query, or None on failure
+        **Purpose:** Load and return the data specified by a valid SQL query, or None if the query could not be run
 
-        The data should be formatted as a pandas Dataframe object
+        The data should be formatted as a pandas Dataframe object. A query that
+        matched no rows must return an empty dataframe rather than None, so that
+        callers can tell an empty result from a failed query.
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
-        :return: A dataframe containing the requested event data as columns or None on failure
+        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows, or None if the query could not be run
         :rtype: Optional[pd.DataFrame]
         """
         pass

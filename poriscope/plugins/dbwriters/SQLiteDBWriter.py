@@ -26,11 +26,10 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, override
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -60,6 +59,8 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
         :type channel: Optional[int]
         :raises RuntimeError: if the configured experiment cannot be found in the database
+        :raises sqlite3.Error: if the delete fails, so that the caller cannot treat an
+            unreset channel as a clean slate
         """
         conn = None
         cursor = None
@@ -93,9 +94,19 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             if conn:
                 conn.execute("ROLLBACK TO SAVEPOINT reset_channel")
                 conn.rollback()
-            self.logger.warning(
+            # Raised rather than swallowed, and at ERROR rather than WARNING. This
+            # is a destructive operation the caller relies on having happened -
+            # MetaDatabaseWriter.write_events follows an abort with
+            # `self.written[channel] = 0`, which claims a clean slate - so
+            # returning normally after a failed delete left the writer's
+            # bookkeeping disagreeing with the database, and at WARNING the user
+            # was never told, since QtHandler floors at ERROR. The abort path that
+            # calls this guards against the raise so it cannot mask an in-flight
+            # error.
+            self.logger.error(
                 f"Failed to delete (experiment_id={experiment_id}, channel_id={channel}): {e}, channel not reset"
             )
+            raise
         else:
             conn.execute("RELEASE SAVEPOINT reset_channel")
             conn.commit()
@@ -116,12 +127,41 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :type channel: Optional[int]
         """
         if self.cursor:
-            self.cursor.close()
+            # Guarded like the commit below, and for the same reason: closing a
+            # cursor whose connection has already gone raises, and this method is
+            # called inline just before the errors its callers actually want
+            # reported. SQLiteEventWriter.close_resources already guarded this.
+            try:
+                self.cursor.close()
+            except Exception:
+                self.logger.info(
+                    f"Failed to close cursor cleanly for channel {channel}"
+                )
             self.cursor = None
         if self.conn:
             self.logger.debug("Closing database connection.")
-            self.conn.commit()  # Ensure all writes are committed
-            self.conn.close()  # Close the connection to release the lock
+            try:
+                self.conn.commit()  # Ensure all writes are committed
+                self.conn.close()  # Close the connection to release the lock
+            except Exception:
+                # Reported at ERROR rather than raised, matching
+                # SQLiteEventWriter.close_resources. For a batch that ends via
+                # write_events' `finally` this is the only commit, so a failure
+                # here means the batch was not saved and the user has to be told;
+                # QtHandler floors at ERROR, so this is what surfaces it.
+                #
+                # It must not raise: several callers invoke close_resources inline
+                # immediately before raising the error they actually want reported
+                # (the early-exit arms of MetaDatabaseWriter.write_events), and an
+                # unguarded commit here replaced those errors rather than adding to
+                # them - measured, a failing commit surfaced as sqlite3's
+                # ProgrammingError in place of the ValueError explaining that
+                # eventfitting had not completed.
+                self.logger.error(
+                    f"Failed to commit and close the database for channel {channel}; "
+                    "events written in this batch may not have been saved.",
+                    exc_info=True,
+                )
             self.conn = None
         else:
             self.logger.debug("Database connection not open to close.")
@@ -227,8 +267,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :raises Exception: if an unexpected error occurs while writing the event
         """
         if abort is True:
+            # Discarding the channel's whole uncommitted batch is intended here:
+            # MetaDatabaseWriter follows an abort with reset_channel() and sets
+            # written = 0, so the caller already treats the run as void. Only the
+            # per-event savepoint is not rolled back to, because on this path no
+            # event is in progress.
             if self.conn:
-                self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                 self.conn.rollback()
             if self.cursor:
                 self.cursor.close()
@@ -237,15 +281,28 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 self.conn.close()
                 self.conn = None
             return False
+        # Tracks whether this call has an open savepoint to roll back to, so a
+        # failure raised before the SAVEPOINT below (connecting, say) does not try
+        # to roll back to a savepoint that was never taken.
+        savepoint_active = False
         try:
             success = False
             if self.conn is None:
                 self.conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
                 self.conn.execute("PRAGMA foreign_keys = ON;")
                 self.cursor = self.conn.cursor()
-                self.conn.execute("SAVEPOINT write_event")
             if self.conn is None or self.cursor is None:
                 raise ValueError("Unable to open database connection in _write_event")
+            # One savepoint per event, not one per batch. Taken per call so that a
+            # failure rolls back only the event that failed; the batch stays in a
+            # single transaction and still commits once, at last_call. The previous
+            # form took this savepoint only when the connection was first opened,
+            # so rolling back to it discarded every event written since - and the
+            # conn.rollback() that followed destroyed the savepoint outright, so
+            # the next failure raised "no such savepoint" from inside the handler
+            # and masked the real error.
+            self.conn.execute("SAVEPOINT write_event")
+            savepoint_active = True
             # Get the experiment ID based on the experiment name
             experiment_name = self.settings["Experiment Name"]["Value"]
             self.cursor.execute(
@@ -299,18 +356,32 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                     )
 
         except sqlite3.Error as e:
-            if self.conn:
+            # Undo only this event. Deliberately no conn.rollback() here - the
+            # caller files this as a per-event rejection and carries on to the next
+            # event, so the events already written in this batch must survive.
+            if self.conn and savepoint_active:
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
-                self.conn.rollback()  # Rollback all changes if any operation fails
+                self.conn.execute("RELEASE SAVEPOINT write_event")
             self.logger.error(f"Failed to write event: {e}")
             raise
         except Exception as e:  # Fallback for truly unexpected errors
-            if self.conn:
+            if self.conn and savepoint_active:
                 self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
-                self.conn.rollback()
+                self.conn.execute("RELEASE SAVEPOINT write_event")
             self.logger.critical(f"Unexpected error writing event: {e}", exc_info=True)
             raise
         else:
+            if self.conn and savepoint_active:
+                if success:
+                    self.conn.execute("RELEASE SAVEPOINT write_event")
+                else:
+                    # An event can fail without raising: _insert_sublevels and
+                    # _insert_event_data return False, and the earlier steps are
+                    # skipped rather than undone. Rolling back to the savepoint
+                    # makes the event all-or-nothing instead of committing the
+                    # orphaned events/sublevels rows it managed to write.
+                    self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
+                    self.conn.execute("RELEASE SAVEPOINT write_event")
             if self.conn and last_call is True:
                 self.conn.commit()
         finally:
@@ -531,20 +602,45 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 units TEXT
             );
             """,
+            # Dropped and recreated rather than CREATE IF NOT EXISTS: earlier
+            # versions installed unscoped forms of both triggers, and IF NOT EXISTS
+            # is a no-op against a database that already carries one, so every
+            # existing file would keep the unscoped version. _initialize_database
+            # runs against existing databases too, so this migrates them in place.
             """
-            CREATE TRIGGER IF NOT EXISTS delete_childless_experiments
+            DROP TRIGGER IF EXISTS delete_childless_experiments;
+            """,
+            # Scoped to OLD.experiment_id. The unscoped form this replaces deleted
+            # every childless experiment in the file on any channel deletion, so
+            # removing one channel from one experiment could cascade away unrelated
+            # experiments that happened to have no channels of their own.
+            """
+            CREATE TRIGGER delete_childless_experiments
             AFTER DELETE ON channels
             BEGIN
                 DELETE FROM experiments
-                WHERE id NOT IN (SELECT DISTINCT experiment_id FROM channels);
+                WHERE id = OLD.experiment_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM channels WHERE experiment_id = OLD.experiment_id
+                  );
             END;
             """,
             """
-            CREATE TRIGGER IF NOT EXISTS delete_childless_channels
+            DROP TRIGGER IF EXISTS delete_childless_channels;
+            """,
+            # Scoped to OLD.channel_db_id, for the same reason: deleting one
+            # channel's events used to sweep every childless channel in the file,
+            # which then fired the trigger above and took their experiments with
+            # them.
+            """
+            CREATE TRIGGER delete_childless_channels
             AFTER DELETE ON events
             BEGIN
                 DELETE FROM channels
-                WHERE id NOT IN (SELECT DISTINCT channel_db_id FROM events);
+                WHERE id = OLD.channel_db_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM events WHERE channel_db_id = OLD.channel_db_id
+                  );
             END;
             """,
             """

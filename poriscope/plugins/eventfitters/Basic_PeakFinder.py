@@ -24,12 +24,11 @@
 # Nada Kerrouri
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, override
 
 import numpy as np
 import numpy.typing as npt
 from scipy.signal import find_peaks
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

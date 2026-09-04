@@ -35,9 +35,10 @@ dependencies = [
 dev = [
     "black==25.1.0",
     "ruff==0.12.11",
-    "mypy==1.9.0",
+    "mypy==1.17.1",
     "pydoclint==0.9.1",
     "pytest==8.4.1",
+    "pytest-cov==7.1.0",
     "pytest-mock==3.14.1",
     "pytest-qt==4.5.0",
     "pytest-timeout==2.4.0",

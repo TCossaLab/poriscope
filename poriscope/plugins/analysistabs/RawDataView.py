@@ -27,14 +27,13 @@
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
@@ -69,6 +68,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         """Initialize the RawDataView-specific attributes."""
 
         self.analysis_time_limits: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        self.timer_channels: Sequence[int] = []
 
     @log(logger=logger)
     @override
@@ -373,7 +373,10 @@ class RawDataView(MetaView, WalkthroughMixin):
 
             for finder in eventfinders:
                 if finder not in self.analysis_time_limits.keys():
-                    self.analysis_time_limits[finder] = {}
+                    # Cleared first so that a failed dispatch cannot seed this
+                    # finder with the previous finder's channels, and the finder
+                    # is registered only on success so the next call retries it.
+                    self.timer_channels = []
                     self.global_signal.emit(
                         "MetaEventFinder",
                         finder,
@@ -382,10 +385,14 @@ class RawDataView(MetaView, WalkthroughMixin):
                         "update_timer_channels",
                         (),
                     )
-                    for ch in self.timer_channels:
-                        self.analysis_time_limits[finder][ch] = {}
-                        self.analysis_time_limits[finder][ch]["start"] = 0
-                        self.analysis_time_limits[finder][ch]["end"] = 0
+                    if not self.timer_channels:
+                        self.logger.error(
+                            f"Could not get channels for {finder}, not registering it yet"
+                        )
+                        continue
+                    self.analysis_time_limits[finder] = {
+                        ch: {"start": 0, "end": 0} for ch in self.timer_channels
+                    }
 
             self.logger.info("ComboBoxes updated with available readers and filters")
         except Exception as e:

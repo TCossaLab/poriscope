@@ -633,13 +633,15 @@ class TestSQLiteDBLoader:
     def test_load_metadata_empty_result(
         self, loader: SQLiteDBLoader, mock_db: Path
     ) -> None:
-        """Test loading metadata with query returning no results."""
+        """A query matching no rows returns an empty frame, not None."""
         loader.db_path = mock_db
         df = loader._load_metadata("SELECT * FROM experiments WHERE id = 999")
-        assert df is None
+        assert df is not None
+        assert df.empty
+        assert "name" in df.columns
 
     def test_load_metadata_db_error(self, loader: SQLiteDBLoader) -> None:
-        """Test loading metadata with database error."""
+        """None is reserved for a query that could not be run at all."""
         loader.db_path = Path("/nonexistent/path.db")
         df = loader._load_metadata("SELECT * FROM experiments")
         assert df is None

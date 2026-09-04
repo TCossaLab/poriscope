@@ -27,7 +27,7 @@
 import logging
 import re
 import sys
-from typing import Any, List, Optional, Tuple
+from typing import Optional, Tuple
 
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
@@ -91,47 +91,8 @@ class FloatRangeValidator(BaseValidator):
 class FloatRangeLineEdit(BaseLineEdit):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._used_floats = False
-
     def create_validator(self) -> FloatRangeValidator:
         return FloatRangeValidator(self)
-
-    def get_values(self) -> List[float]:
-        """Parse and return a list of floats covering the defined ranges."""
-        text = self.text()
-        result = set()
-        self._used_floats = False  # Reset before parsing
-
-        segments = text.split(",")
-        for segment in segments:
-            segment = segment.strip()
-            if "-" in segment:
-                try:
-                    start_str, end_str = segment.split("-")
-                    start = float(start_str)
-                    end = float(end_str)
-                    if "." in start_str or "." in end_str:
-                        self._used_floats = True
-                    result.update(
-                        [start + i * 0.1 for i in range(int((end - start) * 10) + 1)]
-                    )
-                except ValueError:
-                    self.logger.debug(f"Invalid range in segment: '{segment}'")
-            else:
-                try:
-                    num = float(segment)
-                    if "." in segment:
-                        self._used_floats = True
-                    result.add(num)
-                except ValueError:
-                    self.logger.debug(f"Invalid float in segment: '{segment}'")
-
-        return sorted(result)
-
-    def used_floats(self) -> bool:
-        return self._used_floats
 
     def get_start(self) -> Optional[float]:
         """Extracts and returns the starting float of the first valid range or number."""

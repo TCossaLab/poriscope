@@ -28,7 +28,7 @@ import logging
 from collections.abc import Sequence
 from enum import IntEnum
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, override
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +37,6 @@ from numpy.typing import NDArray
 from sklearn.ensemble import AdaBoostRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.tree import DecisionTreeRegressor
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

@@ -25,11 +25,10 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import override
 
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.utils.DocstringDecorator import inherit_docstrings

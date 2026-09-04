@@ -202,12 +202,19 @@ Run individual validation tools:
 .. warning::
 
    Use ``pre-commit run mypy`` rather than a bare ``mypy poriscope``. The hook runs
-   mypy in an isolated environment with a pinned version and no project dependencies,
-   which is exactly what CI does. Running mypy directly from your own virtual
-   environment uses a different version *and* sees the real PySide6/numpy/pandas type
-   stubs, and it will report several hundred additional messages that the gate does
-   not care about. Those are not failures you need to fix — they are a different tool
-   configuration answering a different question. **The hook is the gate.**
+   mypy in an isolated environment with no project dependencies, which is exactly what
+   CI does. Running mypy directly from your own virtual environment sees the real
+   PySide6/numpy/pandas type stubs, and it will report several hundred additional
+   messages that the gate does not care about. Those are not failures you need to fix —
+   they are a different tool configuration answering a different question.
+   **The hook is the gate.**
+
+   The version is pinned in two places and they are deliberately kept equal:
+   ``.pre-commit-config.yaml`` runs mirrors-mypy ``rev: v1.17.1``, and
+   ``pyproject.toml``'s ``[dev]`` extra and ``requirements-dev.txt`` both declare
+   ``mypy==1.17.1``. If you bump one, bump the other in the same commit — the two drifted
+   apart until 2026-09-04, and the resulting version gap was mistaken for the dependency
+   blindness described above. See ``DECISIONS.md``.
 
 .. _docs_render_check:
 
@@ -301,12 +308,17 @@ After running:
    The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled
    *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
    ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
-   maintained code fixed; every site that still reports sits in a file owned by another
-   developer, so enabling the rule would require a ``per-file-ignores`` entry that hides
-   a real check rather than satisfying it. The reasoning, and the separate acceptance of
-   the ``S608`` hardcoded-SQL sites, are recorded in ``DECISIONS.md``; what each audit
-   found is in ``changelog.md``. Please do not re-propose them without reading that
-   entry first.
+   maintained code fixed. What keeps each one from becoming a gate differs by rule.
+   ``S101`` would flag every ``assert`` in the test suite, where 2,243 of its 2,250 sites
+   are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
+   per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
+   advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
+   spread across the test suite, the ``scripts/autodoc/`` generators and the fitter
+   plugins another developer maintains. In each case enabling the rule would require a
+   ``per-file-ignores`` entry that hides a real check rather than satisfying it. The
+   reasoning, and the separate acceptance of the ``S608`` hardcoded-SQL sites, are
+   recorded in ``DECISIONS.md``; what each audit found is in ``changelog.md``. Please do
+   not re-propose them without reading that entry first.
 
    **This is a different question from the security rules that do run on the plugin
    tree.** ``ruff-plugin-security`` selects a separate, narrower set of ``S`` rules and
@@ -496,6 +508,34 @@ exclusions, and ``mypy.ini`` enforces that:
 
 .. _plugin_compliance_testing:
 
+Test Suite Configuration
+-------------------------
+
+``pytest.ini`` is the only pytest configuration in the repository. Two settings there are
+worth knowing about before you add tests:
+
+- ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
+  exists because a hung Qt test otherwise runs to GitHub Actions' six-hour job limit. It
+  is not a performance budget: the slowest unit test measures about 1.4 seconds, and the
+  explicit ``@pytest.mark.timeout`` markers under ``tests/e2e/`` and
+  ``tests/integration/`` are all 90 seconds or less and still override the default. **If
+  your test trips this value, that is a finding about the test, not a reason to raise
+  the number.**
+- ``--strict-markers`` — an unregistered marker name is a collection error rather than an
+  expression that matches nothing. Register any new marker in the ``markers`` list.
+
+Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` extra but is
+**not** wired into ``addopts``:
+
+.. code-block:: bash
+
+   pytest --cov=poriscope --cov-report=term-missing
+
+Run it deliberately when you want the number. The plain ``pytest`` invocation is the
+pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
+the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
+drop, so treat it as information rather than a gate.
+
 Plugin Interface Compliance Testing
 ------------------------------------
 
@@ -674,8 +714,13 @@ Warnings are errors here, and the same build runs on your pull request. See
 
 ☐ **6. Update the changelog.**
 
-Add a short, plain-language entry to ``changelog.md`` describing what changed, under
-the appropriate existing heading.
+Add a plain-language entry to ``changelog.md`` describing what changed, under the
+appropriate existing heading — **one line per change, and no more**. The changelog is
+written for users, so it carries the essential user-facing information and nothing else:
+no sub-bullets, no measurements, and no explanation of why the change was made or what was
+rejected along the way. A breaking change is still called out explicitly as breaking,
+because that *is* user-facing. Reasoning that needs preserving belongs in ``DECISIONS.md``
+instead.
 
 .. warning::
 

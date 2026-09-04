@@ -25,7 +25,6 @@
 # Alejandra Carolina González González
 
 import logging
-import traceback
 import warnings
 from abc import abstractmethod
 from pathlib import Path
@@ -352,7 +351,7 @@ class MetaWriter(BaseDataPlugin):
 
         :param channel: the index of the channel to commit
         :type channel: int
-        :raises Exception: if writing channel metadata fails unexpectedly, or if an unrecoverable error occurs while iterating events
+        :raises Exception: if the output file cannot be opened, if writing channel metadata fails unexpectedly, or if an unrecoverable error occurs while iterating events
         :yield: the progress of the interator, normalized to [0,1]
         :ytype: float
         """
@@ -375,13 +374,21 @@ class MetaWriter(BaseDataPlugin):
 
         try:
             self._initialize_database(channel)
-        except Exception as e:
-            self.logger.info(
-                f"Unable to open file: {type(e).__name__}: {e}, Traceback: {traceback.format_exc()}"
+        except Exception:
+            # Raised rather than reported as a finished run. This used to log at
+            # INFO and then `yield 1.0; return`, which EventWorker turns into a
+            # 100% progress bar and "Generator finished." at INFO - so a writer
+            # that could not open its output file was indistinguishable from one
+            # that had written everything, and the user was left with an empty
+            # database and no indication anything had gone wrong. The sibling
+            # handler below, for channel-metadata failures, has always raised;
+            # EventWorker's own `except Exception` arm reports a raised failure
+            # with a traceback and still emits the progress-bar completion value.
+            self.logger.error(
+                f"Unable to open output file for channel {channel}", exc_info=True
             )
             self.close_resources(channel)
-            yield 1.0
-            return
+            raise
 
         try:
             self._write_channel_metadata(channel)
@@ -471,10 +478,33 @@ class MetaWriter(BaseDataPlugin):
                 raise
             finally:
                 if abort is True:
-                    self.reset_channel(channel)
-                    self.written[channel] = 0
+                    # Guarded because reset_channel now raises on failure and this
+                    # is a finally block, where an unguarded raise would replace
+                    # whatever exception was already propagating. written is left
+                    # as it stands on failure rather than zeroed, so it does not
+                    # claim a clean slate the output never got.
+                    try:
+                        self.reset_channel(channel)
+                        self.written[channel] = 0
+                    except Exception:
+                        self.logger.error(
+                            f"Abort requested but channel {channel} could not be "
+                            "reset; the output still holds its partial events.",
+                            exc_info=True,
+                        )
         finally:
-            self.close_resources(channel)
+            # Guarded for the same reason: close_resources raises if the commit it
+            # performs fails, and that is the only commit for a batch that ends
+            # here, so the failure must be reported without masking an in-flight
+            # exception.
+            try:
+                self.close_resources(channel)
+            except Exception:
+                self.logger.error(
+                    f"Failed to finalize the output for channel {channel}; events "
+                    "written in this batch may not have been saved.",
+                    exc_info=True,
+                )
 
     @log(logger=logger)
     def _validate_param_types(self, settings: dict) -> None:
@@ -534,7 +564,8 @@ class MetaWriter(BaseDataPlugin):
                 data = (data - offset) / scale
             else:
                 warnings.warn(
-                    "Rescaling data to ADC codes without providing a gain setting may result in loss of precision!"
+                    "Rescaling data to ADC codes without providing a gain setting may result in loss of precision!",
+                    stacklevel=2,
                 )
                 data_max = np.max(data)
                 data_min = np.min(data)

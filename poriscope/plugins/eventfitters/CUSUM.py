@@ -25,11 +25,10 @@
 
 import logging
 import warnings
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, override
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -335,7 +334,14 @@ class CUSUM(MetaEventFitter):
                         gneg[0 : len(gneg)] = 0
                         mean = data[anchor]
                         varM = data[anchor]
-            varS = 0
+                        # Welford's accumulator restarts with the new anchor, the
+                        # same way varM does. Carrying varS over from the previous
+                        # anchor while the divisor (k - anchor) restarts at 1
+                        # inflates the variance estimate, and logp/logn scale as
+                        # 1/variance, so the decision functions are suppressed
+                        # across exactly the window where the next transition is
+                        # most likely.
+                        varS = 0
             edges = np.append(edges, length)  # mark the end of the event as an edge
             num_states += 1
 

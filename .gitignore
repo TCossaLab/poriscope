@@ -170,7 +170,7 @@ docs/source/autodoc/
 
 # # Ignore built Sphinx documentation / Prevent tracking of backup or build artifacts
 docs/build/
-docs/source/.doctrees/
+docs/.doctrees/
 *.pyc
 __pycache__/
 .kateproject

@@ -1,5 +1,6 @@
 """Unit tests for MetaDatabaseLoader abstract base class."""
 
+import sqlite3
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -765,10 +766,16 @@ class TestGetExperimentIdByNameBase:
     ) -> None:
         assert MetaDatabaseLoader.get_experiment_id_by_name(loader, "") is None
 
+    @pytest.mark.parametrize(
+        "query_result",
+        [None, pd.DataFrame()],
+        ids=["query_failed", "no_such_experiment"],
+    )
     def test_base_impl_not_found_returns_none(
-        self, loader: ConcreteDatabaseLoader
+        self, loader: ConcreteDatabaseLoader, query_result: Optional[pd.DataFrame]
     ) -> None:
-        with patch.object(loader, "query_database_directly", return_value=None):
+        """None for a failed query and an empty frame for no match both mean "no id"."""
+        with patch.object(loader, "query_database_directly", return_value=query_result):
             assert (
                 MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing") is None
             )
@@ -1129,20 +1136,6 @@ class TestLoadEventDataMalformed:
 
 
 # ---------------------------------------------------------------------------
-# query_database_directly_and_get_generator - generator-is-None branch
-# ---------------------------------------------------------------------------
-class TestQueryGeneratorNoneBranch:
-    def test_none_generator_logs_warning_and_yields_nothing(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        with patch.object(loader, "_load_metadata_generator", return_value=None):
-            rows = list(
-                loader.query_database_directly_and_get_generator("SELECT * FROM events")
-            )
-            assert rows == []
-
-
-# ---------------------------------------------------------------------------
 # get_empty_settings - base class default implementation (the concrete
 # loader overrides this for other tests, so invoke the base version
 # explicitly here).
@@ -1178,6 +1171,446 @@ class TestTupleBuilderOnlyNoneBranches:
             loader.construct_metadata_query(
                 ["dwell_time"], experiments_and_channels={"exp1": [None]}
             )
+
+
+# ---------------------------------------------------------------------------
+# Condition qualification. The fixture registers dwell_time/amplitude/area to
+# events, sublevel_duration/sublevel_amplitude to sublevels and name/date to
+# experiments, mirroring how the real "columns" table maps a metric to the one
+# table that owns it.
+# ---------------------------------------------------------------------------
+class TestConditionQualification:
+    def test_literal_matching_a_column_name_is_not_rewritten(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # A quoted value is data, not a column reference. Rewriting it produced
+        # valid SQL that quietly matched nothing.
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="name = 'sublevel_duration'"
+        )
+        assert debug == ""
+        assert "'sublevel_duration'" in query
+        assert "'s.sublevel_duration'" not in query
+
+    def test_doubled_quote_escape_inside_a_literal_survives(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="name = 'it''s sublevel_duration'"
+        )
+        assert debug == ""
+        assert "'it''s sublevel_duration'" in query
+
+    def test_column_name_only_inside_a_literal_does_not_force_a_join(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # The join-detection scan reads the same way the qualifier does, so a
+        # sublevels column that appears only as a value does not drag the
+        # sublevels table into the query.
+        query, debug, table = loader.construct_metadata_query(
+            ["amplitude"], conditions="name = 'sublevel_duration'"
+        )
+        assert debug == ""
+        assert "JOIN sublevels" not in query
+        assert table == "events"
+
+    def test_experiments_column_in_a_condition_forces_the_join(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, table = loader.construct_metadata_query(
+            ["amplitude"], conditions="date > 50"
+        )
+        assert debug == ""
+        assert "JOIN experiments exp" in query
+        assert "exp.date > 50" in query
+        assert table == "events"
+
+    def test_experiments_column_condition_on_a_sublevels_plot_forces_the_join(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, table = loader.construct_metadata_query(
+            ["sublevel_duration"], conditions="date > 50"
+        )
+        assert debug == ""
+        assert "JOIN experiments exp" in query
+        assert "ON exp.id = s.experiment_id" in query
+        assert "exp.date > 50" in query
+        assert table == "sublevels"
+
+    def test_shared_identity_column_is_qualified_in_a_forced_join(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="sublevel_duration < 100 AND experiment_id = 2"
+        )
+        assert debug == ""
+        assert "e.experiment_id = 2" in query
+
+    def test_shared_identity_column_is_qualified_when_both_tables_are_selected(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # This shape used to pass the condition through unqualified into
+        # "FROM events e JOIN sublevels s", where a bare experiment_id is
+        # ambiguous to SQLite.
+        query, debug, table = loader.construct_metadata_query(
+            ["amplitude", "sublevel_duration"], conditions="experiment_id = 2"
+        )
+        assert debug == ""
+        assert "e.experiment_id = 2" in query
+        assert table == "sublevels"
+
+    def test_events_condition_on_a_sublevels_and_experiments_plot_joins_events(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # Selecting sublevels+experiments columns and filtering on an events
+        # column used to produce a query with no events table at all.
+        query, debug, table = loader.construct_metadata_query(
+            ["sublevel_duration", "date"], conditions="amplitude > 5"
+        )
+        assert debug == ""
+        assert "JOIN events e" in query
+        assert "e.amplitude > 5" in query
+        assert table == "sublevels"
+
+    def test_an_already_qualified_reference_is_left_alone(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="s.sublevel_duration < 100 AND e.amplitude > 5"
+        )
+        assert debug == ""
+        assert "s.s.sublevel_duration" not in query
+        assert "e.e.amplitude" not in query
+
+    def test_single_table_query_leaves_identity_columns_bare(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # Nothing to disambiguate against, so no qualifier is added.
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="experiment_id = 2"
+        )
+        assert debug == ""
+        assert "JOIN" not in query
+        assert "WHERE experiment_id = 2" in query
+
+    def test_event_data_query_qualifies_conditions(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # Its subquery always joins all three tables, so the same filter text has
+        # to be qualified there too.
+        query, debug = loader.construct_event_data_query(
+            conditions="sublevel_duration < 100 AND experiment_id = 2"
+        )
+        assert debug == ""
+        assert "s.sublevel_duration < 100" in query
+        assert "e.experiment_id = 2" in query
+
+
+# ---------------------------------------------------------------------------
+# A bare "id" is the one reference the qualifier will not resolve: it is the
+# events row id in one table and the sublevels row id in another, so guessing
+# would silently filter against the wrong thing.
+# ---------------------------------------------------------------------------
+class TestAmbiguousIdRejection:
+    def test_bare_id_in_a_joined_query_is_rejected_with_guidance(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="sublevel_duration < 100 AND id = 5"
+        )
+        assert query == ""
+        assert '"e.id"' in debug
+        assert '"s.id"' in debug
+
+    def test_guidance_names_only_the_tables_that_query_joins(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        _, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="sublevel_duration < 100 AND id = 5"
+        )
+        assert '"exp.id"' not in debug
+
+    def test_bare_id_is_allowed_when_only_one_table_is_queried(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="id = 5"
+        )
+        assert debug == ""
+        assert "WHERE id = 5" in query
+
+    def test_qualified_id_in_a_joined_query_is_accepted(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="sublevel_duration < 100 AND e.id = 5"
+        )
+        assert debug == ""
+        assert "e.id = 5" in query
+
+    def test_id_inside_a_string_literal_is_not_a_reference(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="sublevel_duration < 100 AND name = 'id'"
+        )
+        assert debug == ""
+        assert "'id'" in query
+
+    def test_bare_id_in_event_data_query_is_rejected_with_guidance(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        query, debug = loader.construct_event_data_query(conditions="id = 5")
+        assert query == ""
+        assert '"exp.id"' in debug
+
+
+# ---------------------------------------------------------------------------
+# Callers write derived columns back with UPDATE <table_name> ... WHERE id = ?
+# (ClusteringView.commit_cluster_data), so the returned id column has to belong
+# to the returned table name in every query shape.
+# ---------------------------------------------------------------------------
+class TestQueryShapeInvariants:
+    @pytest.mark.parametrize(
+        "columns, conditions, expected_table",
+        [
+            (["amplitude"], None, "events"),
+            (["sublevel_duration"], None, "sublevels"),
+            (["amplitude", "sublevel_duration"], None, "sublevels"),
+            (["amplitude", "date"], None, "events"),
+            (["sublevel_duration", "date"], None, "sublevels"),
+            (["amplitude", "sublevel_duration", "date"], None, "sublevels"),
+            (["date"], None, "events"),
+            (["amplitude"], "sublevel_duration < 100", "events"),
+            (["sublevel_duration"], "amplitude > 5", "sublevels"),
+            (["amplitude"], "date > 50", "events"),
+        ],
+    )
+    def test_returned_id_column_belongs_to_the_returned_table(
+        self,
+        loader: ConcreteDatabaseLoader,
+        columns: List[str],
+        conditions: Optional[str],
+        expected_table: str,
+    ) -> None:
+        query, debug, table = loader.construct_metadata_query(
+            columns, conditions=conditions
+        )
+        assert debug == ""
+        assert table == expected_table
+        alias = "e" if table == "events" else "s"
+        assert query.split(",")[0].endswith(f"{alias}.id")
+
+    def test_distinct_only_when_sublevels_is_joined_purely_to_filter(
+        self, loader: ConcreteDatabaseLoader
+    ) -> None:
+        # An events plot filtered by a sublevels column repeats each event once
+        # per sublevel and has to collapse them.
+        filtered, _, _ = loader.construct_metadata_query(
+            ["amplitude"], conditions="sublevel_duration < 100"
+        )
+        assert "SELECT DISTINCT" in filtered
+
+        # Selecting a sublevels column means sublevel grain is what was asked
+        # for, so the rows are not duplicates.
+        plotted, _, _ = loader.construct_metadata_query(
+            ["amplitude", "sublevel_duration"]
+        )
+        assert "SELECT DISTINCT" not in plotted
+
+
+# ---------------------------------------------------------------------------
+# The assertions above check the SQL that comes out. These check that it runs
+# and selects the right rows, against a database carrying the schema
+# SQLiteDBWriter actually creates. A shape assertion cannot catch a query that
+# names a table the FROM clause never joined, which is what "exp.voltage"
+# against "FROM events e JOIN sublevels s" used to be.
+# ---------------------------------------------------------------------------
+PRODUCTION_SCHEMA = """
+CREATE TABLE experiments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+    voltage REAL NOT NULL, thickness REAL NOT NULL, conductivity REAL NOT NULL);
+CREATE TABLE channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL, samplerate REAL NOT NULL);
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL,
+    channel_db_id INTEGER NOT NULL, channel_id INTEGER NOT NULL,
+    event_id INTEGER NOT NULL, start_time REAL NOT NULL,
+    num_sublevels INTEGER NOT NULL, duration REAL, sequence TEXT);
+CREATE TABLE sublevels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL,
+    channel_db_id INTEGER NOT NULL, event_db_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL, event_id INTEGER NOT NULL,
+    level_id INTEGER NOT NULL, levels_left INTEGER NOT NULL,
+    sublevel_duration REAL);
+CREATE TABLE data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER NOT NULL,
+    channel_db_id INTEGER NOT NULL, event_db_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL, event_id INTEGER NOT NULL,
+    data_format TEXT NOT NULL, filtered_data BLOB NOT NULL,
+    raw_data BLOB NOT NULL, fit_data BLOB NOT NULL);
+CREATE TABLE columns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+    table_name TEXT NOT NULL, units TEXT);
+
+INSERT INTO columns (name, table_name, units) VALUES
+    ('duration', 'events', 'us'),
+    ('sequence', 'events', NULL),
+    ('sublevel_duration', 'sublevels', 'us'),
+    ('voltage', 'experiments', 'mV'),
+    ('thickness', 'experiments', 'nm'),
+    ('conductivity', 'experiments', 'S/m');
+
+INSERT INTO experiments (name, voltage, thickness, conductivity)
+    VALUES ('lo', 40, 10, 1.0), ('hi', 100, 10, 1.0);
+INSERT INTO channels (experiment_id, channel_id, samplerate)
+    VALUES (1, 0, 1e6), (2, 0, 1e6);
+
+-- Experiment 1 is at 40 mV and holds a short event and a long one; experiment 2
+-- is at 100 mV and holds a long one. Each event has a short leading sublevel and
+-- a long trailing one, so events and sublevels select different row counts.
+INSERT INTO events
+    (experiment_id, channel_db_id, channel_id, event_id, start_time,
+     num_sublevels, duration, sequence)
+    VALUES (1, 1, 0, 0, 0.0, 2, 50.0, 'duration'),
+           (1, 1, 0, 1, 1.0, 2, 500.0, 'ACGT'),
+           (2, 2, 0, 0, 2.0, 2, 500.0, 'sublevel_duration');
+INSERT INTO sublevels
+    (experiment_id, channel_db_id, event_db_id, channel_id, event_id,
+     level_id, levels_left, sublevel_duration)
+    VALUES (1, 1, 1, 0, 0, 0, 1, 10.0), (1, 1, 1, 0, 0, 1, 0, 40.0),
+           (1, 1, 2, 0, 1, 0, 1, 10.0), (1, 1, 2, 0, 1, 1, 0, 490.0),
+           (2, 2, 3, 0, 0, 0, 1, 10.0), (2, 2, 3, 0, 0, 1, 0, 490.0);
+"""
+
+
+class ProductionSchemaLoader(ConcreteDatabaseLoader):
+    """A loader whose column lookups come from a real database."""
+
+    def __init__(self, connection: sqlite3.Connection):
+        """
+        Bind the loader to an open connection.
+
+        :param connection: An open connection to a production-schema database.
+        :type connection: sqlite3.Connection
+        """
+        self.connection = connection
+        super().__init__(settings={"Input File": {"Type": str, "Value": ":memory:"}})
+
+    def get_column_names_by_table(
+        self, table: Optional[str] = None
+    ) -> Optional[List[str]]:
+        query = "SELECT name FROM columns"
+        params: Tuple[str, ...] = ()
+        if table is not None:
+            query += " WHERE table_name = ?"
+            params = (table,)
+        return [row[0] for row in self.connection.execute(query, params)] or None
+
+    def get_table_by_column(self, column: str) -> Optional[str]:
+        row = self.connection.execute(
+            "SELECT table_name FROM columns WHERE name = ?", (column,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def get_experiment_id_by_name(self, experiment_name: str) -> Optional[int]:
+        row = self.connection.execute(
+            "SELECT id FROM experiments WHERE name = ?", (experiment_name,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def validate_filter_query(self, query: str) -> Tuple[bool, str]:
+        try:
+            self.connection.execute("EXPLAIN " + query)
+        except sqlite3.Error as exc:
+            return False, f"{exc}\n{query}"
+        return True, ""
+
+
+@pytest.fixture
+def real_db_loader() -> Generator[ProductionSchemaLoader, None, None]:
+    """
+    Build a loader over an in-memory database carrying the production schema.
+
+    :return: A loader whose generated queries can actually be executed.
+    :rtype: Generator[ProductionSchemaLoader, None, None]
+    """
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(PRODUCTION_SCHEMA)
+    connection.commit()
+    try:
+        yield ProductionSchemaLoader(connection)
+    finally:
+        connection.close()
+
+
+class TestGeneratedQueriesExecute:
+    def test_filter_on_an_experiment_property_selects_matching_events(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        query, debug, table = real_db_loader.construct_metadata_query(
+            ["duration"], conditions="voltage > 50"
+        )
+        assert debug == ""
+        assert table == "events"
+        rows = real_db_loader.connection.execute(query).fetchall()
+        assert sorted(row[0] for row in rows) == [3]
+
+    def test_filter_on_an_experiment_property_selects_matching_sublevels(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        query, debug, table = real_db_loader.construct_metadata_query(
+            ["sublevel_duration"], conditions="voltage > 50"
+        )
+        assert debug == ""
+        assert table == "sublevels"
+        rows = real_db_loader.connection.execute(query).fetchall()
+        assert sorted(row[0] for row in rows) == [5, 6]
+
+    def test_experiment_and_sublevel_filters_combine(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        query, debug, _ = real_db_loader.construct_metadata_query(
+            ["duration"], conditions="sublevel_duration > 400 AND voltage > 50"
+        )
+        assert debug == ""
+        rows = real_db_loader.connection.execute(query).fetchall()
+        assert sorted(row[0] for row in rows) == [3]
+
+    def test_literal_matching_a_column_name_matches_by_value(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        # Event 3's sequence is the literal text "sublevel_duration". Rewriting
+        # the value as a column reference used to return no rows at all.
+        query, debug, _ = real_db_loader.construct_metadata_query(
+            ["duration"], conditions="sequence = 'sublevel_duration'"
+        )
+        assert debug == ""
+        rows = real_db_loader.connection.execute(query).fetchall()
+        assert sorted(row[0] for row in rows) == [3]
+
+    def test_shared_identity_filter_runs_when_both_tables_are_selected(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        query, debug, table = real_db_loader.construct_metadata_query(
+            ["duration", "sublevel_duration"], conditions="experiment_id = 2"
+        )
+        assert debug == ""
+        assert table == "sublevels"
+        rows = real_db_loader.connection.execute(query).fetchall()
+        assert sorted(row[0] for row in rows) == [5, 6]
+
+    def test_event_data_query_runs_with_an_experiment_property_filter(
+        self, real_db_loader: ProductionSchemaLoader
+    ) -> None:
+        query, debug = real_db_loader.construct_event_data_query(
+            conditions="voltage > 50"
+        )
+        assert debug == ""
+        # The data table is not populated here, so the point is that the query
+        # is accepted by SQLite and its event subquery resolves.
+        real_db_loader.connection.execute("EXPLAIN " + query)
 
 
 if __name__ == "__main__":

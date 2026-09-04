@@ -26,11 +26,10 @@
 
 
 import logging
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, Optional, override
 
 import pandas as pd
 from PySide6.QtWidgets import QMessageBox
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
@@ -181,6 +180,10 @@ class MetadataController(MetaController):
         intent = args[0] if args else None
 
         if debug and not query:
+            # Also on the display panel, not only in the modal: the dialog is
+            # dismissed before the user gets back to the filter text, and the
+            # message is often a set of instructions for correcting it.
+            self.view.add_text_to_display.emit(debug, self.__class__.__name__)
             QMessageBox.warning(
                 self.view,
                 "Invalid Filter",

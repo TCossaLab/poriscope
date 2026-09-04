@@ -27,11 +27,10 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, override
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import override
 
 from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
 from poriscope.utils.DocstringDecorator import inherit_docstrings
