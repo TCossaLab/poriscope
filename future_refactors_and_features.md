@@ -1689,28 +1689,7 @@ and multiple plugin families.
    restoring a preselected config fires the check-callback mid-construction,
    easy to miss when copy-pasted three times. Medium-high value, low risk.
 
-3. **Confirmed dead/broken methods that would raise `AttributeError` if
-   called**: `clustering_settings_widget.py`'s `update_unit_label`
-   (`:376-379`) and `reset_top_inputs` (`:526-532`) reference `self.unit_label`,
-   `self.column_combo`, `self.log_cb`, `self.norm_cb`, `self.plot_cb` — none
-   of which are ever assigned anywhere in the class (confirmed via grep),
-   leftovers from an earlier single-row design predating the current multi-
-   row rewrite. Recommend deleting both, after confirming no external caller
-   depends on them.
-
-4. **The same dead-code pattern recurs in the menu widgets**:
-   `icon_menu_widget.py:390-396` and `text_menu_widget.py:308-317`'s
-   `setLanguageChecked`/`setThemeChecked` reference button attributes never
-   created in either file's `setupUi`. Same fix — delete, unless a planned
-   feature these are stubs for is confirmed with whoever owns the file.
-
-5. **`text_menu_widget.py:206-212` (`menu_button_clicked`)**: a
-   `QTimer.singleShot(100, self.uncheckMenuButton)` call is duplicated
-   (lines 209 and 211), with a leftover `print("text_menu_button_clicked")`
-   sitting next to the proper `self.logger.info(...)` doing the same thing.
-   Trivial, zero-risk cleanup.
-
-6. **`dict_dialog_widget.py:105-238` (`init_ui`)** does three jobs at once:
+3. **`dict_dialog_widget.py:105-238` (`init_ui`)** does three jobs at once:
    builds the Name row, loops over `params` dispatching on key/type across 6
    widget kinds, and lays everything into the grid — with the "Input File"
    (`:125-142`) and "Output File" (`:144-161`) branches near-identical,
@@ -1720,21 +1699,9 @@ and multiple plugin families.
    parameterized helper, is medium value; moderate risk since the lambda
    variable-capture (`s=`, `f=`) needs to survive the extraction carefully.
 
-7. **`walkthrough_steps.py`'s `get_global_walkthrough_steps`**
-   (`:30-420`) is a single 390-line function returning a flat list of ~40
-   tuples spanning 4 tabs, identified only by comments. **Contains a real
-   bug**, not just a style issue: lines 257-264 and 265-272 are byte-for-byte
-   duplicate tuples (same title "Event Analysis Tab", same "Click 'Commit'..."
-   text, same lambda) — one walkthrough step is silently shown twice to
-   users. Fix the duplicate outright; separately, splitting the function into
-   `_raw_data_steps(pages)`/`_event_analysis_steps(pages)`/
-   `_metadata_steps(pages)`/`_clustering_steps(pages)` (concatenated at the
-   end) would make one tab's steps findable without scrolling through 400
-   unrelated lines. Low risk either way (mostly pure data); the duplicate-
-   tuple fix is a genuine bug fix, the split is a navigability improvement.
-
-8. **`icon_menu_widget.py`/`text_menu_widget.py` share extensive structural
-   duplication** beyond the dead-code overlap in #4: repeated inline QSS
+4. **`icon_menu_widget.py`/`text_menu_widget.py` share extensive structural
+   duplication** beyond the abandoned language/theme controls already removed
+   from both: repeated inline QSS
    blocks (the same `QPushButton:hover/:checked/:pressed` styling appears
    5+ times across the two files), a byte-identical `emitSignal` dispatch-
    dict method in both, and the same `setXChecked` slot pattern — suggesting
@@ -1745,7 +1712,7 @@ and multiple plugin families.
    shared QSS constants, `emitSignal`, and the `setXChecked`/signal
    declarations into a small mixin rather than merging the classes outright.
 
-9. **`clustering_settings_widget.py:207-234`** (tail of `init_ui`, the
+5. **`clustering_settings_widget.py:207-234`** (tail of `init_ui`, the
    preselected-config restore block) wraps ~25 lines of unrelated restore
    logic in one broad `try/except Exception` inside an already-140-line
    method. Extracting `_restore_preselected_config(self)` is low-medium
@@ -1787,17 +1754,22 @@ Read-only audit (2026-08) of `poriscope/views/widgets/multiselect_filter.py`,
    implementations already agree almost line-for-line.
 
 2. **Range-parsing/formatting logic is duplicated *and* subtly
-   inconsistent** across `float_range_line_edit.py` (`get_values:98-128`,
-   `get_start:141-165`, `get_duration:167-179`), `integer_range_line_edit.py`
+   inconsistent** across `float_range_line_edit.py` (`get_start`,
+   `get_duration`), `integer_range_line_edit.py`
    (`get_values:167-196`, `RangeValidator:37-157`),
-   `comma_delimited_float_range_edit.py` (`get_values:117-156`), and
+   `comma_delimited_float_range_edit.py` (deleted in `0abd08c`), and
    `time_widget.py` (`FloatRangeValidator.validate:18-95`,
    `_parse_ranges:179-196`). Each re-implements "split on `,`, strip, split
    on `-`, parse number(s), handle malformed segments" from scratch, with
    **divergent edge-case handling for what's meant to be the same grammar**
-   — e.g. `IntegerRangeLineEdit.get_values` explicitly skips segments
-   starting with `-` (`:176-180`); `FloatRangeLineEdit.get_values` has no
-   such guard at all. `time_widget.py` derives the same "0-0"/open-ended
+   — though note the one divergence originally cited here, that
+   `IntegerRangeLineEdit.get_values` skips segments starting with `-` while
+   `FloatRangeLineEdit.get_values` had no such guard, was **structural only**:
+   re-checked 2026-09-04, no input produced different output, because every
+   leading-`-` shape fell into the float version's bare `except ValueError`.
+   That method has since been deleted as uncalled, so this file now
+   contributes only `get_start`/`get_duration` to the duplication.
+   `time_widget.py` derives the same "0-0"/open-ended
    special cases twice within one file (once in the validator, again in
    `_parse_ranges`) with subtly different rules each time (see #6). A shared
    module (e.g. `poriscope/utils/range_parsing.py`) with `split_segments(text)`

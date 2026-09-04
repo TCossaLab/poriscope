@@ -16,6 +16,10 @@
 
 * Removed 455 KB of checked-in test data that no test referenced
 
+* Removed an unused 394-line copy of the guided-walkthrough step list; it was a stale fork of the per-tab lists the app actually shows, and nothing loaded it
+
+* Removed `FloatRangeLineEdit.get_values` and `used_floats`, which nothing called
+
 ## Poriscope 1.8.0: 2026-09-03
 
 * **Fixed assisted metadata filters silently returning the wrong rows**, and they now work on experiment voltage, thickness and conductivity and on `experiment_id`/`channel_id`/`event_id` in every plot and when loading event data
