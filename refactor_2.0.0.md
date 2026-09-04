@@ -200,6 +200,14 @@ then **re-verified again at `c8dc953` immediately before implementation**, which
 five further claims — recorded inline below. The lesson stands for every remaining step:
 **re-verify a tier immediately before working it.**
 
+**Manually verified on Windows 2026-09-04 and all good**: the `3.0-` timer dialog, the
+eventfinder channel list populating, and both export paths — a legitimately-empty sublevels
+table writing an empty CSV, versus a filter matching no events reporting on the status panel
+with no dialog. That was the last outstanding item on these tiers, so **nothing blocks cutting
+1.9.0**. Note this is *not* the 2.0.0 manual pass in the Verification section below, which is a
+wider sweep (all five tabs through the walkthrough plus the multiselect popup path) and is still
+owed for the refactor itself.
+
 ### Tier A — before goldens are generated (landed)
 
 What landed, and what the second verification pass changed:
