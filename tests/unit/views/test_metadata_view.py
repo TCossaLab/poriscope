@@ -5708,12 +5708,12 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
     view.global_signal = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame()
 
     view.global_signal.emit.side_effect = side_effect
 
-    result = view._rebuild_event_id_cache("loader", "", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None)
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -5723,16 +5723,16 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
 def test_rebuild_event_id_cache_stores_event_ids(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filtered_event_ids is populated from the query result."""
+    """Verify filtered_event_ids is populated, and sorted, from the query result."""
     view.global_signal = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"event_id": [0, 5, 10]})
+        if args[2] == "load_metadata":
+            view.relayed_query_result = pd.DataFrame({"event_id": [10, 0, 5]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    result = view._rebuild_event_id_cache("loader", "", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None)
 
     assert result is True
     assert view.filtered_event_ids == [0, 5, 10]
@@ -5745,14 +5745,12 @@ def test_rebuild_event_id_cache_updates_current_trackers(
     view.global_signal = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [1, 2, 3]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache(
-        "loader", "WHERE duration > 1", "duration > 1", "exp1", 2
-    )
+    view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2)
 
     assert view.current_sql_filter == "duration > 1"
     assert view.current_experiment == "exp1"
@@ -5767,12 +5765,12 @@ def test_rebuild_event_id_cache_emits_all_events_when_no_filter(
     view.get_selected_filters = mocker.Mock(return_value={})
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [0, 1, 2]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache("loader", "", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None)
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "All events" in msg
@@ -5786,14 +5784,12 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
     view.get_selected_filters = mocker.Mock(return_value={"my_filter": "duration > 1"})
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [3, 7]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache(
-        "loader", "WHERE duration > 1", "duration > 1", None, None
-    )
+    view._rebuild_event_id_cache("loader", "duration > 1", None, None)
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "my_filter" in msg
@@ -5808,12 +5804,12 @@ def test_rebuild_event_id_cache_emits_total_and_bounds(
     view.get_selected_filters = mocker.Mock(return_value={})
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [2, 5, 9]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache("loader", "", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None)
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "3 total" in msg
@@ -5848,7 +5844,6 @@ def test_shift_range_and_update_plot_rebuilds_cache_when_stale(
     view.filtered_event_ids = []
     view.current_sql_filter = None
     view._rebuild_event_id_cache = mocker.Mock(return_value=False)
-    view._build_where_clause = mocker.Mock(return_value="")
 
     view._shift_range_and_update_plot(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1}, "right"
@@ -5991,7 +5986,6 @@ def test_handle_plot_events_rebuilds_cache_on_filter_change(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._rebuild_event_id_cache = mocker.Mock(return_value=False)
-    view._build_where_clause = mocker.Mock(return_value="WHERE duration > 5")
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}

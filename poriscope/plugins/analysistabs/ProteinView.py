@@ -1522,67 +1522,22 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
-        A global signal callback that stores the result of a direct database query.
+        A global signal callback that stores the result of a database query.
         Used by _rebuild_event_id_cache to receive the list of filtered event_ids.
 
-        :param result: DataFrame returned by query_database_directly, or None if the query failed.
+        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
+        which return the same thing: the rows, an empty frame if none matched, or
+        None if the query could not be built or run.
+
+        :param result: DataFrame returned by the query, or None if it failed.
         :type result: Optional[pd.DataFrame]
         """
         self.relayed_query_result = result
 
     @log(logger=logger)
-    def _build_where_clause(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> str:
-        """
-        Build a WHERE clause string suitable for the event_id cache query,
-        scoped to the current experiment and channel. event_id is only unique
-        within an experiment/channel scope, not across the whole events table,
-        so without this scoping filtered_event_ids mixes duplicate event_ids
-        from every channel, causing navigation to jump to ids that don't exist
-        in the active channel and inflating the reported total count.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
-        :type sql_filter: str
-        :param exp: Experiment name, or None.
-        :type exp: Optional[str]
-        :param channel: Channel identifier, or None.
-        :type channel: Optional[int]
-        :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
-        :rtype: str
-        """
-        filter_parts = []
-        if sql_filter:
-            filter_parts.append(sql_filter)
-
-        if exp is not None:
-            self.experiment_id = None
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_experiment_id_by_name",
-                (exp,),
-                "set_experiment_id",
-                (),
-            )
-            if self.experiment_id is not None:
-                filter_parts.append(f"experiment_id = {self.experiment_id}")
-                if channel is not None:
-                    filter_parts.append(f"channel_id = {channel}")
-
-        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
-
-    @log(logger=logger)
     def _rebuild_event_id_cache(
         self,
         loader: str,
-        where_clause: str,
         sql_filter: str,
         exp: Optional[str],
         channel: Optional[int],
@@ -1596,12 +1551,19 @@ class ProteinView(MetaView, WalkthroughMixin):
         _handle_plot_events/_handle_plot_histogram can detect scope changes.
 
         Emits a display-panel message with the total count and first/last
-        event_id (mirrors ProteinView._rebuild_event_id_cache behaviour).
+        event_id (mirrors MetadataView._rebuild_event_id_cache behaviour).
+
+        Goes through ``load_metadata`` rather than querying the events table
+        directly, so that the filter is evaluated against the same joins the
+        subset and scatter paths give it. A filter on a sublevels column -
+        ``filtered = 5``, meaning every event with at least one sublevel that
+        matches - is only meaningful against ``events JOIN sublevels``, and the
+        hand-built ``SELECT event_id FROM events`` this replaces made every such
+        filter fail as an unknown column and then report itself as an empty
+        subset.
 
         :param loader: Name of the database loader.
         :type loader: str
-        :param where_clause: Full WHERE clause string (may be empty).
-        :type where_clause: str
         :param sql_filter: Raw filter expression without WHERE (used for label and staleness tracking).
         :type sql_filter: str
         :param exp: Experiment name.
@@ -1611,25 +1573,43 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: True if the cache was populated, False if no events were found.
         :rtype: bool
         """
-        query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        # event_id is only unique within an experiment/channel, so without this
+        # scoping the cache mixes duplicate ids from every channel, navigation
+        # jumps to ids the active channel does not have, and the reported total
+        # is inflated.
+        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
+        if exp is not None:
+            exp_and_ch = {exp: [channel] if channel is not None else None}
+
         self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
-            "query_database_directly",
-            (query,),
+            "load_metadata",
+            (["event_id"], sql_filter or None, exp_and_ch),
             "relay_query_result",
             (),
         )
         result = getattr(self, "relayed_query_result", None)
-        if result is None or result.empty or "event_id" not in result.columns:
+        if result is None or "event_id" not in result.columns:
+            # None means the query could not be built or run at all, which is a
+            # real problem and not an empty subset. Logged at ERROR so QtHandler
+            # raises its dialog from the place that can tell the two apart.
+            self.logger.error(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+        if result.empty:
             self.add_text_to_display.emit(
                 "No filtered events found for the current scope.",
                 self.__class__.__name__,
             )
             return False
 
-        self.filtered_event_ids = result["event_id"].tolist()
+        # load_metadata applies no ORDER BY of its own, and the navigation that
+        # reads this list bisects it.
+        self.filtered_event_ids = sorted(result["event_id"].tolist())
         self.current_sql_filter = sql_filter
         self.current_experiment = exp
         self.current_channel = channel
@@ -1689,10 +1669,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         cache = self.filtered_event_ids
@@ -2040,10 +2017,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         cache = self.filtered_event_ids
@@ -2137,10 +2111,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         cache = self.filtered_event_ids

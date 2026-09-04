@@ -68,6 +68,48 @@ attribute, raising on failure becomes the better contract.
 
 ---
 
+## 2026-09-04 - A subquery is opaque to condition rewriting, and both event caches reuse the query builder
+
+**Context.** A saved subset filter had two consumers that disagreed about the SQL context it
+is evaluated in. `construct_metadata_query` derives the joins the filter needs and qualifies
+its columns against them; `MetadataView._rebuild_event_id_cache` and its `ProteinView` twin
+spliced the same text into a hand-built `SELECT event_id FROM events`. So any filter naming a
+sublevels column - `filtered = 5`, the natural way to say "every event with at least one
+sublevel that matches" - worked for the subset and the scatter plots and failed as an unknown
+column in the event viewer, where `query_database_directly` returned `None` and the caller
+reported it to the user as "No filtered events found". Separately, `_qualify_conditions`
+rewrote column references *inside* subqueries, so `e.id IN (SELECT event_db_id FROM sublevels
+WHERE filtered = 5)` became `... WHERE s.filtered = 5`, silently correlating the subquery to
+the outer row.
+
+**Decision.** Extends the 2026-09-03 literal-skipping decision below: a parenthesised
+subquery is opaque exactly as a single-quoted literal already was. `_split_on_opaque_spans`
+protects both, and all three consumers - `_qualify_conditions`, `_references_column` and
+`_find_ambiguous_id` - read it, which is what keeps them agreeing about what the outer query
+refers to. A subquery names its own tables, so it needs no outer
+alias and forces no join. Both event caches now call `load_metadata(["event_id"], filter,
+{exp: [channel]})`, which routes through the same derivation, and `_build_where_clause` is
+deleted from both views.
+
+**Evidence.** Against a production database (191 events, 2499 sublevels, 35 of them
+`filtered = 5`): before, *no* filter text worked in both consumers. `filtered = 5` and
+`e.id IN (...)` saved and returned the right 35 rows for the subset but failed as an unknown
+column in the event viewer, while the `id IN (...)`, `rowid IN (...)` and `EXISTS (...)` forms
+the viewer accepted were all rejected at save time. After, `filtered = 5` and `e.id IN (...)`
+each return the same 35 events in both. Aggregation inside a subquery
+(`GROUP BY event_db_id HAVING COUNT(*) > 3`) also works in assisted mode now, which the user
+guide had said was impossible.
+
+**A failed query is still not an empty subset.** `load_metadata` returning `None` means the
+query could not be built or run, which both caches log at ERROR so `QtHandler` raises its
+dialog; an empty frame keeps the quiet status-panel line. Same split as the subset-export fix
+above.
+
+**Revisit if** a filter legitimately needs the outer row inside a subquery without naming it.
+Today the user writes `e.id`, which is what SQL requires of them anyway.
+
+---
+
 ## 2026-09-04 - get_column_units' empty-string conflation is left alone
 
 **Context.** `get_column_units` returns `""` both when a column's `units` field is NULL and
@@ -198,12 +240,12 @@ return-value RPC is replaced; `plugin_state_changed`, `add_text_to_display`,
 `update_progressbar` and `create_plugin` stay ordinary Qt signals.
 
 **Evidence.** Traced end to end: resolving one experiment id
-(`MetadataView._build_where_clause:2044`) takes 8 hops, 2 Qt emissions and 3 string lookups,
-and needs two methods plus one attribute that exist only to carry one `int` back. That shape
-has a live bug - `relayed_experiment_id` is assigned only at `MetadataView.py:2493` and never
-reset, while `_dispatch_to` logs and returns on failure (`main_controller.py:554`), so a
-failed dispatch leaves `:2052` and `:2341` reading the **previous call's** experiment id and
-scoping the query to the wrong experiment. Also measured: all 77 emits target data plugins and
+(`ProteinView._resolve_event_db_ids`) takes 8 hops, 2 Qt emissions and 3 string lookups, and
+needs two methods plus one attribute that exist only to carry one `int` back. That shape had
+a live bug - a failed dispatch left the reader seeing the **previous call's** experiment id,
+because `_dispatch_to` logs and returns without calling the return function
+(`main_controller.py:554`) - which is now guarded at each site by clearing the attribute
+immediately before the emit, at the cost of repeating that guard everywhere. Also measured: all 77 emits target data plugins and
 **none targets another tab**, so `_relay_global_signal`'s docstring advertising calls into
 `main_model.plugins['MetaController'][key]` describes a capability nothing uses.
 

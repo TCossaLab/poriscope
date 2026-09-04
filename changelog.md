@@ -16,6 +16,12 @@
 
 * A metadata query that matches no rows is now reported as an empty result rather than as a failed query
 
+* **Fixed a subset filter on a sublevel column finding no events when plotting events**: filters like `filtered = 5` were applied to the events table alone, so every one of them failed as an unknown column and was reported as an empty subset — event plotting, its navigation arrows and the protein tab's plots now apply a filter through the same table joins as the metadata plots
+
+* **Assisted filters may now contain a subquery**, which is passed through exactly as typed instead of being rewritten against the outer query's tables; this also makes `GROUP BY`/`HAVING` inside a subquery work in assisted mode
+
+* A filter naming a column that cannot be resolved now raises an error dialog when plotting events, instead of quietly reporting that no events matched
+
 * **Fixed a clean `pip install poriscope` failing on import**: `typing_extensions` was imported by 38 modules but declared as a dependency nowhere; the native `typing.override` replaces it everywhere, including in newly generated plugins
 
 * Test coverage is measured again: `pytest-cov` was declared in no dependency source, so the pull-request workflow's test step failed outright instead of running
