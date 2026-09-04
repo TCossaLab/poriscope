@@ -775,9 +775,7 @@ class TestGetExperimentIdByNameBase:
         self, loader: ConcreteDatabaseLoader, query_result: Optional[pd.DataFrame]
     ) -> None:
         """None for a failed query and an empty frame for no match both mean "no id"."""
-        with patch.object(
-            loader, "query_database_directly", return_value=query_result
-        ):
+        with patch.object(loader, "query_database_directly", return_value=query_result):
             assert (
                 MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing") is None
             )

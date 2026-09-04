@@ -8,6 +8,8 @@
 
 * **An analysis run that stops early now says why on the status panel instead of interrupting with an error dialog and a traceback** — exporting a subset that matches no events was the common way to hit it
 
+* A failed database query or an inconsistent database still raises an error dialog during subset export, so a real problem is not mistaken for an empty result
+
 * **Fixed subset export failing on a subset with no fitted sublevels**, which was reported as "Failed to load sublevels data" rather than exporting an empty sublevels table
 
 * **Fixed a metadata plot or clustering run silently reusing the previous subset's rows** when the database call behind it failed, instead of reporting that the subset returned nothing

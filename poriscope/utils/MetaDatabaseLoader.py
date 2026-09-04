@@ -509,7 +509,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 f"Malformed events query:\n\n{self._format_debug_msg(debug)}"
             )
         events = self._load_metadata(events_query)
-        if events is None or len(events) == 0:
+        if events is None:
+            # Logged at ERROR here, not left to the worker: EventWorker reports a
+            # stopped run at WARNING on the status panel, so a genuine failure has to
+            # raise QtHandler's dialog from the place that knows it is one. See
+            # DECISIONS.md, 2026-09-04. The same applies to every guard below.
+            self.logger.error(f"Events query failed: {events_query}")
+            raise ValueError("Failed to load events table.")
+        if len(events) == 0:
             raise ValueError("No events found matching subset criteria")
 
         event_ids = [int(eid) for eid in events["id"].values.astype(int)]
@@ -521,6 +528,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         sublevels = self._load_metadata(sublevels_query)
         if sublevels is None:
+            self.logger.error(
+                f"Query failed, could not load sublevels data: {sublevels_query}"
+            )
             raise ValueError("Failed to load sublevels data.")
 
         unique_exp_ids = [int(exp_id) for exp_id in np.unique(events["experiment_id"])]
@@ -532,6 +542,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         experiments = self.query_database_directly(experiment_query)
         if experiments is None:
+            self.logger.error(
+                f"Query failed, could not load experiments table: {experiment_query}"
+            )
             raise ValueError("Failed to load experiments table.")
 
         channel_ids = [int(cid) for cid in events["channel_db_id"].values.astype(int)]
@@ -545,6 +558,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         channels = self.query_database_directly(channel_query)
         if channels is None:
+            self.logger.error(
+                f"Query failed, could not load channels table: {channel_query}"
+            )
             raise ValueError("Failed to load channels table.")
 
         columns_query = "SELECT cols.* FROM columns cols"
@@ -555,6 +571,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         columns = self.query_database_directly(columns_query)
         if columns is None:
+            self.logger.error(
+                f"Query failed, could not load columns table: {columns_query}"
+            )
             raise ValueError("Failed to load columns table.")
 
         data_query = f"SELECT d.experiment_id, d.channel_id, d.channel_db_id, d.event_id, d.event_db_id FROM data d WHERE d.event_db_id IN {tuple_builder(event_ids)}"
@@ -565,8 +584,13 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         data = self.query_database_directly(data_query)
         if data is None:
+            self.logger.error(f"Query failed, could not load data table: {data_query}")
             raise ValueError("Failed to load data table.")
         if data.empty:
+            self.logger.error(
+                f"Inconsistent database: {len(event_ids)} events selected but the data "
+                "table holds no rows for any of them"
+            )
             raise ValueError("No rows in the data table for the selected events.")
 
         append = f"{subset_name}_" if subset_name else ""

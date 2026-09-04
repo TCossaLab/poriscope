@@ -526,7 +526,8 @@ class TestLoadMetadataAndCluster:
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(1)
         _answer_load_metadata(
-            view, pd.DataFrame({"a": rng.random(50), "b": rng.random(50), "id": range(50)})
+            view,
+            pd.DataFrame({"a": rng.random(50), "b": rng.random(50), "id": range(50)}),
         )
         with pytest.raises(ValueError, match="parameters"):
             view._load_metadata_and_cluster(config, "loader1")
@@ -544,7 +545,8 @@ class TestLoadMetadataAndCluster:
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(7)
         _answer_load_metadata(
-            view, pd.DataFrame({"a": rng.random(60), "b": rng.random(60), "id": range(60)})
+            view,
+            pd.DataFrame({"a": rng.random(60), "b": rng.random(60), "id": range(60)}),
         )
         df, labels, probs, logs, norm, units, plot = view._load_metadata_and_cluster(
             config, "loader1"
