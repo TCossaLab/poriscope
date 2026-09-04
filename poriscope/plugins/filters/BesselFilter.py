@@ -24,12 +24,11 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
 from scipy.signal import bessel, filtfilt
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

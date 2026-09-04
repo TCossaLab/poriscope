@@ -29,7 +29,7 @@ import logging
 import os
 import sys
 import warnings
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import hdbscan
 import matplotlib.cm as cm
@@ -48,7 +48,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from sklearn.mixture import GaussianMixture
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (

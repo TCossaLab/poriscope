@@ -26,9 +26,7 @@
 
 
 import logging
-from typing import Any, Dict, Generator, List, Optional
-
-from typing_extensions import override
+from typing import Any, Dict, Generator, List, Optional, override
 
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView

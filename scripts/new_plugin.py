@@ -819,7 +819,7 @@ def required_imports(base_cls: type, stubs: Sequence[Stub]) -> List[ImportSpec]:
     """
     specs = [
         ImportSpec("logging", None, None),
-        ImportSpec("typing_extensions", "override", None),
+        ImportSpec("typing", "override", None),
         ImportSpec("poriscope.utils.DocstringDecorator", "inherit_docstrings", None),
         ImportSpec("poriscope.utils.LogDecorator", "log", None),
         ImportSpec(base_cls.__module__, base_cls.__name__, None),

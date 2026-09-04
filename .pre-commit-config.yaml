@@ -16,12 +16,9 @@ repos:
       # Auto-fix hook (manual only)
       - id: ruff
         args: ["--fix"]
-        exclude: ^tests/slow/
         stages: [manual]
         # Strict check (commit + CI)
       - id: ruff
-        args: ["--exit-non-zero-on-fix"]
-        exclude: ^tests/slow/
         stages: [pre-commit]
 
       # Security-relevant bandit (S) rules, plugin tree only. Plugin discovery

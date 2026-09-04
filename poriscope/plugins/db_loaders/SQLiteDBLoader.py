@@ -26,12 +26,11 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, cast
+from typing import Any, Dict, Generator, List, Optional, Tuple, cast, override
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

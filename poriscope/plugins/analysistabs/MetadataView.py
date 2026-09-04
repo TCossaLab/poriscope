@@ -31,7 +31,18 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    override,
+)
 
 import matplotlib.pyplot as pl
 import numpy as np
@@ -53,7 +64,6 @@ from PySide6.QtWidgets import (
 from scipy import stats
 from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (

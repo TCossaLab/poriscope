@@ -29,12 +29,11 @@ import importlib.resources
 import logging
 import os
 import platform
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
 from numpy.ctypeslib import ndpointer
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

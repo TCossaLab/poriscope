@@ -10,6 +10,41 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-04 - The mypy version skew is the cause of the "two disagree wildly" phenomenon
+
+**Context.** `CLAUDE.md` has long warned that `pre-commit run mypy` and a bare
+`mypy poriscope` "disagree wildly and are blind in opposite directions", and attributed it
+solely to the hook's isolated virtualenv having no project dependencies. Measured
+2026-09-04, the versions were skewed three ways as well: `pyproject.toml`'s `[dev]` extra
+and `requirements-dev.txt` both pinned `mypy==1.9.0`, `.pre-commit-config.yaml` ran
+mirrors-mypy `rev: v1.17.1`, and the working virtualenv had `2.3.1` installed. Nothing
+anywhere recorded that, so the skew read as an environment quirk rather than a fact of the
+configuration.
+
+**Decision.** The declared pin is aligned to `mypy==1.17.1`, matching the hook. **The hook
+remains the only gate** - `pre-commit run mypy --all-files` - and the declared pin exists so
+that a contributor running mypy from their own environment gets the same *version* the gate
+uses, even though they will still see different results because their environment has
+PySide6, numpy and pandas types that the hook's isolated env resolves as `Any`.
+
+**Why alignment rather than just documenting the gap.** Aligning costs one character-level
+edit in two files and removes a whole class of confusing report. It does not change what the
+gate checks, so it cannot break a commit that would otherwise pass. Documenting alone would
+have left three numbers in play with nothing reconciling them.
+
+**What alignment does not fix, and must not be mistaken for a fix.** The dependency
+blindness is unchanged and is the larger half of the disagreement: the hook sees PySide6,
+numpy and pandas as `Any`, so it cannot see errors in code that touches them, while a
+project-venv run reports several hundred errors that are overwhelmingly known noise (191
+PySide6 short-form enum accesses alone). **Always measure with the hook.**
+
+**Revisit if** the hook's `rev` is bumped - move the declared pin in the same commit, or the
+skew silently returns. Also revisit if `additional_dependencies` are ever added to the mypy
+hook so it can see real PySide6/numpy/pandas types, which would close the other half and
+make a project-venv run meaningful for the first time.
+
+---
+
 ## 2026-09-03 - `SQLiteEventWriter`'s two-connection commit split stays; tests must wait on rows, not tables
 
 **Context.** `commit_events` calls `_initialize_database`, which opens its own short-lived
@@ -467,7 +502,7 @@ were adopted outright; the rest were audited rule by rule.
 audit, their findings in our own code fixed, and the rule left **unselected**. None is a
 gate.
 
-**Why, per rule.** Ruff's actual scope is the whole repository minus `tests/slow/` - only
+**Why, per rule.** Ruff's actual scope is the whole repository - only
 mypy is scoped to `poriscope/`, and measuring these under `poriscope/` is what produced the
 wrong answer originally:
 

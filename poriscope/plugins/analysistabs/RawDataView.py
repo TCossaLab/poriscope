@@ -27,14 +27,13 @@
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (

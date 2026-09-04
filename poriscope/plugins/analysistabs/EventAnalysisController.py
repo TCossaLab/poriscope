@@ -26,10 +26,9 @@
 
 
 import logging
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, override
 
 from PySide6.QtCore import Slot
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.EventAnalysisModel import EventAnalysisModel
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView

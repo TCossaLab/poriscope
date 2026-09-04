@@ -242,27 +242,11 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 ### CI, packaging and tooling (not logic changes - no plan needed)
 
-- **The only workflow gating PRs into `main` cannot pass its test step.**
-  `ci-internal-pr.yml:130-131` runs `pytest --cov=poriscope --cov-report=xml` with
-  `pytest-cov` declared in no dependency source, so it exits 4 and the coverage-upload and
-  `::notice::Line Coverage` steps never run. **There is no coverage gate anywhere.** Same
-  workflow, `:108-116` does `git add -A && git commit && git push` on a `pull_request`
-  event, where `actions/checkout` leaves a detached HEAD with no branch to push - guarded by
-  `if ! git diff --quiet`, so it only fires when the manual hooks change a file.
-- **`typing_extensions` is imported in 38 modules and declared nowhere**, all unguarded at
-  module level, so it is absent from the wheel's `Requires-Dist` and a clean
-  `pip install poriscope` breaks. It resolves on dev and CI boxes only because `pytest-qt`
-  declares it. `typing.override` is native in the required 3.12, so the import can simply go
-  - and `scripts/new_plugin.py:822` hardcodes it into every generated plugin.
-- **`requirements.txt` is UTF-16LE with a BOM**, duplicates the ten runtime pins, and adds
-  `sphinx`/`sphinx-tabs`/`furo`, so three workflows install the docs extras into the test job.
-- **The mypy version skew is real but undeclared.** `pyproject.toml:38` and
-  `requirements-dev.txt` pin `mypy==1.9.0`; `.pre-commit-config.yaml` runs mirrors-mypy
-  `rev: v1.17.1`. That gap *is* the "two disagree wildly" phenomenon `CLAUDE.md` documents,
-  and nothing records it as the cause.
-- **No default pytest timeout.** `pytest-timeout` is installed but `pytest.ini` sets no
-  `timeout=`; all 22 `@pytest.mark.timeout` markers are in `tests/e2e` and
-  `tests/integration`, so any unit test can hang to GitHub's 6-hour limit.
+- **`ci-internal-pr.yml:108-116` pushes from a detached HEAD.** `git add -A && git commit
+  && git push` on a `pull_request` event, where `actions/checkout` leaves no branch to push -
+  guarded by `if ! git diff --quiet`, so it only fires when the manual hooks change a file.
+  There is still **no coverage gate**: the step now runs (`pytest-cov` landed 2026-09-04) and
+  prints `::notice::Line Coverage`, but nothing fails on a drop. Baseline 83%.
 - **No Windows CI job.** Every matrix is single-entry and none runs `windows-latest`, so
   Linux takes the opposite branch from the shipped platform at 6 of 11
   platform-conditional sites - including `WaveletFilter.py:192`'s `os.add_dll_directory`, in
@@ -274,11 +258,10 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   but never that the version matches the tag, so Zenodo can publish under a stale version.
 - **No pip cache in `ci-internal-pr.yml` or `release.yml`**, and `ci-branches.yml:101` runs
   `pre-commit clean`, discarding the hook-env cache every run.
-- **`.pre-commit-config.yaml` housekeeping.** `exclude: ^tests/slow/` (lines 19, 24) names a
-  directory that does not exist; `--exit-non-zero-on-fix` (line 23) is a no-op without
-  `--fix`; `black` runs only at the manual stage, so formatting is enforced by CI rewriting
-  contributors' commits rather than by failing them; and `scripts/check_plugin_schemas.py` is
-  documented as a gate on the Sphinx QA page but wired into no hook or workflow.
+- **`.pre-commit-config.yaml` housekeeping.** `black` runs only at the manual stage, so
+  formatting is enforced by CI rewriting contributors' commits rather than by failing them;
+  and `scripts/check_plugin_schemas.py` is documented as a gate on the Sphinx QA page but
+  wired into no hook or workflow.
 - **`scripts/new_plugin.py`'s family table is guarded one-directionally.**
   `tests/unit/scripts/test_new_plugin.py:466-472` asserts each `FAMILIES` entry appears in
   `main_model.py`, not the reverse, so adding a ninth `Meta*` base leaves the generator and
@@ -287,12 +270,17 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 - **`test_mapping_audit.csv` is stale and nothing executable reads it.** Its
   `LooseMatchFound` column still names files renamed by the very commit that added it
   (`43d556d`). Referenced only from the `test_event_worker.py` note below. Regenerate or drop.
-- **The suite runtime this file's guidance assumes is 11x out of date.** Measured 2026-09-03:
-  full `pytest -q` is 157 s (2,916 passed), `tests/unit` 97 s, `tests/e2e` +
-  `tests/integration` 62 s warm, slowest single unit test 1.37 s. The 30-minute figure
-  predates the widget-leak and GC fixes. `CLAUDE.md`'s run-only-relevant-tests policy exists
-  to avoid a wait that no longer happens and is worth revisiting on the real number - a
-  decision for the user, not a mechanical change.
+
+### Found while verifying the 2.0.0 plan (2026-09-04)
+
+Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
+
+- **`ProteinView` has no `update_column_units`, but `ProteinController.py:291` calls it.**
+  Not inherited from `MetaView` either; the `AttributeError` is swallowed by
+  `main_controller._dispatch_to`, so protein-tab unit labels silently never update. The other
+  four tabs either define the method or use `set_units`.
+- **`MetaDatabaseLoader.py:1298`'s `if metadata_generator is not None` branch is dead** -
+  `_load_metadata_generator` is a generator function, so it is never `None`.
 
 ### CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
 

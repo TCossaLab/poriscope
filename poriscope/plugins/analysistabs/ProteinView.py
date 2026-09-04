@@ -31,7 +31,18 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -58,7 +69,6 @@ from PySide6.QtWidgets import (
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
 from scipy.stats import t
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (

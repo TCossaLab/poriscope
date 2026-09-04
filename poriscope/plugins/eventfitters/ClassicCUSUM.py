@@ -24,11 +24,10 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import override
 
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.utils.DocstringDecorator import inherit_docstrings

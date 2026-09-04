@@ -25,12 +25,11 @@
 # Kyle Briggs
 
 import logging
-from typing import Optional
+from typing import Optional, override
 
 import numpy as np
 import numpy.typing as npt
 from scipy.signal import welch
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
