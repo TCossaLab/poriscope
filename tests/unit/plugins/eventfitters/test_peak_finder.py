@@ -24,7 +24,7 @@ Coverage targets:
 
 import logging
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -259,13 +259,21 @@ class TestFilterPeaksPassThrough(unittest.TestCase):
 
 
 class TestFilterPeaksBarcode(unittest.TestCase):
-    def _props(self, left_bases, right_bases, prominences=None, peak_loc=None):
+    def _props(
+        self,
+        left_bases,
+        right_bases,
+        prominences=None,
+        peak_loc=None,
+        ecds=None,
+        widths=None,
+    ):
         n = len(left_bases)
         if prominences is None:
             prominences = [200.0] * n
         if peak_loc is None:
             peak_loc = [float(i) for i in range(n)]
-        return {
+        props = {
             "filtered": [0] * n,
             "prominences": np.array(prominences, dtype=float),
             "left_bases": list(left_bases),
@@ -274,6 +282,50 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             # microseconds, as _populate_sublevel_metadata stores it
             "peak_loc": list(peak_loc),
         }
+        if ecds is not None:
+            props["sublevel_raw_ecd"] = list(ecds)
+        if widths is not None:
+            props["peak_width"] = list(widths)
+        return props
+
+    def _carrier(
+        self,
+        locs,
+        widths=None,
+        ecds=None,
+        k=4,
+        ratio=100.0,
+        event_length=1000.0,
+        pf=None,
+    ):
+        """
+        Run the barcode branch over peaks that all sit on the unfolded
+        carrier, so step 1 types every one of them 1 and only the barcode
+        selection decides the outcome.
+
+        unfolded=200, std=10, baseline=100 puts the type-1 band at [160, 220]
+        and an effective base of 200 inside it.
+        """
+        if pf is None:
+            pf = _make_pf(
+                **{
+                    "Event Type": "Barcode",
+                    "Number of peaks": k,
+                    "Peak to Peak Distance Ratio": ratio,
+                }
+            )
+        n = len(locs)
+        props = self._props(
+            [100.0] * n,
+            [100.0] * n,
+            peak_loc=list(locs),
+            ecds=ecds,
+            widths=widths,
+        )
+        out = pf.filter_peaks(
+            np.arange(n), props, 200.0, None, 10.0, 100.0, 1e6, event_length
+        )
+        return list(out["filtered"])
 
     def test_type1_classification(self):
         """Both bases within the type-1 band → type 1."""
@@ -331,36 +383,35 @@ class TestFilterPeaksBarcode(unittest.TestCase):
         )
         self.assertEqual(result["filtered"][0], 2)
 
-    def test_most_prominent_cluster_is_chosen_over_an_earlier_one(self):
+    def test_a_later_cluster_can_win_on_score(self):
         """
-        Two separated, non-adjacent type-1 clusters of equal size: the run
-        with the higher summed prominence must be promoted to type 3, not
-        whichever run happens to be found first.
+        Two separated, non-adjacent type-1 clusters of equal size: the one
+        that scores better must win, not whichever is found first.
 
-        Regression guard for a bug where clustering candidates were
-        pre-filtered down to the `num_peaks` most prominent peaks *globally*,
-        before any run was ever looked for. Here the two globally most
-        prominent peaks belong to different, non-adjacent clusters, so that
-        pre-filter left no two candidates close enough to cluster at all and
-        no barcode was found anywhere in the event - even though a real,
-        more-prominent two-peak run (cluster A) exists.
+        Inherited from a regression guard against candidates being
+        pre-filtered to the `num_peaks` most prominent peaks *globally* before
+        any set was looked for, which on this geometry left no two candidates
+        close enough to pair and found no barcode at all. Prominence no longer
+        decides the selection, so the same geometry is now driven by width:
+        the *later* cluster is the matched pair, and has to be picked over the
+        earlier one that the tie-break would otherwise favour.
         """
         pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
-        # Cluster A: peaks 0-1, 10 us apart, prominences 90/90 (sum 180).
-        # Cluster B: peaks 2-3, 10 us apart, prominences 95/1 (sum 96).
-        # A and B are 490 us apart - far beyond the 50 us (5%) limit - so they
-        # never merge. B's first peak (95) is more prominent than either of
-        # A's, but A's run has the higher total.
+        # Cluster A: peaks 0-1, 10 us apart, widths 2.0 / 8.0 - mismatched.
+        # Cluster B: peaks 2-3, 10 us apart, widths 5.0 / 5.0 - matched.
+        # A and B are 490 us apart, far beyond the 50 us (5%) limit, so they
+        # never merge, and A is earlier - so only the score can promote B.
         props = self._props(
             [100.0, 100.0, 100.0, 100.0],
             [100.0, 100.0, 100.0, 100.0],
             prominences=[90.0, 90.0, 95.0, 1.0],
             peak_loc=[0.0, 10.0, 500.0, 510.0],
+            widths=[2.0, 8.0, 5.0, 5.0],
         )
         result = pf.filter_peaks(
             np.array([0, 10, 500, 510]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
         )
-        self.assertEqual(list(result["filtered"]), [3, 3, 1, 1])
+        self.assertEqual(list(result["filtered"]), [1, 1, 3, 3])
 
     def test_cluster_distance_is_independent_of_sample_rate(self):
         """
@@ -434,6 +485,314 @@ class TestFilterPeaksBarcode(unittest.TestCase):
             np.array([]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
         )
         self.assertEqual(result["filtered"], [])
+
+    def test_carrier_peak_wins_where_the_baseline_band_overlaps_type1(self):
+        """
+        A peak seated on the unfolded carrier must be type 1 even when the
+        baseline band reaches it.
+
+        Regression guard for type 0 being tested first: with unfolded=50 and
+        std=10 the type-1 band opens at 50 - 4*10 = 10 while the baseline band
+        closes at BASELINE_BAND_SIGMA * 10 = 30, so a base at depth 20 is
+        inside both. Type 1 has to win, or a carrier peak is lost from the
+        barcode pool as a baseline peak.
+        """
+        pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
+        # effective_base = -80 + 100 = 20, inside both bands
+        props = self._props([-80.0], [-80.0])
+        result = pf.filter_peaks(
+            np.array([200]), props, 50.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
+        self.assertEqual(result["filtered"][0], 1)
+
+    def test_baseline_peak_is_still_typed_zero(self):
+        """
+        Type 0 stays reachable: a base below the type-1 floor and inside the
+        baseline band is a baseline peak.
+        """
+        pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
+        # effective_base = -95 + 100 = 5, below the type-1 floor of 10 and
+        # inside the 30-wide baseline band
+        props = self._props([-95.0], [-95.0])
+        result = pf.filter_peaks(
+            np.array([200]), props, 50.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
+        self.assertEqual(result["filtered"][0], 0)
+
+    def test_baseline_band_ignores_higher_filter_threshold(self):
+        """
+        The baseline band is BASELINE_BAND_SIGMA, not t2, so raising t2 must
+        not widen it.
+
+        At t2=5 the old band would have been 50 wide and claimed this base as
+        type 0; the fixed band closes at 30, and the base is nowhere near the
+        type-1 floor of 160, so it is rejected instead.
+        """
+        pf = _make_pf(
+            **{
+                "Event Type": "Barcode",
+                "Number of peaks": 2,
+                "Lower Filter Threshold": -4,
+                "Higher Filter Threshold": 5,
+            }
+        )
+        # effective_base = -60 + 100 = 40: outside the 30-wide baseline band,
+        # below the type-1 floor of 200 - 40 = 160
+        props = self._props([-60.0], [-60.0])
+        result = pf.filter_peaks(
+            np.array([200]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
+        self.assertEqual(result["filtered"][0], -1)
+
+    def _edge_props(self, base_at_edge):
+        """Two carrier-seated peaks, with the given base_at_edge flags."""
+        props = self._props([100.0, 100.0], [100.0, 100.0], peak_loc=[0.0, 10.0])
+        props["base_at_edge"] = list(base_at_edge)
+        return props
+
+    def test_type1_peak_with_base_at_either_edge_is_rejected(self):
+        """
+        A type-1 peak whose base was pinned to an end of the trimmed event is
+        rejected to -1, and both ends are treated alike.
+
+        Number of peaks is set above the peak count so nothing is promoted to
+        type 3 and the typing is what is being measured.
+        """
+        for flags, expected in (
+            ([0.0, 0.0], [1, 1]),
+            ([1.0, 0.0], [-1, 1]),
+            ([0.0, 1.0], [1, -1]),
+            ([1.0, 1.0], [-1, -1]),
+        ):
+            with self.subTest(flags=flags):
+                pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 5})
+                result = pf.filter_peaks(
+                    np.array([0, 10]),
+                    self._edge_props(flags),
+                    200.0,
+                    None,
+                    10.0,
+                    100.0,
+                    1e6,
+                    1000.0,
+                )
+                self.assertEqual(list(result["filtered"]), expected)
+
+    def test_edge_flag_does_not_affect_a_baseline_peak(self):
+        """The rejection applies to type 1 only, not to every flagged peak."""
+        pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 2})
+        props = self._props([-95.0], [-95.0])
+        props["base_at_edge"] = [1.0]
+        result = pf.filter_peaks(
+            np.array([200]), props, 50.0, None, 10.0, 100.0, 1e6, 1000.0
+        )
+        self.assertEqual(result["filtered"][0], 0)
+
+    def test_absent_or_nan_edge_flags_type_as_before(self):
+        """
+        A database written before the column existed, or a peak record built
+        without it, must type exactly as it used to rather than being
+        rejected.
+        """
+        for flags in (None, [np.nan, np.nan]):
+            with self.subTest(flags=flags):
+                pf = _make_pf(**{"Event Type": "Barcode", "Number of peaks": 5})
+                props = self._props(
+                    [100.0, 100.0], [100.0, 100.0], peak_loc=[0.0, 10.0]
+                )
+                if flags is not None:
+                    props["base_at_edge"] = list(flags)
+                result = pf.filter_peaks(
+                    np.array([0, 10]), props, 200.0, None, 10.0, 100.0, 1e6, 1000.0
+                )
+                self.assertEqual(list(result["filtered"]), [1, 1])
+
+    # -----------------------------------------------------------------
+    # barcode selection: which type-1 peaks become type 3
+    # -----------------------------------------------------------------
+
+    def test_ideal_event_promotes_the_whole_regular_train(self):
+        """Four evenly spaced peaks of equal width are the barcode."""
+        self.assertEqual(
+            self._carrier([0.0, 45.0, 90.0, 135.0], [2.0, 2.0, 2.0, 2.0], k=4),
+            [3, 3, 3, 3],
+        )
+
+    def test_an_off_pattern_peak_is_skipped_and_keeps_type_1(self):
+        """
+        The selection need not be consecutive: a peak that breaks both the
+        spacing and the width pattern is skipped from the middle of the train,
+        and keeps its type 1 rather than being rejected.
+        """
+        self.assertEqual(
+            self._carrier(
+                [0.0, 45.0, 60.0, 90.0, 135.0],
+                [2.0, 2.0, 9.0, 2.0, 2.0],
+                k=4,
+            ),
+            [3, 3, 1, 3, 3],
+        )
+
+    def test_width_similarity_chooses_between_two_regular_trains(self):
+        """
+        Two equally regular candidate trains, far enough apart never to
+        merge: the one whose peaks have matching widths wins.
+
+        Also the guard that every candidate set is considered, not just the
+        first one found - the winning train here is the earlier, but it wins
+        on score rather than on position (see the tie-break test for what
+        happens when scores are equal).
+        """
+        self.assertEqual(
+            self._carrier(
+                [0.0, 40.0, 80.0, 120.0, 400.0, 440.0, 480.0, 520.0],
+                [2.0, 2.0, 2.0, 2.0, 1.0, 7.0, 3.0, 9.0],
+                k=4,
+                ratio=6.0,
+            ),
+            [3, 3, 3, 3, 1, 1, 1, 1],
+        )
+
+    def test_ecd_similarity_applies_when_its_weight_is_raised(self):
+        """
+        The ECD term is present but zero-weighted by default. Raising it makes
+        it choose, on a geometry where widths are uniform and so cannot.
+        """
+        pf = _make_pf(
+            **{
+                "Event Type": "Barcode",
+                "Number of peaks": 4,
+                "Peak to Peak Distance Ratio": 6.0,
+            }
+        )
+        pf.BARCODE_ECD_WEIGHT = 1.0
+        self.assertEqual(
+            self._carrier(
+                [0.0, 40.0, 80.0, 120.0, 400.0, 440.0, 480.0, 520.0],
+                [2.0] * 8,
+                ecds=[2.0, 2.0, 2.0, 2.0, 1.0, 7.0, 3.0, 9.0],
+                k=4,
+                ratio=6.0,
+                pf=pf,
+            ),
+            [3, 3, 3, 3, 1, 1, 1, 1],
+        )
+
+    def test_skipping_is_refused_when_the_recomputed_gap_is_too_wide(self):
+        """
+        max_distance is a constraint on the *selected* set, so a skip that
+        would put two type-3 peaks more than max_distance apart is illegal
+        however well it scores.
+
+        These four peaks are 40 us apart against a 50 us limit, and the middle
+        one has a badly mismatched width - so the selection would rather skip
+        it, but doing so leaves an 80 us gap. With k=4 every peak has to be
+        taken; with k=3 the set stays adjacent instead of skipping.
+        """
+        self.assertEqual(
+            self._carrier(
+                [0.0, 40.0, 80.0, 120.0], [2.0, 2.0, 9.0, 2.0], k=4, ratio=5.0
+            ),
+            [3, 3, 3, 3],
+        )
+        self.assertEqual(
+            self._carrier(
+                [0.0, 40.0, 80.0, 120.0], [2.0, 2.0, 9.0, 2.0], k=3, ratio=5.0
+            ),
+            [3, 3, 3, 1],
+        )
+
+    def test_equally_matched_sets_go_to_the_largest_total_ecd(self):
+        """
+        Two identical geometries, both perfectly regular and of uniform
+        width: total ECD decides, and it does so even though the ECD term
+        itself is zero-weighted.
+        """
+        self.assertEqual(
+            self._carrier(
+                [0.0, 40.0, 80.0, 400.0, 440.0, 480.0],
+                [2.0] * 6,
+                ecds=[1.0, 1.0, 1.0, 5.0, 5.0, 5.0],
+                k=3,
+                ratio=6.0,
+            ),
+            [1, 1, 1, 3, 3, 3],
+        )
+
+    def test_selection_is_exactly_num_peaks(self):
+        """A longer regular train is still labelled only num_peaks wide."""
+        result = self._carrier([0.0, 40.0, 80.0, 120.0, 160.0, 200.0], [2.0] * 6, k=4)
+        self.assertEqual(result.count(3), 4)
+
+    def test_selection_without_width_or_ecd_falls_back_to_spacing(self):
+        """
+        A database written before peak_width and sublevel_raw_ecd were plumbed
+        through supplies neither, which drops both terms rather than poisoning
+        the score: the regular train is still found on spacing alone.
+        """
+        # Neither widths= nor ecds=, so the properties dict carries neither.
+        self.assertEqual(
+            self._carrier([0.0, 45.0, 90.0, 135.0], k=4),
+            [3, 3, 3, 3],
+        )
+
+    def test_event_35304_geometry_skips_the_noise_peak(self):
+        """
+        A real event that the consecutive-run rule got wrong, and that the
+        ECD term alone also got wrong when the noise peak happened to be the
+        wide one.
+
+        Five type-1 peaks: a regular train at ~105 us spacing (p2, p3, p4, p6)
+        with a low, narrow noise peak (p5) sitting 60 us after p4. Selecting
+        p5 costs two badly mismatched spacings, so the right answer skips it
+        and treats p4 -> p6 as one 110 us gap - which only the recomputed-gap
+        rule permits, and only while max_distance allows 110 us.
+        """
+        locs = [1830.0, 1935.0, 2040.0, 2100.0, 2150.0]
+        widths = [12.0, 12.0, 12.0, 20.0, 12.0]
+        # 15% of an 1100 us event is 165 us, so the 110 us skip gap is legal.
+        self.assertEqual(
+            self._carrier(locs, widths, k=4, ratio=15.0, event_length=1100.0),
+            [3, 3, 3, 1, 3],
+        )
+
+    def test_a_skip_needs_headroom_in_the_distance_limit(self):
+        """
+        The same event with the limit set just below the skip gap: skipping is
+        now illegal, so the noise peak is taken and the regular train is not
+        recovered. Worth pinning, because it is the tension between allowing
+        skips and treating max_distance as a hard constraint - a skip needs
+        room for the gap it leaves behind.
+        """
+        locs = [1830.0, 1935.0, 2040.0, 2100.0, 2150.0]
+        widths = [12.0, 12.0, 12.0, 20.0, 12.0]
+        # 9.5% of 1100 us is 104.5 us: under the 105 us train spacing, so only
+        # the tight trailing peaks can pair at all.
+        result = self._carrier(locs, widths, k=4, ratio=9.5, event_length=1100.0)
+        self.assertNotEqual(result, [3, 3, 3, 1, 3])
+
+    def test_no_selection_when_too_few_candidates(self):
+        """Fewer type-1 peaks than num_peaks means no barcode at all."""
+        self.assertEqual(
+            self._carrier([0.0, 45.0, 90.0], [2.0, 2.0, 2.0], k=4),
+            [1, 1, 1],
+        )
+
+    def test_isolated_peaks_are_not_candidates(self):
+        """
+        A type-1 peak with no neighbour inside max_distance cannot be part of
+        any legal set, so it never reaches the search.
+        """
+        # Three tight peaks plus one 500 us away, k=3 and a 60 us limit.
+        self.assertEqual(
+            self._carrier(
+                [0.0, 40.0, 80.0, 580.0],
+                [2.0, 2.0, 2.0, 2.0],
+                k=3,
+                ratio=6.0,
+            ),
+            [3, 3, 3, 1],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -624,11 +983,81 @@ class TestDefineEventMetadata(unittest.TestCase):
         self.assertIs(t["duration"], float)
         self.assertIs(t["raw_ecd"], float)
         self.assertIs(t["baseline_current"], float)
-        self.assertIs(t["unfolded_level"], float)
         # NOTE (integration): key renamed baseline_std -> baseline_stdev.
         self.assertIs(t["baseline_stdev"], float)
         self.assertIs(t["translocation_direction"], str)
         self.assertIs(t["sequence"], str)
+
+    def test_private_metadata_is_not_declared(self):
+        """
+        The working values PeakFinder keeps for itself must not appear in the
+        declared types or units, or the writer would create columns for them
+        that get_single_event_metadata never supplies.
+        """
+        event_types = self.pf._define_event_metadata_types()
+        event_units = self.pf._define_event_metadata_units()
+        for key in PeakFinder.PRIVATE_EVENT_METADATA:
+            self.assertNotIn(key, event_types)
+            self.assertNotIn(key, event_units)
+
+        sublevel_types = self.pf._define_sublevel_metadata_types()
+        sublevel_units = self.pf._define_sublevel_metadata_units()
+        for key in PeakFinder.PRIVATE_SUBLEVEL_METADATA:
+            self.assertNotIn(key, sublevel_types)
+            self.assertNotIn(key, sublevel_units)
+
+    def test_declared_types_and_units_agree(self):
+        """
+        The writer creates columns from the types dict and labels them from
+        the units dict, so a key in one and not the other is a bug either way.
+        """
+        self.assertEqual(
+            set(self.pf._define_event_metadata_types()),
+            set(self.pf._define_event_metadata_units()),
+        )
+        self.assertEqual(
+            set(self.pf._define_sublevel_metadata_types()),
+            set(self.pf._define_sublevel_metadata_units()),
+        )
+
+    def test_get_single_event_metadata_strips_private_keys(self):
+        """
+        The accessor MetaDatabaseWriter iterates must not hand out the private
+        working values, and must not disturb the internal dicts it copies
+        from - get_plot_features and the classifiers still read those.
+        """
+        pf = _make_pf()
+        pf.eventfitting_status = {0: True}
+        pf.event_metadata = {
+            0: {
+                7: {
+                    "duration": 100.0,
+                    "unfolded_level": 500.0,
+                    "folded_level": 1000.0,
+                    "bound_star": "long end",
+                    "translocation_confidence": 0.9,
+                }
+            }
+        }
+        pf.sublevel_metadata = {
+            0: {7: {"peak_loc": np.array([1.0]), "base_at_edge": np.array([1.0])}}
+        }
+        loader = MagicMock()
+        loader.load_event.return_value = {"data": np.zeros(4)}
+        pf.eventloader = loader
+        pf.applied_filters = {}
+        pf.construct_fitted_event = MagicMock(return_value=None)
+
+        event_metadata, sublevel_metadata, _, _, _ = pf.get_single_event_metadata(0, 7)
+
+        for key in PeakFinder.PRIVATE_EVENT_METADATA:
+            self.assertNotIn(key, event_metadata)
+        for key in PeakFinder.PRIVATE_SUBLEVEL_METADATA:
+            self.assertNotIn(key, sublevel_metadata)
+        # what is left is untouched, and the internals still carry everything
+        self.assertEqual(event_metadata["duration"], 100.0)
+        self.assertIn("unfolded_level", pf.event_metadata[0][7])
+        self.assertIn("base_at_edge", pf.sublevel_metadata[0][7])
 
     def test_sublevel_types_all_present(self):
         t = self.pf._define_sublevel_metadata_types()
@@ -990,6 +1419,413 @@ class TestNoopOverrides(unittest.TestCase):
     def test_close_resources_noop(self):
         self.assertIsNone(self.pf.close_resources())
 
+    def test_default_settings(self):
+        """
+        The shipped defaults, pinned: this plugin exists to read barcodes, so
+        it should be usable without retuning every field first.
+        """
+        settings = self.pf.get_empty_settings(standalone=True)
+        expected = {
+            "Event Type": "Barcode",
+            "Number of peaks": 4,
+            "Lower Filter Threshold": -5,
+            "Higher Filter Threshold": 5,
+            "Peak to Peak Distance Ratio": 30.0,
+            "Window Length Percentage": 10.0,
+            "Min Carrier Blockage": 300.0,
+        }
+        for key, value in expected.items():
+            self.assertEqual(settings[key]["Value"], value, key)
+
+
+# ---------------------------------------------------------------------------
+# FIT_CONSTANT_OFFSET - the flat constant fitted alongside the two Gaussians
+# ---------------------------------------------------------------------------
+
+
+class TestFitConstantOffset(unittest.TestCase):
+    """
+    The seventh fitted parameter: a flat background belonging to neither
+    population.
+
+    It goes last in `params` so positions 0-5 keep their meanings, it is
+    bounded like an amplitude, and it is kept only when it improves the
+    residual - the guard that stops the extra degree of freedom from walking
+    the fit into a worse local minimum.
+    """
+
+    def setUp(self):
+        self.pf = _make_pf()
+
+    @staticmethod
+    def _two_populations(background=0, seed=0, n_hi=5000):
+        """Two symmetric populations (sigma 300), optionally on a pedestal."""
+        rng = np.random.default_rng(seed)
+        core = np.concatenate(
+            [rng.normal(2000.0, 300.0, 6000), rng.normal(3500.0, 300.0, n_hi)]
+        )
+        if not background:
+            return core
+        return np.concatenate([core, rng.uniform(core.min(), core.max(), background)])
+
+    def _fit(self, data, use_offset=True):
+        self.pf.FIT_CONSTANT_OFFSET = use_offset
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        popt, _ = self.pf._fit_and_check_double_gaussian(centers, counts)
+        self.assertIsNotNone(popt)
+        residual = float(
+            np.sum((self.pf._double_gaussian(centers, *popt) - counts) ** 2)
+        )
+        return popt, residual, centers, counts
+
+    # -- the model itself ---------------------------------------------------
+
+    def test_the_constant_is_added_to_both_components(self):
+        x = np.array([0.0, 5.0, 10.0])
+        without = self.pf._double_gaussian(x, 10.0, 0.0, 2.0, 10.0, 10.0, 2.0)
+        with_offset = self.pf._double_gaussian(x, 10.0, 0.0, 2.0, 10.0, 10.0, 2.0, 7.0)
+        np.testing.assert_allclose(with_offset, without + 7.0)
+
+    def test_the_constant_defaults_to_zero(self):
+        # so every call written before the constant existed still describes
+        # the pure double Gaussian
+        x = np.linspace(-5.0, 15.0, 21)
+        np.testing.assert_allclose(
+            self.pf._double_gaussian(x, 10.0, 0.0, 2.0, 10.0, 10.0, 2.0),
+            self.pf._double_gaussian(x, 10.0, 0.0, 2.0, 10.0, 10.0, 2.0, 0.0),
+        )
+
+    # -- what it buys -------------------------------------------------------
+
+    def test_a_real_background_is_recovered_and_the_widths_stop_absorbing_it(self):
+        # 2500 uniform events under two sigma-300 populations. Without the
+        # constant the widths inflate to cover the pedestal.
+        data = self._two_populations(background=2500)
+        with_off, rss_with, centers, counts = self._fit(data, True)
+        without, rss_without, _, _ = self._fit(data, False)
+
+        self.assertEqual(len(with_off), 7)
+        self.assertEqual(len(without), 6)
+
+        # the pedestal's true height in counts per bin
+        expected = 2500.0 / len(counts)
+        self.assertAlmostEqual(float(with_off[6]), expected, delta=0.25 * expected)
+
+        # widths land closer to the true 300 with the constant than without
+        for std_index in (2, 5):
+            self.assertLess(
+                abs(float(with_off[std_index]) - 300.0),
+                abs(float(without[std_index]) - 300.0),
+            )
+        self.assertLess(rss_with, rss_without)
+
+    def test_inert_when_there_is_no_background(self):
+        # The property that makes it safe to switch on everywhere: on data
+        # with no pedestal it settles near zero and moves no mean.
+        data = self._two_populations()
+        with_off, _, _, _ = self._fit(data, True)
+        without, _, _, _ = self._fit(data, False)
+        self.assertLess(float(with_off[6]), 0.02 * float(np.max([1.0, with_off[0]])))
+        for mean_index in (1, 4):
+            self.assertAlmostEqual(
+                float(with_off[mean_index]),
+                float(without[mean_index]),
+                delta=0.001 * abs(float(without[mean_index])),
+            )
+
+    # -- the residual guard -------------------------------------------------
+
+    def _curve_fit_returning(self, seven, six):
+        """
+        Patch `curve_fit` to return chosen parameters per fit arity, so the
+        residual comparison can be driven directly.
+        """
+
+        def fake(f, xdata, ydata, p0=None, bounds=None, **kwargs):
+            chosen = seven if len(p0) == 7 else six
+            popt = np.asarray(chosen, dtype=float)
+            return popt, np.zeros((popt.size, popt.size))
+
+        return patch(
+            "poriscope.plugins.eventfitters.PeakFinder.curve_fit", side_effect=fake
+        )
+
+    def test_a_constant_that_makes_the_residual_worse_is_discarded(self):
+        # The guard, driven directly: the seven-parameter fit comes back with a
+        # clearly worse residual, so the six-parameter one is kept. Real
+        # seeding does not exercise this - it never lost there over the
+        # benchmark in `_curve_fit_bounded`'s docstring - which is exactly why
+        # the rule is worth pinning on its own.
+        data = self._two_populations(background=2500)
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        self.pf.FIT_CONSTANT_OFFSET = True
+
+        good = (400.0, 2000.0, 300.0, 340.0, 3500.0, 300.0)
+        # both components collapsed onto the low end: a bad fit by any measure
+        bad_with_offset = (5.0, 2000.0, 150.0, 5.0, 2050.0, 150.0, 1.0)
+        with self._curve_fit_returning(bad_with_offset, good):
+            popt, _ = self.pf._curve_fit_bounded(centers, counts, good)
+        self.assertEqual(len(popt), 6, "the worse seven-parameter fit won")
+        np.testing.assert_allclose(popt, good)
+
+    def test_a_constant_that_improves_the_residual_is_kept(self):
+        # the mirror of the guard: where the constant earns its place it wins
+        data = self._two_populations(background=2500)
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        self.pf.FIT_CONSTANT_OFFSET = True
+
+        without = (400.0, 2000.0, 300.0, 340.0, 3500.0, 300.0)
+        with_offset = without + (2500.0 / len(counts),)
+        with self._curve_fit_returning(with_offset, without):
+            popt, _ = self.pf._curve_fit_bounded(centers, counts, without)
+        self.assertEqual(len(popt), 7)
+        np.testing.assert_allclose(popt, with_offset)
+
+    def test_the_surviving_fit_is_used_when_the_other_one_raises(self):
+        # one arity failing to converge must not lose the fit that did
+        data = self._two_populations(background=2500)
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        self.pf.FIT_CONSTANT_OFFSET = True
+        good = (400.0, 2000.0, 300.0, 340.0, 3500.0, 300.0)
+
+        def only_six(f, xdata, ydata, p0=None, bounds=None, **kwargs):
+            if len(p0) == 7:
+                raise RuntimeError("did not converge")
+            popt = np.asarray(good, dtype=float)
+            return popt, np.zeros((6, 6))
+
+        with patch(
+            "poriscope.plugins.eventfitters.PeakFinder.curve_fit",
+            side_effect=only_six,
+        ):
+            popt, _ = self.pf._curve_fit_bounded(centers, counts, good)
+        self.assertEqual(len(popt), 6)
+
+    def test_both_failing_still_propagates(self):
+        # so `_fit_double_gaussian` can still fall through to its next seed
+        data = self._two_populations()
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        self.pf.FIT_CONSTANT_OFFSET = True
+        with patch(
+            "poriscope.plugins.eventfitters.PeakFinder.curve_fit",
+            side_effect=RuntimeError("did not converge"),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.pf._curve_fit_bounded(
+                    centers, counts, (400.0, 2000.0, 300.0, 340.0, 3500.0, 300.0)
+                )
+
+    def test_the_kept_fit_is_never_the_worse_of_the_two(self):
+        # the guard's invariant, over background and background-free data and
+        # over a minority second population
+        for background, n_hi in ((0, 5000), (2500, 5000), (0, 300)):
+            with self.subTest(background=background, n_hi=n_hi):
+                data = self._two_populations(background=background, n_hi=n_hi, seed=3)
+                _, rss_with, _, _ = self._fit(data, True)
+                _, rss_without, _, _ = self._fit(data, False)
+                self.assertLessEqual(rss_with, rss_without * (1.0 + 1e-6) + 1e-6)
+
+    def test_a_near_tie_keeps_the_seven_parameter_fit(self):
+        # With no background the constant converges to ~0 and the two fits are
+        # the same curve to within float noise. Letting that noise decide
+        # would flip len(params) between runs on equivalent data, so near-ties
+        # go to the more general model and the output shape stays stable.
+        for seed in (0, 5, 9):
+            with self.subTest(seed=seed):
+                data = self._two_populations(n_hi=600, seed=seed)
+                popt, _, _, _ = self._fit(data, True)
+                self.assertEqual(len(popt), 7)
+
+    def test_switching_the_constant_off_gives_six_parameters(self):
+        data = self._two_populations(background=2500)
+        popt, _, _, _ = self._fit(data, False)
+        self.assertEqual(len(popt), 6)
+
+    # -- what fit_threshold reports -----------------------------------------
+
+    def test_the_constant_is_on_by_default(self):
+        self.assertTrue(PeakFinder.FIT_CONSTANT_OFFSET)
+
+    def test_fit_threshold_reports_the_constant_in_params_and_on_its_own(self):
+        self.pf.FIT_CONSTANT_OFFSET = True
+        bt = self.pf.fit_threshold(self._two_populations(background=2500))
+        self.assertEqual(len(bt["params"]), 7)
+        self.assertEqual(bt["params"][6], bt["offset"])
+        self.assertGreater(bt["offset"], 0.0)
+
+    def test_the_constant_is_zero_not_absent_when_none_was_fitted(self):
+        # so a consumer can read "offset" unconditionally
+        self.pf.FIT_CONSTANT_OFFSET = False
+        bt = self.pf.fit_threshold(self._two_populations(background=2500))
+        self.assertEqual(bt["offset"], 0.0)
+        self.assertEqual(len(bt["params"]), 7)
+        self.assertEqual(bt["params"][6], 0.0)
+
+    def test_the_widths_params_indices_are_unmoved_by_the_constant(self):
+        # `_classify_peak_prominences` reads params[2] and params[5] for the
+        # two standard deviations; appending the constant must not shift them
+        bt = self.pf.fit_threshold(self._two_populations(background=2500))
+        self.assertAlmostEqual(bt["params"][2], 300.0, delta=60.0)
+        self.assertAlmostEqual(bt["params"][5], 300.0, delta=60.0)
+
+    # -- what it must NOT touch ---------------------------------------------
+
+    def test_the_constant_does_not_move_the_gaussian_crossing(self):
+        # it is common to both curves, so it cancels out of g1 == g2
+        without = PeakFinder._gaussian_intersection(100.0, 0.0, 10.0, 50.0, 20.0, 10.0)
+        params = (100.0, 0.0, 10.0, 50.0, 20.0, 10.0, 37.0)
+        with_offset = PeakFinder._gaussian_intersection(*params[:6])
+        self.assertAlmostEqual(without, with_offset, places=12)
+
+    def test_confidence_ignores_a_trailing_constant(self):
+        # excluded by design, so a "constrained" threshold still reads 0.5
+        # exactly at the crossing - see _classification_confidence
+        values = np.array([-5.0, 0.0, 5.0, 10.0, 15.0])
+        six = (100.0, 0.0, 10.0, 100.0, 10.0, 10.0)
+        is_higher = values >= 5.0
+        np.testing.assert_allclose(
+            self.pf._classification_confidence(values, six, is_higher),
+            self.pf._classification_confidence(values, six + (25.0,), is_higher),
+        )
+
+    def test_confidence_still_reads_a_half_at_the_crossing(self):
+        params = (100.0, 0.0, 10.0, 100.0, 10.0, 10.0, 25.0)
+        crossing = PeakFinder._gaussian_intersection(*params[:6])
+        got = self.pf._classification_confidence(
+            np.array([crossing]), params, np.array([True])
+        )
+        self.assertAlmostEqual(float(got[0]), 0.5, places=9)
+
+    def test_a_near_zero_constant_does_not_trip_the_unconstrained_warning(self):
+        # a relative-error test can never be passed by a parameter whose
+        # correct value is zero, so the constant is exempt from it
+        data = self._two_populations()
+        self.pf.FIT_CONSTANT_OFFSET = True
+        counts, _, centers = self.pf._histogram_for_fit(data)
+        with self.assertNoLogs(PeakFinder.logger, level="WARNING"):
+            self.pf._fit_and_check_double_gaussian(centers, counts)
+
+    # -- the constrained refit ----------------------------------------------
+
+    def test_the_constrained_refit_keeps_the_constant_free(self):
+        data = self._two_populations(background=2500)
+        popt, _, centers, counts = self._fit(data, True)
+        m1, s1, m2, s2 = (float(popt[i]) for i in (1, 2, 4, 5))
+        if m1 > m2:
+            m1, s1, m2, s2 = m2, s2, m1, s1
+        valley, method, _ = self.pf._threshold_between_populations(
+            data, centers, counts, m1, s1, m2, s2, False
+        )
+        result = self.pf._fit_double_gaussian_bounded_at_valley(
+            centers, counts, valley, popt
+        )
+        self.assertIsNotNone(result)
+        fit, _ = result
+        self.assertEqual(len(fit), 7)
+        self.assertGreater(float(fit[6]), 0.0)
+
+    def test_the_refit_stays_six_long_when_the_joint_fit_had_no_constant(self):
+        # the refit carries the joint fit's constant rather than inventing one
+        x, y = self._bimodal_for_valley()
+        popt = np.array([868.0, 2491.0, 313.0, 1017.0, 4722.0, 520.0])
+        result = self.pf._fit_double_gaussian_bounded_at_valley(x, y, 3524.0, popt)
+        self.assertIsNotNone(result)
+        fit, _ = result
+        self.assertEqual(len(fit), 6)
+
+    @staticmethod
+    def _bimodal_for_valley(seed=5):
+        rng = np.random.default_rng(seed)
+        x = np.linspace(300, 8000, 70)
+        bw = x[1] - x[0]
+        intensity = (
+            6119
+            * np.exp(-0.5 * ((x - 2495) / 320) ** 2)
+            / (320 * np.sqrt(2 * np.pi))
+            * bw
+            + 11816
+            * np.exp(-0.5 * ((x - 4724) / 523) ** 2)
+            / (523 * np.sqrt(2 * np.pi))
+            * bw
+        )
+        return x, rng.poisson(np.clip(intensity, 0.01, None)).astype(float)
+
+    def test_a_flat_tail_the_constant_absorbs_makes_the_refit_decline(self):
+        # The one behaviour change the constant produces on the constrained
+        # path, and an improvement. On this dataset the threshold search puts
+        # the valley at 6383 - past the end of both populations - and the
+        # six-parameter refit "succeeded" there by parking a broad, near-flat
+        # higher component at 8324 with std 3883 to cover the sparse tail.
+        # With a pedestal available that flat contribution goes to the
+        # constant instead, the higher component collapses below the bin
+        # width, and the existing guard declines rather than reporting a
+        # component 5000 pA past any data. The joint fit is kept.
+        rng = np.random.default_rng(1)
+        data = np.concatenate(
+            [
+                rng.lognormal(np.log(1830) + 0.30**2, 0.30, 6500),
+                rng.lognormal(np.log(3350) + 0.24**2, 0.24, 4600),
+            ]
+        )
+        popt, _, centers, counts = self._fit(data, True)
+        m1, s1, m2, s2 = (float(popt[i]) for i in (1, 2, 4, 5))
+        if m1 > m2:
+            m1, s1, m2, s2 = m2, s2, m1, s1
+        valley, method, _ = self.pf._threshold_between_populations(
+            data, centers, counts, m1, s1, m2, s2, False
+        )
+        self.assertGreater(valley, max(m1, m2), "this corner needs a tail valley")
+        with self.assertLogs(PeakFinder.logger, level="WARNING") as captured:
+            result = self.pf._fit_double_gaussian_bounded_at_valley(
+                centers, counts, valley, popt
+            )
+        self.assertIsNone(result)
+        self.assertTrue(
+            any("collapsed a component" in line for line in captured.output),
+            captured.output,
+        )
+
+    # -- the plot -----------------------------------------------------------
+
+    def test_the_overlay_accepts_seven_parameters_and_draws_the_background(self):
+        ax = MagicMock()
+        self.pf._overlay_fitted_gaussians(
+            ax,
+            (100.0, 0.0, 10.0, 100.0, 30.0, 10.0, 12.0),
+            np.linspace(-40.0, 70.0, 50),
+            "lower",
+            "higher",
+            "test",
+        )
+        self.assertEqual(ax.plot.call_count, 2)
+        ax.axhline.assert_called_once()
+        self.assertEqual(ax.axhline.call_args[0][0], 12.0)
+        # both component curves are drawn sitting on the pedestal
+        for call in ax.plot.call_args_list:
+            self.assertGreaterEqual(float(np.min(call[0][1])), 12.0 - 1e-9)
+
+    def test_the_overlay_draws_no_background_line_when_there_is_none(self):
+        # so a plot with no fitted pedestal looks as it did before
+        ax = MagicMock()
+        self.pf._overlay_fitted_gaussians(
+            ax,
+            (100.0, 0.0, 10.0, 100.0, 30.0, 10.0, 0.0),
+            np.linspace(-40.0, 70.0, 50),
+            "lower",
+            "higher",
+            "test",
+        )
+        self.assertEqual(ax.plot.call_count, 2)
+        ax.axhline.assert_not_called()
+
+    def test_the_overlay_still_rejects_a_wrong_length_params(self):
+        ax = MagicMock()
+        with self.assertLogs(PeakFinder.logger, level="WARNING"):
+            self.pf._overlay_fitted_gaussians(
+                ax, (1.0, 2.0, 3.0), np.linspace(0.0, 1.0, 5), "a", "b", "test"
+            )
+        ax.plot.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # _gaussian_intersection
@@ -1290,8 +2126,15 @@ class TestValleySeparationConstraint(unittest.TestCase):
     def setUp(self):
         self.pf = _make_pf()
 
-    def _skewed(self, s_lower=0.30, seed=1):
-        """Right-skewed lower population whose shoulder reaches the valley."""
+    def _skewed(self, s_lower=0.30, seed=0):
+        """
+        Right-skewed lower population whose shoulder reaches the valley.
+
+        Seed 0 rather than 1: on seed 1 the threshold search puts its valley at
+        6383, past the end of both populations, so the refit there is not
+        exercising the separation constraint these tests are about. That corner
+        has a test of its own in `TestFitConstantOffset`.
+        """
         rng = np.random.default_rng(seed)
         lower = rng.lognormal(np.log(1830) + s_lower**2, s_lower, 6500)
         upper = rng.lognormal(np.log(3350) + 0.24**2, 0.24, 4600)
@@ -1302,7 +2145,7 @@ class TestValleySeparationConstraint(unittest.TestCase):
         counts, edges, centers = self.pf._histogram_for_fit(data)
         popt, one_pop = self.pf._fit_and_check_double_gaussian(centers, counts)
         self.assertIsNotNone(popt)
-        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt)
+        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt[:6])
         valley, _, _ = self.pf._threshold_between_populations(
             data, centers, counts, m1, s1, m2, s2, one_pop
         )
@@ -1322,7 +2165,7 @@ class TestValleySeparationConstraint(unittest.TestCase):
         data = self._skewed()
         counts, edges, centers = self.pf._histogram_for_fit(data)
         popt, one_pop = self.pf._fit_and_check_double_gaussian(centers, counts)
-        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt)
+        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt[:6])
         valley, _, _ = self.pf._threshold_between_populations(
             data, centers, counts, m1, s1, m2, s2, one_pop
         )
@@ -1341,7 +2184,7 @@ class TestValleySeparationConstraint(unittest.TestCase):
         )
         counts, edges, centers = self.pf._histogram_for_fit(data)
         popt, one_pop = self.pf._fit_and_check_double_gaussian(centers, counts)
-        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt)
+        a1, m1, s1, a2, m2, s2 = (float(p) for p in popt[:6])
         valley, _, _ = self.pf._threshold_between_populations(
             data, centers, counts, m1, s1, m2, s2, one_pop
         )
@@ -1426,6 +2269,298 @@ class TestMeansOffTheirPeaksWarning(unittest.TestCase):
         self.pf._warn_if_fitted_means_are_off_their_peaks(
             self.centers[:2], self.counts[:2], params
         )
+
+
+# ---------------------------------------------------------------------------
+# _classify_peak_prominences - which peaks are fitted and classified
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyPeakProminences(unittest.TestCase):
+    """
+    Types 1, 2 and 3 are fitted and classified; everything else keeps NaN.
+
+    The fit is taken on log10(normalized prominence), so the threshold the
+    fit returns is in log units and the split has to happen there - the
+    fixture's threshold of -1.0 is a prominence ratio of 10**-1 = 0.1.
+    """
+
+    NAN = np.nan
+    FIT_RESULT = {
+        "threshold": -1.0,
+        "centers": np.array([-1.6, -0.5]),
+        "params": (100.0, -1.6, 0.2, 100.0, -0.5, 0.2),
+        "n_components": 2,
+        "hist": (None, None),
+    }
+
+    def _run(self, filtered, normalized):
+        pf = _make_pf()
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array(filtered, dtype=float),
+                    "normalized_prominence": np.array(normalized, dtype=float),
+                    "peak_id": [float(i) for i in range(len(filtered))],
+                }
+            }
+        }
+        pf.event_metadata = {0: {0: {}}}
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+        return pf
+
+    def test_types_1_2_and_3_are_fitted_and_others_are_not(self):
+        """Types 0, -1 and the two star codes are excluded from the fit."""
+        pf = self._run(
+            [3.0, 1.0, 2.0, 0.0, -1.0, 4.0, 5.0],
+            [0.20, 0.30, 0.40, 0.92, 0.93, 0.94, 0.95],
+        )
+        fitted = pf.fit_threshold.call_args[0][0]
+        np.testing.assert_allclose(sorted(fitted), np.log10([0.20, 0.30, 0.40]))
+
+    def test_the_fit_is_taken_on_the_log_of_the_normalized_prominence(self):
+        """
+        `fit_threshold` must see log10 values, not the ratios themselves - a
+        Gaussian there is the log-normal the upper population actually is.
+        """
+        ratios = [0.10, 0.20, 0.50, 0.90]
+        pf = self._run([3.0] * 4, ratios)
+        fitted = pf.fit_threshold.call_args[0][0]
+        np.testing.assert_allclose(sorted(fitted), np.log10(sorted(ratios)))
+
+    def test_the_split_happens_in_log_space(self):
+        """
+        The threshold the fit returns is in log units, so it is compared
+        against the log values: 10**-1.0 = 0.1 divides these four.
+        """
+        pf = self._run([3.0] * 4, [0.05, 0.09, 0.50, 0.90])
+        classified = pf.sublevel_metadata[0][0]["classified"]
+        np.testing.assert_array_equal(classified, [0.0, 0.0, 1.0, 1.0])
+
+    def test_the_report_gets_ratios_not_log_units(self):
+        """
+        The classification stays in log space but the report is read by a
+        person, so the threshold and centres are converted back with 10**x.
+        """
+        pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
+        results = pf._peak_prominence_classification_results
+        self.assertAlmostEqual(results["threshold"], 10.0**-1.0)
+        np.testing.assert_allclose(results["centers"], 10.0 ** np.array([-1.6, -0.5]))
+
+    def test_non_positive_prominences_are_dropped_from_the_log_fit(self):
+        """
+        Zero and negative ratios have no logarithm. They are dropped from the
+        fit and left unclassified rather than becoming -inf and taking the
+        histogram's range with them.
+        """
+        pf = self._run([3.0] * 4, [0.0, -0.5, 0.30, 0.90])
+        fitted = pf.fit_threshold.call_args[0][0]
+        np.testing.assert_allclose(sorted(fitted), np.log10([0.30, 0.90]))
+        classified = pf.sublevel_metadata[0][0]["classified"]
+        self.assertTrue(np.isnan(classified[0]))
+        self.assertTrue(np.isnan(classified[1]))
+        self.assertFalse(np.isnan(classified[2]))
+
+    def test_declines_when_no_peak_is_eligible(self):
+        """
+        With no type 1, 2 or 3 peak there is nothing to fit; the columns are
+        still allocated so a reader finds NaN rather than a missing key.
+        """
+        pf = self._run([0.0, -1.0, 4.0], [0.2, 0.5, 0.8])
+        pf.fit_threshold.assert_not_called()
+        self.assertTrue(np.all(np.isnan(pf.sublevel_metadata[0][0]["classified"])))
+        self.assertTrue(
+            np.all(np.isnan(pf.sublevel_metadata[0][0]["classification_confidence"]))
+        )
+
+    def test_linear_fit_when_the_log_scale_is_switched_off(self):
+        """
+        PROMINENCE_FIT_LOG_SCALE False fits the ratios directly, which is the
+        only change needed to compare the two scales on one dataset.
+        """
+        pf = _make_pf()
+        pf.PROMINENCE_FIT_LOG_SCALE = False
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array([3.0, 3.0, 3.0], dtype=float),
+                    "normalized_prominence": np.array([0.1, 0.3, 0.9]),
+                    "peak_id": [0.0, 1.0, 2.0],
+                }
+            }
+        }
+        pf.event_metadata = {0: {0: {}}}
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+
+        fitted = pf.fit_threshold.call_args[0][0]
+        np.testing.assert_allclose(sorted(fitted), [0.1, 0.3, 0.9])
+        # and the report is not exponentiated on this path
+        self.assertAlmostEqual(
+            pf._peak_prominence_classification_results["threshold"], -1.0
+        )
+
+    def test_unfolded_reference_prefers_the_folding_fits_centre(self):
+        """
+        `_run_unfolded_level` prefers the folding fit's own lower centre over
+        any per-event level, since it is the run-wide population mean.
+        """
+        pf = _make_pf()
+        pf._classification_results = {"lower_center": 120.0}
+        pf.event_metadata = {0: {0: {"unfolded_level": 50.0}}}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array([3.0] * 3, dtype=float),
+                    "normalized_prominence": np.array([0.10, 0.30, 0.90]),
+                    "peak_id": [0.0, 1.0, 2.0],
+                }
+            }
+        }
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+        results = pf._peak_prominence_classification_results
+        self.assertEqual(results["unfolded_reference"], 120.0)
+        self.assertEqual(results["unfolded_reference_source"], "fitted unfolded centre")
+
+    def test_unfolded_reference_falls_back_to_the_median_event_level(self):
+        """
+        With no folding fit available, the median of the per-event
+        `unfolded_level` values stands in.
+        """
+        pf = _make_pf()
+        pf.event_metadata = {
+            0: {0: {"unfolded_level": 40.0}, 1: {"unfolded_level": 60.0}}
+        }
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array([3.0] * 3, dtype=float),
+                    "normalized_prominence": np.array([0.10, 0.30, 0.90]),
+                    "peak_id": [0.0, 1.0, 2.0],
+                },
+                1: {
+                    "filtered": np.array([], dtype=float),
+                    "normalized_prominence": np.array([], dtype=float),
+                    "peak_id": [],
+                },
+            }
+        }
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+        results = pf._peak_prominence_classification_results
+        self.assertEqual(results["unfolded_reference"], 50.0)
+        self.assertEqual(
+            results["unfolded_reference_source"], "median per-event unfolded level"
+        )
+
+    def test_unfolded_reference_absent_when_neither_source_is_available(self):
+        """With no folding fit and no per-event level, both come back None."""
+        pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
+        results = pf._peak_prominence_classification_results
+        self.assertIsNone(results["unfolded_reference"])
+        self.assertIsNone(results["unfolded_reference_source"])
+
+    def test_report_carries_fitted_ratio_and_std_factor_fields(self):
+        """
+        The report dict carries the fitted (log10) values alongside the
+        prominence-ratio conversions and the multiplicative std factors, so a
+        reader gets all three unit systems for threshold, centres and std.
+        """
+        pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
+        results = pf._peak_prominence_classification_results
+        self.assertTrue(results["log_scale"])
+        self.assertAlmostEqual(results["threshold_fitted"], -1.0)
+        np.testing.assert_allclose(results["centers_fitted"], [-1.6, -0.5])
+        np.testing.assert_allclose(results["stds_fitted"], [0.2, 0.2])
+        np.testing.assert_allclose(results["std_factors"], 10.0 ** np.array([0.2, 0.2]))
+
+    def test_std_is_reported_as_the_total_pa_span_of_one_sigma(self):
+        """
+        A log-space width is a multiplicative spread, so +/-1 sigma runs from
+        centre/factor to centre*factor - not symmetric about the centre and so
+        with no single "+/- x pA". What it has is a total width, and that is
+        what the report carries: centre * (factor - 1/factor), in pA.
+        """
+        pf = _make_pf()
+        pf._classification_results = {"lower_center": 689.3}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array([3.0] * 3, dtype=float),
+                    "normalized_prominence": np.array([0.10, 0.30, 0.90]),
+                    "peak_id": [0.0, 1.0, 2.0],
+                }
+            }
+        }
+        pf.event_metadata = {0: {0: {}}}
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+        results = pf._peak_prominence_classification_results
+
+        expected = []
+        for center_fitted, std in zip([-1.6, -0.5], [0.2, 0.2]):
+            center_ratio = 10.0**center_fitted
+            factor = 10.0**std
+            expected.append(center_ratio * (factor - 1.0 / factor) * 689.3)
+        np.testing.assert_allclose(results["std_currents"], expected)
+
+        # and it is the width of the span the factor describes, so it agrees
+        # with the two ends computed independently
+        for position, center_ratio in enumerate(results["centers"]):
+            factor = results["std_factors"][position]
+            low = center_ratio / factor * 689.3
+            high = center_ratio * factor * 689.3
+            self.assertAlmostEqual(results["std_currents"][position], high - low)
+
+    def test_std_currents_are_empty_without_a_reference_level(self):
+        # no folding fit and no per-event level, so there is no pA scale
+        pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
+        self.assertEqual(pf._peak_prominence_classification_results["std_currents"], [])
+
+    def test_a_linear_std_is_only_scaled_by_the_reference(self):
+        # with no log transform the width is already a ratio
+        pf = _make_pf()
+        pf.PROMINENCE_FIT_LOG_SCALE = False
+        pf._classification_results = {"lower_center": 500.0}
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array([3.0] * 3, dtype=float),
+                    "normalized_prominence": np.array([0.1, 0.3, 0.9]),
+                    "peak_id": [0.0, 1.0, 2.0],
+                }
+            }
+        }
+        pf.event_metadata = {0: {0: {}}}
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+        results = pf._peak_prominence_classification_results
+        np.testing.assert_allclose(results["std_currents"], [0.2 * 500.0, 0.2 * 500.0])
+
+    def test_std_factors_empty_when_log_scale_is_off(self):
+        """
+        With `PROMINENCE_FIT_LOG_SCALE` off there is no multiplicative
+        factor to report - the std is already a linear width.
+        """
+        pf = _make_pf()
+        pf.PROMINENCE_FIT_LOG_SCALE = False
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.array([3.0] * 3, dtype=float),
+                    "normalized_prominence": np.array([0.1, 0.3, 0.9]),
+                    "peak_id": [0.0, 1.0, 2.0],
+                }
+            }
+        }
+        pf.event_metadata = {0: {0: {}}}
+        pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
+        pf._classify_peak_prominences([0])
+        results = pf._peak_prominence_classification_results
+        self.assertFalse(results["log_scale"])
+        self.assertEqual(results["std_factors"], [])
 
 
 # ---------------------------------------------------------------------------
@@ -1671,18 +2806,25 @@ def _star_event(
     max_blockage=None,
     unfolded_level=500.0,
     baseline_stdev=10.0,
+    peak_width=None,
 ):
     """
     Build the (sublevel, event) metadata pair for one synthetic event.
 
-    `filtered`, `prominence` and `max_blockage` are per-sublevel and
-    index-aligned, NaN on sublevels that are not peaks, exactly as
+    `filtered`, `prominence`, `max_blockage` and `peak_width` are per-sublevel
+    and index-aligned, NaN on sublevels that are not peaks, exactly as
     _populate_sublevel_metadata builds them.
 
     Blockages default far clear of the floor - 2 × unfolded level + 3σ =
     1030 pA with these defaults and the fixture's Higher Filter Threshold of
     3 - so tests about position and prominence are not silently testing the
     depth criterion as well.
+
+    `peak_width` defaults to **omitted**, not to a value, so that tests about
+    position, prominence and depth are likewise not silently testing the
+    widest-peak rule. Tests that mean to exercise that rule pass widths
+    explicitly; one test pins the omitted case itself, since a database
+    written before `peak_width` existed presents exactly that.
     """
     sublevel = {
         "filtered": np.array(filtered, dtype=float),
@@ -1692,6 +2834,8 @@ def _star_event(
             dtype=float,
         ),
     }
+    if peak_width is not None:
+        sublevel["peak_width"] = np.array(peak_width, dtype=float)
     event = {
         "translocation_direction": direction,
         "sequence": sequence,
@@ -2037,8 +3181,9 @@ class TestClassifyBoundStar(unittest.TestCase):
             )
 
     def test_losing_candidates_keep_their_labels(self):
-        # Selection only: the pass must not relabel the peaks it did not pick,
-        # or the peak-filtering statistics would shift under it.
+        # Only the winner is relabelled: the peaks the pass did not pick keep
+        # their -1, so the peak-filtering statistics move by exactly one peak
+        # per starred event.
         filtered = [self.NAN, -1.0, 3.0, 3.0, -1.0, self.NAN]
         pf = self._run(
             ev=_star_event(
@@ -2047,10 +3192,229 @@ class TestClassifyBoundStar(unittest.TestCase):
                 "forward",
             )
         )
+        # Index 4 is the most prominent candidate and lies after the barcode
+        # on a forward event, so it is the short end: 4. Index 1 lost and is
+        # untouched.
+        np.testing.assert_array_equal(
+            pf.sublevel_metadata[0]["ev"]["filtered"],
+            np.array([self.NAN, -1.0, 3.0, 3.0, 4.0, self.NAN], dtype=float),
+        )
+
+    def test_star_label_names_the_end_it_is_bound_to(self):
+        """
+        The winning peak's own ``filtered`` is rewritten to 5 on the long end
+        and 4 on the short end, matching the event's ``bound_star``.
+
+        The four rows are the two trace positions crossed with the two
+        directions: a star before the barcode went through first on a forward
+        event and last on a backward one, and vice versa after the barcode.
+        """
+        before = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
+        after = [self.NAN, 3.0, 3.0, -1.0, self.NAN]
+        proms = [self.NAN, 4.0, 1.0, 4.0, self.NAN]
+        for filtered, direction, star_idx, expected, end in (
+            (before, "forward", 1, 5.0, "long end"),
+            (before, "backward", 1, 4.0, "short end"),
+            (after, "forward", 3, 4.0, "short end"),
+            (after, "backward", 3, 5.0, "long end"),
+        ):
+            with self.subTest(direction=direction, star_idx=star_idx):
+                pf = self._run(ev=_star_event(list(filtered), proms, direction))
+                self.assertEqual(
+                    pf.sublevel_metadata[0]["ev"]["filtered"][star_idx], expected
+                )
+                self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], end)
+
+    def test_star_with_no_direction_keeps_its_minus_one(self):
+        """
+        The label is the end, so a star whose end cannot be resolved is not
+        relabelled - an event with no translocation direction keeps -1.
+        """
+        filtered = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
+        pf = self._run(
+            ev=_star_event(
+                filtered,
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                None,
+            )
+        )
         np.testing.assert_array_equal(
             pf.sublevel_metadata[0]["ev"]["filtered"],
             np.array(filtered, dtype=float),
         )
+
+
+# ---------------------------------------------------------------------------
+# _classify_bound_star - the widest-peak rule
+# ---------------------------------------------------------------------------
+
+
+class TestBoundStarWidestPeakRule(unittest.TestCase):
+    """
+    A candidate that is the widest peak in its own event cannot be promoted.
+
+    The depth floor tests only how deep a peak goes, never how long it lasts,
+    so a carrier body or a long fold can clear it while being the wrong shape
+    for a star. This rule filters the candidate pool rather than vetoing the
+    winner, so a narrower candidate can still take the star.
+    """
+
+    NAN = np.nan
+
+    def _run(self, **cases):
+        pf = _make_pf()
+        pf.sublevel_metadata = {0: {k: v[0] for k, v in cases.items()}}
+        pf.event_metadata = {0: {k: v[1] for k, v in cases.items()}}
+        pf._classify_bound_star([0])
+        return pf
+
+    def test_the_widest_peak_is_not_promoted(self):
+        filtered = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
+        pf = self._run(
+            ev=_star_event(
+                filtered,
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, 500.0, 100.0, 100.0, self.NAN],
+            )
+        )
+        self.assertIsNone(pf.event_metadata[0]["ev"]["bound_star"])
+        # and it keeps its -1 rather than becoming a 4 or a 5
+        np.testing.assert_array_equal(
+            pf.sublevel_metadata[0]["ev"]["filtered"],
+            np.array(filtered, dtype=float),
+        )
+
+    def test_a_rejected_event_is_counted_apart_from_the_starless_ones(self):
+        # it had a deep enough peak in the right place; that is a different
+        # outcome from having no candidate at all
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, 500.0, 100.0, 100.0, self.NAN],
+            )
+        )
+        self.assertEqual(pf._bound_star_results["widest_peak"], 1)
+        self.assertEqual(pf._bound_star_results["no_star"], 0)
+        self.assertEqual(pf._bound_star_results["with_star"], 0)
+        self.assertEqual(
+            pf._bound_star_results["per_sequence"]["0000"]["widest_peak"], 1
+        )
+
+    def test_a_narrower_candidate_is_still_promoted(self):
+        # the control: same geometry, but a type-3 peak is the widest
+        filtered = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
+        pf = self._run(
+            ev=_star_event(
+                filtered,
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, 100.0, 500.0, 100.0, self.NAN],
+            )
+        )
+        self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "long end")
+        self.assertEqual(pf.sublevel_metadata[0]["ev"]["filtered"][1], 5.0)
+        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+
+    def test_the_rule_filters_the_pool_rather_than_vetoing_the_winner(self):
+        # The more prominent candidate would have won on prominence alone, but
+        # it is the event's widest peak. Dropping it hands the star to the
+        # narrower candidate instead of losing it.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, -1.0, self.NAN],
+                [self.NAN, 9.0, 1.0, 1.0, 2.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, 900.0, 100.0, 100.0, 120.0, self.NAN],
+            )
+        )
+        self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "short end")
+        filtered = pf.sublevel_metadata[0]["ev"]["filtered"]
+        self.assertEqual(filtered[4], 4.0, "the narrow candidate should have won")
+        self.assertEqual(filtered[1], -1.0, "the wide candidate keeps its -1")
+        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+
+    def test_peaks_tied_at_the_maximum_width_are_all_excluded(self):
+        # the candidate is not uniquely widest, but it is AT the maximum
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, 500.0, 500.0, 100.0, self.NAN],
+            )
+        )
+        self.assertIsNone(pf.event_metadata[0]["ev"]["bound_star"])
+        self.assertEqual(pf._bound_star_results["widest_peak"], 1)
+
+    def test_a_candidate_with_no_width_of_its_own_is_left_alone(self):
+        # it cannot be shown to be the widest, so the rule does not fire
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, self.NAN, 100.0, 100.0, self.NAN],
+            )
+        )
+        self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "long end")
+
+    def test_absent_widths_skip_the_rule(self):
+        # a database written before `peak_width` existed presents no widths at
+        # all; the rule cannot be applied and must not block every star
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+            )
+        )
+        self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "long end")
+        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+
+    def test_all_nan_widths_skip_the_rule(self):
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN] * 5,
+            )
+        )
+        self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "long end")
+
+    def test_the_depth_floor_still_reports_first(self):
+        # Ordering: an event with no unfolded level cannot be judged at all,
+        # and that signal - it fires for a whole run when folding declines -
+        # must not be masked by the width rule.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, self.NAN],
+                "forward",
+                unfolded_level=None,
+                peak_width=[self.NAN, 500.0, 100.0, 100.0, self.NAN],
+            )
+        )
+        self.assertEqual(pf._bound_star_results["no_height_reference"], 1)
+        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+
+    def test_a_peak_inside_the_barcode_does_not_shield_a_wide_candidate(self):
+        # The maximum is taken over EVERY peak in the event, including ones
+        # that are not candidates, so an interior peak counts toward it.
+        pf = self._run(
+            ev=_star_event(
+                [self.NAN, -1.0, 3.0, -1.0, 3.0, self.NAN],
+                [self.NAN, 4.0, 1.0, 1.0, 1.0, self.NAN],
+                "forward",
+                peak_width=[self.NAN, 500.0, 100.0, 300.0, 100.0, self.NAN],
+            )
+        )
+        # 500 is still the maximum, so the candidate at index 1 is excluded
+        self.assertIsNone(pf.event_metadata[0]["ev"]["bound_star"])
+        self.assertEqual(pf._bound_star_results["widest_peak"], 1)
 
 
 # ---------------------------------------------------------------------------
