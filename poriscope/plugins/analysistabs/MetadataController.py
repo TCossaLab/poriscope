@@ -26,11 +26,10 @@
 
 
 import logging
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, Optional, override
 
 import pandas as pd
 from PySide6.QtWidgets import QMessageBox
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView

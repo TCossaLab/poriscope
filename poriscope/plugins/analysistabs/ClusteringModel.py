@@ -26,8 +26,7 @@
 
 
 import logging
-
-from typing_extensions import override
+from typing import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

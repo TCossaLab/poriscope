@@ -24,11 +24,10 @@
 # Kyle Briggs
 
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, override
 
 import numpy as np
 import pandas as pd
-from typing_extensions import override
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.utils.DocstringDecorator import inherit_docstrings

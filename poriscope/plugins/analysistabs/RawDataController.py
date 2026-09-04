@@ -25,10 +25,9 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, List, Sequence
+from typing import Any, Callable, List, Sequence, override
 
 from PySide6.QtCore import Slot
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.RawDataModel import RawDataModel
 from poriscope.plugins.analysistabs.RawDataView import RawDataView

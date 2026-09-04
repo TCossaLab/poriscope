@@ -766,10 +766,16 @@ class TestGetExperimentIdByNameBase:
     ) -> None:
         assert MetaDatabaseLoader.get_experiment_id_by_name(loader, "") is None
 
+    @pytest.mark.parametrize(
+        "query_result",
+        [None, pd.DataFrame()],
+        ids=["query_failed", "no_such_experiment"],
+    )
     def test_base_impl_not_found_returns_none(
-        self, loader: ConcreteDatabaseLoader
+        self, loader: ConcreteDatabaseLoader, query_result: Optional[pd.DataFrame]
     ) -> None:
-        with patch.object(loader, "query_database_directly", return_value=None):
+        """None for a failed query and an empty frame for no match both mean "no id"."""
+        with patch.object(loader, "query_database_directly", return_value=query_result):
             assert (
                 MetaDatabaseLoader.get_experiment_id_by_name(loader, "missing") is None
             )
@@ -1127,20 +1133,6 @@ class TestLoadEventDataMalformed:
         ):
             events = list(loader.load_event_data())
             assert events == []
-
-
-# ---------------------------------------------------------------------------
-# query_database_directly_and_get_generator - generator-is-None branch
-# ---------------------------------------------------------------------------
-class TestQueryGeneratorNoneBranch:
-    def test_none_generator_logs_warning_and_yields_nothing(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
-        with patch.object(loader, "_load_metadata_generator", return_value=None):
-            rows = list(
-                loader.query_database_directly_and_get_generator("SELECT * FROM events")
-            )
-            assert rows == []
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,47 @@
+## Poriscope 1.9.0: 2026-09-04
+
+* **Fixed a time range with no end silently finding no events**: a range like `3.0-` was accepted by the Time Range dialog but then discarded, so event finding ran over no time at all; it now means "from 3 seconds to the end of the signal", as an end of `0` always has
+
+* **Fixed the event finder channel list failing permanently** if it could not be read the first time, which then made Find Events fail for every channel of that plugin
+
+* Gaussian Mixtures clustering and the protein tab's shape ensemble are now seeded, so re-running either on the same data gives the same answer instead of a slightly different one each time
+
+* **An analysis run that stops early now says why on the status panel instead of interrupting with an error dialog and a traceback** — exporting a subset that matches no events was the common way to hit it
+
+* A failed database query or an inconsistent database still raises an error dialog during subset export, so a real problem is not mistaken for an empty result
+
+* **Fixed subset export failing on a subset with no fitted sublevels**, which was reported as "Failed to load sublevels data" rather than exporting an empty sublevels table
+
+* **Fixed a metadata plot or clustering run silently reusing the previous subset's rows** when the database call behind it failed, instead of reporting that the subset returned nothing
+
+* A metadata query that matches no rows is now reported as an empty result rather than as a failed query
+
+* **Fixed a subset filter on a sublevel column finding no events when plotting events**: filters like `filtered = 5` were applied to the events table alone, so every one of them failed as an unknown column and was reported as an empty subset — event plotting, its navigation arrows and the protein tab's plots now apply a filter through the same table joins as the metadata plots
+
+* **Assisted filters may now contain a subquery**, which is passed through exactly as typed instead of being rewritten against the outer query's tables; this also makes `GROUP BY`/`HAVING` inside a subquery work in assisted mode
+
+* A filter naming a column that cannot be resolved now raises an error dialog when plotting events, instead of quietly reporting that no events matched
+
+* **Fixed a clean `pip install poriscope` failing on import**: `typing_extensions` was imported by 38 modules but declared as a dependency nowhere; the native `typing.override` replaces it everywhere, including in newly generated plugins
+
+* Test coverage is measured again: `pytest-cov` was declared in no dependency source, so the pull-request workflow's test step failed outright instead of running
+
+* Tests now time out after 300 seconds by default rather than hanging until the CI job's own six-hour limit
+
+* Removed a stray `poriscope/pytest.ini` that enabled coverage against the wrong root whenever pytest was run from inside the package
+
+* `requirements.txt` is now UTF-8 instead of UTF-16, so it reads correctly in diffs and in any tool that assumes UTF-8
+
+* The declared `mypy` version now matches the version the pre-commit hook actually runs
+
+* Removed two dead `pre-commit` settings: an exclude naming a directory that does not exist, and `--exit-non-zero-on-fix` on a hook that applies no fixes
+
+* Removed 455 KB of checked-in test data that no test referenced
+
+* Removed an unused 394-line copy of the guided-walkthrough step list; it was a stale fork of the per-tab lists the app actually shows, and nothing loaded it
+
+* Removed `FloatRangeLineEdit.get_values` and `used_floats`, which nothing called
+
 ## Poriscope 1.8.0: 2026-09-03
 
 * **Fixed assisted metadata filters silently returning the wrong rows**, and they now work on experiment voltage, thickness and conductivity and on `experiment_id`/`channel_id`/`event_id` in every plot and when loading event data

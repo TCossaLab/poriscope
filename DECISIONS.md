@@ -10,6 +10,326 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-04 - Worker generator failures report at WARNING on the panel, not as dialogs
+
+**Context.** `EventWorker.process_generator` funnels every exception from a plugin generator
+through one `except Exception` arm - deliberately, because per-type handling in that loop is
+what let a failed analysis be logged as a successful finish. That arm logged at ERROR with a
+traceback, and `QtHandler` is attached to the root logger at ERROR, so it raised a modal
+dialog. Exporting a subset whose filter matched no events therefore met the user with a
+traceback dialog framed as `Worker [...] failed`, for an ordinary empty result.
+
+**Decision.** The arm reports at **WARNING** and sends the exception's message to the
+`add_text_to_display` panel, via a new `Worker.add_text_to_display` signal relayed by
+`MetaModel.emit_text_to_display`. The traceback still reaches the console and the log file
+through `exc_info=True`.
+
+**Why not special-case the empty result.** A generator cannot signal "nothing matched" versus
+"this failed" without the per-type handling that loop must not grow, and data plugins are
+plain ABCs with no Qt signals, so the loader cannot post to the panel itself. Telling them
+apart at the raise site would have needed a new public counting method on
+`MetaDatabaseLoader` for the View to call first - a contract change every database loader and
+the plugin-compliance test would see, to fix a message.
+
+**The accepted cost.** *Every* worker generator failure now reports this way, not just the
+empty ones: a corrupt database, a permission error writing the CSVs or a full disk becomes a
+panel line rather than an interruption. Taken deliberately, on the grounds that `QtHandler`'s
+own policy is that the user should be told on the panel rather than interrupted, and that a
+traceback dialog is developer-facing. The log file keeps the full diagnosis either way.
+
+**Revisit** if a failure class turns up that the user must not be allowed to miss. The fix
+then is for that plugin to report it at ERROR itself, before raising - not to reintroduce
+per-type handling in the worker loop.
+
+---
+
+## 2026-09-04 - A failed database query keeps returning None rather than raising
+
+**Context.** `_load_metadata`, `load_metadata` and `query_database_directly` all used `None`
+for both "the query matched no rows" and "the query could not be run", which made a
+legitimately-empty table indistinguishable from a failure (subset export rejected an event
+with no sublevels as "Failed to load sublevels data"). Splitting the two could have been done
+either way round: empty frame for no rows and `None` kept for failure, or empty frame for no
+rows and an exception for failure.
+
+**Decision.** No-rows returns an empty DataFrame; **failure keeps returning `None`**, and the
+annotations that claimed `-> pd.DataFrame` are corrected to `Optional[pd.DataFrame]`.
+
+**Evidence.** `main_controller._dispatch_to` catches every exception a bus call raises, logs
+it, and returns *without invoking the return function*. Because the analysis tabs read the
+result off an attribute on the statement after `.emit()`, a raising loader would leave that
+attribute holding the previous call's value and the caller's `is None` guard would read stale
+data as this call's answer - strictly worse than the conflation being fixed. Twelve emit sites
+have no `try/except` at all, so an exception would also escape into a Qt slot.
+
+**Revisit** when the emit-then-read pattern is gone (Step 4a of the 2.0.0 refactor converts
+the 75 emits to Controller-mediated calls). Once results are returned rather than read off an
+attribute, raising on failure becomes the better contract.
+
+---
+
+## 2026-09-04 - A subquery is opaque to condition rewriting, and both event caches reuse the query builder
+
+**Context.** A saved subset filter had two consumers that disagreed about the SQL context it
+is evaluated in. `construct_metadata_query` derives the joins the filter needs and qualifies
+its columns against them; `MetadataView._rebuild_event_id_cache` and its `ProteinView` twin
+spliced the same text into a hand-built `SELECT event_id FROM events`. So any filter naming a
+sublevels column - `filtered = 5`, the natural way to say "every event with at least one
+sublevel that matches" - worked for the subset and the scatter plots and failed as an unknown
+column in the event viewer, where `query_database_directly` returned `None` and the caller
+reported it to the user as "No filtered events found". Separately, `_qualify_conditions`
+rewrote column references *inside* subqueries, so `e.id IN (SELECT event_db_id FROM sublevels
+WHERE filtered = 5)` became `... WHERE s.filtered = 5`, silently correlating the subquery to
+the outer row.
+
+**Decision.** Extends the 2026-09-03 literal-skipping decision below: a parenthesised
+subquery is opaque exactly as a single-quoted literal already was. `_split_on_opaque_spans`
+protects both, and all three consumers - `_qualify_conditions`, `_references_column` and
+`_find_ambiguous_id` - read it, which is what keeps them agreeing about what the outer query
+refers to. A subquery names its own tables, so it needs no outer
+alias and forces no join. Both event caches now call `load_metadata(["event_id"], filter,
+{exp: [channel]})`, which routes through the same derivation, and `_build_where_clause` is
+deleted from both views.
+
+**Evidence.** Against a production database (191 events, 2499 sublevels, 35 of them
+`filtered = 5`): before, *no* filter text worked in both consumers. `filtered = 5` and
+`e.id IN (...)` saved and returned the right 35 rows for the subset but failed as an unknown
+column in the event viewer, while the `id IN (...)`, `rowid IN (...)` and `EXISTS (...)` forms
+the viewer accepted were all rejected at save time. After, `filtered = 5` and `e.id IN (...)`
+each return the same 35 events in both. Aggregation inside a subquery
+(`GROUP BY event_db_id HAVING COUNT(*) > 3`) also works in assisted mode now, which the user
+guide had said was impossible.
+
+**A failed query is still not an empty subset.** `load_metadata` returning `None` means the
+query could not be built or run, which both caches log at ERROR so `QtHandler` raises its
+dialog; an empty frame keeps the quiet status-panel line. Same split as the subset-export fix
+above.
+
+**Revisit if** a filter legitimately needs the outer row inside a subquery without naming it.
+Today the user writes `e.id`, which is what SQL requires of them anyway.
+
+---
+
+## 2026-09-04 - get_column_units' empty-string conflation is left alone
+
+**Context.** `get_column_units` returns `""` both when a column's `units` field is NULL and
+when the column does not exist, and `None` only when the query itself failed
+(`SQLiteDBLoader.py:316-323`). It was listed alongside the `None`-sentinel conflation in the
+2.0.0 plan's Tier A.
+
+**Decision.** Not fixed. It is inert: every consumer erases the distinction anyway -
+`metadatacontrols.update_column_units_label` collapses `None` and `""` to a single space for
+display, and `ClusteringController` drops both on a falsy test. No golden file can
+distinguish the two cases, which is the only reason Tier A exists.
+
+**Revisit** if a caller ever needs to tell "this column has no units" from "there is no such
+column" - at which point the fix is a distinct sentinel, and note that two tests pin both
+cases to `""` and `docs/source/signals/global_signal/overview.rst` uses this method as its
+worked example of a one-argument bus call.
+
+---
+
+## 2026-09-04 - TimeRangeValidator is right to refuse a comma after "0-0"
+
+**Context.** `TimeRangeValidator` splits on "," before filtering empty segments and then
+tests `len(parts) > 1` to enforce that `0-0` appears alone, so typing a trailing comma after
+`0-0` is rejected. The 2.0.0 plan recorded this as a defect ("the legal trailing comma in
+`0-0,` is wrongly rejected").
+
+**Decision.** Correct as it stands; changed nothing. `0-0` means the whole file and cannot
+legally be combined with any other range, so no input that could follow the comma would ever
+validate. And because this is a `QValidator` on a `QLineEdit`, `Invalid` refuses the keystroke
+outright rather than merely disabling OK - which is the clearest possible feedback that the
+range being typed cannot be extended.
+
+**Revisit** only if `0-0` stops meaning "the whole file".
+
+---
+
+## 2026-09-04 - The mypy version skew is the cause of the "two disagree wildly" phenomenon
+
+**Context.** `CLAUDE.md` has long warned that `pre-commit run mypy` and a bare
+`mypy poriscope` "disagree wildly and are blind in opposite directions", and attributed it
+solely to the hook's isolated virtualenv having no project dependencies. Measured
+2026-09-04, the versions were skewed three ways as well: `pyproject.toml`'s `[dev]` extra
+and `requirements-dev.txt` both pinned `mypy==1.9.0`, `.pre-commit-config.yaml` ran
+mirrors-mypy `rev: v1.17.1`, and the working virtualenv had `2.3.1` installed. Nothing
+anywhere recorded that, so the skew read as an environment quirk rather than a fact of the
+configuration.
+
+**Decision.** The declared pin is aligned to `mypy==1.17.1`, matching the hook. **The hook
+remains the only gate** - `pre-commit run mypy --all-files` - and the declared pin exists so
+that a contributor running mypy from their own environment gets the same *version* the gate
+uses, even though they will still see different results because their environment has
+PySide6, numpy and pandas types that the hook's isolated env resolves as `Any`.
+
+**Why alignment rather than just documenting the gap.** Aligning costs one character-level
+edit in two files and removes a whole class of confusing report. It does not change what the
+gate checks, so it cannot break a commit that would otherwise pass. Documenting alone would
+have left three numbers in play with nothing reconciling them.
+
+**What alignment does not fix, and must not be mistaken for a fix.** The dependency
+blindness is unchanged and is the larger half of the disagreement: the hook sees PySide6,
+numpy and pandas as `Any`, so it cannot see errors in code that touches them, while a
+project-venv run reports several hundred errors that are overwhelmingly known noise (191
+PySide6 short-form enum accesses alone). **Always measure with the hook.**
+
+**Revisit if** the hook's `rev` is bumped - move the declared pin in the same commit, or the
+skew silently returns. Also revisit if `additional_dependencies` are ever added to the mypy
+hook so it can see real PySide6/numpy/pandas types, which would close the other half and
+make a project-venv run meaningful for the first time.
+
+---
+
+## 2026-09-03 - `SQLiteEventWriter`'s two-connection commit split stays; tests must wait on rows, not tables
+
+**Context.** `commit_events` calls `_initialize_database`, which opens its own short-lived
+connection, creates `channels`/`events`/`columns`, and commits and closes immediately. It
+then writes event rows on a second, longer-lived connection (`self.conn`) that only commits
+once at `last_call`, at the end of the whole batch. `test_commit_events_writes_exact_schema`
+polled `sqlite_has_tables(out_db, {...})` as its `qtbot.waitUntil` predicate - satisfied the
+moment the first connection commits, which can be well before the batch's event rows are
+written and committed on the second. This read 0 rows instead of 5 in one CD run
+(`33438867072`, `release/1.7.0`, 2026-08-31) under full-suite CPU contention; it did not
+reproduce in isolation or in the paired tag-push run of the identical commit seconds later.
+
+**Decision.** Keep the two-connection design in `SQLiteEventWriter` as-is - it is not a bug,
+the writer is correct regardless of when its tables become visible to an external reader.
+Fixed the test instead: added `sqlite_row_count()` alongside `sqlite_has_tables()` in
+`tests/e2e/_helpers.py` and made the wait predicate require
+`sqlite_row_count(out_db, "events") == ds.num_events` too, so the test cannot observe a
+"done" state before the batch's final commit lands.
+
+**Why this is a standing risk, not a one-off.** The gap exists because commit happens on a
+background `EventWorker`/`WorkerThread` fired via `run_generators`, decoupled from the click
+that starts it, and nothing in `MetaWriter`/`MetaModel` exposes a "commit finished" signal a
+test can await - so any e2e test against a writer plugin is reduced to polling the output
+file for a proxy condition. `sqlite_has_tables` was already a fix for an *earlier* version
+of this same race (it replaced polling on file existence); it still wasn't sufficient, since
+table creation and row insertion are two different commits. The same shape of bug can
+recur wherever a test infers "the write finished" from a partial signal instead of the
+actual final state.
+
+**Revisit if / check for when touching this area:**
+- A new e2e test is added against `SQLiteEventWriter`, `SQLiteDBWriter`, or any other
+  `MetaWriter` subclass that writes through more than one connection or commits - reuse
+  `sqlite_row_count`, don't reintroduce a `sqlite_has_tables`-only wait.
+- `MetaModel.run_generators`/`discard_generator` ever gains a real "batch finished" signal -
+  tests should switch to awaiting that instead of polling the database file at all.
+- Anyone consolidates `_initialize_database` and `_write_data` onto a single connection -
+  re-check whether the race actually closes (it narrows the window but a background-thread
+  write is still async relative to a polling test) before relying on it.
+
+---
+
+## 2026-09-03 - The return-value signal bus becomes a direct call, with plugin references pushed
+
+**Context.** Planning the 2.0.0 refactor. `global_signal(metaclass, key, "method", args,
+"return_method", ret_args)` is a string-keyed RPC used as a *blocking* call: emit, then read
+the answer off an attribute on the next statement. 77 call sites, 75 of them in analysis-tab
+Views (82/77 before `062ef6f` collapsed two `query_database_directly` calls). The 2026-08-25 audit deferred fixing this because `MetaController`/`MetaView`
+deliberately hold no reference back to `MainController`, which is what keeps tabs pluggable.
+
+**Decision.** `MetaController` and `MetaModel` gain an inherited, non-abstract
+`get_plugin(metaclass, key)` / `call(metaclass, key, func, *args)` pair that resolves from a
+local dict and invokes directly, so it **returns or raises**. Instances are **pushed** to each
+tab, not pulled: `DataPluginController.update_available_plugins` already fires on all four
+lifecycle events (create `:613`, delete `:353`, both `edit_plugin` branches `:126`/`:212`) and
+`MainController.update_available_plugins:676` already fans out to every tab. Only the
+return-value RPC is replaced; `plugin_state_changed`, `add_text_to_display`,
+`update_progressbar` and `create_plugin` stay ordinary Qt signals.
+
+**Evidence.** Traced end to end: resolving one experiment id
+(`ProteinView._resolve_event_db_ids`) takes 8 hops, 2 Qt emissions and 3 string lookups, and
+needs two methods plus one attribute that exist only to carry one `int` back. That shape had
+a live bug - a failed dispatch left the reader seeing the **previous call's** experiment id,
+because `_dispatch_to` logs and returns without calling the return function
+(`main_controller.py:554`) - which is now guarded at each site by clearing the attribute
+immediately before the emit, at the cost of repeating that guard everywhere. Also measured: all 75 emits target data plugins and
+**none targets another tab**, so `_relay_global_signal`'s docstring advertising calls into
+`main_model.plugins['MetaController'][key]` describes a capability nothing uses.
+
+**Rejected: a typed facade injected into the tab.** Both a full `PluginAccess` ABC and a
+one-method `PluginResolver` were considered. Rejected because resolving a plugin must not
+require the tab or plugin author to know about app-shell internals - the string API is the
+isolation. With the push, there is also nothing left to abstract over: `MetaController` holds a
+plain dict, `__init__`'s signature does not change, and a test supplies a dict directly.
+
+**Rejected: caching on first use.** Needs invalidation on three events, two of them easy to
+miss - a *rename* leaves the cache pointing at a live instance under a dead key, and a
+*re-instantiate* leaves it holding an object whose `close_resources` may have run. A push makes
+the call that would go stale the call that refreshes it. Its lazy first fetch would also still
+have used emit-then-read.
+
+**Accepted cost.** `call()` returns `Any`, so mypy still cannot catch a renamed plugin method.
+That is the price of the string API and it is accepted; do not re-argue it by pointing at the
+lost type safety. `update_available_plugins(names)` is left untouched for the Views, which want
+names for comboboxes - names for the UI, instances for the call path.
+
+**Revisit if** a tab ever needs to call another tab, which no current site does.
+
+---
+
+## 2026-09-03 - Scope decisions for the 2.0.0 refactor
+
+**Context.** The plan in `refactor_2.0.0.md` needed four rulings before implementation.
+
+**MVC mediation is kept.** Commands go View->signal->Controller->call->Model; results go
+Model->signal->View with the Controller connecting, formalised as the *preferred* result path
+rather than an exception, so no passthrough-per-model-method is needed. Note the rule is
+currently vacuous - View/Model direct contact is already zero (no View imports a Model, no
+`self.model` in any View); what fails is the View's second unmediated channel to everything
+else. Direct View->Model was considered and rejected: Qt's own Model/View works because a
+`QAbstractItemModel` is passive and framework-defined, whereas `MetaModel` owns worker threads
+and the `workers`/`threads`/`thread_running` dicts.
+
+**2.0.0 takes the queued ABC breaks.** Several entries below defer contract fixes with "revisit
+if a third-party plugin ecosystem exists, at which point narrowing an ABC becomes a deprecation
+cycle." That window is now and will not reopen cheaply: the `"Kind"` schema key, splitting
+`MetaReader.load_data`'s `raw_data` arm, `close_resources` channel dispatch via
+`_close_one_channel`, `_write_data`'s 13 parameters, `MetaEventFinder`'s undeclared
+`Threshold`. Each is called out explicitly in `changelog.md`.
+
+**1.9.0 ships only what the refactor needs first.** Tier A (defects in code that moves, so
+golden files are not generated over known bugs), Tier B2 (zero-risk deletions) and Tier C
+(CI/tooling). The High-tier scientific and database defects ship inside 2.0.0 instead.
+
+**Moved tests are re-pointed, test owner reviews the diff.** This stretches the standing "do
+not edit her suites" rule and **needs her explicit agreement before Step 2 starts**. *The
+four-part ask was put to her 2026-09-04 and is awaiting a response; the wording and its
+measurements are in `refactor_2.0.0.md`.* The
+alternative considered was leaving a thin View facade per moved method, rejected because ~200
+facades would undercut the LOC and boundary-test metrics the refactor is measured by.
+
+*Re-measured 2026-09-04 at `062ef6f`; the earlier "1,085 view tests" was wrong.* Attributing
+every name on the move list to its innermost enclosing `test_*` gives **324 test functions**,
+11.7% of the suite's 2,781 - 145 of `test_metadata_view.py`'s 347 (the file is 6,082 lines, not
+6,026) and 100 of `test_protein_view.py`'s 257. **"Mechanically, assertions untouched" is true
+of most but not all of it**: 175 entries are a receiver rename, but 60 stub a moving method as a
+collaborator *on the receiver* and 15 assert on that stub - a same-object seam a View/Model split
+breaks - and 46 more assert on a `global_signal.emit` that Step 4a deletes. The ask must say so
+rather than let her discover it. What makes the rest cheap: one receiver fixture per test named
+once in its signature, one construction site per file, and `_qt_mocks.shadow_signals` finding
+signals by introspection so it covers a Model's signals unedited.
+
+**The ask is also wider than tests.** `CODEOWNERS` assigns `poriscope/plugins/analysistabs/utils/`
+solely to her, so Step 3a (all five `*controls.py`) and Step 3f (`walkthrough*.py`) are gated on
+the same conversation despite being independent of Step 2; Step 4d reaches her **e2e** suites,
+where `subset_filters` appears 14 times inside one test's lambdas and f-strings; and Step 2 is
+itself a test-authoring block, which standing policy assigns to her for the characterization
+goldens and to the carve-out for the three new-file deliverables.
+
+**If she does not engage, control reverts to Kyle and the work proceeds.** `CODEOWNERS` is
+advisory by deliberate choice and Kyle has final say; an ownership block gets a stated exit
+rather than an indefinite hold. The ask has been made, so what remains is a waiting period - if
+no answer comes, record in the plan and the commit trail that the owner was asked and did not
+respond, and start with Step 3a.
+
+**Revisit if** the refactor stalls after Step 2, at which point the 1.9.0/2.0.0 split is worth
+rebalancing so the queued Tier B fixes are not held hostage to it.
+
+---
+
 ## 2026-09-03 - The metadata query derives its FROM clause instead of enumerating seven branches
 
 **Context.** `construct_metadata_query` hand-wrote seven query branches, one per
@@ -342,7 +662,7 @@ were adopted outright; the rest were audited rule by rule.
 audit, their findings in our own code fixed, and the rule left **unselected**. None is a
 gate.
 
-**Why, per rule.** Ruff's actual scope is the whole repository minus `tests/slow/` - only
+**Why, per rule.** Ruff's actual scope is the whole repository - only
 mypy is scoped to `poriscope/`, and measuring these under `poriscope/` is what produced the
 wrong answer originally:
 

@@ -397,7 +397,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                     f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
                 )
                 result = self.query_database_directly(query)
-                if result is not None:
+                if result is not None and not result.empty:
                     return result.at[0, "id"]
                 else:
                     return None
@@ -509,7 +509,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 f"Malformed events query:\n\n{self._format_debug_msg(debug)}"
             )
         events = self._load_metadata(events_query)
-        if events is None or len(events) == 0:
+        if events is None:
+            # Logged at ERROR here, not left to the worker: EventWorker reports a
+            # stopped run at WARNING on the status panel, so a genuine failure has to
+            # raise QtHandler's dialog from the place that knows it is one. See
+            # DECISIONS.md, 2026-09-04. The same applies to every guard below.
+            self.logger.error(f"Events query failed: {events_query}")
+            raise ValueError("Failed to load events table.")
+        if len(events) == 0:
             raise ValueError("No events found matching subset criteria")
 
         event_ids = [int(eid) for eid in events["id"].values.astype(int)]
@@ -521,6 +528,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         sublevels = self._load_metadata(sublevels_query)
         if sublevels is None:
+            self.logger.error(
+                f"Query failed, could not load sublevels data: {sublevels_query}"
+            )
             raise ValueError("Failed to load sublevels data.")
 
         unique_exp_ids = [int(exp_id) for exp_id in np.unique(events["experiment_id"])]
@@ -532,6 +542,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         experiments = self.query_database_directly(experiment_query)
         if experiments is None:
+            self.logger.error(
+                f"Query failed, could not load experiments table: {experiment_query}"
+            )
             raise ValueError("Failed to load experiments table.")
 
         channel_ids = [int(cid) for cid in events["channel_db_id"].values.astype(int)]
@@ -545,6 +558,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         channels = self.query_database_directly(channel_query)
         if channels is None:
+            self.logger.error(
+                f"Query failed, could not load channels table: {channel_query}"
+            )
             raise ValueError("Failed to load channels table.")
 
         columns_query = "SELECT cols.* FROM columns cols"
@@ -555,6 +571,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         columns = self.query_database_directly(columns_query)
         if columns is None:
+            self.logger.error(
+                f"Query failed, could not load columns table: {columns_query}"
+            )
             raise ValueError("Failed to load columns table.")
 
         data_query = f"SELECT d.experiment_id, d.channel_id, d.channel_db_id, d.event_id, d.event_db_id FROM data d WHERE d.event_db_id IN {tuple_builder(event_ids)}"
@@ -565,7 +584,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
         data = self.query_database_directly(data_query)
         if data is None:
+            self.logger.error(f"Query failed, could not load data table: {data_query}")
             raise ValueError("Failed to load data table.")
+        if data.empty:
+            self.logger.error(
+                f"Inconsistent database: {len(event_ids)} events selected but the data "
+                "table holds no rows for any of them"
+            )
+            raise ValueError("No rows in the data table for the selected events.")
 
         append = f"{subset_name}_" if subset_name else ""
 
@@ -652,42 +678,108 @@ class MetaDatabaseLoader(BaseDataPlugin):
                 report += f"Channel: {ch}: {num} events\n"
         return report.rstrip("\n")
 
-    def _split_on_sql_string_literals(self, fragment: str) -> List[str]:
+    def _end_of_subquery(self, fragment: str, start: int) -> int:
         """
-        Split a SQL fragment into alternating code and string-literal segments.
-
-        Even indices hold code, odd indices hold single-quoted literals with their
-        quotes intact, and ``"".join`` of the result reproduces the input exactly.
-        Callers rewrite the even segments and leave the odd ones alone, so a column
-        name that also appears as a value - ``sequence = 'sublevel_current'`` - is
-        not rewritten along with the real column references.
+        Find the offset just past the ``)`` that closes a subquery.
 
         :param fragment: A fragment of SQL, typically a WHERE clause body.
         :type fragment: str
-        :return: The alternating code and string-literal segments of the fragment.
+        :param start: Offset of the ``(`` that opens the subquery.
+        :type start: int
+        :return: The offset just past the matching ``)``, or the length of the
+            fragment if the parentheses never balance.
+        :rtype: int
+        """
+        depth = 0
+        in_literal = False
+        for index in range(start, len(fragment)):
+            char = fragment[index]
+            if in_literal:
+                # "''" leaves the literal and immediately re-enters it, which ends
+                # on the same state as reading it as an escape, so it needs no case.
+                if char == "'":
+                    in_literal = False
+            elif char == "'":
+                in_literal = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+        return len(fragment)
+
+    def _split_on_opaque_spans(self, fragment: str) -> List[str]:
+        """
+        Split a SQL fragment into alternating rewritable and opaque segments.
+
+        Even indices hold code that may be rewritten, odd indices hold spans that
+        must be passed through untouched, and ``"".join`` of the result reproduces
+        the input exactly. Two kinds of span are opaque:
+
+        * A single-quoted string literal, so a column name that also appears as a
+          value - ``sequence = 'sublevel_current'`` - is not rewritten along with
+          the real column references.
+        * A parenthesised subquery, from the ``(`` of ``(SELECT`` through its
+          matching ``)``. A subquery names its own tables, so its column references
+          resolve against those rather than against the outer query's aliases, and
+          rewriting them silently correlates the subquery to the outer row. A user
+          who wants a correlated subquery qualifies the reference with the outer
+          alias, which is what SQL requires of them anyway.
+
+        An unterminated literal or an unbalanced paren makes the rest of the
+        fragment opaque, which leaves malformed input for the query validator to
+        reject rather than rewriting it into something that parses.
+
+        :param fragment: A fragment of SQL, typically a WHERE clause body.
+        :type fragment: str
+        :return: The alternating rewritable and opaque segments of the fragment.
         :rtype: List[str]
         """
-        # The literal is a capturing group so that re.split returns the literals
-        # interleaved with the code around them. "''" is SQL's escape for a quote
-        # inside a literal, so it must not be read as the end of one.
-        return re.split(r"('(?:[^']|'')*')", fragment)
+        # "''" is SQL's escape for a quote inside a literal, so it must not be read
+        # as the end of one.
+        opaque = re.compile(r"'|\(\s*SELECT\b", re.IGNORECASE)
+        literal = re.compile(r"'(?:[^']|'')*'")
+
+        segments: List[str] = []
+        start = 0
+        index = 0
+        while True:
+            match = opaque.search(fragment, index)
+            if match is None:
+                break
+            index = match.start()
+            if fragment[index] == "'":
+                found = literal.match(fragment, index)
+                end = found.end() if found else len(fragment)
+            else:
+                end = self._end_of_subquery(fragment, index)
+            segments.append(fragment[start:index])
+            segments.append(fragment[index:end])
+            start = index = end
+        segments.append(fragment[start:])
+        return segments
 
     def _references_column(self, fragment: str, column: str) -> bool:
         """
-        Report whether a SQL fragment refers to a column outside of any string literal.
+        Report whether a SQL fragment refers to a column in its own right.
 
         Matches a qualified reference (``s.duration``) as well as a bare one, since
         the column name is sought on a word boundary rather than a token boundary.
+        A reference inside a string literal or a subquery does not count, for the
+        reasons :meth:`_split_on_opaque_spans` gives, which is what keeps this in
+        agreement with :meth:`_qualify_conditions` about what the outer query
+        refers to.
 
         :param fragment: A fragment of SQL, typically a WHERE clause body.
         :type fragment: str
         :param column: The column name to look for.
         :type column: str
-        :return: True if the fragment refers to the column outside a string literal.
+        :return: True if the fragment refers to the column outside any opaque span.
         :rtype: bool
         """
         pattern = rf"(?<!\w){re.escape(column)}(?!\w)"
-        segments = self._split_on_sql_string_literals(fragment)
+        segments = self._split_on_opaque_spans(fragment)
         return any(re.search(pattern, segment) for segment in segments[::2])
 
     def _qualify_conditions(self, conditions: str, aliases: Dict[str, str]) -> str:
@@ -695,10 +787,10 @@ class MetaDatabaseLoader(BaseDataPlugin):
         Qualify bare column references against the tables a query actually joins.
 
         Lets a user write ``sublevel_duration < 100 AND experiment_id = 2`` and have
-        it work against ``FROM events e JOIN sublevels s``. Only the code parts of
-        the condition are rewritten; anything inside a single-quoted string literal
-        is left exactly as the user typed it, and a reference the user already
-        qualified is left alone.
+        it work against ``FROM events e JOIN sublevels s``. Only the rewritable
+        parts of the condition are touched; anything inside a string literal or a
+        subquery is left exactly as the user typed it, and a reference the user
+        already qualified is left alone.
 
         :param conditions: A WHERE clause body, without the leading ``WHERE``.
         :type conditions: str
@@ -728,7 +820,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # A registered column belongs to exactly one table - "columns.name" is
         # UNIQUE - so the order of the passes does not matter, and the (?<!\.)
         # guard keeps each pass off the previous pass's output.
-        segments = self._split_on_sql_string_literals(conditions)
+        segments = self._split_on_opaque_spans(conditions)
         for index in range(0, len(segments), 2):
             for cols, alias in passes:
                 for col in sorted(set(cols), key=len, reverse=True):
@@ -750,7 +842,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
         behalf: it means a different row in every table, so guessing one would
         silently filter against the wrong thing. Run this after
         :meth:`_qualify_conditions`, since anything still bare at that point is
-        genuinely unqualified.
+        genuinely unqualified. An ``id`` inside a subquery belongs to that subquery
+        and is not reported, since it resolves against the tables the subquery
+        names.
 
         :param conditions: A WHERE clause body that has already been qualified.
         :type conditions: str
@@ -762,7 +856,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         if len(aliases) < 2:
             return None
 
-        segments = self._split_on_sql_string_literals(conditions)
+        segments = self._split_on_opaque_spans(conditions)
         if not any(
             re.search(r"(?<![\w.])id(?!\w)", segment) for segment in segments[::2]
         ):
@@ -810,9 +904,11 @@ class MetaDatabaseLoader(BaseDataPlugin):
         Conditions are qualified against the tables the query actually joins, so a
         caller passes a plain WHERE clause body - ``sublevel_duration < 100 AND
         voltage > 50`` - without knowing the shape. Text inside single-quoted
-        literals is never rewritten. A bare ``id`` is refused, with guidance
-        returned as the debug message, because it means a different row in each
-        table.
+        literals is never rewritten, and neither is a subquery, which names its own
+        tables and so needs nothing from the outer aliases - a condition whose only
+        reference to another table sits inside a subquery therefore joins nothing.
+        A bare ``id`` is refused, with guidance returned as the debug message,
+        because it means a different row in each table.
 
         :param columns: List of column names to retrieve.
         :type columns: List[str]
@@ -891,8 +987,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             )
 
         # Detect the joins the conditions need on top of those the selected columns
-        # already imply. _references_column ignores string literals, so this agrees
-        # with _qualify_conditions about what counts as a column reference.
+        # already imply. _references_column ignores string literals and subqueries,
+        # so this agrees with _qualify_conditions about what counts as a reference
+        # made by the outer query.
         force_events_sublevels_join = False
         force_experiments_join = False
         if conditions:
@@ -1145,14 +1242,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
     def load_metadata_raw(
         self,
         conditions: Optional[str] = None,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """
         Execute a raw SQL query directly, bypassing all query construction.
 
         :param conditions: A complete SQL query string.
         :type conditions: Optional[str]
-        :return: pandas dataframe containing retrieved data
-        :rtype: pd.DataFrame
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query failed or did not validate
+        :rtype: Optional[pd.DataFrame]
         """
         if not conditions:
             return self.query_database_directly("SELECT * FROM events")
@@ -1164,7 +1261,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         columns: List[str],
         conditions: Optional[str] = None,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """
         Fetch specified columns from the metadata database given a query
 
@@ -1176,8 +1273,8 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: pandas dataframe containing retrieved data
-        :rtype: pd.DataFrame
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query could not be built or run
+        :rtype: Optional[pd.DataFrame]
         """
         query, debug, table = self.construct_metadata_query(
             columns, conditions, experiments_and_channels
@@ -1295,24 +1392,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
         valid, debug = self.validate_filter_query(query)
         if valid and not debug:
             metadata_generator = self._load_metadata_generator(query)
-            if metadata_generator is not None:
-                abort = False
-                try:
-                    for event in metadata_generator:
-                        event = event.loc[:, ~event.columns.duplicated()]
-                        abort = yield event
-                        abort = bool(abort)
-                        if abort is True:
-                            break
-                finally:
-                    metadata_generator.close()
-                if abort is True:
-                    self.logger.info("Generator aborted")
-                    return
-            else:
-                self.logger.warning(
-                    "Unable to get events from subset generator that returned None"
-                )
+            abort = False
+            try:
+                for event in metadata_generator:
+                    event = event.loc[:, ~event.columns.duplicated()]
+                    abort = yield event
+                    abort = bool(abort)
+                    if abort is True:
+                        break
+            finally:
+                metadata_generator.close()
+            if abort is True:
+                self.logger.info("Generator aborted")
                 return
         else:
             self.logger.warning(
@@ -1332,13 +1423,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @abstractmethod
     def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
         """
-        **Purpose:** Load and return the data specified by a valid SQL query, or None on failure
+        **Purpose:** Load and return the data specified by a valid SQL query, or None if the query could not be run
 
-        The data should be formatted as a pandas Dataframe object
+        The data should be formatted as a pandas Dataframe object. A query that
+        matched no rows must return an empty dataframe rather than None, so that
+        callers can tell an empty result from a failed query.
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
-        :return: A dataframe containing the requested event data as columns or None on failure
+        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows, or None if the query could not be run
         :rtype: Optional[pd.DataFrame]
         """
         pass

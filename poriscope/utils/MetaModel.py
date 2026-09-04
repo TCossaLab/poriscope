@@ -156,6 +156,11 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                 self.workers[key][channel].update_progressbar.connect(
                     self.emit_progress_update, Qt.QueuedConnection
                 )
+                # A worker that stops early reports why on the status panel rather
+                # than through a modal dialog; see Worker.process_generator.
+                self.workers[key][channel].add_text_to_display.connect(
+                    self.emit_text_to_display, Qt.QueuedConnection
+                )
                 self.threads[key][channel] = WorkerThread(
                     self.workers[key][channel], channel, key
                 )
@@ -340,3 +345,19 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         """
         self.logger.info(f"Progress update received: {progress}% for {identifier}")
         self.update_progressbar.emit(progress, identifier)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def emit_text_to_display(self, text: str, identifier: str) -> None:
+        """
+        Relay a worker's message to the status panel.
+
+        Workers run on their own thread and report an early stop this way rather than by
+        raising it as an ERROR record, which QtHandler would turn into a modal dialog.
+
+        :param text: The message to show the user.
+        :type text: str
+        :param identifier: The reporting worker's key/channel identifier.
+        :type identifier: str
+        """
+        self.add_text_to_display.emit(text, identifier)

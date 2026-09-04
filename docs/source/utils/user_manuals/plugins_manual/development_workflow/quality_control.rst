@@ -202,12 +202,19 @@ Run individual validation tools:
 .. warning::
 
    Use ``pre-commit run mypy`` rather than a bare ``mypy poriscope``. The hook runs
-   mypy in an isolated environment with a pinned version and no project dependencies,
-   which is exactly what CI does. Running mypy directly from your own virtual
-   environment uses a different version *and* sees the real PySide6/numpy/pandas type
-   stubs, and it will report several hundred additional messages that the gate does
-   not care about. Those are not failures you need to fix — they are a different tool
-   configuration answering a different question. **The hook is the gate.**
+   mypy in an isolated environment with no project dependencies, which is exactly what
+   CI does. Running mypy directly from your own virtual environment sees the real
+   PySide6/numpy/pandas type stubs, and it will report several hundred additional
+   messages that the gate does not care about. Those are not failures you need to fix —
+   they are a different tool configuration answering a different question.
+   **The hook is the gate.**
+
+   The version is pinned in two places and they are deliberately kept equal:
+   ``.pre-commit-config.yaml`` runs mirrors-mypy ``rev: v1.17.1``, and
+   ``pyproject.toml``'s ``[dev]`` extra and ``requirements-dev.txt`` both declare
+   ``mypy==1.17.1``. If you bump one, bump the other in the same commit — the two drifted
+   apart until 2026-09-04, and the resulting version gap was mistaken for the dependency
+   blindness described above. See ``DECISIONS.md``.
 
 .. _docs_render_check:
 
@@ -500,6 +507,34 @@ exclusions, and ``mypy.ini`` enforces that:
    reasonable-looking widening of the base's type will fail it.
 
 .. _plugin_compliance_testing:
+
+Test Suite Configuration
+-------------------------
+
+``pytest.ini`` is the only pytest configuration in the repository. Two settings there are
+worth knowing about before you add tests:
+
+- ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
+  exists because a hung Qt test otherwise runs to GitHub Actions' six-hour job limit. It
+  is not a performance budget: the slowest unit test measures about 1.4 seconds, and the
+  explicit ``@pytest.mark.timeout`` markers under ``tests/e2e/`` and
+  ``tests/integration/`` are all 90 seconds or less and still override the default. **If
+  your test trips this value, that is a finding about the test, not a reason to raise
+  the number.**
+- ``--strict-markers`` — an unregistered marker name is a collection error rather than an
+  expression that matches nothing. Register any new marker in the ``markers`` list.
+
+Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` extra but is
+**not** wired into ``addopts``:
+
+.. code-block:: bash
+
+   pytest --cov=poriscope --cov-report=term-missing
+
+Run it deliberately when you want the number. The plain ``pytest`` invocation is the
+pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
+the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
+drop, so treat it as information rather than a gate.
 
 Plugin Interface Compliance Testing
 ------------------------------------

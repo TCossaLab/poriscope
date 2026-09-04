@@ -25,12 +25,11 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log

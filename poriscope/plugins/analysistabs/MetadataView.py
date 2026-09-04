@@ -31,7 +31,18 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    override,
+)
 
 import matplotlib.pyplot as pl
 import numpy as np
@@ -53,7 +64,6 @@ from PySide6.QtWidgets import (
 from scipy import stats
 from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
@@ -129,6 +139,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
+        # Bus results, written by relay_experiment_id/relay_query_result and read
+        # back by the emitter on the next statement. Declared here so the type is
+        # stated once and the callers' cleared-before-emit assignment type-checks.
+        self.relayed_experiment_id: Optional[int] = None
+        self.relayed_query_result: Optional[pd.DataFrame] = None
         # Heterogeneous by design: the histogram paths append 1-D arrays, the
         # density path appends whole DataFrames, and the all-points path appends
         # (x, y) tuples. Flagged for review.
@@ -1411,6 +1426,12 @@ class MetadataView(MetaView, WalkthroughMixin):
                         if self.query == "":
                             return False
 
+                        # Cleared first: a dispatch that fails never calls
+                        # update_plot_data, so without this the guard below would
+                        # read the previous subset's rows and plot them under this
+                        # subset's label. .empty as well as None because the loader
+                        # returns an empty frame for a query that matched nothing.
+                        self.plot_data = None
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
@@ -1420,7 +1441,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             (),
                         )
 
-                        if self.plot_data is None:
+                        if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
                                 f"No data matching the subset {dataset_label}, skipping",
                                 self.__class__.__name__,
@@ -2015,52 +2036,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _build_where_clause(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> str:
-        """
-        Build a WHERE clause for direct DB queries on the events table, scoped to
-        the current filter, experiment, and channel.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        :param sql_filter: SQL filter string (may be empty).
-        :type sql_filter: str
-        :param exp: Experiment name.
-        :type exp: Optional[str]
-        :param channel: Channel identifier.
-        :type channel: Optional[int]
-        :return: WHERE clause string (including the WHERE keyword), or empty string.
-        :rtype: str
-        """
-        filter_parts = []
-        if sql_filter:
-            filter_parts.append(sql_filter)
-        if exp is not None:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_experiment_id_by_name",
-                (exp,),
-                "relay_experiment_id",
-                (),
-            )
-            exp_id = getattr(self, "relayed_experiment_id", None)
-            if exp_id is not None:
-                filter_parts.append(f"experiment_id = {exp_id}")
-                if channel is not None:
-                    filter_parts.append(f"channel_id = {channel}")
-        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
-
-    @log(logger=logger)
     def _rebuild_event_id_cache(
         self,
         loader: str,
-        where_clause: str,
         sql_filter: str,
         exp: Optional[str],
         channel: Optional[int],
@@ -2069,10 +2047,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         Rebuild the filtered event_id cache when filter or scope changes.
         Also emits the display panel message (first plot or filter change only).
 
+        Goes through ``load_metadata`` rather than querying the events table
+        directly, so that the filter is evaluated against the same joins the
+        subset and scatter paths give it. A filter on a sublevels column -
+        ``filtered = 5``, meaning every event with at least one sublevel that
+        matches - is only meaningful against ``events JOIN sublevels``, and the
+        hand-built ``SELECT event_id FROM events`` this replaces made every such
+        filter fail as an unknown column and then report itself as an empty
+        subset.
+
         :param loader: Name of the active database loader.
         :type loader: str
-        :param where_clause: Pre-built WHERE clause for the events table.
-        :type where_clause: str
         :param sql_filter: Current SQL filter string.
         :type sql_filter: str
         :param exp: Current experiment name.
@@ -2082,24 +2067,45 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: True if cache was rebuilt successfully, False otherwise.
         :rtype: bool
         """
-        cache_query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        # event_id is only unique within an experiment/channel, so without this
+        # scoping the cache mixes duplicate ids from every channel and navigation
+        # jumps to ids the active channel does not have.
+        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
+        if exp is not None:
+            exp_and_ch = {exp: [channel] if channel is not None else None}
+
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
-            "query_database_directly",
-            (cache_query,),
+            "load_metadata",
+            (["event_id"], sql_filter or None, exp_and_ch),
             "relay_query_result",
             (),
         )
         cache_result = getattr(self, "relayed_query_result", None)
-        if cache_result is None or cache_result.empty:
+        if cache_result is None:
+            # None means the query could not be built or run at all, which is a
+            # real problem and not an empty subset. Logged at ERROR so QtHandler
+            # raises its dialog from the place that can tell the two apart.
+            self.logger.error(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+        if cache_result.empty:
             self.add_text_to_display.emit(
                 "No filtered events found",
                 self.__class__.__name__,
             )
             return False
 
-        self.filtered_event_ids = cache_result["event_id"].tolist()
+        # load_metadata applies no ORDER BY of its own, and the navigation that
+        # reads this list bisects it.
+        self.filtered_event_ids = sorted(cache_result["event_id"].tolist())
         self.current_sql_filter = sql_filter
         self.current_experiment = exp
         self.current_channel = channel
@@ -2163,10 +2169,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             or channel != self.current_channel
             or not self.filtered_event_ids
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         if not self.filtered_event_ids:
@@ -2292,10 +2295,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             or not self.filtered_event_ids
         )
         if cache_needs_rebuild:
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
         elif not self.filtered_event_ids:
             self.add_text_to_display.emit(
@@ -2330,6 +2330,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
         where_parts = [f"event_id IN {id_tuple}"]
 
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_experiment_id = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2345,6 +2349,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 where_parts.append(f"channel_id = {channel}")
 
         db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2475,9 +2483,13 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
-        A callback from a global_signal call that stores the result of a direct DB query.
+        A callback from a global_signal call that stores the result of a DB query.
 
-        :param result: DataFrame returned by query_database_directly.
+        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
+        which return the same thing: the rows, an empty frame if none matched, or
+        None if the query could not be built or run.
+
+        :param result: DataFrame returned by the query, or None if it failed.
         :type result: Optional[pd.DataFrame]
         """
         self.relayed_query_result = result
@@ -2574,6 +2586,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_rows, num_cols = self._factors(num_events)
         j = 0
         for i, (event, vlines, hlines, pts, vlabels, hlabels, plabels) in enumerate(
+            # strict: the caller appends to all seven lists once per event, so a
+            # length mismatch is structurally impossible and means the caller is
+            # broken. Silently truncating would instead leave the whole bottom
+            # row of subplots without an x-axis label, since labelnum below is
+            # computed from num_events rather than from the trip count.
             zip(
                 event_data,
                 vertical_lines,
@@ -2582,6 +2599,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 vertical_labels,
                 horizontal_labels,
                 point_labels,
+                strict=True,
             )
         ):
             color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]

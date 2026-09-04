@@ -149,6 +149,9 @@ revisiting.
 - `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
   would make it worth revisiting. Check here before re-litigating a settled question.
 - `future_refactors_and_features.md` — larger speculative work.
+- `refactor_2.0.0.md` — the approved plan for the 2.0.0 refactor: the eight steps, the
+  dependency graph and decisions A–E. **Read it before picking anything out of
+  `future_fixes.md`**, since it claims much of that queue. Delete it once 2.0.0 ships.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
@@ -211,3 +214,14 @@ of every session, so it should stay a short list of standing rules.
   triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
   to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
   so a fresh checkout needs that script run before cutting a release.
+- `git flow release finish` opens three editors by default — a merge commit message into
+  `main`, the tag annotation, and a merge commit message into `develop`. Prefix the command
+  with `GIT_MERGE_AUTOEDIT=no` to suppress the two merge editors. **Do not pass `-m` for the
+  tag message**: git flow appends its own text to it, which produced the annotation
+  `v1.8.0 v1.8.0` where every earlier tag reads just `v1.7.1`. Without `-m` the tag editor
+  still opens, so either accept the prefilled message or fix the annotation with
+  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` **before** pushing it.
+- **Allow at least five minutes for `git flow release finish` and `feature finish`.** The
+  `post-merge` hook regenerates the autodoc, which ran past a two-minute timeout during the
+  1.8.0 release. All the git work had already completed by then; only the release branch
+  deletion was left undone, so check `git branch` and `git tag` before re-running anything.

@@ -58,18 +58,37 @@ Then select **Histogram**, x-axis: ``duration`` → events from the experiments 
 50 mV. Poriscope joins the ``experiments`` table automatically, the same way it joins
 ``sublevels`` in Example 4.
 
+**Example 6 - Subquery, including aggregation:**
+
+A subquery is passed through exactly as you type it, so it can do things the filter
+itself cannot. Qualify any reference to the outer row yourself - ``e.id`` for the event.
+
+Filter: ``e.id IN (SELECT event_db_id FROM sublevels WHERE filtered = 5)``
+
+Then select **Histogram**, x-axis: ``duration`` -> events with at least one sublevel
+whose ``filtered`` value is 5. Note that the filter ``filtered = 5`` says the same thing
+more simply, because Example 4's automatic join already means "at least one sublevel
+matches".
+
+Filter: ``e.id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)``
+
+Then select **Histogram**, x-axis: ``duration`` -> events with more than 3 sublevels,
+which is the aggregation the note above says the filter itself cannot express.
+
 Saved as: ``<subset_name>_assisted``
 
 .. note::
 
-   Assisted mode handles cross-table filters automatically but cannot express
-   aggregations (``GROUP BY``, ``HAVING``) or return computed columns
-   (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
-   for those cases.
+   Assisted mode handles cross-table filters automatically but cannot put a
+   ``GROUP BY`` or ``HAVING`` on the query itself, and cannot return computed
+   columns (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
+   for those cases. Aggregation *inside a subquery* does work - see Example 6.
 
    Text compared against a column is left exactly as you type it, so
    ``sequence = 'duration'`` matches the literal value ``duration`` and is not
-   confused with the ``duration`` column.
+   confused with the ``duration`` column. A subquery is left alone the same way:
+   it names its own tables, so its column references are never rewritten against
+   the outer query's, and a reference to the outer row has to be qualified by you.
 
    ``id`` on its own is rejected, because every table has one and they mean different
    rows. Write ``e.id`` for an event, ``s.id`` for a sublevel or ``exp.id`` for an
@@ -277,6 +296,8 @@ Common Mistakes
 | Raw scatterplot missing a selected column| Plot fails with "column not present" error       |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |
++------------------------------------------+--------------------------------------------------+
+| ``event_id`` used to match a sublevel    | Empty result - use ``e.id``; see note above      |
 +------------------------------------------+--------------------------------------------------+
 
 Available Columns

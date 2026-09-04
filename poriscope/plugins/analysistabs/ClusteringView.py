@@ -29,7 +29,7 @@ import logging
 import os
 import sys
 import warnings
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import hdbscan
 import matplotlib.cm as cm
@@ -48,7 +48,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from sklearn.mixture import GaussianMixture
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
@@ -591,6 +590,9 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 "Unable to generate metadata query, double check your solumn selections"
             )
 
+        # Cleared first: a dispatch that fails never calls update_plot_data, so
+        # without this the guard below would cluster the previous run's rows.
+        self.plot_data = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -600,7 +602,10 @@ class ClusteringView(MetaView, WalkthroughMixin):
             (),
         )
 
-        if self.plot_data is None:
+        # .empty as well as None: the loader now returns an empty frame for a
+        # query that matched nothing, and clustering an empty frame raises an
+        # opaque error from deep inside sklearn.
+        if self.plot_data is None or self.plot_data.empty:
             raise ValueError("No data matches the given query")
 
         if not all(col in self.plot_data.columns for col in columns):
@@ -657,7 +662,9 @@ class ClusteringView(MetaView, WalkthroughMixin):
                     "Did you forget to fill in clustering parameters?"
                 ) from e
             columns_except_id = clustering_data.columns[clustering_data.columns != "id"]
-            clusterer = GaussianMixture(n_components=n_components, n_init=100)
+            clusterer = GaussianMixture(
+                n_components=n_components, n_init=100, random_state=42
+            )
             labels = clusterer.fit_predict(clustering_data[columns_except_id])
             probs = clusterer.predict_proba(clustering_data[columns_except_id])
             probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
