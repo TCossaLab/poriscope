@@ -63,7 +63,7 @@ data as this call's answer - strictly worse than the conflation being fixed. Twe
 have no `try/except` at all, so an exception would also escape into a Qt slot.
 
 **Revisit** when the emit-then-read pattern is gone (Step 4a of the 2.0.0 refactor converts
-the 77 emits to Controller-mediated calls). Once results are returned rather than read off an
+the 75 emits to Controller-mediated calls). Once results are returned rather than read off an
 attribute, raising on failure becomes the better contract.
 
 ---
@@ -226,8 +226,8 @@ actual final state.
 
 **Context.** Planning the 2.0.0 refactor. `global_signal(metaclass, key, "method", args,
 "return_method", ret_args)` is a string-keyed RPC used as a *blocking* call: emit, then read
-the answer off an attribute on the next statement. 82 call sites, 77 of them in analysis-tab
-Views. The 2026-08-25 audit deferred fixing this because `MetaController`/`MetaView`
+the answer off an attribute on the next statement. 77 call sites, 75 of them in analysis-tab
+Views (82/77 before `062ef6f` collapsed two `query_database_directly` calls). The 2026-08-25 audit deferred fixing this because `MetaController`/`MetaView`
 deliberately hold no reference back to `MainController`, which is what keeps tabs pluggable.
 
 **Decision.** `MetaController` and `MetaModel` gain an inherited, non-abstract
@@ -245,7 +245,7 @@ needs two methods plus one attribute that exist only to carry one `int` back. Th
 a live bug - a failed dispatch left the reader seeing the **previous call's** experiment id,
 because `_dispatch_to` logs and returns without calling the return function
 (`main_controller.py:554`) - which is now guarded at each site by clearing the attribute
-immediately before the emit, at the cost of repeating that guard everywhere. Also measured: all 77 emits target data plugins and
+immediately before the emit, at the cost of repeating that guard everywhere. Also measured: all 75 emits target data plugins and
 **none targets another tab**, so `_relay_global_signal`'s docstring advertising calls into
 `main_model.plugins['MetaController'][key]` describes a capability nothing uses.
 
@@ -294,12 +294,33 @@ cycle." That window is now and will not reopen cheaply: the `"Kind"` schema key,
 golden files are not generated over known bugs), Tier B2 (zero-risk deletions) and Tier C
 (CI/tooling). The High-tier scientific and database defects ship inside 2.0.0 instead.
 
-**Moved tests are re-pointed mechanically.** Import and receiver only, assertions untouched,
-test owner reviews the diff. This stretches the standing "do not edit her suites" rule and
-**needs her explicit agreement before Step 2 starts** - 1,085 view tests target methods that
-move, and `test_metadata_view.py` alone is 6,026 lines. The alternative considered was leaving
-a thin View facade per moved method, rejected because ~200 facades would undercut the LOC and
-boundary-test metrics the refactor is measured by.
+**Moved tests are re-pointed, test owner reviews the diff.** This stretches the standing "do
+not edit her suites" rule and **needs her explicit agreement before Step 2 starts**. The
+alternative considered was leaving a thin View facade per moved method, rejected because ~200
+facades would undercut the LOC and boundary-test metrics the refactor is measured by.
+
+*Re-measured 2026-09-04 at `062ef6f`; the earlier "1,085 view tests" was wrong.* Attributing
+every name on the move list to its innermost enclosing `test_*` gives **324 test functions**,
+11.7% of the suite's 2,781 - 145 of `test_metadata_view.py`'s 347 (the file is 6,082 lines, not
+6,026) and 100 of `test_protein_view.py`'s 257. **"Mechanically, assertions untouched" is true
+of most but not all of it**: 175 entries are a receiver rename, but 60 stub a moving method as a
+collaborator *on the receiver* and 15 assert on that stub - a same-object seam a View/Model split
+breaks - and 46 more assert on a `global_signal.emit` that Step 4a deletes. The ask must say so
+rather than let her discover it. What makes the rest cheap: one receiver fixture per test named
+once in its signature, one construction site per file, and `_qt_mocks.shadow_signals` finding
+signals by introspection so it covers a Model's signals unedited.
+
+**The ask is also wider than tests.** `CODEOWNERS` assigns `poriscope/plugins/analysistabs/utils/`
+solely to her, so Step 3a (all five `*controls.py`) and Step 3f (`walkthrough*.py`) are gated on
+the same conversation despite being independent of Step 2; Step 4d reaches her **e2e** suites,
+where `subset_filters` appears 14 times inside one test's lambdas and f-strings; and Step 2 is
+itself a test-authoring block, which standing policy assigns to her for the characterization
+goldens and to the carve-out for the three new-file deliverables.
+
+**If she does not engage, control reverts to Kyle and the work proceeds.** `CODEOWNERS` is
+advisory by deliberate choice and Kyle has final say; an ownership block gets a stated exit
+rather than an indefinite hold. Ask first, and record in the plan and the commit trail that the
+owner was asked and did not respond.
 
 **Revisit if** the refactor stalls after Step 2, at which point the 1.9.0/2.0.0 split is worth
 rebalancing so the queued Tier B fixes are not held hostage to it.

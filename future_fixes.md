@@ -18,9 +18,10 @@ Read-only investigation and measurement do not.
 already assigned to a step. Plan artifact:
 <https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>
 
-Root cause behind most of the findings below: the analysis-tab Models are empty (303 lines
-across five, four of them `def _init(self): pass`) while the Views are 11,541 lines and carry
-77 of the 82 `global_signal.emit` sites. Decisions A-E are recorded in `DECISIONS.md`.
+Root cause behind most of the findings below: the analysis-tab Models are empty (298 lines
+across five, four of them `def _init(self): pass`) while the Views are 11,557 lines and carry
+75 of the 77 `global_signal.emit` sites - re-measured at `062ef6f`. Decisions A-E are recorded
+in `DECISIONS.md`.
 
 - **1.9.0 is Tier A + B2 + C of the plan's Step 1** - the defects in code the refactor moves,
   the zero-risk deletions, and the CI/tooling tier. Everything else in the High/Moderate tiers
@@ -31,9 +32,13 @@ across five, four of them `def _init(self): pass`) while the Views are 11,541 li
   of it.
 - **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
   structural change in Steps 3-5.
-- **Needs a person, not code**: the test owner must agree to mechanical test re-pointing before
-  Step 2 starts, and the fitter owner must be consulted before any `MetaEventFitter` signature
-  change, which moves all three owner-held fitters in lockstep.
+- **Needs a person, not code**: see "The ask to Carolina" in `refactor_2.0.0.md` - four parts,
+  namely who authors Step 2, re-pointing the 324 test functions that reference a moving name, the
+  75 stub-seam plus 46 emit assertions that are *not* mechanical, and Steps 3a/3f rewriting
+  `poriscope/plugins/analysistabs/utils/`, which `CODEOWNERS` assigns solely to her along with
+  `tests/`. **If she does not engage, control reverts to Kyle and the work proceeds** - ask first,
+  and say so plainly. Separately the fitter owner must be consulted before any `MetaEventFitter`
+  signature change, which moves all three owner-held fitters in lockstep.
 - `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
 
 ## Review findings (2026-09-03)
@@ -289,6 +294,15 @@ Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`,
   inside a generator is an ordinary `StopIteration` and so is indistinguishable from
   exhaustion. Same conflation the `None`-sentinel split fixed for `_load_metadata`
   (2026-09-04), but a generator needs its own contract.
+- **Five methods on the 2.0.0 move list have zero test coverage**, so moving them is unobservable
+  by the current suite: `MetaView._logscale_and_filter_dataframe:789`,
+  `RawDataView._gaussian:556`, `RawDataView._gaussian_fit:574`, `ProteinView._summarize_vm:497`
+  and `RawDataView._get_baseline_stats:467` (the two hits for that name belong to the
+  `MetaEventFinder` copy). Closing this is the Step 2 gate's job, not separate work.
+- **The destination layer for Steps 3d and 4a-4e is unverified.** `MetaModel` is 363 lines over
+  12 methods with no dedicated test file, and `tests/unit/models/` covers the tab Models only
+  through `test_protein_model.py` (64 lines, 8 tests). A coverage gap, and test authoring is the
+  test developer's remit.
 
 ### CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
 
