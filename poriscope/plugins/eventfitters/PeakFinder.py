@@ -2799,12 +2799,17 @@ class PeakFinder(MetaEventFitter):
                     f"({with_star/sequence_events:.1%})"
                 )
                 if with_star > 0:
+                    # Named by the arm the star is bound to, not by where it
+                    # falls in the trace - see _classify_bound_star. The two
+                    # differ, and the previous wording here ("star translocates
+                    # first") asserted the temporal reading, which is wrong for
+                    # backward events.
                     classification_report += (
-                        f"\n    Long end (star translocates first): "
+                        f"\n    Long end (star on the higher-ECD arm): "
                         f"{star_long_end} ({star_long_end/with_star:.1%})"
                     )
                     classification_report += (
-                        f"\n    Short end (star translocates last): "
+                        f"\n    Short end (star on the lower-ECD arm): "
                         f"{star_short_end} ({star_short_end/with_star:.1%})"
                     )
                 classification_report += (
@@ -3792,14 +3797,14 @@ class PeakFinder(MetaEventFitter):
     @log(logger=logger)
     def _classify_translocation_direction(self, channels: list[int]) -> None:
         """
-        Decide which end of the construct entered the pore first, writing
+        Decide which way round the construct threaded, writing
         ``translocation_direction`` and ``translocation_confidence`` onto every
         event that has a barcode.
 
         Called by ``_post_process_events``, third of the four classifiers,
         after the peak types are settled and before sequences are built - the
         direction is what decides whether an event's sequence is reversed, and
-        which end of the molecule ``_classify_bound_star`` attributes a star to.
+        which arm of the molecule ``_classify_bound_star`` attributes a star to.
 
         The construct is asymmetric about its barcode, so the ratio of the ECD
         before the first type-3 peak to the ECD after the last one says which
@@ -3807,6 +3812,21 @@ class PeakFinder(MetaEventFitter):
         ``log10(pre / post)``; over the run those values form two populations,
         and ``fit_threshold`` separates them. Events with no type-3 peak at all
         contribute nothing and keep no direction.
+
+        **``"forward"`` is a name for the higher-ratio population**, nothing
+        more: it is the side of the fitted threshold where the pre-barcode arm
+        carries the larger ECD, and so where the long arm precedes the barcode
+        in the trace. Which of the two populations physically corresponds to
+        which threading order is a property of the construct, not something
+        this method establishes - it separates the two and names them, and
+        every consumer that needs a physical reading (``sequence``'s reversal,
+        ``bound_star``'s arm) is consistent with that naming rather than with
+        an independent claim about pore entry.
+
+        Being a fitted split also means it is not a per-event ``pre > post``
+        test. The threshold sits wherever the two populations separate, which
+        need not be at a ratio of one, so an event whose own pre/post ratio is
+        below one can still fall in the ``"forward"`` population.
 
         The fit is estimated from the percentile core of the distribution but
         applied to every event - see ``DIRECTION_FIT_PERCENTILES``. Where the
@@ -4212,20 +4232,23 @@ class PeakFinder(MetaEventFitter):
         barcode - the tall spike that makes the pre- or post-barcode ECD large,
         and so the same feature ``_classify_translocation_direction`` reads a
         direction off. Only -1 peaks strictly before the first or strictly after
-        the last type-3 peak are candidates: one sitting between them has no
-        "first or last through the pore" reading. Where an event has several
-        candidates the most prominent one wins, ties going to the earlier peak;
-        the losing peaks keep their -1.
+        the last type-3 peak are candidates: one sitting between them is on
+        neither arm and so has no arm to be attributed to. Where an event has
+        several candidates the most prominent one wins, ties going to the
+        earlier peak; the losing peaks keep their -1.
 
-        The winning peak's own ``filtered`` label is rewritten to name the end
-        it was bound to - **5** for the long end, **4** for the short - so the
-        star is identifiable per peak and not only through the event's
-        ``bound_star``. Both codes are written here and nowhere else, and only
-        for a star whose end could be resolved: a candidate on an event with
-        no translocation direction keeps its -1. This is why the pass runs
-        after the two that select on labels; it also makes the pass
-        non-idempotent, since a re-run would no longer find that peak among
-        the -1s, which ``_post_process_events`` prevents by way of
+        The winning peak's own ``filtered`` label is rewritten to name **the arm
+        of the construct the star is bound to** - **5** for the long arm, **4**
+        for the short - so the star is identifiable per peak and not only
+        through the event's ``bound_star``. Neither code says anything about
+        where the star sits in the trace: both temporal positions can produce
+        either code, depending on the event's direction (see the label
+        discussion below). Both are written here and nowhere else, and only for
+        a star whose arm could be resolved: a candidate on an event with no
+        translocation direction keeps its -1. This is why the pass runs after
+        the two that select on labels; it also makes the pass non-idempotent,
+        since a re-run would no longer find that peak among the -1s, which
+        ``_post_process_events`` prevents by way of
         ``_global_postprocessing_done``.
 
         A candidate must also be *deeper than a fold*: its modal blockage has
@@ -4263,14 +4286,32 @@ class PeakFinder(MetaEventFitter):
         event at once when folding classification declines - has no floor to
         test against and is counted apart rather than reported as starless.
 
-        The label written to ``bound_star`` names the end of the construct the
-        star is bound to - ``"long end"`` or ``"short end"`` - and is in the
-        molecule's frame rather than the trace's: the observed temporal
-        position is flipped for ``translocation_direction == "backward"``
-        events, exactly as ``sequence`` is reversed for them, so ``"long end"``
-        always means the star end entered the pore first however that event
-        happened to thread. A star bound to one consistent end of the construct
-        should therefore give one dominant label.
+        The label written to ``bound_star`` names **which arm of the construct
+        the star is bound to** - ``"long end"`` or ``"short end"`` - and says
+        nothing about where the star sits in the trace. The two are different
+        questions, and conflating them is the easy mistake here: the observed
+        temporal position is flipped for ``translocation_direction ==
+        "backward"`` events, exactly as ``sequence`` is reversed for them, and
+        what survives that flip is a statement about the arm alone. A star
+        before the barcode on a forward event and one after the barcode on a
+        backward event are both on the long arm and both labelled ``"long
+        end"`` (filter type 5). A star bound to one consistent end of the
+        construct therefore gives one dominant label however individual events
+        happened to thread, which is the whole point.
+
+        "Long" and "short" are the two arms as
+        ``_classify_translocation_direction`` resolves them: ``"forward"`` is
+        the higher-``log10(pre / post)`` population, so on a forward event the
+        pre-barcode arm is the long one. Note that this is a run-wide fitted
+        split rather than a per-event ``pre > post`` test - which arm is long
+        is decided by where the threshold between the two populations falls -
+        so an event can be read as long-arm-first even where its own ECD ratio
+        is below one.
+
+        It is specifically **not** true that ``"long end"`` means the star went
+        through the pore first. On a backward event the long arm threads last,
+        so a type-5 star there is temporally last. Removing the threading order
+        is what the flip is for.
 
         This deliberately does not reuse the forward/backward vocabulary that
         ``translocation_direction`` owns. The two fields answer different
@@ -4512,10 +4553,27 @@ class PeakFinder(MetaEventFitter):
                         bucket["unresolved_direction"] += 1
                     continue
 
-                # A backward event ran the construct through in reverse, so a
-                # star seen last in the trace went through the pore first.
-                star_went_first = star_is_before == (direction == "forward")
-                bound_star = "long end" if star_went_first else "short end"
+                # Which arm of the construct the star sits on, which is what
+                # the label names - not where it sits in the trace.
+                #
+                # `direction` is "forward" exactly when this event fell in the
+                # higher-`log10(pre / post)` population, i.e. when the
+                # pre-barcode arm is the long one. So on a forward event the
+                # star is on the long arm iff it is before the barcode, and on
+                # a backward event iff it is after it. The temporal term
+                # cancels either way, leaving a statement about the arm alone:
+                #
+                #   before + forward  -> long arm    after + forward  -> short
+                #   before + backward -> short arm   after + backward -> long
+                #
+                # Note what this is *not*: it is not "the star went through the
+                # pore first". On a backward event the long arm threads last,
+                # so a long-arm star is temporally last. Removing the threading
+                # order is the entire point of the flip - the label has to mean
+                # the same thing whichever way round the molecule went, exactly
+                # as `sequence` is reversed for the same reason.
+                star_on_long_arm = star_is_before == (direction == "forward")
+                bound_star = "long end" if star_on_long_arm else "short end"
 
                 if event_data is not None:
                     event_data["bound_star"] = bound_star
@@ -4535,12 +4593,12 @@ class PeakFinder(MetaEventFitter):
                 # mean the pass is not idempotent - a second run would not
                 # find this peak in the -1 pool - which `_post_process_events`
                 # prevents with `_global_postprocessing_done`.
-                sublevel_data["filtered"][star_index] = 5 if star_went_first else 4
+                sublevel_data["filtered"][star_index] = 5 if star_on_long_arm else 4
 
                 if bucket is not None:
                     results["with_star"] += 1
                     bucket["with_star"] += 1
-                    if star_went_first:
+                    if star_on_long_arm:
                         results["long_end"] += 1
                         bucket["long_end"] += 1
                     else:

@@ -2860,8 +2860,8 @@ class TestClassifyBoundStar(unittest.TestCase):
         return pf.event_metadata[0][key]["bound_star"]
 
     def test_star_before_barcode_on_forward_event_is_long_end(self):
-        # The star entered the pore first and the trace runs in molecule order,
-        # so no correction applies.
+        # Forward means the pre-barcode arm is the long one, so a star before
+        # the barcode is on the long arm.
         pf = self._run(
             ev=_star_event(
                 [self.NAN, -1.0, 3.0, 3.0, self.NAN],
@@ -2872,9 +2872,10 @@ class TestClassifyBoundStar(unittest.TestCase):
         self.assertEqual(self._label(pf, "ev"), "long end")
 
     def test_star_after_barcode_on_backward_event_is_long_end(self):
-        # A backward event ran the construct through in reverse, so a star seen
-        # last in the trace went through the pore first. Same molecular end as
-        # the case above, and the label must agree with it.
+        # Backward puts the long arm after the barcode, so a star seen last in
+        # the trace is on the same arm as the case above and must get the same
+        # label. This pair is what makes the label an arm rather than a
+        # position: opposite temporal positions, identical label.
         pf = self._run(
             ev=_star_event(
                 [self.NAN, 3.0, 3.0, -1.0, self.NAN],
@@ -3202,12 +3203,14 @@ class TestClassifyBoundStar(unittest.TestCase):
 
     def test_star_label_names_the_end_it_is_bound_to(self):
         """
-        The winning peak's own ``filtered`` is rewritten to 5 on the long end
-        and 4 on the short end, matching the event's ``bound_star``.
+        The winning peak's own ``filtered`` is rewritten to 5 on the long arm
+        and 4 on the short arm, matching the event's ``bound_star``.
 
         The four rows are the two trace positions crossed with the two
-        directions: a star before the barcode went through first on a forward
-        event and last on a backward one, and vice versa after the barcode.
+        directions. ``forward`` means the pre-barcode arm is the long one, so
+        the arm the star sits on is "before" on a forward event and "after" on
+        a backward one - which is why each trace position appears with both
+        codes.
         """
         before = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
         after = [self.NAN, 3.0, 3.0, -1.0, self.NAN]
@@ -3225,9 +3228,57 @@ class TestClassifyBoundStar(unittest.TestCase):
                 )
                 self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], end)
 
+    def test_the_code_is_the_arm_and_not_the_position_in_the_trace(self):
+        """
+        The invariant behind types 4 and 5, stated on its own because it is the
+        thing readers get wrong: the code names which arm of the construct the
+        star is bound to and carries no information about where the star sits
+        in the trace.
+
+        Held two ways. Each trace position yields *both* codes depending on the
+        direction, so position alone determines nothing; and each code is
+        reached from *both* trace positions, so a code cannot be read back as a
+        position. In particular a type-5 star is temporally last on a backward
+        event, which is the case the old wording ("star translocates first")
+        got wrong.
+        """
+        before = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
+        after = [self.NAN, 3.0, 3.0, -1.0, self.NAN]
+        proms = [self.NAN, 4.0, 1.0, 4.0, self.NAN]
+
+        codes = {}
+        for position, filtered, star_idx in (
+            ("before", before, 1),
+            ("after", after, 3),
+        ):
+            for direction in ("forward", "backward"):
+                pf = self._run(ev=_star_event(list(filtered), proms, direction))
+                codes[(position, direction)] = pf.sublevel_metadata[0]["ev"][
+                    "filtered"
+                ][star_idx]
+
+        for position in ("before", "after"):
+            got = {codes[(position, d)] for d in ("forward", "backward")}
+            self.assertEqual(
+                got, {4.0, 5.0}, f"a star {position} the barcode fixed the code"
+            )
+
+        for code in (4.0, 5.0):
+            positions = {
+                position for (position, _), value in codes.items() if value == code
+            }
+            self.assertEqual(
+                positions,
+                {"before", "after"},
+                f"type {code:.0f} is reachable from only one trace position",
+            )
+
+        # and the one that makes the temporal reading false outright
+        self.assertEqual(codes[("after", "backward")], 5.0)
+
     def test_star_with_no_direction_keeps_its_minus_one(self):
         """
-        The label is the end, so a star whose end cannot be resolved is not
+        The label is the arm, so a star whose arm cannot be resolved is not
         relabelled - an event with no translocation direction keeps -1.
         """
         filtered = [self.NAN, -1.0, 3.0, 3.0, self.NAN]
