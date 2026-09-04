@@ -1,4 +1,4 @@
-## Poriscope 1.9.0: in progress
+## Poriscope 1.9.0: 2026-09-04
 
 * **Fixed a time range with no end silently finding no events**: a range like `3.0-` was accepted by the Time Range dialog but then discarded, so event finding ran over no time at all; it now means "from 3 seconds to the end of the signal", as an end of `0` always has
 
