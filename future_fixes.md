@@ -331,9 +331,6 @@ Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`,
 - **Four `Meta*` bases carry a byte-identical 3,584-character `get_empty_settings`
   docstring** (`MetaEventFitter`, `MetaDatabaseLoader`, `MetaEventLoader`,
   `SQLiteEventLoader`) - four copies of one document that can drift independently.
-- **`_static/images/MainView.png` still shows the removed sidebar Exit entry** (removed
-  2026-09-02). Its sibling `sidebar_with_tabs.png` was retaken against 1.9.0 on 2026-09-04;
-  this one was not. Needs someone who can drive the UI.
 
 ## Structural audit findings (2026-08-25)
 
