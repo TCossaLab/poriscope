@@ -81,7 +81,10 @@ jobs:
       # -W --keep-going matches the Docs Render Check PR gate, so a warning that
       # somehow reached main fails the deploy instead of publishing broken docs.
       - name: Build Sphinx HTML (docs/source → docs/build)
-        run: sphinx-build -W --keep-going -b html docs/source docs/build
+        # -d keeps Sphinx's doctree pickle cache out of docs/build, which is
+        # published wholesale below - without it the cache lands on gh-pages as
+        # 146 useless .doctree files under docs/.doctrees/.
+        run: sphinx-build -W --keep-going -b html -d docs/.doctrees docs/source docs/build
 
 
       # Ensure GitHub Pages serves _static/ by placing .nojekyll in the publish root
