@@ -94,15 +94,18 @@ Hard blocks:
 - Any `MetaEventFitter` signature change forces lockstep edits in the three owner-held
   fitters, because `test_plugin_compliance` compares annotations by equality. Check in first.
 
-## The ask to Carolina (blocks Step 2)
+## The ask to Carolina — sent 2026-09-04, awaiting response (blocks Step 2)
 
-Decision E was recorded as a one-line ask about tests and stalled for a day because nobody
+**Status: put to her 2026-09-04. No response yet.** Step 2 stays gated until she answers, and
+so do Steps 3a and 3f. What was asked is recorded below, so the record does not depend on the
+message itself surviving.
+
+Decision E had been recorded as a one-line ask about tests and stalled for a day because nobody
 could state it precisely. It is one conversation with one person, in four parts, and three of
 them are not about tests. Carolina González (@Carogg28) solely owns `tests/` and
 `analysistabs/utils/`, co-owns `poriscope/views/` and `analysistabs/`, and authored 203 of the
 ~358 commits under `tests/` (59 against 22 in `tests/unit/views/`, 71 against 3 in
-`tests/e2e/`). Paste-ready wording lives outside the repo in
-`~/.claude/plans/carolina-2.0.0-ask.md`.
+`tests/e2e/`).
 
 1. **Who writes Step 2.** This is the gate, so it is the part that unblocks everything. Of the
    five deliverables, the `ast` boundary test, the duplication ratchet and the five no-GUI flows
@@ -130,10 +133,11 @@ them are not about tests. Carolina González (@Carogg28) solely owns `tests/` an
 base preserves every `view.method(...)` call site), and it is the cheapest way to see what
 "reviewed as a diff" means before agreeing to the rest.
 
-**If the conversation stalls, control reverts to Kyle and the work proceeds.** Ask first, and
-say plainly in the plan and the commit trail that the owner was asked and did not engage -
-`CODEOWNERS` is advisory by deliberate choice and Kyle has final say. An ownership block gets a
-stated exit, not an indefinite hold.
+**If the conversation stalls, control reverts to Kyle and the work proceeds.** The ask has been
+made, which is the part that mattered; `CODEOWNERS` is advisory by deliberate choice and Kyle has
+final say. An ownership block gets a stated exit, not an indefinite hold - so if no answer comes,
+say plainly here and in the commit trail that she was asked and did not respond, and start with
+3a. Do **not** re-derive or re-send the ask: it is above, with its measurements.
 
 ## Step 0 — measurement baseline (landed 2026-09-04, re-baselined at `062ef6f`)
 

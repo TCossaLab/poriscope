@@ -32,13 +32,14 @@ in `DECISIONS.md`.
   of it.
 - **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
   structural change in Steps 3-5.
-- **Needs a person, not code**: see "The ask to Carolina" in `refactor_2.0.0.md` - four parts,
-  namely who authors Step 2, re-pointing the 324 test functions that reference a moving name, the
-  75 stub-seam plus 46 emit assertions that are *not* mechanical, and Steps 3a/3f rewriting
-  `poriscope/plugins/analysistabs/utils/`, which `CODEOWNERS` assigns solely to her along with
-  `tests/`. **If she does not engage, control reverts to Kyle and the work proceeds** - ask first,
-  and say so plainly. Separately the fitter owner must be consulted before any `MetaEventFitter`
-  signature change, which moves all three owner-held fitters in lockstep.
+- **Waiting on a person, not code**: the four-part ask in `refactor_2.0.0.md` was **sent
+  2026-09-04 and is awaiting a response** - who authors Step 2, re-pointing the 324 test functions
+  that reference a moving name, the 75 stub-seam plus 46 emit assertions that are *not* mechanical,
+  and Steps 3a/3f rewriting `poriscope/plugins/analysistabs/utils/`, which `CODEOWNERS` assigns
+  solely to her along with `tests/`. **If no answer comes, control reverts to Kyle and the work
+  proceeds**, recorded plainly rather than done quietly. Separately the fitter owner must be
+  consulted before any `MetaEventFitter` signature change, which moves all three owner-held
+  fitters in lockstep.
 - `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
 
 ## Review findings (2026-09-03)
