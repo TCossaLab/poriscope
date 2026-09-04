@@ -295,9 +295,11 @@ golden files are not generated over known bugs), Tier B2 (zero-risk deletions) a
 (CI/tooling). The High-tier scientific and database defects ship inside 2.0.0 instead.
 
 **Moved tests are re-pointed, test owner reviews the diff.** This stretches the standing "do
-not edit her suites" rule and **needs her explicit agreement before Step 2 starts**. *The
-four-part ask was put to her 2026-09-04 and is awaiting a response; the wording and its
-measurements are in `refactor_2.0.0.md`.* The
+not edit her suites" rule and **needs her explicit agreement before Step 2 starts**. *Put to
+her as a four-part ask on 2026-09-04 and agreed the same day; the wording and its measurements
+are in `refactor_2.0.0.md`. Her reply was a blanket go-ahead and did not split Step 2 authorship,
+so all five deliverables are ours to write - a scoped exception to the standing "test-writing is
+hers" rule, granted for this plan only.* The
 alternative considered was leaving a thin View facade per moved method, rejected because ~200
 facades would undercut the LOC and boundary-test metrics the refactor is measured by.
 
@@ -321,9 +323,8 @@ goldens and to the carve-out for the three new-file deliverables.
 
 **If she does not engage, control reverts to Kyle and the work proceeds.** `CODEOWNERS` is
 advisory by deliberate choice and Kyle has final say; an ownership block gets a stated exit
-rather than an indefinite hold. The ask has been made, so what remains is a waiting period - if
-no answer comes, record in the plan and the commit trail that the owner was asked and did not
-respond, and start with Step 3a.
+rather than an indefinite hold. In the event the exit was not needed - she agreed - but the
+principle stands for the fitter owner and for any future block.
 
 **Revisit if** the refactor stalls after Step 2, at which point the 1.9.0/2.0.0 split is worth
 rebalancing so the queued Tier B fixes are not held hostage to it.

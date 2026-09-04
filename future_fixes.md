@@ -32,12 +32,11 @@ in `DECISIONS.md`.
   of it.
 - **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
   structural change in Steps 3-5.
-- **Waiting on a person, not code**: the four-part ask in `refactor_2.0.0.md` was **sent
-  2026-09-04 and is awaiting a response** - who authors Step 2, re-pointing the 324 test functions
-  that reference a moving name, the 75 stub-seam plus 46 emit assertions that are *not* mechanical,
-  and Steps 3a/3f rewriting `poriscope/plugins/analysistabs/utils/`, which `CODEOWNERS` assigns
-  solely to her along with `tests/`. **If no answer comes, control reverts to Kyle and the work
-  proceeds**, recorded plainly rather than done quietly. Separately the fitter owner must be
+- **The person-blocker is cleared.** The four-part ask in `refactor_2.0.0.md` was sent
+  2026-09-04 and **agreed the same day** - green light to proceed. Decision E is satisfied, so
+  Step 2 is unblocked and so are Steps 3a/3f in `analysistabs/utils/`. Her reply did not split
+  Step 2 authorship, so we write all five deliverables including the characterization goldens -
+  a scoped exception to "test-writing is hers", not a general one. The fitter owner still must be
   consulted before any `MetaEventFitter` signature change, which moves all three owner-held
   fitters in lockstep.
 - `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
