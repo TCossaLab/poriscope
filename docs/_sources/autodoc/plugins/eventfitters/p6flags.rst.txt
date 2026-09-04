@@ -1,0 +1,19 @@
+.. _P6Flags:
+
+P6Flags
+=======
+
+**class P6Flags()**
+
+Bases: :class:`~poriscope.plugins.IntEnum`
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+(none)
+

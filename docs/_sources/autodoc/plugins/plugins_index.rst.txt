@@ -1,0 +1,18 @@
+.. _plugins_index:
+
+Plugins
+=======
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Contents:
+
+   analysistabs/analysistabs
+   datareaders/datareaders
+   datawriters/datawriters
+   db_loaders/db_loaders
+   dbwriters/dbwriters
+   eventfinders/eventfinders
+   eventfitters/eventfitters
+   eventloaders/eventloaders
+   filters/filters

@@ -1,0 +1,7 @@
+Datawriters
+===========
+
+.. toctree::
+   :maxdepth: 1
+
+   sqliteeventwriter

@@ -1,0 +1,30 @@
+.. _Sublevels:
+
+Sublevels
+=========
+
+**class Sublevels()**
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.combinedRegion
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.denormalize
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.filterEmptySublevels
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.insert
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.merge
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.__init__
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.__str__
+
+Properties
+----------
+
+.. autoattribute:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.edges
+.. autoattribute:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.embeded
+.. autoattribute:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.heights
+.. autoattribute:: poriscope.plugins.eventfitters.NanoTrees.Sublevels.size
+

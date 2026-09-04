@@ -1,0 +1,21 @@
+.. _ProteinModel:
+
+ProteinModel
+============
+
+**class ProteinModel(**kwargs)**
+
+Bases: :ref:`MetaModel`
+
+Subclass of MetaModel for handling protein volume/shape-factor fitting data and storage.
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel._init
+

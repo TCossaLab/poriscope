@@ -1,0 +1,79 @@
+.. _PeakFinder:
+
+PeakFinder
+==========
+
+**class PeakFinder(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaEventFitter`
+
+Event fitter that resolves each event into peaks and classifies them.
+
+A :ref:`MetaEventFitter` subclass driven entirely by the base class:
+``MetaEventFitter.fit_events()`` calls ``_pre_process_events`` once per
+channel, then ``_locate_sublevel_transitions`` /
+``_populate_sublevel_metadata`` / ``_populate_event_metadata`` once per
+event, then ``_post_process_events`` when the channel's last event is
+fitted. Per-event work finds peaks and measures them; the dataset-wide
+classifiers (folding, peak prominence, translocation direction, bound
+star) all run from ``_post_process_events`` once every channel has
+finished, because each of them fits a distribution that only exists
+across the whole run.
+
+``fit_fallbacks.md`` at the repository root describes the behaviour that
+is too large to carry in docstrings: every fallback path in the
+double-Gaussian threshold fit.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.classify_1d_distribution
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.classify_2d_distribution
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.close_resources
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.construct_fitted_event
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.enumerate_peaks
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.filter_peaks
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.find_mode_blockage_level
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.fit_threshold
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.get_empty_settings
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.get_plot_features
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.redefine_padding
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.report_channel_status
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder.update_event_metadata_post_processing
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._classification_confidence
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._classify_bound_star
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._classify_folded_unfolded
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._classify_peak_prominences
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._classify_translocation_direction
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._collect_peak_statistics
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._curve_fit_bounded
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_event_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_event_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_sublevel_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._define_sublevel_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._double_gaussian
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._fit_and_check_double_gaussian
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._fit_double_gaussian
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._fit_double_gaussian_bounded_at_valley
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._fit_least_smoothed_spline
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._gaussian_intersection
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._histogram_for_fit
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._init
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._jitter_degenerate_array
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._locate_sublevel_transitions
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._overlay_fitted_gaussians
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._populate_event_metadata
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._populate_sublevel_metadata
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._post_process_events
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._pre_process_events
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._resolve_two_histogram_peaks
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._save_classification_report
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._threshold_between_populations
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._trim_to_populated_core
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._validate_settings
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder.PeakFinder._warn_if_fitted_means_are_off_their_peaks
+

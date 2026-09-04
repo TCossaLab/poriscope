@@ -1,0 +1,45 @@
+.. _ProteinController:
+
+ProteinController
+=================
+
+**class ProteinController(available_subclasses: Optional[Mapping[str, List[str]]] = None, **kwargs)**
+
+Bases: :ref:`MetaController`
+
+Subclass of MetaController for managing protein view-model logic.
+
+Relays queries, event data, and filter/column metadata between the
+database backend and ProteinView.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.alter_database_status
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.check_column_exists
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.get_experiment_names_for_tree
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.get_experiment_structure_ready
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.get_session_state
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.on_raw_filter_validated
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_baseline_duration
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_event_data_generator
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_event_plot_data_generator
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_event_query
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_plot_data
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_query
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_query_result
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_table_by_column
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.relay_units
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.restore_session_state
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.set_channel_db_id
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.set_experiment_id
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.set_exported_event_count
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController.update_column_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController._init
+.. automethod:: poriscope.plugins.analysistabs.ProteinController.ProteinController._setup_connections
+

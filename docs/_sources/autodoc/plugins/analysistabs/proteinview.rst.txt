@@ -1,0 +1,102 @@
+.. _ProteinView:
+
+ProteinView
+===========
+
+**class ProteinView(*args, **kwargs)**
+
+Bases: :ref:`MetaView`, :class:`~poriscope.plugins.WalkthroughMixin`
+
+Subclass of MetaView for estimating translocating protein size and shape from nanopore blockage events.
+
+Given pore diameter/length, fits a two-population (prolate/oblate) volume-and-shape-factor model via Monte Carlo rejection sampling, either per event (Individual mode) or across the aggregate distribution (Ensemble mode). Also supports subset filtering, per-event trace/histogram inspection, and committing or reporting fit results.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.clear_pending_filter_state
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.get_selected_filters
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.notify_plugin_state_changed
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.on_raw_filter_validated
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.relay_query_result
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.replace_filter_item
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.request_experiment_structure
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.restore_subset_filters
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_alter_database_status
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_baseline_duration
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_channel_db_id
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_event_data_generator
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_event_plot_data_generator
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_event_query
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_experiment_id
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_query
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_table_by_column
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_units
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.show_edit_filter_dialog
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.show_selection_tree
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_available_columns
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_filter_name
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.__init__
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._build_dist_page
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._build_load_event_data_args
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._clear_figure_state
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._commit_fits
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._compute_theoretical_blockages
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._construct_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._construct_single_event_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._delete_all_selected_filters
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._delete_filter
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._delete_filter_by_name
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._double_gaussian
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._fetch_event_data
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._fit_and_plot_ensemble_geometry
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._fit_and_sanity_check_double_gaussian
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._fit_double_gaussian
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._generate_vm_ensemble
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._handle_other_actions
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._handle_plot_events
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._handle_plot_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._init
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._load_filter
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._plot_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._plot_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._plot_xyerr_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._rebuild_event_id_cache
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._report_ensemble_fit
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._reset_actions
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._resolve_event_db_ids
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._save_filter
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._set_control_area
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._set_custom_display_area
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._set_display_mode
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._shift_range_and_update_plot
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._show_add_filter_dialog
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._show_filter_info_dialog
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._summarize_vm
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._update_distribution_ensemble
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._update_distribution_individual
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._update_event_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._update_event_plot
+
+Properties
+----------
+
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.ax_hist
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.ax_vm
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.canvas_hist
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.canvas_vm
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.fig_hist
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.fig_vm
+

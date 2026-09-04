@@ -1,0 +1,23 @@
+.. _ThresholdBlockageFinder:
+
+ThresholdBlockageFinder
+=======================
+
+**class ThresholdBlockageFinder(settings: Optional[dict] = None)**
+
+Bases: :class:`~poriscope.plugins.ClassicBlockageFinder`
+
+Subclass of ClassicBlockageFinder that imposes much tighter bounds on the start and end time flagged in the output.
+
+This event finder calls the start of the event at the first threshold crossing, and the end of the event at the corresponding threshold crossing at the end through backtracking.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfinders.ThresholdBlockageFinder.ThresholdBlockageFinder.get_empty_settings
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfinders.ThresholdBlockageFinder.ThresholdBlockageFinder._find_events_in_chunk
+

@@ -1,0 +1,815 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../../genindex.html" /><link rel="search" title="Search" href="../../../search.html" /><link rel="next" title="Running the Software" href="running_software.html" /><link rel="prev" title="Scripting with Poriscope" href="scripting.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
+        <title>Filtering and Querying - Poriscope 1.9.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../../index.html"><div class="brand">Poriscope 1.9.0 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../../index.html">
+  
+  
+  <span class="sidebar-brand-text">Poriscope 1.9.0 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">User Manuals:</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">User Guide</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of User Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_installation.html">User Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="workflow_overview.html">Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorial.html">Tutorial and Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="raw_data_tab.html">Raw Data Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="event_analysis_tab.html">Event Analysis Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metadata_tab.html">MetaData Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="clustering_tab.html">Clustering Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="protein_tab.html">Protein Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="settings.html">Settings Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="menus_and_sessions.html">Menus and Session Management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="scripting.html">Scripting with Poriscope</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Filtering and Querying</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running_software.html">Running the Software</a></li>
+<li class="toctree-l2"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../plugins_manual/plugin_manual_index.html">Developer Guide</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Developer Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../plugins_manual/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins_manual/system_architecture/index.html">System Architecture</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of System Architecture</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/system_architecture/mainview_overview.html">MainView Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/system_architecture/mainmodel_overview.html">MainModel Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/system_architecture/maincontroller_overview.html">MainController Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../MainMVC/MainView.html">MainView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../MainMVC/MainModel.html">MainModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../MainMVC/MainController.html">MainController</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins_manual/development_workflow/index.html">Development Workflow</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Development Workflow</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/development_workflow/developer_setup.html">Developer Setup and Hook Installation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/development_workflow/quality_control.html">Quality Control and Developer Workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/development_workflow/post_merge_automation.html">Post-merge Automation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins_manual/development_workflow/code_ownership.html">Code Ownership</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/index.html">Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/where_to_begin/index.html">Where to Begin</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Where to Begin</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../plugins_manual/plugin_development/where_to_begin/where_to_begin.html">Where to Begin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins_manual/plugin_development/where_to_begin/understanding_base_classes.html">Understanding Base Classes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins_manual/plugin_development/where_to_begin/understanding_signals.html">Understanding Signals</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/frontend_plugin_manual_index.html">Frontend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Frontend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/ready_to_build/index.html">Ready to Build Your Own Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/ready_to_build/metaview_base.html">MetaView as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/ready_to_build/metamodel_base.html">MetaModel as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/ready_to_build/metacontroller_base.html">MetaController as a Base Class</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/hello_world_tutorial.html">Keeping It Minimal: HelloWorld Tutorial</a></li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/simpleCalc/from_helloworld_to_full_mvc.html">From HelloWorld to a Full MVC Analysis Tab</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of From HelloWorld to a Full MVC Analysis Tab</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/simpleCalc/simpleCalc_code.html">SimpleCalc Full Code Example</a></li>
+</ul>
+</li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/next_steps/index.html">What’s next ?</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of What’s next ?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/frontend_plugin/next_steps/adding_walkthrough.html">Adding a Walkthrough to Your Custom MVC Plugin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/backend_plugin_manual_index.html">Backend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of Backend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/index.html">Ready to Build Your Own Data Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Data Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/base_data_plugin.html">Base Data Plugin</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_reader.html">Build a MetaReader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_filter.html">Building a MetaFilter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_finder.html">Building a MetaEventFinder subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_writer.html">Building a MetaWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_loader.html">Build a MetaEventLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_fitter.html">Build a MetaEventFitter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_database_writer.html">Build a MetaDatabaseWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_database_loader.html">Build a MetaDatabaseLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugins_manual/plugin_development/backend_plugin/ready_to_build/serial_channel_operations.html">Thread Safety and Serial Channel Operations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Base Classes:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../autodoc/metaclasses/metaclasses_index.html">Abstract Base Classes</a><input class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of Abstract Base Classes</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/basedataplugin.html">BaseDataPlugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metacontroller.html">MetaController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metadatabaseloader.html">MetaDatabaseLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metadatabasewriter.html">MetaDatabaseWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metaeventfinder.html">MetaEventFinder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metaeventfitter.html">MetaEventFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metaeventloader.html">MetaEventLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metafilter.html">MetaFilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metamodel.html">MetaModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metareader.html">MetaReader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metaview.html">MetaView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/metawriter.html">MetaWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../autodoc/metaclasses/qthandler.html">QtHandler</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Plugins:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../autodoc/plugins/plugins_index.html">Plugins</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of Plugins</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/analysistabs.html">Analysistabs</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of Analysistabs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/proteinview.html">ProteinView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/proteinmodel.html">ProteinModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/rawdatacontroller.html">RawDataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/metadataview.html">MetadataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/clusteringcontroller.html">ClusteringController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/rawdatamodel.html">RawDataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/metadatacontroller.html">MetadataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/eventanalysismodel.html">EventAnalysisModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/eventanalysisview.html">EventAnalysisView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/clusteringview.html">ClusteringView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/rawdataview.html">RawDataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/clusteringmodel.html">ClusteringModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/eventanalysiscontroller.html">EventAnalysisController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/proteincontroller.html">ProteinController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/metadatamodel.html">MetadataModel</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/utils_index.html">Utils</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of Utils</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/eventanalysiscontrols.html">EventAnalysisControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/rawdatacontrols.html">RawDataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/walkthroughmixin.html">WalkthroughMixin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/introdialog.html">IntroDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/overlay.html">Overlay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/stepdialog.html">StepDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/proteincontrols.html">ProteinControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/metadatacontrols.html">MetadataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../autodoc/plugins/analysistabs/utils/clusteringcontrols.html">ClusteringControls</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/datareaders/datareaders.html">Datareaders</a><input class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><div class="visually-hidden">Toggle navigation of Datareaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/singlebinarydecoder.html">SingleBinaryDecoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/chimerareader20240101.html">ChimeraReader20240101</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/chimerareader20240501.html">ChimeraReader20240501</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/binaryreader1x.html">BinaryReader1X</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/chimerareadervc100.html">ChimeraReaderVC100</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/tcossalababfreader.html">TCossaLabABFReader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datareaders/legacyelementsreader.html">LegacyElementsReader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/datawriters/datawriters.html">Datawriters</a><input class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><div class="visually-hidden">Toggle navigation of Datawriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/datawriters/sqliteeventwriter.html">SQLiteEventWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/db_loaders/db_loaders.html">Db Loaders</a><input class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><div class="visually-hidden">Toggle navigation of Db Loaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/db_loaders/sqlitepeakdbloader.html">SQLitePeakDBLoader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/db_loaders/sqlitedbloader.html">SQLiteDBLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/dbwriters/dbwriters.html">Dbwriters</a><input class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><div class="visually-hidden">Toggle navigation of Dbwriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/dbwriters/sqlitedbwriter.html">SQLiteDBWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/eventfinders/eventfinders.html">Eventfinders</a><input class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><div class="visually-hidden">Toggle navigation of Eventfinders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfinders/boundedblockagefinder.html">BoundedBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfinders/thresholdblockagefinder.html">ThresholdBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfinders/classicblockagefinder.html">ClassicBlockageFinder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/eventfitters.html">Eventfitters</a><input class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><div class="visually-hidden">Toggle navigation of Eventfitters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/nofitter.html">NoFitter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/classiccusum.html">ClassicCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/_classificationwarningcollector.html">_ClassificationWarningCollector</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/peakfinder.html">PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/p6flags.html">P6Flags</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/singlesublevel.html">SingleSublevel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/hackylist.html">HackyList</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/sublevels.html">Sublevels</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/nanotrees.html">NanoTrees</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/intracusum.html">IntraCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/basic_peakfinder.html">Basic_PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventfitters/cusum.html">CUSUM</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/eventloaders/eventloaders.html">Eventloaders</a><input class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><div class="visually-hidden">Toggle navigation of Eventloaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/eventloaders/sqliteeventloader.html">SQLiteEventLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../autodoc/plugins/filters/filters.html">Filters</a><input class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><div class="visually-hidden">Toggle navigation of Filters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/filters/besselfilter.html">BesselFilter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../autodoc/plugins/filters/waveletfilter.html">WaveletFilter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Signals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../signals/global_signal/global_signal.html">Global Signal</a><input class="toctree-checkbox" id="toctree-checkbox-25" name="toctree-checkbox-25" role="switch" type="checkbox"/><label for="toctree-checkbox-25"><div class="visually-hidden">Toggle navigation of Global Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../signals/global_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../signals/global_signal/example_usage.html">Example Usage: RawDataView</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../signals/data_plugin_controller_signal/data_plugin_controller_signal.html">Data Plugin Controller Signal</a><input class="toctree-checkbox" id="toctree-checkbox-26" name="toctree-checkbox-26" role="switch" type="checkbox"/><label for="toctree-checkbox-26"><div class="visually-hidden">Toggle navigation of Data Plugin Controller Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../signals/data_plugin_controller_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../signals/data_plugin_controller_signal/example_usage.html">Example Usage: editing plugin settings from a view</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../signals/which_one_to_use/which_one_to_use.html">Which to use</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Logging Decorators:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../loggers_index.html">Logging</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../../_sources/utils/user_manuals/user_guide/filtering_and_querying.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="filtering-and-querying">
+<span id="id1"></span><h1>Filtering and Querying<a class="headerlink" href="#filtering-and-querying" title="Link to this heading">¶</a></h1>
+<p>Poriscope supports two modes for filtering event data: <strong>Assisted SQL</strong> and <strong>Raw SQL</strong>. Both modes are available in any tab that supports filters, including the <a class="reference internal" href="metadata_tab.html#metadata-tab"><span class="std std-ref">MetaData Tab</span></a>.</p>
+<p>Filters can be saved to a JSON file and reloaded in future sessions using the <strong>Save Filter</strong> and <strong>Load Filter</strong> buttons. See <a class="reference internal" href="#saving-and-loading-filters"><span class="std std-ref">Saving and Loading Filters</span></a>.
+The mode you choose at creation time is permanent and encoded directly in the filter name.</p>
+<img alt="Add Filter Dialog" class="align-center" src="../../../_images/FilterDialog.png" />
+<section id="filter-modes">
+<h2>Filter Modes<a class="headerlink" href="#filter-modes" title="Link to this heading">¶</a></h2>
+<section id="assisted-sql">
+<h3>Assisted SQL<a class="headerlink" href="#assisted-sql" title="Link to this heading">¶</a></h3>
+<p>In <strong>Assisted SQL</strong> mode, you write only the <strong>WHERE clause</strong> condition. Poriscope constructs the full SQL query automatically, handling column qualification, table joins, and experiment/channel scoping. You do not control which columns are returned or how the query is structured (Poriscope decides that based on what axes you select in the UI).</p>
+<p>Use this mode for most everyday filters, and if you are not familiar with SQL
+()no SQL knowledge is required, just simple conditions like <code class="docutils literal notranslate"><span class="pre">duration</span> <span class="pre">&gt;</span> <span class="pre">100</span></code>).</p>
+<p><strong>Example 1 — Long events only:</strong></p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">duration</span> <span class="pre">&gt;</span> <span class="pre">100</span></code></p>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code> → histogram of events longer than 100 µs.</p>
+<p><strong>Example 2 — High blockage events:</strong></p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">max_blockage</span> <span class="pre">&gt;</span> <span class="pre">2000</span></code></p>
+<p>Then select <strong>Scatterplot</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>, y-axis: <code class="docutils literal notranslate"><span class="pre">max_blockage</span></code> → scatter of high-blockage events.</p>
+<p><strong>Example 3 — Multi-sublevel events with significant blockage:</strong></p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">num_sublevels</span> <span class="pre">&gt;=</span> <span class="pre">3</span> <span class="pre">and</span> <span class="pre">max_blockage</span> <span class="pre">&gt;</span> <span class="pre">1500</span></code></p>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">fitted_ecd</span></code> → distribution of ECD for complex events.</p>
+<p><strong>Example 4 — Cross-table filter</strong> (join handled automatically by Poriscope):</p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">sublevel_duration</span> <span class="pre">&gt;</span> <span class="pre">200</span></code></p>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code> → returns the <code class="docutils literal notranslate"><span class="pre">duration</span></code> of events
+that contain at least one sublevel longer than 200 µs. Poriscope detects that
+<code class="docutils literal notranslate"><span class="pre">sublevel_duration</span></code> belongs to the <code class="docutils literal notranslate"><span class="pre">sublevels</span></code> table and automatically joins it
+with the <code class="docutils literal notranslate"><span class="pre">events</span></code> table to apply the filter.</p>
+<p><strong>Example 5 — Filter by a property of the experiment:</strong></p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">voltage</span> <span class="pre">&gt;</span> <span class="pre">50</span></code></p>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code> → events from the experiments run above
+50 mV. Poriscope joins the <code class="docutils literal notranslate"><span class="pre">experiments</span></code> table automatically, the same way it joins
+<code class="docutils literal notranslate"><span class="pre">sublevels</span></code> in Example 4.</p>
+<p><strong>Example 6 - Subquery, including aggregation:</strong></p>
+<p>A subquery is passed through exactly as you type it, so it can do things the filter
+itself cannot. Qualify any reference to the outer row yourself - <code class="docutils literal notranslate"><span class="pre">e.id</span></code> for the event.</p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">e.id</span> <span class="pre">IN</span> <span class="pre">(SELECT</span> <span class="pre">event_db_id</span> <span class="pre">FROM</span> <span class="pre">sublevels</span> <span class="pre">WHERE</span> <span class="pre">filtered</span> <span class="pre">=</span> <span class="pre">5)</span></code></p>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code> -&gt; events with at least one sublevel
+whose <code class="docutils literal notranslate"><span class="pre">filtered</span></code> value is 5. Note that the filter <code class="docutils literal notranslate"><span class="pre">filtered</span> <span class="pre">=</span> <span class="pre">5</span></code> says the same thing
+more simply, because Example 4’s automatic join already means “at least one sublevel
+matches”.</p>
+<p>Filter: <code class="docutils literal notranslate"><span class="pre">e.id</span> <span class="pre">IN</span> <span class="pre">(SELECT</span> <span class="pre">event_db_id</span> <span class="pre">FROM</span> <span class="pre">sublevels</span> <span class="pre">GROUP</span> <span class="pre">BY</span> <span class="pre">event_db_id</span> <span class="pre">HAVING</span> <span class="pre">COUNT(*)</span> <span class="pre">&gt;</span> <span class="pre">3)</span></code></p>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code> -&gt; events with more than 3 sublevels,
+which is the aggregation the note above says the filter itself cannot express.</p>
+<p>Saved as: <code class="docutils literal notranslate"><span class="pre">&lt;subset_name&gt;_assisted</span></code></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Assisted mode handles cross-table filters automatically but cannot put a
+<code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code> or <code class="docutils literal notranslate"><span class="pre">HAVING</span></code> on the query itself, and cannot return computed
+columns (e.g., <code class="docutils literal notranslate"><span class="pre">max_blockage</span> <span class="pre">-</span> <span class="pre">min_blockage</span> <span class="pre">AS</span> <span class="pre">blockage_range</span></code>). Use Raw SQL
+for those cases. Aggregation <em>inside a subquery</em> does work - see Example 6.</p>
+<p>Text compared against a column is left exactly as you type it, so
+<code class="docutils literal notranslate"><span class="pre">sequence</span> <span class="pre">=</span> <span class="pre">'duration'</span></code> matches the literal value <code class="docutils literal notranslate"><span class="pre">duration</span></code> and is not
+confused with the <code class="docutils literal notranslate"><span class="pre">duration</span></code> column. A subquery is left alone the same way:
+it names its own tables, so its column references are never rewritten against
+the outer query’s, and a reference to the outer row has to be qualified by you.</p>
+<p><code class="docutils literal notranslate"><span class="pre">id</span></code> on its own is rejected, because every table has one and they mean different
+rows. Write <code class="docutils literal notranslate"><span class="pre">e.id</span></code> for an event, <code class="docutils literal notranslate"><span class="pre">s.id</span></code> for a sublevel or <code class="docutils literal notranslate"><span class="pre">exp.id</span></code> for an
+experiment. <code class="docutils literal notranslate"><span class="pre">experiment_id</span></code>, <code class="docutils literal notranslate"><span class="pre">channel_id</span></code> and <code class="docutils literal notranslate"><span class="pre">event_id</span></code> need no qualifier -
+they mean the same thing in every table.</p>
+</div>
+</section>
+<section id="raw-sql">
+<h3>Raw SQL<a class="headerlink" href="#raw-sql" title="Link to this heading">¶</a></h3>
+<p>In <strong>Raw SQL</strong> mode, you write a <strong>complete SELECT statement</strong>. Poriscope executes
+it against the SQLite database without rewriting or modifying the query content.</p>
+<p>You have full control over which columns are returned and how the query is structured.</p>
+<p>Use this mode when you need aggregations, computed columns, or simply prefer writing
+complete SQL queries directly.</p>
+<p><strong>Example 1 — Same long events filter, written as Raw SQL:</strong></p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">duration</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">100</span>
+</pre></div>
+</div>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>.</p>
+<p><strong>Example 2 — Same high blockage scatterplot, written as Raw SQL:</strong></p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="p">,</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">2000</span>
+</pre></div>
+</div>
+<p>Then select <strong>Scatterplot</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>, y-axis: <code class="docutils literal notranslate"><span class="pre">max_blockage</span></code>.</p>
+<p><strong>Example 3 — Same multi-sublevel filter, written as Raw SQL:</strong></p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">fitted_ecd</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">num_sublevels</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1500</span>
+</pre></div>
+</div>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">fitted_ecd</span></code>.</p>
+<p><strong>Example 4 — Same cross-table filter, written as Raw SQL:</strong></p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">SELECT</span><span class="w"> </span><span class="n">event_db_id</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">sublevels</span>
+<span class="w">    </span><span class="k">WHERE</span><span class="w"> </span><span class="n">sublevel_duration</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">200</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>.</p>
+<p><strong>Example 5 — Aggregation: filter by sublevel count</strong> (not possible in Assisted):</p>
+<p><code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code> groups all sublevel rows by their parent event. <code class="docutils literal notranslate"><span class="pre">HAVING</span> <span class="pre">COUNT(*)</span> <span class="pre">&gt;</span> <span class="pre">3</span></code>
+then keeps only events that have more than 3 sublevel rows.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">SELECT</span><span class="w"> </span><span class="n">event_db_id</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">sublevels</span>
+<span class="w">    </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">event_db_id</span>
+<span class="w">    </span><span class="k">HAVING</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">3</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>.</p>
+<p>You can also aggregate a sublevel property per event and filter on that:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">SELECT</span><span class="w"> </span><span class="n">event_db_id</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">sublevels</span>
+<span class="w">    </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">event_db_id</span>
+<span class="w">    </span><span class="k">HAVING</span><span class="w"> </span><span class="k">AVG</span><span class="p">(</span><span class="n">sublevel_duration</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">150</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>.</p>
+<p><strong>Example 6 — Computed columns</strong> (not possible in Assisted):</p>
+<p>A computed column is derived from existing columns using arithmetic. It is defined
+in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> with <code class="docutils literal notranslate"><span class="pre">expression</span> <span class="pre">AS</span> <span class="pre">column_name</span></code> and can then be used as a plot axis.</p>
+<p>Blockage range — difference between maximum and minimum blockage:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="p">,</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">min_blockage</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">blockage_range</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+</pre></div>
+</div>
+<p>Then select <strong>Scatterplot</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">duration</span></code>, y-axis: <code class="docutils literal notranslate"><span class="pre">blockage_range</span></code>.</p>
+<p>Fractional blockage — blockage normalised to baseline current:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="p">,</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="k">ABS</span><span class="p">(</span><span class="n">baseline_current</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">fractional_blockage</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+</pre></div>
+</div>
+<p>Then select <strong>Histogram</strong>, x-axis: <code class="docutils literal notranslate"><span class="pre">fractional_blockage</span></code>.</p>
+<p>Saved as: <code class="docutils literal notranslate"><span class="pre">&lt;subset_name&gt;_raw</span></code></p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Raw SQL filters must begin with <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>. Entering a WHERE clause in Raw SQL mode
+(e.g., <code class="docutils literal notranslate"><span class="pre">duration</span> <span class="pre">&gt;</span> <span class="pre">100</span></code>) will be rejected with an error message.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In Raw SQL mode, only the columns you explicitly include in your <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement
+will be available for plotting. For a scatterplot of <code class="docutils literal notranslate"><span class="pre">duration</span></code> vs <code class="docutils literal notranslate"><span class="pre">max_blockage</span></code>,
+both columns must appear in the SELECT:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="p">,</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">2000</span>
+</pre></div>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Computed columns in Raw SQL must be aliased to an existing database column name
+to be selectable as a plot axis. For example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span><span class="w"> </span><span class="n">duration</span><span class="p">,</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">min_blockage</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">max_blockage</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span>
+</pre></div>
+</div>
+<p>Aliases that do not match an existing column name (e.g. <code class="docutils literal notranslate"><span class="pre">AS</span> <span class="pre">blockage_range</span></code>)
+will not appear in the axis dropdown and cannot be plotted.</p>
+</div>
+</section>
+</section>
+<section id="creating-a-filter">
+<h2>Creating a Filter<a class="headerlink" href="#creating-a-filter" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Click the <strong>➕</strong> button next to the Filter dropdown.</p></li>
+<li><p>Enter a <strong>name</strong> for the filter.</p></li>
+<li><p>Select the mode using the <strong>Assisted SQL</strong> or <strong>Raw SQL</strong> radio buttons.</p></li>
+<li><p>Enter the filter expression or query in the <strong>Filter</strong> field.</p></li>
+<li><p>Click <strong>OK</strong>.</p></li>
+</ol>
+<p>The filter is saved with a suffix indicating its mode (<code class="docutils literal notranslate"><span class="pre">_assisted</span></code> or <code class="docutils literal notranslate"><span class="pre">_raw</span></code>) and appears
+in the filter dropdown immediately.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The mode radio buttons are locked once a filter is created. To change mode, delete the
+filter and recreate it. This is by design — assisted filters contain WHERE clauses and
+raw filters contain complete SELECT statements. These formats are incompatible and cannot
+be safely converted.</p>
+</div>
+</section>
+<section id="editing-a-filter">
+<h2>Editing a Filter<a class="headerlink" href="#editing-a-filter" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Select exactly one filter from the filter dropdown.</p></li>
+<li><p>Click the <strong>pencil</strong> (edit) icon.</p></li>
+<li><p>Update the name or filter text as needed.</p></li>
+<li><p>Click <strong>OK</strong>.</p></li>
+</ol>
+<p>The mode (Assisted or Raw) is shown but cannot be changed during editing.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>For Raw SQL filters, the updated text must still begin with <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> or the edit
+will be rejected.</p>
+</div>
+</section>
+<section id="saving-and-loading-filters">
+<span id="id2"></span><h2>Saving and Loading Filters<a class="headerlink" href="#saving-and-loading-filters" title="Link to this heading">¶</a></h2>
+<p>Filters can be saved to a JSON file and reloaded in future sessions.</p>
+<ul class="simple">
+<li><p><strong>Save Filter</strong>: Exports all current filters to a <code class="docutils literal notranslate"><span class="pre">.json</span></code> file. Both <code class="docutils literal notranslate"><span class="pre">_assisted</span></code>
+and <code class="docutils literal notranslate"><span class="pre">_raw</span></code> filters are included.</p></li>
+<li><p><strong>Load Filter</strong>: Imports filters from a <code class="docutils literal notranslate"><span class="pre">.json</span></code> file. Raw filters are restored
+directly without re-validation. Assisted filters are re-validated against the database
+before being added.</p></li>
+</ul>
+<p>The saved JSON format looks like:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"long_events_assisted"</span><span class="p">:</span><span class="w"> </span><span class="s2">"duration &gt; 100"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"multi_sublevel_raw"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SELECT duration FROM events WHERE id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) &gt; 3)"</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If any filter name in the file conflicts with an existing filter, no filters from
+that file will be loaded.</p>
+</div>
+</section>
+<section id="common-mistakes">
+<h2>Common Mistakes<a class="headerlink" href="#common-mistakes" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Mistake</p></th>
+<th class="head"><p>Result</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>WHERE clause entered in Raw SQL mode</p></td>
+<td><p>Rejected at creation — must start with SELECT</p></td>
+</tr>
+<tr class="row-odd"><td><p>Full SELECT entered in Assisted mode</p></td>
+<td><p>Fails validation — treated as a WHERE clause</p></td>
+</tr>
+<tr class="row-even"><td><p>Raw scatterplot missing a selected column</p></td>
+<td><p>Plot fails with “column not present” error</p></td>
+</tr>
+<tr class="row-odd"><td><p>Typo in column name</p></td>
+<td><p>Validation error</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">event_id</span></code> used to match a sublevel</p></td>
+<td><p>Empty result - use <code class="docutils literal notranslate"><span class="pre">e.id</span></code>; see note above</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="available-columns">
+<h2>Available Columns<a class="headerlink" href="#available-columns" title="Link to this heading">¶</a></h2>
+<p>The columns available for filtering depend on the loaded database.
+Columns present in the YouTube tutorial database are listed below as a reference (see <a class="reference internal" href="running_software.html#running-software"><span class="std std-ref">Running the Software</span></a>).</p>
+<p><strong>events table:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">duration</span></code> — event duration in µs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">start_time</span></code> — event start time in µs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fitted_ecd</span></code>, <code class="docutils literal notranslate"><span class="pre">raw_ecd</span></code> — equivalent charge displacement</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_blockage</span></code>, <code class="docutils literal notranslate"><span class="pre">min_blockage</span></code> — maximum and minimum current blockage in pA</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_blockage_duration</span></code>, <code class="docutils literal notranslate"><span class="pre">min_blockage_duration</span></code> — duration of max/min blockage levels in µs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_deviation</span></code>, <code class="docutils literal notranslate"><span class="pre">max_deviation_duration</span></code> — maximum deviation from baseline</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">baseline_current</span></code>, <code class="docutils literal notranslate"><span class="pre">baseline_stdev</span></code> — baseline current in pA and its standard deviation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">num_sublevels</span></code> — number of detected sublevels within the event</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cluster_label</span></code>, <code class="docutils literal notranslate"><span class="pre">cluster_confidence</span></code> — clustering results if committed</p></li>
+</ul>
+<p><strong>sublevels table:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">sublevel_duration</span></code> — duration of the sublevel in µs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sublevel_current</span></code> — current during the sublevel in pA</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sublevel_blockage</span></code> — blockage magnitude of the sublevel in pA</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sublevel_stdev</span></code> — standard deviation of current within the sublevel</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sublevel_fitted_ecd</span></code>, <code class="docutils literal notranslate"><span class="pre">sublevel_raw_ecd</span></code> — sublevel-level ECD values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sublevel_start_times</span></code>, <code class="docutils literal notranslate"><span class="pre">sublevel_end_times</span></code> — sublevel time boundaries in µs</p></li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>To inspect your database structure directly, use a SQLite browser such as
+<a class="reference external" href="https://sqlitebrowser.org/">DB Browser for SQLite</a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Tutorial Data</p>
+<p>The data used in the YouTube tutorial series is archived on the Federated Research Data Repository (FRDR):</p>
+<p><strong>DOI:</strong> <a class="reference external" href="https://doi.org/10.20383/103.01695">10.20383/103.01695</a></p>
+<p>The full dataset is ~9.92 GB. Individual <code class="docutils literal notranslate"><span class="pre">.log</span></code> and <code class="docutils literal notranslate"><span class="pre">.json</span></code> files can be downloaded separately from the FRDR page if you only need specific channels.</p>
+<p>The deposit also contains the reference SQLite databases used in the tutorial (<code class="docutils literal notranslate"><span class="pre">.sqlite3</span></code>), and a <code class="docutils literal notranslate"><span class="pre">README.txt</span></code> giving the parameters needed to regenerate them from the recordings.</p>
+</div>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="running_software.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Running the Software</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="scripting.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Scripting with Poriscope</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Kyle Briggs, Carolina González G.
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Filtering and Querying</a><ul>
+<li><a class="reference internal" href="#filter-modes">Filter Modes</a><ul>
+<li><a class="reference internal" href="#assisted-sql">Assisted SQL</a></li>
+<li><a class="reference internal" href="#raw-sql">Raw SQL</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#creating-a-filter">Creating a Filter</a></li>
+<li><a class="reference internal" href="#editing-a-filter">Editing a Filter</a></li>
+<li><a class="reference internal" href="#saving-and-loading-filters">Saving and Loading Filters</a></li>
+<li><a class="reference internal" href="#common-mistakes">Common Mistakes</a></li>
+<li><a class="reference internal" href="#available-columns">Available Columns</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../../_static/documentation_options.js?v=c4cb232b"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>

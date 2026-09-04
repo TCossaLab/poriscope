@@ -1,0 +1,21 @@
+.. _ClusteringModel:
+
+ClusteringModel
+===============
+
+**class ClusteringModel(**kwargs)**
+
+Bases: :ref:`MetaModel`
+
+Subclass of MetaModel for handling clustering-related data processing.
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel._init
+

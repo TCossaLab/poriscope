@@ -1,0 +1,35 @@
+.. _WalkthroughMixin:
+
+WalkthroughMixin
+================
+
+**class WalkthroughMixin()**
+
+Mixin class to provide walkthrough functionality.
+
+Subclasses must implement `get_current_view()` and `get_walkthrough_steps()`.
+
+Signals:
+    walkthrough_finished (str, bool): Emitted when the walkthrough ends.
+        Parameters:
+            - current_view (str): The name of the current view.
+            - was_completed (bool): True if walkthrough finished successfully, False if exited early.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin.launch_walkthrough
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin.show_walkthrough_intro
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin._advance_walkthrough_index
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin._force_close_walkthrough_dialog
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin._handle_walkthrough_done
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin._init_walkthrough
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin._reposition_dialog
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough_mixin.WalkthroughMixin._run_next_walkthrough_step
+

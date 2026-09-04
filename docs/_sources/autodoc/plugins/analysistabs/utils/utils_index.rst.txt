@@ -1,0 +1,15 @@
+Utils
+=====
+
+.. toctree::
+   :maxdepth: 1
+
+   eventanalysiscontrols
+   rawdatacontrols
+   walkthroughmixin
+   introdialog
+   overlay
+   stepdialog
+   proteincontrols
+   metadatacontrols
+   clusteringcontrols

@@ -1,0 +1,24 @@
+.. _RawDataModel:
+
+RawDataModel
+============
+
+**class RawDataModel(**kwargs)**
+
+Bases: :ref:`MetaModel`
+
+Subclass of MetaModel for processing raw signal data.
+
+Includes methods to compute PSDs and integrate noise.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataModel.RawDataModel.calculate_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataModel.RawDataModel.integrate_noise
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataModel.RawDataModel._init
+

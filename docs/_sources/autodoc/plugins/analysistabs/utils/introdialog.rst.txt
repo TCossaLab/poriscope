@@ -1,0 +1,32 @@
+.. _IntroDialog:
+
+IntroDialog
+===========
+
+**class IntroDialog(parent: Optional[QWidget] = None, current_step: str = 'MainView')**
+
+Bases: :class:`~poriscope.plugins.QDialog`
+
+Welcome dialog to start the Poriscope walkthrough tutorial.
+
+.. attribute:: start_walkthrough
+    :type: Signal
+
+    Signal emitted when the user starts the walkthrough.
+
+:param parent: Parent widget, typically the main window.
+:type parent: Optional[QWidget]
+:param current_step: Identifier for the current step (used to customize intro).
+:type current_step: str
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.IntroDialog.emit_start
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.IntroDialog.paintEvent
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.walkthrough.IntroDialog.__init__
+

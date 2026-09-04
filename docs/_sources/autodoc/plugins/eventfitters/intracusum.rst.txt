@@ -1,0 +1,24 @@
+.. _IntraCUSUM:
+
+IntraCUSUM
+==========
+
+**class IntraCUSUM(settings: Optional[dict] = None)**
+
+Bases: :class:`~poriscope.plugins.CUSUM`
+
+Abstract base class to analyze and flag the start and end times of regions
+of interest in a timeseries for further analysis.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM.get_empty_settings
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM._define_event_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM._define_event_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.IntraCUSUM.IntraCUSUM._populate_event_metadata
+

@@ -1,0 +1,27 @@
+.. _BoundedBlockageFinder:
+
+BoundedBlockageFinder
+=====================
+
+**class BoundedBlockageFinder(settings: Optional[dict] = None)**
+
+Bases: :class:`~poriscope.plugins.ClassicBlockageFinder`
+
+Subclass of ClassicBlockageFinder that adds baseline range constraints for event detection.
+
+This event finder enforces a user-defined minimum and maximum baseline range
+and refines the Gaussian baseline fitting procedure accordingly. It filters data
+outside the specified baseline window and raises errors if the computed baseline
+falls outside those bounds.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder.get_empty_settings
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder._get_baseline_stats
+.. automethod:: poriscope.plugins.eventfinders.BoundedBlockageFinder.BoundedBlockageFinder._validate_settings
+

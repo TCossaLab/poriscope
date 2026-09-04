@@ -1,0 +1,22 @@
+Analysistabs
+============
+
+.. toctree::
+   :maxdepth: 1
+
+   proteinview
+   proteinmodel
+   rawdatacontroller
+   metadataview
+   clusteringcontroller
+   rawdatamodel
+   metadatacontroller
+   eventanalysismodel
+   eventanalysisview
+   clusteringview
+   rawdataview
+   clusteringmodel
+   eventanalysiscontroller
+   proteincontroller
+   metadatamodel
+   utils/utils_index

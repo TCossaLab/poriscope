@@ -1,0 +1,24 @@
+.. _LegacyElementsReader:
+
+LegacyElementsReader
+====================
+
+**class LegacyElementsReader(settings: Optional[dict] = None)**
+
+Bases: :class:`~poriscope.plugins.TCossaLabABFReader`
+
+Subclass of MetaReader for reading ABF2 files
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.datareaders.LegacyElementsReader.LegacyElementsReader._get_configs
+.. automethod:: poriscope.plugins.datareaders.LegacyElementsReader.LegacyElementsReader._get_file_channel_stamps
+.. automethod:: poriscope.plugins.datareaders.LegacyElementsReader.LegacyElementsReader._get_file_pattern
+.. automethod:: poriscope.plugins.datareaders.LegacyElementsReader.LegacyElementsReader._get_file_time_stamps
+

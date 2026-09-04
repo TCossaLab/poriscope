@@ -1,0 +1,30 @@
+.. _ClassificationWarningCollector:
+
+_ClassificationWarningCollector
+===============================
+
+**class _ClassificationWarningCollector()**
+
+Bases: :class:`~poriscope.plugins.logging.Handler`
+
+Logging handler that records WARNING-level messages verbatim, so they can
+be surfaced in the saved classification report instead of living only in
+the log file.
+
+Attached to ``PeakFinder.logger`` for the duration of the classifier
+stages in ``_post_process_events`` and nowhere else - see that method for
+where it starts and stops listening. ``report_channel_status`` reads
+``self._classification_warnings`` afterward; this handler has no effect
+on what actually gets logged, since the root/module logging setup is
+untouched.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder._ClassificationWarningCollector.emit
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.PeakFinder._ClassificationWarningCollector.__init__
+

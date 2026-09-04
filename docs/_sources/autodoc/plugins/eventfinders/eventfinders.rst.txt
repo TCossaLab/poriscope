@@ -1,0 +1,9 @@
+Eventfinders
+============
+
+.. toctree::
+   :maxdepth: 1
+
+   boundedblockagefinder
+   thresholdblockagefinder
+   classicblockagefinder

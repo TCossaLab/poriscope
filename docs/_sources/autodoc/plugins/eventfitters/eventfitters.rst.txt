@@ -1,0 +1,18 @@
+Eventfitters
+============
+
+.. toctree::
+   :maxdepth: 1
+
+   nofitter
+   classiccusum
+   _classificationwarningcollector
+   peakfinder
+   p6flags
+   singlesublevel
+   hackylist
+   sublevels
+   nanotrees
+   intracusum
+   basic_peakfinder
+   cusum

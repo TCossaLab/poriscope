@@ -1,0 +1,1204 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../../../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../../../genindex.html" /><link rel="search" title="Search" href="../../../../search.html" /><link rel="next" title="Post-merge Automation" href="post_merge_automation.html" /><link rel="prev" title="Developer Setup and Hook Installation" href="developer_setup.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
+        <title>Quality Control and Developer Workflow - Poriscope 1.9.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../../../index.html"><div class="brand">Poriscope 1.9.0 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../../../index.html">
+  
+  
+  <span class="sidebar-brand-text">Poriscope 1.9.0 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">User Manuals:</span></p>
+<ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../user_guide/index.html">User Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of User Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/user_installation.html">User Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/workflow_overview.html">Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/tutorial.html">Tutorial and Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/raw_data_tab.html">Raw Data Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/event_analysis_tab.html">Event Analysis Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/metadata_tab.html">MetaData Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/clustering_tab.html">Clustering Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/protein_tab.html">Protein Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/settings.html">Settings Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/menus_and_sessions.html">Menus and Session Management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/scripting.html">Scripting with Poriscope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/filtering_and_querying.html">Filtering and Querying</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/running_software.html">Running the Software</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../user_guide/faq.html">FAQ</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../plugin_manual_index.html">Developer Guide</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Developer Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html">Getting Started</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../system_architecture/index.html">System Architecture</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of System Architecture</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../system_architecture/mainview_overview.html">MainView Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../system_architecture/mainmodel_overview.html">MainModel Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../system_architecture/maincontroller_overview.html">MainController Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../MainMVC/MainView.html">MainView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../MainMVC/MainModel.html">MainModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../MainMVC/MainController.html">MainController</a></li>
+</ul>
+</li>
+<li class="toctree-l2 current has-children"><a class="reference internal" href="index.html">Development Workflow</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Development Workflow</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="developer_setup.html">Developer Setup and Hook Installation</a></li>
+<li class="toctree-l3 current current-page"><a class="current reference internal" href="#">Quality Control and Developer Workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="post_merge_automation.html">Post-merge Automation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="code_ownership.html">Code Ownership</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugin_development/index.html">Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugin_development/where_to_begin/index.html">Where to Begin</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Where to Begin</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../plugin_development/where_to_begin/where_to_begin.html">Where to Begin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugin_development/where_to_begin/understanding_base_classes.html">Understanding Base Classes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugin_development/where_to_begin/understanding_signals.html">Understanding Signals</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugin_development/frontend_plugin/frontend_plugin_manual_index.html">Frontend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Frontend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugin_development/frontend_plugin/ready_to_build/index.html">Ready to Build Your Own Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/frontend_plugin/ready_to_build/metaview_base.html">MetaView as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/frontend_plugin/ready_to_build/metamodel_base.html">MetaModel as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/frontend_plugin/ready_to_build/metacontroller_base.html">MetaController as a Base Class</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="../plugin_development/frontend_plugin/hello_world_tutorial.html">Keeping It Minimal: HelloWorld Tutorial</a></li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugin_development/frontend_plugin/simpleCalc/from_helloworld_to_full_mvc.html">From HelloWorld to a Full MVC Analysis Tab</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of From HelloWorld to a Full MVC Analysis Tab</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/frontend_plugin/simpleCalc/simpleCalc_code.html">SimpleCalc Full Code Example</a></li>
+</ul>
+</li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugin_development/frontend_plugin/next_steps/index.html">What’s next ?</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of What’s next ?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/frontend_plugin/next_steps/adding_walkthrough.html">Adding a Walkthrough to Your Custom MVC Plugin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugin_development/backend_plugin/backend_plugin_manual_index.html">Backend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of Backend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/index.html">Ready to Build Your Own Data Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Data Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/base_data_plugin.html">Base Data Plugin</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_reader.html">Build a MetaReader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_filter.html">Building a MetaFilter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_event_finder.html">Building a MetaEventFinder subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_event_writer.html">Building a MetaWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_event_loader.html">Build a MetaEventLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_event_fitter.html">Build a MetaEventFitter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_database_writer.html">Build a MetaDatabaseWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/meta_database_loader.html">Build a MetaDatabaseLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/serial_channel_operations.html">Thread Safety and Serial Channel Operations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Base Classes:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../../autodoc/metaclasses/metaclasses_index.html">Abstract Base Classes</a><input class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of Abstract Base Classes</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/basedataplugin.html">BaseDataPlugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metacontroller.html">MetaController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metadatabaseloader.html">MetaDatabaseLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metadatabasewriter.html">MetaDatabaseWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metaeventfinder.html">MetaEventFinder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metaeventfitter.html">MetaEventFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metaeventloader.html">MetaEventLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metafilter.html">MetaFilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metamodel.html">MetaModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metareader.html">MetaReader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metaview.html">MetaView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/metawriter.html">MetaWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../autodoc/metaclasses/qthandler.html">QtHandler</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Plugins:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../../autodoc/plugins/plugins_index.html">Plugins</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of Plugins</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/analysistabs.html">Analysistabs</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of Analysistabs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/proteinview.html">ProteinView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/proteinmodel.html">ProteinModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/rawdatacontroller.html">RawDataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/metadataview.html">MetadataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/clusteringcontroller.html">ClusteringController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/rawdatamodel.html">RawDataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/metadatacontroller.html">MetadataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/eventanalysismodel.html">EventAnalysisModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/eventanalysisview.html">EventAnalysisView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/clusteringview.html">ClusteringView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/rawdataview.html">RawDataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/clusteringmodel.html">ClusteringModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/eventanalysiscontroller.html">EventAnalysisController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/proteincontroller.html">ProteinController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/metadatamodel.html">MetadataModel</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/utils_index.html">Utils</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of Utils</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/eventanalysiscontrols.html">EventAnalysisControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/rawdatacontrols.html">RawDataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/walkthroughmixin.html">WalkthroughMixin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/introdialog.html">IntroDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/overlay.html">Overlay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/stepdialog.html">StepDialog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/proteincontrols.html">ProteinControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/metadatacontrols.html">MetadataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../autodoc/plugins/analysistabs/utils/clusteringcontrols.html">ClusteringControls</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/datareaders.html">Datareaders</a><input class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><div class="visually-hidden">Toggle navigation of Datareaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/singlebinarydecoder.html">SingleBinaryDecoder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/chimerareader20240101.html">ChimeraReader20240101</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/chimerareader20240501.html">ChimeraReader20240501</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/binaryreader1x.html">BinaryReader1X</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/chimerareadervc100.html">ChimeraReaderVC100</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/tcossalababfreader.html">TCossaLabABFReader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datareaders/legacyelementsreader.html">LegacyElementsReader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/datawriters/datawriters.html">Datawriters</a><input class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><div class="visually-hidden">Toggle navigation of Datawriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/datawriters/sqliteeventwriter.html">SQLiteEventWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/db_loaders/db_loaders.html">Db Loaders</a><input class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><div class="visually-hidden">Toggle navigation of Db Loaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/db_loaders/sqlitepeakdbloader.html">SQLitePeakDBLoader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/db_loaders/sqlitedbloader.html">SQLiteDBLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/dbwriters/dbwriters.html">Dbwriters</a><input class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><div class="visually-hidden">Toggle navigation of Dbwriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/dbwriters/sqlitedbwriter.html">SQLiteDBWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/eventfinders/eventfinders.html">Eventfinders</a><input class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><div class="visually-hidden">Toggle navigation of Eventfinders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfinders/boundedblockagefinder.html">BoundedBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfinders/thresholdblockagefinder.html">ThresholdBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfinders/classicblockagefinder.html">ClassicBlockageFinder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/eventfitters.html">Eventfitters</a><input class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><div class="visually-hidden">Toggle navigation of Eventfitters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/nofitter.html">NoFitter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/classiccusum.html">ClassicCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/_classificationwarningcollector.html">_ClassificationWarningCollector</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/peakfinder.html">PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/p6flags.html">P6Flags</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/singlesublevel.html">SingleSublevel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/hackylist.html">HackyList</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/sublevels.html">Sublevels</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/nanotrees.html">NanoTrees</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/intracusum.html">IntraCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/basic_peakfinder.html">Basic_PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventfitters/cusum.html">CUSUM</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/eventloaders/eventloaders.html">Eventloaders</a><input class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><div class="visually-hidden">Toggle navigation of Eventloaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/eventloaders/sqliteeventloader.html">SQLiteEventLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../autodoc/plugins/filters/filters.html">Filters</a><input class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><div class="visually-hidden">Toggle navigation of Filters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/filters/besselfilter.html">BesselFilter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../autodoc/plugins/filters/waveletfilter.html">WaveletFilter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Signals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../../signals/global_signal/global_signal.html">Global Signal</a><input class="toctree-checkbox" id="toctree-checkbox-25" name="toctree-checkbox-25" role="switch" type="checkbox"/><label for="toctree-checkbox-25"><div class="visually-hidden">Toggle navigation of Global Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../../signals/global_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../signals/global_signal/example_usage.html">Example Usage: RawDataView</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../../signals/data_plugin_controller_signal/data_plugin_controller_signal.html">Data Plugin Controller Signal</a><input class="toctree-checkbox" id="toctree-checkbox-26" name="toctree-checkbox-26" role="switch" type="checkbox"/><label for="toctree-checkbox-26"><div class="visually-hidden">Toggle navigation of Data Plugin Controller Signal</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../../signals/data_plugin_controller_signal/overview.html">API Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../signals/data_plugin_controller_signal/example_usage.html">Example Usage: editing plugin settings from a view</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../signals/which_one_to_use/which_one_to_use.html">Which to use</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Logging Decorators:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../loggers_index.html">Logging</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../../../_sources/utils/user_manuals/plugins_manual/development_workflow/quality_control.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="quality-control-and-developer-workflow">
+<span id="quality-control"></span><h1>Quality Control and Developer Workflow<a class="headerlink" href="#quality-control-and-developer-workflow" title="Link to this heading">¶</a></h1>
+<p>Poriscope uses automated <strong>quality control checks</strong> to ensure that all contributed code
+is consistent, correct, and maintainable.</p>
+<p>These checks are enforced through continuous integration (CI) and can also be enforced
+locally using <strong>Git hooks</strong>.</p>
+<p>This section explains what checks exist, when they run, and how developers should work
+with them.</p>
+<section id="overview-of-quality-controls">
+<h2>Overview of Quality Controls<a class="headerlink" href="#overview-of-quality-controls" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>New to “automated quality control”? The short version: instead of asking a human
+reviewer to manually check formatting, typos in docstrings, or whether your new
+plugin actually implements the right methods, Poriscope runs small programs that
+check these things for you, every time, in seconds. This section explains what
+each one does and why it exists — you don’t need any prior experience with these
+tools to follow along.</p>
+</div>
+<p>The following tools are used in Poriscope:</p>
+<ul class="simple">
+<li><p><strong>Black</strong> – automatic Python code formatting</p></li>
+<li><p><strong>Ruff</strong> – linting and safe automatic fixes</p></li>
+<li><p><strong>Mypy</strong> – static type checking. Every function under <code class="docutils literal notranslate"><span class="pre">poriscope/</span></code> must carry
+parameter and return type hints; see <a class="reference internal" href="#type-checking-policy"><span class="std std-ref">Type Annotation Policy (mypy)</span></a> below</p></li>
+<li><p><strong>pydoclint</strong> – checks that a docstring’s documented parameters, return type, and
+raised exceptions actually match the function’s real signature and body (see
+<a class="reference internal" href="#docstring-consistency"><span class="std std-ref">Docstring and Signature Consistency (pydoclint)</span></a> below)</p></li>
+<li><p><strong>check-added-large-files</strong> – prevents accidental commits of large files</p></li>
+<li><p><strong>Ruff security rules</strong> – a second, separately scoped Ruff pass over
+<code class="docutils literal notranslate"><span class="pre">poriscope/plugins/</span></code> only, flagging code execution, unsafe deserialization and
+process spawning; see <a class="reference internal" href="#plugin-trust-boundary"><span class="std std-ref">Plugin Code Runs on Your Machine</span></a> below</p></li>
+<li><p><strong>plugin module-level code check</strong> – rejects code that runs when a plugin is merely
+discovered; see <a class="reference internal" href="#plugin-trust-boundary"><span class="std std-ref">Plugin Code Runs on Your Machine</span></a> below</p></li>
+</ul>
+<p>All seven are managed through the <strong>pre-commit</strong> framework.</p>
+<p>Two further gates are not pre-commit hooks but are enforced just as strictly:</p>
+<ul class="simple">
+<li><p>a dedicated automated test — <a class="reference internal" href="#plugin-compliance-testing"><span class="std std-ref">Test Suite Configuration</span></a> below — checks that any
+plugin you add or modify actually implements the interface its base class requires. It
+runs as part of the normal test suite, but for anyone contributing a plugin it is just
+as much a compliance gate as the tools above, and often the one that matters most. A
+companion test, <a class="reference internal" href="#settings-schema-checking"><span class="std std-ref">Settings-Schema Checking</span></a>, does the same for the settings schema
+your plugin declares.</p></li>
+<li><p>the <strong>documentation render check</strong> — <a class="reference internal" href="#docs-render-check"><span class="std std-ref">Checking That the Documentation Still Renders</span></a> below — rebuilds the
+Sphinx documentation on every pull request with warnings treated as errors. pydoclint
+checks that a docstring <em>describes the right things</em>; it does not check that the
+docstring is valid reStructuredText. Those are different failure modes, and only this
+gate catches the second one.</p></li>
+</ul>
+</section>
+<section id="pre-commit-hooks-validation">
+<h2>Pre-commit Hooks (Validation)<a class="headerlink" href="#pre-commit-hooks-validation" title="Link to this heading">¶</a></h2>
+<p>Poriscope uses <em>pre-commit</em> to run <strong>validation checks before each commit</strong>.</p>
+<p>When committing code (either via the command line or GitHub Desktop), the following hooks
+run automatically:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ruff</span></code> (strict mode) – validates code without modifying files</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ruff-plugin-security</span></code> – security-relevant rules, plugin tree only</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mypy</span></code> – validates static typing</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> – validates that docstrings match real signatures and behavior</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plugin-module-level</span></code> – blocks import-time code in a data plugin</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">check-added-large-files</span></code> – blocks files larger than 123 KB</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">mypy</span></code> and <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> are both scoped to <code class="docutils literal notranslate"><span class="pre">poriscope/</span></code> and do not run against
+<code class="docutils literal notranslate"><span class="pre">tests/</span></code>. <code class="docutils literal notranslate"><span class="pre">ruff-plugin-security</span></code> is scoped to <code class="docutils literal notranslate"><span class="pre">poriscope/plugins/</span></code> and
+<code class="docutils literal notranslate"><span class="pre">plugin-module-level</span></code> more narrowly still, to the eight data-plugin families.
+Everything else runs against every tracked file.</p>
+<p>These checks <strong>never modify files</strong>.</p>
+<p>If <strong>any hook fails</strong>, the commit is <strong>blocked</strong>.</p>
+</section>
+<section id="automatic-formatting-and-auto-fixes">
+<h2>Automatic Formatting and Auto-fixes<a class="headerlink" href="#automatic-formatting-and-auto-fixes" title="Link to this heading">¶</a></h2>
+<p>Automatic formatting and safe lint fixes are intentionally excluded from the
+commit stage.</p>
+<p>The following tools run <strong>only when explicitly requested</strong>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">black</span></code> – reformats Python code</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ruff</span> <span class="pre">--fix</span></code> – applies safe automatic lint fixes</p></li>
+</ul>
+<p>To run these tools manually on all files, use:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files<span class="w"> </span>--hook-stage<span class="w"> </span>manual
+</pre></div>
+</div>
+<p>Any files modified by this command must be reviewed and committed manually.</p>
+<p>This design ensures that:</p>
+<ul class="simple">
+<li><p>Commits never change files unexpectedly</p></li>
+<li><p>Developers stay in control of formatting changes</p></li>
+<li><p>CI behavior matches local expectations</p></li>
+</ul>
+</section>
+<section id="installing-pre-commit">
+<h2>Installing Pre-commit<a class="headerlink" href="#installing-pre-commit" title="Link to this heading">¶</a></h2>
+<section id="automatic-installation-recommended">
+<h3>Automatic installation (recommended)<a class="headerlink" href="#automatic-installation-recommended" title="Link to this heading">¶</a></h3>
+<p>In most cases, <strong>pre-commit is installed automatically</strong> when you run the Poriscope
+setup script:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/setup_hooks.py
+</pre></div>
+</div>
+</section>
+<section id="manual-installation-fallback">
+<h3>Manual installation (fallback)<a class="headerlink" href="#manual-installation-fallback" title="Link to this heading">¶</a></h3>
+<p>If the setup script was not run, or if Git hooks were removed or reset, you can
+install <code class="docutils literal notranslate"><span class="pre">pre-commit</span></code> manually from the repository root:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pre-commit
+pre-commit<span class="w"> </span>install
+</pre></div>
+</div>
+</section>
+<section id="verification">
+<h3>Verification<a class="headerlink" href="#verification" title="Link to this heading">¶</a></h3>
+<p>To verify that pre-commit is active, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
+</pre></div>
+</div>
+<p>If this succeeds, the repository meets all required quality checks.</p>
+</section>
+</section>
+<section id="using-github-desktop">
+<h2>Using GitHub Desktop<a class="headerlink" href="#using-github-desktop" title="Link to this heading">¶</a></h2>
+<p>GitHub Desktop enforces Poriscope’s Git hooks when configured to use <strong>System Git</strong>.
+If a validation check fails, the commit is blocked and an error message is shown.</p>
+<section id="verifying-hook-enforcement">
+<h3>Verifying Hook Enforcement<a class="headerlink" href="#verifying-hook-enforcement" title="Link to this heading">¶</a></h3>
+<p>To confirm that hooks are active in GitHub Desktop, temporarily introduce a small
+type error in any tracked Python file:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_pre_commit_test</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">"not an int"</span>
+</pre></div>
+</div>
+<p>Attempt to commit the change:</p>
+<ul>
+<li><p>If the commit is <strong>blocked</strong>, the hooks are working correctly.</p></li>
+<li><p>If the commit is <strong>not blocked</strong>, re-run the setup script:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/setup_hooks.py
+</pre></div>
+</div>
+</li>
+</ul>
+<p>After verification, revert the temporary change.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>In Poriscope’s current workflow, formatting tools such as black and
+ruff –fix are executed in a dedicated auto-fix step before strict
+validation.</p>
+<p>During continuous integration (CI), these tools may automatically modify
+files and commit the fixes back to the branch. After auto-fixing, all
+quality checks (including strict ruff validation and mypy) are
+re-run, and the CI job only fails if unresolved issues remain.</p>
+<p>A commit will not be blocked locally unless strict validation hooks fail.</p>
+</div>
+</section>
+</section>
+<section id="running-quality-checks-manually">
+<h2>Running Quality Checks Manually<a class="headerlink" href="#running-quality-checks-manually" title="Link to this heading">¶</a></h2>
+<p>Run all <strong>validation hooks</strong> (the same checks enforced during commits and CI):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
+</pre></div>
+</div>
+<p>Run individual validation tools:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>ruff
+pre-commit<span class="w"> </span>run<span class="w"> </span>mypy
+pre-commit<span class="w"> </span>run<span class="w"> </span>pydoclint
+pre-commit<span class="w"> </span>run<span class="w"> </span>check-added-large-files
+</pre></div>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">pre-commit</span> <span class="pre">run</span> <span class="pre">mypy</span></code> rather than a bare <code class="docutils literal notranslate"><span class="pre">mypy</span> <span class="pre">poriscope</span></code>. The hook runs
+mypy in an isolated environment with no project dependencies, which is exactly what
+CI does. Running mypy directly from your own virtual environment sees the real
+PySide6/numpy/pandas type stubs, and it will report several hundred additional
+messages that the gate does not care about. Those are not failures you need to fix —
+they are a different tool configuration answering a different question.
+<strong>The hook is the gate.</strong></p>
+<p>The version is pinned in two places and they are deliberately kept equal:
+<code class="docutils literal notranslate"><span class="pre">.pre-commit-config.yaml</span></code> runs mirrors-mypy <code class="docutils literal notranslate"><span class="pre">rev:</span> <span class="pre">v1.17.1</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>’s <code class="docutils literal notranslate"><span class="pre">[dev]</span></code> extra and <code class="docutils literal notranslate"><span class="pre">requirements-dev.txt</span></code> both declare
+<code class="docutils literal notranslate"><span class="pre">mypy==1.17.1</span></code>. If you bump one, bump the other in the same commit — the two drifted
+apart until 2026-09-04, and the resulting version gap was mistaken for the dependency
+blindness described above. See <code class="docutils literal notranslate"><span class="pre">DECISIONS.md</span></code>.</p>
+</div>
+</section>
+<section id="checking-that-the-documentation-still-renders">
+<span id="docs-render-check"></span><h2>Checking That the Documentation Still Renders<a class="headerlink" href="#checking-that-the-documentation-still-renders" title="Link to this heading">¶</a></h2>
+<p>Most of Poriscope’s documentation is generated from the docstrings you write, so a
+malformed directive or a broken cross-reference in a docstring is a documentation bug.
+<code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> will not catch it: it verifies that the parameters, return type and
+exceptions a docstring documents match the real function, not that the surrounding
+reStructuredText is well formed. Sphinx catches it, so Sphinx is a gate.</p>
+<p>Every pull request targeting <code class="docutils literal notranslate"><span class="pre">main</span></code>, <code class="docutils literal notranslate"><span class="pre">develop</span></code> or a <code class="docutils literal notranslate"><span class="pre">release/*</span></code> branch runs the
+<strong>Docs Render Check</strong> workflow, which regenerates the autodoc <code class="docutils literal notranslate"><span class="pre">.rst</span></code> files and builds
+the HTML with <code class="docutils literal notranslate"><span class="pre">-W</span></code> — warnings are errors. To run exactly what it runs:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/generate_all_autodoc_rst.py
+sphinx-build<span class="w"> </span>-W<span class="w"> </span>--keep-going<span class="w"> </span>-b<span class="w"> </span>html<span class="w"> </span>docs/source<span class="w"> </span>docs/build
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">--keep-going</span></code> reports every warning in one pass instead of stopping at the first, so
+you can fix them all in a single edit. The <code class="docutils literal notranslate"><span class="pre">post-merge</span></code> git hook uses the same flags
+(see <a class="reference internal" href="post_merge_automation.html"><span class="doc">Post-merge Automation</span></a>), so if hooks are installed you will usually see a
+rendering problem the moment you merge rather than when you open a pull request.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The generator step is not optional. <code class="docutils literal notranslate"><span class="pre">docs/source/autodoc/</span></code> is git-ignored and
+regenerated from the source tree, so a build without it fails on missing table-of-
+contents entries rather than on anything you did.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>The build imports the real package, PySide6 included.</strong> <code class="docutils literal notranslate"><span class="pre">autodoc</span></code> does not mock
+Qt - <code class="docutils literal notranslate"><span class="pre">docs/source/conf.py</span></code> explains at length why mocking it is not an option here -
+so <code class="docutils literal notranslate"><span class="pre">sphinx-build</span></code> needs an environment in which <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">poriscope</span></code> works fully. On
+a development machine with the project installed that is automatic. In CI both docs
+workflows install <code class="docutils literal notranslate"><span class="pre">libegl1</span></code>, <code class="docutils literal notranslate"><span class="pre">libgl1</span></code> and <code class="docutils literal notranslate"><span class="pre">libxkbcommon0</span></code> first: those are the
+libraries the bundled <code class="docutils literal notranslate"><span class="pre">libQt6Gui</span></code>/<code class="docutils literal notranslate"><span class="pre">libQt6Widgets</span></code>/<code class="docutils literal notranslate"><span class="pre">libQt6Svg</span></code> link against that
+the runner image does not already provide, and the dynamic loader resolves all three
+the moment the module is imported. Without them the import fails halfway through
+<code class="docutils literal notranslate"><span class="pre">poriscope.exposed</span></code> and the build fills with unrelated autodoc errors. Xvfb and the
+<code class="docutils literal notranslate"><span class="pre">libxcb-*</span></code> packages the test workflows install are not needed, since those load with
+the xcb platform plugin and a docs build never instantiates a <code class="docutils literal notranslate"><span class="pre">QApplication</span></code>.</p>
+</div>
+</section>
+<section id="running-auto-fix-hooks-manually">
+<h2>Running Auto-fix Hooks Manually<a class="headerlink" href="#running-auto-fix-hooks-manually" title="Link to this heading">¶</a></h2>
+<p>To apply all automatic formatting and safe fixes:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files<span class="w"> </span>--hook-stage<span class="w"> </span>manual
+</pre></div>
+</div>
+<p>After running:</p>
+<ol class="arabic simple">
+<li><p>Review the changes</p></li>
+<li><p>Stage the modified files</p></li>
+<li><p>Commit manually</p></li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Ruff runs in two modes</strong>:</p>
+<ul class="simple">
+<li><p><strong>Auto-fix mode (manual stage)</strong>: fixes code and modifies files</p></li>
+<li><p><strong>Validation mode (commit &amp; CI)</strong>: checks only, fails on violations</p></li>
+</ul>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Which rules are enabled.</strong> Ruff’s default rule set is in force and
+<code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> uses <code class="docutils literal notranslate"><span class="pre">extend-select</span></code>, which adds to those defaults rather
+than replacing them. That matters more than it looks: several conventions this
+project cares about are already enforced without appearing anywhere in the
+config. The one worth knowing is <code class="docutils literal notranslate"><span class="pre">E722</span></code>, <strong>no bare</strong> <code class="docutils literal notranslate"><span class="pre">except:</span></code> – narrow to
+<code class="docutils literal notranslate"><span class="pre">except</span> <span class="pre">Exception:</span></code> at minimum, so that the exceptions you are actually
+swallowing can be named in a <code class="docutils literal notranslate"><span class="pre">:raises:</span></code> docstring section.</p>
+<p>On top of the defaults, <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> selects:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">I</span></code> – import ordering (isort).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">B006</span></code> – a mutable data structure used as an argument default. A <code class="docutils literal notranslate"><span class="pre">[]</span></code> or
+<code class="docutils literal notranslate"><span class="pre">{}</span></code> default is built once, when the function is defined, and then shared by
+every call, so anything that mutates it leaks state between calls. Use <code class="docutils literal notranslate"><span class="pre">None</span></code>
+and create the container inside the function.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">B020</span></code> – a loop control variable that shadows the iterable it iterates over.
+It does not break the loop, because the iterator is created before the first
+assignment, but it makes the original sequence unreachable for the rest of the
+loop body and forces the parameter to be annotated loosely.</p></li>
+</ul>
+<p>The other <code class="docutils literal notranslate"><span class="pre">flake8-bugbear</span></code> and <code class="docutils literal notranslate"><span class="pre">bandit</span></code> rules are deliberately <strong>not</strong> enabled
+<em>project-wide</em>, and this is settled rather than pending. Each of <code class="docutils literal notranslate"><span class="pre">B905</span></code>, <code class="docutils literal notranslate"><span class="pre">B904</span></code>,
+<code class="docutils literal notranslate"><span class="pre">B007</span></code>, <code class="docutils literal notranslate"><span class="pre">S110</span></code>, <code class="docutils literal notranslate"><span class="pre">S112</span></code> and <code class="docutils literal notranslate"><span class="pre">S101</span></code> was run once as an audit and its findings in
+maintained code fixed. What keeps each one from becoming a gate differs by rule.
+<code class="docutils literal notranslate"><span class="pre">S101</span></code> would flag every <code class="docutils literal notranslate"><span class="pre">assert</span></code> in the test suite, where 2,243 of its 2,250 sites
+are, so suppressing it there would suppress essentially all of it. <code class="docutils literal notranslate"><span class="pre">B905</span></code> needs a
+per-site <code class="docutils literal notranslate"><span class="pre">strict=</span></code> judgement, and at least one call cannot be proven equal-length in
+advance. The handful of sites left for <code class="docutils literal notranslate"><span class="pre">B904</span></code>, <code class="docutils literal notranslate"><span class="pre">B007</span></code>, <code class="docutils literal notranslate"><span class="pre">S110</span></code> and <code class="docutils literal notranslate"><span class="pre">S112</span></code> are
+spread across the test suite, the <code class="docutils literal notranslate"><span class="pre">scripts/autodoc/</span></code> generators and the fitter
+plugins another developer maintains. In each case enabling the rule would require a
+<code class="docutils literal notranslate"><span class="pre">per-file-ignores</span></code> entry that hides a real check rather than satisfying it. The
+reasoning, and the separate acceptance of the <code class="docutils literal notranslate"><span class="pre">S608</span></code> hardcoded-SQL sites, are
+recorded in <code class="docutils literal notranslate"><span class="pre">DECISIONS.md</span></code>; what each audit found is in <code class="docutils literal notranslate"><span class="pre">changelog.md</span></code>. Please do
+not re-propose them without reading that entry first.</p>
+<p><strong>This is a different question from the security rules that do run on the plugin
+tree.</strong> <code class="docutils literal notranslate"><span class="pre">ruff-plugin-security</span></code> selects a separate, narrower set of <code class="docutils literal notranslate"><span class="pre">S</span></code> rules and
+applies them only under <code class="docutils literal notranslate"><span class="pre">poriscope/plugins/</span></code> – see
+<a class="reference internal" href="#plugin-trust-boundary"><span class="std std-ref">Plugin Code Runs on Your Machine</span></a>. The two do not overlap: none of the audited-and-declined
+rules above is in that selection, and <code class="docutils literal notranslate"><span class="pre">S608</span></code> is not either.</p>
+</div>
+</section>
+<section id="plugin-code-runs-on-your-machine">
+<span id="plugin-trust-boundary"></span><h2>Plugin Code Runs on Your Machine<a class="headerlink" href="#plugin-code-runs-on-your-machine" title="Link to this heading">¶</a></h2>
+<p>Two of the hooks exist for one reason: <strong>plugin discovery executes every Python file it
+finds.</strong> <code class="docutils literal notranslate"><span class="pre">MainModel.populate_available_plugins()</span></code> walks <code class="docutils literal notranslate"><span class="pre">poriscope/plugins/</span></code> and your
+configured user-plugin folder recursively, and for each file it calls
+<code class="docutils literal notranslate"><span class="pre">spec.loader.exec_module()</span></code>. Python runs module-level code unconditionally, before
+anything has inspected the class – so a plugin file is a code-execution boundary in a way
+that the rest of the application is not.</p>
+<p>For code written inside the lab that is an accepted convenience. For a plugin arriving in
+a pull request from outside it is worth a check, so two hooks police it:</p>
+<dl>
+<dt><code class="docutils literal notranslate"><span class="pre">ruff-plugin-security</span></code></dt><dd><p>A second Ruff pass over <code class="docutils literal notranslate"><span class="pre">poriscope/plugins/</span></code>, selecting only rules a
+nanopore-analysis plugin has no legitimate reason to trip: <code class="docutils literal notranslate"><span class="pre">exec</span></code> and <code class="docutils literal notranslate"><span class="pre">eval</span></code>
+(<code class="docutils literal notranslate"><span class="pre">S102</span></code>, <code class="docutils literal notranslate"><span class="pre">S307</span></code>), unsafe deserialization (<code class="docutils literal notranslate"><span class="pre">S301</span></code> pickle, <code class="docutils literal notranslate"><span class="pre">S302</span></code> marshal,
+<code class="docutils literal notranslate"><span class="pre">S506</span></code> yaml), process spawning (<code class="docutils literal notranslate"><span class="pre">S601</span></code>–<code class="docutils literal notranslate"><span class="pre">S607</span></code>, <code class="docutils literal notranslate"><span class="pre">S609</span></code>), and network or
+temp-file risks (<code class="docutils literal notranslate"><span class="pre">S310</span></code> urlopen, <code class="docutils literal notranslate"><span class="pre">S306</span></code> mktemp).</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">plugin-module-level</span></code></dt><dd><p>Rejects any module-level statement in a data plugin that runs code. The rule is that
+<strong>module-level assignment is fine but module-level invocation is not</strong>, so a type alias
+such as <code class="docutils literal notranslate"><span class="pre">Numeric</span> <span class="pre">=</span> <span class="pre">Union[int,</span> <span class="pre">float,</span> <span class="pre">np.number]</span></code> passes while
+<code class="docutils literal notranslate"><span class="pre">logger</span> <span class="pre">=</span> <span class="pre">logging.getLogger(__name__)</span></code> does not – move that kind of thing into a
+method. Only imports, constants, classes and functions belong at the top level of a
+plugin. Decorators on a class or function are not examined, since <code class="docutils literal notranslate"><span class="pre">&#64;log</span></code> is part of
+the plugin pattern.</p>
+<p>Run it yourself on the plugin you are writing:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">scripts</span><span class="o">/</span><span class="n">check_plugin_module_level</span><span class="o">.</span><span class="n">py</span> <span class="n">poriscope</span><span class="o">/</span><span class="n">plugins</span><span class="o">/</span><span class="n">eventfinders</span><span class="o">/</span><span class="n">MyFinder</span><span class="o">.</span><span class="n">py</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+<p>Both are measured at zero findings on the shipped tree, so neither has a baseline or any
+exemptions – if one fires on your plugin, it has found something real.</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>These checks raise the bar against a careless submission. They are <strong>not</strong> a sandbox
+and not a defence against a determined adversary: a plugin can still do as it likes
+inside a method body that only runs once the plugin is instantiated, and neither hook
+sees a file you drop straight into your user-plugin folder without a pull request.
+Plugins are reviewed by a human before they are merged, and that review remains the
+real gate.</p>
+</div>
+</section>
+<section id="skipping-hooks-advanced-use-only">
+<h2>Skipping Hooks (Advanced Use Only)<a class="headerlink" href="#skipping-hooks-advanced-use-only" title="Link to this heading">¶</a></h2>
+<p>In exceptional cases:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>commit<span class="w"> </span>--no-verify
+</pre></div>
+</div>
+<p>This should only be used in emergencies. Regular use undermines code quality and consistency.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Skipping local verification does <strong>not</strong> bypass automated checks in the continuous
+integration (CI) pipeline. All enforced quality checks are re-run on GitHub, and
+commits that fail CI will not be merged. In practice, using <code class="docutils literal notranslate"><span class="pre">--no-verify</span></code> only
+delays failure and should be avoided.</p>
+</div>
+</section>
+<section id="docstring-and-signature-consistency-pydoclint">
+<span id="docstring-consistency"></span><h2>Docstring and Signature Consistency (pydoclint)<a class="headerlink" href="#docstring-and-signature-consistency-pydoclint" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is a “docstring linter.” If that phrase is new to you: a <em>linter</em> is a
+program that reads your code without running it and flags things that look wrong.
+Most linters (like Ruff) look at style. <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> instead compares your
+docstring’s claims against what the function’s code actually does.</p>
+</div>
+<p>Think of a docstring like the label on a bottle of reagent: it tells the next person
+(possibly a future version of yourself) what’s inside, how much to use, and what to
+watch out for. A label that doesn’t match the contents is arguably <em>worse</em> than no
+label at all, because people trust it and act on it anyway. <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> exists to
+catch exactly that mismatch — automatically, before it ships.</p>
+<p>Concretely, for every documented function, <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> checks that:</p>
+<ul class="simple">
+<li><p>every parameter named in the docstring actually exists in the function signature
+(and vice versa — no undocumented parameters, no documented parameters that don’t
+exist),</p></li>
+<li><p>the documented return type matches what the function actually returns,</p></li>
+<li><p>the exceptions listed in a <code class="docutils literal notranslate"><span class="pre">Raises</span></code> section match the exceptions the function can
+actually raise.</p></li>
+</ul>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> does <strong>not</strong> require every function to have a docstring. It only
+holds a docstring accountable <em>if one already exists</em> — if you didn’t write one,
+<code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> has nothing to check.</p>
+<p>It <em>does</em> require that a documented function’s signature carry type hints, and
+that those hints agree with the docstring’s <code class="docutils literal notranslate"><span class="pre">:type:</span></code> and <code class="docutils literal notranslate"><span class="pre">:rtype:</span></code> fields. The
+signature is the source of truth; where the two disagree, fix the docstring.
+(Separately, <code class="docutils literal notranslate"><span class="pre">mypy</span></code> now requires type hints on <strong>every</strong> function under
+<code class="docutils literal notranslate"><span class="pre">poriscope/</span></code>, documented or not — see <a class="reference internal" href="#type-checking-policy"><span class="std std-ref">Type Annotation Policy (mypy)</span></a>.)</p>
+</div>
+<section id="running-it-locally">
+<h3>Running it locally<a class="headerlink" href="#running-it-locally" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">pre-commit</span> <span class="pre">run</span> <span class="pre">--all-files</span></code> already runs <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> on your behalf, so most
+contributors will meet it there rather than by invoking it directly. If you want to
+check just the docstring/signature rules on their own:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pydoclint<span class="w"> </span>--baseline<span class="o">=</span>.pydoclint-baseline.txt<span class="w"> </span>poriscope
+</pre></div>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">DOC105</span></code> (“type hints do not match”) that makes no sense is usually a
+formatting problem rather than a real mismatch. <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> folds any prose that
+trails a <code class="docutils literal notranslate"><span class="pre">:type:</span></code> field into that field’s value, so a docstring written with the
+parameter list first and the descriptive paragraph last reports a spurious
+<code class="docutils literal notranslate"><span class="pre">DOC105</span></code> against whichever parameter happens to be documented last. Put the
+description <strong>first</strong>, then the <code class="docutils literal notranslate"><span class="pre">:param:</span></code>/<code class="docutils literal notranslate"><span class="pre">:type:</span></code>/<code class="docutils literal notranslate"><span class="pre">:return:</span></code>/<code class="docutils literal notranslate"><span class="pre">:rtype:</span></code>
+fields, and it goes away.</p>
+</div>
+</section>
+<section id="why-is-there-a-baseline-file">
+<h3>Why is there a “baseline” file?<a class="headerlink" href="#why-is-there-a-baseline-file" title="Link to this heading">¶</a></h3>
+<p>When <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> was first introduced, roughly 1,090 pre-existing docstring
+mismatches predated the tool. Rather than blocking every future commit on cleaning up
+the entire history at once, they were recorded in <code class="docutils literal notranslate"><span class="pre">.pydoclint-baseline.txt</span></code> and
+allowed to remain while they were worked through.</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>That cleanup is finished.</strong> <code class="docutils literal notranslate"><span class="pre">.pydoclint-baseline.txt</span></code> is now an empty,
+zero-byte file, and it should stay that way. There is nothing left to forgive, so
+every violation the hook reports is a real one in code you touched, and it will
+fail the commit.</p>
+<p>In particular, <strong>do not</strong> regenerate the baseline to make a failure go away:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Don't do this to silence a failure - fix the docstring instead.</span>
+pydoclint<span class="w"> </span>--generate-baseline<span class="o">=</span>True<span class="w"> </span>--baseline<span class="o">=</span>.pydoclint-baseline.txt<span class="w"> </span>poriscope
+</pre></div>
+</div>
+<p>Re-populating the baseline would silently re-open the door to exactly the
+mismatches the cleanup closed. Fix the docstring the tool is complaining about.</p>
+</div>
+</section>
+</section>
+<section id="type-annotation-policy-mypy">
+<span id="type-checking-policy"></span><h2>Type Annotation Policy (mypy)<a class="headerlink" href="#type-annotation-policy-mypy" title="Link to this heading">¶</a></h2>
+<p>Every function under <code class="docutils literal notranslate"><span class="pre">poriscope/</span></code> carries parameter and return type hints, with no
+exclusions, and <code class="docutils literal notranslate"><span class="pre">mypy.ini</span></code> enforces that:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">disallow_untyped_defs</span> <span class="pre">=</span> <span class="pre">True</span></code> — a function with no annotations is an error rather
+than being silently skipped. <strong>New code must be annotated.</strong></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">check_untyped_defs</span> <span class="pre">=</span> <span class="pre">True</span></code> — function bodies are type-checked even where the
+checker cannot fully resolve their types.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">strict_equality</span> <span class="pre">=</span> <span class="pre">True</span></code> — catches comparisons between types that can never be
+equal, such as a display string compared against an integer channel id.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">python_version</span> <span class="pre">=</span> <span class="pre">3.12</span></code> — fixes the language and standard-library level mypy checks
+against. Without it mypy assumes whatever interpreter happens to run it, so a
+contributor on a newer Python could see a different verdict from CI. Only
+<code class="docutils literal notranslate"><span class="pre">MAJOR.MINOR</span></code> is valid here; the patch-level floor is <code class="docutils literal notranslate"><span class="pre">requires-python</span></code> in
+<code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>, which is a separate concern.</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If you are adding a plugin, the simplest and most reliable way to annotate its
+methods is to <strong>copy the signature from the ``Meta*`` base class verbatim</strong>, rather
+than inferring types from your implementation. The compliance test in
+<a class="reference internal" href="#plugin-compliance-testing"><span class="std std-ref">Test Suite Configuration</span></a> compares your override against the base, and for
+generic types such as <code class="docutils literal notranslate"><span class="pre">List[str]</span></code> it compares them by <em>equality</em> — so a
+reasonable-looking widening of the base’s type will fail it.</p>
+</div>
+</section>
+<section id="test-suite-configuration">
+<span id="plugin-compliance-testing"></span><h2>Test Suite Configuration<a class="headerlink" href="#test-suite-configuration" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">pytest.ini</span></code> is the only pytest configuration in the repository. Two settings there are
+worth knowing about before you add tests:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">timeout</span> <span class="pre">=</span> <span class="pre">300</span></code> — a per-test backstop in seconds, supplied by <code class="docutils literal notranslate"><span class="pre">pytest-timeout</span></code>. It
+exists because a hung Qt test otherwise runs to GitHub Actions’ six-hour job limit. It
+is not a performance budget: the slowest unit test measures about 1.4 seconds, and the
+explicit <code class="docutils literal notranslate"><span class="pre">&#64;pytest.mark.timeout</span></code> markers under <code class="docutils literal notranslate"><span class="pre">tests/e2e/</span></code> and
+<code class="docutils literal notranslate"><span class="pre">tests/integration/</span></code> are all 90 seconds or less and still override the default. <strong>If
+your test trips this value, that is a finding about the test, not a reason to raise
+the number.</strong></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--strict-markers</span></code> — an unregistered marker name is a collection error rather than an
+expression that matches nothing. Register any new marker in the <code class="docutils literal notranslate"><span class="pre">markers</span></code> list.</p></li>
+</ul>
+<p>Coverage is measured with <code class="docutils literal notranslate"><span class="pre">pytest-cov</span></code>, which is declared in the <code class="docutils literal notranslate"><span class="pre">[dev]</span></code> extra but is
+<strong>not</strong> wired into <code class="docutils literal notranslate"><span class="pre">addopts</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pytest<span class="w"> </span>--cov<span class="o">=</span>poriscope<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
+</pre></div>
+</div>
+<p>Run it deliberately when you want the number. The plain <code class="docutils literal notranslate"><span class="pre">pytest</span></code> invocation is the
+pre-commit gate and stays free of coverage instrumentation. <code class="docutils literal notranslate"><span class="pre">ci-internal-pr.yml</span></code> runs
+the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
+drop, so treat it as information rather than a gate.</p>
+</section>
+<section id="plugin-interface-compliance-testing">
+<h2>Plugin Interface Compliance Testing<a class="headerlink" href="#plugin-interface-compliance-testing" title="Link to this heading">¶</a></h2>
+<p>Recall from <a class="reference internal" href="../plugin_development/where_to_begin/understanding_base_classes.html#understanding-base-classes"><span class="std std-ref">understanding base classes</span></a> that every
+<code class="docutils literal notranslate"><span class="pre">MetaXXXX</span></code> base class is a blueprint: it defines exactly which methods a plugin
+<em>must</em> implement, with which arguments, in which order, and returning what type.
+Writing a plugin that follows the blueprint isn’t optional — it’s how Poriscope’s GUI
+and scripting layer both know how to talk to your plugin without any extra
+configuration.</p>
+<p>Continuing that analogy: if the base class is the blueprint, then
+<code class="docutils literal notranslate"><span class="pre">tests/unit/plugins/test_plugin_compliance.py</span></code> is the building inspector. It doesn’t
+care about interior decorating (that’s your algorithm’s business) — it walks through
+every plugin in the codebase and checks that the load-bearing structure the blueprint
+demanded is actually there.</p>
+<p>Concretely, this test:</p>
+<ol class="arabic simple">
+<li><p>recursively imports every module under <code class="docutils literal notranslate"><span class="pre">poriscope.plugins</span></code> so that every plugin
+class actually gets loaded,</p></li>
+<li><p>finds every concrete subclass of each <code class="docutils literal notranslate"><span class="pre">Meta*</span></code>/<code class="docutils literal notranslate"><span class="pre">BaseDataPlugin</span></code> base,</p></li>
+<li><p>checks that each one implements every method its base class marks as
+<code class="docutils literal notranslate"><span class="pre">&#64;abstractmethod</span></code>,</p></li>
+<li><p>checks that overridden methods keep the same argument names, the same argument
+order, and (where type hints are present) a compatible type signature.</p></li>
+</ol>
+<p>Run it locally with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pytest<span class="w"> </span>tests/unit/plugins/test_plugin_compliance.py
+</pre></div>
+</div>
+<p>This is exactly the test referred to in <a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/index.html#build-data-plugin"><span class="std std-ref">Ready to Build Your Own Data Plugin?</span></a> and
+<a class="reference internal" href="../plugin_development/frontend_plugin/ready_to_build/index.html#build-frontend-plugin"><span class="std std-ref">Ready to Build Your Own Plugin?</span></a> when they say a contribution must “pass our tests and
+type checks” — <strong>a plugin cannot be merged if this test fails against it</strong>, no matter
+how good the underlying science is.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>If you’re building a new plugin, don’t wait until you’re “done” to run this test.
+Stub out the required methods first (even with just <code class="docutils literal notranslate"><span class="pre">pass</span></code> in the body), run the
+test, and fix any interface mismatches immediately. It is much cheaper to fix a
+wrong argument name before you’ve written 200 lines of logic around it than after.</p>
+</div>
+</section>
+<section id="settings-schema-checking">
+<span id="id1"></span><h2>Settings-Schema Checking<a class="headerlink" href="#settings-schema-checking" title="Link to this heading">¶</a></h2>
+<p>Interface compliance above checks the <em>methods</em> your plugin implements. A separate check
+covers the <em>settings schema</em> it declares — the dict your <code class="docutils literal notranslate"><span class="pre">get_empty_settings()</span></code> returns,
+where each parameter carries a <code class="docutils literal notranslate"><span class="pre">Type</span></code> and optionally a <code class="docutils literal notranslate"><span class="pre">Value</span></code>, <code class="docutils literal notranslate"><span class="pre">Options</span></code>, <code class="docutils literal notranslate"><span class="pre">Min</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Max</span></code> and <code class="docutils literal notranslate"><span class="pre">Units</span></code>.</p>
+<p>The reason this needs its own check is that nothing else looks at the schema until a user
+tries to use your plugin. <code class="docutils literal notranslate"><span class="pre">BaseDataPlugin</span></code> validates a <em>supplied</em> settings dict at
+instantiation, so a contradiction baked into the schema itself — a <code class="docutils literal notranslate"><span class="pre">Min</span></code> above its
+<code class="docutils literal notranslate"><span class="pre">Max</span></code>, an <code class="docutils literal notranslate"><span class="pre">Options</span></code> list whose entries are not of the declared <code class="docutils literal notranslate"><span class="pre">Type</span></code>, a default that
+is not among its own <code class="docutils literal notranslate"><span class="pre">Options</span></code> — surfaces as a <code class="docutils literal notranslate"><span class="pre">TypeError</span></code> or <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> raised
+from inside the base class, with nothing pointing at your schema as the cause.</p>
+<p>The single most common version of this, and the one that caught real plugins in the
+codebase when the check was introduced, is declaring <code class="docutils literal notranslate"><span class="pre">&quot;Type&quot;:</span> <span class="pre">float</span></code> and then writing an
+int default:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">settings</span><span class="p">[</span><span class="s2">"Min Height"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"Type"</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="s2">"Value"</span><span class="p">:</span> <span class="mi">500</span><span class="p">}</span>     <span class="c1"># wrong</span>
+<span class="n">settings</span><span class="p">[</span><span class="s2">"Min Height"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"Type"</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="s2">"Value"</span><span class="p">:</span> <span class="mf">500.0</span><span class="p">}</span>   <span class="c1"># right</span>
+</pre></div>
+</div>
+<p>The runtime check is a bare <code class="docutils literal notranslate"><span class="pre">isinstance</span></code>, and <code class="docutils literal notranslate"><span class="pre">isinstance(500,</span> <span class="pre">float)</span></code> is <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p>
+<p>Run the check over every plugin, or just yours:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/check_plugin_schemas.py
+python<span class="w"> </span>scripts/check_plugin_schemas.py<span class="w"> </span>MyEventFinder
+</pre></div>
+</div>
+<p>It is also part of the normal test suite, as
+<code class="docutils literal notranslate"><span class="pre">tests/unit/plugins/test_plugin_settings_schema.py</span></code>, so CI enforces it whether or not
+you run the script. To call the check on a schema directly — from your own test, say —
+use <code class="docutils literal notranslate"><span class="pre">poriscope.utils.settings_schema.validate_settings_schema()</span></code>, which takes a schema
+and returns a list of human-readable problems.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Omitting <code class="docutils literal notranslate"><span class="pre">Value</span></code> entirely is fine and means the same as <code class="docutils literal notranslate"><span class="pre">Value:</span> <span class="pre">None</span></code>: no default,
+the user must supply one. Most shipped readers do exactly this. What is <em>not</em> fine is
+supplying a <code class="docutils literal notranslate"><span class="pre">Value</span></code> that contradicts the <code class="docutils literal notranslate"><span class="pre">Type</span></code> beside it.</p>
+</div>
+</section>
+<section id="pre-pull-request-compliance-checklist">
+<span id="pre-pr-checklist"></span><h2>Pre-Pull-Request Compliance Checklist<a class="headerlink" href="#pre-pull-request-compliance-checklist" title="Link to this heading">¶</a></h2>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>This is the section to bookmark. Before opening or updating a pull request —
+especially one adding a new data plugin or frontend plugin family — walk through
+these steps in order. They mirror exactly what CI will check, so a clean run here
+means CI should pass too, and a maintainer won’t send your PR back with something
+you could have caught yourself in thirty seconds.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>If you are <em>starting</em> a data plugin rather than finishing one, generate it with
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/new_plugin.py</span></code> — see <a class="reference internal" href="../plugin_development/backend_plugin/ready_to_build/index.html#new-plugin-script"><span class="std std-ref">Start From a Generated Skeleton</span></a>. Every step below
+passes against the generated skeleton before you have written any of your own code,
+which means the first failure you see is one you actually caused. Getting a signature
+or a docstring field wrong by hand is by far the most common reason a first plugin PR
+comes back, and the generator copies both verbatim out of the base class.</p>
+</div>
+<p>☐ <strong>1. Apply automatic formatting and safe fixes.</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files<span class="w"> </span>--hook-stage<span class="w"> </span>manual
+</pre></div>
+</div>
+<p>This runs <code class="docutils literal notranslate"><span class="pre">black</span></code> and <code class="docutils literal notranslate"><span class="pre">ruff</span> <span class="pre">--fix</span></code> and may modify your files. Review the diff,
+then stage the changes.</p>
+<p>☐ <strong>2. Run strict validation.</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
+</pre></div>
+</div>
+<p>This runs <code class="docutils literal notranslate"><span class="pre">ruff</span></code> (strict), <code class="docutils literal notranslate"><span class="pre">mypy</span></code>, <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code>, and <code class="docutils literal notranslate"><span class="pre">check-added-large-files</span></code>.
+Nothing here is auto-fixed for you — if <code class="docutils literal notranslate"><span class="pre">mypy</span></code> or <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> report a problem,
+you need to edit the code or docstring yourself. See <a class="reference internal" href="#docstring-consistency"><span class="std std-ref">Docstring and Signature Consistency (pydoclint)</span></a>
+above if a pydoclint failure doesn’t make sense, and <a class="reference internal" href="#type-checking-policy"><span class="std std-ref">Type Annotation Policy (mypy)</span></a> for
+what mypy expects of new code.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Neither failure can be waived. There is no baseline left for <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code> to
+forgive a new violation with, and the <code class="docutils literal notranslate"><span class="pre">mypy</span></code> annotation flags are on, so an
+unannotated function you add will fail here even though it would once have been
+skipped.</p>
+</div>
+<p>☐ <strong>3. If you added or modified a plugin (or a ``Meta*`` base class), run the plugin
+compliance suite and the settings-schema check.</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pytest<span class="w"> </span>tests/unit/plugins/test_plugin_compliance.py
+python<span class="w"> </span>scripts/check_plugin_schemas.py
+</pre></div>
+</div>
+<p>See <a class="reference internal" href="#plugin-compliance-testing"><span class="std std-ref">Test Suite Configuration</span></a> and <a class="reference internal" href="#settings-schema-checking"><span class="std std-ref">Settings-Schema Checking</span></a> above for what
+these actually check. The first covers the methods your plugin implements, the second the
+settings schema it declares; they catch different mistakes.</p>
+<p>☐ <strong>4. Run the test suite</strong> — the same suite continuous integration runs on every
+branch push:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pytest
+</pre></div>
+</div>
+<p>There is no subset and no marker filter, at under 10 minutes, e2e tests are worth their cost. CI runs the whole suite everywhere, e2e
+tests included.</p>
+<p>For per-marker counts and mean
+durations, run <code class="docutils literal notranslate"><span class="pre">pytest</span> <span class="pre">--marker-stats</span></code>.</p>
+<p>☐ <strong>5. Check that the documentation still renders.</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/generate_all_autodoc_rst.py
+sphinx-build<span class="w"> </span>-W<span class="w"> </span>--keep-going<span class="w"> </span>-b<span class="w"> </span>html<span class="w"> </span>docs/source<span class="w"> </span>docs/build
+</pre></div>
+</div>
+<p>Warnings are errors here, and the same build runs on your pull request. See
+<a class="reference internal" href="#docs-render-check"><span class="std std-ref">Checking That the Documentation Still Renders</span></a> above for why this is a separate gate from <code class="docutils literal notranslate"><span class="pre">pydoclint</span></code>.</p>
+<p>☐ <strong>6. Update the changelog.</strong></p>
+<p>Add a plain-language entry to <code class="docutils literal notranslate"><span class="pre">changelog.md</span></code> describing what changed, under the
+appropriate existing heading — <strong>one line per change, and no more</strong>. The changelog is
+written for users, so it carries the essential user-facing information and nothing else:
+no sub-bullets, no measurements, and no explanation of why the change was made or what was
+rejected along the way. A breaking change is still called out explicitly as breaking,
+because that <em>is</em> user-facing. Reasoning that needs preserving belongs in <code class="docutils literal notranslate"><span class="pre">DECISIONS.md</span></code>
+instead.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>If you are contributing from a fork</strong> (the typical path for an external/
+community contribution), steps 1–5 above must be completed <em>before you push</em>.
+Fork-originated pull requests run in a restricted, read-only CI workflow that
+performs strict validation and the full test suite — it deliberately cannot
+auto-fix formatting or push corrections back to your branch, for security reasons.
+If you skip step 1 or 2 locally, CI will simply fail on something a maintainer has
+no way to fix for you, and you’ll need to push a follow-up commit anyway.</p>
+</div>
+<p>Once all six boxes are checked, you’re ready to open (or re-request review on) your
+pull request.</p>
+</section>
+<section id="summary-for-new-developers">
+<h2>Summary for New Developers<a class="headerlink" href="#summary-for-new-developers" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Pre-commit enforces consistent, high-quality code</p></li>
+<li><p>Hooks run automatically on commit</p></li>
+<li><p>GitHub Desktop enforces the same rules</p></li>
+<li><p>Most formatting and lint issues are auto-fixable</p></li>
+<li><p>Mypy and pydoclint issues must be resolved manually — neither has a baseline or
+waiver left to fall back on</p></li>
+<li><p>All new code under <code class="docutils literal notranslate"><span class="pre">poriscope/</span></code> must carry type hints; see
+<a class="reference internal" href="#type-checking-policy"><span class="std std-ref">Type Annotation Policy (mypy)</span></a></p></li>
+<li><p>New or modified plugins must also pass <code class="docutils literal notranslate"><span class="pre">test_plugin_compliance.py</span></code> — see
+<a class="reference internal" href="#plugin-compliance-testing"><span class="std std-ref">Test Suite Configuration</span></a></p></li>
+<li><p>Docstrings must render, not just describe the right parameters — every pull request
+rebuilds the docs with warnings as errors; see <a class="reference internal" href="#docs-render-check"><span class="std std-ref">Checking That the Documentation Still Renders</span></a></p></li>
+<li><p>Before opening a pull request, work through <a class="reference internal" href="#pre-pr-checklist"><span class="std std-ref">Pre-Pull-Request Compliance Checklist</span></a> in full</p></li>
+</ul>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="post_merge_automation.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Post-merge Automation</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="developer_setup.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Developer Setup and Hook Installation</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Kyle Briggs, Carolina González G.
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Quality Control and Developer Workflow</a><ul>
+<li><a class="reference internal" href="#overview-of-quality-controls">Overview of Quality Controls</a></li>
+<li><a class="reference internal" href="#pre-commit-hooks-validation">Pre-commit Hooks (Validation)</a></li>
+<li><a class="reference internal" href="#automatic-formatting-and-auto-fixes">Automatic Formatting and Auto-fixes</a></li>
+<li><a class="reference internal" href="#installing-pre-commit">Installing Pre-commit</a><ul>
+<li><a class="reference internal" href="#automatic-installation-recommended">Automatic installation (recommended)</a></li>
+<li><a class="reference internal" href="#manual-installation-fallback">Manual installation (fallback)</a></li>
+<li><a class="reference internal" href="#verification">Verification</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#using-github-desktop">Using GitHub Desktop</a><ul>
+<li><a class="reference internal" href="#verifying-hook-enforcement">Verifying Hook Enforcement</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#running-quality-checks-manually">Running Quality Checks Manually</a></li>
+<li><a class="reference internal" href="#checking-that-the-documentation-still-renders">Checking That the Documentation Still Renders</a></li>
+<li><a class="reference internal" href="#running-auto-fix-hooks-manually">Running Auto-fix Hooks Manually</a></li>
+<li><a class="reference internal" href="#plugin-code-runs-on-your-machine">Plugin Code Runs on Your Machine</a></li>
+<li><a class="reference internal" href="#skipping-hooks-advanced-use-only">Skipping Hooks (Advanced Use Only)</a></li>
+<li><a class="reference internal" href="#docstring-and-signature-consistency-pydoclint">Docstring and Signature Consistency (pydoclint)</a><ul>
+<li><a class="reference internal" href="#running-it-locally">Running it locally</a></li>
+<li><a class="reference internal" href="#why-is-there-a-baseline-file">Why is there a “baseline” file?</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#type-annotation-policy-mypy">Type Annotation Policy (mypy)</a></li>
+<li><a class="reference internal" href="#test-suite-configuration">Test Suite Configuration</a></li>
+<li><a class="reference internal" href="#plugin-interface-compliance-testing">Plugin Interface Compliance Testing</a></li>
+<li><a class="reference internal" href="#settings-schema-checking">Settings-Schema Checking</a></li>
+<li><a class="reference internal" href="#pre-pull-request-compliance-checklist">Pre-Pull-Request Compliance Checklist</a></li>
+<li><a class="reference internal" href="#summary-for-new-developers">Summary for New Developers</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../../../_static/documentation_options.js?v=c4cb232b"></script>
+    <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>
