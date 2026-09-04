@@ -33,6 +33,7 @@ from poriscope.utils.LogDecorator import log
 
 class Worker(QObject):
     update_progressbar = Signal(float, str)
+    add_text_to_display = Signal(str, str)
     stop_signal = Signal()
     logger = logging.getLogger(__name__)
 
@@ -71,10 +72,22 @@ class Worker(QObject):
         in this loop is what allowed the bug above - so there is deliberately no per-type
         handling here beyond ``StopIteration``, which is the success path.
 
+        That single arm reports at **WARNING, not ERROR**, and sends the exception's message to
+        the ``add_text_to_display`` panel. A generator has no way to tell a routine empty result
+        from a real failure without the per-type handling this loop must not grow, and the
+        routine cases are common: a subset filter matching no events, a channel with nothing in
+        it. ``QtHandler`` raises ERROR records as modal dialogs, so reporting at ERROR met a
+        user's ordinary empty filter with a traceback dialog framed as a worker crash. The
+        traceback still reaches the console and the log file via ``exc_info``; what the user
+        gets is one sentence on the panel, which is where this application tells rather than
+        interrupts. The cost, accepted deliberately: a genuine failure no longer interrupts
+        either.
+
         Every exit arm emits a completion value for the progress bar explicitly rather than
-        relying on the ``finally`` in :py:meth:`run`, and does so *before* logging the failure:
-        the progress-bar teardown travels on a queued connection while an ERROR record raises a
-        modal dialog, so emitting first is what stops the bar being stranded behind that dialog.
+        relying on the ``finally`` in :py:meth:`run`, and does so before reporting the failure.
+        That ordering originally existed because an ERROR record raised a modal dialog and the
+        queued progress-bar teardown would be stranded behind it; it is kept because emitting
+        completion before anything that can block remains the safer order.
         """
         identifier = f"{self.key}/{self.channel}"
         p: float = 0
@@ -94,9 +107,11 @@ class Worker(QObject):
                 break
             except Exception as e:
                 self.update_progressbar.emit(100, identifier)
-                self.logger.exception(
-                    f"Worker [{identifier}] failed after {'0' if not started else 'at least one'} "
-                    f"generator step: {repr(e)}"
+                self.add_text_to_display.emit(f"{self.key}: {e}", identifier)
+                self.logger.warning(
+                    f"Worker [{identifier}] stopped after {'0' if not started else 'at least one'} "
+                    f"generator step: {repr(e)}",
+                    exc_info=True,
                 )
                 break
             else:

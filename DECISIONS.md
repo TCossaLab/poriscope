@@ -10,6 +10,39 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-04 - Worker generator failures report at WARNING on the panel, not as dialogs
+
+**Context.** `EventWorker.process_generator` funnels every exception from a plugin generator
+through one `except Exception` arm - deliberately, because per-type handling in that loop is
+what let a failed analysis be logged as a successful finish. That arm logged at ERROR with a
+traceback, and `QtHandler` is attached to the root logger at ERROR, so it raised a modal
+dialog. Exporting a subset whose filter matched no events therefore met the user with a
+traceback dialog framed as `Worker [...] failed`, for an ordinary empty result.
+
+**Decision.** The arm reports at **WARNING** and sends the exception's message to the
+`add_text_to_display` panel, via a new `Worker.add_text_to_display` signal relayed by
+`MetaModel.emit_text_to_display`. The traceback still reaches the console and the log file
+through `exc_info=True`.
+
+**Why not special-case the empty result.** A generator cannot signal "nothing matched" versus
+"this failed" without the per-type handling that loop must not grow, and data plugins are
+plain ABCs with no Qt signals, so the loader cannot post to the panel itself. Telling them
+apart at the raise site would have needed a new public counting method on
+`MetaDatabaseLoader` for the View to call first - a contract change every database loader and
+the plugin-compliance test would see, to fix a message.
+
+**The accepted cost.** *Every* worker generator failure now reports this way, not just the
+empty ones: a corrupt database, a permission error writing the CSVs or a full disk becomes a
+panel line rather than an interruption. Taken deliberately, on the grounds that `QtHandler`'s
+own policy is that the user should be told on the panel rather than interrupted, and that a
+traceback dialog is developer-facing. The log file keeps the full diagnosis either way.
+
+**Revisit** if a failure class turns up that the user must not be allowed to miss. The fix
+then is for that plugin to report it at ERROR itself, before raising - not to reintroduce
+per-type handling in the worker loop.
+
+---
+
 ## 2026-09-04 - A failed database query keeps returning None rather than raising
 
 **Context.** `_load_metadata`, `load_metadata` and `query_database_directly` all used `None`
