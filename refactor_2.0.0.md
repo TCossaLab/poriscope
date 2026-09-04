@@ -606,3 +606,10 @@ Full `pytest` green before every commit, no path arguments and no marker filter.
 `pre-commit run --all-files` is the mypy gate. **Manual Windows pass** driving all five tabs
 through the walkthrough plus the multiselect popup path — CI is Linux under Xvfb and
 `DECISIONS.md` records that path as structurally unexercisable there.
+
+**Baseline manual pass: run 2026-09-04, all clear.** All five tabs through the walkthrough; the
+column and filter multiselect popups on both Metadata and Protein (open, select, deselect,
+select-all, dismiss on an outside click, reopen with the selection intact); and no widget
+outliving the app on close. That is the pre-refactor baseline, so a later failure is
+attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
+five controls widgets, and after 3f, which moves the walkthrough modules.
