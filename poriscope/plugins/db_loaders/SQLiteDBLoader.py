@@ -826,7 +826,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
 
-        :return: A dataframe containing the requested event data as columns or None on failure
+        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows, or None if the query could not be run
         :rtype: Optional[pd.DataFrame]
         """
         conn = None
@@ -836,13 +836,17 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             cursor = conn.cursor()
             cursor.execute(query)
             result = cursor.fetchall()
-            if result:
-                column_names = [description[0] for description in cursor.description]
-                return pd.DataFrame(result, columns=column_names)
-            else:
-                return None
+            # A query that matched nothing returns an empty frame, not None, so
+            # that callers can tell "no rows" from "the query failed" - None is
+            # reserved for the latter.
+            column_names = (
+                [description[0] for description in cursor.description]
+                if cursor.description
+                else []
+            )
+            return pd.DataFrame(result, columns=column_names)
         except sqlite3.Error as e:
-            self.logger.warning(f"Database error executing query {query}: {e}")
+            self.logger.error(f"Database error executing query {query}: {e}")
             return None
         finally:
             if cursor:

@@ -60,6 +60,27 @@ def view(qt_app):
 # ===========================================================================
 
 
+def _answer_load_metadata(view, plot_data):
+    """
+    Connect a stand-in for the signal bus that answers a load_metadata call.
+
+    _load_metadata_and_cluster clears plot_data before emitting and reads it
+    back on the next statement, so that a dispatch which never returns cannot
+    be mistaken for a successful one. A test therefore has to answer the emit
+    the way main_controller._dispatch_to does - by calling the named return
+    function - rather than pre-assigning the attribute and relying on the emit
+    being a no-op.
+    """
+
+    def _dispatch(metaclass, key, call_function, call_args, return_function, ret_args):
+        if call_function == "load_metadata":
+            view.update_plot_data(plot_data)
+
+    view.global_signal.connect(_dispatch)
+    # Held so the connection outlives this call for the rest of the test.
+    view._test_bus = _dispatch
+
+
 def _make_df(*cols):
     """Small DataFrame with the given column names (float data)."""
     rng = np.random.default_rng(42)
@@ -454,7 +475,7 @@ class TestLoadMetadataAndCluster:
     def test_missing_column_raises(self, view):
         config = self._config_hdbscan()
         view.query = "SELECT * FROM events"
-        view.plot_data = pd.DataFrame({"other": [1.0], "id": [0]})
+        _answer_load_metadata(view, pd.DataFrame({"other": [1.0], "id": [0]}))
         with pytest.raises(KeyError):
             view._load_metadata_and_cluster(config, "loader1")
 
@@ -463,8 +484,11 @@ class TestLoadMetadataAndCluster:
         config["method_params"]["HDBSCAN_Cluster_Size_input"] = "not_a_number"
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(0)
-        view.plot_data = pd.DataFrame(
-            {"duration": rng.random(50), "current": rng.random(50), "id": range(50)}
+        _answer_load_metadata(
+            view,
+            pd.DataFrame(
+                {"duration": rng.random(50), "current": rng.random(50), "id": range(50)}
+            ),
         )
         with pytest.raises(ValueError, match="parameters"):
             view._load_metadata_and_cluster(config, "loader1")
@@ -473,12 +497,15 @@ class TestLoadMetadataAndCluster:
         config = self._config_hdbscan()
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(42)
-        view.plot_data = pd.DataFrame(
-            {
-                "duration": rng.random(100),
-                "current": rng.random(100),
-                "id": np.arange(100),
-            }
+        _answer_load_metadata(
+            view,
+            pd.DataFrame(
+                {
+                    "duration": rng.random(100),
+                    "current": rng.random(100),
+                    "id": np.arange(100),
+                }
+            ),
         )
         result = view._load_metadata_and_cluster(config, "loader1")
         assert len(result) == 7
@@ -498,8 +525,8 @@ class TestLoadMetadataAndCluster:
         }
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(1)
-        view.plot_data = pd.DataFrame(
-            {"a": rng.random(50), "b": rng.random(50), "id": range(50)}
+        _answer_load_metadata(
+            view, pd.DataFrame({"a": rng.random(50), "b": rng.random(50), "id": range(50)})
         )
         with pytest.raises(ValueError, match="parameters"):
             view._load_metadata_and_cluster(config, "loader1")
@@ -516,8 +543,8 @@ class TestLoadMetadataAndCluster:
         }
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(7)
-        view.plot_data = pd.DataFrame(
-            {"a": rng.random(60), "b": rng.random(60), "id": range(60)}
+        _answer_load_metadata(
+            view, pd.DataFrame({"a": rng.random(60), "b": rng.random(60), "id": range(60)})
         )
         df, labels, probs, logs, norm, units, plot = view._load_metadata_and_cluster(
             config, "loader1"

@@ -590,6 +590,9 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 "Unable to generate metadata query, double check your solumn selections"
             )
 
+        # Cleared first: a dispatch that fails never calls update_plot_data, so
+        # without this the guard below would cluster the previous run's rows.
+        self.plot_data = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -599,7 +602,10 @@ class ClusteringView(MetaView, WalkthroughMixin):
             (),
         )
 
-        if self.plot_data is None:
+        # .empty as well as None: the loader now returns an empty frame for a
+        # query that matched nothing, and clustering an empty frame raises an
+        # opaque error from deep inside sklearn.
+        if self.plot_data is None or self.plot_data.empty:
             raise ValueError("No data matches the given query")
 
         if not all(col in self.plot_data.columns for col in columns):
