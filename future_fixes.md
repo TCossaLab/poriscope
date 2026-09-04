@@ -280,17 +280,19 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
 
-- **`ProteinView` has no `update_column_units`, but `ProteinController.py:291` calls it.**
+- **`ProteinView` has no `update_column_units`, but `ProteinController.py:290` calls it**, and
+  `ProteinView.py:3508` also names it as a bus return function.
   Not inherited from `MetaView` either; the `AttributeError` is swallowed by
   `main_controller._dispatch_to`, so protein-tab unit labels silently never update. The other
   four tabs either define the method or use `set_units`.
-- **`MetaDatabaseLoader.export_subset_to_csv:579` assumes one `data` row per event id.**
+- **`MetaDatabaseLoader.export_subset_to_csv:605` assumes one `data` row per event id.**
   `data["filename"] = filenames` raises a length mismatch if the `data` table holds rows for
   only some of the selected events. An empty `data` table is now rejected explicitly; a
   partially-populated one is not.
 - **`SQLitePeakDBLoader.get_plot_features:176-178` indexes `result.iloc[1]`** but the guard at
   `:154` only rules out zero rows, so a single-row result raises `IndexError`.
-- **`SQLiteDBLoader._load_metadata_generator:884` returns bare on `sqlite3.Error`**, which
+- **`SQLiteDBLoader._load_metadata_generator:886` returns bare on `sqlite3.Error`** (method at
+  `:859`), which
   inside a generator is an ordinary `StopIteration` and so is indistinguishable from
   exhaustion. Same conflation the `None`-sentinel split fixed for `_load_metadata`
   (2026-09-04), but a generator needs its own contract.
