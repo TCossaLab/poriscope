@@ -10,6 +10,67 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-04 - A failed database query keeps returning None rather than raising
+
+**Context.** `_load_metadata`, `load_metadata` and `query_database_directly` all used `None`
+for both "the query matched no rows" and "the query could not be run", which made a
+legitimately-empty table indistinguishable from a failure (subset export rejected an event
+with no sublevels as "Failed to load sublevels data"). Splitting the two could have been done
+either way round: empty frame for no rows and `None` kept for failure, or empty frame for no
+rows and an exception for failure.
+
+**Decision.** No-rows returns an empty DataFrame; **failure keeps returning `None`**, and the
+annotations that claimed `-> pd.DataFrame` are corrected to `Optional[pd.DataFrame]`.
+
+**Evidence.** `main_controller._dispatch_to` catches every exception a bus call raises, logs
+it, and returns *without invoking the return function*. Because the analysis tabs read the
+result off an attribute on the statement after `.emit()`, a raising loader would leave that
+attribute holding the previous call's value and the caller's `is None` guard would read stale
+data as this call's answer - strictly worse than the conflation being fixed. Twelve emit sites
+have no `try/except` at all, so an exception would also escape into a Qt slot.
+
+**Revisit** when the emit-then-read pattern is gone (Step 4a of the 2.0.0 refactor converts
+the 77 emits to Controller-mediated calls). Once results are returned rather than read off an
+attribute, raising on failure becomes the better contract.
+
+---
+
+## 2026-09-04 - get_column_units' empty-string conflation is left alone
+
+**Context.** `get_column_units` returns `""` both when a column's `units` field is NULL and
+when the column does not exist, and `None` only when the query itself failed
+(`SQLiteDBLoader.py:316-323`). It was listed alongside the `None`-sentinel conflation in the
+2.0.0 plan's Tier A.
+
+**Decision.** Not fixed. It is inert: every consumer erases the distinction anyway -
+`metadatacontrols.update_column_units_label` collapses `None` and `""` to a single space for
+display, and `ClusteringController` drops both on a falsy test. No golden file can
+distinguish the two cases, which is the only reason Tier A exists.
+
+**Revisit** if a caller ever needs to tell "this column has no units" from "there is no such
+column" - at which point the fix is a distinct sentinel, and note that two tests pin both
+cases to `""` and `docs/source/signals/global_signal/overview.rst` uses this method as its
+worked example of a one-argument bus call.
+
+---
+
+## 2026-09-04 - TimeRangeValidator is right to refuse a comma after "0-0"
+
+**Context.** `TimeRangeValidator` splits on "," before filtering empty segments and then
+tests `len(parts) > 1` to enforce that `0-0` appears alone, so typing a trailing comma after
+`0-0` is rejected. The 2.0.0 plan recorded this as a defect ("the legal trailing comma in
+`0-0,` is wrongly rejected").
+
+**Decision.** Correct as it stands; changed nothing. `0-0` means the whole file and cannot
+legally be combined with any other range, so no input that could follow the comma would ever
+validate. And because this is a `QValidator` on a `QLineEdit`, `Invalid` refuses the keystroke
+outright rather than merely disabling OK - which is the clearest possible feedback that the
+range being typed cannot be extended.
+
+**Revisit** only if `0-0` stops meaning "the whole file".
+
+---
+
 ## 2026-09-04 - The mypy version skew is the cause of the "two disagree wildly" phenomenon
 
 **Context.** `CLAUDE.md` has long warned that `pre-commit run mypy` and a bare

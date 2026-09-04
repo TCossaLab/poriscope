@@ -1,5 +1,17 @@
 ## Poriscope 1.9.0: in progress
 
+* **Fixed a time range with no end silently finding no events**: a range like `3.0-` was accepted by the Time Range dialog but then discarded, so event finding ran over no time at all; it now means "from 3 seconds to the end of the signal", as an end of `0` always has
+
+* **Fixed the event finder channel list failing permanently** if it could not be read the first time, which then made Find Events fail for every channel of that plugin
+
+* Gaussian Mixtures clustering and the protein tab's shape ensemble are now seeded, so re-running either on the same data gives the same answer instead of a slightly different one each time
+
+* **Fixed subset export failing on a subset with no fitted sublevels**, which was reported as "Failed to load sublevels data" rather than exporting an empty sublevels table
+
+* **Fixed a metadata plot or clustering run silently reusing the previous subset's rows** when the database call behind it failed, instead of reporting that the subset returned nothing
+
+* A metadata query that matches no rows is now reported as an empty result rather than as a failed query
+
 * **Fixed a clean `pip install poriscope` failing on import**: `typing_extensions` was imported by 38 modules but declared as a dependency nowhere; the native `typing.override` replaces it everywhere, including in newly generated plugins
 
 * Test coverage is measured again: `pytest-cov` was declared in no dependency source, so the pull-request workflow's test step failed outright instead of running

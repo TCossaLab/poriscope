@@ -397,7 +397,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
                     f"SELECT id FROM experiments WHERE name = '{escaped_name}' LIMIT 1"
                 )
                 result = self.query_database_directly(query)
-                if result is not None:
+                if result is not None and not result.empty:
                     return result.at[0, "id"]
                 else:
                     return None
@@ -566,6 +566,8 @@ class MetaDatabaseLoader(BaseDataPlugin):
         data = self.query_database_directly(data_query)
         if data is None:
             raise ValueError("Failed to load data table.")
+        if data.empty:
+            raise ValueError("No rows in the data table for the selected events.")
 
         append = f"{subset_name}_" if subset_name else ""
 
@@ -1145,14 +1147,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
     def load_metadata_raw(
         self,
         conditions: Optional[str] = None,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """
         Execute a raw SQL query directly, bypassing all query construction.
 
         :param conditions: A complete SQL query string.
         :type conditions: Optional[str]
-        :return: pandas dataframe containing retrieved data
-        :rtype: pd.DataFrame
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query failed or did not validate
+        :rtype: Optional[pd.DataFrame]
         """
         if not conditions:
             return self.query_database_directly("SELECT * FROM events")
@@ -1164,7 +1166,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         columns: List[str],
         conditions: Optional[str] = None,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]] = None,
-    ) -> pd.DataFrame:
+    ) -> Optional[pd.DataFrame]:
         """
         Fetch specified columns from the metadata database given a query
 
@@ -1176,8 +1178,8 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :type conditions: Optional[str]
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: pandas dataframe containing retrieved data
-        :rtype: pd.DataFrame
+        :return: pandas dataframe containing retrieved data, empty if the query matched no rows, or None if the query could not be built or run
+        :rtype: Optional[pd.DataFrame]
         """
         query, debug, table = self.construct_metadata_query(
             columns, conditions, experiments_and_channels
@@ -1295,24 +1297,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
         valid, debug = self.validate_filter_query(query)
         if valid and not debug:
             metadata_generator = self._load_metadata_generator(query)
-            if metadata_generator is not None:
-                abort = False
-                try:
-                    for event in metadata_generator:
-                        event = event.loc[:, ~event.columns.duplicated()]
-                        abort = yield event
-                        abort = bool(abort)
-                        if abort is True:
-                            break
-                finally:
-                    metadata_generator.close()
-                if abort is True:
-                    self.logger.info("Generator aborted")
-                    return
-            else:
-                self.logger.warning(
-                    "Unable to get events from subset generator that returned None"
-                )
+            abort = False
+            try:
+                for event in metadata_generator:
+                    event = event.loc[:, ~event.columns.duplicated()]
+                    abort = yield event
+                    abort = bool(abort)
+                    if abort is True:
+                        break
+            finally:
+                metadata_generator.close()
+            if abort is True:
+                self.logger.info("Generator aborted")
                 return
         else:
             self.logger.warning(
@@ -1332,13 +1328,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
     @abstractmethod
     def _load_metadata(self, query: str) -> Optional[pd.DataFrame]:
         """
-        **Purpose:** Load and return the data specified by a valid SQL query, or None on failure
+        **Purpose:** Load and return the data specified by a valid SQL query, or None if the query could not be run
 
-        The data should be formatted as a pandas Dataframe object
+        The data should be formatted as a pandas Dataframe object. A query that
+        matched no rows must return an empty dataframe rather than None, so that
+        callers can tell an empty result from a failed query.
 
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
-        :return: A dataframe containing the requested event data as columns or None on failure
+        :return: A dataframe containing the requested event data as columns, empty if the query matched no rows, or None if the query could not be run
         :rtype: Optional[pd.DataFrame]
         """
         pass

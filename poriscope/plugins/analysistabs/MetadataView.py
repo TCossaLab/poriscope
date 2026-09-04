@@ -139,6 +139,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
+        # Bus results, written by relay_experiment_id/relay_query_result and read
+        # back by the emitter on the next statement. Declared here so the type is
+        # stated once and the callers' cleared-before-emit assignment type-checks.
+        self.relayed_experiment_id: Optional[int] = None
+        self.relayed_query_result: Optional[pd.DataFrame] = None
         # Heterogeneous by design: the histogram paths append 1-D arrays, the
         # density path appends whole DataFrames, and the all-points path appends
         # (x, y) tuples. Flagged for review.
@@ -1421,6 +1426,12 @@ class MetadataView(MetaView, WalkthroughMixin):
                         if self.query == "":
                             return False
 
+                        # Cleared first: a dispatch that fails never calls
+                        # update_plot_data, so without this the guard below would
+                        # read the previous subset's rows and plot them under this
+                        # subset's label. .empty as well as None because the loader
+                        # returns an empty frame for a query that matched nothing.
+                        self.plot_data = None
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
@@ -1430,7 +1441,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             (),
                         )
 
-                        if self.plot_data is None:
+                        if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
                                 f"No data matching the subset {dataset_label}, skipping",
                                 self.__class__.__name__,
@@ -2051,6 +2062,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         if sql_filter:
             filter_parts.append(sql_filter)
         if exp is not None:
+            # Cleared first: a dispatch that fails never calls
+            # relay_experiment_id, so without this the read below would scope
+            # the query to whichever experiment was resolved last.
+            self.relayed_experiment_id = None
             self.global_signal.emit(
                 "MetaDatabaseLoader",
                 loader,
@@ -2093,6 +2108,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         :rtype: bool
         """
         cache_query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2340,6 +2359,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
         where_parts = [f"event_id IN {id_tuple}"]
 
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_experiment_id = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2355,6 +2378,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 where_parts.append(f"channel_id = {channel}")
 
         db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2584,6 +2611,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_rows, num_cols = self._factors(num_events)
         j = 0
         for i, (event, vlines, hlines, pts, vlabels, hlabels, plabels) in enumerate(
+            # strict: the caller appends to all seven lists once per event, so a
+            # length mismatch is structurally impossible and means the caller is
+            # broken. Silently truncating would instead leave the whole bottom
+            # row of subplots without an x-axis label, since labelnum below is
+            # computed from num_events rather than from the trip count.
             zip(
                 event_data,
                 vertical_lines,
@@ -2592,6 +2624,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 vertical_labels,
                 horizontal_labels,
                 point_labels,
+                strict=True,
             )
         ):
             color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]

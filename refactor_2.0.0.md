@@ -1,7 +1,8 @@
 # Poriscope 2.0.0 Refactor Plan
 
-Approved 2026-09-03. Step 0 and Step 1's Tier C landed 2026-09-04; everything else is
-open. Measurements taken on `develop` at `4fe1618`, re-verified at `fc4fdf7`.
+Approved 2026-09-03. **Step 0 and the whole of Step 1 (Tiers A, B2 and C) landed
+2026-09-04**; Step 2 onwards is open. Measurements taken on `develop` at `4fe1618`,
+re-verified at `fc4fdf7`.
 Full write-up: <https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>
 
 Excluded throughout by standing policy: `PeakFinder.py`, `Basic_PeakFinder.py`, `NanoTrees.py`.
@@ -62,7 +63,8 @@ Step 3a — independent of everything; safe first branch.
 Hard blocks:
 
 - Step 2 blocks Steps 3–5 absolutely.
-- Tier A must land before goldens are generated, or goldens encode known bugs.
+- Tier A had to land before goldens are generated, or goldens encode known bugs — done
+  2026-09-04, so Step 2 is now unblocked on this axis.
 - Decision E must be agreed before Step 2 starts.
 - Protein threading fix is already recorded as blocked on the emit-then-read conversion.
 - `new_plugin.py`'s analysis-tab half is already deferred until this lands; it becomes Step 6.
@@ -121,14 +123,43 @@ ratchet starts from, not the whole prize. Largest single wins: `create_info_butt
 template in favour of the native `typing.override` — verified by importing all 124
 `poriscope` modules with `typing_extensions` blocked at the meta-path.
 
-## Step 1 — Poriscope 1.9.0
+## Step 1 — Poriscope 1.9.0 (landed 2026-09-04)
 
-Tier C landed 2026-09-04. Tiers A and B2 below were **re-verified at `fc4fdf7` and
-rewritten**; the original lists were drafted from the 2026-08-25 audit and named work that
-`0abd08c`/`41adc07` had already done on 2026-08-24. Do not re-derive them from an earlier
-revision of the artifact.
+All three tiers are in. Tiers A and B2 were rewritten at `fc4fdf7` after the original lists
+(drafted from the 2026-08-25 audit) named work `0abd08c`/`41adc07` had already done, and were
+then **re-verified again at `c8dc953` immediately before implementation**, which corrected
+five further claims — recorded inline below. The lesson stands for every remaining step:
+**re-verify a tier immediately before working it.**
 
-### Tier A — before goldens are generated
+### Tier A — before goldens are generated (landed)
+
+What landed, and what the second verification pass changed:
+
+- Seeding, `zip(strict=True)`, the `format_axis_label` alignment, `timer_channels` and the
+  loader `None`-split all landed as described below.
+- **Corrections found at `c8dc953`:** the `format_axis_label` drift is **latent, not live** —
+  every unit reaching `ProteinView`'s copy is a hardcoded literal, and `proteincontrols` has
+  no units label, so the single-space unit that produces `Label ( )` cannot arrive; the
+  `zip` item's "size the grid from the materialised list" is redundant once `strict=True`
+  raises, and was dropped; `RawDataView`'s line numbers were each off by one (registration
+  `:375`, emit `:376`, read `:384`), and `timer_channels` is also never cleared between
+  finders, so a failed dispatch seeded one finder with another's channels; the loaders live in
+  `poriscope/plugins/db_loaders/`, not `plugins/dataplugins/databaseloaders/`;
+  `_parse_ranges` splits on **every** hyphen, not the first, so a two-hyphen segment was
+  dropped as well as an empty-end one.
+- **`get_column_units` was not fixed** — its `""` conflation is inert, since every consumer
+  erases the distinction. `DECISIONS.md` 2026-09-04.
+- **`ClusteringView.axes` was not fixed.** Verified latent: both unguarded reads are
+  immediately preceded by a `_reset_actions()` call, and `update_plot` carries no
+  `@register_action`, so replay cannot reach it out of order. A real fix needs an
+  `Optional[Axes]` declaration plus handling at both reads, which belongs with the
+  canvas-lifecycle work in **Step 3**. Requeued in `future_fixes.md` with the corrected
+  ~75/26 attribute counts.
+- **Failure signalling:** the split is empty-frame-for-no-rows with `None` **kept** for
+  failure, because `_dispatch_to` swallows exceptions and leaves the caller reading a stale
+  attribute. `DECISIONS.md` 2026-09-04.
+
+The verified detail, kept for reference:
 
 - `ClusteringView.py:660` `GaussianMixture(n_init=100)` is unseeded; add `random_state`.
   `PeakFinder.py:5817`/`:5850` already pass `random_state=42`, so the convention exists.
@@ -173,7 +204,7 @@ revision of the artifact.
   **`ProteinView.ax_hist`/`ax_vm` are not an instance of this** — both are `@property` over
   axes built eagerly by `_set_custom_display_area`, which is on the construction path.
 
-### Tier B2 — smaller than advertised
+### Tier B2 — smaller than advertised (landed 2026-09-04)
 
 Two of the six original items were already fixed by `0abd08c`/`41adc07` on 2026-08-24: the
 four `AttributeError` methods (`update_unit_label`, `reset_top_inputs`, `setLanguageChecked`,
@@ -196,8 +227,10 @@ four `AttributeError` methods (`update_unit_label`, `reset_top_inputs`, `setLang
   dropped. `_on_ok` then stores `ranges = []` and `RawDataView.py:1118-1128` runs
   `find_events(channel, [], ...)` — event finding over no time at all, silently. Fix
   `_parse_ranges` (`split("-", 1)` plus empty-end to `0.0`), not the validator, which
-  `tests/unit/views/widgets/test_time_widget.py:90-92` pins. Separately `:78` counts unfiltered
-  empty segments, so the legal trailing comma in `"0-0,"` is wrongly rejected.
+  `tests/unit/views/widgets/test_time_widget.py:90-92` pins. **The `:78` unfiltered
+  segment count was left alone**: `0-0` means the whole file and cannot legally be followed by
+  anything, and `Invalid` on a `QValidator` refuses the keystroke outright, which is the right
+  feedback. `DECISIONS.md` 2026-09-04.
 - `IntegerRangeLineEdit` vs `FloatRangeLineEdit` leading-`-` handling is a **structural**
   difference only — no input produces different output, because the float version's every
   leading-`-` shape falls into its bare `except ValueError`. Nothing to rule on; Step 5d

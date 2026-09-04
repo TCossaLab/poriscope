@@ -25,9 +25,10 @@ across five, four of them `def _init(self): pass`) while the Views are 11,541 li
 - **1.9.0 is Tier A + B2 + C of the plan's Step 1** - the defects in code the refactor moves,
   the zero-risk deletions, and the CI/tooling tier. Everything else in the High/Moderate tiers
   below ships inside 2.0.0.
-- **Do not fix duplication findings here.** The ~1,900 removable lines, `format_axis_label`'s
-  drift, `_factors`, `_setup_canvas`'s dead `num_channels`, `hist_data`'s three shapes and the
-  five oversized `setupUi` are the refactor itself, not work to do ahead of it.
+- **Do not fix duplication findings here.** The ~1,900 removable lines, the three
+  `format_axis_label` copies, `_factors`, `_setup_canvas`'s dead `num_channels`, `hist_data`'s
+  three shapes and the five oversized `setupUi` are the refactor itself, not work to do ahead
+  of it.
 - **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
   structural change in Steps 3-5.
 - **Needs a person, not code**: the test owner must agree to mechanical test re-pointing before
@@ -64,11 +65,6 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   for `MetaWriter` or `MetaDatabaseWriter`, so the component owning the whole database
   schema is unverified. Test authoring is another developer's remit - a coverage gap, not
   work to pick up here.
-- **`zip()` without `strict=` over plugin-supplied sequences.** `MetadataView.py:2577` zips
-  seven fitter-supplied sequences while `num_events = len(event_data)` two lines above sizes
-  the subplot grid, so 20 events' data with 18 sets of vlines draws 18 plots into a 20-cell
-  grid, silently. The per-site judgement in `DECISIONS.md` for keeping `B905` off does not
-  apply to this one.
 - **`Optional[int] = None` channel dispatch is documented 21 times and implemented almost
   nowhere.** `close_resources` is `@abstractmethod` in all six bases, none implements the
   dispatch, and 18 of 21 shipped plugins ignore the argument.
@@ -167,21 +163,25 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   `QWidgetABCMeta.py` are 49 lines each differing in 2, and their `__new__` overrides are
   dead - only `__call__` is load-bearing, and it is genuinely required (verified: without
   it Shiboken's metaclass lets an abstract QObject subclass instantiate).
-- **`format_axis_label` has drifted between its two copies** - a module function in
-  `ProteinView.py:4052` and a method in `MetadataView.py:3627`, disagreeing on a
-  whitespace-only unit (`Label ( )` vs `Label`). Symptom of the duplication above.
+- **`format_axis_label` still exists in three places** - a module function in `ProteinView.py`,
+  a method in `MetadataView.py` and inlined in `ClusteringView.py`. The behavioural drift is
+  gone (2026-09-04); merging the copies is the refactor's Step 3.
 - **`MainView`'s navigation state is a QLabel's rendered text.** `get_current_view:1079`
   returns `self.page_title_label.text()`, keyed into `self.pages` at `:1052` to decide
   whether to launch a walkthrough; the label starts as `"Home"`, in neither, so the app logs
   a misleading "does not support walkthrough" before the first switch. `on_view_switched`
   writes `self._current_view` at `:1094` and nothing reads it. The five tab Views do this
   correctly with a hardcoded literal.
-- **28 attributes are assigned only outside `__init__`**, with 23 `hasattr`/`getattr` guards
-  papering over it. `_reset_actions` is never called from any `_init`, so
-  `ClusteringView.axes` and `ProteinView.ax_hist`/`ax_vm` do not exist until the first plot.
-  `ClusteringView._init:97-99` declares one such attribute with a comment explaining the
-  hazard while `self.logs`/`normalized`/`plot`, read three lines away, got none. The e2e
-  suite patches one instance rather than surfacing it (`tests/e2e/conftest.py:68-88`).
+- **~75 attributes are assigned only outside `__init__`** across the five Views, with 26
+  guards papering over it (6 `hasattr`, 20 `getattr(self, ..., default)`) - re-measured
+  2026-09-04, the earlier "28 and 23" was wrong. `ClusteringView.axes` is the clearest case,
+  assigned only in `_reset_actions:158/160` and read unguarded at `:739`/`:762`, though it is
+  latent: both reads are immediately preceded by a `_reset_actions()` call, and `update_plot`
+  carries no `@register_action` so replay cannot reach it out of order. Fixing it properly
+  means an `Optional[Axes]` declared in `_init` plus handling at both reads, which belongs
+  with the canvas-lifecycle work in Step 3, not ahead of it. **`ProteinView.ax_hist`/`ax_vm`
+  are not instances of this** - both are properties over axes built eagerly by
+  `_set_custom_display_area`, which is on the construction path.
 - **`MetaFilter.force_serial_channel_operations` is unenforceable.**
   `get_callable_filter:105` hands out `self.filter_data` as a bare bound method invoked
   inside another plugin's generator, and `@serialize_channels` is restricted to generator
@@ -279,8 +279,16 @@ Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`,
   Not inherited from `MetaView` either; the `AttributeError` is swallowed by
   `main_controller._dispatch_to`, so protein-tab unit labels silently never update. The other
   four tabs either define the method or use `set_units`.
-- **`MetaDatabaseLoader.py:1298`'s `if metadata_generator is not None` branch is dead** -
-  `_load_metadata_generator` is a generator function, so it is never `None`.
+- **`MetaDatabaseLoader.export_subset_to_csv:579` assumes one `data` row per event id.**
+  `data["filename"] = filenames` raises a length mismatch if the `data` table holds rows for
+  only some of the selected events. An empty `data` table is now rejected explicitly; a
+  partially-populated one is not.
+- **`SQLitePeakDBLoader.get_plot_features:176-178` indexes `result.iloc[1]`** but the guard at
+  `:154` only rules out zero rows, so a single-row result raises `IndexError`.
+- **`SQLiteDBLoader._load_metadata_generator:884` returns bare on `sqlite3.Error`**, which
+  inside a generator is an ordinary `StopIteration` and so is indistinguishable from
+  exhaustion. Same conflation the `None`-sentinel split fixed for `_load_metadata`
+  (2026-09-04), but a generator needs its own contract.
 
 ### CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
 
