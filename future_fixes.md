@@ -12,6 +12,29 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
+## The 2.0.0 refactor plan claims much of this queue (2026-09-03)
+
+**Read `refactor_2.0.0.md` before picking anything up here**, and check whether the item is
+already assigned to a step. Plan artifact:
+<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>
+
+Root cause behind most of the findings below: the analysis-tab Models are empty (303 lines
+across five, four of them `def _init(self): pass`) while the Views are 11,541 lines and carry
+77 of the 82 `global_signal.emit` sites. Decisions A-E are recorded in `DECISIONS.md`.
+
+- **1.9.0 is Tier A + B2 + C of the plan's Step 1** - the defects in code the refactor moves,
+  the zero-risk deletions, and the CI/tooling tier. Everything else in the High/Moderate tiers
+  below ships inside 2.0.0.
+- **Do not fix duplication findings here.** The ~1,900 removable lines, `format_axis_label`'s
+  drift, `_factors`, `_setup_canvas`'s dead `num_channels`, `hist_data`'s three shapes and the
+  five oversized `setupUi` are the refactor itself, not work to do ahead of it.
+- **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
+  structural change in Steps 3-5.
+- **Needs a person, not code**: the test owner must agree to mechanical test re-pointing before
+  Step 2 starts, and the fitter owner must be consulted before any `MetaEventFitter` signature
+  change, which moves all three owner-held fitters in lockstep.
+- `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
+
 ## Review findings (2026-09-03)
 
 Six-slice review: app shell, `Meta*` ABCs, algorithmic plugins, database layer, Qt/GUI,

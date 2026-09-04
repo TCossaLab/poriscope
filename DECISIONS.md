@@ -51,6 +51,90 @@ actual final state.
 
 ---
 
+## 2026-09-03 - The return-value signal bus becomes a direct call, with plugin references pushed
+
+**Context.** Planning the 2.0.0 refactor. `global_signal(metaclass, key, "method", args,
+"return_method", ret_args)` is a string-keyed RPC used as a *blocking* call: emit, then read
+the answer off an attribute on the next statement. 82 call sites, 77 of them in analysis-tab
+Views. The 2026-08-25 audit deferred fixing this because `MetaController`/`MetaView`
+deliberately hold no reference back to `MainController`, which is what keeps tabs pluggable.
+
+**Decision.** `MetaController` and `MetaModel` gain an inherited, non-abstract
+`get_plugin(metaclass, key)` / `call(metaclass, key, func, *args)` pair that resolves from a
+local dict and invokes directly, so it **returns or raises**. Instances are **pushed** to each
+tab, not pulled: `DataPluginController.update_available_plugins` already fires on all four
+lifecycle events (create `:613`, delete `:353`, both `edit_plugin` branches `:126`/`:212`) and
+`MainController.update_available_plugins:676` already fans out to every tab. Only the
+return-value RPC is replaced; `plugin_state_changed`, `add_text_to_display`,
+`update_progressbar` and `create_plugin` stay ordinary Qt signals.
+
+**Evidence.** Traced end to end: resolving one experiment id
+(`MetadataView._build_where_clause:2044`) takes 8 hops, 2 Qt emissions and 3 string lookups,
+and needs two methods plus one attribute that exist only to carry one `int` back. That shape
+has a live bug - `relayed_experiment_id` is assigned only at `MetadataView.py:2493` and never
+reset, while `_dispatch_to` logs and returns on failure (`main_controller.py:554`), so a
+failed dispatch leaves `:2052` and `:2341` reading the **previous call's** experiment id and
+scoping the query to the wrong experiment. Also measured: all 77 emits target data plugins and
+**none targets another tab**, so `_relay_global_signal`'s docstring advertising calls into
+`main_model.plugins['MetaController'][key]` describes a capability nothing uses.
+
+**Rejected: a typed facade injected into the tab.** Both a full `PluginAccess` ABC and a
+one-method `PluginResolver` were considered. Rejected because resolving a plugin must not
+require the tab or plugin author to know about app-shell internals - the string API is the
+isolation. With the push, there is also nothing left to abstract over: `MetaController` holds a
+plain dict, `__init__`'s signature does not change, and a test supplies a dict directly.
+
+**Rejected: caching on first use.** Needs invalidation on three events, two of them easy to
+miss - a *rename* leaves the cache pointing at a live instance under a dead key, and a
+*re-instantiate* leaves it holding an object whose `close_resources` may have run. A push makes
+the call that would go stale the call that refreshes it. Its lazy first fetch would also still
+have used emit-then-read.
+
+**Accepted cost.** `call()` returns `Any`, so mypy still cannot catch a renamed plugin method.
+That is the price of the string API and it is accepted; do not re-argue it by pointing at the
+lost type safety. `update_available_plugins(names)` is left untouched for the Views, which want
+names for comboboxes - names for the UI, instances for the call path.
+
+**Revisit if** a tab ever needs to call another tab, which no current site does.
+
+---
+
+## 2026-09-03 - Scope decisions for the 2.0.0 refactor
+
+**Context.** The plan in `refactor_2.0.0.md` needed four rulings before implementation.
+
+**MVC mediation is kept.** Commands go View->signal->Controller->call->Model; results go
+Model->signal->View with the Controller connecting, formalised as the *preferred* result path
+rather than an exception, so no passthrough-per-model-method is needed. Note the rule is
+currently vacuous - View/Model direct contact is already zero (no View imports a Model, no
+`self.model` in any View); what fails is the View's second unmediated channel to everything
+else. Direct View->Model was considered and rejected: Qt's own Model/View works because a
+`QAbstractItemModel` is passive and framework-defined, whereas `MetaModel` owns worker threads
+and the `workers`/`threads`/`thread_running` dicts.
+
+**2.0.0 takes the queued ABC breaks.** Several entries below defer contract fixes with "revisit
+if a third-party plugin ecosystem exists, at which point narrowing an ABC becomes a deprecation
+cycle." That window is now and will not reopen cheaply: the `"Kind"` schema key, splitting
+`MetaReader.load_data`'s `raw_data` arm, `close_resources` channel dispatch via
+`_close_one_channel`, `_write_data`'s 13 parameters, `MetaEventFinder`'s undeclared
+`Threshold`. Each is called out explicitly in `changelog.md`.
+
+**1.9.0 ships only what the refactor needs first.** Tier A (defects in code that moves, so
+golden files are not generated over known bugs), Tier B2 (zero-risk deletions) and Tier C
+(CI/tooling). The High-tier scientific and database defects ship inside 2.0.0 instead.
+
+**Moved tests are re-pointed mechanically.** Import and receiver only, assertions untouched,
+test owner reviews the diff. This stretches the standing "do not edit her suites" rule and
+**needs her explicit agreement before Step 2 starts** - 1,085 view tests target methods that
+move, and `test_metadata_view.py` alone is 6,026 lines. The alternative considered was leaving
+a thin View facade per moved method, rejected because ~200 facades would undercut the LOC and
+boundary-test metrics the refactor is measured by.
+
+**Revisit if** the refactor stalls after Step 2, at which point the 1.9.0/2.0.0 split is worth
+rebalancing so the queued Tier B fixes are not held hostage to it.
+
+---
+
 ## 2026-09-03 - The metadata query derives its FROM clause instead of enumerating seven branches
 
 **Context.** `construct_metadata_query` hand-wrote seven query branches, one per

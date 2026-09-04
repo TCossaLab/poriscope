@@ -149,6 +149,9 @@ revisiting.
 - `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
   would make it worth revisiting. Check here before re-litigating a settled question.
 - `future_refactors_and_features.md` — larger speculative work.
+- `refactor_2.0.0.md` — the approved plan for the 2.0.0 refactor: the eight steps, the
+  dependency graph and decisions A–E. **Read it before picking anything out of
+  `future_fixes.md`**, since it claims much of that queue. Delete it once 2.0.0 ships.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
