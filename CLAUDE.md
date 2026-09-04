@@ -214,13 +214,23 @@ of every session, so it should stay a short list of standing rules.
   triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
   to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
   so a fresh checkout needs that script run before cutting a release.
-- `git flow release finish` opens three editors by default — a merge commit message into
-  `main`, the tag annotation, and a merge commit message into `develop`. Prefix the command
-  with `GIT_MERGE_AUTOEDIT=no` to suppress the two merge editors. **Do not pass `-m` for the
-  tag message**: git flow appends its own text to it, which produced the annotation
-  `v1.8.0 v1.8.0` where every earlier tag reads just `v1.7.1`. Without `-m` the tag editor
-  still opens, so either accept the prefilled message or fix the annotation with
-  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` **before** pushing it.
+- **`git flow release finish` is run by a human, interactively — hand it off, do not automate
+  it.** Everything up to it is ordinary work: `release start`, the version bumps in
+  `poriscope/constants.py` and `CITATION.cff`, dating the `changelog.md` header, a full green
+  `pytest`, and the preparation commit. Then stop and let someone run
+  `GIT_MERGE_AUTOEDIT=no git flow release finish <version>` themselves, and push `main`,
+  `develop` and the tag afterwards.
+  It opens three editors — two merge commit messages and the tag annotation.
+  `GIT_MERGE_AUTOEDIT=no` suppresses the merges, but the tag editor always opens and **git flow
+  prefills it with nothing**, so `GIT_EDITOR=true` yields an empty message and the command dies
+  with `fatal: no tag message?` *after* the merge into `main` has landed, leaving the release
+  half-finished. **Do not pass `-m` either**: git flow appends its own text, which produced the
+  annotation `v1.8.0 v1.8.0` where every other tag reads just its version. Pointing `GIT_EDITOR`
+  at a command that writes the annotation into the file does work, and is idempotent over an
+  already-completed merge — that is how 1.9.0 was salvaged — but it is a fragile trick for a
+  once-per-release command, which is why the step is handed off. Whoever runs it should check the
+  annotation before pushing, and fix it with
+  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` if git flow duplicated it.
 - **Allow at least five minutes for `git flow release finish` and `feature finish`.** The
   `post-merge` hook regenerates the autodoc, which ran past a two-minute timeout during the
   1.8.0 release. All the git work had already completed by then; only the release branch
