@@ -10,6 +10,29 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-06 - Step 3b's shared bases are named `MetaSubsetTab*`, not `MetaDatabaseTab*`
+
+**Context.** `Meta` does not mean the same thing in every `poriscope/utils/` base. In
+`MetaView`, `MetaController`, `MetaReader` and most of the rest it marks an abstract base
+class. In **`MetaDatabaseLoader` and `MetaDatabaseWriter` it means metadata** - those plugins
+read and write databases of metadata *about events*: duration, blockage, sublevels. The two
+senses are not distinguishable from the name.
+
+**Decision.** The shared bases for the Metadata and Protein tab triads are
+`MetaSubsetTabView`, `MetaSubsetTabController` and `MetaSubsetTabControls`. The plan had said
+`MetaDatabaseTab*`; that name is retired.
+
+**Evidence.** Read as intended it is *Meta* + *DatabaseTab* + *View*; read as written it is
+*MetaDatabase* + *TabView*, which puts it beside the event-metadata plugin bases and borrows
+the wrong sense of the prefix. `MetaSubsetTab*` names what the two tabs actually share - both
+build subset filters over a queried database - and collides with nothing.
+
+**Revisit if** the `Meta` ambiguity is ever resolved by renaming the metadata-sense classes.
+Until then, do not begin a new analysis-tab base with `MetaDatabase`, and name a base for the
+behaviour its subclasses share rather than for the storage they sit on.
+
+---
+
 ## 2026-09-06 - The MVC boundary's layers are derived from filenames, not listed
 
 **Context.** `check_mvc_boundary.py`'s rules 1-3 scanned ten hardcoded filenames under

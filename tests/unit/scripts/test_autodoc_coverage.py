@@ -146,21 +146,30 @@ def test_the_walkthrough_classes_each_have_a_page() -> None:
     assert WALKTHROUGH_CLASSES <= pages, sorted(WALKTHROUGH_CLASSES - pages)
 
 
+#: Every base Step 3 creates to hold promoted analysis-tab code. Each is listed here
+#: as it lands, because losing one's page is invisible to everything else.
+STEP_3_BASES = ("metacontrols", "metasubsettabcontroller")
+
+
 @needs_autodoc
-def test_metacontrols_has_a_page_at_all() -> None:
+@pytest.mark.parametrize("module", STEP_3_BASES)
+def test_every_step_3_base_has_a_page_at_all(module: str) -> None:
     """
     The one thing nothing else in this file would notice.
 
     ``metaclasses_generate_autodoc.py`` skips any class in ``poriscope/utils/``
     with no docstring - a bare ``continue``, printed to stdout and nowhere else.
-    So a ``MetaControls`` that lost its class docstring would publish **no page**,
+    So a Step 3 base that lost its class docstring would publish **no page**,
     silently, with ``sphinx-build -W`` green and every other test here passing,
-    taking every directive Step 3a promoted with it. The page is keyed off the
+    taking every directive that step promoted with it. Pages are keyed off the
     *module* name lowercased, not the class name.
-    """
-    page = AUTODOC / "metaclasses" / "metacontrols.rst"
 
-    assert page.is_file(), "MetaControls lost its page; check its class docstring"
+    :param module: the lowercased module name whose page must exist
+    :type module: str
+    """
+    page = AUTODOC / "metaclasses" / f"{module}.rst"
+
+    assert page.is_file(), f"{module} lost its page; check its class docstring"
     assert "automethod" in page.read_text(encoding="utf-8")
 
 

@@ -914,7 +914,7 @@ commit 1 adds that.
   with it. Six tests call it directly, and the Metadata ones patch
   `poriscope.plugins.analysistabs.MetadataView.MetadataControls`, so any template method must
   preserve that patch target.
-- **3b `MetaDatabaseTabView` + `MetaDatabaseTabController`** (Metadata/Protein) — largest
+- **3b `MetaSubsetTabView` + `MetaSubsetTabController`** (Metadata/Protein) — largest
   cluster in the repo. **No longer blocked on 4d.** It was recorded as "subset-filter state must
   find its layer first"; verified 2026-09-06, that was never the blocker, and the real one is
   different.
@@ -924,7 +924,7 @@ commit 1 adds that.
     `_assisted`/`_raw` conventions — `MetadataView.py:152`/`:184-186` against
     `ProteinView.py:232`/`:228-230`. The methods around it are already byte-identical: ~194
     View lines (`_save_filter`, `restore_subset_filters`, the delete/replace/update group) and
-    ~96 Controller lines. Four declarations promote verbatim. Writing `MetaDatabaseTabView`
+    ~96 Controller lines. Four declarations promote verbatim. Writing `MetaSubsetTabView`
     today hits **no** state conflict; what actually bites is the controls attribute name
     (`self.metadatacontrols` vs `self.proteincontrols`, 60 and 58 references), which needs a
     uniform accessor and is a different problem.
@@ -954,9 +954,9 @@ memory**, not by adding up group sizes.
 | # | Commit | Promotes | repo removable | Δ |
 | --- | --- | --- | --- | --- |
 | 0 | `docs:` the approved series | — | 1,400 | — |
-| 1 | `MetaDatabaseTabController` + 17 methods | Controller | **1,221** | −179 |
-| 2 | `MetaDatabaseTabView` + 15 methods | View | **986** | −235 |
-| 3 | `MetaDatabaseTabControls` + 10 methods | Controls | **906** | −80 |
+| 1 | `MetaSubsetTabController` + 17 methods | Controller | **1,221** | −179 |
+| 2 | `MetaSubsetTabView` + 15 methods | View | **986** | −235 |
+| 3 | `MetaSubsetTabControls` + 10 methods | Controls | **906** | −80 |
 
 −494 removable lines, larger than 3a. Family `functions` falls at every stage (Controller
 81→47, View 258→228, controls 83→63), so `_divergence_warning` stays silent.
@@ -995,7 +995,7 @@ Verified rather than assumed:
   `relay_table_by_column` has no caller in the app, only in tests, which assign the
   attribute first. Not fixed inside 3b — the bare annotation preserves current behaviour and
   the dead trio goes to `future_fixes.md` for 3e.
-- **`MetaDatabaseTabView` needs `SelectionTree` and `MultiSelectComboBox` from
+- **`MetaSubsetTabView` needs `SelectionTree` and `MultiSelectComboBox` from
   `poriscope/views/widgets/`, and no module in `poriscope/utils/` imports from
   `poriscope/views/` today.** Accepted: shared bases depending on shared widgets is the
   direction 3f moves `walkthrough` in, neither depends on plugins, and those widget modules

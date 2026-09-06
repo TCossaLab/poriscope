@@ -17,6 +17,7 @@ from poriscope.utils.MetaEventLoader import MetaEventLoader
 from poriscope.utils.MetaFilter import MetaFilter
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
+from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
 
@@ -53,6 +54,7 @@ META_CLASSES: Set[Type] = {
     MetaFilter,
     MetaModel,
     MetaReader,
+    MetaSubsetTabController,
     MetaView,
     MetaWriter,
 }
