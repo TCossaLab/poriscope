@@ -1022,3 +1022,9 @@ select-all, dismiss on an outside click, reopen with the selection intact); and 
 outliving the app on close. That is the pre-refactor baseline, so a later failure is
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
+
+**Post-3a manual pass: run 2026-09-06, all clear.** Same scope as the baseline, against a
+branch that had rewritten all five controls widgets — so the promoted widget factories, the
+`create_info_button`/`create_add_button`/`create_delete_button` wiring and the placeholder
+guard were all exercised through the real UI. Nothing regressed. The next one is owed after
+3f.
