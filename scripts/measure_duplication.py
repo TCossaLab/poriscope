@@ -42,7 +42,8 @@ This is that script, committed, so the number is reproducible and can be ratchet
   module-level class* is considered. Functions nested inside another function are
   not: their text is already contained in their parent's, so counting both would
   double-count the same lines.
-- A function's text is ``ast.get_source_segment`` output, dedented and stripped.
+- A function's text is ``ast.get_source_segment`` output with its indentation
+  depth normalised away (see ``normalise``) and stripped.
   Note ``get_source_segment`` starts at the ``def`` line, so **decorators are not
   part of the compared text** - two methods with identical bodies but different
   decorators compare equal. That is deliberate: the body is what a promotion
@@ -55,6 +56,17 @@ This is that script, committed, so the number is reproducible and can be ratchet
 
 This is a floor, not the whole prize. Byte identity cannot see a 195-line override
 that differs in two lines, so a family can shrink by more than this measures.
+
+**Byte identity is brittle in one direction, and it matters.** Editing a few
+characters in *one* copy of a five-way duplicate drops that copy out of its group,
+so the removable count falls by a whole copy's worth while nothing was
+deduplicated - and the duplication is in fact worse, five near-identical bodies
+instead of five identical ones. That is not hypothetical here: ``multiselect.py``
+and ``multiselect_filter.py`` are ~90% duplicates where a fix demonstrably was
+applied to only one of them. No similarity measure is needed to catch it, because
+the two cases differ in a number already recorded: promoting a method to a shared
+base **deletes** the copies, so ``functions`` falls too, while an edit into
+divergence leaves it untouched. ``--check`` says so when it sees that shape.
 
 Exits 1 under ``--check`` if the measurement disagrees with
 ``.duplication-baseline.json``, in **either** direction. Going up is a regression.
@@ -121,6 +133,31 @@ def display(path: Path) -> str:
         return str(path)
 
 
+def normalise(segment: str) -> str:
+    """
+    Strip a function's source down to a form that ignores its indentation depth.
+
+    ``textwrap.dedent`` alone is not enough here. ``ast.get_source_segment``
+    starts at the ``def`` token rather than at the start of its line, so the first
+    line of a method carries no leading whitespace while its body carries the
+    class indent. The common prefix across those lines is therefore ``""`` and
+    dedent does nothing, leaving a method and an identically-bodied module-level
+    function comparing unequal.
+
+    Dedenting everything *after* the first line fixes that while preserving the
+    body's internal structure.
+
+    :param segment: the raw source segment for one function
+    :type segment: str
+    :return: the segment with its indentation depth normalised away
+    :rtype: str
+    """
+    head, newline, tail = segment.partition("\n")
+    if not newline:
+        return head.strip()
+    return (head.strip() + newline + textwrap.dedent(tail)).strip()
+
+
 def collect_functions(source: str, filename: str) -> List[Tuple[str, str]]:
     """
     Collect every module-level function and method of a module-level class.
@@ -153,7 +190,7 @@ def collect_functions(source: str, filename: str) -> List[Tuple[str, str]]:
         segment = ast.get_source_segment(source, node)
         if segment is None:
             continue
-        collected.append((name, textwrap.dedent(segment).strip()))
+        collected.append((name, normalise(segment)))
     return collected
 
 
@@ -302,7 +339,57 @@ def compare(
                     f"{family}.{key}: fell from {was} to {now} - record the win by "
                     f"rerunning with --update in the same commit"
                 )
+
+        problems.extend(_divergence_warning(family, current, baseline))
     return problems
+
+
+def _divergence_warning(
+    family: str,
+    current: Dict[str, Dict[str, int]],
+    baseline: Dict[str, Dict[str, int]],
+) -> List[str]:
+    """
+    Warn when removable lines fell but no function was actually deleted.
+
+    Byte identity is brittle in one direction: editing a few characters in *one*
+    copy of a five-way duplicate drops that copy out of its group, so the removable
+    count falls by a whole copy's worth while nothing was deduplicated. The
+    duplication is in fact worse - five near-identical bodies instead of five
+    identical ones - and this repository has form for it, ``multiselect.py`` and
+    ``multiselect_filter.py`` being ~90% duplicates where a fix demonstrably was
+    applied to only one.
+
+    The two cases are distinguishable without any similarity measure: promoting a
+    method to a shared base **deletes** the copies, so the function count falls too.
+    An edit into divergence leaves it untouched.
+
+    :param family: the family being reported on
+    :type family: str
+    :param current: the measurement just taken
+    :type current: Dict[str, Dict[str, int]]
+    :param baseline: the checked-in counts
+    :type baseline: Dict[str, Dict[str, int]]
+    :return: at most one warning, empty if the shape does not match
+    :rtype: List[str]
+    """
+    if family not in current or family not in baseline:
+        return []
+
+    removable_fell = current[family].get("removable_lines", 0) < baseline[family].get(
+        "removable_lines", 0
+    )
+    functions_fell = current[family].get("functions", 0) < baseline[family].get(
+        "functions", 0
+    )
+    if removable_fell and not functions_fell:
+        return [
+            f"{family}: removable lines fell but no function was deleted. A real "
+            f"promotion removes the copies, so `functions` falls too. Check that a "
+            f"copy was not simply edited into divergence before running --update - "
+            f"that reads as progress here while making the duplication worse."
+        ]
+    return []
 
 
 def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:
