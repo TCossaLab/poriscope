@@ -322,3 +322,156 @@ class TestSummarizeVmManySamples:
         assert all(PLUSMINUS in row for row in rows)
         # std of two identical values is 0, not NaN
         assert rows[2] == f"b = 1.0 {PLUSMINUS} 0.0 nm"
+
+
+class TestResolveEventDbIds:
+    """
+    The scoped event-id resolution, which is both a Step 4a and a Step 4b target.
+
+    It authors SQL in the widget *and* uses the emit-then-read bus pattern twice,
+    so it is moved by 4b and rewritten by 4a. The audit reported it as ``RUNS
+    ONLY``: it executes in the protein e2e flow, but nothing named it, so neither
+    the generated query nor the stale-read guards were pinned.
+
+    The bus is stubbed the way the real one behaves - the emit sets the attribute
+    named by its return-function argument - rather than as a bare ``Mock`` that
+    silently does nothing. A stub that skips the side effect makes every assertion
+    here vacuous, which is the trap ``_qt_mocks.py`` and the earlier
+    ``_overlay_plot`` episode both record.
+    """
+
+    @pytest.fixture
+    def bus(self, view: ProteinView):
+        """
+        Wire the view's global_signal to deliver results like the real dispatcher.
+
+        :param view: the view under test
+        :type view: ProteinView
+        :return: a dict controlling what each dispatched call returns
+        :rtype: dict
+        """
+        answers: dict = {"get_experiment_id_by_name": 7, "query_database_directly": None}
+
+        def deliver(metaclass, key, method, args, return_fn, extra):
+            if return_fn == "set_experiment_id":
+                view.experiment_id = answers["get_experiment_id_by_name"]
+            elif return_fn == "relay_query_result":
+                answers["last_query"] = args[0]
+                view.relayed_query_result = answers["query_database_directly"]
+
+        view.global_signal.emit.side_effect = deliver
+        return answers
+
+    def test_no_event_ids_short_circuits_before_any_query(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """An empty selection is not an error and must not reach the database."""
+        assert view._resolve_event_db_ids("loader", [], "exp", 0) is None
+        view.global_signal.emit.assert_not_called()
+
+    def test_the_query_scopes_by_event_id_experiment_and_channel(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """
+        All three clauses, in order.
+
+        The scoping is the reason the method exists: ``event_id`` is unique only
+        within an experiment and channel, so dropping either clause resolves to
+        another channel's row.
+        """
+        bus["query_database_directly"] = pd.DataFrame({"id": [1], "event_id": [3]})
+
+        view._resolve_event_db_ids("loader", [3, 4], "exp", 2)
+
+        assert bus["last_query"] == (
+            "SELECT id, event_id FROM events "
+            "WHERE event_id IN (3,4) AND experiment_id = 7 AND channel_id = 2"
+        )
+
+    def test_the_experiment_id_is_cleared_before_it_is_requested(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """
+        The stale-read guard.
+
+        A failed dispatch never calls the return function, so without the pre-clear
+        the method would silently reuse the *previous* experiment's id and scope the
+        query to the wrong experiment. Simulated by a bus that delivers nothing.
+        """
+        view.experiment_id = 99
+        bus["query_database_directly"] = pd.DataFrame({"id": [1], "event_id": [3]})
+        view.global_signal.emit.side_effect = lambda *a, **k: None
+
+        view._resolve_event_db_ids("loader", [3], "exp", None)
+
+        assert view.experiment_id is None
+
+    def test_a_failed_experiment_lookup_omits_the_clause_entirely(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """
+        Rather than emitting ``experiment_id = None`` into the SQL.
+
+        The query is then wider than intended, which is a real behaviour worth
+        knowing about, but it is not malformed.
+        """
+        captured: dict = {}
+
+        def deliver(metaclass, key, method, args, return_fn, extra):
+            if return_fn == "relay_query_result":
+                captured["query"] = args[0]
+                view.relayed_query_result = pd.DataFrame({"id": [1]})
+
+        view.global_signal.emit.side_effect = deliver
+
+        view._resolve_event_db_ids("loader", [3], "exp", 5)
+
+        assert "experiment_id" not in captured["query"]
+        assert "channel_id = 5" in captured["query"]
+
+    def test_no_experiment_means_no_lookup_at_all(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """A ``None`` experiment skips the first bus round trip."""
+        bus["query_database_directly"] = pd.DataFrame({"id": [1]})
+
+        view._resolve_event_db_ids("loader", [3], None, 1)
+
+        methods = [c.args[2] for c in view.global_signal.emit.call_args_list]
+        assert "get_experiment_id_by_name" not in methods
+
+    def test_the_result_is_cleared_before_the_query(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """The same guard on the second round trip, and the reason it returns None."""
+        view.relayed_query_result = pd.DataFrame({"id": [42]})
+        view.global_signal.emit.side_effect = lambda *a, **k: None
+
+        assert view._resolve_event_db_ids("loader", [3], None, None) is None
+
+    @pytest.mark.parametrize(
+        "result",
+        [None, pd.DataFrame(), pd.DataFrame({"event_id": [1]})],
+        ids=["none", "empty", "missing id column"],
+    )
+    def test_an_unusable_result_becomes_none(
+        self, view: ProteinView, bus: dict, result
+    ) -> None:
+        """
+        Three distinct failures collapse to one answer.
+
+        Pinned because the caller only checks for ``None``, so a merge that let an
+        empty frame through would break it in a way no type checker would catch.
+        """
+        bus["query_database_directly"] = result
+
+        assert view._resolve_event_db_ids("loader", [3], None, None) is None
+
+    def test_a_good_result_is_returned_unchanged(
+        self, view: ProteinView, bus: dict
+    ) -> None:
+        """The frame is passed straight back; no reshaping happens here."""
+        frame = pd.DataFrame({"id": [10, 11], "event_id": [3, 4]})
+        bus["query_database_directly"] = frame
+
+        assert view._resolve_event_db_ids("loader", [3, 4], None, None) is frame

@@ -25,6 +25,7 @@ from typing import Dict
 import numpy as np
 import numpy.typing as npt
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from tests.unit.views._qt_mocks import shadow_signals
@@ -358,3 +359,220 @@ class TestGetBaselineStats:
             recorded["stdev"].append(stdev)
 
         num_regression.check({k: np.asarray(v) for k, v in recorded.items()})
+
+
+class TestStartEventfinder:
+    """
+    The event-finding launch path, a Step 4a target the audit found unpinned.
+
+    It executes in the raw-data e2e flow but nothing named it, so none of its
+    branching was asserted: the filter round trip, the already-complete
+    confirmation, the two shapes of time limit, or the per-channel bundling of
+    ``find_events``. Step 4a rewrites every emit here into a Model call, so what
+    each emit carries is what has to survive.
+
+    The bus is stubbed the way the real dispatcher behaves - setting the attribute
+    named by the emit's return-function argument - rather than as a silent mock.
+    """
+
+    @pytest.fixture
+    def wired(self, view: RawDataView):
+        """
+        A view wired so bus emits are recorded and deliver their side effects.
+
+        :param view: the bare view
+        :type view: RawDataView
+        :return: the view, with ``calls`` recording every emitted dispatch
+        :rtype: RawDataView
+        """
+        view.analysis_time_limits = {}
+        view.eventfinding_status = False
+        view.calls = []
+
+        def deliver(metaclass, key, method, args, return_fn, extra):
+            view.calls.append((metaclass, key, method, args, return_fn, extra))
+            if return_fn == "set_event_filter":
+                view.data_filter = "a-callable"
+
+        view.global_signal.emit.side_effect = deliver
+        return view
+
+    @staticmethod
+    def limits(view: RawDataView, finder: str, channel: int, spec: dict) -> None:
+        """
+        Install one channel's time limits.
+
+        :param view: the view
+        :type view: RawDataView
+        :param finder: the eventfinder key
+        :type finder: str
+        :param channel: the channel number
+        :type channel: int
+        :param spec: the limit dict for that channel
+        :type spec: dict
+        :return: None
+        :rtype: None
+        """
+        view.analysis_time_limits.setdefault(finder, {})[channel] = spec
+
+    @staticmethod
+    def find_calls(view: RawDataView) -> list:
+        """
+        Every find_events dispatch the view emitted.
+
+        :param view: the view
+        :type view: RawDataView
+        :return: the matching recorded calls
+        :rtype: list
+        """
+        return [call for call in view.calls if call[2] == "find_events"]
+
+    def test_a_bare_channel_is_coerced_to_a_list(self, wired: RawDataView) -> None:
+        """Callers pass either shape, and a bare int must not be iterated as one."""
+        self.limits(wired, "finder", 0, {"start": 0.0, "end": 0.0})
+
+        wired._start_eventfinder("finder", "No Filter", 0)
+
+        assert len(self.find_calls(wired)) == 1
+        assert self.find_calls(wired)[0][3][0] == 0
+
+    def test_no_filter_skips_the_filter_round_trip(self, wired: RawDataView) -> None:
+        """The literal placeholder is not a plugin name and must not be resolved."""
+        self.limits(wired, "finder", 0, {"start": 0.0, "end": 0.0})
+
+        wired._start_eventfinder("finder", "No Filter", [0])
+
+        assert not [call for call in wired.calls if call[0] == "MetaFilter"]
+        assert wired.data_filter is None
+
+    def test_a_named_filter_is_fetched_and_passed_to_find_events(
+        self, wired: RawDataView
+    ) -> None:
+        """The resolved callable travels as the fourth find_events argument."""
+        self.limits(wired, "finder", 0, {"start": 0.0, "end": 0.0})
+
+        wired._start_eventfinder("finder", "my-filter", [0])
+
+        assert [call for call in wired.calls if call[0] == "MetaFilter"]
+        assert self.find_calls(wired)[0][3][3] == "a-callable"
+
+    def test_the_filter_is_cleared_before_it_is_fetched(
+        self, wired: RawDataView
+    ) -> None:
+        """
+        The stale-read guard: a failed dispatch must not reuse the previous run's
+        filter callable against this run's data.
+        """
+        wired.data_filter = "stale"
+        self.limits(wired, "finder", 0, {"start": 0.0, "end": 0.0})
+        wired.global_signal.emit.side_effect = None
+
+        wired._start_eventfinder("finder", "my-filter", [0])
+
+        assert wired.data_filter is None
+
+    def test_explicit_ranges_are_used_and_copied(self, wired: RawDataView) -> None:
+        """
+        A copy, so a later edit to the stored limits cannot mutate a queued run.
+
+        The source comment says so explicitly, and it is the kind of detail that
+        disappears silently when a method is re-homed.
+        """
+        stored = [(1.0, 2.0), (5.0, 6.0)]
+        self.limits(wired, "finder", 0, {"ranges": stored})
+
+        wired._start_eventfinder("finder", "No Filter", [0])
+
+        passed = self.find_calls(wired)[0][3][1]
+        assert passed == stored
+        assert passed is not stored
+
+    def test_start_and_end_become_a_single_range(self, wired: RawDataView) -> None:
+        """The other limit shape, for a finder configured without explicit ranges."""
+        self.limits(wired, "finder", 0, {"start": 3.0, "end": 9.0})
+
+        wired._start_eventfinder("finder", "No Filter", [0])
+
+        assert self.find_calls(wired)[0][3][1] == [(3.0, 9.0)]
+
+    def test_a_falsy_end_becomes_zero_meaning_end_of_signal(
+        self, wired: RawDataView
+    ) -> None:
+        """
+        ``end or 0.0`` collapses None and 0 alike, and 0 means "to the end".
+
+        The same convention the Time Range dialog uses; 1.9.0 fixed a bug where
+        the two disagreed, so the agreement is worth holding.
+        """
+        self.limits(wired, "finder", 0, {"start": 3.0, "end": None})
+
+        wired._start_eventfinder("finder", "No Filter", [0])
+
+        assert self.find_calls(wired)[0][3][1] == [(3.0, 0.0)]
+
+    def test_one_find_events_per_channel_then_one_run_generators(
+        self, wired: RawDataView
+    ) -> None:
+        """
+        The bundling contract: N channels give N dispatches and a single run.
+
+        Emitting run_generators inside the loop would start the workers before
+        every channel had been queued.
+        """
+        for channel in (0, 1, 2):
+            self.limits(wired, "finder", channel, {"start": 0.0, "end": 0.0})
+
+        wired._start_eventfinder("finder", "No Filter", [0, 1, 2])
+
+        assert [call[3][0] for call in self.find_calls(wired)] == [0, 1, 2]
+        wired.run_generators.emit.assert_called_once_with("finder")
+
+    def test_the_return_args_carry_the_channel_and_finder(
+        self, wired: RawDataView
+    ) -> None:
+        """set_generator needs both in order to file the generator it is handed."""
+        self.limits(wired, "finder", 4, {"start": 0.0, "end": 0.0})
+
+        wired._start_eventfinder("finder", "No Filter", [4])
+
+        call = self.find_calls(wired)[0]
+        assert call[4] == "set_generator"
+        assert call[5] == (4, "finder", "MetaEventFinder")
+
+    def test_declining_the_overwrite_prompt_skips_only_that_channel(
+        self, wired: RawDataView, mocker
+    ) -> None:
+        """
+        An already-finished channel asks before redoing it, and No means skip.
+
+        The other channels still run, which is what a coarser guard would get
+        wrong by abandoning the whole batch.
+        """
+        for channel in (0, 1):
+            self.limits(wired, "finder", channel, {"start": 0.0, "end": 0.0})
+        wired.eventfinding_status = True
+        mocker.patch(
+            "poriscope.plugins.analysistabs.RawDataView.QMessageBox.question",
+            side_effect=[QMessageBox.No, QMessageBox.Yes],
+        )
+
+        wired._start_eventfinder("finder", "No Filter", [0, 1])
+
+        assert [call[3][0] for call in self.find_calls(wired)] == [1]
+
+    def test_a_missing_channel_limit_stops_before_launching_anything(
+        self, wired: RawDataView
+    ) -> None:
+        """
+        A configuration gap raises rather than launching a partial batch.
+
+        ``run_generators`` sits inside the same try block, so nothing starts -
+        the safe outcome, and easy to break by hoisting that emit out during the
+        move to the Model.
+        """
+        wired.analysis_time_limits = {"finder": {}}
+
+        with pytest.raises(KeyError):
+            wired._start_eventfinder("finder", "No Filter", [0])
+
+        wired.run_generators.emit.assert_not_called()

@@ -485,8 +485,12 @@ judgement about which methods look thin.
   11 runs only, 0 untested.** The 11 are five `notify_plugin_state_changed` (now closed,
   23 tests), two `_on_sizes_checkbox_toggled`, `check_column_exists`/`set_column_exists`
   (Step 3e), and `ProteinView._resolve_event_db_ids` / `RawDataView._start_eventfinder`
-  (Step 4a). **Open decision:** the audit needs a coverage JSON, so it cannot be a plain
-  pytest test the way the other two gates are — choose between a `characterization` test
+  (Step 4a). **All 11 are now closed**, with 71 new tests across four files:
+  `test_plugin_state_notifications.py` (23), `test_controls_bins_validator.py` (9),
+  `test_column_exists_relay.py` (10), plus `_resolve_event_db_ids` added to
+  `test_protein_view_characterization.py` and `_start_eventfinder` to
+  `test_raw_data_view_characterization.py`. **Open decision:** the audit needs a coverage
+  JSON, so it cannot be a plain pytest test the way the other two gates are — choose between a `characterization` test
   that skips without coverage data, a CI-only step in `ci-internal-pr.yml` (which already
   runs the coverage variant), or leaving it a manually-run script. Record the choice in
   `DECISIONS.md`.
