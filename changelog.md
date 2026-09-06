@@ -1,5 +1,13 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** `check_column_exists` and `set_column_exists` are no longer on `MetaController` and `MetaView`; they were used only by the protein tab and now live on `ProteinController` and `ProteinView`
+
+* **Breaking:** `MetaView._setup_canvas` no longer takes a `num_channels` argument, which it never read
+
+* The event-index range helpers now live on the shared base for the Raw Data and Event Analysis tabs rather than on the base every tab inherits
+
+* Progress-bar updates in one analysis tab no longer wait on a lock held by another tab
+
 * The Raw Data and Event Analysis control panels now share a common `MetaEventTabControls` base instead of each carrying its own copy of the channel, filter and event-index handling, so a fix to one reaches both
 
 * The Raw Data and Event Analysis tabs now share a common `MetaEventTabView` base instead of each carrying its own copy of the channel validation, commit-parameter and data-filter handling, so a fix to one reaches both

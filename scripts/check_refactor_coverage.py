@@ -104,14 +104,22 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # algorithm twice, and its single caller now goes through the survivor. Removed
     # rather than left behind - this list is checked for existence, and a target that
     # no longer exists is a hole in the net, not a pass.
-    ("poriscope/utils/MetaView.py", "_parse_event_indices", "3d"),
-    ("poriscope/utils/MetaView.py", "_shift_ranges", "3d"),
-    ("poriscope/utils/MetaView.py", "_merge_ranges", "3d"),
-    ("poriscope/utils/MetaView.py", "_format_ranges", "3d"),
-    ("poriscope/utils/MetaView.py", "_expand_event_indices", "3d"),
-    # Step 3e - tab-specific leakage out of the bases
-    ("poriscope/utils/MetaView.py", "set_column_exists", "3e"),
-    ("poriscope/utils/MetaController.py", "check_column_exists", "3e"),
+    # The five range helpers moved down to MetaEventTabView in Step 3e rather than to
+    # MetaModel: their only callers are the two event tabs, and moving them down needs
+    # no call-site change. 3d proper still has to move them to the Model, from here.
+    ("poriscope/utils/MetaEventTabView.py", "_parse_event_indices", "3d"),
+    ("poriscope/utils/MetaEventTabView.py", "_shift_ranges", "3d"),
+    ("poriscope/utils/MetaEventTabView.py", "_merge_ranges", "3d"),
+    ("poriscope/utils/MetaEventTabView.py", "_format_ranges", "3d"),
+    ("poriscope/utils/MetaEventTabView.py", "_expand_event_indices", "3d"),
+    # Step 3e - tab-specific leakage out of the bases. Landed 2026-09-06; the entries
+    # now name where each landed, so the net still covers them.
+    ("poriscope/plugins/analysistabs/ProteinView.py", "set_column_exists", "3e"),
+    (
+        "poriscope/plugins/analysistabs/ProteinController.py",
+        "check_column_exists",
+        "3e",
+    ),
     # Step 4c - scientific computation out of the widgets
     (
         "poriscope/plugins/analysistabs/ClusteringView.py",

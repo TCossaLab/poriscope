@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, override
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, override
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
@@ -54,6 +54,10 @@ class MetaEventTabView(MetaView):
       reject anything that is not exactly one channel.
     - **The data filter.** ``set_data_filter_function`` records the callable the tab
       applies to raw samples before finding or fitting.
+    - **The event-index range helpers.** ``_parse_event_indices``, ``_expand_event_indices``,
+      ``_shift_ranges``, ``_merge_ranges`` and ``_format_ranges`` turn the event-index
+      field's text into ranges and back. They lived on ``MetaView`` until Step 3e, where
+      only these two tabs ever called them; they are pure apart from one logger call.
 
     What a subclass owes it:
 
@@ -70,6 +74,106 @@ class MetaEventTabView(MetaView):
 
     #: Assigned by ``set_data_filter_function`` and by each tab's own plot paths.
     data_filter: Optional[Callable]
+
+    @log(logger=logger)
+    def _parse_event_indices(
+        self, indices: str, allow_floats: bool
+    ) -> list[tuple[float, float]]:
+        """
+        Parse '7-10,12' → [(7,10), (12,12)]
+        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
+        otherwise every bound is parsed with int().
+        """
+        result: list[tuple[float, float]] = []
+        caster = float if allow_floats else int
+
+        for segment in indices.split(","):
+            segment = segment.strip()
+            if "-" in segment:
+                try:
+                    start, end = map(caster, segment.split("-"))
+                    result.append((start, end))
+                except ValueError:
+                    self.logger.warning(f"Invalid range segment: {segment}")
+            elif segment:
+                try:
+                    val = caster(segment)
+                    result.append((val, val))
+                except ValueError:
+                    self.logger.warning(f"Invalid index segment: {segment}")
+
+        return result
+
+    @log(logger=logger)
+    def _shift_ranges(
+        self, ranges: Sequence[tuple[float, float]], direction: str, offset: float
+    ) -> list[tuple[float, float]]:
+        """Shift each tuple range left or right."""
+        shifted: list[tuple[float, float]] = []
+        for start, end in ranges:
+            if start == end:  # Sigle index
+                val = start + offset if direction == "right" else start - offset
+                shifted.append((val, val))
+            else:  # Range
+                new_start = (
+                    end + offset
+                    if direction == "right"
+                    else ((2 * start) - end) - offset
+                )
+                new_end = (
+                    ((2 * end) - start) + offset
+                    if direction == "right"
+                    else start - offset
+                )
+                shifted.append((new_start, new_end))
+        return shifted
+
+    @log(logger=logger)
+    def _merge_ranges(
+        self, ranges: Sequence[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
+        """Merge overlapping or contiguous ranges."""
+        merged: list[tuple[float, float]] = []
+        for start, end in sorted(ranges):
+            if not merged or merged[-1][1] < start - 1:
+                merged.append((start, end))
+            else:
+                last_start, last_end = merged[-1]
+                merged[-1] = (last_start, max(last_end, end))
+        return merged
+
+    @log(logger=logger)
+    def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
+        """Format list of tuples into '8-11,13'"""
+        return ",".join(
+            f"{start}-{end}" if start != end else str(start) for start, end in ranges
+        )
+
+    @log(logger=logger)
+    def _expand_event_indices(self, indices_str: str) -> list[int]:
+        """
+        Expand '1,3-5' → [1,3,4,5], exclude segments with negatives.
+        """
+        result: Set[int] = set()
+        for segment in indices_str.split(","):
+            segment = segment.strip()
+            try:
+                if "-" in segment:
+                    parts = segment.split("-")
+                    if len(parts) != 2:
+                        raise ValueError
+                    start, end = map(int, parts)
+                    if start < 0 or end < 0:
+                        continue
+                    result.update(range(start, end + 1))
+                else:
+                    val = int(segment)
+                    if val < 0:
+                        continue
+                    result.add(val)
+            except ValueError:
+                continue
+        return sorted(result)
 
     @log(logger=logger)
     @override

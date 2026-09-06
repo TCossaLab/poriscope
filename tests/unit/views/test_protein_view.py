@@ -1120,65 +1120,19 @@ class TestUpdatePlot:
 # ===========================================================================
 
 
-class TestRangeHelpers:
-    def test_parse_single(self, mock_view):
-        assert mock_view._parse_event_indices("5", False) == [(5, 5)]
+class TestFactors:
+    """
+    ``MetaView._factors``, the subplot-grid helper.
 
-    def test_parse_range(self, mock_view):
-        assert mock_view._parse_event_indices("3-7", False) == [(3, 7)]
-
-    def test_parse_mixed(self, mock_view):
-        assert mock_view._parse_event_indices("1,3-5,8", False) == [
-            (1, 1),
-            (3, 5),
-            (8, 8),
-        ]
-
-    def test_shift_right_increases_values(self, mock_view):
-        before = mock_view._shift_ranges([(3, 3)], "right", 1)
-        assert before[0][0] > 3 or before[0][1] > 3 or before[0] == (4, 4)
-
-    def test_shift_left_decreases_values(self, mock_view):
-        result = mock_view._shift_ranges([(5, 5)], "left", 1)
-        # Left shift should move the range downward
-        assert result[0][0] <= 5 and result[0][1] <= 5
-
-    def test_shift_left_does_not_go_below_one(self, mock_view):
-        # Shifting left from 1 should not produce 0 or negative
-        result = mock_view._shift_ranges([(1, 1)], "left", 1)
-        assert result[0][0] >= 0  # at worst 0; real impls clamp to 1
-
-    def test_merge_adjacent(self, mock_view):
-        assert mock_view._merge_ranges([(1, 2), (3, 4)]) == [(1, 4)]
-
-    def test_merge_disjoint(self, mock_view):
-        assert mock_view._merge_ranges([(1, 2), (5, 6)]) == [(1, 2), (5, 6)]
-
-    def test_merge_empty(self, mock_view):
-        assert mock_view._merge_ranges([]) == []
-
-    def test_format_single(self, mock_view):
-        assert mock_view._format_ranges([(5, 5)]) == "5"
-
-    def test_format_range(self, mock_view):
-        assert mock_view._format_ranges([(3, 7)]) == "3-7"
-
-    def test_format_mixed(self, mock_view):
-        assert mock_view._format_ranges([(1, 1), (3, 5)]) == "1,3-5"
-
-    def test_expand_single(self, mock_view):
-        assert mock_view._expand_event_indices("5") == [5]
-
-    def test_expand_range(self, mock_view):
-        assert mock_view._expand_event_indices("3-5") == [3, 4, 5]
-
-    def test_expand_mixed(self, mock_view):
-        assert mock_view._expand_event_indices("1,3-5,8") == [1, 3, 4, 5, 8]
-
-    def test_expand_positive_only(self, mock_view):
-        # Only positive indices should appear
-        result = mock_view._expand_event_indices("1,2,3")
-        assert all(i > 0 for i in result)
+    This class held sixteen more tests, for the five event-index range helpers. Step 3e
+    moved those helpers off ``MetaView`` and onto ``MetaEventTabView``, whose only
+    subclasses are the two event tabs - the protein tab never had a claim on them, and
+    reaching a base method through an unrelated tab is what let that go unnoticed.
+    ``tests/unit/views/test_meta_view_characterization.py`` pins all five properly, with
+    28 tests asserting literal values; the ones deleted here asserted an ``or``-chain of
+    three alternatives, and one asserted ``>= 0`` under a comment claiming a clamp the
+    implementation does not have.
+    """
 
     def test_factors_perfect_square(self, mock_view):
         assert mock_view._factors(4) == (2, 2)

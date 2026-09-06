@@ -725,8 +725,8 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 **Landed:** Steps 0, 1 (1.9.0), 2 (all seven branches + exit review), **3a** (`MetaControls`,
 489 duplicated lines removed), **3d-pre** (the two logscale helpers collapsed to one), the
 boundary-gate widening, **3b** (the three `MetaSubsetTab*` bases, 494 lines) and **3c** (the
-three `MetaEventTab*` bases, 153 lines).
-`develop` is clean; the suite is **3,345 passed / 4 skipped**; duplication **753** removable;
+three `MetaEventTab*` bases, 153 lines) and **3e** (the bases narrowed by 120 lines).
+`develop` is clean; duplication **753** removable;
 boundary allowlist **110**; refactor coverage **247 targets** (re-measured 2026-09-06 via
 `collect_targets()`; 3d-pre removed one).
 
@@ -743,10 +743,21 @@ safety was measured rather than lucky. Rule 4 stays narrow deliberately —
 `DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
 `quality_control.rst`, which had never documented rule 4 at all.
 
-**Then, in dependency order:** 3d proper
-(now a numpy-only method plus the five range helpers), 3e, 3f (decided: move to
-`views/widgets/`, drop three autodoc pages, hand-write one for `WalkthroughMixin`), 3g,
-3a-bis.
+**Then, in dependency order:** 3f (decided: move to `views/widgets/`, drop three autodoc
+pages, hand-write one for `WalkthroughMixin`), 3g, 3a-bis. Then Step 4, and **3d after 4a**.
+
+**Reordered 2026-09-06: 3d moves after 4a.** The plan had it as a Step 3 promotion on the
+grounds that it is `MetaView` → `MetaModel` and "not View → Model, because both already live
+on the base". That is true of where the code *lives* and false of where it is *called from*:
+`_logscale_and_filter_multiple_columns` has **9 synchronous inline call sites** in
+`MetadataView` (6), `ProteinView` (2) and `ClusteringView` (1), and the range helpers had
+**6** in the two event tabs. **No View holds a model reference at all** — zero `self.model`
+across all five Views and `MetaView` — and there is no synchronous View-to-Model path in the
+architecture. Creating one is Decision A's `call` on `MetaController`/`MetaModel`, i.e. 4a.
+So 3d is fifteen call sites converted to the Controller-mediated round trip: Step 4 work by
+definition, not a move. The half that *was* possible without 4a — taking the five range
+helpers off `MetaView` — landed in 3e instead, since their callers are exactly 3c's family
+and moving them **down** needs no call-site change.
 
 **Owed — contributor docs on what to inherit from.** Step 3 leaves an analysis-tab author
 with a real choice that did not exist before: `MetaView` directly, or one of the
@@ -850,6 +861,49 @@ have none of them — so it is not universal plot state and does not belong on `
 the rule in `DECISIONS.md`. Left alone deliberately. Note this is a third shape of the
 mixin revisit condition: not "a third tab wants part of an intermediate", but "two tabs in
 *different* intermediates share behaviour".
+
+#### 3e — LANDED 2026-09-06
+
+Narrowing the published bases rather than deduplicating, so the duplication ratchet is
+almost unmoved (753 removable, unchanged; `*View.py` functions 218 → 219 as
+`set_column_exists` arrives in `ProteinView` as a single copy). Boundary allowlist unmoved at
+110. **`MetaView` loses 110 lines and `MetaController` 10.**
+
+- **The five event-index range helpers move `MetaView` → `MetaEventTabView`** (90 lines).
+  Their only callers are `EventAnalysisView` and `RawDataView`, so they sat on the base all
+  five tabs inherit for the benefit of two. Pure apart from one `logger` call, and moving them
+  *down* needs no call-site change. 3d still has to move them on to `MetaModel` from here.
+- **`check_column_exists` / `set_column_exists` move to `ProteinController` / `ProteinView`.**
+  **The plan called these "clustering-only" and that was the wrong tab.** Clustering has its
+  own separate pair, `check_cluster_column_exists` → `set_cluster_column_exists`, writing a
+  different attribute; nothing here ever ran for clustering. Protein already overrode
+  `check_column_exists`, so the base copy was dead. **Breaking:** two methods removed from
+  `Meta*` ABCs.
+- **`_setup_canvas` loses its `num_channels` parameter.** Never read in the body; the single
+  call site passed nothing; and the docstring claimed it built "subplots corresponding to the
+  number of channels", which the body does not do. Docstring corrected too.
+- **`MetaView.lock` becomes per-instance.** It was a *class* attribute, so all five tab views
+  serialised on one lock, guarding exactly one site — `remove_progress_bar`, which mutates the
+  strictly per-instance `self.progress_bars`.
+
+Three instruments needed the same edit in the same commit, which is the rule 3d-pre
+established:
+
+- `check_refactor_coverage`'s `MOVED` table now names the new homes.
+- `test_column_exists_relay.py`, a Step 2 characterization test written specifically to
+  protect this move, was re-pointed to `ProteinController`/`ProteinView` **and had its stated
+  premise corrected**, since it repeated the plan's wrong tab.
+- 45 range-helper characterization tests followed their methods by making
+  `test_meta_view_characterization.py`'s concrete subclass extend `MetaEventTabView`, which
+  reaches both bases' methods by ordinary inheritance.
+
+**And one test set was deleted rather than moved.** `test_protein_view.py::TestRangeHelpers`
+held 16 tests for the range helpers, reached through a tab that has no relationship to them —
+which is how nobody noticed the helpers did not belong on `MetaView`. They were already
+recorded as weak (an `or`-chain of three alternatives; one asserting `>= 0` under a comment
+claiming a clamp the implementation does not have), and
+`test_meta_view_characterization.py` pins all five properly with 28 literal-value tests. The
+4 `_factors` tests in that class stay, and it is renamed `TestFactors`.
 
 ## Step 3 — promotion to `Meta*` bases
 

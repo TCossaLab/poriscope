@@ -19,6 +19,14 @@ the reason this file exists at all:
   covered by ``TestLogscaleMultipleColumns`` below and, end to end, by
   ``tests/integration/flows/test_clustering_flow_no_gui.py``.
 
+**The five range helpers now live on ``MetaEventTabView``, not ``MetaView``.** Step 3e
+moved them down: their only callers are ``EventAnalysisView`` and ``RawDataView``, so
+sitting on the base every tab inherits was leakage, and 3c had just created the right
+home. 3d still has to move them on to ``MetaModel`` from there. The concrete subclass
+below therefore extends ``MetaEventTabView``, which reaches both it and ``MetaView``'s
+own ``_logscale_and_filter_multiple_columns`` through ordinary inheritance - one fixture
+still covers everything this file pins.
+
 The five range helpers are pinned for a different reason. They do have tests, in
 ``test_protein_view.py``'s ``TestRangeHelpers``, but weak ones: the shift tests
 assert an ``or``-chain of three alternatives, and one asserts ``>= 0`` under a
@@ -37,14 +45,21 @@ import numpy as np
 import pytest
 from PySide6.QtWidgets import QBoxLayout
 
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
 
 
-class _ConcreteView(MetaView):
-    """A minimal concrete MetaView, so the base's own methods can be exercised."""
+class _ConcreteView(MetaEventTabView):
+    """
+    A minimal concrete view, so the bases' own methods can be exercised.
+
+    It extends ``MetaEventTabView`` rather than ``MetaView`` because Step 3e moved the
+    range helpers down to it. Only three abstract hooks need satisfying here:
+    ``MetaEventTabView`` already implements ``_reset_actions`` and
+    ``notify_plugin_state_changed`` concretely for both event tabs.
+    """
 
     def _init(self) -> None:
         """Satisfy the abstract hook; the tests need no state from it."""
@@ -52,29 +67,21 @@ class _ConcreteView(MetaView):
     def _set_control_area(self, layout: QBoxLayout) -> None:
         """Satisfy the abstract hook; no controls widget is built."""
 
-    def _reset_actions(self, axis_type: str = "2d") -> None:
-        """Satisfy the abstract hook; no canvas exists to reset."""
-
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """Satisfy the abstract hook; no comboboxes to populate."""
-
-    def notify_plugin_state_changed(
-        self, metaclass: str, plugin_key: str, reason: str
-    ) -> None:
-        """Satisfy the abstract hook; nothing listens."""
 
 
 @pytest.fixture
 def view() -> _ConcreteView:
     """
-    Build a MetaView without constructing any Qt widget.
+    Build the view without constructing any Qt widget.
 
     ``__new__`` skips ``QWidget.__init__``, so there is no C++ object behind the
     instance and emitting a class-level Signal would raise "Signal source has been
     deleted"; ``shadow_signals`` swaps each for a stand-in. ``logger`` is a class
     attribute and is deliberately left alone - mocking it blinds ``caplog``.
 
-    :return: a MetaView subclass instance with its signals shadowed
+    :return: a MetaEventTabView subclass instance with its signals shadowed
     :rtype: _ConcreteView
     """
     instance = _ConcreteView.__new__(_ConcreteView)

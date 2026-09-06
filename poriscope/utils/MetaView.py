@@ -27,7 +27,7 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -90,7 +90,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     run_generators = Signal(str)
     add_text_to_display = Signal(str, str)
     load_actions_from_json = Signal(str)  # filename
-    lock = threading.Lock()
 
     def __init__(self) -> None:
         """
@@ -99,6 +98,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         super().__init__()
         self.available_plugins: Dict[str, List[str]] = {}
         self.progress_bars: Dict[str, Dict[str, Any]] = {}
+        # Guards progress_bars, which is per-instance - so this is too. It was a
+        # class attribute until Step 3e, which serialised every tab against every
+        # other for a dict none of them share.
+        self.lock = threading.Lock()
         self._init()
         self._setup_ui()
         self.plot_data: Optional[Any] = None
@@ -217,9 +220,11 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         pass
 
     @log(logger=logger)
-    def _setup_canvas(self, num_channels: int = 1) -> None:
+    def _setup_canvas(self) -> None:
         """
-        Set up the canvas with a given number of subplots corresponding to the number of channels.
+        Build the figure and its canvas, and parent the canvas to this widget.
+
+        Subclasses lay out their own subplots afterwards; this makes one empty figure.
         """
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
@@ -256,16 +261,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.progress_bar_layout.addWidget(
             self.kill_all_button, alignment=Qt.AlignRight
         )
-
-    @log(logger=logger)
-    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Sets the status indicating if cluster columns already exist.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.column_table = exists_in_table
 
     @log(logger=logger)
     @Slot(float, str)
@@ -548,106 +543,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         :rtype: None
         """
         pass
-
-    @log(logger=logger)
-    def _parse_event_indices(
-        self, indices: str, allow_floats: bool
-    ) -> list[tuple[float, float]]:
-        """
-        Parse '7-10,12' → [(7,10), (12,12)]
-        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
-        otherwise every bound is parsed with int().
-        """
-        result: list[tuple[float, float]] = []
-        caster = float if allow_floats else int
-
-        for segment in indices.split(","):
-            segment = segment.strip()
-            if "-" in segment:
-                try:
-                    start, end = map(caster, segment.split("-"))
-                    result.append((start, end))
-                except ValueError:
-                    self.logger.warning(f"Invalid range segment: {segment}")
-            elif segment:
-                try:
-                    val = caster(segment)
-                    result.append((val, val))
-                except ValueError:
-                    self.logger.warning(f"Invalid index segment: {segment}")
-
-        return result
-
-    @log(logger=logger)
-    def _shift_ranges(
-        self, ranges: Sequence[tuple[float, float]], direction: str, offset: float
-    ) -> list[tuple[float, float]]:
-        """Shift each tuple range left or right."""
-        shifted: list[tuple[float, float]] = []
-        for start, end in ranges:
-            if start == end:  # Sigle index
-                val = start + offset if direction == "right" else start - offset
-                shifted.append((val, val))
-            else:  # Range
-                new_start = (
-                    end + offset
-                    if direction == "right"
-                    else ((2 * start) - end) - offset
-                )
-                new_end = (
-                    ((2 * end) - start) + offset
-                    if direction == "right"
-                    else start - offset
-                )
-                shifted.append((new_start, new_end))
-        return shifted
-
-    @log(logger=logger)
-    def _merge_ranges(
-        self, ranges: Sequence[tuple[float, float]]
-    ) -> list[tuple[float, float]]:
-        """Merge overlapping or contiguous ranges."""
-        merged: list[tuple[float, float]] = []
-        for start, end in sorted(ranges):
-            if not merged or merged[-1][1] < start - 1:
-                merged.append((start, end))
-            else:
-                last_start, last_end = merged[-1]
-                merged[-1] = (last_start, max(last_end, end))
-        return merged
-
-    @log(logger=logger)
-    def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
-        """Format list of tuples into '8-11,13'"""
-        return ",".join(
-            f"{start}-{end}" if start != end else str(start) for start, end in ranges
-        )
-
-    @log(logger=logger)
-    def _expand_event_indices(self, indices_str: str) -> list[int]:
-        """
-        Expand '1,3-5' → [1,3,4,5], exclude segments with negatives.
-        """
-        result: Set[int] = set()
-        for segment in indices_str.split(","):
-            segment = segment.strip()
-            try:
-                if "-" in segment:
-                    parts = segment.split("-")
-                    if len(parts) != 2:
-                        raise ValueError
-                    start, end = map(int, parts)
-                    if start < 0 or end < 0:
-                        continue
-                    result.update(range(start, end + 1))
-                else:
-                    val = int(segment)
-                    if val < 0:
-                        continue
-                    result.add(val)
-            except ValueError:
-                continue
-        return sorted(result)
 
     # private API, should generally be left alone by subclasses
 

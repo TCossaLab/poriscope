@@ -218,16 +218,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             )
 
     @log(logger=logger)
-    def check_column_exists(self, table_name: str) -> None:
-        """
-        Notify the view to check if a cluster column exists in the given table.
-
-        :param table_name: Name of the table to check.
-        :type table_name: str
-        """
-        self.view.set_column_exists(table_name)
-
-    @log(logger=logger)
     @Slot(str, str)
     def relay_add_text_to_display(self, text: str, source: str) -> None:
         """

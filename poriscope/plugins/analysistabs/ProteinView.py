@@ -415,7 +415,7 @@ class ProteinView(MetaSubsetTabView, WalkthroughMixin):
         ]
         table_name = "events"
 
-        self.column_table = None
+        self.column_table: Optional[str] = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -571,6 +571,16 @@ class ProteinView(MetaSubsetTabView, WalkthroughMixin):
             lines.extend(f"&nbsp;&nbsp;{row}" for row in rows)
 
         self.add_text_to_display.emit("<br>".join(lines), self.__class__.__name__)
+
+    @log(logger=logger)
+    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
+        """
+        Record which table already holds committed fit-data columns.
+
+        :param exists_in_table: Name of table where columns exist or None.
+        :type exists_in_table: Optional[str]
+        """
+        self.column_table = exists_in_table
 
     @log(logger=logger)
     def set_alter_database_status(self, status: bool) -> None:

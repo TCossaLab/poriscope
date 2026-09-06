@@ -1,72 +1,60 @@
 """
 Characterization tests for the ``check_column_exists`` / ``set_column_exists`` relay.
 
-Step 3e removes this pair from the bases as tab-specific leakage: both live on
-``MetaController`` and ``MetaView``, where every tab inherits them, but only the
-clustering tab uses them - to record which table already holds committed cluster
-columns, so a second commit can warn instead of duplicating them.
+Step 3e removed this pair from the bases as tab-specific leakage. Both lived on
+``ProteinController`` and ``MetaView``, where every tab inherited them, and they now live
+on ``ProteinController`` and ``ProteinView`` - which are the only things that use them,
+to record which table already holds committed fit-data columns so a second commit can
+warn instead of duplicating them.
 
-The refactor-coverage audit reported both as ``RUNS ONLY``. They execute during the
-clustering e2e flow, but no test named either, so nothing asserted that the
-controller reaches the view or that the view stores what it is handed. Both are one
-line, and one line is exactly what gets dropped unnoticed when a method is deleted
-from a base and re-homed on a subclass.
+**The plan said "clustering", and that was the wrong tab.** The clustering tab has its
+own separate pair, ``ClusteringController.check_cluster_column_exists`` ->
+``ClusteringView.set_cluster_column_exists``, writing a different attribute. Nothing
+here ever ran for clustering. Measured when 3e was implemented, 2026-09-06.
+
+The refactor-coverage audit reported both as ``RUNS ONLY``. They execute during an e2e
+flow, but no test named either, so nothing asserted that the controller reaches the view
+or that the view stores what it is handed. Both are one line, and one line is exactly
+what gets dropped unnoticed when a method is deleted from a base and re-homed on a
+subclass - which is what these now hold in their new home.
 """
 
-from typing import Dict, List, Optional
+from typing import Optional
 
 import pytest
-from PySide6.QtWidgets import QBoxLayout
 
-from poriscope.utils.MetaController import MetaController
-from poriscope.utils.MetaView import MetaView
+from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.ProteinView import ProteinView
 
 pytestmark = pytest.mark.characterization
 
 
-class _ConcreteView(MetaView):
-    """A concrete MetaView so the base's own setter is reachable."""
-
-    def _init(self) -> None:
-        """Satisfy the abstract hook."""
-
-    def _set_control_area(self, layout: QBoxLayout) -> None:
-        """Satisfy the abstract hook."""
-
-    def _reset_actions(self, axis_type: str = "2d") -> None:
-        """Satisfy the abstract hook."""
-
-    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
-        """Satisfy the abstract hook."""
-
-    def notify_plugin_state_changed(
-        self, metaclass: str, plugin_key: str, reason: str
-    ) -> None:
-        """Satisfy the abstract hook."""
-
-
 @pytest.fixture
-def view() -> _ConcreteView:
+def view() -> ProteinView:
     """
-    A MetaView built without Qt.
+    A ProteinView built without Qt, so its own setter is reachable.
+
+    ``__new__`` rather than the constructor: the setter under test touches one
+    attribute and nothing else, and building the real widget would drag in the whole
+    tab.
 
     :return: the view
-    :rtype: _ConcreteView
+    :rtype: ProteinView
     """
-    return _ConcreteView.__new__(_ConcreteView)
+    return ProteinView.__new__(ProteinView)
 
 
 @pytest.fixture
-def controller(mocker) -> MetaController:
+def controller(mocker) -> ProteinController:
     """
-    A MetaController with a mock view, built without Qt.
+    A ProteinController with a mock view, built without Qt.
 
     :param mocker: pytest-mock's fixture
     :type mocker: Any
     :return: the controller
-    :rtype: MetaController
+    :rtype: ProteinController
     """
-    instance = MetaController.__new__(MetaController)  # type: ignore[type-abstract]
+    instance = ProteinController.__new__(ProteinController)
     instance.view = mocker.Mock()
     return instance
 
@@ -74,13 +62,13 @@ def controller(mocker) -> MetaController:
 class TestSetColumnExists:
     """The view side: store whichever table was reported, including none."""
 
-    def test_it_records_the_table_name(self, view: _ConcreteView) -> None:
-        """The clustering tab reads this back before committing new columns."""
+    def test_it_records_the_table_name(self, view: ProteinView) -> None:
+        """The protein tab reads this back before committing new columns."""
         view.set_column_exists("events")
 
         assert view.column_table == "events"
 
-    def test_none_means_no_table_holds_them(self, view: _ConcreteView) -> None:
+    def test_none_means_no_table_holds_them(self, view: ProteinView) -> None:
         """
         ``None`` is a real answer here, not a failure.
 
@@ -92,7 +80,7 @@ class TestSetColumnExists:
 
         assert view.column_table is None
 
-    def test_a_later_answer_replaces_an_earlier_one(self, view: _ConcreteView) -> None:
+    def test_a_later_answer_replaces_an_earlier_one(self, view: ProteinView) -> None:
         """The value is per-query state, not accumulated."""
         view.set_column_exists("events")
         view.set_column_exists("sublevels")
@@ -101,7 +89,7 @@ class TestSetColumnExists:
 
     @pytest.mark.parametrize("value", ["events", "sublevels", None, ""])
     def test_it_stores_what_it_is_given_without_interpreting_it(
-        self, view: _ConcreteView, value: Optional[str]
+        self, view: ProteinView, value: Optional[str]
     ) -> None:
         """No normalisation, so an empty string stays distinguishable from None."""
         view.set_column_exists(value)
@@ -113,19 +101,19 @@ class TestCheckColumnExists:
     """The controller side: a one-hop relay onto the view."""
 
     def test_it_forwards_the_table_name_to_the_view(
-        self, controller: MetaController
+        self, controller: ProteinController
     ) -> None:
-        """The whole method. Step 3e moves it, and this is what must survive."""
+        """The whole method. Step 3e re-homed it, and this is what survived."""
         controller.check_column_exists("events")
 
         controller.view.set_column_exists.assert_called_once_with("events")
 
-    def test_it_returns_none(self, controller: MetaController) -> None:
+    def test_it_returns_none(self, controller: ProteinController) -> None:
         """It is a notification, and the bus discards any return value."""
         assert controller.check_column_exists("events") is None
 
 
-def test_the_relay_works_end_to_end(view: _ConcreteView, mocker) -> None:
+def test_the_relay_works_end_to_end(view: ProteinView, mocker) -> None:
     """
     Controller to view, with the real view rather than a mock on the far side.
 
@@ -133,7 +121,7 @@ def test_the_relay_works_end_to_end(view: _ConcreteView, mocker) -> None:
     which is what a re-homing gets wrong. It would fail if the controller called a
     differently named setter, which no single-sided test would notice.
     """
-    controller = MetaController.__new__(MetaController)  # type: ignore[type-abstract]
+    controller = ProteinController.__new__(ProteinController)
     controller.view = view
 
     controller.check_column_exists("sublevels")
