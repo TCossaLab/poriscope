@@ -43,13 +43,12 @@ from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.walkthrough_mixin import (
-    WalkthroughMixin,
     WalkthroughStep,
 )
 
 
 @inherit_docstrings
-class EventAnalysisView(MetaEventTabView, WalkthroughMixin):
+class EventAnalysisView(MetaEventTabView):
     """
     Subclass of MetaEventTabView for visualizing and interacting with event-based signal analysis.
 
@@ -57,11 +56,6 @@ class EventAnalysisView(MetaEventTabView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override

@@ -16,6 +16,8 @@ Comprehensive test coverage for:
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock
 
@@ -29,6 +31,9 @@ from poriscope.plugins.analysistabs.MetadataView import MetadataView
 # ----------------------------- Fixtures ------------------------------
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
 @pytest.fixture
 def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
@@ -39,10 +44,6 @@ def mock_qt_dependencies(mocker: MockerFixture) -> None:
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
         "poriscope.utils.MetaView.MetaView.__init__",
-        return_value=None,
-    )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.WalkthroughMixin.__init__",
         return_value=None,
     )
 
@@ -612,30 +613,66 @@ def test_plot_1d_density_sets_log10_label_when_logscale_true(
     assert "log10" in call_args
 
 
-def test_dunder_init_calls_super_and_initializers(mocker: MockerFixture) -> None:
+def test_metaview_runs_each_initializer_exactly_once() -> None:
     """
-    Verify __init__ delegates to the parent and helper initializers.
+    ``MetaView.__init__`` is the only constructor, and it calls each hook once.
 
-    ``MetaSubsetTabView`` sits between ``MetadataView`` and ``MetaView`` since Step 3b
-    but defines no ``__init__`` of its own, so ``super().__init__`` still resolves to
-    ``MetaView``'s - which is why that is what is patched.
+    Step 3g deleted ``MetadataView.__init__``, which was byte-identical in all five
+    tabs. It called ``self._init()`` after ``super().__init__(...)`` - and
+    ``MetaView.__init__`` already calls ``_init()`` itself, so **every tab ran it
+    twice**, once before ``_setup_ui()`` and once after. That was measured to be a
+    no-op before it was removed: no attribute ``_init`` assigns is also assigned
+    anywhere in the ``_setup_ui`` call tree, in any of the five tabs, so the second
+    call only rewrote its own values.
+
+    Asserted against the source rather than by constructing a tab, because reaching
+    ``MetaView.__init__`` at all means building a real ``QWidget``, and the only way
+    this file's fixtures avoid that is by patching that very method away.
     """
-    mock_super_init: MagicMock = mocker.patch(
-        "poriscope.utils.MetaView.MetaView.__init__",
-        return_value=None,
+    source = Path(REPO_ROOT, "poriscope", "utils", "MetaView.py").read_text(
+        encoding="utf-8"
     )
-    mock_init: MagicMock = mocker.patch.object(MetadataView, "_init", autospec=True)
-    mock_init_walkthrough: MagicMock = mocker.patch.object(
+    tree = ast.parse(source)
+    cls = next(
+        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MetaView"
+    )
+    init = next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+    )
+    called = [
+        n.func.attr
+        for n in ast.walk(init)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "self"
+    ]
+
+    assert called.count("_init") == 1, called
+    assert called.count("_init_walkthrough") == 1, called
+    assert called.count("_setup_ui") == 1, called
+
+
+def test_no_tab_defines_its_own_dunder_init() -> None:
+    """
+    All five tabs inherit construction, so the duplicate cannot creep back.
+
+    Asserted across the family rather than on Metadata alone: the five copies were
+    identical, so a regression would most likely reintroduce all five.
+    """
+    from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+    from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
+    from poriscope.plugins.analysistabs.ProteinView import ProteinView
+    from poriscope.plugins.analysistabs.RawDataView import RawDataView
+
+    for cls in (
+        ClusteringView,
+        EventAnalysisView,
         MetadataView,
-        "_init_walkthrough",
-        autospec=True,
-    )
-
-    view = MetadataView("arg", key="value")
-
-    mock_super_init.assert_called_once_with("arg", key="value")
-    mock_init.assert_called_once_with(view)
-    mock_init_walkthrough.assert_called_once_with(view)
+        ProteinView,
+        RawDataView,
+    ):
+        assert "__init__" not in cls.__dict__, f"{cls.__name__} regrew an __init__"
 
 
 def test_plot_1d_density_uses_first_bins_entry(

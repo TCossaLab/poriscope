@@ -73,7 +73,6 @@ from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDial
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.walkthrough_mixin import (
-    WalkthroughMixin,
     WalkthroughStep,
 )
 
@@ -84,7 +83,7 @@ warnings.filterwarnings(
 
 
 @inherit_docstrings
-class MetadataView(MetaSubsetTabView, WalkthroughMixin):
+class MetadataView(MetaSubsetTabView):
     """
     Subclass of MetaSubsetTabView for visualizing and interacting with metadata plots.
 
@@ -101,11 +100,6 @@ class MetadataView(MetaSubsetTabView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override

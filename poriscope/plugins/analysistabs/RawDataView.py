@@ -41,13 +41,12 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.time_widget import TimeWidget
 from poriscope.views.widgets.walkthrough_mixin import (
-    WalkthroughMixin,
     WalkthroughStep,
 )
 
 
 @inherit_docstrings
-class RawDataView(MetaEventTabView, WalkthroughMixin):
+class RawDataView(MetaEventTabView):
     """
     Subclass of MetaEventTabView for visualizing raw signal data and PSD plots.
 
@@ -56,11 +55,6 @@ class RawDataView(MetaEventTabView, WalkthroughMixin):
 
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override

@@ -55,7 +55,6 @@ from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 from poriscope.views.widgets.walkthrough_mixin import (
-    WalkthroughMixin,
     WalkthroughStep,
 )
 
@@ -68,7 +67,7 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
 
 
 @inherit_docstrings
-class ClusteringView(MetaView, WalkthroughMixin):
+class ClusteringView(MetaView):
     """
     Subclass of MetaView for displaying and interacting with clustering analysis.
 
@@ -76,11 +75,6 @@ class ClusteringView(MetaView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override

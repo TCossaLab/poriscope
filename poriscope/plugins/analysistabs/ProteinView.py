@@ -77,7 +77,6 @@ from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.walkthrough_mixin import (
-    WalkthroughMixin,
     WalkthroughStep,
 )
 
@@ -88,7 +87,7 @@ warnings.filterwarnings(
 
 
 @inherit_docstrings
-class ProteinView(MetaSubsetTabView, WalkthroughMixin):
+class ProteinView(MetaSubsetTabView):
     """
     Subclass of MetaSubsetTabView for estimating translocating protein size and shape from nanopore blockage events.
 
@@ -186,11 +185,6 @@ class ProteinView(MetaSubsetTabView, WalkthroughMixin):
             self.canvas_vm_individual = value
         else:
             self.canvas_vm_ensemble = value
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override

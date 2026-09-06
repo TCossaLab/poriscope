@@ -54,9 +54,10 @@ from PySide6.QtWidgets import (
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
+from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
-class MetaView(QWidget, metaclass=QWidgetABCMeta):
+class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
     """
     Abstract base class designed to provide a unified interface for different analysis tabs.
 
@@ -104,6 +105,11 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.lock = threading.Lock()
         self._init()
         self._setup_ui()
+        # Every tab used to repeat this pair in its own __init__, calling _init() a
+        # second time after _setup_ui(). Measured as a no-op before removing it: no
+        # attribute _init assigns is also assigned anywhere in the _setup_ui call
+        # tree, in any of the five tabs, so the second call rewrote its own values.
+        self._init_walkthrough()
         self.plot_data: Optional[Any] = None
         self.threads: List[Any] = []
         self.layout().setContentsMargins(0, 0, 0, 0)

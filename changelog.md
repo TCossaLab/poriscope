@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed each analysis tab initialising itself twice on startup**: every tab ran its state setup once before its widgets were built and again afterwards
+
+* Analysis tabs no longer need to inherit `WalkthroughMixin` themselves; it comes with the base class, and a tab written against `MetaView` gets the walkthrough for free
+
 * **Breaking:** the walkthrough widgets have moved from `poriscope.plugins.analysistabs.utils` to `poriscope.views.widgets`; a plugin that imports `WalkthroughMixin` or `WalkthroughStep` needs its import path updated
 
 * Fixed two links in the "Adding a walkthrough" tutorial that had never resolved, and gave `WalkthroughMixin` an API reference page for them to point at

@@ -726,7 +726,7 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 489 duplicated lines removed), **3d-pre** (the two logscale helpers collapsed to one), the
 boundary-gate widening, **3b** (the three `MetaSubsetTab*` bases, 494 lines) and **3c** (the
 three `MetaEventTab*` bases, 153 lines) and **3e** (the bases narrowed by 120 lines).
-`develop` is clean; duplication **753** removable;
+`develop` is clean; duplication **737** removable;
 boundary allowlist **110**; refactor coverage **247 targets** (re-measured 2026-09-06 via
 `collect_targets()`; 3d-pre removed one).
 
@@ -743,8 +743,8 @@ safety was measured rather than lucky. Rule 4 stays narrow deliberately —
 `DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
 `quality_control.rst`, which had never documented rule 4 at all.
 
-**Then, in dependency order:** 3f (decided: move to `views/widgets/`, drop three autodoc
-pages, hand-write one for `WalkthroughMixin`), 3g, 3a-bis. Then Step 4, and **3d after 4a**.
+**Then, in dependency order:** 3a-bis is all that remains of Step 3. Then Step 4, and
+**3d after 4a**.
 
 **Reordered 2026-09-06: 3d moves after 4a.** The plan had it as a Step 3 promotion on the
 grounds that it is `MetaView` → `MetaModel` and "not View → Model, because both already live
@@ -930,6 +930,43 @@ as well as at the boundary gate.
 plan calls for a frozen dataclass. Deferred as its own commit: **90 four-element tuple literals**
 across 7 files construct these, and `walkthrough_mixin` unpacks them positionally (`step[2]`).
 Mechanical but large, and it moves no gate — a readability change in a file plugin authors read.
+
+#### 3g — LANDED 2026-09-06
+
+`MetaView` now inherits `WalkthroughMixin` and calls `_init_walkthrough()` itself, so all five
+tabs drop both the mixin from their bases and their byte-identical four-line `__init__`.
+Duplication **753 → 737**.
+
+**It was not a free deletion — `_init()` was running twice on every tab**, once from
+`MetaView.__init__` before `_setup_ui()` and once from the tab's own `__init__` after it.
+Verified by instrumenting a real `MetadataView` construction, not by reading. Removing the late
+call was measured safe first: **no attribute any of the five `_init` bodies assigns is also
+assigned anywhere in the `_setup_ui` call tree**, so the second call only rewrote its own
+values. Zero overlap in all five tabs.
+
+**The trap that decided the design.** `MetaView` precedes `WalkthroughMixin` in every tab's MRO,
+so giving `MetaView` a no-op `_init_walkthrough` default — the obvious way to keep the mixin
+optional — would have **shadowed the mixin's and silently disabled every walkthrough**. Measured
+before it was written. The mixin is therefore listed *last* on `MetaView`
+(`MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta)`), which reproduces each tab's
+existing MRO exactly, one level up: `MetadataView → MetaSubsetTabView → MetaView → QWidget →
+QObject → QPaintDevice → Object → WalkthroughMixin → object`, byte-for-byte what it was.
+
+**`WalkthroughMixin` stays a class**, contrary to the first sketch of this step. It is used at
+three levels, and only the middle one is a `MetaView`: `MainView(QMainWindow, WalkthroughMixin)`
+is the orchestrator — Help ▸ Tutorial, and `launch_walkthrough_if_needed` reaching into the
+current tab (`main_view.py:1040-1057`) — while `ClusteringSettingsDialog` and
+`AddSubsetFilterDialog` run *nested* walkthroughs when a tab's own is active
+(`ClusteringView.py:497`, `MetadataView.py:2879`, `ProteinView.py:3372`). Neither a
+`QMainWindow` nor a `QDialog` can be a `MetaView`.
+
+`test_dunder_init_calls_super_and_initializers` tested a method that no longer exists and was
+replaced by two that pin what 3g established: `MetaView.__init__` calls `_init`,
+`_init_walkthrough` and `_setup_ui` exactly once each, and no tab defines an `__init__`. The
+first is asserted against the source, because reaching `MetaView.__init__` means building a real
+`QWidget` and the only way that file's fixtures avoid one is by patching that method away. A
+`WalkthroughMixin.__init__` patch in the fixture was also deleted: the mixin has no `__init__`,
+so it had been inert all along.
 
 ## Step 3 — promotion to `Meta*` bases
 
