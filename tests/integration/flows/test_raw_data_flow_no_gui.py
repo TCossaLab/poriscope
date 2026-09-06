@@ -169,9 +169,7 @@ def find_events(triad: Triad, qtbot: Any, channels: List[int]) -> None:
     )
 
 
-def commit_events(
-    triad: Triad, qtbot: Any, channels: List[int], expected: int
-) -> None:
+def commit_events(triad: Triad, qtbot: Any, channels: List[int], expected: int) -> None:
     """
     Drive the tab's commit action and wait for every expected row to land.
 
