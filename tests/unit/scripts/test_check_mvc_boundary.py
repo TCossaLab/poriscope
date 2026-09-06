@@ -1,12 +1,18 @@
 """
 Tests for ``scripts/check_mvc_boundary.py``, the analysis-tab MVC boundary measure.
 
-These drive the three rules against small synthetic module texts rather than the
+These drive the four rules against small synthetic module texts rather than the
 real Views and Controllers, so they pin the *definition* of each rule and do not
 move every time the refactor removes a violation. That matters more here than
 usual: an earlier count of "21 import statements over 12 View x module pairs"
 could not be reproduced because the rule was never written down precisely enough
-to re-derive, and the real figures are 22 and 13.
+to re-derive, and the real figures are 24 and 14.
+
+``TestLayerMembership`` is the exception, and reads the real tree on purpose. Which
+files a rule covers is not a definition that can be checked against synthetic text,
+and it was the gate's blind spot: rules 1-3 scanned ten hardcoded filenames under
+``poriscope/plugins/analysistabs/``, so promoting a method to a base in
+``poriscope/utils/`` removed it from the measurement without fixing it.
 
 ``scripts/`` is not a package, so the module under test is loaded by file path.
 """
@@ -16,7 +22,7 @@ import importlib.util
 import textwrap
 import types
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 import pytest
 
@@ -227,9 +233,9 @@ class TestTotals:
         :rtype: Dict[str, Dict[str, object]]
         """
         return {
-            "emits": {"AView.py": 3},
-            "imports": {"AView.py": ["numpy", "numpy.typing", "pandas"]},
-            "private_access": {"AController.py": 2},
+            "emits": {"poriscope/a/AView.py": 3},
+            "imports": {"poriscope/a/AView.py": ["numpy", "numpy.typing", "pandas"]},
+            "private_access": {"poriscope/a/AController.py": 2},
         }
 
     def test_total_sums_all_three_rules(self, mod: types.ModuleType) -> None:
@@ -256,7 +262,11 @@ class TestComparison:
         :return: an allowlist-shaped mapping
         :rtype: Dict[str, Dict[str, object]]
         """
-        return {"emits": {"AView.py": 3}, "imports": {}, "private_access": {}}
+        return {
+            "emits": {"poriscope/a/AView.py": 3},
+            "imports": {},
+            "private_access": {},
+        }
 
     def test_a_match_is_silent(self, mod: types.ModuleType) -> None:
         """No disagreement means no message."""
@@ -265,7 +275,7 @@ class TestComparison:
     def test_a_new_file_is_a_new_violation(self, mod: types.ModuleType) -> None:
         """A violation appearing where the allowlist has none fails loudly."""
         current = {
-            "emits": {"AView.py": 3, "BView.py": 1},
+            "emits": {"poriscope/a/AView.py": 3, "poriscope/a/BView.py": 1},
             "imports": {},
             "private_access": {},
         }
@@ -293,25 +303,111 @@ class TestComparison:
         self, mod: types.ModuleType
     ) -> None:
         """A partial change names what it was and what it is."""
-        current = {"emits": {"AView.py": 2}, "imports": {}, "private_access": {}}
+        current = {
+            "emits": {"poriscope/a/AView.py": 2},
+            "imports": {},
+            "private_access": {},
+        }
         problems = mod.compare(current, self._allowlist())
         assert any("was 3, is now 2" in p for p in problems)
 
 
-class TestFileLists:
-    """Guards on the explicit file lists."""
+class TestLayerMembership:
+    """
+    Which files rules 1-3 read, now that the layer is derived rather than listed.
 
-    def test_every_named_file_exists(self, mod: types.ModuleType) -> None:
-        """A renamed file must fail loudly rather than shrink the measurement."""
-        for name in mod.VIEWS + mod.CONTROLLERS:
-            assert (mod.TABS / name).is_file(), f"{name} is missing"
+    The original ten hardcoded filenames made the gate blind to its own refactor: a
+    method promoted to a base in ``poriscope/utils/`` left the measurement without
+    being fixed. These pin the two tests that replaced them - a whole-directory
+    membership and a filename suffix - and, more importantly, pin the *destinations*,
+    since those are what the list could not see.
+    """
 
-    def test_all_five_tabs_are_covered_on_both_sides(
+    def _names(self, paths: List[Path]) -> Set[str]:
+        """
+        Reduce a layer scan to repository-relative paths.
+
+        :param paths: the files a layer scan returned
+        :type paths: List[Path]
+        :return: their repository-relative paths
+        :rtype: Set[str]
+        """
+        return {p.resolve().relative_to(REPO_ROOT).as_posix() for p in paths}
+
+    def test_the_five_tab_views_and_controllers_are_all_classified(
         self, mod: types.ModuleType
     ) -> None:
-        """Five Views and five Controllers, or the metric is measuring a subset."""
-        assert len(mod.VIEWS) == 5
-        assert len(mod.CONTROLLERS) == 5
+        """The original ten, which the hardcoded lists covered and must still cover."""
+        views = self._names(mod.view_modules())
+        controllers = self._names(mod.controller_modules())
+        tabs = "poriscope/plugins/analysistabs"
+
+        for tab in ("Clustering", "EventAnalysis", "Metadata", "Protein", "RawData"):
+            assert f"{tabs}/{tab}View.py" in views
+            assert f"{tabs}/{tab}Controller.py" in controllers
+
+    def test_the_promotion_destinations_are_classified(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        The whole point of widening the scan.
+
+        ``MetaController`` is where Step 3b would promote ``relay_query``, which holds
+        **all ten** of rule 3's violations; ``MetaView`` and ``MetaControls`` are
+        Step 3's View-side destinations. Under the hardcoded lists a promotion to any
+        of them zeroed the rule without fixing anything.
+        """
+        assert "poriscope/utils/MetaView.py" in self._names(mod.view_modules())
+        assert "poriscope/utils/MetaControls.py" in self._names(mod.view_modules())
+        assert "poriscope/utils/MetaController.py" in self._names(
+            mod.controller_modules()
+        )
+
+    def test_a_data_plugin_base_is_in_neither_layer(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        ``poriscope/utils/`` is flat and holds bases for every layer.
+
+        This is why role is read off the filename there rather than taking the
+        directory wholesale: ``MetaReader`` and its seven siblings import numpy by
+        design, and classifying them as Views would book eight violations the refactor
+        will never remove.
+        """
+        both = self._names(mod.view_modules()) | self._names(mod.controller_modules())
+
+        assert "poriscope/utils/MetaReader.py" not in both
+        assert "poriscope/utils/MetaEventFitter.py" not in both
+
+    def test_the_two_layers_do_not_overlap(self, mod: types.ModuleType) -> None:
+        """A module in both layers would be counted under rules it does not own."""
+        overlap = self._names(mod.view_modules()) & self._names(
+            mod.controller_modules()
+        )
+
+        assert overlap == set()
+
+    def test_no_dunder_init_is_scanned(self, mod: types.ModuleType) -> None:
+        """Re-exports are noise, and are excluded on both sides as in rule 4."""
+        scanned = mod.view_modules() + mod.controller_modules()
+
+        assert not any(p.name == "__init__.py" for p in scanned)
+
+    def test_an_empty_layer_raises_rather_than_reading_as_clean(
+        self, mod: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        The one failure mode a derived scan has that a list does not.
+
+        A list goes stale loudly - the file it names is missing. A derived scan goes
+        stale *silently*: rename a directory and it matches nothing, which measures as
+        a clean layer rather than as a broken gate.
+        """
+        monkeypatch.setattr(mod, "VIEW_DIRS", ())
+        monkeypatch.setattr(mod, "VIEW_SUFFIXES", ("NoSuchSuffix.py",))
+
+        with pytest.raises(FileNotFoundError, match="View layer"):
+            mod.measure()
 
 
 # ===========================================================================

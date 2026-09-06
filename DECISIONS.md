@@ -10,6 +10,35 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-06 - The MVC boundary's layers are derived from filenames, not listed
+
+**Context.** `check_mvc_boundary.py`'s rules 1-3 scanned ten hardcoded filenames under
+`poriscope/plugins/analysistabs/`, which made the gate blind to the refactor it measures:
+promoting a method to a base in `poriscope/utils/` removed it from the measurement without
+fixing it. Step 3b's first promotion, `relay_query`, carries 10 of 10 of rule 3's violations.
+
+**Decision.** Classify every module under `poriscope/` by two tests - a directory that is
+wholly one layer, or a filename suffix (`*View.py`/`*Controls.py`, `*Controller.py`) that
+names the role wherever the module lives. A suffix rather than a longer list, because a list
+is exactly what went stale. Rule 4 is **not** widened to `poriscope/utils/`.
+
+**Evidence.** The View layer goes 5 modules -> 33 and the Controller layer 5 -> 8, and the
+total moves 111 -> 113. The two new entries are `MetaView`'s `numpy` and `numpy.typing`, a
+real rule-2 violation the narrow scan could not see; every numpy reference in that file is
+inside `_logscale_and_filter_multiple_columns`, which Step 3d moves to `MetaModel`, so they
+clear with that step. Everything else newly scanned - the five controls widgets,
+`MetaControls`, `walkthrough*`, all of `poriscope/views/`, `MetaController`,
+`poriscope/controllers/` - is clean on all three rules, which also confirms Step 3a's safety
+was real rather than luck. Rule 4 stays narrow because `poriscope/utils/plugin_schemas.py:40`
+imports `poriscope.plugins` deliberately, to walk the package for schemas; booking it would
+put an entry on the allowlist that nothing intends to remove.
+
+**Revisit if** a View- or Controller-layer module is added under a name that matches neither
+test. `measure()` raises on an empty layer, but a single unclassified module is silently
+unmeasured - which is the one weakness a derived scan has that a list does not.
+
+---
+
 ## 2026-09-06 - The DataFrame log-scaling helper is deleted, not merged into the array one
 
 **Context.** `MetaView` carried two log-scaling helpers implementing the same algorithm:

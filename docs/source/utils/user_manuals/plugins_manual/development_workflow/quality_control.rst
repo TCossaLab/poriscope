@@ -690,9 +690,10 @@ rerun with ``--update`` and commit the new baseline alongside it.
 Analysis-Tab MVC Boundary
 --------------------------
 
-Like the ratchet above, this one only affects you if you edit the analysis tabs. The
-analysis-tab layer never grew a real Model, so its Views absorbed work a Model should do.
-Three rules describe the boundary the 2.0.0 refactor is putting back:
+Like the ratchet above, this one affects you if you edit the analysis tabs, the widgets they
+are built from, the app shell's own views and controllers, or the shared bases under
+``poriscope/utils/``. The analysis-tab layer never grew a real Model, so its Views absorbed
+work a Model should do. Four rules describe the boundary the 2.0.0 refactor is putting back:
 
 1. **No View emits on the plugin bus.** A ``global_signal.emit`` inside a widget means a
    cross-plugin call originates in the View.
@@ -700,9 +701,27 @@ Three rules describe the boundary the 2.0.0 refactor is putting back:
    ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``.
 3. **No Controller reads a View private.** ``self.view._x`` reaches past the View's
    interface into its internals.
+4. **No app-shell module imports from a plugin package.** ``poriscope/views/`` importing
+   ``poriscope.plugins.analysistabs.utils.walkthrough`` is a layering inversion: the shell
+   depending on a plugin.
 
 ``.mvc-boundary-allowlist.json`` records every violation that exists today, and
 ``tests/unit/scripts/test_mvc_boundary_allowlist.py`` fails if the measurement disagrees.
+
+**Which files each rule reads.** Rules 1–3 classify every module under ``poriscope/`` into
+a layer, by two tests: a directory whose contents are all one layer (``poriscope/views/`` and
+``poriscope/plugins/analysistabs/utils/`` are View, ``poriscope/controllers/`` is Controller),
+or a filename suffix that names the role wherever the module lives (``*View.py`` and
+``*Controls.py`` are View, ``*Controller.py`` is Controller). The suffix test is what covers
+``poriscope/utils/``, which is flat and holds bases for every layer — including eight
+data-plugin bases that import ``numpy`` legitimately and are therefore in neither layer. Rule
+4 is narrower on purpose: it reads only ``poriscope/views/``, ``poriscope/controllers/`` and
+``poriscope/models/``, because ``poriscope/utils/plugin_schemas.py`` imports the plugin
+package deliberately, to discover schemas.
+
+If you add a widget or a base, name it for its role and it is measured with no edit to the
+script. If you must name it something else, add its directory to ``VIEW_DIRS`` or
+``CONTROLLER_DIRS`` — a module that falls into neither layer is silently unmeasured.
 
 .. code-block:: bash
 

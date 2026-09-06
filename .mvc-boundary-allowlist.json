@@ -1,24 +1,24 @@
 {
   "emits": {
-    "ClusteringView.py": 7,
-    "EventAnalysisView.py": 13,
-    "MetadataView.py": 20,
-    "ProteinView.py": 21,
-    "RawDataView.py": 14
+    "poriscope/plugins/analysistabs/ClusteringView.py": 7,
+    "poriscope/plugins/analysistabs/EventAnalysisView.py": 13,
+    "poriscope/plugins/analysistabs/MetadataView.py": 20,
+    "poriscope/plugins/analysistabs/ProteinView.py": 21,
+    "poriscope/plugins/analysistabs/RawDataView.py": 14
   },
   "imports": {
-    "ClusteringView.py": [
+    "poriscope/plugins/analysistabs/ClusteringView.py": [
       "hdbscan",
       "numpy",
       "pandas",
       "pandas.api.types",
       "sklearn.mixture"
     ],
-    "EventAnalysisView.py": [
+    "poriscope/plugins/analysistabs/EventAnalysisView.py": [
       "numpy",
       "numpy.typing"
     ],
-    "MetadataView.py": [
+    "poriscope/plugins/analysistabs/MetadataView.py": [
       "numpy",
       "numpy.typing",
       "pandas",
@@ -26,7 +26,7 @@
       "scipy.optimize",
       "scipy.stats"
     ],
-    "ProteinView.py": [
+    "poriscope/plugins/analysistabs/ProteinView.py": [
       "numpy",
       "numpy.typing",
       "pandas",
@@ -34,8 +34,12 @@
       "scipy.signal",
       "scipy.stats"
     ],
-    "RawDataView.py": [
+    "poriscope/plugins/analysistabs/RawDataView.py": [
       "fast_histogram",
+      "numpy",
+      "numpy.typing"
+    ],
+    "poriscope/utils/MetaView.py": [
       "numpy",
       "numpy.typing"
     ]
@@ -53,7 +57,7 @@
     ]
   },
   "private_access": {
-    "MetadataController.py": 5,
-    "ProteinController.py": 5
+    "poriscope/plugins/analysistabs/MetadataController.py": 5,
+    "poriscope/plugins/analysistabs/ProteinController.py": 5
   }
 }

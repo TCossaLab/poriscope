@@ -8,7 +8,7 @@
 
 * Every method the 2.0.0 refactor will move or deduplicate is now checked for test coverage by `scripts/check_refactor_coverage.py`, so a method cannot be restructured while nothing pins its behaviour
 
-* The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 107 known violations, so no new one can be added while the 2.0.0 refactor removes the existing ones
+* The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 113 known violations across the analysis tabs, the widgets they are built from, the app shell and the shared bases, so no new one can be added while the 2.0.0 refactor removes the existing ones
 
 * Duplication across the five analysis-tab View, Controller and controls files is now measured by `scripts/measure_duplication.py` and held against a checked-in baseline, so a refactor that promotes a shared method has to show that it deleted the copies
 

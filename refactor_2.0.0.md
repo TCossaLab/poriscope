@@ -728,14 +728,20 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 boundary allowlist **111**; refactor coverage **248 targets, 248 pinned** (re-measure — 3d-pre
 removed one target).
 
-**Do this first, before any other Step 3 promotion: widen `check_mvc_boundary.py`'s scan.**
-Its rules 1–3 read hardcoded filename tuples under `poriscope/plugins/analysistabs/`, so a
-method promoted to a base in `poriscope/utils/` leaves the measurement without being fixed.
-This is the real block on 3b, and 3c, 3d and 3g have the same shape. 3a was safe only because
-none of its twelve promoted methods carried an emit, a forbidden import or a private read.
-Approved 2026-09-06; not yet started.
+**The gate widening — LANDED 2026-09-06.** Rules 1–3 no longer read hardcoded filename
+tuples: every module under `poriscope/` is classified into a layer by a whole-layer directory
+or by a filename suffix (`*View.py`/`*Controls.py`, `*Controller.py`), so a base promoted into
+`poriscope/utils/` is measured the moment it is named for its role. **View layer 5 → 33
+modules, Controller layer 5 → 8, allowlist 111 → 113.** The +2 is `MetaView`'s `numpy` and
+`numpy.typing` — a real rule-2 violation the narrow scan could not see, not a regression; every
+numpy reference in that file sits inside `_logscale_and_filter_multiple_columns`, so **3d
+clears it**. Everything else newly scanned is clean on all three rules, which confirms 3a's
+safety was measured rather than lucky. Rule 4 stays narrow deliberately —
+`poriscope/utils/plugin_schemas.py:40` imports `poriscope.plugins` on purpose. Reasoning in
+`DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
+`quality_control.rst`, which had never documented rule 4 at all.
 
-**Then, in dependency order:** 3b (unblocked once the gate is widened; order it so the
+**Then, in dependency order:** 3b (now unblocked; order it so the
 state-touching methods land last, leaving `relay_query` per-tab until 4d), 3c, 3d proper
 (now a numpy-only method plus the five range helpers), 3e, 3f (decided: move to
 `views/widgets/`, drop three autodoc pages, hand-write one for `WalkthroughMixin`), 3g,

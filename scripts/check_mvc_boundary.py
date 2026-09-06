@@ -78,6 +78,25 @@ pairs" could not be reproduced because it was never written down precisely enoug
   ``poriscope.plugins``. Relative imports are skipped and ``__init__.py`` files are
   not scanned, since re-exports there would be noise rather than dependencies.
 
+**Which files each rule reads.** Rules 1-3 originally scanned ten hardcoded filenames
+under ``poriscope/plugins/analysistabs/``, which made them blind to their own refactor:
+a method promoted to a base in ``poriscope/utils/`` left the measurement without being
+fixed, and Step 3b's first promotion carries 100% of rule 3's violations. So layer
+membership is now *derived* over the whole of ``poriscope/``, by two tests - a
+directory whose contents are all one layer, or a filename suffix that names the role
+wherever the module lives. The suffix test is the part that matters: a base promoted
+into ``poriscope/utils/`` is measured the moment it is named ``MetaEventTabView.py``.
+Widening it moved the View layer from 5 modules to 33 and the Controller layer from 5
+to 8, and added exactly two entries - ``MetaView``'s ``numpy`` and ``numpy.typing``,
+a real rule-2 violation the narrow scan could not see, which clears when Step 3d moves
+``_logscale_and_filter_multiple_columns`` to ``MetaModel``.
+
+**Rule 4 is deliberately *not* widened to ``poriscope/utils/``.** Those are shared
+bases rather than app shell, and ``poriscope/utils/plugin_schemas.py`` imports
+``poriscope.plugins`` on purpose, to walk the plugin package for schemas. Booking it
+would put an entry on the allowlist that the refactor has no intention of removing,
+which is the one thing that would make the total meaningless.
+
 Exits 1 under ``--check`` if the counts disagree with
 ``.mvc-boundary-allowlist.json`` in **either** direction. A rise is a new violation.
 A fall is progress, and it fails too, so the win is recorded in the same commit that
@@ -93,23 +112,26 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TABS = REPO_ROOT / "poriscope" / "plugins" / "analysistabs"
+PORISCOPE = REPO_ROOT / "poriscope"
 
-VIEWS: Tuple[str, ...] = (
-    "ClusteringView.py",
-    "EventAnalysisView.py",
-    "MetadataView.py",
-    "ProteinView.py",
-    "RawDataView.py",
+#: Directories whose every module is View-layer code: the app shell's own widgets
+#: and the widgets an analysis tab is assembled from.
+VIEW_DIRS: Tuple[str, ...] = (
+    "poriscope/views",
+    "poriscope/plugins/analysistabs/utils",
 )
 
-CONTROLLERS: Tuple[str, ...] = (
-    "ClusteringController.py",
-    "EventAnalysisController.py",
-    "MetadataController.py",
-    "ProteinController.py",
-    "RawDataController.py",
-)
+#: Filename suffixes that make a module View-layer wherever it lives. This is what
+#: keeps the set derived rather than a second hardcoded list: a base promoted into
+#: ``poriscope/utils/`` is measured the moment it is named ``MetaEventTabView.py``.
+#: ``poriscope/utils/`` cannot be taken wholesale - it is flat and holds bases for
+#: every layer, including eight data-plugin bases that import numpy by design - so
+#: role is read off the filename there.
+VIEW_SUFFIXES: Tuple[str, ...] = ("View.py", "Controls.py", "controls.py")
+
+#: The Controller layer, by the same two tests.
+CONTROLLER_DIRS: Tuple[str, ...] = ("poriscope/controllers",)
+CONTROLLER_SUFFIXES: Tuple[str, ...] = ("Controller.py",)
 
 #: Top-level packages a View has no business importing. ``sqlite3`` is zero today
 #: and kept as a ratchet; ``fast_histogram`` is here because Step 4c moves it.
@@ -252,6 +274,57 @@ def plugin_imports(tree: ast.Module) -> List[str]:
     return sorted(found)
 
 
+def package_modules() -> List[Path]:
+    """
+    Every module under ``poriscope/``, excluding package ``__init__`` files.
+
+    :return: the files, sorted
+    :rtype: List[Path]
+    """
+    return [p for p in sorted(PORISCOPE.rglob("*.py")) if p.name != "__init__.py"]
+
+
+def in_layer(path: Path, dirs: Tuple[str, ...], suffixes: Tuple[str, ...]) -> bool:
+    """
+    Report whether a module belongs to a layer, by directory or by filename.
+
+    :param path: the module to classify
+    :type path: Path
+    :param dirs: repository-relative directories whose contents are all in the layer
+    :type dirs: Tuple[str, ...]
+    :param suffixes: filename suffixes that place a module in the layer anywhere
+    :type suffixes: Tuple[str, ...]
+    :return: True if the module belongs to the layer
+    :rtype: bool
+    """
+    name = display(path)
+    return name.startswith(tuple(f"{d}/" for d in dirs)) or name.endswith(suffixes)
+
+
+def view_modules() -> List[Path]:
+    """
+    Every View-layer module rules 1 and 2 apply to.
+
+    :return: the files, sorted
+    :rtype: List[Path]
+    """
+    return [p for p in package_modules() if in_layer(p, VIEW_DIRS, VIEW_SUFFIXES)]
+
+
+def controller_modules() -> List[Path]:
+    """
+    Every Controller-layer module rule 3 applies to.
+
+    :return: the files, sorted
+    :rtype: List[Path]
+    """
+    return [
+        p
+        for p in package_modules()
+        if in_layer(p, CONTROLLER_DIRS, CONTROLLER_SUFFIXES)
+    ]
+
+
 def shell_modules() -> List[Path]:
     """
     Every app-shell module the layering rule applies to.
@@ -271,29 +344,31 @@ def measure() -> Dict[str, Dict[str, object]]:
 
     :return: the per-file findings, grouped by rule
     :rtype: Dict[str, Dict[str, object]]
-    :raises FileNotFoundError: if a file named in VIEWS or CONTROLLERS is missing
+    :raises FileNotFoundError: if either layer scan comes back empty
     :raises SyntaxError: if a file cannot be parsed
     """
     emits: Dict[str, int] = {}
     imports: Dict[str, List[str]] = {}
     privates: Dict[str, List[str]] = {}
 
-    for name in VIEWS:
-        path = TABS / name
-        if not path.is_file():
-            raise FileNotFoundError(f"{display(path)} is named in VIEWS but is missing")
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
+    views = view_modules()
+    controllers = controller_modules()
+    # A derived scan has no list to go stale, but it can go silently empty if a
+    # directory is renamed - and an empty layer would read as a clean one.
+    if not views:
+        raise FileNotFoundError("the View layer scan matched no modules")
+    if not controllers:
+        raise FileNotFoundError("the Controller layer scan matched no modules")
+
+    for path in views:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+        name = display(path)
         emits[name] = sum(1 for node in ast.walk(tree) if is_global_signal_emit(node))
         imports[name] = forbidden_imports(tree)
 
-    for name in CONTROLLERS:
-        path = TABS / name
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"{display(path)} is named in CONTROLLERS but is missing"
-            )
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
-        privates[name] = view_private_reads(tree)
+    for path in controllers:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+        privates[display(path)] = view_private_reads(tree)
 
     layering: Dict[str, List[str]] = {}
     for path in shell_modules():
