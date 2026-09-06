@@ -478,3 +478,124 @@ class TestResolveEventDbIds:
         bus["query_database_directly"] = frame
 
         assert view._resolve_event_db_ids("loader", [3, 4], None, None) is frame
+
+
+class TestReportEnsembleFit:
+    """
+    The Report All readout, a Step 4c target the exit review found unpinned.
+
+    It executed under the protein e2e flow but nothing named it, so nothing
+    asserted what the user is actually shown. Ensemble mode has no per-event id to
+    write results back against, so this readout is the *only* record of an ensemble
+    fit - if it silently reported the wrong numbers there would be nothing else to
+    check them against.
+    """
+
+    @pytest.fixture
+    def fitted(self, view: ProteinView) -> ProteinView:
+        """
+        A view carrying the state a completed ensemble fit leaves behind.
+
+        :param view: the bare view
+        :type view: ProteinView
+        :return: the view, as if an ensemble fit had just run
+        :rtype: ProteinView
+        """
+        view.ensemble_fit_params = np.array([10.0, 0.15, 0.03, 6.0, 0.40, 0.04])
+        view.ensemble_fit_bins = 75
+        view.ensemble_fit_sizes = False
+        view.ensemble_fit_prolate_summary = None
+        view.ensemble_fit_oblate_summary = None
+        return view
+
+    def reported(self, view: ProteinView) -> str:
+        """
+        The text the view last pushed to the status panel.
+
+        :param view: the view
+        :type view: ProteinView
+        :return: the emitted message
+        :rtype: str
+        """
+        return view.add_text_to_display.emit.call_args.args[0]
+
+    def test_no_fit_reports_that_rather_than_an_empty_table(
+        self, view: ProteinView
+    ) -> None:
+        """
+        Asking for a report before running one says so, and returns.
+
+        The alternative - unpacking None into six names - would raise at the user
+        for what is an ordinary mistake.
+        """
+        view.ensemble_fit_params = None
+
+        view._report_ensemble_fit()
+
+        assert "No ensemble fit available" in self.reported(view)
+
+    def test_both_peaks_are_reported(self, fitted: ProteinView) -> None:
+        """All six fitted parameters reach the user, at four significant figures."""
+        fitted._report_ensemble_fit()
+        text = self.reported(fitted)
+
+        assert "amplitude=10, mean=0.15, std=0.03" in text
+        assert "amplitude=6, mean=0.4, std=0.04" in text
+
+    def test_a_bin_count_is_labelled_as_a_count(self, fitted: ProteinView) -> None:
+        """
+        The binning is part of the result, since a different binning gives a
+        different fit, and count and size mean different things.
+        """
+        fitted._report_ensemble_fit()
+
+        assert "bin count = 75" in self.reported(fitted)
+
+    def test_bin_sizes_are_labelled_as_sizes(self, fitted: ProteinView) -> None:
+        """The other branch of the same label."""
+        fitted.ensemble_fit_sizes = True
+        fitted.ensemble_fit_bins = [1.0, 2.0]
+
+        fitted._report_ensemble_fit()
+
+        assert "bin size(s) = [1.0, 2.0]" in self.reported(fitted)
+
+    def test_an_unset_bin_count_falls_back_to_the_default(
+        self, fitted: ProteinView
+    ) -> None:
+        """``None`` means the plot used the default of 100, not that it used none."""
+        fitted.ensemble_fit_bins = None
+
+        fitted._report_ensemble_fit()
+
+        assert "bin count = 100" in self.reported(fitted)
+
+    def test_the_shape_summaries_are_included_when_present(
+        self, fitted: ProteinView
+    ) -> None:
+        """Both families are reported, each under its own heading."""
+        fitted.ensemble_fit_prolate_summary = (["V = 1.0 nm"], "N=3 samples")
+        fitted.ensemble_fit_oblate_summary = (["V = 2.0 nm"], "N=4 samples")
+
+        fitted._report_ensemble_fit()
+        text = self.reported(fitted)
+
+        assert "<b>Prolate</b> (N=3 samples)" in text
+        assert "<b>Oblate</b> (N=4 samples)" in text
+        assert "V = 1.0 nm" in text and "V = 2.0 nm" in text
+
+    def test_a_missing_summary_is_omitted_rather_than_shown_empty(
+        self, fitted: ProteinView
+    ) -> None:
+        """
+        Sampling can produce one family and not the other, and a heading with
+        nothing under it would read as a result of zero rather than as no result.
+        """
+        fitted.ensemble_fit_prolate_summary = (["V = 1.0 nm"], "N=3 samples")
+        fitted.ensemble_fit_oblate_summary = None
+
+        fitted._report_ensemble_fit()
+        text = self.reported(fitted)
+
+        assert "<b>Prolate</b>" in text
+        assert "Oblate" not in text

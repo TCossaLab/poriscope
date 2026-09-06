@@ -21,6 +21,7 @@ golden file for a three-element tuple is less legible than the literal.
 """
 
 from typing import Dict
+from unittest.mock import MagicMock
 
 import numpy as np
 import numpy.typing as npt
@@ -28,7 +29,7 @@ import pytest
 from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
-from tests.unit.views._qt_mocks import shadow_signals
+from tests.unit.views._qt_mocks import mock_figure, shadow_signals
 
 pytestmark = pytest.mark.characterization
 
@@ -576,3 +577,97 @@ class TestStartEventfinder:
             wired._start_eventfinder("finder", "No Filter", [0])
 
         wired.run_generators.emit.assert_not_called()
+
+
+class TestUpdatePsd:
+    """
+    The PSD axis-limit arithmetic, a Step 4c target the exit review found unpinned.
+
+    ``update_psd`` executed under the raw-data e2e flow but no test named it, so
+    nothing asserted the limits it computes. They are not cosmetic: the x limit is
+    derived from where the RMS curve reaches 99.9% of its final value, and both y
+    limits are snapped to half-decades, which is what keeps a noise spectrum
+    readable rather than dominated by one spike.
+    """
+
+    @pytest.fixture
+    def psd_view(self, view: RawDataView):
+        """
+        A view with a figure that really tracks the axes added to it.
+
+        :param view: the bare view
+        :type view: RawDataView
+        :return: the view, ready to plot a PSD
+        :rtype: RawDataView
+        """
+        view.figure = mock_figure()
+        view.canvas = MagicMock()
+        view.toolbar = MagicMock()
+        view._clear_cache()
+        return view
+
+    def test_one_subplot_per_channel(self, psd_view: RawDataView) -> None:
+        """The grid is sized by _factors, so three channels still get three axes."""
+        frequency = np.logspace(0, 5, 200)
+        psd = [np.full(200, 1e-3) + 1e-5 for _ in range(3)]
+        rms = [np.linspace(1.0, 10.0, 200) for _ in range(3)]
+
+        psd_view.update_psd(psd, rms, frequency, [0, 1, 2])
+
+        assert psd_view.figure.add_subplot.call_count == 3
+
+    def test_the_x_limit_is_the_decade_above_the_rms_plateau(
+        self, psd_view: RawDataView
+    ) -> None:
+        """
+        The upper x limit comes from where RMS reaches 99.9% of its final value,
+        rounded up to the next decade - so a spectrum sampled to 100 kHz whose
+        noise plateaus early is not plotted mostly empty.
+        """
+        frequency = np.logspace(0, 5, 200)
+        rms = np.concatenate([np.linspace(1.0, 10.0, 100), np.full(100, 10.0)])
+        psd = np.full(200, 1e-3)
+
+        psd_view.update_psd([psd], [rms], frequency, [0])
+
+        ax = psd_view.figure.get_axes()[0]
+        _, upper = ax.set_xlim.call_args.args
+        assert upper == pytest.approx(10 ** np.ceil(np.log10(frequency[100])))
+
+    def test_the_y_limits_snap_to_half_decades(self, psd_view: RawDataView) -> None:
+        """
+        Both are rounded to the nearest half power of ten, outward.
+
+        A limit of exactly the data's min and max would clip the curve against the
+        axes; the half-decade snap is what leaves it legible.
+        """
+        frequency = np.logspace(0, 5, 200)
+        psd = np.full(200, 2.5e-4)
+        psd[50] = 7.5e-2
+        rms = np.linspace(1.0, 10.0, 200)
+
+        psd_view.update_psd([psd], [rms], frequency, [0])
+
+        ax = psd_view.figure.get_axes()[0]
+        lower, upper = ax.set_ylim.call_args.args
+        assert lower == pytest.approx(10 ** (np.floor(np.log10(2.5e-4) * 2) / 2))
+        assert upper == pytest.approx(10 ** (np.ceil(np.log10(7.5e-2) * 2) / 2))
+
+    def test_the_figure_is_cleared_before_replotting(
+        self, psd_view: RawDataView
+    ) -> None:
+        """
+        Otherwise a second PSD run would stack axes on top of the first.
+
+        Pinned because Step 4c moves the computation out but must leave the canvas
+        lifecycle behind, and a clear that moved with it would leak axes.
+        """
+        frequency = np.logspace(0, 5, 100)
+        psd = [np.full(100, 1e-3)]
+        rms = [np.linspace(1.0, 10.0, 100)]
+
+        psd_view.update_psd(psd, rms, frequency, [0])
+        psd_view.update_psd(psd, rms, frequency, [0])
+
+        assert psd_view.figure.clear.call_count == 2
+        assert len(psd_view.figure.get_axes()) == 1

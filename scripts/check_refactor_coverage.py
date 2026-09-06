@@ -159,6 +159,58 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/RawDataView.py", "_get_baseline_stats", "4c"),
     ("poriscope/plugins/analysistabs/RawDataView.py", "_gaussian", "4c"),
     ("poriscope/plugins/analysistabs/RawDataView.py", "_gaussian_fit", "4c"),
+    # Step 4c continued - the plotting computation. `refactor_2.0.0.md` names
+    # `_construct_event_overlay`, `_plot_1d_density`, `_plot_capture_rate` and
+    # `_update_distribution_individual` explicitly; the sibling plot helpers are the
+    # same family and move with them, so listing only the named ones would be an
+    # arbitrary cut. These were missed on the first pass because they were picked by
+    # how easily they could be tested rather than by what the step moves - the exact
+    # error the audit exists to prevent, made one level up in the audit itself.
+    (
+        "poriscope/plugins/analysistabs/ClusteringView.py",
+        "_load_metadata_and_cluster",
+        "4c",
+    ),
+    (
+        "poriscope/plugins/analysistabs/MetadataView.py",
+        "_construct_event_overlay",
+        "4c",
+    ),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_1d_density", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_capture_rate", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_1d_histogram", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_heatmap", "4c"),
+    (
+        "poriscope/plugins/analysistabs/MetadataView.py",
+        "_plot_categorical_histogram",
+        "4c",
+    ),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_scatterplot", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_3d_scatterplot", "4c"),
+    (
+        "poriscope/plugins/analysistabs/MetadataView.py",
+        "_plot_all_points_histogram",
+        "4c",
+    ),
+    (
+        "poriscope/plugins/analysistabs/ProteinView.py",
+        "_update_distribution_individual",
+        "4c",
+    ),
+    (
+        "poriscope/plugins/analysistabs/ProteinView.py",
+        "_update_distribution_ensemble",
+        "4c",
+    ),
+    (
+        "poriscope/plugins/analysistabs/ProteinView.py",
+        "_plot_all_points_histogram",
+        "4c",
+    ),
+    ("poriscope/plugins/analysistabs/ProteinView.py", "_plot_scatterplot", "4c"),
+    ("poriscope/plugins/analysistabs/ProteinView.py", "_plot_xyerr_scatterplot", "4c"),
+    ("poriscope/plugins/analysistabs/ProteinView.py", "_report_ensemble_fit", "4c"),
+    ("poriscope/plugins/analysistabs/RawDataView.py", "update_psd", "4c"),
     # Step 4e - file I/O to the Model, dialog selection left in the View
     ("poriscope/plugins/analysistabs/MetadataView.py", "_export_csv_subset", "4e"),
 )
