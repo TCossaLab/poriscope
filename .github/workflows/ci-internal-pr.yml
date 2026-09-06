@@ -128,7 +128,20 @@ jobs:
       - name: Run full test suite (headless with GUI support)
         run: |
           xvfb-run -a pytest -q --maxfail=1 --disable-warnings \
-            --cov=poriscope --cov-report=xml
+            --cov=poriscope --cov-report=xml --cov-report=json:coverage.json
+
+      # ------------------------------------------------------------
+      # 4b. Refactor-coverage audit
+      #
+      # Every method the 2.0.0 refactor moves or deduplicates must be pinned by
+      # a test that names it. Knowing whether each body actually executed needs
+      # coverage data, so this runs here rather than as a plain pytest test -
+      # this workflow already pays for the coverage run. The structural half of
+      # the same check does run under plain pytest, in
+      # tests/unit/scripts/test_refactor_coverage_gate.py.
+      # ------------------------------------------------------------
+      - name: Refactor-coverage audit
+        run: python scripts/check_refactor_coverage.py --coverage coverage.json
 
       # ------------------------------------------------------------
       # 5. Upload coverage report

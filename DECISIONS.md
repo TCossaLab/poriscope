@@ -10,6 +10,40 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-05 - The refactor-coverage gate is split, not made conditional
+
+**Context.** Step 2's other two gates - the duplication ratchet and the MVC boundary
+allowlist - are pure AST measurements and run under a plain `pytest`. The refactor-coverage
+audit cannot: deciding whether a method is genuinely covered needs to know whether its body
+*executed*, which only `coverage.py` can answer, and a plain run carries no coverage data.
+The options were a test that skips without coverage, a CI-only step, or a manually-run script.
+
+**Decision.** Split it. The **structural half runs under plain `pytest` everywhere**: every
+audit target must resolve to a file that really defines it, and every deduplicated method
+must be named by at least one test. The **execution half runs where coverage already
+exists** - `ci-internal-pr.yml` gained `--cov-report=json` and a step invoking
+`scripts/check_refactor_coverage.py`, and the two pytest tests that need the report skip with
+an actionable reason when it is absent.
+
+**Evidence.** The structural half alone catches both failures a rename causes - a target
+silently dropping off the list, and a method losing its only direct test - which is most of
+the value at no cost. `ci-internal-pr.yml` already runs the coverage variant, so the
+execution half costs one extra report format and one step. A skip-only design was rejected
+because it would never actually run; a CI-only design was rejected because it would leave
+`pytest` blind to a renamed target.
+
+**The exit rule is strict.** The script exits 1 on anything that is not `PINNED`, `RUNS ONLY`
+included: a method exercised only in passing by an e2e flow has nothing asserting what it
+produced, which is not coverage for a method about to be moved. If an end-to-end flow is
+genuinely the only sensible exercise for some method, record why here and exclude it
+explicitly rather than loosening the rule.
+
+**Revisit if / check for when touching this area:** the suite gains per-test coverage
+attribution, which would let `PINNED` distinguish a call on a real instance from one on a
+`MagicMock` - today it cannot, so pinned rows are a review list rather than a guarantee; or
+the audit becomes slow enough that running it on every internal PR matters (it is AST plus a
+JSON read today).
+
 ## 2026-09-05 - The 2.0.0 structural gates are pytest tests, not pre-commit hooks
 
 **Context.** Step 2 adds two "a count must not grow" gates: an `ast` MVC boundary check and a

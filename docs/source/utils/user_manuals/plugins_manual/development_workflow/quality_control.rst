@@ -725,6 +725,49 @@ a violation, rerun with ``--update`` and commit the new allowlist alongside it.
    conflated statements with distinct modules could not be reproduced, which is the reason
    the rule is now executable rather than described.
 
+.. _refactor_coverage_audit:
+
+Refactor-Coverage Audit
+------------------------
+
+The third of the analysis-tab gates, and like the other two it only affects you if you edit
+those files while the 2.0.0 refactor is in progress. The rule it holds is that **every method
+the refactor moves or deduplicates must be pinned by a test that names it** — the target list
+is derived from the refactor's own move and deduplication lists rather than from a judgement
+about which methods look under-tested.
+
+.. code-block:: bash
+
+   pytest --cov=poriscope --cov-report=json:coverage.json
+   python scripts/check_refactor_coverage.py --coverage coverage.json
+
+It reports one of four verdicts per target. ``UNTESTED`` means the body never ran, which is
+what catches a method that every test replaces with a ``Mock``. ``RUNS ONLY`` means the body
+ran but no test names it — it is exercised in passing, usually by a click-driven end-to-end
+flow, with nothing checking what it produced. ``PINNED`` means both signals are present.
+Anything that is not ``PINNED`` exits non-zero.
+
+**Why it is shaped differently from the other two gates.** Deciding whether a method is
+covered needs to know whether its body executed, which only coverage data can say, and a
+plain ``pytest`` run carries none. So the check is split: the structural half — every target
+resolves to a file that defines it, and every deduplicated method is named by some test —
+runs under plain ``pytest`` in ``tests/unit/scripts/test_refactor_coverage_gate.py``, and the
+execution half runs in ``ci-internal-pr.yml``, which already performs a coverage run. Locally,
+the two coverage-dependent tests skip with a message telling you the command above.
+
+.. note::
+
+   ``PINNED`` is deliberately the weak verdict. The "a test names it" signal is syntactic, so
+   a call on a ``MagicMock`` reads the same as a call on a real instance. Read the ``patch``
+   column beside it: many substitutions and few direct calls is the shape that hid
+   ``MetaView._logscale_and_filter_multiple_columns``, which had 38 references in the suite
+   and was replaced by a ``Mock`` in every one of them.
+
+   Line-coverage percentages are deliberately not used anywhere in this check. The five
+   analysis-tab Views were at 87–91% before a single characterization test existed, because
+   those lines already executed under the end-to-end suite with nothing asserting the values
+   they produced. "Executed" and "pinned" are different properties.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
