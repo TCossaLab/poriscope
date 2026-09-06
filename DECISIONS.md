@@ -10,6 +10,45 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-06 - The DataFrame log-scaling helper is deleted, not merged into the array one
+
+**Context.** `MetaView` carried two log-scaling helpers implementing the same algorithm:
+`_logscale_and_filter_multiple_columns` (N arrays in, N arrays out, 8 callers) and
+`_logscale_and_filter_dataframe` (frame in, frame out, 1 caller). Step 3d moves this code to
+`MetaModel`, and moving two copies of one algorithm is worth avoiding.
+
+**Decision.** Keep the array form; delete the frame form; adapt its sole caller
+(`ClusteringView._load_metadata_and_cluster`) to pass the same columns as arrays and rebuild
+the frame afterwards.
+
+**Evidence.** Of the four supposed divergences, two do not exist: dtype behaviour is identical
+in both (logged column -> `float64`, others preserved) and the status-panel messages are
+byte-identical in text and counts, both verified by running them side by side. The two real
+ones - `dropna()` looking at every column where the array form masks only the arrays it is
+handed, and the resulting tolerance of a non-numeric column - are **inert at the only call
+site**, which passes exactly `columns + ["id"]`. Both guards the frame form supplied are
+already redundant there: `ClusteringView.py:608` rejects an empty frame and `:611` rejects
+missing columns, before the call. Direction was chosen by caller count, 1 against 8, which
+also keeps pandas out of the Views that Step 4 exists to take it out of - and in fact removed
+`import pandas` from `MetaView` altogether.
+
+**On performance.** The obvious alternative - keep the frame form, adapt the eight array
+callers - measured 2.7-4.7x slower, but that is not intrinsic: the frame form re-slices the
+whole frame once per log column. A single-slice rewrite reaches parity with the array form
+(1.06x at 1M rows). So performance did not decide this; churn did.
+
+**What is genuinely lost.** The frame form could carry a text column through row filtering,
+and named the missing column in its `ValueError`. Nothing uses either: no caller passes a
+non-numeric column, and the caller validates its columns first with a `KeyError` that names
+them.
+
+**Revisit if** a caller appears that needs to row-filter a frame containing non-numeric
+columns alongside the logged ones. The array form cannot do that - `np.isnan` raises on an
+object dtype - and re-adding a frame adapter over the array core would be the fix, not
+resurrecting a second algorithm.
+
+---
+
 ## 2026-09-06 - `createButton`'s majority version is promoted, `setStyleSheet("")` included
 
 **Context.** `createButton` was byte-identical in four of the five `*controls.py` files;

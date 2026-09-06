@@ -8,13 +8,16 @@ the reason this file exists at all:
 - ``_logscale_and_filter_multiple_columns`` is referenced by 38 test functions and
   **every one replaces it with a Mock**, so its body has no behavioural coverage
   while sitting on every 1-D and 2-D plot path in ``MetadataView``.
-- ``_logscale_and_filter_dataframe`` has no references in ``tests/`` at all. Its
-  sole caller is ``ClusteringView.py:624``.
-
-The pair implement the same idea twice with genuinely different edge cases, and
-Step 3d proposes unifying them. Those differences are pinned explicitly below so
-that unification is a decision someone makes rather than a behaviour change nobody
-noticed.
+- ``_logscale_and_filter_dataframe`` **is gone.** It had no references in
+  ``tests/`` at all and one caller, ``ClusteringView.py``. Pinning the pair's
+  differences is what made unifying them a decision rather than an accident: dtype
+  behaviour and the status-panel text turned out identical, and the two real
+  divergences - ``dropna()``'s wider row scope and its tolerance of a text column -
+  were inert at that single call site, which passed exactly ``columns + ["id"]``.
+  Step 3d-pre therefore deleted the frame form and adapted the caller to pass those
+  same columns as arrays. Its nine tests went with it; the surviving behaviour is
+  covered by ``TestLogscaleMultipleColumns`` below and, end to end, by
+  ``tests/integration/flows/test_clustering_flow_no_gui.py``.
 
 The five range helpers are pinned for a different reason. They do have tests, in
 ``test_protein_view.py``'s ``TestRangeHelpers``, but weak ones: the shift tests
@@ -31,7 +34,6 @@ is less legible than the literal.
 from typing import Dict, List
 
 import numpy as np
-import pandas as pd
 import pytest
 from PySide6.QtWidgets import QBoxLayout
 
@@ -196,105 +198,6 @@ class TestLogscaleMultipleColumns:
         ]
         assert any("contained NaN" in m for m in messages)
         assert any("could not be logscaled" in m for m in messages)
-
-
-# ===========================================================================
-# _logscale_and_filter_dataframe - zero test references anywhere
-# ===========================================================================
-
-
-class TestLogscaleDataFrame:
-    """The frame form: same idea, different edge cases."""
-
-    def test_empty_frame_is_returned_unchanged_and_not_copied(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        The empty guard returns the *same object*, where the array form returns ``()``.
-
-        Pinned because it is one of the differences Step 3d has to resolve
-        deliberately if the two are unified.
-        """
-        df = pd.DataFrame({"a": []})
-
-        assert view._logscale_and_filter_dataframe(df) is df
-
-    def test_the_input_frame_is_not_modified(self, view: _ConcreteView) -> None:
-        """The docstring promises a new frame; the caller's is left alone."""
-        df = pd.DataFrame({"a": [1.0, np.nan, 100.0]})
-
-        view._logscale_and_filter_dataframe(df, log_columns=["a"])
-
-        assert len(df) == 3
-
-    def test_log10_is_applied_to_the_named_column_only(
-        self, view: _ConcreteView
-    ) -> None:
-        """Unnamed columns are row-filtered but not transformed."""
-        df = pd.DataFrame({"a": [1.0, 10.0, 100.0], "b": [1.0, 10.0, 100.0]})
-
-        out = view._logscale_and_filter_dataframe(df, log_columns=["a"])
-
-        np.testing.assert_allclose(out["a"].to_numpy(), [0.0, 1.0, 2.0])
-        np.testing.assert_allclose(out["b"].to_numpy(), [1.0, 10.0, 100.0])
-
-    def test_a_missing_column_raises_and_names_it(self, view: _ConcreteView) -> None:
-        """Unlike the array form's arity check, this one names what was missing."""
-        df = pd.DataFrame({"a": [1.0]})
-
-        with pytest.raises(ValueError, match="nope"):
-            view._logscale_and_filter_dataframe(df, log_columns=["nope"])
-
-    def test_dropna_removes_rows_for_columns_nobody_asked_to_log(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        **The key divergence from the array form.**
-
-        ``dropna()`` looks at *every* column in the frame, so a null in a column
-        that is neither logged nor plotted still deletes the row. The array form
-        masks only the arrays it was handed, so an unrelated column cannot reach
-        it at all. Step 3d must decide which of these is intended before unifying
-        the two.
-        """
-        df = pd.DataFrame({"a": [1.0, 10.0, 100.0], "unrelated": [1.0, np.nan, 3.0]})
-
-        out = view._logscale_and_filter_dataframe(df, log_columns=["a"])
-
-        np.testing.assert_allclose(out["a"].to_numpy(), [0.0, 2.0])
-
-    def test_a_null_in_a_text_column_also_drops_the_row(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        The frame form tolerates non-numeric columns; the array form cannot.
-
-        ``np.isnan`` raises on an object dtype, so this input has no equivalent on
-        the array side - another difference unification has to face.
-        """
-        df = pd.DataFrame({"a": [1.0, 10.0, 100.0], "label": ["x", None, "z"]})
-
-        out = view._logscale_and_filter_dataframe(df, log_columns=["a"])
-
-        assert out["label"].tolist() == ["x", "z"]
-
-    def test_negative_data_is_rectified_by_average_sign(
-        self, view: _ConcreteView
-    ) -> None:
-        """Same rectification rule as the array form."""
-        df = pd.DataFrame({"a": [-1.0, -10.0, -100.0]})
-
-        out = view._logscale_and_filter_dataframe(df, log_columns=["a"])
-
-        np.testing.assert_allclose(out["a"].to_numpy(), [0.0, 1.0, 2.0])
-
-    def test_the_logged_column_is_forced_to_float64(self, view: _ConcreteView) -> None:
-        """An integer column comes back as float; the array form preserves dtype."""
-        df = pd.DataFrame({"a": [1, 10, 100]})
-
-        out = view._logscale_and_filter_dataframe(df, log_columns=["a"])
-
-        assert out["a"].dtype == np.float64
 
 
 # ===========================================================================

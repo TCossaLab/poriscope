@@ -31,7 +31,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
     NavigationToolbar2QT as NavigationToolbar,
@@ -785,81 +784,3 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             )
 
         return tuple(current_data)
-
-    def _logscale_and_filter_dataframe(
-        self, df: pd.DataFrame, log_columns: Optional[List[str]] = None
-    ) -> pd.DataFrame:
-        """
-        Filters a DataFrame for NaN values and applies logarithmic scaling to specified columns, returning a new DataFrame; the input is not modified.
-
-        This function:
-
-        - Removes rows with NaN values in any column.
-        - Applies log10 scaling to specified columns after rectifying based on average sign.
-        - Sequentially removes rows with non-positive values in log columns.
-
-        Args:
-            df (pd.DataFrame): Input DataFrame with numerical data. Not modified; a copy is filtered and transformed internally.
-            log_columns (list of str, optional): List of column names to apply log scaling.
-            If None, no log scaling is applied.
-
-        Returns:
-            pd.DataFrame: A new, filtered and transformed DataFrame.
-        """
-
-        if df.empty:
-            return df
-
-        # Create a copy to avoid SettingWithCopyWarning
-        df = df.copy()
-
-        if log_columns is None:
-            log_columns = []
-
-        if not all(col in df.columns for col in log_columns):
-            missing = [col for col in log_columns if col not in df.columns]
-            raise ValueError(f"Columns not found in DataFrame: {missing}")
-
-        num_points_init = len(df)
-
-        # Drop NaNs in place
-        df.dropna(inplace=True)
-        num_points_after_nan = len(df)
-        num_points_nan = num_points_init - num_points_after_nan
-
-        if num_points_nan > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_nan} out of {num_points_init} points that contained NaN",
-                self.__class__.__name__,
-            )
-
-        num_points_before_log = len(df)
-
-        for col in log_columns:
-            if df.empty:
-                break
-
-            d = df[col].values
-            avg = np.average(d)
-            sign = np.sign(avg) if avg != 0 else 1
-
-            rectified = sign * d
-            log_mask = rectified > 0
-
-            # Filter rows based on log_mask
-            df = df.loc[log_mask].copy()
-
-            # Apply log10 transformation using .loc
-            df[col] = df[col].astype(np.float64)
-            df.loc[:, col] = np.log10(sign * df[col]).astype(np.float64)
-
-        num_points_final = len(df)
-        num_points_log_removed = num_points_before_log - num_points_final
-
-        if num_points_log_removed > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_log_removed} out of {num_points_before_log} points that could not be logscaled",
-                self.__class__.__name__,
-            )
-
-        return df

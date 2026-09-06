@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The two log-scaling routines behind the plots are now one, so a correction to how data is filtered or log-scaled applies everywhere it is used rather than to one of the two copies
+
 * The five analysis-tab control panels now share a common `MetaControls` base instead of each carrying its own copy of the same widget factories and signals, so a fix to one reaches all five
 
 * Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes

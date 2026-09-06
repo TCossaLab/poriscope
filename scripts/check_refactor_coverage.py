@@ -99,7 +99,11 @@ TESTS = REPO_ROOT / "tests"
 MOVED: Tuple[Tuple[str, str, str], ...] = (
     # Step 3d - MetaView -> MetaModel
     ("poriscope/utils/MetaView.py", "_logscale_and_filter_multiple_columns", "3d"),
-    ("poriscope/utils/MetaView.py", "_logscale_and_filter_dataframe", "3d"),
+    # `_logscale_and_filter_dataframe` was a target until Step 3d-pre deleted it
+    # (2026-09-06) rather than moving it: it and the entry above implemented one
+    # algorithm twice, and its single caller now goes through the survivor. Removed
+    # rather than left behind - this list is checked for existence, and a target that
+    # no longer exists is a hole in the net, not a pass.
     ("poriscope/utils/MetaView.py", "_parse_event_indices", "3d"),
     ("poriscope/utils/MetaView.py", "_shift_ranges", "3d"),
     ("poriscope/utils/MetaView.py", "_merge_ranges", "3d"),
