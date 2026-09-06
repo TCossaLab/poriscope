@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Raw Data and Event Analysis control panels now share a common `MetaEventTabControls` base instead of each carrying its own copy of the channel, filter and event-index handling, so a fix to one reaches both
+
 * The Raw Data and Event Analysis tabs now share a common `MetaEventTabView` base instead of each carrying its own copy of the channel validation, commit-parameter and data-filter handling, so a fix to one reaches both
 
 * The Raw Data and Event Analysis tabs now share a common `MetaEventTabController` base instead of each carrying its own copy of the plugin-registry and sample-rate relays, so a fix to one reaches both
