@@ -259,7 +259,9 @@ def test_selecting_both_channels_exports_both(
     out = tmp_path / "export_both"
     out.mkdir()
 
-    rows = row_counts(export(metadata_tab, qtbot, out, "both_channels", {"exp_a": [0, 1]}))
+    rows = row_counts(
+        export(metadata_tab, qtbot, out, "both_channels", {"exp_a": [0, 1]})
+    )
 
     assert rows["events"] == 40
     assert rows["sublevels"] == 120
