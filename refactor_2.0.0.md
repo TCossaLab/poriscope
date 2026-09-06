@@ -724,8 +724,9 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 **Landed:** Steps 0, 1 (1.9.0), 2 (all seven branches + exit review), **3a** (`MetaControls`,
 489 duplicated lines removed), **3d-pre** (the two logscale helpers collapsed to one), the
-boundary-gate widening, and **3b** (the three `MetaSubsetTab*` bases, 494 lines).
-`develop` is clean; the suite is **3,346 passed / 4 skipped**; duplication **906** removable;
+boundary-gate widening, **3b** (the three `MetaSubsetTab*` bases, 494 lines) and **3c** (the
+three `MetaEventTab*` bases, 153 lines).
+`develop` is clean; the suite is **3,345 passed / 4 skipped**; duplication **753** removable;
 boundary allowlist **110**; refactor coverage **247 targets** (re-measured 2026-09-06 via
 `collect_targets()`; 3d-pre removed one).
 
@@ -742,7 +743,7 @@ safety was measured rather than lucky. Rule 4 stays narrow deliberately —
 `DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
 `quality_control.rst`, which had never documented rule 4 at all.
 
-**Then, in dependency order:** 3c, 3d proper
+**Then, in dependency order:** 3d proper
 (now a numpy-only method plus the five range helpers), 3e, 3f (decided: move to
 `views/widgets/`, drop three autodoc pages, hand-write one for `WalkthroughMixin`), 3g,
 3a-bis.
@@ -811,6 +812,44 @@ just the method names.
 byte-identical at **31 lines**, the largest View pair in the repo, and sit in opposite
 families. Stateless, so it belongs on `MetaView` itself — 3c routes it there.
 `set_alter_database_status` (Clustering/Protein, 8 lines) is the other one.
+
+#### 3c — LANDED 2026-09-06
+
+Three commits, **906 → 753 removable lines (−153)**, every stage hitting its simulated
+number exactly. Boundary allowlist unmoved at **110** — none of the promoted methods carries
+an emit or a computation import. Suite 3,345 passed / 4 skipped.
+
+| Commit | Family | before → after |
+| --- | --- | --- |
+| `MetaEventTabController` + 2 methods | `*Controller.py` | 28 → 8 |
+| `MetaEventTabView` + 5 methods | `*View.py` | 116 → 55 |
+| `MetaEventTabControls` + 3 methods | `*controls.py` | **72 → 0** |
+
+**The `*controls.py` family is fully deduplicated**, from 641 where 3a started.
+
+**Two of `MetaView`'s abstract hooks are now implemented on the intermediate.**
+`notify_plugin_state_changed` is a deliberate no-op for both event tabs and `_reset_actions`
+is identical in each; `MetaView` still declares both abstract, so
+`test_plugin_state_notifications`' assertion about the base is unaffected, and
+`MetaEventTabView.__abstractmethods__` is correctly down to three against
+`MetaSubsetTabView`'s seven.
+
+**`@abstractmethod` is inert on a plain `QWidget`, and that was measured rather than
+assumed.** `MetaControls` has Shiboken's `ObjectType` as its metaclass, so
+`__abstractmethods__` is never computed and the decorator enforces nothing. The fix is the
+project's own `QWidgetABCMeta`, which `MetaView` already uses — not a `NotImplementedError`
+substitute. A base needs the metaclass only when it actually declares an abstract method,
+and a subclass may declare the more derived metaclass without changing its parent.
+
+**`update_plot_features` stays duplicated, and this is the measured cost of the no-mixin
+decision.** At 31 lines it is the largest remaining View pair, shared by `EventAnalysisView`
+and `MetadataView` — one tab in each family, so neither intermediate can hold it. It is not
+stateless either: it reads six attributes (`hlabels`, `vlabels`, `plabels`, `horizontal`,
+`vertical`, `points`) that **only those two tabs carry** — Clustering, Protein and RawData
+have none of them — so it is not universal plot state and does not belong on `MetaView` by
+the rule in `DECISIONS.md`. Left alone deliberately. Note this is a third shape of the
+mixin revisit condition: not "a third tab wants part of an intermediate", but "two tabs in
+*different* intermediates share behaviour".
 
 ## Step 3 — promotion to `Meta*` bases
 
