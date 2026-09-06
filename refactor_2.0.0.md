@@ -194,9 +194,12 @@ files and so belong to Step 3a. The rest is 152 in Metadata/Protein pairs (Step 
 4-of-5 group (`createButton`) and 6 in a 3-of-5 group. The total is unchanged from `fc4fdf7`;
 Step 1 removed no duplicate method.
 
-**1,199 lines total — but produced by a one-off, unversioned script, so this figure is not
-reproducible today.** Step 2's ratchet builds the instrument and re-derives it; treat the numbers
-in this table as indicative until it does. The plan's ~1,900 and the >= 2,500 target both include
+**1,199 lines total, and now reproducible**: `python scripts/measure_duplication.py` re-derives
+this table exactly, and `--check` holds it against `.duplication-baseline.json`. The original
+figure was produced by a one-off unversioned script and could not be re-checked; the committed
+instrument confirms it — 23/20/25 identical bodies and 351/207/641 removable lines — and also
+confirms Step 3a's 444 lines across the ten groups identical in all five controls files.
+The plan's ~1,900 and the >= 2,500 target both include
 near-identical code this measure cannot see (`ClassicCUSUM`'s 195-line override differing in
 2 lines, the Chimera readers differing in 23 of 390), so treat 1,199 as the *floor* the
 ratchet starts from, not the whole prize. Largest single wins: `create_info_button` and
@@ -369,11 +372,11 @@ the work is**. Decision E is agreed and all five deliverables are ours.
    import statements over **13** distinct (View, module) pairs + 10 private-access sites. The
    bullet below instructs "add `fast_histogram`" and then quotes a total computed *before* that
    addition; `RawDataView.py:34` is the missing entry.
-2. **The duplication baseline is not reproducible.** No measurement tool exists —
-   `ast.get_source_segment` appears exactly once in the repo and it is in prose, and `scripts/`
-   holds no duplicate detection. Step 0's 1,199 / 68 came from a one-off unversioned script. The
-   ratchet must **build the instrument and re-derive the baseline**, not encode a number nobody
-   can re-check.
+2. **The duplication baseline was not reproducible — now it is.** No measurement tool existed;
+   Step 0's 1,199 / 68 came from a one-off unversioned script. `scripts/measure_duplication.py`
+   now re-derives it and **confirms every figure exactly**, including Step 3a's 444 lines across
+   ten all-five groups. So the number was right; it simply could not be checked, which is a
+   different failure and a reminder that "unverifiable" is not the same as "wrong".
 3. **The golden targets were wrong.** `_calculate_heatmap`, `_double_gaussian`,
    `_fit_double_gaussian`, `_compute_theoretical_blockages`, `_generate_vm_ensemble`,
    `_normalize_column_data` and both `_construct_all_points_histogram` copies **already have
@@ -690,7 +693,7 @@ from `exposed.py` so changing it is breaking.
 | Metric | Baseline | Target | Instrument |
 | --- | --- | --- | --- |
 | MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates) | 0 | `ast` test (Step 2 branch 3) |
-| Duplicated lines removed | 0 of ~1,199 — baseline to be re-derived | ≥ 2,500 | duplication ratchet (Step 2 branch 2) |
+| Duplicated lines removed | 0 of 1,199 (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet |
 | Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) |
 | Numerical output | unpinned | unchanged | golden files (2A) |
 | Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) |

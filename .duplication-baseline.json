@@ -1,0 +1,20 @@
+{
+  "*Controller.py": {
+    "files": 5,
+    "functions": 81,
+    "identical_bodies": 20,
+    "removable_lines": 207
+  },
+  "*View.py": {
+    "files": 5,
+    "functions": 258,
+    "identical_bodies": 23,
+    "removable_lines": 351
+  },
+  "*controls.py": {
+    "files": 5,
+    "functions": 143,
+    "identical_bodies": 25,
+    "removable_lines": 641
+  }
+}

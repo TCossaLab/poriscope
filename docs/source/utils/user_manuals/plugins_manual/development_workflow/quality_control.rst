@@ -643,6 +643,48 @@ and returns a list of human-readable problems.
    the user must supply one. Most shipped readers do exactly this. What is *not* fine is
    supplying a ``Value`` that contradicts the ``Type`` beside it.
 
+.. _duplication_ratchet:
+
+Analysis-Tab Duplication Ratchet
+---------------------------------
+
+This one only affects you if you edit the analysis tabs — the five ``*View.py`` and
+``*Controller.py`` files under ``poriscope/plugins/analysistabs/`` or the five
+``*controls.py`` under its ``utils/``. Those three families carry a large amount of
+byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists so
+that removal is *demonstrated* rather than asserted.
+
+``scripts/measure_duplication.py`` counts, per family, how many function bodies are
+byte-identical across more than one file and how many lines would be deleted by promoting
+one copy to a shared base. ``.duplication-baseline.json`` records those counts, and
+``tests/unit/scripts/test_duplication_ratchet.py`` fails if the measurement disagrees.
+
+.. code-block:: bash
+
+   python scripts/measure_duplication.py             # the table
+   python scripts/measure_duplication.py --verbose   # every duplicate group, largest first
+   python scripts/measure_duplication.py --check     # compare against the baseline
+
+**The check is exact, not "no worse than".** A rise means duplication was added. A fall is
+a win — and it fails too, so the win is recorded in the same commit that earned it. Under
+a "no worse than" rule the baseline would quietly overstate the duplication still present
+and the slack would accumulate unnoticed. If your change legitimately removed duplication,
+rerun with ``--update`` and commit the new baseline alongside it.
+
+.. warning::
+
+   Read the failure message before running ``--update``. Byte identity is brittle in one
+   direction: editing a few characters in *one* copy of a five-way duplicate drops that
+   copy out of its group, so the removable count falls by a whole copy's worth while
+   nothing was deduplicated — and the duplication is actually *worse*, five near-identical
+   bodies instead of five identical ones. The check tells the two apart without any
+   similarity measure, because promoting a method to a base **deletes** the copies, so the
+   function count falls too, while an edit into divergence leaves it untouched. When it
+   sees that shape it says so explicitly.
+
+   If you are fixing a bug in one of these methods, the fix almost certainly belongs in
+   every copy.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
