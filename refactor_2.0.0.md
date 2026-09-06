@@ -905,6 +905,32 @@ claiming a clamp the implementation does not have), and
 `test_meta_view_characterization.py` pins all five properly with 28 literal-value tests. The
 4 `_factors` tests in that class stay, and it is renamed `TestFactors`.
 
+#### 3f — LANDED 2026-09-06
+
+`walkthrough.py` and `walkthrough_mixin.py` move from `plugins/analysistabs/utils/` into
+`poriscope/views/widgets/`, with their two test files following to `tests/unit/views/widgets/`.
+**Boundary allowlist 110 → 106, and rule 4 now reads zero** — the first of the four rules to
+reach its target. It stays in as a ratchet. **Breaking:** the import path for
+`WalkthroughMixin` and `WalkthroughStep` changes.
+
+The autodoc outcome went as decided: four pages / 26 directives deleted, three of them
+deliberately (`IntroDialog`, `Overlay`, `StepDialog` — internal UI machinery named in no prose
+docs), and `WalkthroughMixin` replaced by a hand-written page at
+`docs/.../next_steps/walkthrough_mixin.rst` with a real `.. _walkthrough_mixin:` label, added to
+that tutorial's own toctree. **`python -m sphinx -b html -W --keep-going` exits 0**, which also
+confirms the two repaired links resolve: both were backslash-escaped, so Sphinx rendered them as
+literal text, and both named labels that existed nowhere in `docs/` — `mainview_walkthrough` had
+no target at all and now points at `MainView`.
+
+`test_autodoc_coverage` now asserts the shape that resulted rather than the one it guarded
+against, including that the modules are **not** back under `plugins/`, so undoing 3f fails there
+as well as at the boundary gate.
+
+**Still open in 3f:** `WalkthroughStep` is a `Tuple[str, str, str, Callable[...]]` alias and the
+plan calls for a frozen dataclass. Deferred as its own commit: **90 four-element tuple literals**
+across 7 files construct these, and `walkthrough_mixin` unpacks them positionally (`step[2]`).
+Mechanical but large, and it moves no gate — a readability change in a file plugin authors read.
+
 ## Step 3 — promotion to `Meta*` bases
 
 - **3a `MetaControls(QWidget)`** — highest value, independent of the test gate, **gated on
