@@ -41,6 +41,7 @@ dev = [
     "pytest-cov==7.1.0",
     "pytest-mock==3.14.1",
     "pytest-qt==4.5.0",
+    "pytest-regressions==2.11.0",
     "pytest-timeout==2.4.0",
 ]
 docs = [
