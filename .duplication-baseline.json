@@ -16,5 +16,23 @@
     "functions": 143,
     "identical_bodies": 25,
     "removable_lines": 641
+  },
+  "datareaders": {
+    "files": 7,
+    "functions": 90,
+    "identical_bodies": 15,
+    "removable_lines": 435
+  },
+  "eventfitters": {
+    "files": 4,
+    "functions": 35,
+    "identical_bodies": 10,
+    "removable_lines": 193
+  },
+  "views/widgets": {
+    "files": 11,
+    "functions": 125,
+    "identical_bodies": 7,
+    "removable_lines": 62
   }
 }

@@ -312,3 +312,76 @@ class TestFileLists:
         """Five Views and five Controllers, or the metric is measuring a subset."""
         assert len(mod.VIEWS) == 5
         assert len(mod.CONTROLLERS) == 5
+
+
+# ===========================================================================
+# Rule 4 - an app-shell module importing from a plugin package
+# ===========================================================================
+
+
+class TestPluginImports:
+    """
+    The layering rule, added by the Step 2 exit review.
+
+    Step 3f's whole point is that the app shell imports *up* from
+    ``plugins/analysistabs/utils/walkthrough*``. Without this rule nothing observed
+    that inversion, so 3f could be done, half-done or undone with every gate green.
+    """
+
+    def test_a_plugin_import_is_recorded(self, mod: types.ModuleType) -> None:
+        """The canonical form: the shell reaching into a plugin package."""
+        source = "from poriscope.plugins.analysistabs.utils.walkthrough import Overlay"
+
+        assert mod.plugin_imports(parse(source)) == [
+            "poriscope.plugins.analysistabs.utils.walkthrough"
+        ]
+
+    def test_a_plain_import_is_recorded_too(self, mod: types.ModuleType) -> None:
+        """Both import forms reach the same package."""
+        source = "import poriscope.plugins.analysistabs.utils.walkthrough"
+
+        assert mod.plugin_imports(parse(source)) == [
+            "poriscope.plugins.analysistabs.utils.walkthrough"
+        ]
+
+    def test_imports_within_the_shell_are_ignored(self, mod: types.ModuleType) -> None:
+        """
+        The rule is about the direction of the dependency, not about imports.
+
+        The shell importing from itself, or from ``poriscope.utils``, is exactly
+        how it is supposed to be built.
+        """
+        source = """
+            from poriscope.utils.MetaView import MetaView
+            from poriscope.views.widgets.time_widget import TimeWidget
+            from PySide6.QtWidgets import QWidget
+            """
+        assert mod.plugin_imports(parse(source)) == []
+
+    def test_relative_imports_are_skipped(self, mod: types.ModuleType) -> None:
+        """A relative import cannot cross packages, so it cannot invert layering."""
+        assert mod.plugin_imports(parse("from . import walkthrough")) == []
+
+    def test_the_shell_scan_covers_views_controllers_and_models(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        All three shell packages, not just views.
+
+        Views are where the inversion lives today; controllers and models are
+        included so a new one cannot appear somewhere unwatched.
+        """
+        scanned = {p.as_posix() for p in mod.shell_modules()}
+
+        assert any("/views/" in p for p in scanned)
+        assert any("/controllers/" in p for p in scanned)
+        assert any("/models/" in p for p in scanned)
+
+    def test_no_dunder_init_is_scanned(self, mod: types.ModuleType) -> None:
+        """
+        Package ``__init__`` files re-export by design and would be noise.
+
+        Excluded deliberately, so a later reader does not mistake their absence for
+        an oversight.
+        """
+        assert not any(p.name == "__init__.py" for p in mod.shell_modules())

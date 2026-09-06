@@ -85,31 +85,70 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TABS = REPO_ROOT / "poriscope" / "plugins" / "analysistabs"
 
-#: The three five-file families, enumerated rather than globbed. Case matters:
-#: ``eventAnalysisControls.py`` is camelCase and does not match ``*controls.py``.
+#: The families the refactor deduplicates, enumerated rather than globbed and
+#: given as repository-relative paths. Case matters in the analysis-tab controls
+#: family: ``eventAnalysisControls.py`` is camelCase and does not match
+#: ``*controls.py``, so a glob would silently drop 742 lines, 17% of it.
+#:
+#: The three analysis-tab families are Step 3's; the rest are Steps 5a and 5d, and
+#: were added by the Step 2 exit review, which found 772 removable lines sitting
+#: outside the ratchet in exactly the families those steps work on.
+#:
+#: ``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are deliberately
+#: absent from the fitters family. Their logic is another developer's under standing
+#: policy, so a ratchet over them would fail on their owner's commits and block work
+#: that is not ours to gate. Their duplication is therefore unmeasured by design, not
+#: by oversight.
 FAMILIES: Dict[str, Tuple[str, ...]] = {
     "*View.py": (
-        "ClusteringView.py",
-        "EventAnalysisView.py",
-        "MetadataView.py",
-        "ProteinView.py",
-        "RawDataView.py",
+        "poriscope/plugins/analysistabs/ClusteringView.py",
+        "poriscope/plugins/analysistabs/EventAnalysisView.py",
+        "poriscope/plugins/analysistabs/MetadataView.py",
+        "poriscope/plugins/analysistabs/ProteinView.py",
+        "poriscope/plugins/analysistabs/RawDataView.py",
     ),
     "*Controller.py": (
-        "ClusteringController.py",
-        "EventAnalysisController.py",
-        "MetadataController.py",
-        "ProteinController.py",
-        "RawDataController.py",
+        "poriscope/plugins/analysistabs/ClusteringController.py",
+        "poriscope/plugins/analysistabs/EventAnalysisController.py",
+        "poriscope/plugins/analysistabs/MetadataController.py",
+        "poriscope/plugins/analysistabs/ProteinController.py",
+        "poriscope/plugins/analysistabs/RawDataController.py",
     ),
     "*controls.py": (
-        "utils/clusteringcontrols.py",
-        "utils/eventAnalysisControls.py",
-        "utils/metadatacontrols.py",
-        "utils/proteincontrols.py",
-        "utils/rawdatacontrols.py",
+        "poriscope/plugins/analysistabs/utils/clusteringcontrols.py",
+        "poriscope/plugins/analysistabs/utils/eventAnalysisControls.py",
+        "poriscope/plugins/analysistabs/utils/metadatacontrols.py",
+        "poriscope/plugins/analysistabs/utils/proteincontrols.py",
+        "poriscope/plugins/analysistabs/utils/rawdatacontrols.py",
+    ),
+    "eventfitters": (
+        "poriscope/plugins/eventfitters/ClassicCUSUM.py",
+        "poriscope/plugins/eventfitters/CUSUM.py",
+        "poriscope/plugins/eventfitters/IntraCUSUM.py",
+        "poriscope/plugins/eventfitters/NoFitter.py",
+    ),
+    "datareaders": (
+        "poriscope/plugins/datareaders/BinaryReader1X.py",
+        "poriscope/plugins/datareaders/ChimeraReader20240101.py",
+        "poriscope/plugins/datareaders/ChimeraReader20240501.py",
+        "poriscope/plugins/datareaders/ChimeraReaderVC100.py",
+        "poriscope/plugins/datareaders/LegacyElementsReader.py",
+        "poriscope/plugins/datareaders/SingleBinaryDecoder.py",
+        "poriscope/plugins/datareaders/TCossaLabABFReader.py",
+    ),
+    "views/widgets": (
+        "poriscope/views/widgets/add_subset_filter_dialog.py",
+        "poriscope/views/widgets/clustering_settings_widget.py",
+        "poriscope/views/widgets/dict_dialog_widget.py",
+        "poriscope/views/widgets/dropdown_selection_widget.py",
+        "poriscope/views/widgets/edit_subset_filter_dialog.py",
+        "poriscope/views/widgets/icon_menu_widget.py",
+        "poriscope/views/widgets/multiselect.py",
+        "poriscope/views/widgets/multiselect_filter.py",
+        "poriscope/views/widgets/SelectionTree.py",
+        "poriscope/views/widgets/text_menu_widget.py",
+        "poriscope/views/widgets/time_widget.py",
     ),
 }
 
@@ -250,7 +289,7 @@ def measure() -> Dict[str, Dict[str, object]]:
     """
     results: Dict[str, Dict[str, object]] = {}
     for family, names in FAMILIES.items():
-        files = [TABS / name for name in names]
+        files = [REPO_ROOT / name for name in names]
         for path in files:
             if not path.is_file():
                 raise FileNotFoundError(

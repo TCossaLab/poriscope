@@ -22,6 +22,7 @@ Two groups:
   merging all three is an explicit decision.
 """
 
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pytest
@@ -290,3 +291,112 @@ class TestFormatAxisLabelStripsFromTheFirstParenthesis:
         """Leaving a leading space before the unit, which is what the axis shows."""
         assert format_axis_label("(all)", "pA") == " (pA)"
         assert metadata_view.format_axis_label("(all)", "pA") == " (pA)"
+
+
+# ===========================================================================
+# createButton - identical in four of five, and the fifth is the point
+# ===========================================================================
+
+
+CONTROLS_WITH_STYLE_RESET = (
+    "clusteringcontrols",
+    "metadatacontrols",
+    "proteincontrols",
+    "rawdatacontrols",
+)
+
+
+def controls_source(module: str) -> str:
+    """
+    Read one controls module's source.
+
+    :param module: the module's file stem
+    :type module: str
+    :return: the file's text
+    :rtype: str
+    """
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "poriscope"
+        / "plugins"
+        / "analysistabs"
+        / "utils"
+        / f"{module}.py"
+    )
+    return path.read_text(encoding="utf-8")
+
+
+def create_button_body(module: str) -> str:
+    """
+    Extract one module's ``createButton`` source.
+
+    :param module: the module's file stem
+    :type module: str
+    :return: the method's source text
+    :rtype: str
+    """
+    import ast
+    import textwrap
+
+    source = controls_source(module)
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "createButton":
+            segment = ast.get_source_segment(source, node)
+            assert segment is not None
+            head, newline, tail = segment.partition("\n")
+            return (head.strip() + newline + textwrap.dedent(tail)).strip()
+    raise AssertionError(f"{module} has no createButton")
+
+
+class TestCreateButtonDivergence:
+    """
+    ``createButton`` is identical in four of five controls files. The fifth differs,
+    and Step 3a's plan is to promote the majority version.
+
+    That would change ``eventAnalysisControls``' behaviour, because its copy omits
+    the ``setStyleSheet("")`` reset the other four end with. Nothing asserted this
+    before the Step 2 exit review, so the promotion would have been silent. It is
+    pinned here so 3a has to make the call deliberately: either keep the reset and
+    accept that EventAnalysis buttons gain it, or drop it and accept that the other
+    four lose it.
+    """
+
+    def test_four_of_five_reset_the_stylesheet(self) -> None:
+        """The majority version ends by clearing any inherited style."""
+        for module in CONTROLS_WITH_STYLE_RESET:
+            assert 'setStyleSheet("")' in create_button_body(module), module
+
+    def test_event_analysis_is_the_one_that_does_not(self) -> None:
+        """
+        The single divergence, stated as a fact about today's code.
+
+        If this test starts failing, either 3a has happened or someone has quietly
+        aligned the fifth copy - both are fine, and both should be noticed.
+        """
+        assert 'setStyleSheet("")' not in create_button_body("eventAnalysisControls")
+
+    def test_the_four_majority_copies_are_byte_identical(self) -> None:
+        """
+        So "the majority version" is well defined, which 3a's plan assumes.
+
+        If these four ever diverge among themselves, promoting one of them is no
+        longer a mechanical choice and 3a needs rethinking.
+        """
+        bodies = {create_button_body(module) for module in CONTROLS_WITH_STYLE_RESET}
+        assert len(bodies) == 1
+
+    def test_the_divergence_is_only_the_stylesheet_reset(self) -> None:
+        """
+        Everything else about the fifth copy matches, so the decision is narrow.
+
+        Pinned because a second difference appearing later would make the same
+        promotion a bigger behaviour change than 3a's plan accounts for.
+        """
+        majority = create_button_body("metadatacontrols")
+        odd_one = create_button_body("eventAnalysisControls")
+
+        without_reset = "\n".join(
+            line for line in majority.splitlines() if 'setStyleSheet("")' not in line
+        )
+        assert without_reset == odd_one
