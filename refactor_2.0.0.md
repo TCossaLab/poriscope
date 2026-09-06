@@ -722,287 +722,42 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 ## Next up — state as of 2026-09-06
 
-**Landed:** Steps 0, 1 (1.9.0), 2 (all seven branches + exit review), **3a** (`MetaControls`,
-489 duplicated lines removed), **3d-pre** (the two logscale helpers collapsed to one), the
-boundary-gate widening, **3b** (the three `MetaSubsetTab*` bases, 494 lines) and **3c** (the
-three `MetaEventTab*` bases, 153 lines) and **3e** (the bases narrowed by 120 lines).
-`develop` is clean; duplication **737** removable;
-boundary allowlist **110**; refactor coverage **247 targets** (re-measured 2026-09-06 via
-`collect_targets()`; 3d-pre removed one).
+**Steps 0, 1, 2 and 3 are complete.** Also landed: the boundary-gate widening, and two fixes
+found on the way (the dead `involved_tables` trio; a flaky `test_raw_data_flow_no_gui` wait).
 
-**The gate widening — LANDED 2026-09-06.** Rules 1–3 no longer read hardcoded filename
-tuples: every module under `poriscope/` is classified into a layer by a whole-layer directory
-or by a filename suffix (`*View.py`/`*Controls.py`, `*Controller.py`), so a base promoted into
-`poriscope/utils/` is measured the moment it is named for its role. **View layer 5 → 33
-modules, Controller layer 5 → 8, allowlist 111 → 113.** The +2 is `MetaView`'s `numpy` and
-`numpy.typing` — a real rule-2 violation the narrow scan could not see, not a regression; every
-numpy reference in that file sits inside `_logscale_and_filter_multiple_columns`, so **3d
-clears it**. Everything else newly scanned is clean on all three rules, which confirms 3a's
-safety was measured rather than lucky. Rule 4 stays narrow deliberately —
-`poriscope/utils/plugin_schemas.py:40` imports `poriscope.plugins` on purpose. Reasoning in
-`DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
-`quality_control.rst`, which had never documented rule 4 at all.
-
-**Step 3 is complete.** Next is Step 4, and **3d after 4a**.
-
-**Reordered 2026-09-06: 3d moves after 4a.** The plan had it as a Step 3 promotion on the
-grounds that it is `MetaView` → `MetaModel` and "not View → Model, because both already live
-on the base". That is true of where the code *lives* and false of where it is *called from*:
-`_logscale_and_filter_multiple_columns` has **9 synchronous inline call sites** in
-`MetadataView` (6), `ProteinView` (2) and `ClusteringView` (1), and the range helpers had
-**6** in the two event tabs. **No View holds a model reference at all** — zero `self.model`
-across all five Views and `MetaView` — and there is no synchronous View-to-Model path in the
-architecture. Creating one is Decision A's `call` on `MetaController`/`MetaModel`, i.e. 4a.
-So 3d is fifteen call sites converted to the Controller-mediated round trip: Step 4 work by
-definition, not a move. The half that *was* possible without 4a — taking the five range
-helpers off `MetaView` — landed in 3e instead, since their callers are exactly 3c's family
-and moving them **down** needs no call-site change.
-
-**Owed — contributor docs on what to inherit from.** Step 3 leaves an analysis-tab author
-with a real choice that did not exist before: `MetaView` directly, or one of the
-intermediates (`MetaSubsetTabView` today, `MetaEventTabView` after 3c), and the same for the
-Controller and Controls. The plugin-development manual walks people through writing a tab but
-says nothing about picking a base, because until now there was only one. Write that section
-once Step 3's bases are all in place, covering what each intermediate gives you, what it
-demands back, and the rule for deciding — stateless shared behaviour goes on the common base,
-stateful or contract-bearing behaviour goes on an intermediate. Requested 2026-09-06.
-
-**Owed:** a manual Windows pass after each structural step — last run 2026-09-06 after 3a,
-clear. 3d-pre did not touch the UI, so none is owed for it; the next is due after 3f.
-
-**Standing method notes** live in the artifact's section 08 (29 rules), which is the source
-material for the refactor skill. Two from this round worth remembering at the keyboard: a
-harness "exit code 0" is not a test result — read the `N passed` line from the run's own
-output; and any step that *removes* rather than moves code owes its instruments the same edit
-in the same commit.
-
-#### 3b — LANDED 2026-09-06
-
-Three commits, **1,400 → 906 removable lines (−494)**, every stage hitting its simulated
-number exactly. Boundary allowlist **113 → 110**, earned by three `global_signal.emit` sites
-collapsing 3+3 → 3 on `MetaSubsetTabView`. Suite 3,346 passed / 4 skipped.
-
-| Commit | Family | before → after | functions |
-| --- | --- | --- | --- |
-| `MetaSubsetTabController` + 17 methods | `*Controller.py` | 207 → 28 | 81 → 47 |
-| `MetaSubsetTabView` + 15 methods | `*View.py` | 351 → 116 | 258 → 228 |
-| `MetaSubsetTabControls` + 10 methods | `*controls.py` | 152 → 72 | 83 → 63 |
-
-**Named `MetaSubsetTab*`, not `MetaDatabaseTab*`.** `Meta` means *metadata* in
-`MetaDatabaseLoader`/`MetaDatabaseWriter`, not *metaclass*, so the planned name borrowed the
-wrong sense of the prefix. `DECISIONS.md` carries it, and the rule: name a base for the
-behaviour its subclasses share, not the storage they sit on.
-
-**No mixin.** `SubsetFilterMixin` was considered and rejected — `WalkthroughMixin` is the
-codebase's only mixin and 3f/3g fold it into the base, so adding a second while removing the
-first leaves two composition mechanisms and no rule for choosing. `DECISIONS.md` carries the
-rule that replaced it and its revisit conditions.
-
-**`test_plugin_compliance` gained an `INTERMEDIATE_BASES` category.** An intermediate must
-stay abstract like a `META_CLASSES` member but need not redeclare the abstract methods it
-inherits; requiring that would have meant copying eighty lines of `MetaView` docstring, and
-`update_available_plugins`' real body, into a class nobody implements from scratch. 3c will
-add `MetaEventTabView` to the same set.
-
-**The lesson worth carrying: a promotion moves the *patch target*, and one of those failures
-is a crash rather than a failure.** Four groups of tests broke, all patching a name in the
-tab module that the promotion moved. Three were ordinary failures. The fourth —
-`QFileDialog.getSaveFileName`, still patched on the tab while the code called the base's real
-`QFileDialog` — opened a **native modal dialog** in a headless run and killed the interpreter
-at **exit 127 with no summary line and no faulthandler dump**, at a *different* place each
-run. Two of those crashes were misread as pre-existing flakiness before the mechanism was
-found. After a promotion, grep the tests for every name the moving methods referenced, not
-just the method names.
-
-**Deliberately left per-tab:** `relay_query` and the pending-filter state it reads (Step 4d),
-`update_filters` on the View side, and `setupUi`/`connect_signals` throughout.
-
-**Cross-family duplication the intermediates cannot hold:**
-`EventAnalysisView.update_plot_features` and `MetadataView.update_plot_features` are
-byte-identical at **31 lines**, the largest View pair in the repo, and sit in opposite
-families. Stateless, so it belongs on `MetaView` itself — 3c routes it there.
-`set_alter_database_status` (Clustering/Protein, 8 lines) is the other one.
-
-#### 3c — LANDED 2026-09-06
-
-Three commits, **906 → 753 removable lines (−153)**, every stage hitting its simulated
-number exactly. Boundary allowlist unmoved at **110** — none of the promoted methods carries
-an emit or a computation import. Suite 3,345 passed / 4 skipped.
-
-| Commit | Family | before → after |
+| Gate | Start | Now |
 | --- | --- | --- |
-| `MetaEventTabController` + 2 methods | `*Controller.py` | 28 → 8 |
-| `MetaEventTabView` + 5 methods | `*View.py` | 116 → 55 |
-| `MetaEventTabControls` + 3 methods | `*controls.py` | **72 → 0** |
+| Duplication, removable lines | 1,889 | **737** |
+| — `*controls.py` family | 641 | **0** |
+| Boundary allowlist | 111 | **106** |
+| — rule 4, layering | 4 | **0** |
+| Suite | 3,339 | **3,330 passed / 4 skipped** |
 
-**The `*controls.py` family is fully deduplicated**, from 641 where 3a started.
+Six new bases exist: `MetaControls`; `MetaSubsetTabView`/`Controller`/`Controls` (Metadata,
+Protein); `MetaEventTabView`/`Controller`/`Controls` (RawData, EventAnalysis).
 
-**Two of `MetaView`'s abstract hooks are now implemented on the intermediate.**
-`notify_plugin_state_changed` is a deliberate no-op for both event tabs and `_reset_actions`
-is identical in each; `MetaView` still declares both abstract, so
-`test_plugin_state_notifications`' assertion about the base is unaffected, and
-`MetaEventTabView.__abstractmethods__` is correctly down to three against
-`MetaSubsetTabView`'s seven.
+**Next: Step 4**, then **3d after 4a** — see the reordering note below, and section 05 of the
+artifact. 3d needs Decision A's `call()` before it can move anything.
 
-**`@abstractmethod` is inert on a plain `QWidget`, and that was measured rather than
-assumed.** `MetaControls` has Shiboken's `ObjectType` as its metaclass, so
-`__abstractmethods__` is never computed and the decorator enforces nothing. The fix is the
-project's own `QWidgetABCMeta`, which `MetaView` already uses — not a `NotImplementedError`
-substitute. A base needs the metaclass only when it actually declares an abstract method,
-and a subclass may declare the more derived metaclass without changing its parent.
+**Owed — a manual Windows pass, and it is a big one.** None has been run since 3a. Since then
+3f moved the walkthrough widgets, 3g changed how every tab is constructed (`_init` now runs once
+instead of twice) and folded the mixin into `MetaView`, and 3a-bis changed how every control
+area is built and wired. Check: all five tabs open and their controls respond; the walkthrough
+runs from Help ▸ Tutorial on each tab and the nested dialog walkthroughs still launch
+(Clustering settings, Add subset filter) and force-close with their dialog; the Metadata and
+Protein filter edit/delete buttons still reach their handlers; no widget outlives the app on
+close.
 
-**`update_plot_features` stays duplicated, and this is the measured cost of the no-mixin
-decision.** At 31 lines it is the largest remaining View pair, shared by `EventAnalysisView`
-and `MetadataView` — one tab in each family, so neither intermediate can hold it. It is not
-stateless either: it reads six attributes (`hlabels`, `vlabels`, `plabels`, `horizontal`,
-`vertical`, `points`) that **only those two tabs carry** — Clustering, Protein and RawData
-have none of them — so it is not universal plot state and does not belong on `MetaView` by
-the rule in `DECISIONS.md`. Left alone deliberately. Note this is a third shape of the
-mixin revisit condition: not "a third tab wants part of an intermediate", but "two tabs in
-*different* intermediates share behaviour".
+**Owed — contributor docs on what to inherit from.** Now overdue: Step 3 leaves an
+analysis-tab author choosing between `MetaView` and four intermediates, and the plugin manual
+still describes only the one-base world. `metaview_base.rst` has been updated for `3a-bis`'s
+hook, but the "which base" question is unwritten.
 
-#### 3e — LANDED 2026-09-06
+**Still open from 3f:** `WalkthroughStep` as a frozen dataclass — 90 tuple literals across 7
+files, moves no gate.
 
-Narrowing the published bases rather than deduplicating, so the duplication ratchet is
-almost unmoved (753 removable, unchanged; `*View.py` functions 218 → 219 as
-`set_column_exists` arrives in `ProteinView` as a single copy). Boundary allowlist unmoved at
-110. **`MetaView` loses 110 lines and `MetaController` 10.**
-
-- **The five event-index range helpers move `MetaView` → `MetaEventTabView`** (90 lines).
-  Their only callers are `EventAnalysisView` and `RawDataView`, so they sat on the base all
-  five tabs inherit for the benefit of two. Pure apart from one `logger` call, and moving them
-  *down* needs no call-site change. 3d still has to move them on to `MetaModel` from here.
-- **`check_column_exists` / `set_column_exists` move to `ProteinController` / `ProteinView`.**
-  **The plan called these "clustering-only" and that was the wrong tab.** Clustering has its
-  own separate pair, `check_cluster_column_exists` → `set_cluster_column_exists`, writing a
-  different attribute; nothing here ever ran for clustering. Protein already overrode
-  `check_column_exists`, so the base copy was dead. **Breaking:** two methods removed from
-  `Meta*` ABCs.
-- **`_setup_canvas` loses its `num_channels` parameter.** Never read in the body; the single
-  call site passed nothing; and the docstring claimed it built "subplots corresponding to the
-  number of channels", which the body does not do. Docstring corrected too.
-- **`MetaView.lock` becomes per-instance.** It was a *class* attribute, so all five tab views
-  serialised on one lock, guarding exactly one site — `remove_progress_bar`, which mutates the
-  strictly per-instance `self.progress_bars`.
-
-Three instruments needed the same edit in the same commit, which is the rule 3d-pre
-established:
-
-- `check_refactor_coverage`'s `MOVED` table now names the new homes.
-- `test_column_exists_relay.py`, a Step 2 characterization test written specifically to
-  protect this move, was re-pointed to `ProteinController`/`ProteinView` **and had its stated
-  premise corrected**, since it repeated the plan's wrong tab.
-- 45 range-helper characterization tests followed their methods by making
-  `test_meta_view_characterization.py`'s concrete subclass extend `MetaEventTabView`, which
-  reaches both bases' methods by ordinary inheritance.
-
-**And one test set was deleted rather than moved.** `test_protein_view.py::TestRangeHelpers`
-held 16 tests for the range helpers, reached through a tab that has no relationship to them —
-which is how nobody noticed the helpers did not belong on `MetaView`. They were already
-recorded as weak (an `or`-chain of three alternatives; one asserting `>= 0` under a comment
-claiming a clamp the implementation does not have), and
-`test_meta_view_characterization.py` pins all five properly with 28 literal-value tests. The
-4 `_factors` tests in that class stay, and it is renamed `TestFactors`.
-
-#### 3f — LANDED 2026-09-06
-
-`walkthrough.py` and `walkthrough_mixin.py` move from `plugins/analysistabs/utils/` into
-`poriscope/views/widgets/`, with their two test files following to `tests/unit/views/widgets/`.
-**Boundary allowlist 110 → 106, and rule 4 now reads zero** — the first of the four rules to
-reach its target. It stays in as a ratchet. **Breaking:** the import path for
-`WalkthroughMixin` and `WalkthroughStep` changes.
-
-The autodoc outcome went as decided: four pages / 26 directives deleted, three of them
-deliberately (`IntroDialog`, `Overlay`, `StepDialog` — internal UI machinery named in no prose
-docs), and `WalkthroughMixin` replaced by a hand-written page at
-`docs/.../next_steps/walkthrough_mixin.rst` with a real `.. _walkthrough_mixin:` label, added to
-that tutorial's own toctree. **`python -m sphinx -b html -W --keep-going` exits 0**, which also
-confirms the two repaired links resolve: both were backslash-escaped, so Sphinx rendered them as
-literal text, and both named labels that existed nowhere in `docs/` — `mainview_walkthrough` had
-no target at all and now points at `MainView`.
-
-`test_autodoc_coverage` now asserts the shape that resulted rather than the one it guarded
-against, including that the modules are **not** back under `plugins/`, so undoing 3f fails there
-as well as at the boundary gate.
-
-**Still open in 3f:** `WalkthroughStep` is a `Tuple[str, str, str, Callable[...]]` alias and the
-plan calls for a frozen dataclass. Deferred as its own commit: **90 four-element tuple literals**
-across 7 files construct these, and `walkthrough_mixin` unpacks them positionally (`step[2]`).
-Mechanical but large, and it moves no gate — a readability change in a file plugin authors read.
-
-#### 3g — LANDED 2026-09-06
-
-`MetaView` now inherits `WalkthroughMixin` and calls `_init_walkthrough()` itself, so all five
-tabs drop both the mixin from their bases and their byte-identical four-line `__init__`.
-Duplication **753 → 737**.
-
-**It was not a free deletion — `_init()` was running twice on every tab**, once from
-`MetaView.__init__` before `_setup_ui()` and once from the tab's own `__init__` after it.
-Verified by instrumenting a real `MetadataView` construction, not by reading. Removing the late
-call was measured safe first: **no attribute any of the five `_init` bodies assigns is also
-assigned anywhere in the `_setup_ui` call tree**, so the second call only rewrote its own
-values. Zero overlap in all five tabs.
-
-**The trap that decided the design.** `MetaView` precedes `WalkthroughMixin` in every tab's MRO,
-so giving `MetaView` a no-op `_init_walkthrough` default — the obvious way to keep the mixin
-optional — would have **shadowed the mixin's and silently disabled every walkthrough**. Measured
-before it was written. The mixin is therefore listed *last* on `MetaView`
-(`MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta)`), which reproduces each tab's
-existing MRO exactly, one level up: `MetadataView → MetaSubsetTabView → MetaView → QWidget →
-QObject → QPaintDevice → Object → WalkthroughMixin → object`, byte-for-byte what it was.
-
-**`WalkthroughMixin` stays a class**, contrary to the first sketch of this step. It is used at
-three levels, and only the middle one is a `MetaView`: `MainView(QMainWindow, WalkthroughMixin)`
-is the orchestrator — Help ▸ Tutorial, and `launch_walkthrough_if_needed` reaching into the
-current tab (`main_view.py:1040-1057`) — while `ClusteringSettingsDialog` and
-`AddSubsetFilterDialog` run *nested* walkthroughs when a tab's own is active
-(`ClusteringView.py:497`, `MetadataView.py:2879`, `ProteinView.py:3372`). Neither a
-`QMainWindow` nor a `QDialog` can be a `MetaView`.
-
-`test_dunder_init_calls_super_and_initializers` tested a method that no longer exists and was
-replaced by two that pin what 3g established: `MetaView.__init__` calls `_init`,
-`_init_walkthrough` and `_setup_ui` exactly once each, and no tab defines an `__init__`. The
-first is asserted against the source, because reaching `MetaView.__init__` means building a real
-`QWidget` and the only way that file's fixtures avoid one is by patching that method away. A
-`WalkthroughMixin.__init__` patch in the fixture was also deleted: the mixin has no `__init__`,
-so it had been inert all along.
-
-#### 3a-bis — LANDED 2026-09-06, completing Step 3
-
-`MetaView._set_control_area` is now **concrete** and builds the control area itself: it calls
-`_build_controls()`, connects the four signals every panel carries, calls
-`_connect_control_signals()`, and lays the widget out. The five per-tab copies (24/25/29/27/23
-lines) become a 13-line `_build_controls` each. **−112 lines against +101 across the bases**,
-and a new tab now writes three lines where it used to write twenty-five.
-
-**The plan's premise was wrong twice, as it recorded** — and measuring the five bodies showed
-they differ in exactly three ways: the widget class, the attribute name it is stored under, and
-two extra connects that only Metadata and Protein have. Those two signals are
-`edit_filter_requested`/`delete_filter_requested`, which 3b had just put on
-`MetaSubsetTabControls`, so they became a `_connect_control_signals` override on
-`MetaSubsetTabView` — 3b made 3a-bis cleaner than it could have been on its own.
-
-**The attribute name is why `_build_controls` returns the widget instead of assigning it.**
-`self.metadatacontrols` and its four siblings have **190 references across `poriscope/` and 26
-test files**, and the same names are dispatch keys in each tab's saved action history. The hook
-lets each tab keep its own name while the base owns the wiring; nothing was renamed.
-
-**`_build_controls` is deliberately not abstract.** It returns an empty `MetaControls` by
-default, because the plugin tutorial's `HelloWorldView` overrides `_set_control_area` to add a
-bare `QLabel` and has no controls panel at all — an abstract hook would leave the documented
-starting point uninstantiable. So `MetaView`'s abstract surface is **one smaller and nothing
-joined it**: a pure relaxation, safe for every existing subclass.
-
-`tests/unit/plugins/test_mvc_base_contracts.py` — written by the Step 2 exit review naming
-3a-bis specifically — was updated in the same commit, which is what it exists for. Two
-`test_metadata_view` patches moved to `poriscope.utils.MetaView` because the layout
-construction moved with the method; the `MetadataControls` patch stayed in the tab module,
-because `_build_controls` did. `metaview_base.rst` and the Hello World tutorial were updated;
-`sphinx -b html -W` exits 0.
-
-**The ratchet does not move, by construction** — the five copies were pairwise distinct, so
-`measure_duplication` never counted them. Recorded so the absence is not read later as a missed
-opportunity. This is the second such case after 3d-pre.
+**Standing method notes** live in the artifact's section 08, now **34 rules**, which is the
+source material for the refactor skill.
 
 ## Step 3 — promotion to `Meta*` bases
 
