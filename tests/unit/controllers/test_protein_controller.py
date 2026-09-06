@@ -76,23 +76,6 @@ class TestAlterDatabaseStatus:
 
 
 # ===========================================================================
-# relay_table_by_column
-# ===========================================================================
-
-
-class TestRelayTableByColumn:
-    def test_forwards_table_to_view(self, controller):
-        controller.view.involved_tables = []
-        controller.relay_table_by_column("events")
-        assert "events" in controller.view.involved_tables
-
-    def test_forwards_none_ignored_by_view(self, controller):
-        controller.view.involved_tables = []
-        controller.relay_table_by_column(None)
-        assert controller.view.involved_tables == []
-
-
-# ===========================================================================
 # relay_baseline_duration
 # ===========================================================================
 

@@ -44,7 +44,7 @@ class MetaSubsetTabController(MetaController):
     What a subclass inherits:
 
     - **Relays into the View.** relay_plot_data, relay_units,
-      relay_event_query, relay_table_by_column, relay_baseline_duration
+      relay_event_query, relay_baseline_duration
       and the two generator relays hand a Model or plugin result to the View, which
       is the Model-to-View half of the mediation pattern Decision B keeps.
     - **Experiment and column state.** set_experiment_id, set_channel_db_id,
@@ -71,16 +71,6 @@ class MetaSubsetTabController(MetaController):
     """
 
     logger = logging.getLogger(__name__)
-
-    @log(logger=logger)
-    def relay_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Relay the name of the table a column lives in to the view.
-
-        :param table: Name of the table containing the queried column, or None if the loader could not resolve one.
-        :type table: Optional[str]
-        """
-        self.view.set_table_by_column(table)
 
     @log(logger=logger)
     def relay_baseline_duration(self, duration: Optional[float]) -> None:

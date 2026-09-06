@@ -4,7 +4,6 @@ Tests for poriscope.plugins.analysistabs.MetadataController.
 Covers:
 - _init creates view and model
 - _setup_connections wires signals
-- relay_table_by_column delegation
 - relay_baseline_duration delegation
 - set_exported_event_count delegation
 - relay_event_query (query present, query empty with debug)
@@ -122,24 +121,6 @@ def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
     ctrl.view = mocker.Mock()
     ctrl.model = mocker.Mock()
     ctrl._setup_connections()  # should not raise
-
-
-# ----------------------- relay_table_by_column -----------------------
-
-
-def test_relay_table_by_column_passes_table_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a column-grouped table dict to the view unchanged.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    table: Dict[str, List[int]] = {"col_a": [1, 2], "col_b": [3, 4]}
-    controller.relay_table_by_column(table)
-    mock_view.set_table_by_column.assert_called_once_with(table)
 
 
 # ---------------------- relay_baseline_duration ----------------------

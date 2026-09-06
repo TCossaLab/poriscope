@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** removed `set_table_by_column` from the Metadata and Protein tab views and `relay_table_by_column` from their controllers - nothing in the app called them, and the table list they appended to was never created, so the call would have raised; deciding which tables a query needs to join is done by the database loader itself
+
 * The Metadata and Protein control panels now share a common `MetaSubsetTabControls` base instead of each carrying its own copy of the same filter combobox, filter buttons and loader handling, so a fix to one reaches both
 
 * The Metadata and Protein tabs now share a common `MetaSubsetTabView` base instead of each carrying its own copy of the same fifteen query, column, filter and experiment-selection methods, so a fix to one reaches both

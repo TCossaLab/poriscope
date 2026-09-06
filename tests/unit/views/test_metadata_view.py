@@ -5164,16 +5164,6 @@ class TestSimpleSetters:
         view.set_experiment_id(None)
         assert view.experiment_id is None
 
-    def test_set_table_by_column_appends(self, view: MetadataView) -> None:
-        view.involved_tables = []
-        view.set_table_by_column("events")
-        assert "events" in view.involved_tables
-
-    def test_set_table_by_column_none_does_not_append(self, view: MetadataView) -> None:
-        view.involved_tables = []
-        view.set_table_by_column(None)
-        assert view.involved_tables == []
-
     def test_set_channel_db_id(self, view: MetadataView) -> None:
         view.set_channel_db_id(7)
         assert view.channel_db_id == 7

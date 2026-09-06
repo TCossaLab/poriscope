@@ -12,18 +12,6 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
-## Flaky integration tests (2026-09-06)
-
-- `tests/integration/flows/test_raw_data_flow_no_gui.py:229` fails intermittently with
-  `assert 2 == 5` - the event-finding worker has written only part of its rows when the
-  assertion runs. Roughly 1 run in 5; passes 3/3 in isolation. A synchronisation gap in the
-  test, not in RawData.
-- `MetadataView.set_table_by_column` / `ProteinView.set_table_by_column` append to
-  `self.involved_tables`, which is initialised nowhere in `poriscope/`, so the call would
-  raise `AttributeError`. Unreachable today: `relay_table_by_column` has no caller in the
-  app. Delete the trio (2 View + 2 Controller methods, 34 lines) with their tests, or
-  initialise the attribute - Step 3e.
-
 ## The 2.0.0 refactor plan claims much of this queue (2026-09-03)
 
 **Read `refactor_2.0.0.md` before picking anything up here**, and check whether the item is

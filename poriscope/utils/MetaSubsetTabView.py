@@ -51,8 +51,8 @@ class MetaSubsetTabView(MetaView):
 
     What a subclass inherits:
 
-    - **Query state.** ``set_query``, ``set_event_query``, ``set_table_by_column``
-      and ``set_experiment_id`` receive the SQL and the scope the Controller
+    - **Query state.** ``set_query``, ``set_event_query`` and ``set_experiment_id``
+      receive the SQL and the scope the Controller
       resolved, and optionally echo it to the status panel.
     - **Column and unit state.** ``update_available_columns``, ``update_units`` and
       ``set_units`` keep the tab's column comboboxes and axis labels in step with the
@@ -106,7 +106,6 @@ class MetaSubsetTabView(MetaView):
     experiment_id: Optional[int]
     event_data_generator: Iterator[Any]
     event_query: str
-    involved_tables: List[str]
     query: str
     selection_tree: SelectionTree
     table_name: str
@@ -162,17 +161,6 @@ class MetaSubsetTabView(MetaView):
         :type experiment_id: Optional[int]
         """
         self.experiment_id = experiment_id
-
-    @log(logger=logger)
-    def set_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Get a list of tables affected by an SQL query.
-
-        :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
-        :type table: Optional[str]
-        """
-        if table is not None:
-            self.involved_tables.append(table)
 
     @log(logger=logger)
     def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:

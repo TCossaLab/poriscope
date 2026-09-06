@@ -770,21 +770,6 @@ class TestStateSetters:
         mock_view.set_experiment_id(99)
         assert mock_view.experiment_id == 99
 
-    def test_set_table_by_column_appends(self, mock_view):
-        if not hasattr(mock_view, "involved_tables"):
-            mock_view.involved_tables = []
-        before = len(mock_view.involved_tables)
-        mock_view.set_table_by_column("events")
-        assert len(mock_view.involved_tables) == before + 1
-        assert "events" in mock_view.involved_tables
-
-    def test_set_table_by_column_none_ignored(self, mock_view):
-        if not hasattr(mock_view, "involved_tables"):
-            mock_view.involved_tables = []
-        before = len(mock_view.involved_tables)
-        mock_view.set_table_by_column(None)
-        assert len(mock_view.involved_tables) == before
-
     def test_set_units(self, mock_view):
         mock_view.set_units("nm")
         assert mock_view.units == "nm"

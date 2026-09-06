@@ -196,7 +196,9 @@ def commit_events(triad: Triad, qtbot: Any, channels: List[int], expected: int) 
         "commit_events",
         ({"writer": WRITER, "channel": [str(c) for c in channels]},),
     )
-    qtbot.waitUntil(lambda: row_count(triad.out_db, "events") > 0, timeout=120_000)
+    qtbot.waitUntil(
+        lambda: row_count(triad.out_db, "events") == expected, timeout=120_000
+    )
 
 
 @pytest.mark.timeout(300)
