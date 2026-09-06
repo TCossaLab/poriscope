@@ -14,6 +14,8 @@ from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
 from poriscope.utils.MetaEventFinder import MetaEventFinder
 from poriscope.utils.MetaEventFitter import MetaEventFitter
 from poriscope.utils.MetaEventLoader import MetaEventLoader
+from poriscope.utils.MetaEventTabController import MetaEventTabController
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.utils.MetaFilter import MetaFilter
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
@@ -69,6 +71,8 @@ META_CLASSES: Set[Type] = {
 # `MetaView.update_available_plugins`, a real method body - into a class nobody
 # implements from scratch.
 INTERMEDIATE_BASES: Set[Type] = {
+    MetaEventTabController,
+    MetaEventTabView,
     MetaSubsetTabController,
     MetaSubsetTabView,
 }

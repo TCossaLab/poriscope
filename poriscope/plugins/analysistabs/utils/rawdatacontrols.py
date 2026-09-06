@@ -24,14 +24,13 @@
 # Alejandra Carolina González González
 
 import logging
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
-from PySide6.QtCore import QCoreApplication, QSize, Qt
+from PySide6.QtCore import QCoreApplication, QSize
 from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QListWidgetItem,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -39,14 +38,13 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
-from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 from poriscope.views.float_range_line_edit import FloatRangeLineEdit
 from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
 
 
-class RawDataControls(MetaControls):
+class RawDataControls(MetaEventTabControls):
     logger = logging.getLogger(__name__)
 
     placeholder_texts = (
@@ -510,59 +508,6 @@ class RawDataControls(MetaControls):
         if button is not None:
             button.setChecked(False)
 
-    def update_channels(self, channels: Sequence[int]) -> None:
-        """
-        Updates the channels displayed in the MultiSelectComboBox widget and restores previous selections.
-
-        :param channels: Channel indices to display.
-        :type channels: Sequence[int]
-        """
-        self.logger.info(f"Updating channels to {channels}")
-
-        # Get current selections from the MultiSelectComboBox BEFORE clearing
-        current_selections = set(self.channel_comboBox.getSelectedItems())
-        self.logger.debug(
-            f"Current selections before restoration: {current_selections}"
-        )
-
-        new_channels = [str(i) for i in channels]
-
-        # Check if this is a first load (no items exist yet) to default to Select All
-        is_first_load = self.channel_comboBox.listWidget.count() == 0
-
-        # Block signals during the entire rebuild to avoid emitting incorrect states
-        self.channel_comboBox.listWidget.itemChanged.disconnect(
-            self.channel_comboBox.handleItemChanged
-        )
-
-        # Clear and rebuild items, preserving checked state from previous selections.
-        # On first load, default all channels to checked (Select All behavior).
-        self.channel_comboBox.listWidget.clear()
-        for text in new_channels:
-            item = QListWidgetItem(text, self.channel_comboBox.listWidget)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            # On first load select all by default, otherwise restore previous selection
-            state = (
-                Qt.Checked
-                if (is_first_load or text in current_selections)
-                else Qt.Unchecked
-            )
-            item.setCheckState(state)
-
-        self.logger.debug(f"Added channels: {new_channels}")
-
-        self.channel_comboBox.listWidget.itemChanged.connect(
-            self.channel_comboBox.handleItemChanged
-        )
-
-        # Update display text and Select All button without emitting selectionChanged
-        self.channel_comboBox.refreshDisplayText()
-        self.channel_comboBox.updateSelectAllButton()
-
-        # Log the final state of selections
-        restored_selections = self.channel_comboBox.getSelectedItems()
-        self.logger.debug(f"Selected items after restoration: {restored_selections}")
-
     def update_readers(self, readers: list[str]) -> None:
         self.logger.info(f"Updating readers: {readers}")
 
@@ -579,22 +524,6 @@ class RawDataControls(MetaControls):
             self.readers_comboBox.setCurrentText(current_selection)
         else:
             self.readers_comboBox.setCurrentIndex(0)
-
-    def update_filters(self, filters: list[str]) -> None:
-        self.logger.info(f"Updating filters: {filters}")
-
-        # Store current selection
-        current_selection = self.filters_comboBox.currentText()
-
-        self.filters_comboBox.clear()
-        display_filters = filters if filters != [] else ["No Filter"]
-        self.filters_comboBox.addItems(display_filters)
-
-        # Restore selection if it still exists
-        if current_selection in display_filters:
-            self.filters_comboBox.setCurrentText(current_selection)
-        else:
-            self.filters_comboBox.setCurrentIndex(0)
 
     def update_writers(self, writers: list[str]) -> None:
         self.logger.info(f"Updating writers: {writers}")
@@ -635,13 +564,6 @@ class RawDataControls(MetaControls):
         self.start_time_lineEdit.blockSignals(True)
         self.start_time_lineEdit.set_range(start, length)
         self.start_time_lineEdit.blockSignals(False)
-        self.validate_inputs()
-
-    @log(logger=logger)
-    def set_event_index_input(self, value: str) -> None:
-        self.event_index_lineEdit.blockSignals(True)
-        self.event_index_lineEdit.set_range(value)
-        self.event_index_lineEdit.blockSignals(False)
         self.validate_inputs()
 
 

@@ -33,13 +33,13 @@ from poriscope.plugins.analysistabs.RawDataModel import RawDataModel
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
 @inherit_docstrings
-class RawDataController(MetaController):
+class RawDataController(MetaEventTabController):
     """
-    Subclass of MetaController for managing raw data view-model logic.
+    Subclass of MetaEventTabController for managing raw data view-model logic.
 
     Handles raw data plotting and PSD logic.
     """
@@ -74,21 +74,6 @@ class RawDataController(MetaController):
         self.view.set_psd(Pxx_list, rms_list, frequency, kept_indices)
 
     @log(logger=logger)
-    @Slot(dict)
-    def update_available_plugins(self, available_plugins: dict) -> None:
-        """
-        Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
-
-        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
-        """
-        self.logger.debug(
-            f"Controller received available plugins update: {available_plugins}"
-        )
-        self.model.update_available_plugins(available_plugins)
-        self.view.update_available_plugins(available_plugins)
-
-    @log(logger=logger)
     def set_event_filter(self, data_filter: Callable) -> None:
         """
         Set the data filter function used for processing events.
@@ -107,16 +92,6 @@ class RawDataController(MetaController):
         :type data: Any
         """
         self.view.update_plot_data(data)
-
-    @log(logger=logger)
-    def update_plot_samplerate(self, samplerate: float) -> None:
-        """
-        Set the sampling rate to be used for time axis conversion in the plot.
-
-        :param samplerate: Sampling rate in Hz.
-        :type samplerate: float
-        """
-        self.view.update_plot_samplerate(samplerate)
 
     @log(logger=logger)
     @Slot(list)

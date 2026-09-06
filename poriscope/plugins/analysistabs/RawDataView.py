@@ -42,14 +42,14 @@ from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
 )
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.time_widget import TimeWidget
 
 
 @inherit_docstrings
-class RawDataView(MetaView, WalkthroughMixin):
+class RawDataView(MetaEventTabView, WalkthroughMixin):
     """
-    Subclass of MetaView for visualizing raw signal data and PSD plots.
+    Subclass of MetaEventTabView for visualizing raw signal data and PSD plots.
 
     Handles plot rendering, signal responses, and interactions with readers, filters, and event finders.
     """
@@ -93,17 +93,6 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         layout.setSpacing(0)
         layout.addLayout(controlsAndAnalysisLayout, stretch=1)
-
-    @log(logger=logger)
-    @override
-    def _reset_actions(self, axis_type: str = "2d") -> None:
-        """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
-
-        :param axis_type: Either '2d' or '3d' to determine plot projection.
-        :type axis_type: str
-        """
-        pass
 
     @log(logger=logger)
     def _factors(self, n: int) -> Tuple[int, int]:
@@ -397,27 +386,6 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.logger.info("ComboBoxes updated with available readers and filters")
         except Exception as e:
             self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
-
-    @log(logger=logger)
-    def notify_plugin_state_changed(
-        self, metaclass: str, plugin_key: str, reason: str
-    ) -> None:
-        """
-        This tab does not currently react to any plugin_state_changed
-        notifications.
-
-        :param metaclass: The metaclass of the plugin instance whose state
-                        changed.
-        :type metaclass: str
-        :param plugin_key: The unique key identifying the plugin instance that
-                        changed.
-        :type plugin_key: str
-        :param reason: A short string identifying what kind of change occurred.
-        :type reason: str
-        :return: None
-        :rtype: None
-        """
-        pass
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -757,20 +725,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         :rtype: str
         """
         return self.rawdatacontrols.event_index_lineEdit.text().strip()
-
-    @log(logger=logger)
-    def validate_single_channel(self, channels: Sequence[int]) -> None:
-        """
-        Ensure only one channel is selected.
-
-        :param channels: List of selected channel indices.
-        :type channels: Sequence[int]
-        :raises ValueError: If more than one channel is selected.
-        """
-        if len(channels) > 1:
-            raise ValueError(
-                "Unable to plot events from multiple channels, select only one"
-            )
 
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
@@ -1211,32 +1165,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         data_filter = parameters.get("filter")
         channels = [int(ch) for ch in parameters["channel"]]
         return eventfinder, data_filter, channels
-
-    @log(logger=logger)
-    def _extract_commit_event_parameters(
-        self, parameters: Dict[str, Any]
-    ) -> Tuple[Optional[str], List[int]]:
-        """
-        Extract writer and channels from parameters.
-
-        :param parameters: Input dictionary.
-        :type parameters: Dict[str, Any]
-        :return: (writer, channels)
-        :rtype: Tuple[Optional[str], List[int]]
-        """
-        writer = parameters.get("writer")
-        channels = [int(ch) for ch in parameters["channel"]]
-        return writer, channels
-
-    @log(logger=logger)
-    def set_data_filter_function(self, data_filter: Callable) -> None:
-        """
-        Set the callcable function to filter data
-
-        :param data_filter: a callable function
-        :type data_filter: Callable
-        """
-        self.data_filter = data_filter
 
     @log(logger=logger)
     def _shift_range_and_update_trace(

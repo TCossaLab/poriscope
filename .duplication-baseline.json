@@ -1,21 +1,21 @@
 {
   "*Controller.py": {
     "files": 5,
-    "functions": 47,
-    "identical_bodies": 3,
-    "removable_lines": 28
+    "functions": 43,
+    "identical_bodies": 1,
+    "removable_lines": 8
   },
   "*View.py": {
     "files": 5,
-    "functions": 228,
-    "identical_bodies": 8,
-    "removable_lines": 116
+    "functions": 218,
+    "identical_bodies": 3,
+    "removable_lines": 55
   },
   "*controls.py": {
     "files": 5,
-    "functions": 63,
-    "identical_bodies": 3,
-    "removable_lines": 72
+    "functions": 57,
+    "identical_bodies": 0,
+    "removable_lines": 0
   },
   "datareaders": {
     "files": 7,
