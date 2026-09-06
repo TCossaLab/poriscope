@@ -28,14 +28,12 @@ from typing import Any, Dict, Optional, Sequence
 
 from PySide6.QtCore import QCoreApplication, QSize, Qt
 from PySide6.QtWidgets import (
-    QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -301,84 +299,6 @@ class RawDataControls(MetaControls):
         main_layout.addWidget(self.groupBox)
         self.retranslateUi()
         self.logger.info("UI setup complete")
-
-    def create_info_button(
-        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
-    ) -> QToolButton:
-        """Creates an info button linked to the corresponding combobox."""
-        button = QToolButton(parent)
-        button.setIcon(get_icon("pencil-square.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(info_text)
-        button.clicked.connect(
-            lambda _, comboBox=comboBox, metaclass=metaclass: self.show_plugin_edit_manager(
-                comboBox, metaclass
-            )
-        )
-        # Disable initially if no valid item is selected
-        button.setEnabled(
-            comboBox.count() > 0
-            and comboBox.currentIndex() != -1
-            and not self.is_placeholder_item(comboBox)
-        )
-        comboBox.currentIndexChanged.connect(
-            lambda _, button=button, comboBox=comboBox: self.toggle_info_button(
-                button, comboBox
-            )
-        )
-        return button
-
-    def create_add_button(
-        self, parent: QWidget, comboBox: QComboBox, add_text: str, metaclass: str
-    ) -> QToolButton:
-        """Creates an add button linked to the corresponding combobox."""
-        button = QToolButton(parent)
-        button.setIcon(get_icon("plus-square.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(add_text)
-        button.clicked.connect(
-            lambda: self.show_plugin_add_manager(comboBox, metaclass)
-        )
-        button.setEnabled(True)
-        return button
-
-    def create_delete_button(
-        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
-    ) -> QToolButton:
-        """Creates a delete button linked to the corresponding combobox."""
-        button = QToolButton(parent)
-        button.setIcon(get_icon("trash.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(info_text)
-        button.clicked.connect(
-            lambda _, comboBox=comboBox, metaclass=metaclass: self.delete_plugin(
-                comboBox, metaclass
-            )
-        )
-        # Disable initially if no valid item is selected
-        button.setEnabled(
-            comboBox.count() > 0
-            and comboBox.currentIndex() != -1
-            and not self.is_placeholder_item(comboBox)
-        )
-        comboBox.currentIndexChanged.connect(
-            lambda _, button=button, comboBox=comboBox: self.toggle_info_button(
-                button, comboBox
-            )
-        )
-        return button
 
     def validate_inputs(self) -> None:
         is_trace_psd_valid = True

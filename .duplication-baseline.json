@@ -13,9 +13,9 @@
   },
   "*controls.py": {
     "files": 5,
-    "functions": 98,
-    "identical_bodies": 16,
-    "removable_lines": 452
+    "functions": 83,
+    "identical_bodies": 13,
+    "removable_lines": 152
   },
   "datareaders": {
     "files": 7,

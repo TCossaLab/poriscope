@@ -26,7 +26,7 @@
 
 from typing import Any, Dict, Optional, Sequence
 
-from PySide6.QtCore import QCoreApplication, Signal
+from PySide6.QtCore import QCoreApplication, QSize, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QToolButton,
     QWidget,
 )
+
+from poriscope.configs.utils import get_icon
 
 
 class MetaControls(QWidget):
@@ -54,6 +56,9 @@ class MetaControls(QWidget):
     - **Widget factories.** :meth:`createLabel`, :meth:`create_comboBox` and
       :meth:`createButton` build the three plain widgets every panel uses, with the
       font, size policy and translation call applied consistently.
+    - **Icon buttons.** :meth:`create_info_button`, :meth:`create_add_button` and
+      :meth:`create_delete_button` build the pencil, plus and trash buttons beside
+      each plugin combobox, already wired to the signals below.
     - **The placeholder guard.** :meth:`is_placeholder_item` and
       :meth:`toggle_info_button` keep a combobox's edit and delete buttons disabled
       until a real plugin is selected, reading the tab's own
@@ -125,6 +130,131 @@ class MetaControls(QWidget):
             and comboBox.currentIndex() != -1
             and not self.is_placeholder_item(comboBox)
         )
+
+    def create_info_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
+        """
+        Build the pencil button that opens the plugin manager on a combobox's selection.
+
+        Disabled while the selection is a placeholder, and re-evaluated whenever the
+        combobox changes.
+
+        :param parent: Widget to parent the button to.
+        :type parent: QWidget
+        :param comboBox: Combobox the button acts on.
+        :type comboBox: QComboBox
+        :param info_text: Tooltip text.
+        :type info_text: str
+        :param metaclass: Plugin family the combobox lists.
+        :type metaclass: str
+        :return: The new button.
+        :rtype: QToolButton
+        """
+        button = QToolButton(parent)
+        button.setIcon(get_icon("pencil-square.svg"))
+        button.setIconSize(QSize(16, 16))
+        button.setStyleSheet(
+            "QToolButton { border: none; background: transparent; }"
+            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
+        )
+        button.setToolTip(info_text)
+        button.clicked.connect(
+            lambda _, comboBox=comboBox, metaclass=metaclass: self.show_plugin_edit_manager(
+                comboBox, metaclass
+            )
+        )
+        # Disable initially if no valid item is selected
+        button.setEnabled(
+            comboBox.count() > 0
+            and comboBox.currentIndex() != -1
+            and not self.is_placeholder_item(comboBox)
+        )
+        comboBox.currentIndexChanged.connect(
+            lambda _, button=button, comboBox=comboBox: self.toggle_info_button(
+                button, comboBox
+            )
+        )
+        return button
+
+    def create_add_button(
+        self, parent: QWidget, comboBox: QComboBox, add_text: str, metaclass: str
+    ) -> QToolButton:
+        """
+        Build the plus button that opens the plugin manager on a new plugin.
+
+        Always enabled: adding a plugin does not depend on one already being selected.
+
+        :param parent: Widget to parent the button to.
+        :type parent: QWidget
+        :param comboBox: Combobox the new plugin will be added to.
+        :type comboBox: QComboBox
+        :param add_text: Tooltip text.
+        :type add_text: str
+        :param metaclass: Plugin family to add to.
+        :type metaclass: str
+        :return: The new button.
+        :rtype: QToolButton
+        """
+        button = QToolButton(parent)
+        button.setIcon(get_icon("plus-square.svg"))
+        button.setIconSize(QSize(16, 16))
+        button.setStyleSheet(
+            "QToolButton { border: none; background: transparent; }"
+            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
+        )
+        button.setToolTip(add_text)
+        button.clicked.connect(
+            lambda: self.show_plugin_add_manager(comboBox, metaclass)
+        )
+        button.setEnabled(True)
+        return button
+
+    def create_delete_button(
+        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
+    ) -> QToolButton:
+        """
+        Build the trash button that deletes the combobox's current selection.
+
+        Disabled while the selection is a placeholder, and re-evaluated whenever the
+        combobox changes.
+
+        :param parent: Widget to parent the button to.
+        :type parent: QWidget
+        :param comboBox: Combobox the button acts on.
+        :type comboBox: QComboBox
+        :param info_text: Tooltip text.
+        :type info_text: str
+        :param metaclass: Plugin family the combobox lists.
+        :type metaclass: str
+        :return: The new button.
+        :rtype: QToolButton
+        """
+        button = QToolButton(parent)
+        button.setIcon(get_icon("trash.svg"))
+        button.setIconSize(QSize(16, 16))
+        button.setStyleSheet(
+            "QToolButton { border: none; background: transparent; }"
+            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
+        )
+        button.setToolTip(info_text)
+        button.clicked.connect(
+            lambda _, comboBox=comboBox, metaclass=metaclass: self.delete_plugin(
+                comboBox, metaclass
+            )
+        )
+        # Disable initially if no valid item is selected
+        button.setEnabled(
+            comboBox.count() > 0
+            and comboBox.currentIndex() != -1
+            and not self.is_placeholder_item(comboBox)
+        )
+        comboBox.currentIndexChanged.connect(
+            lambda _, button=button, comboBox=comboBox: self.toggle_info_button(
+                button, comboBox
+            )
+        )
+        return button
 
     def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """

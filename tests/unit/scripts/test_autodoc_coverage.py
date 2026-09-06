@@ -5,14 +5,18 @@ Nothing in ``tests/`` mentioned ``automethod`` before the Step 2 exit review, so
 published API documentation had no gate at all. Two refactor steps change it, and
 measuring rather than assuming corrected the plan on both.
 
-**Step 3a's risk is smaller than recorded.** The plan says the generators "skip
-classes with no docstring - none of the five has one - so ~50 ``automethod`` lines
-would vanish". The five controls classes genuinely have no class docstring, and are
-documented anyway: they carry **143 ``automethod`` directives between them**. The
-generator writes a docstring when there is one and documents the class either way.
-And ``metaclasses_generate_autodoc.py`` scans ``poriscope/utils/`` as a directory,
-so a new ``MetaControls.py`` dropped there is picked up with no registration step.
-The methods move to a new page rather than disappearing.
+**Step 3a's risk was smaller than recorded, and it has now landed.** The plan said
+the generators "skip classes with no docstring - none of the five has one - so ~50
+``automethod`` lines would vanish". The five controls classes genuinely have no
+class docstring and were documented anyway; the *plugins* generator writes a
+docstring when there is one and documents the class either way. The gate that
+actually bites is the other generator's: ``metaclasses_generate_autodoc.py`` scans
+``poriscope/utils/`` as a directory, so ``MetaControls.py`` needed no registration
+step - but it ``continue``s past a class with no docstring and emits no page at
+all. So the promoted methods moved to a new page rather than disappearing, and
+what holds that is ``MetaControls``' own class docstring. Both halves are asserted
+below: that the page exists, and that the promoted directives are on it and on no
+per-tab page.
 
 **Step 3f's risk is real and is the one to hold.** The generators scan exactly two
 roots, ``poriscope/utils`` and ``poriscope/plugins``. **``poriscope/views/`` is
@@ -41,6 +45,10 @@ AUTODOC = REPO_ROOT / "docs" / "source" / "autodoc"
 
 #: The roots the two generators scan, read from their own module constants below.
 EXPECTED_ROOTS = {"poriscope/utils", "poriscope/plugins"}
+
+#: Dotted path Step 3a's promoted methods are documented under, now that they live
+#: on the shared base rather than on five copies.
+BASE_CLASS_PATH = "poriscope.utils.MetaControls.MetaControls"
 
 #: The classes the two walkthrough modules own. Step 3f moves both modules.
 WALKTHROUGH_CLASSES = {"introdialog", "overlay", "stepdialog", "walkthroughmixin"}
@@ -183,18 +191,24 @@ def test_the_controls_classes_are_documented_despite_having_no_docstring() -> No
 
 
 @needs_autodoc
-def test_the_controls_family_documents_the_methods_step_3a_promotes() -> None:
+def test_the_methods_step_3a_promoted_are_documented_on_metacontrols() -> None:
     """
-    The directives 3a moves, present on the per-tab pages today.
+    The directives 3a moved, now on ``MetaControls``' page rather than on five.
 
-    After 3a they should appear on ``MetaControls``' page instead. If they appear
-    on neither, ~50 directives have silently left the published documentation,
-    which is the outcome the plan warns about even though its stated mechanism was
-    wrong.
+    Before 3a this asserted the same three names appeared **five times** across the
+    per-tab pages, one per class. They now appear once each, on the base's page, and
+    on none of the five - which is the whole point of the promotion. The failure
+    this still guards against is unchanged: if they appear on neither, roughly sixty
+    directives have silently left the published documentation, and both a
+    ``sphinx-build -W`` and the rest of this file stay green while it happens.
     """
     promoted = ("create_info_button", "create_delete_button", "create_add_button")
+    base_page = (AUTODOC / "metaclasses" / "metacontrols.rst").read_text(
+        encoding="utf-8"
+    )
     utils_pages = (AUTODOC / "plugins" / "analysistabs" / "utils").glob("*ontrols*.rst")
-    text = "\n".join(p.read_text(encoding="utf-8") for p in utils_pages)
+    per_tab = "\n".join(p.read_text(encoding="utf-8") for p in utils_pages)
 
     for method in promoted:
-        assert text.count(method) >= 5, method
+        assert f".. automethod:: {BASE_CLASS_PATH}.{method}" in base_page, method
+        assert method not in per_tab, f"{method} still has a per-tab copy"
