@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Raw Data and Event Analysis tabs now share a common `MetaEventTabController` base instead of each carrying its own copy of the plugin-registry and sample-rate relays, so a fix to one reaches both
+
 * **Breaking:** removed `set_table_by_column` from the Metadata and Protein tab views and `relay_table_by_column` from their controllers - nothing in the app called them, and the table list they appended to was never created, so the call would have raised; deciding which tables a query needs to join is done by the database loader itself
 
 * The Metadata and Protein control panels now share a common `MetaSubsetTabControls` base instead of each carrying its own copy of the same filter combobox, filter buttons and loader handling, so a fix to one reaches both
