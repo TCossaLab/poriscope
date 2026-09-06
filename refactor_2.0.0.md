@@ -480,6 +480,16 @@ judgement about which methods look thin.
   appears in `tests/` only as stub definitions. Both are real zero-coverage cases.
 - `test:` close the gaps the audit finds, then check the audit in so Steps 3-5 cannot move or
   merge a method that nothing pins.
+- **Progress 2026-09-05.** `scripts/check_refactor_coverage.py` and its tests landed on the
+  branch (`af14745`); suite 3,151 passed / 2 skipped. First run: **284 targets, 273 pinned,
+  11 runs only, 0 untested.** The 11 are five `notify_plugin_state_changed` (now closed,
+  23 tests), two `_on_sizes_checkbox_toggled`, `check_column_exists`/`set_column_exists`
+  (Step 3e), and `ProteinView._resolve_event_db_ids` / `RawDataView._start_eventfinder`
+  (Step 4a). **Open decision:** the audit needs a coverage JSON, so it cannot be a plain
+  pytest test the way the other two gates are — choose between a `characterization` test
+  that skips without coverage data, a CI-only step in `ci-internal-pr.yml` (which already
+  runs the coverage variant), or leaving it a manually-run script. Record the choice in
+  `DECISIONS.md`.
 
 **Note on line coverage.** It is the wrong instrument for this and should not be used as the
 audit's measure. The five Views were at 87-91% *before* any characterization test existed, and
@@ -598,8 +608,14 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
   preserve that patch target.
 - **3b `MetaDatabaseTabView` + `MetaDatabaseTabController`** (Metadata/Protein) — largest
   cluster in the repo. **Blocked on 4d**: subset-filter state must find its layer first.
-- **3c `MetaEventTabView`** (RawData/EventAnalysis). Both re-override `_factors` and
-  `notify_plugin_state_changed`, shadowing base versions they could inherit — delete.
+- **3c `MetaEventTabView`** (RawData/EventAnalysis). Both re-override `_factors`, shadowing
+  the concrete base version they could inherit — delete those two.
+  **Correction, 2026-09-05: `notify_plugin_state_changed` is NOT an instance of this.**
+  `MetaView` declares it `@abstractmethod` (`:518`) and its docstring says it "must be
+  implemented by subclasses, even if the correct" response is nothing, so RawData's and
+  EventAnalysis's `pass` bodies are required by the ABC. Deleting them makes both classes
+  uninstantiable. Asserted in `tests/unit/views/test_plugin_state_notifications.py` so the
+  claim cannot be acted on by mistake.
 - **3d** Move `_logscale_and_filter_multiple_columns` (`MetaView.py:696`) and
   `_logscale_and_filter_dataframe` (`:789`) — ~170 lines of pandas in a `QWidget` base — and the
   five event-index range helpers to `MetaModel`. Note this is `MetaView` → `MetaModel`, **not**
