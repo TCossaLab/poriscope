@@ -66,16 +66,16 @@ from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 
 warnings.filterwarnings(
     "ignore",

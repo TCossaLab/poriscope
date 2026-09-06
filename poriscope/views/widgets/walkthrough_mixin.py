@@ -31,7 +31,7 @@ from PySide6.QtCore import QPoint, QRect, QTimer, Signal
 from PySide6.QtGui import QMoveEvent
 from PySide6.QtWidgets import QWidget
 
-from poriscope.plugins.analysistabs.utils.walkthrough import (
+from poriscope.views.widgets.walkthrough import (
     IntroDialog,
     StepDialog,
     start_walkthrough,

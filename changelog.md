@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the walkthrough widgets have moved from `poriscope.plugins.analysistabs.utils` to `poriscope.views.widgets`; a plugin that imports `WalkthroughMixin` or `WalkthroughStep` needs its import path updated
+
+* Fixed two links in the "Adding a walkthrough" tutorial that had never resolved, and gave `WalkthroughMixin` an API reference page for them to point at
+
 * **Breaking:** `check_column_exists` and `set_column_exists` are no longer on `MetaController` and `MetaView`; they were used only by the protein tab and now live on `ProteinController` and `ProteinView`
 
 * **Breaking:** `MetaView._setup_canvas` no longer takes a `num_channels` argument, which it never read

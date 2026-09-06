@@ -12,7 +12,7 @@ import pytest
 from PySide6.QtCore import QRect, Signal
 from PySide6.QtWidgets import QWidget
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
+from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 # ---------------------------------------------------------------------------
 # Minimal concrete implementation
@@ -140,7 +140,7 @@ class TestRunNextWalkthroughStep:
         w._walkthrough_index = 0
 
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.start_walkthrough"
+            "poriscope.views.widgets.walkthrough_mixin.start_walkthrough"
         ) as mock_start:
             mock_dialog = MagicMock()
             mock_dialog.done_signal = MagicMock()
@@ -160,9 +160,7 @@ class TestRunNextWalkthroughStep:
         w._global_walkthrough_steps = steps
         w._walkthrough_index = 0
 
-        with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.QTimer"
-        ) as mock_timer:
+        with patch("poriscope.views.widgets.walkthrough_mixin.QTimer") as mock_timer:
             w._run_next_walkthrough_step()
             mock_timer.singleShot.assert_called()
 
@@ -175,7 +173,7 @@ class TestRunNextWalkthroughStep:
         w._walkthrough_index = 0
 
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.start_walkthrough"
+            "poriscope.views.widgets.walkthrough_mixin.start_walkthrough"
         ) as mock_start:
             w._run_next_walkthrough_step()
             # start_walkthrough should NOT have been called since no valid widgets
@@ -208,7 +206,7 @@ class TestRunNextWalkthroughStep:
             return mock_dialog
 
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.start_walkthrough",
+            "poriscope.views.widgets.walkthrough_mixin.start_walkthrough",
             side_effect=fake_start,
         ):
             w._run_next_walkthrough_step()
@@ -231,7 +229,7 @@ class TestRepositionDialogFallbacks:
     """
 
     def _setup(self, qtbot):
-        from poriscope.plugins.analysistabs.utils.walkthrough import Overlay, StepDialog
+        from poriscope.views.widgets.walkthrough import Overlay, StepDialog
 
         parent = ConcreteWalkthrough()
         parent.resize(800, 600)
@@ -253,7 +251,7 @@ class TestRepositionDialogFallbacks:
     def test_candidate_fits_calls_move_and_returns(self, qtbot):
         """Primary candidate fits → dialog.move(pos) called (lines 240-241).
         Parent is enormous so 'right of widget' candidate fits inside window_rect."""
-        from poriscope.plugins.analysistabs.utils.walkthrough import Overlay, StepDialog
+        from poriscope.views.widgets.walkthrough import Overlay, StepDialog
 
         parent = ConcreteWalkthrough()
         parent.resize(3000, 3000)
@@ -402,7 +400,7 @@ class TestCheckNextViewAndPseudo:
         w._handle_walkthrough_done = tracking_handle
 
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.start_walkthrough",
+            "poriscope.views.widgets.walkthrough_mixin.start_walkthrough",
             side_effect=fake_start,
         ):
             w._run_next_walkthrough_step()
@@ -601,7 +599,7 @@ class TestShowWalkthroughIntro:
     def test_skips_if_already_active(self, widget):
         widget._walkthrough_active = True
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.IntroDialog"
+            "poriscope.views.widgets.walkthrough_mixin.IntroDialog"
         ) as MockDialog:
             widget.show_walkthrough_intro("MainView")
             MockDialog.assert_not_called()
@@ -609,7 +607,7 @@ class TestShowWalkthroughIntro:
     def test_creates_intro_dialog_when_inactive(self, widget):
         widget._walkthrough_active = False
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.IntroDialog"
+            "poriscope.views.widgets.walkthrough_mixin.IntroDialog"
         ) as MockDialog:
             mock_intro = MagicMock()
             MockDialog.return_value = mock_intro
@@ -620,7 +618,7 @@ class TestShowWalkthroughIntro:
     def test_connects_signal_to_launch(self, widget):
         widget._walkthrough_active = False
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough_mixin.IntroDialog"
+            "poriscope.views.widgets.walkthrough_mixin.IntroDialog"
         ) as MockDialog:
             mock_intro = MagicMock()
             MockDialog.return_value = mock_intro
@@ -654,7 +652,7 @@ class TestAbstractMethods:
 
 class TestRepositionDialog:
     def _make_dialog_with_steps(self, widget_instance, qtbot):
-        from poriscope.plugins.analysistabs.utils.walkthrough import (
+        from poriscope.views.widgets.walkthrough import (
             Overlay,
             StepDialog,
         )

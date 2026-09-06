@@ -50,14 +50,14 @@ from PySide6.QtWidgets import (
 from sklearn.mixture import GaussianMixture
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 
 # Check if running on Windows
 if sys.platform == "win32":

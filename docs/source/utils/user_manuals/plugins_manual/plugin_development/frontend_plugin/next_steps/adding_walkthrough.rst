@@ -119,5 +119,5 @@ Then, from your view (e.g., `ClusteringView`), you can trigger the walkthrough o
 See Also
 ---------
 
-* \:ref:`mainview_walkthrough`
-* \:ref:`walkthrough_mixin`
+* :ref:`MainView` - the shell view that hosts a tab's walkthrough
+* :ref:`walkthrough_mixin` - the mixin's own API reference

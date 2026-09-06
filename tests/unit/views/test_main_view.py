@@ -6,8 +6,8 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
 from poriscope.views.main_view import MainView
+from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
 @pytest.fixture

@@ -15,7 +15,7 @@ import pytest
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QDialog, QWidget
 
-from poriscope.plugins.analysistabs.utils.walkthrough import (
+from poriscope.views.widgets.walkthrough import (
     IntroDialog,
     Overlay,
     StepDialog,
@@ -288,7 +288,7 @@ class TestStartWalkthrough:
         """If Overlay raises, start_walkthrough still returns a dialog."""
         steps = _make_steps(parent_widget, 1)
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough.Overlay",
+            "poriscope.views.widgets.walkthrough.Overlay",
             side_effect=RuntimeError("overlay boom"),
         ):
             result = start_walkthrough(parent_widget, steps)
@@ -300,7 +300,7 @@ class TestStartWalkthrough:
         """If StepDialog raises, start_walkthrough returns a fallback QDialog."""
         steps = _make_steps(parent_widget, 1)
         with patch(
-            "poriscope.plugins.analysistabs.utils.walkthrough.StepDialog",
+            "poriscope.views.widgets.walkthrough.StepDialog",
             side_effect=RuntimeError("dialog boom"),
         ):
             result = start_walkthrough(parent_widget, steps)

@@ -50,10 +50,11 @@ The four rules:
    reaching past the View's interface into its internals; Step 4d moves that state
    to the Model.
 4. **No app-shell module imports from a plugin package.** ``poriscope/views/``
-   importing ``poriscope.plugins.analysistabs.utils.walkthrough`` is a layering
-   inversion: the shell depends on a plugin. Step 3f fixes it by moving those two
-   modules into ``views/widgets/``, and without this rule nothing would observe
-   that the step had finished. Added by the Step 2 exit review.
+   importing ``poriscope.plugins.analysistabs.utils.walkthrough`` was a layering
+   inversion: the shell depending on a plugin. Step 3f fixed it by moving those two
+   modules into ``views/widgets/``, and without this rule nothing would have observed
+   that the step had finished. Added by the Step 2 exit review; **reads zero since
+   2026-09-06**, and stays in as a ratchet against a new inversion appearing.
 
 **The rule's exact definition is the number, so it is stated here rather than left
 to be inferred.** An earlier count of "21 import statements over 12 View x module
