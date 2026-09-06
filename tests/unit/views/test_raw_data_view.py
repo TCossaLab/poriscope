@@ -25,7 +25,6 @@ Coverage targets:
 - _handle_other_actions (with reader, without reader)
 - handle_parameter_change dispatch (load_data_and_update_plot, some_other_action)
 - _factors
-- _get_baseline_stats (degenerate guard)
 - update_available_plugins (success + exception path)
 - _start_writer
 - _shift_range_and_update_trace (left shift, negative guard)
@@ -36,6 +35,11 @@ Coverage targets:
 - set_data_filter_function
 - set_psd
 - _get_event_index_text
+
+Not covered here: the numeric methods ``_get_baseline_stats``, ``_gaussian_fit``
+and ``_gaussian`` live in ``test_raw_data_view_characterization.py``. This roster
+used to claim ``_get_baseline_stats (degenerate guard)`` while no such test
+existed anywhere in the repository.
 """
 
 from __future__ import annotations
