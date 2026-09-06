@@ -613,6 +613,8 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 f"All columns {columns} must be present in the provided dataframe"
             )
 
+        logged = {c for c, b in zip(columns, logs, strict=True) if b}
+
         # "id" is carried through for row identity, but is kept out of `columns` so
         # that `columns` stays index-aligned with the per-column flag lists (logs,
         # norm, plot) built alongside it. Appending to `columns` here is what used to
@@ -620,11 +622,17 @@ class ClusteringView(MetaView, WalkthroughMixin):
         # reach "id" - which is why it was never actually excluded from
         # normalization despite the code appearing to exclude it.
         frame_columns = columns + ["id"]
-        clustering_data = self.plot_data[frame_columns]
-        clustering_data = self._logscale_and_filter_dataframe(
-            clustering_data,
-            log_columns=[c for c, b in zip(columns, logs, strict=True) if b],
+
+        # `_logscale_and_filter_multiple_columns` is the only logscale helper on
+        # `MetaView` - the DataFrame-shaped twin was deleted in Step 3d-pre, since this
+        # was its sole caller. It filters rows across every array it is handed, so
+        # passing `frame_columns` reproduces exactly what the frame form's `dropna()`
+        # saw, and the frame is rebuilt for the DataFrame-shaped work that follows.
+        filtered = self._logscale_and_filter_multiple_columns(
+            *(self.plot_data[c].to_numpy() for c in frame_columns),
+            log_flags=[c in logged for c in frame_columns],
         )
+        clustering_data = pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
         clustering_data = self._normalize_column_data(
             clustering_data,
             exclude_cols=[c for c, b in zip(columns, norm, strict=True) if not b]

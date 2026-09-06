@@ -89,6 +89,13 @@ Hard blocks:
   2026-09-04, so Step 2 is now unblocked on this axis.
 - Decision E must be agreed before Step 2 starts.
 - Protein threading fix is already recorded as blocked on the emit-then-read conversion.
+- **The boundary gate must be widened before any Step 3 promotion moves an emit or a
+  `self.view._private` read onto a base.** `check_mvc_boundary.py`'s rules 1-3 scan hardcoded
+  filenames under `poriscope/plugins/analysistabs/`; a base in `poriscope/utils/` is invisible
+  to them, so such a promotion drops the allowlist without fixing anything. This is the real
+  block on 3b (see 3b below), and 3c, 3d and 3g have the same shape. 3a was unaffected because
+  none of the twelve methods it promoted contained an emit, a forbidden import or a private
+  read — verified by the allowlist holding at 111 across all four of its commits.
 - `new_plugin.py`'s analysis-tab half is already deferred until this lands; it becomes Step 6.
 - `@register_action` records `func.__name__` and `MetaView.update_actions_from_json` replays
   via `getattr(self, name)` **on the View**. **5** decorator sites over 4 distinct names
@@ -872,7 +879,35 @@ commit 1 adds that.
   `poriscope.plugins.analysistabs.MetadataView.MetadataControls`, so any template method must
   preserve that patch target.
 - **3b `MetaDatabaseTabView` + `MetaDatabaseTabController`** (Metadata/Protein) — largest
-  cluster in the repo. **Blocked on 4d**: subset-filter state must find its layer first.
+  cluster in the repo. **No longer blocked on 4d.** It was recorded as "subset-filter state must
+  find its layer first"; verified 2026-09-06, that was never the blocker, and the real one is
+  different.
+  - **The state is the most *uniform* thing in the cluster, not a source of conflict.** Same
+    name, same `Dict[str, str]`, same three `Optional[str]` pendings
+    (`_pending_filter_name`, `_pending_filter_text`, `_pending_old_filter_name`), same
+    `_assisted`/`_raw` conventions — `MetadataView.py:152`/`:184-186` against
+    `ProteinView.py:232`/`:228-230`. The methods around it are already byte-identical: ~194
+    View lines (`_save_filter`, `restore_subset_filters`, the delete/replace/update group) and
+    ~96 Controller lines. Four declarations promote verbatim. Writing `MetaDatabaseTabView`
+    today hits **no** state conflict; what actually bites is the controls attribute name
+    (`self.metadatacontrols` vs `self.proteincontrols`, 60 and 58 references), which needs a
+    uniform accessor and is a different problem.
+  - **The real blocker: the boundary gate would read zero for the wrong reason.**
+    `check_mvc_boundary.py`'s rules 1-3 scan hardcoded filename tuples under
+    `poriscope/plugins/analysistabs/`, and `poriscope/utils/` is scanned by none of them —
+    the same property 3a relied on to assert its allowlist must stay at 111. Here it inverts:
+    promote `relay_query`, the natural centrepiece of 3b, and all **10** allowlisted
+    private-read sites — 100% of that rule's violations — leave the measurement while still
+    existing. Up to **41** of the 75 emits go the same way. The allowlist is the refactor's
+    headline metric, and it falling for free is worse than it not falling.
+  - **Decision: widen the gate's scan, then run 3b before 4d.** Teach
+    `check_mvc_boundary.py` to discover the analysis-tab MVC classes by hierarchy or by
+    `rglob` over both `analysistabs/` and `utils/Meta*`, rather than a five-name tuple. Small,
+    and it de-risks 3c, 3d and 3g, which have the same shape. **Do this before any Step 3
+    promotion that moves an emit or a `self.view._private` read onto a base.**
+  - Within 3b, order the promotions so the state-touching methods land last: bank the ~194
+    identical View lines and the identical Controller group first, leave `relay_query`
+    per-tab until 4d.
 - **3c `MetaEventTabView`** (RawData/EventAnalysis). Both re-override `_factors`, shadowing
   the concrete base version they could inherit — delete those two.
   **Correction, 2026-09-05: `notify_plugin_state_changed` is NOT an instance of this.**
@@ -886,8 +921,41 @@ commit 1 adds that.
   five event-index range helpers to `MetaModel`. Note this is `MetaView` → `MetaModel`, **not**
   View → Model: both already live on the base, which is why the first has 34 tests (all
   exercising it as a stub through `MetadataView`, one of them baked into the fixture 346 of 347
-  tests use) and the second has none. Note the two logscale methods implement the same algorithm twice with different
-  edge cases (`dropna()` vs array masking) — unifying is medium-risk, needs 2A coverage first.
+  tests use) and the second has none.
+  - **3d-pre — the two logscale methods collapse to one, approved 2026-09-06.** The Step 2
+    coverage the unification needed now exists (45 characterization tests), and measuring the
+    pair reduced the "different edge cases" to almost nothing: **dtype behaviour is identical**
+    in both (logged column → `float64`, others preserved — the characterization docstring
+    claiming the array form "preserves dtype" was wrong), and the status-panel text and counts
+    are **byte-identical**. Only two real divergences survive — `dropna()` sees every column
+    while the array form masks only the arrays it is handed, and the frame form therefore
+    tolerates a text column — and **both are inert at the only frame call site**, which passes
+    exactly `columns + ["id"]`.
+  - **Decision: keep `_logscale_and_filter_multiple_columns`, delete
+    `_logscale_and_filter_dataframe`.** The frame form has **one** caller against the array
+    form's eight, so this is ~3 lines of adapter at `ClusteringView.py:624` instead of ~24
+    across eight sites, and it avoids pushing more pandas into the Views that Step 4 exists to
+    take it out of. Both guards the frame form supplies are already redundant there —
+    `ClusteringView.py:608` rejects an empty frame and `:611` rejects missing columns, before
+    the call. Net −77 lines.
+  - **Performance was measured, not assumed.** Naive delegation the other way (array → frame)
+    cost 2.7–4.7×, but that is the frame form's own N+1 full copies — it re-slices the whole
+    frame once per log column. A single-slice rewrite is at **parity** with the array form
+    (1.06× at 1M rows, faster at 10k) and 2.4× faster than the frame form. Keeping the array
+    form costs nothing at all, which is why it wins on both churn and speed.
+  - **This commit banks no ratchet win, by construction.** Both methods live in one file, and
+    `measure_duplication` only counts identical bodies *across files in a family* — so it has
+    never seen this duplication and cannot record its removal. Recorded here so the absence is
+    not read later as a missed opportunity.
+  - **LANDED 2026-09-06**, −191 lines against +68, suite 3,338 passed / 4 skipped, both ratchets
+    unmoved as predicted. **Unpredicted bonus: `MetaView` no longer imports `pandas` at all.**
+    A `QWidget` base shedding its dataframe dependency was a large part of 3d's stated
+    rationale, and it fell out of the deletion rather than the move — so what remains for 3d
+    proper is a numpy-only method plus the five range helpers.
+  - **The audit's `MOVED` table listed the deleted method as a 3d target**, so both of its
+    existence tests failed the moment it went. The tripwire working as designed; the entry is
+    removed with a comment saying 3d-pre deleted rather than moved it. Any future step that
+    *removes* rather than moves code owes its instruments the same edit in the same commit.
 - **3e** Remove tab-specific leakage: `MetaController.check_column_exists` and
   `MetaView.set_column_exists` are Clustering-only; `_setup_canvas`'s `num_channels` unused;
   `MetaView.lock` is a class attribute shared by every tab view guarding 1 of 4 accesses.
@@ -899,6 +967,33 @@ commit 1 adds that.
   the solely-owned directory, and `walkthrough.py` also holds `IntroDialog`, `Overlay` and
   `StepDialog`, each of which has its own autodoc page keyed off the module path. Make
   `WalkthroughStep` (a 4-tuple alias used across 8 modules) a frozen dataclass.
+  - **The autodoc question, settled 2026-09-06.** The generators scan `poriscope/utils` (flat,
+    skips docstring-free classes, pages keyed by *module*) and `poriscope/plugins` (two levels,
+    no docstring gate, pages keyed by *class*). `poriscope/views/` is scanned by neither, so the
+    move deletes four pages: `introdialog` (3 directives), `overlay` (4), `stepdialog` (9),
+    `walkthroughmixin` (10) — **26 in total**.
+  - **Decision: move to `views/widgets/` as planned, accept losing three of the four pages, and
+    hand-write the fourth.** `IntroDialog`, `Overlay` and `StepDialog` are named in no prose
+    documentation anywhere — internal UI machinery a plugin author never instantiates, and the
+    docs exist for developers and users rather than for completeness. `WalkthroughMixin` is
+    different: `docs/.../next_steps/adding_walkthrough.rst` is a live tutorial telling authors
+    to inherit it, so it gets a small hand-written `.. autoclass::` page carrying a real
+    `.. _walkthrough_mixin:` label. That page also repairs two **backslash-escaped pseudo-links**
+    in that tutorial, which point at labels (`mainview_walkthrough`, `walkthrough_mixin`) that
+    exist nowhere in `docs/` — they have never resolved.
+  - **Both rejected options were costed.** Adding `poriscope/views/` as a third root needs a
+    genuinely new recursive generator (the plugins one is hard-shaped to
+    `<root>/<category>/*.py` and would miss `widgets/validators/` entirely) and would publish
+    **26 classes / 260 directives** of mostly-undocumented internal widgets to preserve 26 — and
+    it breaks `sphinx-build -W`, because `docs/source/utils/MainMVC/MainView.rst` already
+    hand-declares `.. _MainView:`. Moving to `poriscope/utils/` instead clears the layering
+    equally but loses Intro and Overlay anyway to the module-keyed filename (three classes, one
+    `walkthrough.rst`, last writer wins) and emits three duplicate TOC entries, failing the
+    build outright.
+  - `tests/unit/scripts/test_autodoc_coverage.py` asserts the current location and the four page
+    stems, so 3f edits `WALKTHROUGH_CLASSES`,
+    `test_the_walkthrough_modules_are_currently_inside_a_scanned_root` and
+    `test_the_walkthrough_classes_each_have_a_page` — deliberately, in the same commit.
 - **3g** `__init__` is byte-identical in all 5 Views (8 lines, `super().__init__()` +
   `_init_walkthrough()`). Delete; fold into `MetaView`/mixin.
 
@@ -930,10 +1025,23 @@ commit 1 adds that.
   `_pending_old_filter_name` → Model. Removes the Controller-reaches-into-View-privates
   violation, which is **10 sites across two files**, not the one recorded:
   `MetadataController.py:199-200` and `:221-223`, **and `ProteinController.py:153-154` and
-  `:175-177`**. Twelve further `self.view.subset_filters` / `restore_subset_filters` reach-ins
-  across the same two Controllers move with them, and the `_private` rule will not flag those.
+  `:175-177`**. **Eight** further `self.view.subset_filters` reach-ins plus **two**
+  `restore_subset_filters` calls across the same two Controllers move with them, and the
+  `_private` rule will not flag those. (This applies the Q3 correction above, which said "8, not
+  12, corrected in 4d below" and then was never applied here — the figure had read "Twelve"
+  since. Verified 2026-09-06: four bare `subset_filters` and one `restore_subset_filters` in
+  each Controller, none anywhere else in `poriscope/`.)
   This is the step that reaches her **e2e** suites. Resolve `hist_data`'s three shapes here
   (21 tests reference it, so those assertions change by design).
+  - **4d is harder than 3b, which is why the ordering below inverts.** **No View anywhere
+    references `self.model`** — verified 2026-09-06, zero occurrences across all five `*View.py`
+    and `MetaView.py`. Views reach the Model only asynchronously, through `global_signal` via
+    the Controller. But **15 of the 16 `subset_filters` reads are synchronous**: dialog
+    construction at `MetadataView.py:3108` and `:3195`, and `get_selected_filters` on every
+    plot. Moving the dict to the Model therefore needs either a synchronous View→Model accessor
+    that Decision B currently forbids, or a View-side cache. That is a design decision, not a
+    move, and doing it before 3b means taking it twice — once per tab — instead of once on the
+    base.
 - **4e** File I/O: `_export_csv_subset`, `_save_filter`/`_load_filter`, `_commit_fits`,
   `_commit_clusters`, `_merge_clusters`. Keep `QFileDialog` path selection in the View.
   `MetaController.export_plot_data` is the precedent.
