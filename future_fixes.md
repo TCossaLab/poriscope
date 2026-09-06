@@ -436,6 +436,20 @@ refactoring lands, to avoid generating triads against a layout about to change.
 
 ## Still queued
 
+- **`MetadataView._handle_plot_events` builds SQL inline, 120 lines into a 244-line method.**
+  `MetadataView.py:2351` emits `SELECT id FROM events WHERE {' AND '.join(where_parts)}`, the
+  near-twin of `ProteinView._resolve_event_db_ids:1778`'s `SELECT id, event_id FROM events
+  WHERE ...` - different projection, same scoping. The Protein one is pinned directly; this one
+  is not, because pinning its text means driving the whole orchestrator. **Extract it before
+  Step 4b moves it**, then pin it the same way. The projection difference is recorded in
+  `tests/unit/views/test_view_authored_sql.py` so the merge cannot assume they are identical.
+- **The metadata query's table aliases are only half parameterised.**
+  `MetaDatabaseLoader.py:1021-1029` builds an alias map that feeds the projection and the
+  WHERE qualification, but the JOIN's `ON` clause hardcodes `s.event_db_id`. Renaming the
+  `sublevels` alias emits `JOIN sublevels sl ON e.id = s.event_db_id`, which is invalid SQL.
+  Latent - nothing changes the aliases today - and live the moment Step 4b does. Found by
+  perturbing the alias to verify `tests/unit/utils/test_metadata_query_goldens.py` was
+  actually sensitive.
 - **`format_axis_label` truncates a column name containing parentheses.** The pattern
   `\s*\(.*?\)$` is anchored at `$`, so the leftmost match wins and the lazy `.*?` expands
   across every intervening `)`: the strip reaches back to the **first** parenthesis, not the
