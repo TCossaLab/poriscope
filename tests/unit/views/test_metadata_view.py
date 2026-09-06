@@ -33,11 +33,12 @@ from poriscope.plugins.analysistabs.MetadataView import MetadataView
 def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
+    mocker.patch("poriscope.utils.MetaSubsetTabView.QFileDialog")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
+        "poriscope.utils.MetaView.MetaView.__init__",
         return_value=None,
     )
     mocker.patch(
@@ -271,7 +272,7 @@ def test_get_save_filename_opens_dialog(
 ) -> None:
     """Verify QFileDialog.getSaveFileName is called."""
     mock_dialog: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
     )
 
@@ -286,7 +287,7 @@ def test_get_save_filename_returns_empty_on_cancel(
 ) -> None:
     """Verify empty string is returned when user cancels."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
 
@@ -612,9 +613,15 @@ def test_plot_1d_density_sets_log10_label_when_logscale_true(
 
 
 def test_dunder_init_calls_super_and_initializers(mocker: MockerFixture) -> None:
-    """Verify __init__ delegates to the parent and helper initializers."""
+    """
+    Verify __init__ delegates to the parent and helper initializers.
+
+    ``MetaSubsetTabView`` sits between ``MetadataView`` and ``MetaView`` since Step 3b
+    but defines no ``__init__`` of its own, so ``super().__init__`` still resolves to
+    ``MetaView``'s - which is why that is what is patched.
+    """
     mock_super_init: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
+        "poriscope.utils.MetaView.MetaView.__init__",
         return_value=None,
     )
     mock_init: MagicMock = mocker.patch.object(MetadataView, "_init", autospec=True)
@@ -3071,7 +3078,7 @@ def test_save_filter_returns_early_when_no_filters(
     """Verify returns early when subset_filters is empty."""
     view.subset_filters = {}
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName"
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName"
     )
 
     view._save_filter()
@@ -3085,7 +3092,7 @@ def test_save_filter_opens_file_dialog(
     """Verify file dialog is opened."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("builtins.open", mocker.mock_open())
@@ -3102,7 +3109,7 @@ def test_save_filter_returns_when_no_path_selected(
     """Verify returns when user cancels file dialog."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -3118,7 +3125,7 @@ def test_save_filter_writes_json_to_file(
     """Verify filters are written to JSON file."""
     view.subset_filters = {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -3136,7 +3143,7 @@ def test_save_filter_logs_error_on_exception(
     """Verify error is logged when save fails."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
@@ -4347,9 +4354,7 @@ def test_show_selection_tree_creates_tree_if_not_exists(
     if hasattr(view, "selection_tree"):
         delattr(view, "selection_tree")
 
-    mock_tree_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.SelectionTree"
-    )
+    mock_tree_class = mocker.patch("poriscope.utils.MetaSubsetTabView.SelectionTree")
     mock_tree = mocker.Mock()
     mock_tree.show_dialog.return_value = {"exp1": [1, 2]}
     mock_tree_class.return_value = mock_tree

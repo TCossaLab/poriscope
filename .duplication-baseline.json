@@ -7,9 +7,9 @@
   },
   "*View.py": {
     "files": 5,
-    "functions": 258,
-    "identical_bodies": 23,
-    "removable_lines": 351
+    "functions": 228,
+    "identical_bodies": 8,
+    "removable_lines": 116
   },
   "*controls.py": {
     "files": 5,

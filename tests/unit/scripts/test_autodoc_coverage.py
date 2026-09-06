@@ -148,7 +148,11 @@ def test_the_walkthrough_classes_each_have_a_page() -> None:
 
 #: Every base Step 3 creates to hold promoted analysis-tab code. Each is listed here
 #: as it lands, because losing one's page is invisible to everything else.
-STEP_3_BASES = ("metacontrols", "metasubsettabcontroller")
+STEP_3_BASES = (
+    "metacontrols",
+    "metasubsettabcontroller",
+    "metasubsettabview",
+)
 
 
 @needs_autodoc

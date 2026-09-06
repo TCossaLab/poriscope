@@ -747,6 +747,15 @@ state-touching methods land last, leaving `relay_query` per-tab until 4d), 3c, 3
 `views/widgets/`, drop three autodoc pages, hand-write one for `WalkthroughMixin`), 3g,
 3a-bis.
 
+**Owed — contributor docs on what to inherit from.** Step 3 leaves an analysis-tab author
+with a real choice that did not exist before: `MetaView` directly, or one of the
+intermediates (`MetaSubsetTabView` today, `MetaEventTabView` after 3c), and the same for the
+Controller and Controls. The plugin-development manual walks people through writing a tab but
+says nothing about picking a base, because until now there was only one. Write that section
+once Step 3's bases are all in place, covering what each intermediate gives you, what it
+demands back, and the rule for deciding — stateless shared behaviour goes on the common base,
+stateful or contract-bearing behaviour goes on an intermediate. Requested 2026-09-06.
+
 **Owed:** a manual Windows pass after each structural step — last run 2026-09-06 after 3a,
 clear. 3d-pre did not touch the UI, so none is owed for it; the next is due after 3f.
 

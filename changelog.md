@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Metadata and Protein tabs now share a common `MetaSubsetTabView` base instead of each carrying its own copy of the same fifteen query, column, filter and experiment-selection methods, so a fix to one reaches both
+
 * The Metadata and Protein tabs now share a common `MetaSubsetTabController` base instead of each carrying its own copy of the same seventeen relay and state methods, so a fix to one reaches both
 
 * The two log-scaling routines behind the plots are now one, so a correction to how data is filtered or log-scaled applies everywhere it is used rather than to one of the two copies

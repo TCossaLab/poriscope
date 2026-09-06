@@ -1433,7 +1433,7 @@ class TestOnRawFilterValidated:
 
 
 class TestSaveLoadFilter:
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
     def test_save_filter_writes_json(self, mock_dialog, mock_view):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fp:
             path = fp.name
@@ -1445,7 +1445,7 @@ class TestSaveLoadFilter:
         assert data == {"f1": "dur>100", "f2": "dur<500"}
         os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
     def test_save_filter_empty_is_noop(self, mock_dialog, mock_view):
         mock_view.subset_filters = {}
         mock_view._save_filter()

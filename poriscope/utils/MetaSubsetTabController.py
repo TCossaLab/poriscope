@@ -25,7 +25,6 @@
 # Kyle Briggs
 
 import logging
-from abc import abstractmethod
 from typing import Any, Dict, Generator, Optional, override
 
 from poriscope.utils.LogDecorator import log
@@ -72,24 +71,6 @@ class MetaSubsetTabController(MetaController):
     """
 
     logger = logging.getLogger(__name__)
-
-    @abstractmethod
-    def _init(self) -> None:
-        """
-        Perform additional initialization specific to the algorithm being implemented.
-        Must be implemented by subclasses.
-
-        This function is called at the end of the class constructor to perform additional initialization specific to the algorithm being implemented.
-        kwargs provided to the base class constructor are available as class attributes.
-        """
-        pass
-
-    @abstractmethod
-    def _setup_connections(self) -> None:
-        """
-        Set up any local connections between the subordinate view and model
-        """
-        pass
 
     @log(logger=logger)
     def relay_table_by_column(self, table: Optional[str]) -> None:

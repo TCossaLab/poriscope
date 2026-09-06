@@ -222,12 +222,12 @@ def test_metadata_flow(
     # exercising the REAL populate_tree/select_all_button/get_selected
     # logic on a plain (non-popup) widget instance instead of faking the
     # whole class.
-    import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = metadata_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         tree = selection_widget.tree
         select_all_btn = selection_widget.select_all_button
@@ -385,7 +385,7 @@ def test_metadata_flow(
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,
