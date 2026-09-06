@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The five analysis-tab control panels now share a common `MetaControls` base instead of each carrying its own copy of the same widget factories and signals, so a fix to one reaches all five
+
 * Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes
 
 * Every method the 2.0.0 refactor will move or deduplicate is now checked for test coverage by `scripts/check_refactor_coverage.py`, so a method cannot be restructured while nothing pins its behaviour

@@ -28,21 +28,18 @@ import logging
 from typing import Any, Dict, List, Optional, Sequence
 
 from PySide6.QtCore import (
-    QCoreApplication,
     QRegularExpression,
     QSize,
     Qt,
     Signal,
 )
-from PySide6.QtGui import QFont, QRegularExpressionValidator
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
-    QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
     QSizePolicy,
@@ -52,23 +49,17 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
-class ProteinControls(QWidget):
-    actionTriggered = Signal(
-        str, str, tuple
-    )  # Signal to trigger an action in the controller (submodel_name, action_name, args)
-    is_signal_connected = False  # Class-level flag to check if signal is connected
-    logger = logging.getLogger(__name__)
-
-    edit_processed = Signal(str, str)
-    add_processed = Signal(str)
-    delete_processed = Signal(str, str)
+class ProteinControls(MetaControls):
     edit_filter_requested = Signal(str, str)
     delete_filter_requested = Signal(str)
 
     logger = logging.getLogger(__name__)
+
+    placeholder_texts = ("No Event Database",)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -77,7 +68,6 @@ class ProteinControls(QWidget):
         self.connect_signals()
         self.logger.info("ProteinControls initialized")
         self.validate_inputs()
-        self.active_popups: Dict[QComboBox, Any] = {}
 
     def setupUi(self) -> None:
         self.logger.info("Setting up UI")
@@ -527,111 +517,6 @@ class ProteinControls(QWidget):
             self.bins_lineEdit.setPlaceholderText("e.g. 10 or 5,10,15")
 
     # QWidgets
-    def create_comboBox(self, parent: QWidget) -> QComboBox:
-        comboBox = QComboBox(parent)
-        comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return comboBox
-
-    def createButton(
-        self, parent: QWidget, text: str, bold: bool = False
-    ) -> QPushButton:
-        button = QPushButton(parent)
-        font = QFont()
-        font.setBold(bold)
-        font.setWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
-        button.setFont(font)
-        button.setText(QCoreApplication.translate("Form", text, None))
-        button.setCheckable(True)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.setStyleSheet("")  # Resetting to default style
-        return button
-
-    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
-        label = QLabel(parent)
-        font = QFont()
-        font.setPointSize(pointSize - 6)
-        label.setFont(font)
-        label.setText(QCoreApplication.translate("Form", text, None))
-        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return label
-
-    def create_info_button(
-        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
-    ) -> QToolButton:
-        """Creates an info button linked to the corresponding combobox."""
-        button = QToolButton(parent)
-        button.setIcon(get_icon("pencil-square.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(info_text)
-        button.clicked.connect(
-            lambda _, comboBox=comboBox, metaclass=metaclass: self.show_plugin_edit_manager(
-                comboBox, metaclass
-            )
-        )
-        # Disable initially if no valid item is selected
-        button.setEnabled(
-            comboBox.count() > 0
-            and comboBox.currentIndex() != -1
-            and not self.is_placeholder_item(comboBox)
-        )
-        comboBox.currentIndexChanged.connect(
-            lambda _, button=button, comboBox=comboBox: self.toggle_info_button(
-                button, comboBox
-            )
-        )
-        return button
-
-    def create_add_button(
-        self, parent: QWidget, comboBox: QComboBox, add_text: str, metaclass: str
-    ) -> QToolButton:
-        """Creates an add button linked to the corresponding combobox."""
-        button = QToolButton(parent)
-        button.setIcon(get_icon("plus-square.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(add_text)
-        button.clicked.connect(
-            lambda: self.show_plugin_add_manager(comboBox, metaclass)
-        )
-        button.setEnabled(True)
-        return button
-
-    def create_delete_button(
-        self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
-    ) -> QToolButton:
-        """Creates a delete button linked to the corresponding combobox."""
-        button = QToolButton(parent)
-        button.setIcon(get_icon("trash.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(info_text)
-        button.clicked.connect(
-            lambda _, comboBox=comboBox, metaclass=metaclass: self.delete_plugin(
-                comboBox, metaclass
-            )
-        )
-        # Disable initially if no valid item is selected
-        button.setEnabled(
-            comboBox.count() > 0
-            and comboBox.currentIndex() != -1
-            and not self.is_placeholder_item(comboBox)
-        )
-        comboBox.currentIndexChanged.connect(
-            lambda _, button=button, comboBox=comboBox: self.toggle_info_button(
-                button, comboBox
-            )
-        )
-        return button
 
     def create_filter_info_button(
         self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
@@ -685,38 +570,6 @@ class ProteinControls(QWidget):
         # self.db_loader_comboBox.tCurrentText("")
 
     # QWidget status
-    def toggle_info_button(self, button: QToolButton, comboBox: QComboBox) -> None:
-        """Enables or disables the info button based on the comboBox selection and item count."""
-        button.setEnabled(
-            comboBox.count() > 0
-            and comboBox.currentIndex() != -1
-            and not self.is_placeholder_item(comboBox)
-        )
-
-    def is_placeholder_item(self, comboBox: QComboBox) -> bool:
-        """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in ["No Event Database"]
-
-    def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
-        """Displays the plugin manager with details for the selected item from the combobox."""
-        key = comboBox.currentText()
-        self.edit_processed.emit(metaclass, key)
-
-    def show_plugin_add_manager(self, comboBox: QComboBox, metaclass: str) -> None:
-        """Displays the plugin manager with details for the selected item from the combobox."""
-
-        self.add_processed.emit(metaclass)
-
-    def delete_plugin(self, comboBox: QComboBox, metaclass: str) -> None:
-        """Deletes the plugin corresponding tot he current ComboBox selection"""
-
-        key = comboBox.currentText()
-        self.delete_processed.emit(metaclass, key)
-
-    def clear_popup_reference(self, comboBox: QComboBox) -> None:
-        """Clears the reference to the popup when it is closed."""
-        if comboBox in self.active_popups:
-            self.active_popups.pop(comboBox)
 
     # Signals Connection
     def connect_signals(self) -> None:

@@ -158,9 +158,8 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   truncates it back; measured, `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at
   100 kHz, and when it slips low `i += len(data)` compounds it. Pass sample counts, or
   `round()`.
-- **Duplication, measured at ~1,900 removable lines.** Ten byte-identical helpers across the
-  five `*controls.py` files are 444 of them and want a `BaseTabControls(QWidget)` - all five
-  currently inherit plain `QWidget`. `CUSUM.py`/`NoFitter.py` share 411 identical lines;
+- **Duplication, measured at 1,400 removable lines** (was 1,889; Step 3a's `MetaControls`
+  took 489). `CUSUM.py`/`NoFitter.py` share 411 identical lines;
   `ClassicCUSUM` is a 195-line override differing in 2 lines and wants to be `CUSUM` with a
   `_normalize_step_size()` hook; the two Chimera readers differ in 23 lines of 390;
   `_get_baseline_stats` and `_find_events_in_chunk` are each duplicated across two finders

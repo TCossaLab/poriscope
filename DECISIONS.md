@@ -10,6 +10,31 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-06 - `createButton`'s majority version is promoted, `setStyleSheet("")` included
+
+**Context.** `createButton` was byte-identical in four of the five `*controls.py` files;
+`eventAnalysisControls.py` omitted the trailing `button.setStyleSheet("")  # Resetting to
+default style` the other four ended with. Step 3a promotes one copy to `MetaControls`, so
+one of the two behaviours had to be chosen. `tests/unit/views/test_duplicated_helpers.py`
+pinned the divergence precisely so the choice could not be made silently.
+
+**Decision.** Promote the majority version, reset included. EventAnalysis's four buttons
+gain the call; the other four files are behaviourally untouched.
+
+**Evidence.** The call is inert, measured rather than argued. Two `QPushButton`s under a
+parent carrying `QPushButton { color: rgb(1,2,3); }`, one given `setStyleSheet("")` and one
+not: both report `styleSheet() == ""` and both still resolve `ButtonText` to
+`(1,2,3,255)`. So an empty stylesheet neither differs from never having set one nor blocks
+a parent's cascade - the comment "Resetting to default style" describes something the call
+cannot do. Separately, no `createButton` product in any of the five files is given a
+stylesheet afterwards, so nothing downstream depends on either behaviour.
+
+**Revisit if** a controls panel starts applying a stylesheet to a `createButton` product,
+or a parent stylesheet is introduced that a child is meant to opt out of - the second needs
+a real reset (an explicit rule, or `setAttribute`), not an empty string.
+
+---
+
 ## 2026-09-05 - The refactor-coverage gate is split, not made conditional
 
 **Context.** Step 2's other two gates - the duplication ratchet and the MVC boundary

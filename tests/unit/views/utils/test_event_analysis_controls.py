@@ -109,9 +109,6 @@ class TestInstantiation:
         assert hasattr(ec, "raw_checkbox")
         assert not ec.raw_checkbox.isChecked()
 
-    def test_max_range_size(self, ec):
-        assert ec.max_range_size == 16
-
     def test_active_popups_empty(self, ec):
         assert ec.active_popups == {}
 

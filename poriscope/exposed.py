@@ -72,6 +72,7 @@ from poriscope.utils.EventWorker import Worker
 
 # --- Meta Interfaces ---
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
 from poriscope.utils.MetaEventFinder import MetaEventFinder
@@ -127,6 +128,7 @@ __all__ = [
     "WaveletFilter",
     # --- Meta Interfaces ---
     "MetaController",
+    "MetaControls",
     "MetaDatabaseLoader",
     "MetaDatabaseWriter",
     "MetaEventFinder",

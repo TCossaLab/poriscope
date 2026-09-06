@@ -573,6 +573,13 @@ the list had been hand-picked by how easily a method could be tested rather than
 step moves. Seventeen entries added (284 → 298); only two were unpinned and both are now
 closed. **Audit: 298 of 298 pinned.**
 
+**Correction, 2026-09-06: it is 308, and the invariant is the ratio, not the count.** The
+target list is *derived*, not baselined — `check_refactor_coverage.deduplicated_targets()`
+importlib-loads `measure_duplication.py` and calls `measure()` live. `8fe18359` added the
+`eventfitters`, `datareaders` and `views/widgets` families to that instrument, which added
+targets to this one, and nothing recorded it. **Record "100% pinned", never a fixed count**:
+the number falls by design as each dedup step lands (Step 3a alone takes it to 248).
+
 **Q2 — what checks are still missing?** Five, listed below with what each would cost.
 
 **Q3 — have the gates' assumptions drifted?** Two figures in this document have:
@@ -748,6 +755,109 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
     Protein, RawData and Clustering controls have no unit test file at all. Pulling a method up
     to a base preserves every `view.method(...)` call site, so **3a re-points no test** — but
     the duplication ratchet that would prove no copy was lost is Step 2's, which 3a precedes.
+    *(Re-measured 2026-09-06 against the whole suite rather than those two files: **90** test
+    functions touch a promoted method or one of the four signals. All reach them through a real
+    widget instance or an instance-level connection, so the "re-points no test" conclusion
+    holds — the 12 was an undercount of the same fact.)*
+
+#### 3a — LANDED 2026-09-06
+
+**Five commits on one branch, each banking a measured fall in the ratchet. Every predicted
+figure below was met exactly.** Every figure below
+was produced by simulating the stage through `measure_duplication.collect_functions` against
+modified source text, not by arithmetic. Branch `feature/step-3a-metacontrols`.
+
+| # | Commit | Promotes | family removable | repo removable | Δ | targets |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | `docs:` this section | — | 641 | 1,889 | — | 308 |
+| 1 | base + plain widget factories | `createLabel`, `create_comboBox`, `createButton`, the 4 signals, `__init__`/`active_popups` | 554 | 1,802 | −87 | 293 |
+| 2 | plugin-management handlers | `show_plugin_edit_manager`, `show_plugin_add_manager`, `delete_plugin`, `clear_popup_reference` | 486 | 1,734 | −68 | 273 |
+| 3 | placeholder guard + toggle | `is_placeholder_item` (+ `placeholder_texts`), `toggle_info_button` | 452 | 1,700 | −34 | 263 |
+| 4 | the three icon-button factories | `create_info_button`, `create_add_button`, `create_delete_button` | 152 | 1,400 | −300 | 248 |
+| 5 | `docs:` 3a landed | — | 152 | 1,400 | — | 248 |
+
+Family `functions` falls at every stage (143 → 128 → 108 → 98 → 83), so
+`measure_duplication`'s `_divergence_warning` stays silent; `identical_bodies` 25 → 22 → 18 →
+16 → 13. `check_mvc_boundary --check` stays at **111 in every commit** and must never need
+`--update` — `poriscope/utils/` is scanned by none of its four rules, so movement there means
+something unintended happened.
+
+**The order is forced by the call graph, not chosen.** A promoted method may only call things
+already on the base: `create_info_button` → `show_plugin_edit_manager` + `is_placeholder_item`
++ `toggle_info_button`; `create_delete_button` → `delete_plugin` + the same two;
+`create_add_button` → `show_plugin_add_manager`; `toggle_info_button` →
+`is_placeholder_item`; `clear_popup_reference` → `self.active_popups`; the three
+`show_*`/`delete_plugin` → their signals; `createLabel`/`create_comboBox`/`createButton` →
+nothing. So the leaves go first and the largest single win lands last.
+
+**Outcome, all three gates verified.** Duplication 1,889 → **1,400** removable repo-wide, the
+`*controls.py` family 641 → **152** over 143 → 83 functions and 25 → 13 identical bodies — 489
+lines, matching the simulation at every stage. Boundary allowlist **111, unmoved**. Refactor
+coverage **248 targets, 248 pinned**, down from 308 exactly as predicted, since the twelve
+promoted names contributed five targets each. Suite 3,339 → **3,346 passed, 4 skipped**.
+
+**What is left in the family is now entirely tab-pair work, cleanly split.** Every one of the
+thirteen remaining groups is a two-file pair: `update_channels` (52), `update_filters` (15) and
+`set_event_index_input` (5) between EventAnalysis and RawData, which is **3c**; and
+`update_loaders`, the three filter-button factories, `update_filters` (13),
+`_on_sizes_checkbox_toggled`, `show_filter_info_dialog_single`, `delete_filter_by_name`,
+`get_selected_filter_names` and `retranslateUi` between Metadata and Protein, which is **3b**.
+Nothing five-way survives, which is the check that 3a's scope was complete.
+
+**Still owed: the manual Windows pass.** 3a rewrote all five controls widgets, so this is
+exactly the case `refactor_2.0.0.md`'s verification section names. Baseline 2026-09-04 was
+clear, so a failure is attributable.
+
+**Three decisions taken, 2026-09-06.**
+
+- **`createButton`: promote the majority version, keeping `setStyleSheet("")`.** EventAnalysis's
+  four buttons gain the call. Measured inert: two `QPushButton`s under a parent carrying
+  `QPushButton { color: rgb(1,2,3); }`, one reset and one not, both report `styleSheet() == ""`
+  and both still resolve `ButtonText` to `(1,2,3,255)`. The call changes nothing *and* does not
+  do what its comment claims — an empty stylesheet does not block a parent's cascade.
+- **`max_range_size` is deleted**, with its only assertion
+  (`test_event_analysis_controls.py:112-113`). Set in Clustering/EventAnalysis/RawData, read
+  nowhere in `poriscope/`. Same category as `is_signal_connected`.
+- **`MetaControls` is exported from `poriscope/exposed.py`**, alongside `MetaView`/`MetaModel`/
+  `MetaController`.
+
+**`is_placeholder_item` becomes one base method reading a per-subclass class attribute**
+(`placeholder_texts`, default `()`): `("No Event Database",)` for Clustering/Metadata/Protein,
+the four loader/writer/filter/fitter strings for EventAnalysis, the four reader/writer/filter/
+eventfinder strings for RawData. `active_popups` moves to `MetaControls.__init__`, which
+initialises it *before* `setupUi()` rather than after — safe, because `clear_popup_reference`
+is its only reader in `poriscope/`.
+
+**Four corrections to the bullets above, found while planning 3a.**
+
+1. **`retranslateUi` is not "semantically `pass` in all five".** It is called from `setupUi` in
+   all five, and `eventAnalysisControls.py:536` and `rawdatacontrols.py:567` really do
+   `setWindowTitle(...)` plus `{loaders,readers}_comboBox.setCurrentText("")`. Metadata (`:768`)
+   and Protein (`:682`) are a bare `pass`; Clustering (`:294`) is a docstring plus `pass`. It
+   stays per-tab, and the "three near-misses worth ~45 lines" estimate shrinks accordingly.
+2. **`on_loader_changed` belongs to 3b, not 3a.** Its three carriers — Clustering, Metadata,
+   Protein — are exactly the three DB-loader tabs, and it calls `self.collect_parameters()`,
+   which is not on the base. It is in no duplication group, so promoting it moves the ratchet by
+   zero and the coverage gate does not guard it.
+3. **The `@log(logger=logger)` rebinding risk does not apply to 3a.** None of the twelve
+   promoted methods is decorated, and every logging call in the family goes through
+   `self.logger`, which resolves through the MRO to the subclass's own class attribute. Each
+   subclass keeps exactly one `logger = logging.getLogger(__name__)`; the base declares none.
+   The risk is real for `set_event_index_input` (2 copies, a 3c candidate).
+4. **The autodoc hazard's mechanism is the docstring gate, not "own methods only".** Both
+   generators emit own methods only, and the plugins generator documents docstring-free classes
+   happily — the five controls classes prove it. The live gate is
+   `metaclasses_generate_autodoc.py:111-114`, which `continue`s past a docstring-free class and
+   emits **no page at all**, silently, with `sphinx-build -W` green. So **`MetaControls` must
+   carry a class docstring**, and the five subclasses must not gain one
+   (`test_autodoc_coverage.py:142` asserts they have none).
+
+**Two tests fail by design and are rewritten in the commit that breaks them.**
+`test_duplicated_helpers.py`'s `TestCreateButtonDivergence` *raises* rather than fails once
+`createButton` leaves the five files (commit 1); `test_autodoc_coverage.py:168` asserts the
+three icon-button directives appear ≥5 times across the per-tab pages, and all three sit at
+exactly 5 today (commit 4). Nothing currently asserts that `metacontrols.rst` exists at all —
+commit 1 adds that.
 - **3a-bis `_set_control_area` as a `MetaView` template method** — separable from `MetaControls`,
   and **the recorded premise was wrong twice over**. The five bodies are in the *View* files, not
   the controls files, and they are pairwise distinct at 21/22/23/25/27 lines: Clustering has a
@@ -912,3 +1022,9 @@ select-all, dismiss on an outside click, reopen with the selection intact); and 
 outliving the app on close. That is the pre-refactor baseline, so a later failure is
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
+
+**Post-3a manual pass: run 2026-09-06, all clear.** Same scope as the baseline, against a
+branch that had rewritten all five controls widgets — so the promoted widget factories, the
+`create_info_button`/`create_add_button`/`create_delete_button` wiring and the placeholder
+guard were all exercised through the real UI. Nothing regressed. The next one is owed after
+3f.
