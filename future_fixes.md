@@ -436,6 +436,26 @@ refactoring lands, to avoid generating triads against a layout about to change.
 
 ## Still queued
 
+- **`pytest.ini` sets no `pythonpath`, so `tests.*` imports resolve only by luck.**
+  `pytest tests/unit/views/test_event_analysis_view.py` alone fails with
+  `ModuleNotFoundError: No module named 'tests'`; it works only when `tests/e2e/conftest.py`
+  is collected first. Step 2 branch 1 adds `pythonpath = .`. **The 13 dead `sys.path` shims
+  in the e2e test modules are then deletable** - each is placed *after* the import it exists
+  to enable, so none of them ever did anything.
+- **Two view test modules mock the view's `logger`**, which `tests/unit/views/_qt_mocks.py`'s
+  module docstring explicitly warns against: `test_raw_data_view.py:73` and
+  `test_metadata_view.py:97`. Every `caplog` assertion in those two files is blind. They also
+  hand-mock `global_signal` instead of using `shadow_signals`.
+- **`tests/conftest.py:8-15` describes a `tests/unit/models/conftest.py` deleted in
+  `c99249ea`.** The `main_model` fixture now lives at `tests/unit/models/test_main_model.py:25`
+  and relies wholly on the autouse `sandbox_user_data_dir`.
+- **`ProteinView._build_load_event_data_args:1957-1967` appends a scope clause to arbitrary
+  user SQL on a naive `"WHERE" in scoped_query.upper()` test**, so a `WHERE` inside a subquery
+  or a string literal mis-fires. This is exactly what `MetaDatabaseLoader._split_on_opaque_spans`
+  exists to handle, and this path does not use it. `MetadataView` has no equivalent. Step 2
+  branch 5 pins the current behaviour; the fix is separate.
+- **`test_raw_data_view.py:28`'s module docstring lists `_get_baseline_stats` as covered and
+  no such test exists.** Corrected by Step 2 branch 4, which also adds the missing test.
 - **Three `scripts/autodoc/` lint sites are ours to fix, and are the only part of the
   declined-rules sweep that is.** Two `S110` in `metaclasses_generate_autodoc.py` and
   `plugins_generate_autodoc.py`, one `S112` in the latter. Fixing them would not enable

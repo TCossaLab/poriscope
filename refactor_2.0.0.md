@@ -9,6 +9,12 @@ ratchet anchored there would credit Step 1's deletions to the refactor. Re-verif
 document against `062ef6f` corrected nine of thirteen checkable Step 3a sub-claims, six Step 2
 claims and the Decision E figure; the corrections are inline below.
 
+**Step 2 was checked a fourth time at `c9fe294`, 2026-09-05, when it was planned in detail, and
+three more claims moved** — the allowlist seed (106 → **107**), the duplication baseline (not
+reproducible; no measurement tool exists), and the golden target list (most named methods are
+already covered; a different set has zero coverage). Two of those three changed what the work
+*is*, not just its numbers. See Step 2 below.
+
 Full write-up: <https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>
 
 Excluded throughout by standing policy: `PeakFinder.py`, `Basic_PeakFinder.py`, `NanoTrees.py`.
@@ -188,7 +194,9 @@ files and so belong to Step 3a. The rest is 152 in Metadata/Protein pairs (Step 
 4-of-5 group (`createButton`) and 6 in a 3-of-5 group. The total is unchanged from `fc4fdf7`;
 Step 1 removed no duplicate method.
 
-**1,199 lines total.** The plan's ~1,900 and the >= 2,500 target both include
+**1,199 lines total — but produced by a one-off, unversioned script, so this figure is not
+reproducible today.** Step 2's ratchet builds the instrument and re-derives it; treat the numbers
+in this table as indicative until it does. The plan's ~1,900 and the >= 2,500 target both include
 near-identical code this measure cannot see (`ClassicCUSUM`'s 195-line override differing in
 2 lines, the Chimera readers differing in 23 of 390), so treat 1,199 as the *floor* the
 ratchet starts from, not the whole prize. Largest single wins: `create_info_button` and
@@ -351,67 +359,152 @@ WARNING-level routine-state sweep.
 
 ## Step 2 — tests (GATE)
 
-Re-verified at `062ef6f`; six claims moved and one bullet turned out to be already done.
-Authorship of each deliverable is part of the ask to Carolina above.
+Re-verified at `062ef6f` (six claims moved, one bullet already done) and again at **`c9fe294`**
+on 2026-09-05 when it was planned in detail — **three more moved, and two of them changed what
+the work is**. Decision E is agreed and all five deliverables are ours.
 
-- **Goldens** via `pytest-regressions` (`num_regression`/`dataframe_regression` compare float
-  arrays with tolerances). **`pytest-regressions` is declared nowhere and is not installed**, so
-  this is greenfield; declare it in *both* `pyproject.toml [dev]` and `requirements-dev.txt`.
-  `pytest.ini` sets `--strict-markers`, so registering a `characterization` marker there is a
-  hard prerequisite, not a nicety - an unregistered marker is a collection error. Drive
-  computational View methods directly on a headless instance, fed from `tests/synthetic_data/`
-  (five generators, present). **The mechanism is not what was recorded**: the `__new__` bypass
-  lives in each test module's own `mock_view` fixture, and the load-bearing helper is
-  `tests/unit/views/_qt_mocks.py`'s `shadow_signals`, which replaces every class-level `Signal`
-  with a `FakeSignal` because a `__new__`-built view has no C++ QObject behind it. Verified
-  empirically: `_init()`, a real computational method and a shadowed emit all work with
-  `QApplication.instance()` still `None`. Two of the four files using the pattern import the
-  shared helper; the other two roll their own. Its docstring's warning applies to goldens -
-  **do not mock the view's `logger`**, it blinds `caplog`.
-- **SQL goldens** across filter/experiment/channel/table shapes. **Re-target this**:
-  `_build_where_clause` was deleted by `062ef6f` and has 0 references in `poriscope/` and
-  `tests/`. Its "2 test hits" were both `mocker.Mock` *replacements*, so it never had
-  behavioural coverage at all. The live surface is `MetaDatabaseLoader.construct_metadata_query`
-  plus `_split_on_opaque_spans`, `_references_column`, `_qualify_conditions` and
-  `_find_ambiguous_id`, which already carry substantial tests in
-  `tests/unit/utils/test_meta_database_loader.py`. Precedent: the 2026-09-03 metadata-query fix
-  was validated by diffing generated SQL across all seven branch shapes.
-- **`ast` MVC boundary test**: no `analysistabs/*View.py` imports
-  numpy/scipy/sklearn/hdbscan/pandas/**`fast_histogram`**/sqlite3; no View contains
-  `global_signal.emit`; no Controller touches a `view._private`. **Add `fast_histogram`** -
-  `RawDataView.py:34` imports it and Step 4c moves it, so the rule as first written would let
-  4c's completion go unregistered. `sqlite3` contributes **0** (no View imports it; the Views
-  build SQL as f-strings and hand it to the loader), but keep it in the rule as a ratchet.
-  Allowlist seed at `062ef6f`: **106 entries** - 75 emits, 21 forbidden import statements
-  (12 distinct View x module pairs), 10 private-access sites. The allowlist size is the headline
-  progress metric.
-- **Duplication ratchet** on byte-identical-method counts across the three 5-file families;
-  Step 0's numbers, re-measured above, are the starting point.
-- **One no-GUI flow per tab** in `tests/integration/flows/`: load → filter → plot → export,
-  asserting on exported CSV content, not widget state. Survives the refactor unchanged by
-  construction. **This is five new tests, not two.** The three flows there today are
-  `*_instantiation_pipeline_no_gui.py` - they construct no View and no Controller and export no
-  CSV, so by this bullet's own definition **0 of 5 tabs are covered**. When such a flow waits on
-  writer output, follow `DECISIONS.md` 2026-09-03 (`SQLiteEventWriter`'s two-connection commit
-  split): wait on committed **rows** via `sqlite_row_count`, never on table presence alone -
-  note that helper currently lives at `tests/e2e/_helpers.py:410`, so it needs importing across
-  trees or relocating.
-- ~~Extend `test_plugin_compliance` to the analysis-tab triad.~~ **Already done** -
-  `MetaController`/`MetaModel`/`MetaView` are in `META_CLASSES` and `BASE_CLASS_DATA`, and 15 of
-  its 71 tests are the triad. The real gap is that the check is near-vacuous: `MetaModel` has
-  exactly **one** abstract method (`_init`), which 4 of the 5 tab Models implement as `pass`, so
-  `[MetaModel-*]` passes unchanged no matter what the refactor does to the Model layer. Worth
-  keeping in mind that the same equality-comparison constraint that binds the owner-held fitters
-  applies to `MetaView`'s five abstract methods once Step 3 starts promoting into the base.
-- **Already-existing characterization net, worth not rebuilding.** `tests/e2e/` is 16 files /
-  5,469 lines with a full flow per tab plus a CSV-export test, driven through clicks, so it names
-  almost no internal method and survives Steps 3 and 4 by construction. The exception is exactly
-  the state Step 4d moves - `subset_filters` in 4 files and `view._analysis_mode` /
-  `view._display_mode` in 2 more.
-- **Destination coverage is nearly absent.** `tests/unit/models/` holds 3 files, of which only
-  `test_protein_model.py` (64 lines, 8 tests) covers a tab Model; there is no `test_meta_model.py`
-  and `poriscope/utils/MetaModel.py` (363 lines, 12 methods) has no dedicated test file. That is
-  where Steps 3d and 4a-4e land.
+### What the fourth pass changed
+
+1. **Allowlist seed is 107, not 106.** 75 emits (21/20/14/13/7, confirmed) + **22** forbidden
+   import statements over **13** distinct (View, module) pairs + 10 private-access sites. The
+   bullet below instructs "add `fast_histogram`" and then quotes a total computed *before* that
+   addition; `RawDataView.py:34` is the missing entry.
+2. **The duplication baseline is not reproducible.** No measurement tool exists —
+   `ast.get_source_segment` appears exactly once in the repo and it is in prose, and `scripts/`
+   holds no duplicate detection. Step 0's 1,199 / 68 came from a one-off unversioned script. The
+   ratchet must **build the instrument and re-derive the baseline**, not encode a number nobody
+   can re-check.
+3. **The golden targets were wrong.** `_calculate_heatmap`, `_double_gaussian`,
+   `_fit_double_gaussian`, `_compute_theoretical_blockages`, `_generate_vm_ensemble`,
+   `_normalize_column_data` and both `_construct_all_points_histogram` copies **already have
+   direct tests**. What has none: `RawDataView._gaussian_fit` (`:574` — its own source comment
+   calls it "THE CRITICAL MATH FIX"), `RawDataView._get_baseline_stats` (`:467`, listed as
+   covered in `test_raw_data_view.py:28`'s docstring with no such test),
+   `MetaView._logscale_and_filter_dataframe` (`:789`), and `ProteinView._summarize_vm` (`:497`).
+   Worst: **`MetaView._logscale_and_filter_multiple_columns` (`:696`) has 38 test references and
+   every one is a `Mock`** — no behavioural coverage at all, on every 1-D and 2-D plot path.
+
+### Execution — six branches, in order
+
+One branch per piece, finished into `develop` before the next starts. **Both gates are pytest
+tests, not pre-commit hooks**, with measurement logic in `scripts/`: only a test is enforced by
+all four CI workflows with no extra wiring and appears in `--marker-stats`, and the script keeps
+"what do I have to fix" runnable on its own.
+
+**1. `feature/step-2-test-harness`** — the shared prerequisite.
+- `chore(test):` `pytest-regressions` pinned `==` in **both** `pyproject.toml [dev]` and
+  `requirements-dev.txt` — `ci-branches.yml`/`ci-fork-pr.yml` install only from the latter and
+  never read `pyproject.toml`; `release.yml` installs only the former. Register a
+  `characterization` marker in `pytest.ini` (`--strict-markers` makes an unregistered marker a
+  *collection error*). Add `pythonpath = .` — without it `tests.*` resolves only because
+  `tests/e2e/conftest.py` is collected first, and `pytest tests/unit/views/test_event_analysis_view.py`
+  alone fails with `ModuleNotFoundError: No module named 'tests'`.
+- `docs:` `quality_control.rst` "Test Suite Configuration"; `changelog.md` under a new
+  `## Poriscope 2.0.0: in progress`; `DECISIONS.md` on tests-not-hooks.
+
+**2. `feature/step-2-duplication-ratchet`** — second, not last: it makes Step 3a's "no copy was
+lost" claim provable, and 3a precedes it.
+- `chore(scripts):` `scripts/measure_duplication.py`, shaped like
+  `scripts/check_plugin_module_level.py`. Algorithm per Step 0: AST-parse each file in a family,
+  `ast.get_source_segment` per function, dedent + strip, group by identical text, removable lines
+  = copies beyond the first. **Enumerate the five paths per family explicitly** — the fifth
+  controls file is `eventAnalysisControls.py`, camelCase, and a `*controls.py` glob silently
+  drops 742 lines (17% of the family).
+- `test(scripts):` cover the instrument against small synthetic module texts, not the real tree,
+  so the tests do not move when the refactor does.
+- `test:` `.duplication-baseline.json` (precedent: `.pydoclint-baseline.txt`) plus the ratchet.
+  **Exact match, not `<=`** — a commit that removes duplication lowers the baseline in the same
+  commit, which is how the win gets recorded instead of accruing as slack. Correct Step 0's table
+  to the re-derived numbers.
+
+**3. `feature/step-2-mvc-boundary`** — the headline metric; this reaching 0 *is* Steps 3–5 finishing.
+- `chore(scripts):` `scripts/check_mvc_boundary.py`. Three rules: no View contains
+  `global_signal.emit`; no View imports numpy/scipy/sklearn/hdbscan/pandas/**`fast_histogram`**/sqlite3;
+  no Controller reads a `view._private`. `sqlite3` contributes 0 today (Views build SQL as
+  f-strings) and stays as a ratchet. **Pin the rule's exact definition in the module docstring —
+  the definition *is* the number**: `numpy.typing` counts as `numpy` for the pair count but as its
+  own `ast.Import` node, and that ambiguity is what produced the unreproducible 21/12.
+- `test:` `.mvc-boundary-allowlist.json` seeded at **107**, keyed by file and symbol rather than
+  line number so ordinary edits do not churn it, plus the exact-match gate.
+- `docs:` `changelog.md` and a `DECISIONS.md` entry recording the rule definition. (The
+  106 → 107 correction is already applied above and in the Verification table.)
+
+**4. `feature/step-2-characterization-goldens`** — pins the surface nothing tests today.
+`pytest-regressions` where the output is an array or DataFrame; plain explicit assertions for
+scalars, strings and short tuples. Keep samples small so every golden stays well under
+`check-added-large-files --maxkb=123`.
+- `test(views):` the two `_logscale_*` filters and the five range helpers, in `tests/unit/utils/`.
+  Pin the divergence Step 3d proposes unifying: `~np.isnan` masking vs `df.dropna()` (which also
+  drops nulls in columns nobody asked to log), `return ()` vs returning the *original object* on
+  empty, and the `astype(np.float64)` the frame version forces. Replace `test_protein_view.py:1138`
+  `TestRangeHelpers`' `or`-chained assertions — `_shift_ranges` **reflects** rather than translates
+  a multi-element range, which is unpinned.
+- `test(views):` `_gaussian_fit`, `_get_baseline_stats`, `_gaussian`; correct the stale coverage
+  roster at `test_raw_data_view.py:28`.
+- `test(views):` `_summarize_vm`, all three branches.
+- `test(views):` equivalence tables — three `_factors` copies (`MetaView.py:139`,
+  `RawDataView.py:109`, `EventAnalysisView.py:121`) and three `format_axis_label` copies
+  (`ProteinView.py:4037` module function, `MetadataView.py:3645` method, and the **inlined,
+  genuinely divergent** `ClusteringView.py:731-742`, which does not strip a trailing `(...)` and
+  accepts `"  "` where the others reject it). Pin the divergence so Step 3's merge is a decision.
+
+Reuse `_qt_mocks.shadow_signals` and the `__new__`-bypass fixture (`test_protein_view.py:108-161`);
+`tests/unit/views/conftest.py` gives dialog patching and widget/GC teardown free. **Do not mock
+the view's `logger`** — it blinds `caplog`.
+
+**5. `feature/step-2-sql-goldens`** — today **no test anywhere asserts on generated SQL text**;
+all 110 tests in `test_meta_database_loader.py` use substring containment, so a refactor could
+reorder joins, reassign aliases or change the projection and every one would still pass.
+- `test(db):` exact-text goldens over `construct_metadata_query` (`:877`) across the shapes those
+  classes already enumerate, pinning all three tuple elements.
+- `test(db):` direct tests for `_split_on_opaque_spans` (`:712`), `_references_column` (`:763`),
+  `_qualify_conditions` (`:785`), `_find_ambiguous_id` (`:835`) and `_end_of_subquery` (`~:695`) —
+  **none has one**, and `_split_on_opaque_spans`' documented `"".join(result) == input` invariant
+  is never asserted.
+- `test(views):` the View-authored SQL, pinned *before* the refactor moves it into the loader —
+  `MetadataView.py:2351`, `ProteinView.py:1778`, and `ProteinView.py:1957-1967`'s `scoped_query`,
+  which appends a scope clause to arbitrary user SQL on a naive `"WHERE" in query.upper()` test.
+  **Pin it and file it; do not fix it here.**
+
+**6. `feature/step-2-tab-flows`** — five flows, load → filter → plot → export, asserting on
+exported CSV content rather than widget state.
+- `test(integration):` `tests/integration/flows/_triad.py`. **This rung does not exist**: the three
+  existing `*_no_gui.py` build no View or Controller, and there is no headless triad fixture
+  between the mock-only unit controller tests and the click-driven e2e suites. Build it from the
+  e2e construction at `tests/e2e/raw_data/test_trace_load_navigate_psd.py:102-120`, driving the
+  controller API directly instead of the menubar. Reuse `tests/integration/conftest.py`'s
+  `sample_*` fixtures and the four currently-unused `make_synthetic_*` factories, and the
+  `Type = None` wiring idiom at `test_raw_data_instantiation_pipeline_no_gui.py:69-86`.
+- `test(integration):` one tab first, to prove the harness. Where a flow waits on writer output,
+  wait on committed **rows** via `sqlite_row_count` (`tests/e2e/_helpers.py:410`), never on table
+  presence — `DECISIONS.md` 2026-09-03.
+- `test(integration):` the remaining four. The `integration` marker is applied by path; do not
+  hand-apply it.
+- `docs:` close out Step 2 here, in `changelog.md`, `DECISIONS.md`, `future_fixes.md`, and the
+  artifact.
+
+### Already in place — do not rebuild
+
+- **`test_plugin_compliance` already covers the triad** (all three bases, 15 of its 71 tests). The
+  real gap is that `MetaModel` has exactly **one** abstract method, which 4 of 5 tab Models
+  implement as `pass`, so `[MetaModel-*]` passes no matter what the refactor does to the Model
+  layer. The same equality comparison that binds the owner-held fitters applies to `MetaView`'s
+  five abstract methods once Step 3 promotes into the base.
+- **`tests/e2e/` is already a characterization net** — 16 files, 5,469 lines, a full flow per tab
+  driven through clicks, naming almost no internal method. The exception is exactly what Step 4d
+  moves: `subset_filters` in 4 files, `view._analysis_mode`/`_display_mode` in 2 more.
+- **Destination coverage stays absent, by design.** `tests/unit/models/` holds 3 files, only
+  `test_protein_model.py` (64 lines, 8 tests) covers a tab Model, and `MetaModel` (363 lines, 12
+  methods) has no test file. Step 2 does not close that; the goldens make the move observable and
+  the destination's coverage comes with the move, in Steps 3d and 4a–4e.
+
+### Deferred out of Step 2 — file, do not fix
+
+The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they exist to enable);
+`test_raw_data_view.py` and `test_metadata_view.py` mocking the view's `logger` against
+`_qt_mocks.py`'s explicit warning; `tests/conftest.py:8-15` referencing a conftest deleted in
+`c99249ea`; `ProteinView`'s naive `WHERE` substring test; and `ClusteringView`'s GMM branch
+(`:660-670`), which has no extracted method to pin and gets one in Step 4c.
 
 ## Step 3 — promotion to `Meta*` bases
 
@@ -596,8 +689,8 @@ from `exposed.py` so changing it is breaking.
 
 | Metric | Baseline | Target | Instrument |
 | --- | --- | --- | --- |
-| MVC boundary allowlist | 106 (75 emits, 21 imports, 10 privates) | 0 | `ast` test (2B) |
-| Duplicated lines removed | 0 of 1,199 measured | ≥ 2,500 | duplication ratchet |
+| MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates) | 0 | `ast` test (Step 2 branch 3) |
+| Duplicated lines removed | 0 of ~1,199 — baseline to be re-derived | ≥ 2,500 | duplication ratchet (Step 2 branch 2) |
 | Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) |
 | Numerical output | unpinned | unchanged | golden files (2A) |
 | Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) |

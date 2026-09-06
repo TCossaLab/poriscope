@@ -10,6 +10,53 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-05 - The 2.0.0 structural gates are pytest tests, not pre-commit hooks
+
+**Context.** Step 2 adds two "a count must not grow" gates: an `ast` MVC boundary check and a
+duplication ratchet. The repo has precedent for both mechanisms - `plugin-module-level` and
+`pydoclint --baseline` are local pre-commit hooks, while `test_plugin_compliance` is a pytest
+test that reflects over the whole plugin tree.
+
+**Decision.** Both gates are **pytest tests**, with their measurement logic in `scripts/` so it
+stays runnable on its own. Baselines are checked-in JSON compared for **exact match**, not `<=`.
+
+**Evidence.** Only a test is enforced by all four test-running workflows with no extra wiring:
+`ci-branches.yml` and `ci-fork-pr.yml` run `pytest` but would each need the hook added
+separately. Only a test appears in `--marker-stats`. Exact match rather than `<=` is what makes
+a refactor commit record its own win - under `<=` a step that removes duplication leaves the
+baseline overstated and the slack accrues silently.
+
+**Revisit if / check for when touching this area:** a gate needs to block the commit rather than
+the push (then it wants a hook as well, calling the same script); or the measurement becomes slow
+enough to matter in a full run - it is AST-only over 15 files today.
+
+---
+
+## 2026-09-05 - Step 2's goldens pin the uncovered methods, not the ones the plan named
+
+**Context.** `refactor_2.0.0.md` Step 2 called for characterization goldens over "the
+computational View methods". Checked at `c9fe294`, most of those already have direct tests.
+
+**Decision.** Golden only what has no behavioural coverage, plus equivalence tables for the
+duplicated helpers Step 3 is about to merge. Use `pytest-regressions` where the output is an
+array or DataFrame and plain explicit assertions for scalars, strings and short tuples.
+
+**Evidence.** `_calculate_heatmap`, `_double_gaussian`, `_fit_double_gaussian`,
+`_compute_theoretical_blockages`, `_generate_vm_ensemble`, `_normalize_column_data` and both
+`_construct_all_points_histogram` copies all have direct tests. `RawDataView._gaussian_fit:574`,
+`RawDataView._get_baseline_stats:467`, `MetaView._logscale_and_filter_dataframe:789` and
+`ProteinView._summarize_vm:497` have zero references in `tests/`.
+`MetaView._logscale_and_filter_multiple_columns:696` has 38 references and every one is a `Mock`
+substitution, so the body is uncovered while sitting on every 1-D and 2-D plot path. A golden
+file for a three-element tuple is less legible than the literal, which is why the mechanism is
+split rather than applied uniformly.
+
+**Revisit if / check for when touching this area:** a method on this list gains real coverage
+from another direction; or Step 4c extracts a computation that currently has no separable method
+(`ClusteringView`'s GMM branch at `:660-670`), which then becomes goldenable.
+
+---
+
 ## 2026-09-04 - Worker generator failures report at WARNING on the panel, not as dialogs
 
 **Context.** `EventWorker.process_generator` funnels every exception from a plugin generator
