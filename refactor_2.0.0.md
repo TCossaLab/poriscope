@@ -533,6 +533,32 @@ exported CSV content rather than widget state.
 - `docs:` close out Step 2 here, in `changelog.md`, `DECISIONS.md`, `future_fixes.md`, and the
   artifact.
 
+### Step 2 exit review — required before any Step 3 code is written
+
+**Standing instruction, 2026-09-05: after branch 7 lands, re-assess the plan in light of
+where the tests, pins and golden files actually ended up.** Step 2 was specified before any
+of it existed, and four verification passes have already moved claims in Steps 3a, 3c, 3d and
+4d. The review is not a formality; it is the last point at which a missing check is cheap.
+
+What it has to answer:
+
+1. **Is everything that needs verifying actually testable?** For each of Steps 3-5, name the
+   observable that would fail if the step went wrong, and confirm something asserts it today.
+   A step whose only evidence is "the suite is still green" is not covered - the suite was
+   green before Step 2 started, with 11 refactor targets exercised only in passing.
+2. **What checks are still missing?** Candidates already visible: nothing pins the
+   `@register_action` replay path against a saved `.json` action file, which is user data;
+   nothing pins `get_session_state` round-tripping a real 1.x session file, which Step 4d
+   changes; and no gate holds the `Meta*` bases' coverage, which is where Steps 3d and 4a-4e
+   land and which sits at 69-76%.
+3. **Have the gates' own assumptions drifted?** Re-run all three, re-read the audit's
+   hand-written `MOVED` list against the step descriptions, and confirm the emit-bearing and
+   SQL-authoring derivations still find what the steps mean by them.
+4. **Is the manual Windows pass still the only cover for the platform-conditional paths?**
+   If so, schedule it against 3a rather than discovering it late.
+
+Record the outcome here and in the artifact before starting Step 3.
+
 ### Already in place — do not rebuild
 
 - **`test_plugin_compliance` already covers the triad** (all three bases, 15 of its 71 tests). The
