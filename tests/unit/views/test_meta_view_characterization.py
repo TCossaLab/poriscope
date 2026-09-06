@@ -28,6 +28,8 @@ return short tuples, lists and strings, and a golden file for a two-element tupl
 is less legible than the literal.
 """
 
+from typing import Dict, List
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -51,7 +53,7 @@ class _ConcreteView(MetaView):
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """Satisfy the abstract hook; no canvas exists to reset."""
 
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """Satisfy the abstract hook; no comboboxes to populate."""
 
     def notify_plugin_state_changed(

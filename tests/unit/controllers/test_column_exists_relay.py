@@ -13,7 +13,7 @@ line, and one line is exactly what gets dropped unnoticed when a method is delet
 from a base and re-homed on a subclass.
 """
 
-from typing import Optional
+from typing import Dict, List, Optional
 
 import pytest
 from PySide6.QtWidgets import QBoxLayout
@@ -36,7 +36,7 @@ class _ConcreteView(MetaView):
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """Satisfy the abstract hook."""
 
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """Satisfy the abstract hook."""
 
     def notify_plugin_state_changed(
@@ -92,9 +92,7 @@ class TestSetColumnExists:
 
         assert view.column_table is None
 
-    def test_a_later_answer_replaces_an_earlier_one(
-        self, view: _ConcreteView
-    ) -> None:
+    def test_a_later_answer_replaces_an_earlier_one(self, view: _ConcreteView) -> None:
         """The value is per-query state, not accumulated."""
         view.set_column_exists("events")
         view.set_column_exists("sublevels")

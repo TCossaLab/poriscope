@@ -22,7 +22,7 @@ Two groups:
   merging all three is an explicit decision.
 """
 
-from typing import Optional
+from typing import Dict, List, Optional
 
 import pytest
 from PySide6.QtWidgets import QBoxLayout
@@ -49,7 +49,7 @@ class _BaseOnlyView(MetaView):
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """Satisfy the abstract hook."""
 
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """Satisfy the abstract hook."""
 
     def notify_plugin_state_changed(

@@ -350,7 +350,10 @@ class TestResolveEventDbIds:
         :return: a dict controlling what each dispatched call returns
         :rtype: dict
         """
-        answers: dict = {"get_experiment_id_by_name": 7, "query_database_directly": None}
+        answers: dict = {
+            "get_experiment_id_by_name": 7,
+            "query_database_directly": None,
+        }
 
         def deliver(metaclass, key, method, args, return_fn, extra):
             if return_fn == "set_experiment_id":

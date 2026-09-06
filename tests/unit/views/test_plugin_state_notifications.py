@@ -23,7 +23,7 @@ redundant, and deleting them would make both classes uninstantiable. That is
 asserted below so the claim cannot be acted on by mistake.
 """
 
-from typing import Any
+from typing import Any, Dict, List
 
 import pytest
 from PySide6.QtWidgets import QBoxLayout
@@ -180,7 +180,9 @@ class TestTabsThatDeliberatelyDoNothing:
 
         for metaclass in ("MetaDatabaseLoader", "MetaReader", ""):
             for reason in ("columns", "settings", ""):
-                assert view.notify_plugin_state_changed(metaclass, "any", reason) is None
+                assert (
+                    view.notify_plugin_state_changed(metaclass, "any", reason) is None
+                )
 
 
 class TestTheHookIsRequiredByTheBase:
@@ -220,7 +222,9 @@ class TestTheHookIsRequiredByTheBase:
             def _reset_actions(self, axis_type: str = "2d") -> None:
                 """Present."""
 
-            def update_available_plugins(self, available_plugins: dict) -> None:
+            def update_available_plugins(
+                self, available_plugins: Dict[str, List[str]]
+            ) -> None:
                 """Present."""
 
         with pytest.raises(TypeError, match="notify_plugin_state_changed"):

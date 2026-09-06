@@ -72,10 +72,11 @@ per-test coverage attribution, which is far more machinery than this is worth to
 if it ever becomes worth it, the cheap approximation is a second coverage run under
 ``-m "not e2e"`` and treating "executed without e2e" as the targeted signal.
 
-Exits 1 on any ``UNTESTED``, ``NOT FOUND`` or ``MISSING FILE`` target, which are the
-unambiguous failures. ``RUNS ONLY`` is reported and does not fail, because a method
-whose only sensible exercise is an end-to-end flow is a judgement call rather than a
-defect.
+**Exits 1 on any target that is not ``PINNED``**, ``RUNS ONLY`` included. That is the
+standing criterion stated plainly: a method about to be moved needs a test that names
+it, and one exercised only in passing does not qualify. If an end-to-end flow really is
+the only sensible exercise for some method, record why in ``DECISIONS.md`` and exclude
+it explicitly rather than loosening this rule.
 """
 
 import argparse
@@ -510,9 +511,7 @@ def main(argv: List[str]) -> int:
         print(f"Audit failed: {exc}", file=sys.stderr)
         return 1
 
-    failing = [
-        r for r in records if r["verdict"] in {"UNTESTED", "NOT FOUND", "MISSING FILE"}
-    ]
+    failing = [r for r in records if r["verdict"] != "PINNED"]
 
     header = f"{'verdict':<13}{'step':<9}{'direct':>7}{'patch':>7}  method"
     print(header)

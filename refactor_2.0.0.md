@@ -489,11 +489,12 @@ judgement about which methods look thin.
   `test_plugin_state_notifications.py` (23), `test_controls_bins_validator.py` (9),
   `test_column_exists_relay.py` (10), plus `_resolve_event_db_ids` added to
   `test_protein_view_characterization.py` and `_start_eventfinder` to
-  `test_raw_data_view_characterization.py`. **Open decision:** the audit needs a coverage
-  JSON, so it cannot be a plain pytest test the way the other two gates are — choose between a `characterization` test
-  that skips without coverage data, a CI-only step in `ci-internal-pr.yml` (which already
-  runs the coverage variant), or leaving it a manually-run script. Record the choice in
-  `DECISIONS.md`.
+  `test_raw_data_view_characterization.py`. **Decided 2026-09-05:** the gate is *split*. Its structural half
+  runs under plain `pytest` everywhere (`tests/unit/scripts/test_refactor_coverage_gate.py`);
+  its execution half runs where coverage already exists — `ci-internal-pr.yml` now emits
+  `--cov-report=json` and invokes the script. Exit is strict: anything not `PINNED` fails,
+  `RUNS ONLY` included. Reasoning in `DECISIONS.md` 2026-09-05.
+  **Audit now reports 284 targets, 284 pinned.**
 
 **Note on line coverage.** It is the wrong instrument for this and should not be used as the
 audit's measure. The five Views were at 87-91% *before* any characterization test existed, and

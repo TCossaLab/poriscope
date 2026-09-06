@@ -120,9 +120,7 @@ def test_both_copies_are_byte_identical() -> None:
     import textwrap
 
     bodies = {
-        textwrap.dedent(
-            inspect.getsource(cls._on_sizes_checkbox_toggled)
-        ).strip()
+        textwrap.dedent(inspect.getsource(cls._on_sizes_checkbox_toggled)).strip()
         for cls in CONTROLS
     }
     assert len(bodies) == 1
