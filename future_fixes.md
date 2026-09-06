@@ -436,6 +436,14 @@ refactoring lands, to avoid generating triads against a layout about to change.
 
 ## Still queued
 
+- **`format_axis_label` truncates a column name containing parentheses.** The pattern
+  `\s*\(.*?\)$` is anchored at `$`, so the leftmost match wins and the lazy `.*?` expands
+  across every intervening `)`: the strip reaches back to the **first** parenthesis, not the
+  last. A column named `Rate (per pore)` plotted with unit `Hz` is labelled `Rate (Hz)`,
+  silently losing `per pore`; `a (b) (c) (d)` collapses to `a`. Two copies,
+  `ProteinView.py:4037` and `MetadataView.py:3645`; `ClusteringView.py:731-742`'s inline
+  builder is unaffected because it never receives a label with a parenthetical. Behaviour is
+  pinned in `tests/unit/views/test_duplicated_helpers.py`, so a fix must update those tests.
 - **`pytest.ini` sets no `pythonpath`, so `tests.*` imports resolve only by luck.**
   `pytest tests/unit/views/test_event_analysis_view.py` alone fails with
   `ModuleNotFoundError: No module named 'tests'`; it works only when `tests/e2e/conftest.py`
