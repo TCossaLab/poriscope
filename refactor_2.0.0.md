@@ -524,7 +524,7 @@ reorder joins, reassign aliases or change the projection and every one would sti
   live the moment Step 4b touches it. And a case named "duplicate columns are collapsed" was
   simply wrong: a repeated column is projected twice.
 
-**7. `feature/step-2-tab-flows`** — five flows, load → filter → plot → export, asserting on
+**7. `feature/step-2-tab-flows`** — LANDED 2026-09-06. Five flows, load → filter → plot → export, asserting on
 exported CSV content rather than widget state.
 - `test(integration):` `tests/integration/flows/_triad.py`. **This rung does not exist**: the three
   existing `*_no_gui.py` build no View or Controller, and there is no headless triad fixture
@@ -540,6 +540,24 @@ exported CSV content rather than widget state.
   hand-apply it.
 - `docs:` close out Step 2 here, in `changelog.md`, `DECISIONS.md`, `future_fixes.md`, and the
   artifact.
+- **What landed.** `tests/integration/flows/_triad.py` builds a real
+  `MainModel`/`MainView`/`MainController` plus one tab in ~0.3 s each, with two bypasses only:
+  the tab is created by calling `MainController.instantiate_analysis_tab`, which is what the
+  menu action's signal reaches, and plugins are registered by handing a configured instance to
+  `DataPluginController.model.register_plugin` and emitting the same `update_available_plugins`
+  notification the real path emits. Then one flow per tab, 20 tests total: Metadata (CSV,
+  six tables per subset), Clustering (database write, with every committed label compared back
+  to the id it was computed for), RawData (committed event rows plus channel attribution),
+  EventAnalysis (metadata rows plus the experiment row), Protein (plot then CSV export).
+  Every flow is driven through `handle_parameter_change` action names, so **none of them names
+  an internal method** and Steps 3-5 can move those methods freely.
+- **Three waits were wrong, all caught rather than assumed.** `not model.workers` is true only
+  before the first key appears, since `workers` is keyed metaclass then channel. A predicate of
+  "any CSV with rows in this folder" was satisfied instantly by a *previous* export's files. And
+  a commit wait on `row_count > 0` passed in isolation and failed the full suite at
+  `assert 1 == 5`, because rows land incrementally on a worker thread — the same failure
+  `DECISIONS.md` 2026-09-03 records, made again inside a file whose own docstring cites that
+  decision.
 
 ### Step 2 exit review — required before any Step 3 code is written
 

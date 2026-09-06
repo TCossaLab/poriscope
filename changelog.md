@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes
+
 * Every method the 2.0.0 refactor will move or deduplicate is now checked for test coverage by `scripts/check_refactor_coverage.py`, so a method cannot be restructured while nothing pins its behaviour
 
 * The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 107 known violations, so no new one can be added while the 2.0.0 refactor removes the existing ones

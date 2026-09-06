@@ -23,7 +23,6 @@ in ``ProteinView._resolve_event_db_ids`` *is* pinned, in
 ``future_fixes.md``: extract that query before Step 4b moves it.
 """
 
-
 import pytest
 
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
