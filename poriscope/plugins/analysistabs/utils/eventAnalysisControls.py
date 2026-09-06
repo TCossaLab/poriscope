@@ -382,27 +382,6 @@ class EventAnalysisControls(MetaControls):
             "No Event Fitter",
         ]
 
-    def clear_popup_reference(self, comboBox: QComboBox) -> None:
-        """Clears the reference to the popup when it is closed."""
-        if comboBox in self.active_popups:
-            self.active_popups.pop(comboBox)
-
-    def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
-        """Displays the plugin manager with details for the selected item from the combobox."""
-        key = comboBox.currentText()
-        self.edit_processed.emit(metaclass, key)
-
-    def show_plugin_add_manager(self, comboBox: QComboBox, metaclass: str) -> None:
-        """Displays the plugin manager with details for the selected item from the combobox."""
-
-        self.add_processed.emit(metaclass)
-
-    def delete_plugin(self, comboBox: QComboBox, metaclass: str) -> None:
-        """Deletes the plugin corresponding tot he current ComboBox selection"""
-
-        key = comboBox.currentText()
-        self.delete_processed.emit(metaclass, key)
-
     def validate_inputs(self) -> None:
         is_commit_valid = True
         is_plot_events_valid = True

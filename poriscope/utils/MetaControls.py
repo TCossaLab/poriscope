@@ -80,6 +80,51 @@ class MetaControls(QWidget):
         super().__init__(parent)
         self.active_popups: Dict[QComboBox, Any] = {}
 
+    def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
+        """
+        Ask the tab to open the plugin manager on the combobox's current selection.
+
+        :param comboBox: Combobox whose current text names the plugin to edit.
+        :type comboBox: QComboBox
+        :param metaclass: Plugin family the combobox lists.
+        :type metaclass: str
+        """
+        key = comboBox.currentText()
+        self.edit_processed.emit(metaclass, key)
+
+    def show_plugin_add_manager(self, comboBox: QComboBox, metaclass: str) -> None:
+        """
+        Ask the tab to open the plugin manager on a new plugin of this family.
+
+        :param comboBox: Combobox the request came from; its selection is not read.
+        :type comboBox: QComboBox
+        :param metaclass: Plugin family to add to.
+        :type metaclass: str
+        """
+        self.add_processed.emit(metaclass)
+
+    def delete_plugin(self, comboBox: QComboBox, metaclass: str) -> None:
+        """
+        Ask the tab to delete the plugin the combobox currently names.
+
+        :param comboBox: Combobox whose current text names the plugin to delete.
+        :type comboBox: QComboBox
+        :param metaclass: Plugin family the combobox lists.
+        :type metaclass: str
+        """
+        key = comboBox.currentText()
+        self.delete_processed.emit(metaclass, key)
+
+    def clear_popup_reference(self, comboBox: QComboBox) -> None:
+        """
+        Forget a combobox's popup once it has closed.
+
+        :param comboBox: Combobox whose popup has been dismissed.
+        :type comboBox: QComboBox
+        """
+        if comboBox in self.active_popups:
+            self.active_popups.pop(comboBox)
+
     def create_comboBox(self, parent: QWidget) -> QComboBox:
         """
         Build a combobox that expands to fill the width available to it.
