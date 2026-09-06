@@ -723,10 +723,11 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 ## Next up — state as of 2026-09-06
 
 **Landed:** Steps 0, 1 (1.9.0), 2 (all seven branches + exit review), **3a** (`MetaControls`,
-489 duplicated lines removed) and **3d-pre** (the two logscale helpers collapsed to one).
-`develop` is clean; the suite is **3,338 passed / 4 skipped**; duplication **1,400** removable;
-boundary allowlist **111**; refactor coverage **248 targets, 248 pinned** (re-measure — 3d-pre
-removed one target).
+489 duplicated lines removed), **3d-pre** (the two logscale helpers collapsed to one), the
+boundary-gate widening, and **3b** (the three `MetaSubsetTab*` bases, 494 lines).
+`develop` is clean; the suite is **3,346 passed / 4 skipped**; duplication **906** removable;
+boundary allowlist **110**; refactor coverage **247 targets** (re-measured 2026-09-06 via
+`collect_targets()`; 3d-pre removed one).
 
 **The gate widening — LANDED 2026-09-06.** Rules 1–3 no longer read hardcoded filename
 tuples: every module under `poriscope/` is classified into a layer by a whole-layer directory
@@ -741,11 +742,19 @@ safety was measured rather than lucky. Rule 4 stays narrow deliberately —
 `DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
 `quality_control.rst`, which had never documented rule 4 at all.
 
-**Then, in dependency order:** 3b (now unblocked; order it so the
-state-touching methods land last, leaving `relay_query` per-tab until 4d), 3c, 3d proper
+**Then, in dependency order:** 3c, 3d proper
 (now a numpy-only method plus the five range helpers), 3e, 3f (decided: move to
 `views/widgets/`, drop three autodoc pages, hand-write one for `WalkthroughMixin`), 3g,
 3a-bis.
+
+**Owed — contributor docs on what to inherit from.** Step 3 leaves an analysis-tab author
+with a real choice that did not exist before: `MetaView` directly, or one of the
+intermediates (`MetaSubsetTabView` today, `MetaEventTabView` after 3c), and the same for the
+Controller and Controls. The plugin-development manual walks people through writing a tab but
+says nothing about picking a base, because until now there was only one. Write that section
+once Step 3's bases are all in place, covering what each intermediate gives you, what it
+demands back, and the rule for deciding — stateless shared behaviour goes on the common base,
+stateful or contract-bearing behaviour goes on an intermediate. Requested 2026-09-06.
 
 **Owed:** a manual Windows pass after each structural step — last run 2026-09-06 after 3a,
 clear. 3d-pre did not touch the UI, so none is owed for it; the next is due after 3f.
@@ -755,6 +764,53 @@ material for the refactor skill. Two from this round worth remembering at the ke
 harness "exit code 0" is not a test result — read the `N passed` line from the run's own
 output; and any step that *removes* rather than moves code owes its instruments the same edit
 in the same commit.
+
+#### 3b — LANDED 2026-09-06
+
+Three commits, **1,400 → 906 removable lines (−494)**, every stage hitting its simulated
+number exactly. Boundary allowlist **113 → 110**, earned by three `global_signal.emit` sites
+collapsing 3+3 → 3 on `MetaSubsetTabView`. Suite 3,346 passed / 4 skipped.
+
+| Commit | Family | before → after | functions |
+| --- | --- | --- | --- |
+| `MetaSubsetTabController` + 17 methods | `*Controller.py` | 207 → 28 | 81 → 47 |
+| `MetaSubsetTabView` + 15 methods | `*View.py` | 351 → 116 | 258 → 228 |
+| `MetaSubsetTabControls` + 10 methods | `*controls.py` | 152 → 72 | 83 → 63 |
+
+**Named `MetaSubsetTab*`, not `MetaDatabaseTab*`.** `Meta` means *metadata* in
+`MetaDatabaseLoader`/`MetaDatabaseWriter`, not *metaclass*, so the planned name borrowed the
+wrong sense of the prefix. `DECISIONS.md` carries it, and the rule: name a base for the
+behaviour its subclasses share, not the storage they sit on.
+
+**No mixin.** `SubsetFilterMixin` was considered and rejected — `WalkthroughMixin` is the
+codebase's only mixin and 3f/3g fold it into the base, so adding a second while removing the
+first leaves two composition mechanisms and no rule for choosing. `DECISIONS.md` carries the
+rule that replaced it and its revisit conditions.
+
+**`test_plugin_compliance` gained an `INTERMEDIATE_BASES` category.** An intermediate must
+stay abstract like a `META_CLASSES` member but need not redeclare the abstract methods it
+inherits; requiring that would have meant copying eighty lines of `MetaView` docstring, and
+`update_available_plugins`' real body, into a class nobody implements from scratch. 3c will
+add `MetaEventTabView` to the same set.
+
+**The lesson worth carrying: a promotion moves the *patch target*, and one of those failures
+is a crash rather than a failure.** Four groups of tests broke, all patching a name in the
+tab module that the promotion moved. Three were ordinary failures. The fourth —
+`QFileDialog.getSaveFileName`, still patched on the tab while the code called the base's real
+`QFileDialog` — opened a **native modal dialog** in a headless run and killed the interpreter
+at **exit 127 with no summary line and no faulthandler dump**, at a *different* place each
+run. Two of those crashes were misread as pre-existing flakiness before the mechanism was
+found. After a promotion, grep the tests for every name the moving methods referenced, not
+just the method names.
+
+**Deliberately left per-tab:** `relay_query` and the pending-filter state it reads (Step 4d),
+`update_filters` on the View side, and `setupUi`/`connect_signals` throughout.
+
+**Cross-family duplication the intermediates cannot hold:**
+`EventAnalysisView.update_plot_features` and `MetadataView.update_plot_features` are
+byte-identical at **31 lines**, the largest View pair in the repo, and sit in opposite
+families. Stateless, so it belongs on `MetaView` itself — 3c routes it there.
+`set_alter_database_status` (Clustering/Protein, 8 lines) is the other one.
 
 ## Step 3 — promotion to `Meta*` bases
 
@@ -914,7 +970,7 @@ commit 1 adds that.
   with it. Six tests call it directly, and the Metadata ones patch
   `poriscope.plugins.analysistabs.MetadataView.MetadataControls`, so any template method must
   preserve that patch target.
-- **3b `MetaDatabaseTabView` + `MetaDatabaseTabController`** (Metadata/Protein) — largest
+- **3b `MetaSubsetTabView` + `MetaSubsetTabController`** (Metadata/Protein) — largest
   cluster in the repo. **No longer blocked on 4d.** It was recorded as "subset-filter state must
   find its layer first"; verified 2026-09-06, that was never the blocker, and the real one is
   different.
@@ -924,7 +980,7 @@ commit 1 adds that.
     `_assisted`/`_raw` conventions — `MetadataView.py:152`/`:184-186` against
     `ProteinView.py:232`/`:228-230`. The methods around it are already byte-identical: ~194
     View lines (`_save_filter`, `restore_subset_filters`, the delete/replace/update group) and
-    ~96 Controller lines. Four declarations promote verbatim. Writing `MetaDatabaseTabView`
+    ~96 Controller lines. Four declarations promote verbatim. Writing `MetaSubsetTabView`
     today hits **no** state conflict; what actually bites is the controls attribute name
     (`self.metadatacontrols` vs `self.proteincontrols`, 60 and 58 references), which needs a
     uniform accessor and is a different problem.
@@ -944,6 +1000,62 @@ commit 1 adds that.
   - Within 3b, order the promotions so the state-touching methods land last: bank the ~194
     identical View lines and the identical Controller group first, leave `relay_query`
     per-tab until 4d.
+
+#### 3b — approved series, 2026-09-06
+
+Three banked commits, one per class family. **Every figure was produced by simulating the
+stage through `measure_duplication.collect_functions` against modified source held in
+memory**, not by adding up group sizes.
+
+| # | Commit | Promotes | repo removable | Δ |
+| --- | --- | --- | --- | --- |
+| 0 | `docs:` the approved series | — | 1,400 | — |
+| 1 | `MetaSubsetTabController` + 17 methods | Controller | **1,221** | −179 |
+| 2 | `MetaSubsetTabView` + 15 methods | View | **986** | −235 |
+| 3 | `MetaSubsetTabControls` + 10 methods | Controls | **906** | −80 |
+
+−494 removable lines, larger than 3a. Family `functions` falls at every stage (Controller
+81→47, View 258→228, controls 83→63), so `_divergence_warning` stays silent.
+
+**Stage 2's −235 is 8 more than the pair list adds up to (227)**, because at least one
+promoted method belongs to a *three*-file group — deleting two of three copies collapses
+the group entirely rather than halving it. That is the reason to simulate rather than add.
+
+**The boundary allowlist falls 113 → 110**, earned. Three promoted View methods carry a
+`global_signal.emit` (`update_available_columns`, `request_experiment_structure`,
+`update_units`), so 3+3 copies become 3 on the base. Under the pre-widening scan this would
+have been an unearned fall of the same size, which is exactly what the widening prevented.
+No promoted body needs numpy, pandas or scipy, so rule 2 is unchanged.
+
+**Order: Controller → View → Controls**, cheapest surface first — the 17 Controller methods
+reference exactly one thing not already on `MetaController`, `self.view`. `relay_query` is
+**not** promoted: its bodies differ, so it is worth zero on the ratchet, and leaving it
+per-tab keeps all 10 rule-3 violations visible until 4d.
+
+Verified rather than assumed:
+
+- **`@log(logger=logger)` rebinding is real here and benign.** Unlike 3a, *every* promoted
+  View and Controller method is decorated. The decorator does nothing unless the logger is
+  at DEBUG; the level is set globally on the root logger (`main_model.py:548`, no per-module
+  UI); and the record's message already carries `MetadataView.set_query` from
+  `self.__class__.__name__`. Only `%(name)s` changes — and `MetaView`/`MetaController`
+  already log their shared methods under their own module names, so this is the existing
+  convention.
+- **The state is uniform and forces no decisions.** Six attributes are annotated identically
+  in both `_init`s. Eight more (`experiment_id`, `query`, `table_name`, `units`,
+  `event_query`, `event_data_generator`, `selection_tree`, `involved_tables`) are set only
+  by their setters in *both* tabs; they go on the base as bare annotations, which declare
+  them to mypy and create nothing at runtime, preserving today's behaviour exactly.
+- **`self.involved_tables` is never initialised anywhere in `poriscope/`**, so
+  `set_table_by_column("events")` would raise `AttributeError`. Unreachable:
+  `relay_table_by_column` has no caller in the app, only in tests, which assign the
+  attribute first. Not fixed inside 3b — the bare annotation preserves current behaviour and
+  the dead trio goes to `future_fixes.md` for 3e.
+- **`MetaSubsetTabView` needs `SelectionTree` and `MultiSelectComboBox` from
+  `poriscope/views/widgets/`, and no module in `poriscope/utils/` imports from
+  `poriscope/views/` today.** Accepted: shared bases depending on shared widgets is the
+  direction 3f moves `walkthrough` in, neither depends on plugins, and those widget modules
+  import nothing from `poriscope.utils`, so there is no cycle. `DECISIONS.md` carries it.
 - **3c `MetaEventTabView`** (RawData/EventAnalysis). Both re-override `_factors`, shadowing
   the concrete base version they could inherit — delete those two.
   **Correction, 2026-09-05: `notify_plugin_state_changed` is NOT an instance of this.**

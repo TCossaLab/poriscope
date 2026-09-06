@@ -81,6 +81,9 @@ from poriscope.utils.MetaEventLoader import MetaEventLoader
 from poriscope.utils.MetaFilter import MetaFilter
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
+from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
@@ -137,6 +140,9 @@ __all__ = [
     "MetaFilter",
     "MetaModel",
     "MetaReader",
+    "MetaSubsetTabController",
+    "MetaSubsetTabControls",
+    "MetaSubsetTabView",
     "MetaView",
     "MetaWriter",
     # --- Base Classes ---

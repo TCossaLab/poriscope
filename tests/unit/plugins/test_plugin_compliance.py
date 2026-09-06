@@ -17,6 +17,8 @@ from poriscope.utils.MetaEventLoader import MetaEventLoader
 from poriscope.utils.MetaFilter import MetaFilter
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
+from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
 
@@ -55,6 +57,20 @@ META_CLASSES: Set[Type] = {
     MetaReader,
     MetaView,
     MetaWriter,
+}
+
+# Intermediate framework bases: abstract classes that sit *between* a META_CLASSES
+# interface and its concrete subclasses, holding code two or more of them share.
+# Like a META class they must stay abstract, but unlike one they are NOT required to
+# redeclare the abstract methods they inherit. The redeclaration rule exists so that a
+# plugin family's own page states its contract to the plugin author who will implement
+# it; an intermediate's contract is already fully stated on the interface above it, and
+# restating it would mean copying eighty lines of docstring - and, for
+# `MetaView.update_available_plugins`, a real method body - into a class nobody
+# implements from scratch.
+INTERMEDIATE_BASES: Set[Type] = {
+    MetaSubsetTabController,
+    MetaSubsetTabView,
 }
 
 
@@ -283,6 +299,9 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
 
     4. **Abstractness policy**
        - Classes in `META_CLASSES` are framework interfaces and MUST be abstract.
+       - Classes in `INTERMEDIATE_BASES` sit between an interface and its concrete
+         subclasses, and MUST also be abstract - but need not redeclare the abstract
+         methods they inherit, since the interface above them already states them.
        - All other subclasses are implementations and MUST be concrete.
 
     :param base_class_name: Name of the base class being tested.
@@ -381,13 +400,14 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
                 f"Meta interface must redeclare abstract methods from {base_cls.__name__}: {sorted(not_redeclared)}"
             )
     # 4) Abstractness policy:
-    #    - Classes in META_CLASSES are framework interfaces and MUST be abstract.
+    #    - Classes in META_CLASSES and INTERMEDIATE_BASES are framework classes and
+    #      MUST be abstract.
     #    - All other subclasses are implementations and MUST be concrete.
     is_abstract = inspect.isabstract(plugin_cls)
-    if plugin_cls in META_CLASSES:
-        # Interface/meta classes should remain abstract
+    if plugin_cls in META_CLASSES or plugin_cls in INTERMEDIATE_BASES:
+        # Interface/meta classes and the intermediates below them stay abstract
         if not is_abstract:
-            errors.append("should be abstract (framework META class)")
+            errors.append("should be abstract (framework base class)")
     else:
         # Implementations should be instantiable
         if is_abstract:

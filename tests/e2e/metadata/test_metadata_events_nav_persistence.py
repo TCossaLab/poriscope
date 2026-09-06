@@ -228,12 +228,12 @@ def test_metadata_events_and_filters(
 
     # SelectionTree.show_dialog() bypass (Qt.Popup hangs under offscreen -
     # see test_metadata_flow.py for full rationale)
-    import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = metadata_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
         if select_all_btn.text() == "Select All":
@@ -243,7 +243,7 @@ def test_metadata_events_and_filters(
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,

@@ -10,6 +10,79 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-06 - Shared tab behaviour goes in a base class; no new mixins
+
+**Context.** Step 3b could have shared the Metadata/Protein code through a
+`SubsetFilterMixin` instead of a `MetaSubsetTabView` intermediate. Mixins compose where
+single inheritance does not, which matters because a few duplicate pairs cross the tab
+families - `update_plot_features` is byte-identical between `EventAnalysisView` and
+`MetadataView`, spanning both of Step 3's intended intermediates.
+
+**Decision.** No new mixins. Shared analysis-tab behaviour goes into the `Meta*` base chain:
+onto an existing base if it is stateless and self-contained, onto a new intermediate base if
+it carries state, abstract hooks or new imports.
+
+**Evidence.** `WalkthroughMixin` is the codebase's only mixin and Steps 3f/3g fold it into
+the base, so adding a second while removing the first would leave two competing composition
+mechanisms and no rule for choosing. The split above is what keeps `MetaView` - the published
+plugin API, exported from `exposed.py` and documented as the extension point - from widening
+with contracts most subclasses do not participate in: folding 3b's View half into it would
+have put subset-filter state on every tab instance, forced `_delete_filter` and
+`show_edit_filter_dialog` to be either abstract (breaking the other three tabs) or concrete
+no-ops (a silent-override hazard), and pulled `SelectionTree` and `MultiSelectComboBox` into
+all five tabs. Cross-family duplication is ~39 lines against ~639 within-family, so the
+families are real; a stateless cross-family pair like `update_plot_features` goes on
+`MetaView` itself.
+
+**Revisit if** a third tab needs *part* of an intermediate's behaviour but not the rest, or
+two intermediates must both supply behaviour to one tab. Either would mean the
+single-inheritance chain has stopped expressing the structure. Raise it rather than acting on
+it.
+
+---
+
+## 2026-09-06 - `poriscope/utils/` may import from `poriscope/views/widgets/`
+
+**Context.** `MetaSubsetTabView` needs `SelectionTree` and `MultiSelectComboBox`, and before
+Step 3b no module in `poriscope/utils/` imported from `poriscope/views/` at all.
+
+**Decision.** Accepted. Shared bases may depend on shared widgets.
+
+**Evidence.** It is the same direction Step 3f moves `walkthrough` in, and neither side
+depends on a plugin package, so it is not the layering inversion rule 4 exists to catch.
+`SelectionTree`, `multiselect` and `multiselect_filter` import nothing from `poriscope.utils`,
+so there is no cycle. The alternative was leaving `show_selection_tree`,
+`update_available_columns` and `_show_filter_info_dialog` per-tab, costing real duplication to
+avoid a dependency that is correct.
+
+**Revisit if** a `views/widgets/` module ever needs something from `poriscope/utils/`, which
+would close the cycle.
+
+---
+
+## 2026-09-06 - Step 3b's shared bases are named `MetaSubsetTab*`, not `MetaDatabaseTab*`
+
+**Context.** `Meta` does not mean the same thing in every `poriscope/utils/` base. In
+`MetaView`, `MetaController`, `MetaReader` and most of the rest it marks an abstract base
+class. In **`MetaDatabaseLoader` and `MetaDatabaseWriter` it means metadata** - those plugins
+read and write databases of metadata *about events*: duration, blockage, sublevels. The two
+senses are not distinguishable from the name.
+
+**Decision.** The shared bases for the Metadata and Protein tab triads are
+`MetaSubsetTabView`, `MetaSubsetTabController` and `MetaSubsetTabControls`. The plan had said
+`MetaDatabaseTab*`; that name is retired.
+
+**Evidence.** Read as intended it is *Meta* + *DatabaseTab* + *View*; read as written it is
+*MetaDatabase* + *TabView*, which puts it beside the event-metadata plugin bases and borrows
+the wrong sense of the prefix. `MetaSubsetTab*` names what the two tabs actually share - both
+build subset filters over a queried database - and collides with nothing.
+
+**Revisit if** the `Meta` ambiguity is ever resolved by renaming the metadata-sense classes.
+Until then, do not begin a new analysis-tab base with `MetaDatabase`, and name a base for the
+behaviour its subclasses share rather than for the storage they sit on.
+
+---
+
 ## 2026-09-06 - The MVC boundary's layers are derived from filenames, not listed
 
 **Context.** `check_mvc_boundary.py`'s rules 1-3 scanned ten hardcoded filenames under

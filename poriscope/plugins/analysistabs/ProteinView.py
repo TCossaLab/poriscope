@@ -77,11 +77,9 @@ from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
 )
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
-from poriscope.views.widgets.multiselect import MultiSelectComboBox
-from poriscope.views.widgets.SelectionTree import SelectionTree
 
 warnings.filterwarnings(
     "ignore",
@@ -90,9 +88,9 @@ warnings.filterwarnings(
 
 
 @inherit_docstrings
-class ProteinView(MetaView, WalkthroughMixin):
+class ProteinView(MetaSubsetTabView, WalkthroughMixin):
     """
-    Subclass of MetaView for estimating translocating protein size and shape from nanopore blockage events.
+    Subclass of MetaSubsetTabView for estimating translocating protein size and shape from nanopore blockage events.
 
     Given pore diameter/length, fits a two-population (prolate/oblate) volume-and-shape-factor model via Monte Carlo rejection sampling, either per event (Individual mode) or across the aggregate distribution (Ensemble mode). Also supports subset filtering, per-event trace/histogram inspection, and committing or reporting fit results.
     """
@@ -225,27 +223,25 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
         self.current_channel: Optional[int] = None
-        self._pending_filter_name: Optional[str] = None
-        self._pending_filter_text: Optional[str] = None
-        self._pending_old_filter_name: Optional[str] = None
+        self._pending_filter_name = None
+        self._pending_filter_text = None
+        self._pending_old_filter_name = None
         self.filtered_event_ids: List[int] = []
-        self.subset_filters: Dict[str, str] = {}
+        self.subset_filters = {}
         self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
         self.available_columns: List[str] = []
-        self.selected_experiment_and_channels_by_loader: Dict[
-            str, Dict[str, List[str]]
-        ] = {}
+        self.selected_experiment_and_channels_by_loader = {}
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Any] = None
         self.allowed_sizes: Optional[bool] = None
 
-        self._show_sql_in_display: bool = False
-        self._show_event_sql_in_display: bool = False
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
 
         self._last_event_action: str = "plot_events"  # or "plot_histogram"
 
@@ -634,22 +630,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type channel_db_id: Optional[int]
         """
         self.channel_db_id = channel_db_id
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog for the user to choose a save location.
-
-        :return: Selected filename.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
 
     @log(logger=logger)
     def _clear_figure_state(
@@ -1048,27 +1028,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides an experiment id for a given filter.
-
-        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
-        :type experiment_id: Optional[int]
-        """
-        self.experiment_id = experiment_id
-
-    @log(logger=logger)
-    def set_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Get a list of tables affected by an SQL query.
-
-        :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
-        :type table: Optional[str]
-        """
-        if table is not None:
-            self.involved_tables.append(table)
-
-    @log(logger=logger)
     def _construct_all_points_histogram(
         self,
         event_generator: Iterator[Dict[str, Any]],
@@ -1273,39 +1232,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type duration: Optional[float]
         """
         self.baseline_duration = duration
-
-    @log(logger=logger)
-    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
-        """
-        Set the event data generator for event-based plots.
-
-        :param generator: A generator that yields event data.
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.event_data_generator = generator
-
-    @log(logger=logger)
-    def _save_filter(self) -> None:
-        """
-        Save the current filters to a JSON file.
-
-        """
-        if not self.subset_filters:
-            self.logger.info("There are no filters to save.")
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "w") as f:
-                json.dump(self.subset_filters, f, indent=4)
-            self.logger.info(f"Filters saved to {path}")
-        except Exception as e:
-            self.logger.error(f"Failed to save filters: {e}")
 
     @log(logger=logger)
     def _load_filter(self, parameters: Dict[str, Any]) -> None:
@@ -3358,160 +3284,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
-    def set_query(self, query: str, table_name: str) -> None:
-        """
-        Set the SQL query and table name used in plotting.
-
-        :param query: SQL query string.
-        :type query: str
-        :param table_name: Name of the database table.
-        :type table_name: str
-        """
-        self.query = query
-        self.table_name = table_name
-        if not query:
-            return
-
-        # Only display SQL for filter creation/edit validation
-        if self._show_sql_in_display:
-            self.add_text_to_display.emit(
-                f"SQL ({table_name}):\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            # one-shot so normal plot queries never show
-            self._show_sql_in_display = False
-
-    @log(logger=logger)
-    def set_event_query(self, query: str) -> None:
-        """
-        A global signal callback that provides a valid SQL query for fetching event data.
-
-        :param query: SQL query string for fetching event data.
-        :type query: str
-        """
-        self.event_query = query
-        if not query:
-            return
-
-        if self._show_event_sql_in_display:
-            self.add_text_to_display.emit(
-                f"Event SQL:\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            self._show_event_sql_in_display = False
-
-    @log(logger=logger)
-    def set_units(self, units: Any) -> None:
-        """
-        Set the units returned from the database for use in axis labels.
-
-        :param units: List or string representing units.
-        :type units: Any
-        """
-        self.units = units
-
-    @log(logger=logger)
-    def update_available_columns(self, loader: str) -> None:
-        """
-        Request available columns from the database loader.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
-
-    @log(logger=logger)
-    def request_experiment_structure(self, loader_name: str) -> None:
-        """
-        Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.
-
-        :param loader_name: the key of the loader
-        :type loader_name: str
-        """
-        if not loader_name or loader_name == "No Event Database":
-            return
-
-        self.logger.debug(
-            f"Requesting experiment-channel structure from loader: {loader_name}"
-        )
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader_name,
-            "get_experiments_and_channels",
-            (),
-            "get_experiment_structure_ready",
-            (loader_name,),
-        )
-
-    @log(logger=logger)
-    def show_selection_tree(
-        self,
-        structure: dict[str, list[str]],
-        loader_name: str,
-        selection: Optional[dict[str, list[str]]] = None,
-    ) -> None:
-        """
-        Displays the selection tree for a given loader using the full structure and current selection.
-        """
-        self.logger.debug(
-            f"Displaying selection tree with structure: {structure} for loader: {loader_name}"
-        )
-
-        if not hasattr(self, "selection_tree"):
-            self.selection_tree = SelectionTree()
-
-        selected = self.selection_tree.show_dialog(
-            structure,
-            loader_name,
-            title="Select Experiment and Channels",
-            selected=selection,
-        )
-
-        self.selected_experiment_and_channels_by_loader[loader_name] = selected
-        self.logger.debug(f"Updated selection for {loader_name}: {selected}")
-
-    @log(logger=logger)
-    def update_units(self, loader: str, column: str, axis: str) -> None:
-        """
-        Request units for a specific column from the loader.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param column: Name of the column to get units for.
-        :type column: str
-        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
-        :type axis: str
-        """
-        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
-        # rather than an error, so do not dispatch it as a plugin key.
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (axis,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
-
-    @log(logger=logger)
     def _handle_other_actions(
         self, action_name: str, parameters: Dict[str, Any]
     ) -> None:
@@ -3736,47 +3508,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "relay_query",
                 ("validate_edited_filter",),
             )
-
-    @log(logger=logger)
-    def clear_pending_filter_state(self) -> None:
-        """
-        reset all filters to factory settings
-        """
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
-
-    @log(logger=logger)
-    def _show_filter_info_dialog(
-        self, comboBox: MultiSelectComboBox, parameters: Dict[str, Any]
-    ) -> None:
-        """
-        Called when clicking the edit button for filters with multiple selection.
-
-        Validates that exactly one filter is selected and delegates to the edit dialog.
-
-        :param comboBox: The combo box containing the list of selectable filters.
-        :type comboBox: MultiSelectComboBox
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        loader = parameters["db_loader"]
-        selected = comboBox.getSelectedItems()
-        if len(selected) != 1:
-            self.logger.warning("Please select exactly one filter to edit.")
-            return
-
-        self.show_edit_filter_dialog(selected[0], loader)
-
-    @log(logger=logger)
-    def _delete_filter_by_name(self, name: str) -> None:
-        """
-        Deletes a single filter by name.
-
-        :param name: The name of the filter to delete.
-        :type name: str
-        """
-        self._delete_filter(name)
 
     @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:
