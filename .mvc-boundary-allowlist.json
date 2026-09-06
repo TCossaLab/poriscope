@@ -40,6 +40,18 @@
       "numpy.typing"
     ]
   },
+  "layering": {
+    "poriscope/views/main_view.py": [
+      "poriscope.plugins.analysistabs.utils.walkthrough",
+      "poriscope.plugins.analysistabs.utils.walkthrough_mixin"
+    ],
+    "poriscope/views/widgets/add_subset_filter_dialog.py": [
+      "poriscope.plugins.analysistabs.utils.walkthrough_mixin"
+    ],
+    "poriscope/views/widgets/clustering_settings_widget.py": [
+      "poriscope.plugins.analysistabs.utils.walkthrough_mixin"
+    ]
+  },
   "private_access": {
     "MetadataController.py": 5,
     "ProteinController.py": 5

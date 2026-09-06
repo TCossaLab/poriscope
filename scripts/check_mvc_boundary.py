@@ -29,13 +29,13 @@ Check the analysis-tab MVC boundary, against a shrinking allowlist.
     python scripts/check_mvc_boundary.py [--verbose] [--update] [--check]
 
 The analysis-tab layer never grew a real Model, so the Views absorbed the work a
-Model should do. Three rules describe the boundary the 2.0.0 refactor is putting
+Model should do. Four rules describe the boundary the 2.0.0 refactor is putting
 back, and the allowlist counts how far it still is from holding. **That count going
 to zero is Steps 3-5 finishing**, which is why it is the refactor's headline metric
 rather than a pass/fail gate: every entry is a known violation, recorded so that a
 *new* one cannot slip in beside it.
 
-The three rules:
+The four rules:
 
 1. **No View emits on the plugin bus.** A ``global_signal.emit`` in a widget means a
    cross-plugin call originates in the View. Step 4a turns these into
@@ -49,6 +49,11 @@ The three rules:
 3. **No Controller reads a View private.** ``self.view._x`` is the Controller
    reaching past the View's interface into its internals; Step 4d moves that state
    to the Model.
+4. **No app-shell module imports from a plugin package.** ``poriscope/views/``
+   importing ``poriscope.plugins.analysistabs.utils.walkthrough`` is a layering
+   inversion: the shell depends on a plugin. Step 3f fixes it by moving those two
+   modules into ``views/widgets/``, and without this rule nothing would observe
+   that the step had finished. Added by the Step 2 exit review.
 
 **The rule's exact definition is the number, so it is stated here rather than left
 to be inferred.** An earlier count of "21 import statements over 12 View x module
@@ -68,6 +73,10 @@ pairs" could not be reproduced because it was never written down precisely enoug
 - A private access is an attribute read whose receiver is ``self.view`` and whose
   name starts with a single underscore. Dunders are excluded; they are Python
   protocol, not View internals.
+- A layering violation is one import statement in ``poriscope/views``,
+  ``poriscope/controllers`` or ``poriscope/models`` naming anything under
+  ``poriscope.plugins``. Relative imports are skipped and ``__init__.py`` files are
+  not scanned, since re-exports there would be noise rather than dependencies.
 
 Exits 1 under ``--check`` if the counts disagree with
 ``.mvc-boundary-allowlist.json`` in **either** direction. A rise is a new violation.
@@ -113,6 +122,16 @@ FORBIDDEN_IMPORTS: Set[str] = {
     "sklearn",
     "sqlite3",
 }
+
+#: The app shell. Nothing under here may import from a plugin package.
+SHELL_ROOTS: Tuple[str, ...] = (
+    "poriscope/views",
+    "poriscope/controllers",
+    "poriscope/models",
+)
+
+#: The package the shell must not depend on.
+PLUGIN_PACKAGE = "poriscope.plugins"
 
 ALLOWLIST_PATH = REPO_ROOT / ".mvc-boundary-allowlist.json"
 
@@ -210,6 +229,42 @@ def view_private_reads(tree: ast.Module) -> List[str]:
     return sorted(found)
 
 
+def plugin_imports(tree: ast.Module) -> List[str]:
+    """
+    List every import of a plugin module, as the dotted path it names.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: the dotted module paths, sorted
+    :rtype: List[str]
+    """
+    found: List[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith(PLUGIN_PACKAGE):
+                    found.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or node.module is None:
+                continue
+            if node.module.startswith(PLUGIN_PACKAGE):
+                found.append(node.module)
+    return sorted(found)
+
+
+def shell_modules() -> List[Path]:
+    """
+    Every app-shell module the layering rule applies to.
+
+    :return: the files, sorted
+    :rtype: List[Path]
+    """
+    files: List[Path] = []
+    for root in SHELL_ROOTS:
+        files.extend(sorted((REPO_ROOT / root).rglob("*.py")))
+    return [f for f in files if f.name != "__init__.py"]
+
+
 def measure() -> Dict[str, Dict[str, object]]:
     """
     Measure all three rules across the Views and Controllers.
@@ -240,7 +295,19 @@ def measure() -> Dict[str, Dict[str, object]]:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
         privates[name] = view_private_reads(tree)
 
-    return {"emits": emits, "imports": imports, "private_access": privates}
+    layering: Dict[str, List[str]] = {}
+    for path in shell_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+        found = plugin_imports(tree)
+        if found:
+            layering[display(path)] = found
+
+    return {
+        "emits": emits,
+        "imports": imports,
+        "private_access": privates,
+        "layering": layering,
+    }
 
 
 def to_allowlist(results: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, object]]:
@@ -259,12 +326,14 @@ def to_allowlist(results: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, o
     emits: Dict[str, int] = results["emits"]  # type: ignore[assignment]
     imports: Dict[str, List[str]] = results["imports"]  # type: ignore[assignment]
     privates: Dict[str, List[str]] = results["private_access"]  # type: ignore[assignment]
+    layering: Dict[str, List[str]] = results["layering"]  # type: ignore[assignment]
     return {
         "emits": {name: count for name, count in sorted(emits.items()) if count},
         "imports": {name: names for name, names in sorted(imports.items()) if names},
         "private_access": {
             name: len(names) for name, names in sorted(privates.items()) if names
         },
+        "layering": {name: names for name, names in sorted(layering.items()) if names},
     }
 
 
@@ -280,7 +349,8 @@ def total(allowlist: Dict[str, Dict[str, object]]) -> int:
     emits = sum(int(v) for v in allowlist.get("emits", {}).values())
     imports = sum(len(v) for v in allowlist.get("imports", {}).values())  # type: ignore[arg-type]
     privates = sum(int(v) for v in allowlist.get("private_access", {}).values())
-    return emits + imports + privates
+    layering = sum(len(v) for v in allowlist.get("layering", {}).values())  # type: ignore[arg-type]
+    return emits + imports + privates + layering
 
 
 def distinct_pairs(allowlist: Dict[str, Dict[str, object]]) -> int:
@@ -334,7 +404,7 @@ def compare(
     :rtype: List[str]
     """
     problems: List[str] = []
-    for rule in ("emits", "imports", "private_access"):
+    for rule in ("emits", "imports", "private_access", "layering"):
         now = current.get(rule, {})
         was = allowed.get(rule, {})
         for name in sorted(set(now) | set(was)):
@@ -391,6 +461,13 @@ def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:
         detail = f"  {', '.join(sorted(set(raw[name])))}" if verbose else ""
         print(f"     {count:>3}  {name}{detail}")
     print(f"     {sum(privates.values()):>3}  total")
+
+    print("\n4. App-shell module importing from a plugin package")
+    layering_rule: Dict[str, List[str]] = allowlist["layering"]  # type: ignore[assignment]
+    for name, modules in layering_rule.items():
+        detail = f"  {', '.join(modules)}" if verbose else ""
+        print(f"     {len(modules):>3}  {name}{detail}")
+    print(f"     {sum(len(m) for m in layering_rule.values()):>3}  total")
 
     print(
         f"\nAllowlist total: {total(allowlist)} "

@@ -354,8 +354,23 @@ class TestFamilyLists:
         """
         for family, names in mod.FAMILIES.items():
             for name in names:
-                path = mod.TABS / name
+                path = mod.REPO_ROOT / name
                 assert path.is_file(), f"{family}: {name} is missing"
+
+    def test_the_owner_held_fitters_are_not_ratcheted(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        PeakFinder, Basic_PeakFinder and NanoTrees are deliberately absent.
+
+        Their logic is another developer's under standing policy, so ratcheting
+        over them would fail on their owner's commits and block work that is not
+        ours to gate. Absent by design, not by oversight - asserted so a later
+        "completeness" tidy-up cannot quietly add them.
+        """
+        listed = {name for names in mod.FAMILIES.values() for name in names}
+        for excluded in ("PeakFinder.py", "Basic_PeakFinder.py", "NanoTrees.py"):
+            assert not any(name.endswith(excluded) for name in listed), excluded
 
     def test_the_controls_family_includes_the_camelcase_file(
         self, mod: types.ModuleType
@@ -366,5 +381,6 @@ class TestFamilyLists:
         Globbing that pattern finds four files and silently drops 742 lines, 17% of
         the family, so this is pinned rather than left to a comment.
         """
-        assert "utils/eventAnalysisControls.py" in mod.FAMILIES["*controls.py"]
-        assert all(len(names) == 5 for names in mod.FAMILIES.values())
+        controls = mod.FAMILIES["*controls.py"]
+        assert any(name.endswith("eventAnalysisControls.py") for name in controls)
+        assert len(controls) == 5

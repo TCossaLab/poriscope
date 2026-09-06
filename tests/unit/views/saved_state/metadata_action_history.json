@@ -1,0 +1,17 @@
+{
+  "0": {
+    "function": "_reset_actions",
+    "args": ["2d"],
+    "kwargs": {}
+  },
+  "1": {
+    "function": "update_available_columns",
+    "args": ["loader"],
+    "kwargs": {}
+  },
+  "2": {
+    "function": "_method_that_no_longer_exists",
+    "args": [],
+    "kwargs": {}
+  }
+}

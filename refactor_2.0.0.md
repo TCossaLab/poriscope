@@ -559,7 +559,7 @@ exported CSV content rather than widget state.
   `DECISIONS.md` 2026-09-03 records, made again inside a file whose own docstring cites that
   decision.
 
-### Step 2 exit review — DONE 2026-09-06. Five gaps found; Step 3 may start
+### Step 2 exit review — DONE 2026-09-06. Five gaps found, all closed; Step 3 may start
 
 Measured at `578b05e` on `develop`. Suite 3,300 passed / 4 skipped (2,948 at the 1.9.0
 baseline). All three gates green. Repo coverage 83%, unchanged, with 3,593 missed statements
@@ -590,39 +590,67 @@ Yes, and it need not be. There are **10** platform-conditional sites, two of the
 patches `sys.platform`, so CI on Linux only ever builds the `QWidget` container and the
 `QDialog` one that actually ships is never constructed. Parametrizing those two tests over the
 platform is cheap and would convert the most fragile part of the manual pass into a real test.
+**CLOSED** by `tests/unit/views/widgets/test_multiselect_platform_branch.py`, which builds both
+containers on either host. The manual pass is still owed — only a human can see a popup fail to
+dismiss or leave a ghost window — but a *structural* change to the Windows branch now fails in
+CI. Note only `multiselect.py` has the branch; `multiselect_filter.py` uses `QDialog`
+unconditionally, which is asserted so the asymmetry is not rediscovered.
 
-#### The five missing checks, in priority order
+#### The five missing checks — ALL CLOSED 2026-09-06
 
 1. **The duplication ratchet covers only the three analysis-tab families.** Measured with the
    same instrument, the unratcheted families hold **772 removable lines** — `datareaders` 435,
    `eventfitters` 275, `views/widgets` 62 — against the 1,199 that are ratcheted. That is
    exactly the work Steps 5a and 5d do, with no instrument on it, and 772 is itself a floor
    since byte identity cannot see `ClassicCUSUM`'s 195-line override differing in two lines.
-   **Cheapest high-value fix: extend `FAMILIES` in `measure_duplication.py`.**
+   **CLOSED.** `FAMILIES` now covers `eventfitters`, `datareaders` and `views/widgets`,
+   taking the measured total from 1,199 to **1,889**. `PeakFinder.py`, `Basic_PeakFinder.py`
+   and `NanoTrees.py` are excluded by name and asserted absent: their logic is another
+   developer's, so ratcheting over them would fail on their owner's commits.
 2. **Nothing pins `MetaView`'s abstract surface.** `test_plugin_compliance` *reads*
    `__abstractmethods__` to check subclasses implement it, but never asserts the set itself, so
    3a-bis making `_set_control_area` concrete would pass silently — and Decision C lists the ABC
    breaks 2.0.0 intends to take, which is only meaningful if an unlisted one fails.
+   **CLOSED** by `tests/unit/plugins/test_mvc_base_contracts.py`, which pins all three MVC
+   bases' abstract sets exactly.
 3. **No layering rule.** Step 3f's whole point is that `views/main_view.py:53,58`,
    `views/widgets/add_subset_filter_dialog.py:30` and
    `views/widgets/clustering_settings_widget.py:52` import *up* from `plugins/analysistabs/`.
    Nothing asserts that, so 3f's completion is unobservable. **A fourth rule in
    `check_mvc_boundary.py` — no `poriscope/views/` module imports from `poriscope/plugins/` —
    costs a few lines and starts at an allowlist of 4.**
+   **CLOSED.** Rule 4 added; allowlist 107 → **111**. Verified by adding an inversion to
+   `main_controller.py` and watching the gate name it.
 4. **Nothing replays a saved `.json` action file or session.** There is **no checked-in
    `.json` fixture anywhere in `tests/`**, and `update_actions_from_json` is asserted only on a
    *mock* view. Step 7 records that saved action files are user data and that moving a decorated
    method breaks replay; the same applies to `get_session_state`, which 4d changes.
+   **CLOSED** by `tests/unit/views/test_saved_state_replay.py` against a checked-in fixture
+   (which needed a `.gitignore` negation, since `*.json` is blanket-ignored). It pins the risk
+   as current behaviour: **an action whose method has moved is silently skipped** — no error,
+   no log line, a partial replay the user cannot detect.
 5. **Autodoc output is unchecked.** Nothing in `tests/` mentions `automethod`. Step 3a would
    silently drop ~50 directives (the generators emit own methods only and skip classes with no
    docstring, which all five controls files lack), and 3f moves modules whose pages are keyed
    off the module path.
+   **CLOSED, and measuring corrected this twice.** The five controls classes have no docstring
+   and are documented anyway, carrying **143 `automethod` directives**; the generator writes a
+   docstring only if present and documents the class regardless. And
+   `metaclasses_generate_autodoc.py` scans `poriscope/utils/` as a *directory*, so a new
+   `MetaControls.py` is picked up with no registration. **3a's autodoc risk is therefore small.**
+   **3f's is real**: the generators scan only `poriscope/utils` and `poriscope/plugins`,
+   `poriscope/views/` is covered by neither, and moving the walkthrough modules there would
+   delete the four pages they own (`IntroDialog`, `Overlay`, `StepDialog`, `WalkthroughMixin`).
+   Gated by `tests/unit/scripts/test_autodoc_coverage.py`.
 
 #### Two things the review confirmed rather than found
 
 - **`createButton`'s divergence is real and unpinned.** `eventAnalysisControls.py` omits the
   `setStyleSheet("")` the other four have. Nothing asserts it, so promoting the majority version
-  in 3a would change EventAnalysis's behaviour silently. Pin it before 3a, not after.
+  in 3a would change EventAnalysis's behaviour silently. **CLOSED** — pinned in
+  `test_duplicated_helpers.py`, including that the four majority copies are byte-identical so
+  "the majority version" is well defined, and that the stylesheet reset is the *only*
+  difference.
 - **The `Meta*` coverage worry was aimed at the wrong files.** 69-76% describes the *data-plugin*
   bases — `MetaWriter` 69.0%, `MetaReader` 70.5%, `MetaDatabaseWriter` 72.7%, `MetaEventFitter`
   73.8% — which Step 5b touches. Steps 3d and 4a-4e land in `MetaModel` (**77.9%**), `MetaView`
