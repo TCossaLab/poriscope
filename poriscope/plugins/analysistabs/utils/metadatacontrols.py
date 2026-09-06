@@ -25,14 +25,13 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import (
     QRegularExpression,
     QSize,
     Qt,
     QTimer,
-    Signal,
 )
 from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
@@ -45,24 +44,19 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
-class MetadataControls(MetaControls):
-    edit_filter_requested = Signal(str, str)
-    delete_filter_requested = Signal(str)
+class MetadataControls(MetaSubsetTabControls):
 
     logger = logging.getLogger(__name__)
-
-    placeholder_texts = ("No Event Database",)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -596,66 +590,10 @@ class MetadataControls(MetaControls):
         self.retranslateUi()
         self.logger.info("UI setup complete")
 
-    def _on_sizes_checkbox_toggled(self, checked: bool) -> None:
-        if checked:
-            self.bins_lineEdit.setValidator(self.float_validator)
-            self.bins_lineEdit.setPlaceholderText("e.g. 1.2, 3.5, 4.0")
-        else:
-            self.bins_lineEdit.setValidator(self.int_validator)
-            self.bins_lineEdit.setPlaceholderText("e.g. 10 or 5,10,15")
-
     # QWidgets
 
-    def create_filter_info_button(
-        self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
-    ) -> QToolButton:
-        button = QToolButton(parent)
-        button.setIcon(get_icon("pencil-square.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(tooltip)
-        return button
-
-    def create_add_filter_button(
-        self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
-    ) -> QToolButton:
-        button = QToolButton(parent)
-        button.setIcon(get_icon("plus-square.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(tooltip)
-        return button
-
-    def create_filter_delete_button(
-        self, parent: QWidget, comboBox: MultiSelectFilterComboBox, tooltip: str
-    ) -> QToolButton:
-        button = QToolButton(parent)
-        button.setIcon(get_icon("trash.svg"))
-        button.setIconSize(QSize(16, 16))
-        button.setStyleSheet(
-            "QToolButton { border: none; background: transparent; }"
-            "QToolTip { border: 1px solid palette(mid); background-color: palette(base); color: palette(text); padding: 2px; }"
-        )
-        button.setToolTip(tooltip)
-        return button
-
-    def show_filter_info_dialog_single(self, name: str) -> None:
-        loader = self.db_loader_comboBox.currentText()
-        self.edit_filter_requested.emit(name, loader)
-
-    def delete_filter_by_name(self, name: str) -> None:
-        self.delete_filter_requested.emit(name)
-
-    def retranslateUi(self) -> None:
-        pass
-        # self.setWindowTitle(QCoreApplication.translate("Form", "Form", None))
-        # self.db_loader_comboBox.tCurrentText("")
+    # self.setWindowTitle(QCoreApplication.translate("Form", "Form", None))
+    # self.db_loader_comboBox.tCurrentText("")
 
     # QWidget status
     @log(logger=logger)
@@ -896,9 +834,6 @@ class MetadataControls(MetaControls):
         self.logger.debug(f"Collected parameters: {parameters}")
         return parameters
 
-    def get_selected_filter_names(self) -> List[str]:
-        return self.filter_comboBox.getSelectedItems()
-
     def on_loader_changed(self) -> None:
         """Handles parameter changes and emits an action signal."""
         parameters = self.collect_parameters()
@@ -1070,22 +1005,6 @@ class MetadataControls(MetaControls):
         if button is not None:
             button.setChecked(False)
 
-    def update_loaders(self, loaders: list[str]) -> None:
-        self.logger.info(f"Updating loaders: {loaders}")
-
-        # Store current selection
-        current_selection = self.db_loader_comboBox.currentText()
-        self.db_loader_comboBox.clear()
-
-        display_loaders = loaders if loaders else ["No Event Database"]
-        self.db_loader_comboBox.addItems(display_loaders)
-
-        # Restore selection if it still exists
-        if current_selection in display_loaders:
-            self.db_loader_comboBox.setCurrentText(current_selection)
-        else:
-            self.db_loader_comboBox.setCurrentIndex(0)
-
     def set_event_id_input(self, value: int) -> None:
         """
         Update the event_id field with the snapped event_id after navigation.
@@ -1097,17 +1016,3 @@ class MetadataControls(MetaControls):
         self.event_id_lineEdit.setText(str(value))
         self.event_id_lineEdit.blockSignals(False)
         self.validate_inputs()
-
-    def update_filters(self, filters: Sequence[Any]) -> None:
-        self.logger.info(f"Updating channels to {filters}")
-
-        # Store the current selection(s)
-        current_selections = self.filter_comboBox.getSelectedItems()
-
-        self.filter_comboBox.clear()
-        self.filter_comboBox.addItems([str(i) for i in filters])
-
-        # Restore selections if they still exist
-        for selection in current_selections:
-            if selection in [str(i) for i in filters]:
-                self.filter_comboBox.selectItem(selection)

@@ -151,6 +151,7 @@ def test_the_walkthrough_classes_each_have_a_page() -> None:
 STEP_3_BASES = (
     "metacontrols",
     "metasubsettabcontroller",
+    "metasubsettabcontrols",
     "metasubsettabview",
 )
 

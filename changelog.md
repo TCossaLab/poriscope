@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Metadata and Protein control panels now share a common `MetaSubsetTabControls` base instead of each carrying its own copy of the same filter combobox, filter buttons and loader handling, so a fix to one reaches both
+
 * The Metadata and Protein tabs now share a common `MetaSubsetTabView` base instead of each carrying its own copy of the same fifteen query, column, filter and experiment-selection methods, so a fix to one reaches both
 
 * The Metadata and Protein tabs now share a common `MetaSubsetTabController` base instead of each carrying its own copy of the same seventeen relay and state methods, so a fix to one reaches both
