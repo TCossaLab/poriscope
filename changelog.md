@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* Duplication across the five analysis-tab View, Controller and controls files is now measured by `scripts/measure_duplication.py` and held against a checked-in baseline, so a refactor that promotes a shared method has to show that it deleted the copies
+
 * Running a single test file on its own now works: shared test helpers imported as `tests.<module>` resolved only when a higher-level conftest happened to be collected first, so `pytest <one file>` failed with `No module named 'tests'` while the same file passed in a full run
 
 ## Poriscope 1.9.0: 2026-09-04
