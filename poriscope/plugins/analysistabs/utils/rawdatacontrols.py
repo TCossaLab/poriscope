@@ -51,6 +51,13 @@ from poriscope.views.widgets.multiselect import MultiSelectComboBox
 class RawDataControls(MetaControls):
     logger = logging.getLogger(__name__)
 
+    placeholder_texts = (
+        "No Reader",
+        "No Writer",
+        "No Filter",
+        "No Eventfinder",
+    )
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.logger.info("Initializing RawDataControls")
@@ -372,23 +379,6 @@ class RawDataControls(MetaControls):
             )
         )
         return button
-
-    def toggle_info_button(self, button: QToolButton, comboBox: QComboBox) -> None:
-        """Enables or disables the info button based on the comboBox selection and item count."""
-        button.setEnabled(
-            comboBox.count() > 0
-            and comboBox.currentIndex() != -1
-            and not self.is_placeholder_item(comboBox)
-        )
-
-    def is_placeholder_item(self, comboBox: QComboBox) -> bool:
-        """Returns True if the combobox contains a placeholder like 'No Reader', 'No Writer', etc."""
-        return comboBox.currentText() in [
-            "No Reader",
-            "No Writer",
-            "No Filter",
-            "No Eventfinder",
-        ]
 
     def validate_inputs(self) -> None:
         is_trace_psd_valid = True

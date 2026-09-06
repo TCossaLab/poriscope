@@ -24,11 +24,18 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from PySide6.QtCore import QCoreApplication, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QComboBox, QLabel, QPushButton, QSizePolicy, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QToolButton,
+    QWidget,
+)
 
 
 class MetaControls(QWidget):
@@ -47,6 +54,10 @@ class MetaControls(QWidget):
     - **Widget factories.** :meth:`createLabel`, :meth:`create_comboBox` and
       :meth:`createButton` build the three plain widgets every panel uses, with the
       font, size policy and translation call applied consistently.
+    - **The placeholder guard.** :meth:`is_placeholder_item` and
+      :meth:`toggle_info_button` keep a combobox's edit and delete buttons disabled
+      until a real plugin is selected, reading the tab's own
+      :attr:`placeholder_texts`.
     - **Signals.** ``actionTriggered`` carries a request into the tab's Controller as
       ``(submodel_name, action_name, args)``. ``add_processed``, ``edit_processed``
       and ``delete_processed`` carry plugin-management requests, and are emitted for
@@ -58,6 +69,8 @@ class MetaControls(QWidget):
       declares none, because every call in the family goes through ``self.logger``
       and resolves through the MRO - so a logger here would silently re-home every
       subclass's records to ``poriscope.utils.MetaControls``.
+    - **Its own** :attr:`placeholder_texts`, or the placeholder guard above will read
+      every combobox entry as a real selection.
     - ``setupUi``, ``connect_signals``, ``validate_inputs`` and ``collect_parameters``,
       which are genuinely per-tab and are called by the subclass's own ``__init__``.
     """
@@ -70,6 +83,13 @@ class MetaControls(QWidget):
     add_processed = Signal(str)
     delete_processed = Signal(str, str)
 
+    #: Combobox texts that stand in for "nothing has been selected yet" on this tab -
+    #: the placeholder each combobox shows before any plugin of its family exists.
+    #: Every subclass sets its own. The empty default makes a panel that forgets to
+    #: treat every entry as a real selection, which is how a panel with no
+    #: placeholder text behaves anyway.
+    placeholder_texts: Sequence[str] = ()
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """
         Initialize the shared state every controls panel needs.
@@ -79,6 +99,32 @@ class MetaControls(QWidget):
         """
         super().__init__(parent)
         self.active_popups: Dict[QComboBox, Any] = {}
+
+    def is_placeholder_item(self, comboBox: QComboBox) -> bool:
+        """
+        Report whether the combobox's current text is this tab's "nothing here yet".
+
+        :param comboBox: Combobox to inspect.
+        :type comboBox: QComboBox
+        :return: True when the selection is a placeholder rather than a real plugin.
+        :rtype: bool
+        """
+        return comboBox.currentText() in self.placeholder_texts
+
+    def toggle_info_button(self, button: QToolButton, comboBox: QComboBox) -> None:
+        """
+        Enable a combobox's edit or delete button only for a real selection.
+
+        :param button: Button to enable or disable.
+        :type button: QToolButton
+        :param comboBox: Combobox the button acts on.
+        :type comboBox: QComboBox
+        """
+        button.setEnabled(
+            comboBox.count() > 0
+            and comboBox.currentIndex() != -1
+            and not self.is_placeholder_item(comboBox)
+        )
 
     def show_plugin_edit_manager(self, comboBox: QComboBox, metaclass: str) -> None:
         """
