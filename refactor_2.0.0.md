@@ -502,7 +502,7 @@ adding them moved the numbers by at most one point - those lines already execute
 suite, and nothing asserted the values. Post-branch-4: Metadata 91%, EventAnalysis 87%,
 RawData 88%, Protein 90%, Clustering 89%, `MetaView` 92%.
 
-**6. `feature/step-2-sql-goldens`** — today **no test anywhere asserts on generated SQL text**;
+**6. `feature/step-2-sql-goldens`** — LANDED 2026-09-05. Today **no test anywhere asserts on generated SQL text**;
 all 110 tests in `test_meta_database_loader.py` use substring containment, so a refactor could
 reorder joins, reassign aliases or change the projection and every one would still pass.
 - `test(db):` exact-text goldens over `construct_metadata_query` (`:877`) across the shapes those
@@ -511,10 +511,18 @@ reorder joins, reassign aliases or change the projection and every one would sti
   `_qualify_conditions` (`:785`), `_find_ambiguous_id` (`:835`) and `_end_of_subquery` (`~:695`) —
   **none has one**, and `_split_on_opaque_spans`' documented `"".join(result) == input` invariant
   is never asserted.
-- `test(views):` the View-authored SQL, pinned *before* the refactor moves it into the loader —
-  `MetadataView.py:2351`, `ProteinView.py:1778`, and `ProteinView.py:1957-1967`'s `scoped_query`,
-  which appends a scope clause to arbitrary user SQL on a naive `"WHERE" in query.upper()` test.
-  **Pin it and file it; do not fix it here.**
+- `test(views):` the View-authored SQL, pinned *before* the refactor moves it into the loader.
+  `ProteinView.py:1778` was already pinned in branch 5 via `_resolve_event_db_ids`;
+  `ProteinView.py:1957-1967`'s `scoped_query` is pinned here including both mis-fires of its
+  naive `"WHERE" in query.upper()` test. **`MetadataView.py:2351` is pinned only indirectly** —
+  it is inline, 120 lines into a 244-line orchestrator, so its text cannot be reached without
+  driving the whole method. Extract it before Step 4b moves it; queued in `future_fixes.md`,
+  and the projection difference against its Protein twin (`id` vs `id, event_id`) is asserted.
+- **Two findings from verifying the goldens are actually sensitive.** The alias map at
+  `MetaDatabaseLoader.py:1021-1029` feeds the projection and the WHERE qualification while the
+  JOIN's `ON` clause hardcodes `s.`, so renaming an alias emits invalid SQL — latent today,
+  live the moment Step 4b touches it. And a case named "duplicate columns are collapsed" was
+  simply wrong: a repeated column is projected twice.
 
 **7. `feature/step-2-tab-flows`** — five flows, load → filter → plot → export, asserting on
 exported CSV content rather than widget state.
