@@ -1,0 +1,47 @@
+{
+  "emits": {
+    "ClusteringView.py": 7,
+    "EventAnalysisView.py": 13,
+    "MetadataView.py": 20,
+    "ProteinView.py": 21,
+    "RawDataView.py": 14
+  },
+  "imports": {
+    "ClusteringView.py": [
+      "hdbscan",
+      "numpy",
+      "pandas",
+      "pandas.api.types",
+      "sklearn.mixture"
+    ],
+    "EventAnalysisView.py": [
+      "numpy",
+      "numpy.typing"
+    ],
+    "MetadataView.py": [
+      "numpy",
+      "numpy.typing",
+      "pandas",
+      "scipy",
+      "scipy.optimize",
+      "scipy.stats"
+    ],
+    "ProteinView.py": [
+      "numpy",
+      "numpy.typing",
+      "pandas",
+      "scipy.optimize",
+      "scipy.signal",
+      "scipy.stats"
+    ],
+    "RawDataView.py": [
+      "fast_histogram",
+      "numpy",
+      "numpy.typing"
+    ]
+  },
+  "private_access": {
+    "MetadataController.py": 5,
+    "ProteinController.py": 5
+  }
+}

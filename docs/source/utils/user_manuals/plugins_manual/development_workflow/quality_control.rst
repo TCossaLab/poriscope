@@ -685,6 +685,46 @@ rerun with ``--update`` and commit the new baseline alongside it.
    If you are fixing a bug in one of these methods, the fix almost certainly belongs in
    every copy.
 
+.. _mvc_boundary:
+
+Analysis-Tab MVC Boundary
+--------------------------
+
+Like the ratchet above, this one only affects you if you edit the analysis tabs. The
+analysis-tab layer never grew a real Model, so its Views absorbed work a Model should do.
+Three rules describe the boundary the 2.0.0 refactor is putting back:
+
+1. **No View emits on the plugin bus.** A ``global_signal.emit`` inside a widget means a
+   cross-plugin call originates in the View.
+2. **No View imports a computation library** — ``numpy``, ``scipy``, ``sklearn``,
+   ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``.
+3. **No Controller reads a View private.** ``self.view._x`` reaches past the View's
+   interface into its internals.
+
+``.mvc-boundary-allowlist.json`` records every violation that exists today, and
+``tests/unit/scripts/test_mvc_boundary_allowlist.py`` fails if the measurement disagrees.
+
+.. code-block:: bash
+
+   python scripts/check_mvc_boundary.py             # the current state of each rule
+   python scripts/check_mvc_boundary.py --verbose   # name every import and private attribute
+   python scripts/check_mvc_boundary.py --check     # compare against the allowlist
+
+This is a **progress metric**, not a pass/fail gate. Every entry on the allowlist is a known
+violation that the refactor will remove; the allowlist reaching zero is that work finishing.
+What it prevents is a *new* violation slipping in unnoticed beside the known ones. As with
+the duplication ratchet, the comparison is exact in both directions — if your change removes
+a violation, rerun with ``--update`` and commit the new allowlist alongside it.
+
+.. note::
+
+   The counting rule is stated exactly in the script's module docstring, because the
+   definition *is* the number. In particular an import contributes **one entry per import
+   statement**, keyed by the dotted path as written: ``import numpy`` and
+   ``import numpy.typing`` are two entries, not one module. An earlier hand count that
+   conflated statements with distinct modules could not be reproduced, which is the reason
+   the rule is now executable rather than described.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
