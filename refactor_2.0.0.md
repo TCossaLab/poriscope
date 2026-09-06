@@ -760,9 +760,10 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
     widget instance or an instance-level connection, so the "re-points no test" conclusion
     holds — the 12 was an undercount of the same fact.)*
 
-#### 3a — approved execution, 2026-09-06
+#### 3a — LANDED 2026-09-06
 
-**Five commits on one branch, each banking a measured fall in the ratchet.** Every figure below
+**Five commits on one branch, each banking a measured fall in the ratchet. Every predicted
+figure below was met exactly.** Every figure below
 was produced by simulating the stage through `measure_duplication.collect_functions` against
 modified source text, not by arithmetic. Branch `feature/step-3a-metacontrols`.
 
@@ -788,6 +789,24 @@ already on the base: `create_info_button` → `show_plugin_edit_manager` + `is_p
 `is_placeholder_item`; `clear_popup_reference` → `self.active_popups`; the three
 `show_*`/`delete_plugin` → their signals; `createLabel`/`create_comboBox`/`createButton` →
 nothing. So the leaves go first and the largest single win lands last.
+
+**Outcome, all three gates verified.** Duplication 1,889 → **1,400** removable repo-wide, the
+`*controls.py` family 641 → **152** over 143 → 83 functions and 25 → 13 identical bodies — 489
+lines, matching the simulation at every stage. Boundary allowlist **111, unmoved**. Refactor
+coverage **248 targets, 248 pinned**, down from 308 exactly as predicted, since the twelve
+promoted names contributed five targets each. Suite 3,339 → **3,346 passed, 4 skipped**.
+
+**What is left in the family is now entirely tab-pair work, cleanly split.** Every one of the
+thirteen remaining groups is a two-file pair: `update_channels` (52), `update_filters` (15) and
+`set_event_index_input` (5) between EventAnalysis and RawData, which is **3c**; and
+`update_loaders`, the three filter-button factories, `update_filters` (13),
+`_on_sizes_checkbox_toggled`, `show_filter_info_dialog_single`, `delete_filter_by_name`,
+`get_selected_filter_names` and `retranslateUi` between Metadata and Protein, which is **3b**.
+Nothing five-way survives, which is the check that 3a's scope was complete.
+
+**Still owed: the manual Windows pass.** 3a rewrote all five controls widgets, so this is
+exactly the case `refactor_2.0.0.md`'s verification section names. Baseline 2026-09-04 was
+clear, so a failure is attributable.
 
 **Three decisions taken, 2026-09-06.**
 
