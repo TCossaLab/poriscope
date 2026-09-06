@@ -947,6 +947,15 @@ commit 1 adds that.
     `measure_duplication` only counts identical bodies *across files in a family* — so it has
     never seen this duplication and cannot record its removal. Recorded here so the absence is
     not read later as a missed opportunity.
+  - **LANDED 2026-09-06**, −191 lines against +68, suite 3,338 passed / 4 skipped, both ratchets
+    unmoved as predicted. **Unpredicted bonus: `MetaView` no longer imports `pandas` at all.**
+    A `QWidget` base shedding its dataframe dependency was a large part of 3d's stated
+    rationale, and it fell out of the deletion rather than the move — so what remains for 3d
+    proper is a numpy-only method plus the five range helpers.
+  - **The audit's `MOVED` table listed the deleted method as a 3d target**, so both of its
+    existence tests failed the moment it went. The tripwire working as designed; the entry is
+    removed with a comment saying 3d-pre deleted rather than moved it. Any future step that
+    *removes* rather than moves code owes its instruments the same edit in the same commit.
 - **3e** Remove tab-specific leakage: `MetaController.check_column_exists` and
   `MetaView.set_column_exists` are Clustering-only; `_setup_canvas`'s `num_channels` unused;
   `MetaView.lock` is a class attribute shared by every tab view guarding 1 of 4 accesses.
