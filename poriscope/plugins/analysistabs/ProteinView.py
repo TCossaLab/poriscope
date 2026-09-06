@@ -55,7 +55,6 @@ from matplotlib.backends.backend_qt5agg import (
 from matplotlib.figure import Figure
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QCheckBox,
     QDialog,
     QFileDialog,
@@ -587,32 +586,18 @@ class ProteinView(MetaSubsetTabView):
         self.operation_success = status
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> ProteinControls:
         """
-        Set up the control area layout by inserting metadata controls.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout to which the controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: ProteinControls
         """
         self.proteincontrols = ProteinControls()
-        self.proteincontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.proteincontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.proteincontrols.add_processed.connect(self.handle_add_triggered)
-        self.proteincontrols.delete_processed.connect(self.handle_delete_triggered)
-        self.proteincontrols.edit_filter_requested.connect(self.show_edit_filter_dialog)
-        self.proteincontrols.delete_filter_requested.connect(
-            self._delete_filter_by_name
-        )
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.proteincontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.proteincontrols
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:

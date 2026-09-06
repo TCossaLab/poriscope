@@ -33,7 +33,7 @@ import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -65,28 +65,18 @@ class RawDataView(MetaEventTabView):
         self.timer_channels: Sequence[int] = []
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> RawDataControls:
         """
-        Set up the control area layout by embedding the RawDataControls widget.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout where controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: RawDataControls
         """
         self.rawdatacontrols = RawDataControls()
-        self.rawdatacontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.rawdatacontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.rawdatacontrols.add_processed.connect(self.handle_add_triggered)
-        self.rawdatacontrols.delete_processed.connect(self.handle_delete_triggered)
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.rawdatacontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.rawdatacontrols
 
     @log(logger=logger)
     def _factors(self, n: int) -> Tuple[int, int]:

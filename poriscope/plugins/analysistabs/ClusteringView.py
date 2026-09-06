@@ -41,10 +41,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from pandas.api.types import is_float_dtype
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QDialog,
     QFileDialog,
-    QHBoxLayout,
     QMessageBox,
 )
 from sklearn.mixture import GaussianMixture
@@ -91,29 +89,18 @@ class ClusteringView(MetaView):
         self.plot_units: Sequence[Optional[str]] = []
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> ClusteringControls:
         """
-        Sets up the left-hand control area for the clustering plugin.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The parent layout to which controls are added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: ClusteringControls
         """
-
         self.clusteringcontrols = ClusteringControls()
-        self.clusteringcontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.clusteringcontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.clusteringcontrols.add_processed.connect(self.handle_add_triggered)
-        self.clusteringcontrols.delete_processed.connect(self.handle_delete_triggered)
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.clusteringcontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.clusteringcontrols
 
     @log(logger=logger)
     def get_save_filename(self) -> str:

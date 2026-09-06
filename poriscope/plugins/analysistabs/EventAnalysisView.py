@@ -34,7 +34,7 @@ import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
@@ -75,30 +75,18 @@ class EventAnalysisView(MetaEventTabView):
         pass
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> EventAnalysisControls:
         """
-        Set up the control area with widgets for user interaction.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: Layout to which the controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: EventAnalysisControls
         """
         self.eventAnalysisControls = EventAnalysisControls()
-        self.eventAnalysisControls.actionTriggered.connect(self.handle_parameter_change)
-        self.eventAnalysisControls.edit_processed.connect(self.handle_edit_triggered)
-        self.eventAnalysisControls.add_processed.connect(self.handle_add_triggered)
-        self.eventAnalysisControls.delete_processed.connect(
-            self.handle_delete_triggered
-        )
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the eventAnalysisControls directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.eventAnalysisControls, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.eventAnalysisControls
 
     @log(logger=logger)
     def _factors(self, n: int) -> Tuple[int, int]:

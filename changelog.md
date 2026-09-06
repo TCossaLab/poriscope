@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* `MetaView._set_control_area` is no longer abstract: it now builds the control area for you from a new `_build_controls` hook and connects the four signals every controls panel carries, so a new tab writes three lines instead of twenty-five; a tab that lays out its own control area can still override it
+
 * **Fixed each analysis tab initialising itself twice on startup**: every tab ran its state setup once before its widgets were built and again afterwards
 
 * Analysis tabs no longer need to inherit `WalkthroughMixin` themselves; it comes with the base class, and a tab written against `MetaView` gets the walkthrough for free

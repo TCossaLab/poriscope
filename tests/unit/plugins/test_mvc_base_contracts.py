@@ -10,9 +10,13 @@ That matters because **Decision C lists the ABC breaks 2.0.0 intends to take**, 
 a list of intended breaks is only meaningful if an unintended one fails. Two steps
 change these contracts on purpose:
 
-* **3a-bis** proposes making ``MetaView._set_control_area`` concrete, which relaxes
-  a contract every subclass satisfies today. No break, but a contract change
-  Decision C does not list.
+* **3a-bis** made ``MetaView._set_control_area`` concrete (landed 2026-09-06),
+  which relaxed a contract every subclass satisfied. Its replacement hook
+  ``_build_controls`` is deliberately **not** abstract - it returns an empty panel
+  by default, so a tab that lays out its own control area can override
+  ``_set_control_area`` instead and stay instantiable. So the set below is one
+  smaller and nothing joined it. No break, but a contract change Decision C does
+  not list.
 * **3c** proposes deleting ``_factors`` overrides in RawData and EventAnalysis.
   That one is safe - ``_factors`` is concrete on the base - but the same bullet
   wrongly named ``notify_plugin_state_changed``, which is abstract, and acting on
@@ -41,7 +45,6 @@ CONTRACTS = {
     MetaView: {
         "_init",
         "_reset_actions",
-        "_set_control_area",
         "notify_plugin_state_changed",
         "update_available_plugins",
     },

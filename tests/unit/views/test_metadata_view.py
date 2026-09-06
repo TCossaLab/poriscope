@@ -39,7 +39,7 @@ def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
     mocker.patch("poriscope.utils.MetaSubsetTabView.QFileDialog")
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
+    mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
@@ -228,7 +228,13 @@ def test_init_sets_allowed_sizes_none(view: MetadataView) -> None:
 def test_set_control_area_creates_metadata_controls(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify MetadataControls instance is created."""
+    """
+    Verify MetadataControls instance is created.
+
+    Still patched in the tab module: Step 3a-bis moved the wiring and layout up to
+    ``MetaView``, but ``_build_controls`` - which constructs the widget and stores it
+    under this tab's own name - stayed here, which is the whole point of that hook.
+    """
     mock_layout: MagicMock = mocker.Mock()
     mock_controls_cls: MagicMock = mocker.patch(
         "poriscope.plugins.analysistabs.MetadataView.MetadataControls"
@@ -256,9 +262,14 @@ def test_set_control_area_connects_action_triggered_signal(
 def test_set_control_area_adds_controls_to_layout(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify controls are added to layout."""
+    """
+    Verify controls are added to layout.
+
+    Since Step 3a-bis the layout is built by ``MetaView._set_control_area``, which the
+    tab inherits, so the ``QHBoxLayout`` to patch is the base module's.
+    """
     mock_layout: MagicMock = mocker.Mock()
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
+    mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
 
     view._set_control_area(mock_layout)
 

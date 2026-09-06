@@ -743,8 +743,7 @@ safety was measured rather than lucky. Rule 4 stays narrow deliberately —
 `DECISIONS.md`; the rule and its scan are stated in the script's docstring and in
 `quality_control.rst`, which had never documented rule 4 at all.
 
-**Then, in dependency order:** 3a-bis is all that remains of Step 3. Then Step 4, and
-**3d after 4a**.
+**Step 3 is complete.** Next is Step 4, and **3d after 4a**.
 
 **Reordered 2026-09-06: 3d moves after 4a.** The plan had it as a Step 3 promotion on the
 grounds that it is `MetaView` → `MetaModel` and "not View → Model, because both already live
@@ -967,6 +966,43 @@ first is asserted against the source, because reaching `MetaView.__init__` means
 `QWidget` and the only way that file's fixtures avoid one is by patching that method away. A
 `WalkthroughMixin.__init__` patch in the fixture was also deleted: the mixin has no `__init__`,
 so it had been inert all along.
+
+#### 3a-bis — LANDED 2026-09-06, completing Step 3
+
+`MetaView._set_control_area` is now **concrete** and builds the control area itself: it calls
+`_build_controls()`, connects the four signals every panel carries, calls
+`_connect_control_signals()`, and lays the widget out. The five per-tab copies (24/25/29/27/23
+lines) become a 13-line `_build_controls` each. **−112 lines against +101 across the bases**,
+and a new tab now writes three lines where it used to write twenty-five.
+
+**The plan's premise was wrong twice, as it recorded** — and measuring the five bodies showed
+they differ in exactly three ways: the widget class, the attribute name it is stored under, and
+two extra connects that only Metadata and Protein have. Those two signals are
+`edit_filter_requested`/`delete_filter_requested`, which 3b had just put on
+`MetaSubsetTabControls`, so they became a `_connect_control_signals` override on
+`MetaSubsetTabView` — 3b made 3a-bis cleaner than it could have been on its own.
+
+**The attribute name is why `_build_controls` returns the widget instead of assigning it.**
+`self.metadatacontrols` and its four siblings have **190 references across `poriscope/` and 26
+test files**, and the same names are dispatch keys in each tab's saved action history. The hook
+lets each tab keep its own name while the base owns the wiring; nothing was renamed.
+
+**`_build_controls` is deliberately not abstract.** It returns an empty `MetaControls` by
+default, because the plugin tutorial's `HelloWorldView` overrides `_set_control_area` to add a
+bare `QLabel` and has no controls panel at all — an abstract hook would leave the documented
+starting point uninstantiable. So `MetaView`'s abstract surface is **one smaller and nothing
+joined it**: a pure relaxation, safe for every existing subclass.
+
+`tests/unit/plugins/test_mvc_base_contracts.py` — written by the Step 2 exit review naming
+3a-bis specifically — was updated in the same commit, which is what it exists for. Two
+`test_metadata_view` patches moved to `poriscope.utils.MetaView` because the layout
+construction moved with the method; the `MetadataControls` patch stayed in the tab module,
+because `_build_controls` did. `metaview_base.rst` and the Hello World tutorial were updated;
+`sphinx -b html -W` exits 0.
+
+**The ratchet does not move, by construction** — the five copies were pairwise distinct, so
+`measure_duplication` never counted them. Recorded so the absence is not read later as a missed
+opportunity. This is the second such case after 3d-pre.
 
 ## Step 3 — promotion to `Meta*` bases
 

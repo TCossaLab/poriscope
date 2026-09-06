@@ -33,6 +33,7 @@ from typing import Any, Dict, Iterator, List, Optional
 from PySide6.QtWidgets import QFileDialog
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
 from poriscope.views.widgets.SelectionTree import SelectionTree
@@ -110,6 +111,20 @@ class MetaSubsetTabView(MetaView):
     selection_tree: SelectionTree
     table_name: str
     units: Dict[str, str]
+
+    def _connect_control_signals(self, controls: MetaSubsetTabControls) -> None:
+        """
+        Connect the two filter signals only a subset tab's controls panel carries.
+
+        ``MetaView._set_control_area`` wires the four every panel has; these two are
+        declared on ``MetaSubsetTabControls`` and were the sole difference between the
+        Metadata and Protein copies of that method before Step 3a-bis.
+
+        :param controls: the panel just built by ``_build_controls``
+        :type controls: MetaSubsetTabControls
+        """
+        controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
+        controls.delete_filter_requested.connect(self._delete_filter_by_name)
 
     @abstractmethod
     def _delete_filter(self, name: str) -> None:

@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
 from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
@@ -215,15 +216,61 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
         # Add display container to the provided layout
         layout.addWidget(display_container, stretch=4)  # Adjusted stretch factor
 
-    @abstractmethod
+    def _build_controls(self) -> MetaControls:
+        """
+        Build this tab's controls panel and return it.
+
+        The subclass also stores it under whatever name the rest of that tab uses -
+        ``self.metadatacontrols``, ``self.rawdatacontrols`` and so on - because those
+        names appear throughout each tab and in its saved action history. This hook
+        only has to hand the widget back, so the base can wire it and place it.
+
+        Concrete rather than abstract, returning an empty panel, so that a tab which
+        lays out its own control area can override ``_set_control_area`` instead and
+        never implement this. Making it abstract would leave such a tab uninstantiable
+        - including the ``HelloWorldView`` the plugin tutorial is built around.
+
+        :return: the tab's controls panel
+        :rtype: MetaControls
+        """
+        return MetaControls()
+
+    def _connect_control_signals(self, controls: MetaControls) -> None:
+        """
+        Connect any signals beyond the four that every controls panel carries.
+
+        A no-op by default. ``MetaSubsetTabView`` overrides it for the two filter
+        signals that only ``MetaSubsetTabControls`` declares.
+
+        :param controls: the panel just built by ``_build_controls``
+        :type controls: MetaControls
+        """
+
+    @log(logger=logger)
     def _set_control_area(self, layout: QBoxLayout) -> None:
         """
-        Create and set up the control area for user interaction elements.
+        Build the tab's controls panel, wire it up, and place it in the layout.
+
+        Concrete since Step 3a-bis. All five tabs carried a copy of this differing only
+        in the widget class, the attribute name it was stored under, and - for the two
+        subset tabs - two extra signal connections. Those three differences are now
+        ``_build_controls`` and ``_connect_control_signals``.
 
         :param layout: The main layout to which the control area will be added. A box layout specifically, since implementations nest a sub-layout with addLayout().
         :type layout: QBoxLayout
         """
-        pass
+        controls = self._build_controls()
+        controls.actionTriggered.connect(self.handle_parameter_change)
+        controls.edit_processed.connect(self.handle_edit_triggered)
+        controls.add_processed.connect(self.handle_add_triggered)
+        controls.delete_processed.connect(self.handle_delete_triggered)
+        self._connect_control_signals(controls)
+
+        controlsAndAnalysisLayout = QHBoxLayout()
+        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
+        controlsAndAnalysisLayout.addWidget(controls, stretch=1)
+        layout.setSpacing(0)
+        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
     def _setup_canvas(self) -> None:
