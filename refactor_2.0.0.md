@@ -387,14 +387,19 @@ the work is**. Decision E is agreed and all five deliverables are ours.
    Worst: **`MetaView._logscale_and_filter_multiple_columns` (`:696`) has 38 test references and
    every one is a `Mock`** — no behavioural coverage at all, on every 1-D and 2-D plot path.
 
-### Execution — six branches, in order
+### Execution — seven branches, in order
+
+**Landed 2026-09-05: branches 1-4.** `develop` carries the harness, the duplication
+ratchet, the MVC boundary allowlist and the characterization goldens. Suite at 3,136
+passed / 2 skipped, up from 2,948 at the 1.9.0 baseline. Branch 5 is the coverage audit
+added below; 6 and 7 are unchanged.
 
 One branch per piece, finished into `develop` before the next starts. **Both gates are pytest
 tests, not pre-commit hooks**, with measurement logic in `scripts/`: only a test is enforced by
 all four CI workflows with no extra wiring and appears in `--marker-stats`, and the script keeps
 "what do I have to fix" runnable on its own.
 
-**1. `feature/step-2-test-harness`** — the shared prerequisite.
+**1. `feature/step-2-test-harness`** — LANDED 2026-09-05. The shared prerequisite.
 - `chore(test):` `pytest-regressions` pinned `==` in **both** `pyproject.toml [dev]` and
   `requirements-dev.txt` — `ci-branches.yml`/`ci-fork-pr.yml` install only from the latter and
   never read `pyproject.toml`; `release.yml` installs only the former. Register a
@@ -405,7 +410,7 @@ all four CI workflows with no extra wiring and appears in `--marker-stats`, and 
 - `docs:` `quality_control.rst` "Test Suite Configuration"; `changelog.md` under a new
   `## Poriscope 2.0.0: in progress`; `DECISIONS.md` on tests-not-hooks.
 
-**2. `feature/step-2-duplication-ratchet`** — second, not last: it makes Step 3a's "no copy was
+**2. `feature/step-2-duplication-ratchet`** — LANDED 2026-09-05. Second, not last: it makes Step 3a's "no copy was
 lost" claim provable, and 3a precedes it.
 - `chore(scripts):` `scripts/measure_duplication.py`, shaped like
   `scripts/check_plugin_module_level.py`. Algorithm per Step 0: AST-parse each file in a family,
@@ -420,7 +425,7 @@ lost" claim provable, and 3a precedes it.
   commit, which is how the win gets recorded instead of accruing as slack. Correct Step 0's table
   to the re-derived numbers.
 
-**3. `feature/step-2-mvc-boundary`** — the headline metric; this reaching 0 *is* Steps 3–5 finishing.
+**3. `feature/step-2-mvc-boundary`** — LANDED 2026-09-05. The headline metric; this reaching 0 *is* Steps 3–5 finishing.
 - `chore(scripts):` `scripts/check_mvc_boundary.py`. Three rules: no View contains
   `global_signal.emit`; no View imports numpy/scipy/sklearn/hdbscan/pandas/**`fast_histogram`**/sqlite3;
   no Controller reads a `view._private`. `sqlite3` contributes 0 today (Views build SQL as
@@ -432,7 +437,8 @@ lost" claim provable, and 3a precedes it.
 - `docs:` `changelog.md` and a `DECISIONS.md` entry recording the rule definition. (The
   106 → 107 correction is already applied above and in the Verification table.)
 
-**4. `feature/step-2-characterization-goldens`** — pins the surface nothing tests today.
+**4. `feature/step-2-characterization-goldens`** — LANDED 2026-09-05. Pins the surface
+nothing tested.
 `pytest-regressions` where the output is an array or DataFrame; plain explicit assertions for
 scalars, strings and short tuples. Keep samples small so every golden stays well under
 `check-added-large-files --maxkb=123`.
@@ -455,7 +461,33 @@ Reuse `_qt_mocks.shadow_signals` and the `__new__`-bypass fixture (`test_protein
 `tests/unit/views/conftest.py` gives dialog patching and widget/GC teardown free. **Do not mock
 the view's `logger`** — it blinds `caplog`.
 
-**5. `feature/step-2-sql-goldens`** — today **no test anywhere asserts on generated SQL text**;
+**5. `feature/step-2-refactor-coverage-audit`** — **the criterion branches 1-4 were not built
+to.** They pinned what had *zero* behavioural coverage plus equivalence for the copies Step 3
+merges. The standing criterion is wider and better defined: **every method the refactor moves
+or deduplicates must be covered**, derived from the refactor's own lists rather than from a
+judgement about which methods look thin.
+- `chore(scripts):` an audit that enumerates the affected set and reports what is unpinned.
+  The **deduplicated** half is machine-derivable - `scripts/measure_duplication.py` already
+  names every method in every duplicate group, **66 distinct methods**. The **moved** half is
+  prose in Steps 3d and 4a-4e below and has to be written out explicitly before it can be
+  checked; that list becomes part of the audit's input.
+- **Counting call sites is not measuring coverage.** `_logscale_and_filter_multiple_columns`
+  had 38 references and every one was a `Mock`, so it looked covered and was not. The audit
+  must discriminate direct calls on a real instance from mock substitutions, and a naive
+  reference count scored 64 of the 66 dedup methods "covered" on exactly that flawed basis.
+- Known already from a first pass: **`_on_sizes_checkbox_toggled`** appears in
+  `test_metadata_controls.py:108` *only as a comment*, and **`notify_plugin_state_changed`**
+  appears in `tests/` only as stub definitions. Both are real zero-coverage cases.
+- `test:` close the gaps the audit finds, then check the audit in so Steps 3-5 cannot move or
+  merge a method that nothing pins.
+
+**Note on line coverage.** It is the wrong instrument for this and should not be used as the
+audit's measure. The five Views were at 87-91% *before* any characterization test existed, and
+adding them moved the numbers by at most one point - those lines already executed under the e2e
+suite, and nothing asserted the values. Post-branch-4: Metadata 91%, EventAnalysis 87%,
+RawData 88%, Protein 90%, Clustering 89%, `MetaView` 92%.
+
+**6. `feature/step-2-sql-goldens`** — today **no test anywhere asserts on generated SQL text**;
 all 110 tests in `test_meta_database_loader.py` use substring containment, so a refactor could
 reorder joins, reassign aliases or change the projection and every one would still pass.
 - `test(db):` exact-text goldens over `construct_metadata_query` (`:877`) across the shapes those
@@ -469,7 +501,7 @@ reorder joins, reassign aliases or change the projection and every one would sti
   which appends a scope clause to arbitrary user SQL on a naive `"WHERE" in query.upper()` test.
   **Pin it and file it; do not fix it here.**
 
-**6. `feature/step-2-tab-flows`** — five flows, load → filter → plot → export, asserting on
+**7. `feature/step-2-tab-flows`** — five flows, load → filter → plot → export, asserting on
 exported CSV content rather than widget state.
 - `test(integration):` `tests/integration/flows/_triad.py`. **This rung does not exist**: the three
   existing `*_no_gui.py` build no View or Controller, and there is no headless triad fixture
