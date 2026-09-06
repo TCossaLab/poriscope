@@ -725,8 +725,8 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 **Landed:** Steps 0, 1 (1.9.0), 2 (all seven branches + exit review), **3a** (`MetaControls`,
 489 duplicated lines removed) and **3d-pre** (the two logscale helpers collapsed to one).
 `develop` is clean; the suite is **3,338 passed / 4 skipped**; duplication **1,400** removable;
-boundary allowlist **111**; refactor coverage **248 targets, 248 pinned** (re-measure — 3d-pre
-removed one target).
+boundary allowlist **113**; refactor coverage **247 targets** (re-measured 2026-09-06 via
+`collect_targets()`; 3d-pre removed one).
 
 **The gate widening — LANDED 2026-09-06.** Rules 1–3 no longer read hardcoded filename
 tuples: every module under `poriscope/` is classified into a layer by a whole-layer directory
@@ -944,6 +944,62 @@ commit 1 adds that.
   - Within 3b, order the promotions so the state-touching methods land last: bank the ~194
     identical View lines and the identical Controller group first, leave `relay_query`
     per-tab until 4d.
+
+#### 3b — approved series, 2026-09-06
+
+Three banked commits, one per class family. **Every figure was produced by simulating the
+stage through `measure_duplication.collect_functions` against modified source held in
+memory**, not by adding up group sizes.
+
+| # | Commit | Promotes | repo removable | Δ |
+| --- | --- | --- | --- | --- |
+| 0 | `docs:` the approved series | — | 1,400 | — |
+| 1 | `MetaDatabaseTabController` + 17 methods | Controller | **1,221** | −179 |
+| 2 | `MetaDatabaseTabView` + 15 methods | View | **986** | −235 |
+| 3 | `MetaDatabaseTabControls` + 10 methods | Controls | **906** | −80 |
+
+−494 removable lines, larger than 3a. Family `functions` falls at every stage (Controller
+81→47, View 258→228, controls 83→63), so `_divergence_warning` stays silent.
+
+**Stage 2's −235 is 8 more than the pair list adds up to (227)**, because at least one
+promoted method belongs to a *three*-file group — deleting two of three copies collapses
+the group entirely rather than halving it. That is the reason to simulate rather than add.
+
+**The boundary allowlist falls 113 → 110**, earned. Three promoted View methods carry a
+`global_signal.emit` (`update_available_columns`, `request_experiment_structure`,
+`update_units`), so 3+3 copies become 3 on the base. Under the pre-widening scan this would
+have been an unearned fall of the same size, which is exactly what the widening prevented.
+No promoted body needs numpy, pandas or scipy, so rule 2 is unchanged.
+
+**Order: Controller → View → Controls**, cheapest surface first — the 17 Controller methods
+reference exactly one thing not already on `MetaController`, `self.view`. `relay_query` is
+**not** promoted: its bodies differ, so it is worth zero on the ratchet, and leaving it
+per-tab keeps all 10 rule-3 violations visible until 4d.
+
+Verified rather than assumed:
+
+- **`@log(logger=logger)` rebinding is real here and benign.** Unlike 3a, *every* promoted
+  View and Controller method is decorated. The decorator does nothing unless the logger is
+  at DEBUG; the level is set globally on the root logger (`main_model.py:548`, no per-module
+  UI); and the record's message already carries `MetadataView.set_query` from
+  `self.__class__.__name__`. Only `%(name)s` changes — and `MetaView`/`MetaController`
+  already log their shared methods under their own module names, so this is the existing
+  convention.
+- **The state is uniform and forces no decisions.** Six attributes are annotated identically
+  in both `_init`s. Eight more (`experiment_id`, `query`, `table_name`, `units`,
+  `event_query`, `event_data_generator`, `selection_tree`, `involved_tables`) are set only
+  by their setters in *both* tabs; they go on the base as bare annotations, which declare
+  them to mypy and create nothing at runtime, preserving today's behaviour exactly.
+- **`self.involved_tables` is never initialised anywhere in `poriscope/`**, so
+  `set_table_by_column("events")` would raise `AttributeError`. Unreachable:
+  `relay_table_by_column` has no caller in the app, only in tests, which assign the
+  attribute first. Not fixed inside 3b — the bare annotation preserves current behaviour and
+  the dead trio goes to `future_fixes.md` for 3e.
+- **`MetaDatabaseTabView` needs `SelectionTree` and `MultiSelectComboBox` from
+  `poriscope/views/widgets/`, and no module in `poriscope/utils/` imports from
+  `poriscope/views/` today.** Accepted: shared bases depending on shared widgets is the
+  direction 3f moves `walkthrough` in, neither depends on plugins, and those widget modules
+  import nothing from `poriscope.utils`, so there is no cycle. `DECISIONS.md` carries it.
 - **3c `MetaEventTabView`** (RawData/EventAnalysis). Both re-override `_factors`, shadowing
   the concrete base version they could inherit — delete those two.
   **Correction, 2026-09-05: `notify_plugin_state_changed` is NOT an instance of this.**
