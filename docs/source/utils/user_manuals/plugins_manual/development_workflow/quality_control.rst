@@ -511,7 +511,7 @@ exclusions, and ``mypy.ini`` enforces that:
 Test Suite Configuration
 -------------------------
 
-``pytest.ini`` is the only pytest configuration in the repository. Two settings there are
+``pytest.ini`` is the only pytest configuration in the repository. Three settings there are
 worth knowing about before you add tests:
 
 - ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
@@ -523,6 +523,22 @@ worth knowing about before you add tests:
   the number.**
 - ``--strict-markers`` — an unregistered marker name is a collection error rather than an
   expression that matches nothing. Register any new marker in the ``markers`` list.
+- ``pythonpath = .`` — puts the repository root on ``sys.path`` so the shared test helpers
+  (``tests/unit/views/_qt_mocks.py``, ``tests/e2e/_helpers.py``, the
+  ``tests/synthetic_data/`` generators) are importable as ``tests.<module>``. The editable
+  install exposes only ``poriscope``, so without this setting those imports resolve only
+  when a conftest higher up the tree happens to be collected first — which made running a
+  single test file on its own fail with ``No module named 'tests'`` while the same file
+  passed in a full run.
+
+.. note::
+
+   If you add a dev dependency, it must go in **both** ``pyproject.toml``'s ``[dev]`` extra
+   and ``requirements-dev.txt``. They are byte-for-byte mirrors of each other and nothing
+   enforces that, but different CI workflows read different ones: ``ci-branches.yml`` and
+   ``ci-fork-pr.yml`` install only from ``requirements-dev.txt``, while ``release.yml``
+   installs only ``.[dev]``. Adding it to one file alone breaks half of CI. Pin it exactly
+   with ``==``, as every other entry in both files is.
 
 Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` extra but is
 **not** wired into ``addopts``:
