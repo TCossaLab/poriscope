@@ -139,6 +139,24 @@ def test_the_walkthrough_classes_each_have_a_page() -> None:
 
 
 @needs_autodoc
+def test_metacontrols_has_a_page_at_all() -> None:
+    """
+    The one thing nothing else in this file would notice.
+
+    ``metaclasses_generate_autodoc.py`` skips any class in ``poriscope/utils/``
+    with no docstring - a bare ``continue``, printed to stdout and nowhere else.
+    So a ``MetaControls`` that lost its class docstring would publish **no page**,
+    silently, with ``sphinx-build -W`` green and every other test here passing,
+    taking every directive Step 3a promoted with it. The page is keyed off the
+    *module* name lowercased, not the class name.
+    """
+    page = AUTODOC / "metaclasses" / "metacontrols.rst"
+
+    assert page.is_file(), "MetaControls lost its page; check its class docstring"
+    assert "automethod" in page.read_text(encoding="utf-8")
+
+
+@needs_autodoc
 def test_the_controls_classes_are_documented_despite_having_no_docstring() -> None:
     """
     The plan's stated reason for Step 3a's autodoc risk, checked and found wrong.

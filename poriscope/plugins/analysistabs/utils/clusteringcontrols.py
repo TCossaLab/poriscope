@@ -27,15 +27,13 @@
 import logging
 from typing import Any, Dict, Optional, Sequence
 
-from PySide6.QtCore import QCoreApplication, QSize, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QToolButton,
     QVBoxLayout,
@@ -43,19 +41,10 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
+from poriscope.utils.MetaControls import MetaControls
 
 
-class ClusteringControls(QWidget):
-    actionTriggered = Signal(
-        str, str, tuple
-    )  # Signal to trigger an action in the controller (submodel_name, action_name, args)
-    is_signal_connected = False  # Class-level flag to check if signal is connected
-    logger = logging.getLogger(__name__)
-
-    edit_processed = Signal(str, str)
-    add_processed = Signal(str)
-    delete_processed = Signal(str, str)
-
+class ClusteringControls(MetaControls):
     logger = logging.getLogger(__name__)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -73,8 +62,6 @@ class ClusteringControls(QWidget):
         self.connect_signals()
         self.logger.info("ClusteringControls initialized")
         self.validate_inputs()
-        self.max_range_size = 16
-        self.active_popups: Dict[QComboBox, Any] = {}
 
     def setupUi(self) -> None:
         self.logger.info("Setting up UI")
@@ -185,33 +172,6 @@ class ClusteringControls(QWidget):
         self.logger.info("UI setup complete")
 
     # QWidgets
-    def create_comboBox(self, parent: QWidget) -> QComboBox:
-        comboBox = QComboBox(parent)
-        comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return comboBox
-
-    def createButton(
-        self, parent: QWidget, text: str, bold: bool = False
-    ) -> QPushButton:
-        button = QPushButton(parent)
-        font = QFont()
-        font.setBold(bold)
-        font.setWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
-        button.setFont(font)
-        button.setText(QCoreApplication.translate("Form", text, None))
-        button.setCheckable(True)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.setStyleSheet("")  # Resetting to default style
-        return button
-
-    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
-        label = QLabel(parent)
-        font = QFont()
-        font.setPointSize(pointSize - 6)
-        label.setFont(font)
-        label.setText(QCoreApplication.translate("Form", text, None))
-        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return label
 
     def create_info_button(
         self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str

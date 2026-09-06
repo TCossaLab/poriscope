@@ -31,16 +31,13 @@ from PySide6.QtCore import (
     QCoreApplication,
     QSize,
     Qt,
-    Signal,
 )
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QLabel,
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
@@ -51,20 +48,13 @@ from PySide6.QtWidgets import (
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
 
 
-class EventAnalysisControls(QWidget):
-    actionTriggered = Signal(
-        str, str, tuple
-    )  # Signal to trigger an action in the controller (submodel_name, action_name, args)
-    is_signal_connected = False  # Class-level flag to check if signal is connected
+class EventAnalysisControls(MetaControls):
     logger = logging.getLogger(__name__)
-
-    edit_processed = Signal(str, str)
-    add_processed = Signal(str)
-    delete_processed = Signal(str, str)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -73,8 +63,6 @@ class EventAnalysisControls(QWidget):
         self.connect_signals()
         self.logger.info("EventAnalysisControls initialized")
         self.validate_inputs()
-        self.max_range_size = 16
-        self.active_popups: Dict[QComboBox, Any] = {}
 
     def setupUi(self) -> None:
         self.logger.info("Setting up UI")
@@ -505,33 +493,6 @@ class EventAnalysisControls(QWidget):
         self.actionTriggered.emit(
             "EventAnalysisModel", "parameter_changed", (parameters,)
         )
-
-    def create_comboBox(self, parent: QWidget) -> QComboBox:
-        comboBox = QComboBox(parent)
-        comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return comboBox
-
-    def createButton(
-        self, parent: QWidget, text: str, bold: bool = False
-    ) -> QPushButton:
-        button = QPushButton(parent)
-        font = QFont()
-        font.setBold(bold)
-        font.setWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
-        button.setFont(font)
-        button.setText(QCoreApplication.translate("Form", text, None))
-        button.setCheckable(True)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return button
-
-    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
-        label = QLabel(parent)
-        font = QFont()
-        font.setPointSize(pointSize - 6)
-        label.setFont(font)
-        label.setText(QCoreApplication.translate("Form", text, None))
-        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return label
 
     def retranslateUi(self) -> None:
         self.setWindowTitle(QCoreApplication.translate("Form", "Form", None))

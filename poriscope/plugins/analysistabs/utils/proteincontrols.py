@@ -28,13 +28,12 @@ import logging
 from typing import Any, Dict, List, Optional, Sequence
 
 from PySide6.QtCore import (
-    QCoreApplication,
     QRegularExpression,
     QSize,
     Qt,
     Signal,
 )
-from PySide6.QtGui import QFont, QRegularExpressionValidator
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -42,7 +41,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
     QSizePolicy,
@@ -52,19 +50,11 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.configs.utils import get_icon
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
-class ProteinControls(QWidget):
-    actionTriggered = Signal(
-        str, str, tuple
-    )  # Signal to trigger an action in the controller (submodel_name, action_name, args)
-    is_signal_connected = False  # Class-level flag to check if signal is connected
-    logger = logging.getLogger(__name__)
-
-    edit_processed = Signal(str, str)
-    add_processed = Signal(str)
-    delete_processed = Signal(str, str)
+class ProteinControls(MetaControls):
     edit_filter_requested = Signal(str, str)
     delete_filter_requested = Signal(str)
 
@@ -77,7 +67,6 @@ class ProteinControls(QWidget):
         self.connect_signals()
         self.logger.info("ProteinControls initialized")
         self.validate_inputs()
-        self.active_popups: Dict[QComboBox, Any] = {}
 
     def setupUi(self) -> None:
         self.logger.info("Setting up UI")
@@ -527,33 +516,6 @@ class ProteinControls(QWidget):
             self.bins_lineEdit.setPlaceholderText("e.g. 10 or 5,10,15")
 
     # QWidgets
-    def create_comboBox(self, parent: QWidget) -> QComboBox:
-        comboBox = QComboBox(parent)
-        comboBox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return comboBox
-
-    def createButton(
-        self, parent: QWidget, text: str, bold: bool = False
-    ) -> QPushButton:
-        button = QPushButton(parent)
-        font = QFont()
-        font.setBold(bold)
-        font.setWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
-        button.setFont(font)
-        button.setText(QCoreApplication.translate("Form", text, None))
-        button.setCheckable(True)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.setStyleSheet("")  # Resetting to default style
-        return button
-
-    def createLabel(self, parent: QWidget, pointSize: int, text: str) -> QLabel:
-        label = QLabel(parent)
-        font = QFont()
-        font.setPointSize(pointSize - 6)
-        label.setFont(font)
-        label.setText(QCoreApplication.translate("Form", text, None))
-        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        return label
 
     def create_info_button(
         self, parent: QWidget, comboBox: QComboBox, info_text: str, metaclass: str
