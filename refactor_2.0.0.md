@@ -720,6 +720,36 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 `c99249ea`; `ProteinView`'s naive `WHERE` substring test; and `ClusteringView`'s GMM branch
 (`:660-670`), which has no extracted method to pin and gets one in Step 4c.
 
+## Next up — state as of 2026-09-06
+
+**Landed:** Steps 0, 1 (1.9.0), 2 (all seven branches + exit review), **3a** (`MetaControls`,
+489 duplicated lines removed) and **3d-pre** (the two logscale helpers collapsed to one).
+`develop` is clean; the suite is **3,338 passed / 4 skipped**; duplication **1,400** removable;
+boundary allowlist **111**; refactor coverage **248 targets, 248 pinned** (re-measure — 3d-pre
+removed one target).
+
+**Do this first, before any other Step 3 promotion: widen `check_mvc_boundary.py`'s scan.**
+Its rules 1–3 read hardcoded filename tuples under `poriscope/plugins/analysistabs/`, so a
+method promoted to a base in `poriscope/utils/` leaves the measurement without being fixed.
+This is the real block on 3b, and 3c, 3d and 3g have the same shape. 3a was safe only because
+none of its twelve promoted methods carried an emit, a forbidden import or a private read.
+Approved 2026-09-06; not yet started.
+
+**Then, in dependency order:** 3b (unblocked once the gate is widened; order it so the
+state-touching methods land last, leaving `relay_query` per-tab until 4d), 3c, 3d proper
+(now a numpy-only method plus the five range helpers), 3e, 3f (decided: move to
+`views/widgets/`, drop three autodoc pages, hand-write one for `WalkthroughMixin`), 3g,
+3a-bis.
+
+**Owed:** a manual Windows pass after each structural step — last run 2026-09-06 after 3a,
+clear. 3d-pre did not touch the UI, so none is owed for it; the next is due after 3f.
+
+**Standing method notes** live in the artifact's section 08 (29 rules), which is the source
+material for the refactor skill. Two from this round worth remembering at the keyboard: a
+harness "exit code 0" is not a test result — read the `N passed` line from the run's own
+output; and any step that *removes* rather than moves code owes its instruments the same edit
+in the same commit.
+
 ## Step 3 — promotion to `Meta*` bases
 
 - **3a `MetaControls(QWidget)`** — highest value, independent of the test gate, **gated on
