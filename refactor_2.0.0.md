@@ -559,7 +559,77 @@ exported CSV content rather than widget state.
   `DECISIONS.md` 2026-09-03 records, made again inside a file whose own docstring cites that
   decision.
 
-### Step 2 exit review — required before any Step 3 code is written
+### Step 2 exit review — DONE 2026-09-06. Five gaps found; Step 3 may start
+
+Measured at `578b05e` on `develop`. Suite 3,300 passed / 4 skipped (2,948 at the 1.9.0
+baseline). All three gates green. Repo coverage 83%, unchanged, with 3,593 missed statements
+against Step 0's 3,693.
+
+**Q1 — is everything that needs verifying testable?** Yes for Steps 3a-3g and 4a-4e, once the
+audit's own list was corrected. **The audit was measuring an incomplete target set**: Step 4c
+names `_construct_event_overlay`, `_plot_1d_density`, `_plot_capture_rate` and
+`_update_distribution_individual` explicitly and none was a target, because the moved half of
+the list had been hand-picked by how easily a method could be tested rather than by what the
+step moves. Seventeen entries added (284 → 298); only two were unpinned and both are now
+closed. **Audit: 298 of 298 pinned.**
+
+**Q2 — what checks are still missing?** Five, listed below with what each would cost.
+
+**Q3 — have the gates' assumptions drifted?** Two figures in this document have:
+- `self.view.subset_filters` reach-ins are **8**, not 12 — four each in `MetadataController`
+  and `ProteinController`, and none anywhere else. Corrected in 4d below.
+- The `@register_action` count **holds at 5**, verified by AST rather than grep; a naive grep
+  gives 11 because six mentions are docstring prose, which is what produced the original
+  wrong figure.
+Everything else re-derives: `test_every_moved_target_exists` is green, and the emit-bearing
+and SQL-authoring derivations still find what their steps describe.
+
+**Q4 — is the manual Windows pass still the only cover for the platform-conditional paths?**
+Yes, and it need not be. There are **10** platform-conditional sites, two of them in
+`multiselect.py`. `test_multiselect.py` and `test_multiselect_filter.py` now exist but neither
+patches `sys.platform`, so CI on Linux only ever builds the `QWidget` container and the
+`QDialog` one that actually ships is never constructed. Parametrizing those two tests over the
+platform is cheap and would convert the most fragile part of the manual pass into a real test.
+
+#### The five missing checks, in priority order
+
+1. **The duplication ratchet covers only the three analysis-tab families.** Measured with the
+   same instrument, the unratcheted families hold **772 removable lines** — `datareaders` 435,
+   `eventfitters` 275, `views/widgets` 62 — against the 1,199 that are ratcheted. That is
+   exactly the work Steps 5a and 5d do, with no instrument on it, and 772 is itself a floor
+   since byte identity cannot see `ClassicCUSUM`'s 195-line override differing in two lines.
+   **Cheapest high-value fix: extend `FAMILIES` in `measure_duplication.py`.**
+2. **Nothing pins `MetaView`'s abstract surface.** `test_plugin_compliance` *reads*
+   `__abstractmethods__` to check subclasses implement it, but never asserts the set itself, so
+   3a-bis making `_set_control_area` concrete would pass silently — and Decision C lists the ABC
+   breaks 2.0.0 intends to take, which is only meaningful if an unlisted one fails.
+3. **No layering rule.** Step 3f's whole point is that `views/main_view.py:53,58`,
+   `views/widgets/add_subset_filter_dialog.py:30` and
+   `views/widgets/clustering_settings_widget.py:52` import *up* from `plugins/analysistabs/`.
+   Nothing asserts that, so 3f's completion is unobservable. **A fourth rule in
+   `check_mvc_boundary.py` — no `poriscope/views/` module imports from `poriscope/plugins/` —
+   costs a few lines and starts at an allowlist of 4.**
+4. **Nothing replays a saved `.json` action file or session.** There is **no checked-in
+   `.json` fixture anywhere in `tests/`**, and `update_actions_from_json` is asserted only on a
+   *mock* view. Step 7 records that saved action files are user data and that moving a decorated
+   method breaks replay; the same applies to `get_session_state`, which 4d changes.
+5. **Autodoc output is unchecked.** Nothing in `tests/` mentions `automethod`. Step 3a would
+   silently drop ~50 directives (the generators emit own methods only and skip classes with no
+   docstring, which all five controls files lack), and 3f moves modules whose pages are keyed
+   off the module path.
+
+#### Two things the review confirmed rather than found
+
+- **`createButton`'s divergence is real and unpinned.** `eventAnalysisControls.py` omits the
+  `setStyleSheet("")` the other four have. Nothing asserts it, so promoting the majority version
+  in 3a would change EventAnalysis's behaviour silently. Pin it before 3a, not after.
+- **The `Meta*` coverage worry was aimed at the wrong files.** 69-76% describes the *data-plugin*
+  bases — `MetaWriter` 69.0%, `MetaReader` 70.5%, `MetaDatabaseWriter` 72.7%, `MetaEventFitter`
+  73.8% — which Step 5b touches. Steps 3d and 4a-4e land in `MetaModel` (**77.9%**), `MetaView`
+  (91.8%) and `MetaController` (97.1%). `MetaModel` is the weakest of the MVC triad bases and is
+  the destination for the moves, so that is the number to watch, not the data-plugin ones.
+
+### Original scope of the review, kept for reference
 
 **Standing instruction, 2026-09-05: after branch 7 lands, re-assess the plan in light of
 where the tests, pins and golden files actually ended up.** Step 2 was specified before any
