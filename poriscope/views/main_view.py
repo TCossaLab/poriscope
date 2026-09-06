@@ -50,20 +50,20 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.constants import __VERSION__
-from poriscope.plugins.analysistabs.utils.walkthrough import (
-    IntroDialog,
-    Overlay,
-    StepDialog,
-)
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.LogDecorator import log
 from poriscope.views.help import HelpCentre
 from poriscope.views.settings_window import SettingsWindow
 from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
+from poriscope.views.widgets.walkthrough import (
+    IntroDialog,
+    Overlay,
+    StepDialog,
+)
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 
 
 class MainView(QMainWindow, WalkthroughMixin):

@@ -18,12 +18,19 @@ what holds that is ``MetaControls``' own class docstring. Both halves are assert
 below: that the page exists, and that the promoted directives are on it and on no
 per-tab page.
 
-**Step 3f's risk is real and is the one to hold.** The generators scan exactly two
-roots, ``poriscope/utils`` and ``poriscope/plugins``. **``poriscope/views/`` is
-scanned by neither**, and has no autodoc anywhere. 3f moves ``walkthrough.py`` and
-``walkthrough_mixin.py`` from ``plugins/analysistabs/utils/`` into
-``views/widgets/`` - out of a documented tree and into an undocumented one - which
-would silently delete the four pages those modules own.
+**Step 3f landed 2026-09-06, and the outcome was decided rather than discovered.** The
+generators scan exactly two roots, ``poriscope/utils`` and ``poriscope/plugins``.
+**``poriscope/views/`` is scanned by neither.** 3f moved ``walkthrough.py`` and
+``walkthrough_mixin.py`` from ``plugins/analysistabs/utils/`` into ``views/widgets/`` to
+fix a layering inversion, taking them out of a documented tree and into an undocumented
+one, which deleted the four pages those modules owned - 26 ``automethod`` directives.
+
+Three of the four were let go deliberately: ``IntroDialog``, ``Overlay`` and
+``StepDialog`` are internal UI machinery named in no prose documentation anywhere, and a
+plugin author never instantiates them. ``WalkthroughMixin`` was not, because a live
+tutorial tells authors to inherit it, so it has a hand-written page carrying a real
+``.. _walkthrough_mixin:`` label. The tests below now hold that shape: the three have no
+page, the fourth does, and it is not under ``autodoc/``.
 
 Pages are keyed by **class**, not by module, which is why 14 modules under the
 scanned roots legitimately have no page: they hold decorators, metaclasses and
@@ -50,8 +57,16 @@ EXPECTED_ROOTS = {"poriscope/utils", "poriscope/plugins"}
 #: on the shared base rather than on five copies.
 BASE_CLASS_PATH = "poriscope.utils.MetaControls.MetaControls"
 
-#: The classes the two walkthrough modules own. Step 3f moves both modules.
-WALKTHROUGH_CLASSES = {"introdialog", "overlay", "stepdialog", "walkthroughmixin"}
+#: The three dialog classes whose pages Step 3f deliberately gave up.
+WALKTHROUGH_DIALOG_CLASSES = {"introdialog", "overlay", "stepdialog"}
+
+#: The hand-written replacement for ``WalkthroughMixin``'s generated page, and the
+#: tutorial that links to it. Both are hand-maintained, so neither is under ``autodoc/``.
+HANDWRITTEN_MIXIN_PAGE = Path(
+    "docs/source/utils/user_manuals/plugins_manual/plugin_development"
+    "/frontend_plugin/next_steps/walkthrough_mixin.rst"
+)
+WALKTHROUGH_TUTORIAL = HANDWRITTEN_MIXIN_PAGE.with_name("adding_walkthrough.rst")
 
 
 def generator_roots() -> Set[str]:
@@ -116,16 +131,20 @@ def test_the_app_shell_is_covered_by_no_generator() -> None:
     assert not any(root.startswith("poriscope/views") for root in generator_roots())
 
 
-def test_the_walkthrough_modules_are_currently_inside_a_scanned_root() -> None:
+def test_the_walkthrough_modules_live_in_the_app_shell() -> None:
     """
-    They live under ``poriscope/plugins`` today, which is why they have pages.
+    Step 3f moved them into ``poriscope/views/widgets/``, which no generator scans.
 
-    When 3f moves them this fails, which is the intended prompt: either extend the
-    generators to the destination or accept losing four pages, deliberately.
+    Asserted from the destination rather than the origin so that moving them back -
+    which would restore the layering inversion rule 4 of the MVC boundary exists to
+    catch - fails here too.
     """
     for name in ("walkthrough.py", "walkthrough_mixin.py"):
-        path = REPO_ROOT / "poriscope" / "plugins" / "analysistabs" / "utils" / name
-        assert path.is_file(), f"{name} has moved; see Step 3f"
+        moved = REPO_ROOT / "poriscope" / "views" / "widgets" / name
+        origin = REPO_ROOT / "poriscope" / "plugins" / "analysistabs" / "utils" / name
+
+        assert moved.is_file(), f"{name} is not in views/widgets/; see Step 3f"
+        assert not origin.is_file(), f"{name} is back under plugins/; see Step 3f"
 
 
 # ===========================================================================
@@ -134,16 +153,39 @@ def test_the_walkthrough_modules_are_currently_inside_a_scanned_root() -> None:
 
 
 @needs_autodoc
-def test_the_walkthrough_classes_each_have_a_page() -> None:
+def test_the_three_dialog_classes_have_no_generated_page() -> None:
     """
-    Four pages, keyed by class name rather than by module.
+    Given up deliberately by Step 3f, so their absence must not read as a regression.
 
-    These are what 3f puts at risk, so they are named individually rather than
-    counted.
+    If one reappears, either a generator grew a third root or the modules moved back -
+    both worth knowing about.
     """
     pages = {p.stem.lower() for p in AUTODOC.rglob("*.rst")}
 
-    assert WALKTHROUGH_CLASSES <= pages, sorted(WALKTHROUGH_CLASSES - pages)
+    assert not (WALKTHROUGH_DIALOG_CLASSES & pages), sorted(
+        WALKTHROUGH_DIALOG_CLASSES & pages
+    )
+
+
+def test_the_mixin_keeps_a_hand_written_page_with_a_real_label() -> None:
+    """
+    The one page 3f replaced rather than dropped.
+
+    ``adding_walkthrough.rst`` tells plugin authors to inherit ``WalkthroughMixin``, and
+    linked to it through two **backslash-escaped** pseudo-references that Sphinx rendered
+    as literal text - and whose labels existed nowhere in ``docs/``, so they could never
+    have resolved even unescaped. 3f wrote the label and repaired both links.
+    """
+    page = REPO_ROOT / HANDWRITTEN_MIXIN_PAGE
+    assert page.is_file(), f"{HANDWRITTEN_MIXIN_PAGE} is missing"
+
+    text = page.read_text(encoding="utf-8")
+    assert ".. _walkthrough_mixin:" in text
+    assert "poriscope.views.widgets.walkthrough_mixin.WalkthroughMixin" in text
+
+    tutorial = (REPO_ROOT / WALKTHROUGH_TUTORIAL).read_text(encoding="utf-8")
+    assert ":ref:`walkthrough_mixin`" in tutorial
+    assert r"\:ref:" not in tutorial, "an escaped pseudo-link is back"
 
 
 #: Every base Step 3 creates to hold promoted analysis-tab code. Each is listed here

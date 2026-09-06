@@ -419,25 +419,27 @@ class TestPluginImports:
     """
     The layering rule, added by the Step 2 exit review.
 
-    Step 3f's whole point is that the app shell imports *up* from
+    Step 3f's whole point was that the app shell imported *up* from
     ``plugins/analysistabs/utils/walkthrough*``. Without this rule nothing observed
-    that inversion, so 3f could be done, half-done or undone with every gate green.
+    that inversion, so 3f could have been done, half-done or undone with every gate
+    green. 3f landed 2026-09-06 and the rule now reads zero; these use a module that
+    still exists, since the walkthrough modules have moved into the shell.
     """
 
     def test_a_plugin_import_is_recorded(self, mod: types.ModuleType) -> None:
         """The canonical form: the shell reaching into a plugin package."""
-        source = "from poriscope.plugins.analysistabs.utils.walkthrough import Overlay"
+        source = "from poriscope.plugins.analysistabs.MetadataView import MetadataView"
 
         assert mod.plugin_imports(parse(source)) == [
-            "poriscope.plugins.analysistabs.utils.walkthrough"
+            "poriscope.plugins.analysistabs.MetadataView"
         ]
 
     def test_a_plain_import_is_recorded_too(self, mod: types.ModuleType) -> None:
         """Both import forms reach the same package."""
-        source = "import poriscope.plugins.analysistabs.utils.walkthrough"
+        source = "import poriscope.plugins.analysistabs.MetadataView"
 
         assert mod.plugin_imports(parse(source)) == [
-            "poriscope.plugins.analysistabs.utils.walkthrough"
+            "poriscope.plugins.analysistabs.MetadataView"
         ]
 
     def test_imports_within_the_shell_are_ignored(self, mod: types.ModuleType) -> None:
