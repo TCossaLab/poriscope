@@ -1097,6 +1097,58 @@ Verified rather than assumed:
 
 ## Step 4 — View code that is Model code
 
+#### 4c RawData — LANDED 2026-09-07
+
+**Allowlist 103 → 102, and `fast_histogram` reaches zero** — the import rule 2 was extended
+to include *specifically* because `RawDataView` held it and this step moves it.
+`RawDataModel` gains `get_baseline_stats` and `gaussian_fit`.
+
+Cheap because `update_plot` takes its data as arguments: the stats are computed **once for
+all channels before the loop** rather than inside it. `baseline: bool` became
+`baseline_stats`, the View emits `baseline_stats_requested`, and the Controller's slot loops
+the channels and hands the list back. A failed channel contributes `None`, so its trace is
+still drawn without a band — what the View did when it computed these itself.
+
+**`RawDataView._gaussian` was deleted, not moved: zero callers anywhere in `poriscope/`.**
+`gaussian_fit` fits a parabola to `log(histogram)` rather than calling a model function, so
+nothing ever needed it. `ClassicBlockageFinder` keeps its own separate copy.
+
+**The golden files were verified rather than regenerated.** `pytest-regressions` wrote fresh
+goldens in the new location first; all three came out **byte-identical** to the pre-move ones,
+so the computation is numerically unchanged — and *then* the originals were `git mv`'d into
+place, so the tests compare against values recorded before the move rather than against the
+new code's own output. **Never keep a self-generated golden across a move; that is the one
+thing that turns a golden test into a tautology.**
+
+#### 4c Protein and Metadata — recommend doing these AFTER 4a, 2026-09-07
+
+Measured after the two cheap tabs landed. 4c's cost is dominated by the **caller
+restructure**, and it scales with how bus-driven the callers are:
+
+| Tab | External callers | Their total lines | `emit`s among them | Status |
+| --- | --- | --- | --- | --- |
+| Clustering | 1 | 30 restructured | 0 | landed |
+| RawData | 1 | 92 | 0 | landed |
+| **Protein** | **3** | **483** | **6** | recommend after 4a |
+| **Metadata** | **9** | **1,041** | **19** | recommend after 4a |
+
+The two remaining tabs' callers are the *plotting orchestrators*
+(`_update_distribution_individual` 239L/4 emits, `_fit_and_plot_ensemble_geometry` 126L/2,
+`MetadataView._overlay_plot` 352L/**13**). Their flows are emit → read → compute → emit →
+read → compute → plot, so extracting the computation *now* means splitting each into several
+async handlers — and **4a then rewrites the same code**, because it collapses every
+emit-then-read pair into a direct call and makes those methods linear again. Doing 4a first
+makes both tabs much cheaper; doing them first means doing the work twice.
+
+**Two 4c targets should not move at all, and the plan is wrong to list them:**
+
+- **`MetadataView.format_axis_label`** has **6 callers**, all plot methods, and formats a
+  label string from a column name and a unit. That is presentation, not computation. Moving it
+  would mean six Controller round trips to format a string.
+- **`ProteinView._update_distribution_individual`** is 239 lines with **19** `self.*`
+  references including `global_signal`, `update_plot` and `_reset_actions`. It is an
+  orchestrator, not a computation — 4a/4b work, not 4c's.
+
 #### 4c Clustering pilot — LANDED 2026-09-07
 
 **Boundary allowlist 106 → 103, and rule 2 falls for the first time in the refactor.**

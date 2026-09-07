@@ -176,9 +176,13 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "_fit_and_plot_ensemble_geometry",
         "4c",
     ),
-    ("poriscope/plugins/analysistabs/RawDataView.py", "_get_baseline_stats", "4c"),
-    ("poriscope/plugins/analysistabs/RawDataView.py", "_gaussian", "4c"),
-    ("poriscope/plugins/analysistabs/RawDataView.py", "_gaussian_fit", "4c"),
+    # The RawData half of 4c landed 2026-09-07. These two moved to RawDataModel and
+    # lost their leading underscore, since the Controller calls them now. `_gaussian`
+    # is absent because it was not moved: it had zero callers anywhere in poriscope/ -
+    # `_gaussian_fit` fits a parabola to log(histogram) rather than calling a model
+    # function - so it was deleted rather than carried across.
+    ("poriscope/plugins/analysistabs/RawDataModel.py", "get_baseline_stats", "4c"),
+    ("poriscope/plugins/analysistabs/RawDataModel.py", "gaussian_fit", "4c"),
     # Step 4c continued - the plotting computation. `refactor_2.0.0.md` names
     # `_construct_event_overlay`, `_plot_1d_density`, `_plot_capture_rate` and
     # `_update_distribution_individual` explicitly; the sibling plot helpers are the

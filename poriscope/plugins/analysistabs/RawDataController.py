@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, List, Sequence, override
+from typing import Any, Callable, List, Optional, Sequence, Tuple, override
 
 from PySide6.QtCore import Slot
 
@@ -56,6 +56,44 @@ class RawDataController(MetaEventTabController):
     @override
     def _setup_connections(self) -> None:
         self.view.calculate_psd.connect(self.calculate_psd)
+        self.view.baseline_stats_requested.connect(self.compute_baseline_stats)
+
+    @log(logger=logger)
+    def compute_baseline_stats(
+        self, data: List[Any], channels: List[int], start: Any
+    ) -> None:
+        """
+        Fit each channel's baseline and hand the results back for plotting.
+
+        Decision B's command path, the same shape as calculate_psd below. Step 4c moved
+        the fitting to RawDataModel; the View asks for it here and plots on the answer.
+
+        A channel whose fit fails contributes None rather than aborting the plot, which
+        is what the View did when it computed these itself - a flat or degenerate trace
+        should still be drawn, just without its baseline band.
+
+        The division by 1000 converts pA to nA, matching the scale update_plot draws on.
+        It moved here with the call it belongs to.
+
+        :param data: one array of samples per channel
+        :type data: List[Any]
+        :param channels: the channel identifiers, index-aligned with data
+        :type channels: List[int]
+        :param start: the start time the View is plotting from, passed straight through
+        :type start: Any
+        :return: None
+        :rtype: None
+        """
+        stats: List[Optional[Tuple[float, float, float]]] = []
+        for channel_data, channel in zip(data, channels, strict=True):
+            try:
+                stats.append(self.model.get_baseline_stats(channel_data / 1000))
+            except ValueError as e:
+                self.logger.warning(
+                    f"Unable to compute baseline stats for channel {channel}: {e}"
+                )
+                stats.append(None)
+        self.view.update_plot(data, channels, start, stats)
 
     @log(logger=logger)
     @Slot(list, float)
