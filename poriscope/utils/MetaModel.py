@@ -26,7 +26,7 @@
 
 import logging
 from abc import abstractmethod
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -76,6 +76,8 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         self.workers: Dict[str, Dict[int, Worker]] = (
             {}
         )  # Holds worker objects per key/channel
+        # Pushed by MetaController on every plugin lifecycle event (Step 4a).
+        self._plugin_instances: Dict[str, Dict[str, object]] = {}
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
@@ -91,6 +93,99 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         ) in kwargs.items():  # set class parameters with kwargs dict for use later
             setattr(self, k, v)
         self._init()
+
+    # ---------------------------------------------------------------- Step 4a
+    # Direct access to the data plugins, replacing the return-value signal bus.
+    # Instances are *pushed* here by MetaController on every plugin lifecycle event,
+    # so nothing is resolved lazily and nothing can go stale: a rename or a
+    # re-instantiation refreshes this map through the same path that refreshes the
+    # combobox names the View sees. See Decision A in refactor_2.0.0.md.
+
+    @log(logger=logger)
+    def set_plugin_instances(
+        self, instances: Mapping[str, Mapping[str, object]]
+    ) -> None:
+        """
+        Receive the live data plugin instances, keyed by metaclass then by key.
+
+        Called by ``MetaController`` whenever the app's plugin set changes. Subclasses
+        should not need to override it.
+
+        :param instances: metaclass name -> plugin key -> live instance
+        :type instances: Mapping[str, Mapping[str, object]]
+        :return: None
+        :rtype: None
+        """
+        self._plugin_instances = {k: dict(v) for k, v in instances.items()}
+
+    def _get_plugin(self, metaclass: str, key: str) -> object:
+        """
+        Return the live plugin instance registered under a metaclass and key.
+
+        :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
+        :type metaclass: str
+        :param key: the instance's unique key, e.g. ``"SQLiteDBLoader_0"``
+        :type key: str
+        :return: the plugin instance
+        :rtype: object
+        :raises KeyError: if no instance is registered under that metaclass and key
+        """
+        try:
+            return self._plugin_instances[metaclass][key]
+        except KeyError:
+            raise KeyError(f"No {metaclass} plugin registered under {key!r}") from None
+
+    def call(
+        self, metaclass: str, key: str, method: str, *args: Any, **kwargs: Any
+    ) -> Any:
+        """
+        Call a method on a data plugin and return its result.
+
+        The replacement for emitting ``global_signal`` and reading the answer back off
+        an attribute. **Failures raise here**, at the call site, rather than being
+        logged and swallowed several hops away - which is the whole point of the
+        change: the old path returned silently on four separate conditions, and a
+        caller could not tell a failure from a stale value.
+
+        Keyword arguments are accepted, which the signal bus could not carry - its
+        ``call_args`` was a positional tuple. That matters because 48 methods on the
+        data-plugin bases have default parameters, several of them deep in the
+        signature: ``MetaEventFinder.get_event_data_generator`` has three and
+        ``MetaReader.continuous_read`` five. Positionally, setting the last one means
+        passing every earlier one too, and a signature that later gains a parameter in
+        the middle shifts every call site silently. Decision C changes some of these
+        signatures deliberately, so naming the argument is the safer habit.
+
+        Returns ``Any``, so mypy cannot catch a renamed plugin method or a misspelled
+        keyword. That is the accepted price of keeping the plugin API string-keyed; see
+        Decision A.
+
+        :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
+        :type metaclass: str
+        :param key: the instance's unique key
+        :type key: str
+        :param method: the name of the method to call on it
+        :type method: str
+        :param \\*args: positional arguments for that method
+        :type \\*args: Any
+        :param \\**kwargs: keyword arguments for that method
+        :type \\**kwargs: Any
+        :return: whatever the plugin method returned
+        :rtype: Any
+        :raises AttributeError: if the instance has no such method, or it is not callable
+        """
+        # A KeyError from _get_plugin propagates: an unknown plugin is the caller's
+        # problem to see, not something to translate into a different failure here.
+        if method.startswith("_"):
+            raise AttributeError(
+                f"{method!r} is not part of {metaclass}'s public interface; "
+                f"call() reaches a plugin's public API only"
+            )
+        instance = self._get_plugin(metaclass, key)
+        func = getattr(instance, method, None)
+        if not callable(func):
+            raise AttributeError(f"{metaclass}/{key} has no callable method {method!r}")
+        return func(*args, **kwargs)
 
     # private API, must be implemented by sublcasses
     @abstractmethod

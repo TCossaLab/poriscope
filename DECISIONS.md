@@ -10,6 +10,39 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-07 - `call()` is the only public door to a plugin, and `get_plugin` is private
+
+**Context.** Decision A named `get_plugin`/`call` as the pair replacing the return-value
+signal bus. Asked whether use of the public API could be enforced, and whether a plugin could
+reject calls that did not arrive through `call()` by inspecting the call stack.
+
+**Decision.** `_get_plugin` is **private**, so `call()` is the only public door; `call()`
+**refuses a method name starting with an underscore**; and `check_mvc_boundary` gains a fifth
+rule counting the ways around both. **No call-stack inspection.**
+
+**Evidence.** Both guards are free today: all **75** bus calls in the codebase target public
+plugin methods, so the underscore guard breaks nothing, and nothing calls `get_plugin` yet, so
+privatising it costs nothing. Rule 5 reads **zero** across 32 tab-layer modules, making it a
+ratchet from the start rather than a backlog. Against the stack-inspection idea: `inspect.stack`
+is expensive on a path that runs per chunk and per event, where the `@log` decorator was
+deliberately written to cost nothing; `call()` is not the only legitimate caller, since plugins
+hold each other (`MetaEventFinder` holds a `MetaReader`, `MetaDatabaseWriter` a
+`MetaEventFitter`); workers invoke plugin methods from a `WorkerThread` whose stack starts at
+Qt's thread entry, so the check would reject the highest-volume legitimate path; and it would
+fail on a user's machine rather than on the developer's commit. `standalone` is also the wrong
+lever - it distinguishes GUI construction from **script** construction, and scripting is a
+supported workflow in which a user holds plugin instances directly.
+
+**`call()` also takes `**kwargs`**, which the bus could not: its `call_args` was a positional
+tuple. 48 methods on the data-plugin bases have default parameters, several last in the
+signature (`get_event_data_generator` three, `continuous_read` five), so positionally, setting
+the last means passing every earlier one - and Decision C is changing some of those signatures.
+
+**Revisit if** a genuine need for a raw plugin instance in a tab appears. Make `_get_plugin`
+public deliberately at that point rather than working around it, and expect rule 5 to move.
+
+---
+
 ## 2026-09-06 - Shared tab behaviour goes in a base class; no new mixins
 
 **Context.** Step 3b could have shared the Metadata/Protein code through a

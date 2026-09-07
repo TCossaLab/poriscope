@@ -42,6 +42,7 @@
     ]
   },
   "layering": {},
+  "plugin_reach": {},
   "private_access": {
     "poriscope/plugins/analysistabs/MetadataController.py": 5,
     "poriscope/plugins/analysistabs/ProteinController.py": 5

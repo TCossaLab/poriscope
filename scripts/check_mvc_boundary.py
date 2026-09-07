@@ -55,6 +55,14 @@ The four rules:
    modules into ``views/widgets/``, and without this rule nothing would have observed
    that the step had finished. Added by the Step 2 exit review; **reads zero since
    2026-09-06**, and stays in as a ratchet against a new inversion appearing.
+5. **No analysis-tab module reaches a data plugin except through ``call()``.**
+   ``MetaController.call`` and ``MetaModel.call`` are the whole plugin-facing API a tab
+   gets (Step 4a, Decision A); a tab that resolves an instance for itself, or imports a
+   concrete plugin class, has gone around it. Added 2026-09-07 and **reads zero**, so
+   it is a ratchet from the start rather than a backlog. Python cannot enforce this at
+   runtime without inspecting the call stack on every plugin call, which would cost
+   more than it is worth and would reject the worker-thread path; a static ratchet
+   fails on the commit instead, which is earlier and cheaper.
 
 **The rule's exact definition is the number, so it is stated here rather than left
 to be inferred.** An earlier count of "21 import statements over 12 View x module
@@ -78,6 +86,12 @@ pairs" could not be reproduced because it was never written down precisely enoug
   ``poriscope/controllers`` or ``poriscope/models`` naming anything under
   ``poriscope.plugins``. Relative imports are skipped and ``__init__.py`` files are
   not scanned, since re-exports there would be noise rather than dependencies.
+- A plugin-reach violation is one of three things in an analysis-tab module: a call to
+  ``get_plugin_instance``, an attribute access named ``data_plugin_controller``, or an
+  import of a module under ``poriscope.plugins.<family>`` for one of the eight data
+  plugin families. The signal named ``data_plugin_controller_signal`` is a different
+  identifier and does not count. ``_plugin_instances`` is not counted either: that is
+  the sanctioned mechanism ``call()`` reads, pushed in by ``MainController``.
 
 **Which files each rule reads.** Rules 1-3 originally scanned ten hardcoded filenames
 under ``poriscope/plugins/analysistabs/``, which made them blind to their own refactor:
@@ -155,6 +169,30 @@ SHELL_ROOTS: Tuple[str, ...] = (
 
 #: The package the shell must not depend on.
 PLUGIN_PACKAGE = "poriscope.plugins"
+
+#: The eight data plugin families. An analysis tab must not import a concrete plugin
+#: from any of them - it reaches them by key through ``call()``.
+PLUGIN_FAMILIES: Set[str] = {
+    "datareaders",
+    "datawriters",
+    "db_loaders",
+    "db_writers",
+    "eventfinders",
+    "eventfitters",
+    "eventloaders",
+    "filters",
+}
+
+#: Filename suffixes that put a ``poriscope/utils/`` base in the analysis-tab layer for
+#: rule 5. Deliberately narrower than the View/Controller layers above: the data plugin
+#: bases (``MetaReader`` and its seven siblings) legitimately hold one another, so they
+#: are not tab modules and rule 5 does not apply to them.
+TAB_LAYER_SUFFIXES: Tuple[str, ...] = (
+    "View.py",
+    "Controller.py",
+    "Model.py",
+    "Controls.py",
+)
 
 ALLOWLIST_PATH = REPO_ROOT / ".mvc-boundary-allowlist.json"
 
@@ -326,6 +364,82 @@ def controller_modules() -> List[Path]:
     ]
 
 
+def tab_layer_modules() -> List[Path]:
+    """
+    Every analysis-tab module rule 5 applies to.
+
+    Everything under ``poriscope/plugins/analysistabs/``, plus the ``poriscope/utils/``
+    bases those tabs inherit - which are named for their role, so the data plugin bases
+    are correctly excluded.
+
+    :return: the files, sorted
+    :rtype: List[Path]
+    """
+    modules: List[Path] = []
+    for path in package_modules():
+        name = display(path)
+        if name.startswith("poriscope/plugins/analysistabs/"):
+            modules.append(path)
+        elif name.startswith("poriscope/utils/Meta") and name.endswith(
+            TAB_LAYER_SUFFIXES
+        ):
+            modules.append(path)
+    return modules
+
+
+def plugin_reaches(tree: ast.Module) -> List[str]:
+    """
+    List every way a module reaches a data plugin other than through ``call()``.
+
+    Three shapes, one entry each. ``data_plugin_controller_signal`` is a different
+    identifier and is not matched, and ``_plugin_instances`` is not matched either -
+    that is the map ``call()`` itself reads, pushed in by ``MainController``.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: one description per site, sorted
+    :rtype: List[str]
+    """
+    found: List[str] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get_plugin_instance"
+        ):
+            found.append("get_plugin_instance")
+        elif isinstance(node, ast.Attribute) and node.attr == "data_plugin_controller":
+            found.append("data_plugin_controller")
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or node.module is None:
+                continue
+            if _is_plugin_family_import(node.module):
+                found.append(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if _is_plugin_family_import(alias.name):
+                    found.append(alias.name)
+    return sorted(found)
+
+
+def _is_plugin_family_import(module: str) -> bool:
+    """
+    Report whether a dotted path names a module inside a data plugin family.
+
+    :param module: the dotted module path as written
+    :type module: str
+    :return: True if it lies under one of the eight families
+    :rtype: bool
+    """
+    parts = module.split(".")
+    return (
+        len(parts) > 2
+        and parts[0] == "poriscope"
+        and parts[1] == "plugins"
+        and parts[2] in PLUGIN_FAMILIES
+    )
+
+
 def shell_modules() -> List[Path]:
     """
     Every app-shell module the layering rule applies to.
@@ -378,11 +492,22 @@ def measure() -> Dict[str, Dict[str, object]]:
         if found:
             layering[display(path)] = found
 
+    plugin_reach: Dict[str, List[str]] = {}
+    tabs = tab_layer_modules()
+    if not tabs:
+        raise FileNotFoundError("the analysis-tab layer scan matched no modules")
+    for path in tabs:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+        found = plugin_reaches(tree)
+        if found:
+            plugin_reach[display(path)] = found
+
     return {
         "emits": emits,
         "imports": imports,
         "private_access": privates,
         "layering": layering,
+        "plugin_reach": plugin_reach,
     }
 
 
@@ -403,6 +528,7 @@ def to_allowlist(results: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, o
     imports: Dict[str, List[str]] = results["imports"]  # type: ignore[assignment]
     privates: Dict[str, List[str]] = results["private_access"]  # type: ignore[assignment]
     layering: Dict[str, List[str]] = results["layering"]  # type: ignore[assignment]
+    reach: Dict[str, List[str]] = results["plugin_reach"]  # type: ignore[assignment]
     return {
         "emits": {name: count for name, count in sorted(emits.items()) if count},
         "imports": {name: names for name, names in sorted(imports.items()) if names},
@@ -410,6 +536,7 @@ def to_allowlist(results: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, o
             name: len(names) for name, names in sorted(privates.items()) if names
         },
         "layering": {name: names for name, names in sorted(layering.items()) if names},
+        "plugin_reach": {name: names for name, names in sorted(reach.items()) if names},
     }
 
 
@@ -426,7 +553,8 @@ def total(allowlist: Dict[str, Dict[str, object]]) -> int:
     imports = sum(len(v) for v in allowlist.get("imports", {}).values())  # type: ignore[arg-type]
     privates = sum(int(v) for v in allowlist.get("private_access", {}).values())
     layering = sum(len(v) for v in allowlist.get("layering", {}).values())  # type: ignore[arg-type]
-    return emits + imports + privates + layering
+    reach = sum(len(v) for v in allowlist.get("plugin_reach", {}).values())  # type: ignore[arg-type]
+    return emits + imports + privates + layering + reach
 
 
 def distinct_pairs(allowlist: Dict[str, Dict[str, object]]) -> int:
@@ -480,7 +608,7 @@ def compare(
     :rtype: List[str]
     """
     problems: List[str] = []
-    for rule in ("emits", "imports", "private_access", "layering"):
+    for rule in ("emits", "imports", "private_access", "layering", "plugin_reach"):
         now = current.get(rule, {})
         was = allowed.get(rule, {})
         for name in sorted(set(now) | set(was)):
@@ -544,6 +672,13 @@ def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:
         detail = f"  {', '.join(modules)}" if verbose else ""
         print(f"     {len(modules):>3}  {name}{detail}")
     print(f"     {sum(len(m) for m in layering_rule.values()):>3}  total")
+
+    print("\n5. Analysis-tab module reaching a data plugin outside call()")
+    reach_rule: Dict[str, List[str]] = allowlist["plugin_reach"]  # type: ignore[assignment]
+    for name, sites in reach_rule.items():
+        detail = f"  {', '.join(sites)}" if verbose else ""
+        print(f"     {len(sites):>3}  {name}{detail}")
+    print(f"     {sum(len(s) for s in reach_rule.values()):>3}  total")
 
     print(
         f"\nAllowlist total: {total(allowlist)} "
