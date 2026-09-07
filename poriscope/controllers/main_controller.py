@@ -860,6 +860,12 @@ class MainController(QObject):
                 self.save_tab_action_history
             )
             self.analysis_tabs[subclass].update_available_plugins(self.data_plugins)
+            # Step 4a: and the instances, or a tab created after the plugins
+            # already exist - which is exactly what restoring a session does -
+            # gets a populated combobox and an empty instance map.
+            self.analysis_tabs[subclass].set_plugin_instances(
+                self._live_plugin_instances()
+            )
             self.logger.debug(f"New analysis tab of type {subclass} added")
             self.update_plugin_history(history, "")
 

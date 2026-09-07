@@ -5,10 +5,12 @@ Covers:
 - _init creates view and model
 - _setup_connections is a no-op that does not raise
 - display_write_status (success and failure branches)
+- load_metadata_for_clustering, which replaced relay_query and the two bus calls
+  behind it: it builds the query, loads the rows, and reports either failure on the
+  status panel rather than leaving the View to read a stale attribute
 - check_cluster_column / commit_clusters, the Step 4a commit path: two round trips
   with the overwrite confirmation in the View between them, and a failed drop that
   stops the commit rather than writing on top of a half-deleted result
-- relay_query (query present, debug-only path)
 - relay_event_data_generator delegation
 - relay_plot_data delegation
 - relay_units delegation
@@ -136,40 +138,6 @@ def test_display_write_status_emits_failure_message(
     )
 
 
-# ------------------------- relay_query -------------------------------
-
-
-def test_relay_query_forwards_query_and_table_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a valid query and table name to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    controller.relay_query("SELECT * FROM events", "", "events")
-    mock_view.set_query.assert_called_once_with("SELECT * FROM events", "events")
-
-
-def test_relay_query_emits_debug_when_query_empty(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Emit a debug message and still call set_query when the query string is empty.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    controller.relay_query("", "debug message", "events")
-    controller.add_text_to_display.emit.assert_called_once_with(
-        "debug message", "ClusteringController"
-    )
-    mock_view.set_query.assert_called_once_with("", "events")
-
-
 # --------------- relay_event_data_generator --------------------------
 
 
@@ -222,6 +190,163 @@ def test_relay_units_delegates_to_view(
     units = {"current": "pA", "time": "s"}
     controller.relay_units(units)
     mock_view.set_units.assert_called_once_with(units)
+
+
+# -------------------- load_metadata_for_clustering (Step 4a) ----------
+
+
+class TestLoadMetadataForClustering:
+    """
+    What replaced ``relay_query`` and the two bus calls behind it.
+
+    Both answers used to be parked on View attributes and read back on the next
+    statement. That is the pattern that twice shipped a plot of the previous subset's
+    rows: a dispatch that failed left the attribute holding the last successful value,
+    and the ``is None`` guard read it as this subset's answer. Every test here is a case
+    the old path could not distinguish.
+    """
+
+    def _config(self):
+        """A minimal config, as the settings dialog produces one."""
+        return {
+            "method": "HDBSCAN",
+            "filter": "",
+            "columns": [
+                {
+                    "column": "duration",
+                    "unit": "us",
+                    "log": False,
+                    "norm": True,
+                    "plot": True,
+                }
+            ],
+            "method_params": {},
+        }
+
+    def test_it_builds_the_query_then_loads_the_rows(self, controller, mocker) -> None:
+        """Two calls, in order, both by key through the Model."""
+        frame = mocker.Mock(empty=False)
+        controller.model.call.side_effect = [("SELECT 1", "", "events"), frame]
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        assert controller.model.call.call_count == 2
+        first, second = controller.model.call.call_args_list
+        assert first.args[2] == "construct_metadata_query"
+        assert second.args[2] == "load_metadata"
+
+    def test_it_hands_the_rows_to_the_view(self, controller, mocker) -> None:
+        """The result path: the rows arrive as an argument, not as an attribute."""
+        frame = mocker.Mock(empty=False)
+        config = self._config()
+        controller.model.call.side_effect = [("SELECT 1", "", "events"), frame]
+
+        controller.load_metadata_for_clustering(config, "L")
+
+        controller.view.on_metadata_loaded.assert_called_once_with(config, "L", frame)
+
+    def test_the_query_and_table_still_reach_the_view(self, controller, mocker) -> None:
+        """
+        ``set_query`` is kept: the View shows the SQL on the status panel from it.
+
+        Only the delivery changed, not the state.
+        """
+        controller.model.call.side_effect = [
+            ("SELECT 1", "", "events"),
+            mocker.Mock(empty=False),
+        ]
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        controller.view.set_query.assert_called_once_with("SELECT 1", "events")
+
+    def test_an_empty_query_stops_and_is_reported(self, controller) -> None:
+        """
+        The loader could not build a query from the selected columns.
+
+        The View used to detect this by reading back ``self.query == ""``; it is a
+        return value now, and nothing is loaded.
+        """
+        controller.model.call.return_value = ("", "no such column", "events")
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        assert controller.model.call.call_count == 1
+        controller.view.on_metadata_loaded.assert_not_called()
+        assert controller.add_text_to_display.emit.called
+
+    def test_a_debug_message_is_shown_when_the_query_is_empty(self, controller) -> None:
+        """
+        The loader's own explanation reaches the panel.
+
+        This is what ``relay_query`` did, and it is the useful half of that method -
+        the message is often a set of instructions for fixing the filter.
+        """
+        controller.model.call.return_value = ("", "unknown column: dur", "events")
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("unknown column: dur" in m for m in messages)
+
+    def test_an_empty_result_stops_and_is_reported(self, controller, mocker) -> None:
+        """
+        A query that matched nothing.
+
+        ``.empty`` as well as None, because the loader returns an empty frame rather
+        than None and clustering one raises from deep inside sklearn.
+        """
+        controller.model.call.side_effect = [
+            ("SELECT 1", "", "events"),
+            mocker.Mock(empty=True),
+        ]
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        controller.view.on_metadata_loaded.assert_not_called()
+
+    def test_none_rows_stop_and_are_reported(self, controller) -> None:
+        """The other empty shape, which the old guard conflated with a failure."""
+        controller.model.call.side_effect = [("SELECT 1", "", "events"), None]
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        controller.view.on_metadata_loaded.assert_not_called()
+
+    def test_a_failing_query_build_is_reported(self, controller) -> None:
+        """A raise from the plugin, which the bus swallowed entirely."""
+        controller.model.call.side_effect = KeyError("no such plugin")
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        controller.view.on_metadata_loaded.assert_not_called()
+        assert controller.add_text_to_display.emit.called
+
+    def test_a_view_side_validation_error_is_reported_not_raised(
+        self, controller, mocker
+    ) -> None:
+        """
+        Qt invoked this from a signal, so the View's raises must not escape it.
+
+        ``on_metadata_loaded`` raises for a missing column or a malformed parameter;
+        the user is told, and the slot returns.
+        """
+        controller.model.call.side_effect = [
+            ("SELECT 1", "", "events"),
+            mocker.Mock(empty=False),
+        ]
+        controller.view.on_metadata_loaded.side_effect = ValueError(
+            "Did you forget to fill in clustering parameters?"
+        )
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("clustering parameters" in m for m in messages)
 
 
 # -------------------- the commit path (Step 4a) -----------------------

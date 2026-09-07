@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed a tab being unable to use a plugin it was showing in its dropdown** after a saved session was restored: the tab was told which plugins existed but not given access to them, so selecting one reported that it did not exist
+
+* **Fixed the clustering settings dialog failing with an error instead of opening** when the column list could not be read from the database
+
 * Analysis tabs can now call a data plugin directly through `call()` on their model or controller, so a failed plugin call raises where it happened instead of being logged several hops away and leaving the caller with the previous call's answer
 
 * The baseline statistics behind the Raw Data tab's green baseline band are now computed in that tab's model rather than in its plot widget

@@ -97,6 +97,13 @@ class ClusteringView(MetaView):
     #: rather than one because a modal confirmation sits between them.
     cluster_commit_requested = Signal(str, object, str, object)
 
+    #: Asks the Controller to build the metadata query and load the rows for it. Step 4a:
+    #: this replaced the last two ``global_signal`` emits in this tab, whose answers were
+    #: parked on ``self.query`` and ``self.plot_data`` and read back on the next
+    #: statement - the pattern that twice shipped a plot of the *previous* subset's rows.
+    #: The rows arrive at ``on_metadata_loaded``.
+    metadata_load_requested = Signal(dict, str)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -108,6 +115,11 @@ class ClusteringView(MetaView):
         self._clear_cache()
         self.cluster_data: Optional[pd.DataFrame] = None
         self.query = ""
+        # Set by update_column_names when the loader answers. Initialised here
+        # because the clustering settings dialog reads it: before Step 4a it was
+        # created only by that callback, so a loader whose columns could not be
+        # read left the dialog raising AttributeError instead of opening empty.
+        self.columns: List[str] = []
         # Positional units for the currently plotted columns, set by
         # update_plot and read back by _merge_clusters when it replots.
         # Declared here so the attribute exists before the first plot.
@@ -517,18 +529,15 @@ class ClusteringView(MetaView):
         self, config: Dict[str, Any], loader: str
     ) -> None:
         """
-        Load metadata from the database and ask the Model to cluster it.
+        Validate the settings dialog's config and ask the Controller for the rows.
 
-        Returns nothing. Step 4c moved the clustering onto ClusteringModel, so this
-        method ends by emitting cluster_requested rather than by returning a result. The
-        answer arrives at set_clustering_result, which is where the plotting that used
-        to follow this call inline now lives.
+        Step 4a split this in two. It used to emit ``global_signal`` twice and read each
+        answer back off an attribute on the following statement; the rows now arrive at
+        :meth:`on_metadata_loaded`, which does the filtering and the clustering request.
 
-        What stays here is what belongs to the View: reading the settings dialog's
-        config, rejecting a duplicate column selection, fetching the rows over the
-        plugin bus, filtering and log-scaling them, and parsing the method parameters
-        the user typed - so a malformed parameter is reported against the form it came
-        from rather than raised from inside the Model.
+        What stays here is validation of what the user just selected, which is the
+        View's own business: a duplicate column makes for a meaningless plot and is
+        worth refusing before anything is loaded.
 
         :param config: Dictionary with selected columns and method configuration.
         :type config: Dict[str, Any]
@@ -536,14 +545,9 @@ class ClusteringView(MetaView):
         :type loader: str
         :return: None
         :rtype: None
-        :raises KeyError: If a duplicate column is selected, or if a selected column is missing from the loaded dataframe.
-        :raises ValueError: If the metadata query cannot be generated, no data matches the query, or the clustering method/parameters are invalid or missing.
+        :raises KeyError: If a duplicate column is selected.
         """
         columns = [val["column"] for val in config["columns"]]
-        units = [val["unit"] for val in config["columns"]]
-        logs = [val["log"] for val in config["columns"]]
-        norm = [val["norm"] for val in config["columns"]]
-        plot = [val["plot"] for val in config["columns"]]
 
         seen = set()
         for col in columns:
@@ -551,39 +555,37 @@ class ClusteringView(MetaView):
                 raise KeyError("All columns should be different for a meaningful plot")
             seen.add(col)
 
-        sql_filter = config["filter"]
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "construct_metadata_query",
-            (columns, sql_filter),
-            "relay_query",
-            (),
-        )
-        if self.query == "":
-            raise ValueError(
-                "Unable to generate metadata query, double check your solumn selections"
-            )
+        self.metadata_load_requested.emit(config, loader)
 
-        # Cleared first: a dispatch that fails never calls update_plot_data, so
-        # without this the guard below would cluster the previous run's rows.
-        self.plot_data = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_metadata",
-            (columns, sql_filter),
-            "update_plot_data",
-            (),
-        )
+    @log(logger=logger)
+    def on_metadata_loaded(
+        self, config: Dict[str, Any], loader: str, plot_data: pd.DataFrame
+    ) -> None:
+        """
+        Filter and log-scale the loaded rows, then ask for them to be clustered.
 
-        # .empty as well as None: the loader now returns an empty frame for a
-        # query that matched nothing, and clustering an empty frame raises an
-        # opaque error from deep inside sklearn.
-        if self.plot_data is None or self.plot_data.empty:
-            raise ValueError("No data matches the given query")
+        The second half of :meth:`_load_metadata_and_request_clustering`. The rows are a
+        parameter now rather than something read back off ``self.plot_data``, so the
+        clear-before-emit guard that used to protect that read is gone with the read.
 
-        if not all(col in self.plot_data.columns for col in columns):
+        :param config: Dictionary with selected columns and method configuration.
+        :type config: Dict[str, Any]
+        :param loader: Identifier of the loader plugin.
+        :type loader: str
+        :param plot_data: the rows the Controller loaded
+        :type plot_data: pd.DataFrame
+        :return: None
+        :rtype: None
+        :raises KeyError: If a selected column is missing from the loaded dataframe.
+        :raises ValueError: If the clustering method or its parameters are invalid or missing.
+        """
+        columns = [val["column"] for val in config["columns"]]
+        units = [val["unit"] for val in config["columns"]]
+        logs = [val["log"] for val in config["columns"]]
+        norm = [val["norm"] for val in config["columns"]]
+        plot = [val["plot"] for val in config["columns"]]
+
+        if not all(col in plot_data.columns for col in columns):
             raise KeyError(
                 f"All columns {columns} must be present in the provided dataframe"
             )
@@ -603,8 +605,9 @@ class ClusteringView(MetaView):
         # was its sole caller. It filters rows across every array it is handed, so
         # passing `frame_columns` reproduces exactly what the frame form's `dropna()`
         # saw, and the frame is rebuilt for the DataFrame-shaped work that follows.
+        # Step 3d moves it to `MetaModel`; it is still a View method today.
         filtered = self._logscale_and_filter_multiple_columns(
-            *(self.plot_data[c].to_numpy() for c in frame_columns),
+            *(plot_data[c].to_numpy() for c in frame_columns),
             log_flags=[c in logged for c in frame_columns],
         )
         clustering_data = pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
