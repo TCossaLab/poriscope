@@ -9,11 +9,8 @@
   },
   "imports": {
     "poriscope/plugins/analysistabs/ClusteringView.py": [
-      "hdbscan",
       "numpy",
-      "pandas",
-      "pandas.api.types",
-      "sklearn.mixture"
+      "pandas"
     ],
     "poriscope/plugins/analysistabs/EventAnalysisView.py": [
       "numpy",

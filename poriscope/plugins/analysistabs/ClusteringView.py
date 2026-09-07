@@ -31,21 +31,18 @@ import sys
 import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
-import hdbscan
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
-from pandas.api.types import is_float_dtype
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QMessageBox,
 )
-from sklearn.mixture import GaussianMixture
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -72,6 +69,14 @@ class ClusteringView(MetaView):
     Handles plotting, user input, and signal exchanges.
     """
 
+    #: Asks the Controller to cluster an already-loaded frame. Carries the frame, the
+    #: columns to leave un-normalized, the method name, and that method's already-parsed
+    #: parameters. Step 4c introduced it: the clustering itself lives on
+    #: ``ClusteringModel`` now, and this is Decision B's command path to it -
+    #: ``RawDataView.calculate_psd`` is the same shape. The answer arrives at
+    #: :meth:`set_clustering_result`.
+    cluster_requested = Signal(object, list, str, dict)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -87,6 +92,9 @@ class ClusteringView(MetaView):
         # update_plot and read back by _merge_clusters when it replots.
         # Declared here so the attribute exists before the first plot.
         self.plot_units: Sequence[Optional[str]] = []
+        # Held between emitting cluster_requested and set_clustering_result
+        # receiving the answer; None means no request is outstanding.
+        self._pending_cluster_display: Optional[Tuple[Any, ...]] = None
 
     @log(logger=logger)
     def _build_controls(self) -> ClusteringControls:
@@ -502,46 +510,37 @@ class ClusteringView(MetaView):
                 f"Clustering parameters updated for '{title}': {config_result}"
             )
             try:
-                clustered_data, labels, confidence, logs, norm, units, plot = (
-                    self._load_metadata_and_cluster(config_result, title)
-                )
+                self._load_metadata_and_request_clustering(config_result, title)
             except (ValueError, KeyError, TypeError) as e:
                 self.logger.error(f"Unable to cluster data: {repr(e)}")
                 return
-            if clustered_data is None:
-                self.logger.error("Unable to cluster data: dataframe came back empty")
-                return
-
-            self.add_text_to_display.emit(
-                f"{config_result['method']} applied to {len(clustered_data)} rows",
-                self.__class__.__name__,
-            )
-            self._reset_actions()
-            self.update_plot(
-                clustered_data, labels, confidence, logs, norm, units, plot
-            )
         else:
             self.logger.debug("Clustering dialog cancelled.")
 
     @log(logger=logger)
-    def _load_metadata_and_cluster(self, config: Dict[str, Any], loader: str) -> Tuple[
-        Any,  # clustering_data (likely a DataFrame)
-        Any,  # labels (e.g. ndarray or list)
-        Any,  # probs (e.g. ndarray or list)
-        List[Any],  # logs
-        List[Any],  # norm
-        List[Any],  # units
-        List[Any],  # plot
-    ]:
+    def _load_metadata_and_request_clustering(
+        self, config: Dict[str, Any], loader: str
+    ) -> None:
         """
-        Loads metadata from the database and performs clustering.
+        Load metadata from the database and ask the Model to cluster it.
+
+        Returns nothing. Step 4c moved the clustering onto ClusteringModel, so this
+        method ends by emitting cluster_requested rather than by returning a result. The
+        answer arrives at set_clustering_result, which is where the plotting that used
+        to follow this call inline now lives.
+
+        What stays here is what belongs to the View: reading the settings dialog's
+        config, rejecting a duplicate column selection, fetching the rows over the
+        plugin bus, filtering and log-scaling them, and parsing the method parameters
+        the user typed - so a malformed parameter is reported against the form it came
+        from rather than raised from inside the Model.
 
         :param config: Dictionary with selected columns and method configuration.
         :type config: Dict[str, Any]
         :param loader: Identifier of the loader plugin.
         :type loader: str
-        :return: Tuple containing clustered data, labels, confidence, logs, normalized flags, units, and plot flags.
-        :rtype: Tuple[Any, Any, Any, List[Any], List[Any], List[Any], List[Any]]
+        :return: None
+        :rtype: None
         :raises KeyError: If a duplicate column is selected, or if a selected column is missing from the loaded dataframe.
         :raises ValueError: If the metadata query cannot be generated, no data matches the query, or the clustering method/parameters are invalid or missing.
         """
@@ -614,52 +613,78 @@ class ClusteringView(MetaView):
             log_flags=[c in logged for c in frame_columns],
         )
         clustering_data = pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
-        clustering_data = self._normalize_column_data(
-            clustering_data,
-            exclude_cols=[c for c, b in zip(columns, norm, strict=True) if not b]
-            + ["id"],
-        )
+        exclude_cols = [c for c, b in zip(columns, norm, strict=True) if not b] + ["id"]
 
-        if config["method"] == "HDBSCAN":
-            try:
-                min_cluster_size = int(
-                    config["method_params"]["HDBSCAN_Cluster_Size_input"]
-                )
-                min_samples = int(config["method_params"]["HDBSCAN_Min_Points_input"])
-                cluster_selection_epsilon = float(
-                    config["method_params"]["HDBSCAN_Sensitivity_input"]
-                )
-            except ValueError as e:
-                raise ValueError(
-                    "Did you forget to fill in clustering parameters?"
-                ) from e
-            labels, probs = self._update_clusters_hdbscan(
-                clustering_data,
-                min_cluster_size=min_cluster_size,
-                min_samples=min_samples,
-                cluster_selection_epsilon=cluster_selection_epsilon,
-            )
-        elif config["method"] == "Gaussian Mixtures":
-            try:
-                n_components = int(
-                    config["method_params"][
-                        "Gaussian Mixtures_Number_of_Clusters_input"
-                    ]
-                )
-            except ValueError as e:
-                raise ValueError(
-                    "Did you forget to fill in clustering parameters?"
-                ) from e
-            columns_except_id = clustering_data.columns[clustering_data.columns != "id"]
-            clusterer = GaussianMixture(
-                n_components=n_components, n_init=100, random_state=42
-            )
-            labels = clusterer.fit_predict(clustering_data[columns_except_id])
-            probs = clusterer.predict_proba(clustering_data[columns_except_id])
-            probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
-        else:
-            raise ValueError(f"Unknown clustering method: {config['method']!r}")
-        return clustering_data, labels, probs, logs, norm, units, plot
+        # Parsed here rather than in the Model: these are the strings the user typed
+        # into the settings dialog, so a bad one is this form's problem to report.
+        method = config["method"]
+        if method not in ("HDBSCAN", "Gaussian Mixtures"):
+            raise ValueError(f"Unknown clustering method: {method!r}")
+        try:
+            if method == "HDBSCAN":
+                params: Dict[str, Any] = {
+                    "min_cluster_size": int(
+                        config["method_params"]["HDBSCAN_Cluster_Size_input"]
+                    ),
+                    "min_samples": int(
+                        config["method_params"]["HDBSCAN_Min_Points_input"]
+                    ),
+                    "cluster_selection_epsilon": float(
+                        config["method_params"]["HDBSCAN_Sensitivity_input"]
+                    ),
+                }
+            else:
+                params = {
+                    "n_components": int(
+                        config["method_params"][
+                            "Gaussian Mixtures_Number_of_Clusters_input"
+                        ]
+                    )
+                }
+        except ValueError as e:
+            raise ValueError("Did you forget to fill in clustering parameters?") from e
+
+        # The per-column display flags are this View's own request context, not
+        # anything the Model or Controller needs, so they are held here rather than
+        # sent on a round trip. set_clustering_result reads them back.
+        self._pending_cluster_display = (method, logs, norm, units, plot)
+        self.cluster_requested.emit(clustering_data, exclude_cols, method, params)
+
+    @log(logger=logger)
+    def set_clustering_result(
+        self,
+        data: pd.DataFrame,
+        labels: Union[Sequence[Any], np.ndarray],
+        confidence: Union[Sequence[Any], np.ndarray],
+    ) -> None:
+        """
+        Receive the Model's clustering result and plot it.
+
+        The other half of cluster_requested. Everything here used to follow the
+        clustering call inline in _handle_clustering_settings; Step 4c moved the
+        clustering itself to ClusteringModel, so this moved here instead.
+
+        :param data: the normalized frame the Model clustered
+        :type data: pd.DataFrame
+        :param labels: cluster label per row
+        :type labels: Union[Sequence[Any], np.ndarray]
+        :param confidence: cluster confidence per row
+        :type confidence: Union[Sequence[Any], np.ndarray]
+        :return: None
+        :rtype: None
+        """
+        if self._pending_cluster_display is None:
+            self.logger.error("Clustering result arrived with no request outstanding")
+            return
+        method, logs, norm, units, plot = self._pending_cluster_display
+        self._pending_cluster_display = None
+
+        self.add_text_to_display.emit(
+            f"{method} applied to {len(data)} rows",
+            self.__class__.__name__,
+        )
+        self._reset_actions()
+        self.update_plot(data, labels, confidence, logs, norm, units, plot)
 
     @log(logger=logger)
     def update_plot(
@@ -855,64 +880,6 @@ class ClusteringView(MetaView):
             self.logger.debug(
                 f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
             )
-
-    @log(logger=logger)
-    def _normalize_column_data(
-        self, df: pd.DataFrame, exclude_cols: Optional[List[str]] = None
-    ) -> pd.DataFrame:
-        """
-        Applies MAD-based normalization to float columns in the dataframe.
-
-        :param df: Input DataFrame.
-        :type df: pd.DataFrame
-        :param exclude_cols: Columns to exclude from normalization. None means exclude nothing.
-        :type exclude_cols: Optional[List[str]]
-        :return: Normalized DataFrame.
-        :rtype: pd.DataFrame
-        """
-        if exclude_cols is None:
-            exclude_cols = []
-        df = df.copy()  # avoid SettingWithCopyWarning
-        datatypes = df.dtypes
-        for col, dt in datatypes.items():
-            if col not in exclude_cols and is_float_dtype(dt):  # leave int types alone
-                median = df[col].median()
-                mad = (df[col] - median).abs().median()
-                if mad != 0:
-                    df.loc[:, col] = (df[col] - median) / mad
-        return df
-
-    @log(logger=logger)
-    def _update_clusters_hdbscan(
-        self,
-        df: pd.DataFrame,
-        min_cluster_size: int = 30,
-        min_samples: int = 1,
-        cluster_selection_epsilon: float = 1,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Performs HDBSCAN clustering on the provided data.
-
-        :param df: DataFrame to cluster.
-        :type df: pd.DataFrame
-        :param min_cluster_size: Minimum size of clusters.
-        :type min_cluster_size: int
-        :param min_samples: Minimum samples per cluster.
-        :type min_samples: int
-        :param cluster_selection_epsilon: Epsilon value to influence cluster boundaries.
-        :type cluster_selection_epsilon: float
-        :return: Cluster labels and probabilities.
-        :rtype: tuple[np.ndarray, np.ndarray]
-        """
-        columns_except_id = df.columns[df.columns != "id"]
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-            cluster_selection_epsilon=cluster_selection_epsilon,
-        ).fit(df[columns_except_id])
-        labels = clusterer.labels_
-        probs = clusterer.probabilities_
-        return labels, probs
 
     def get_current_view(self) -> str:
         return "ClusteringView"

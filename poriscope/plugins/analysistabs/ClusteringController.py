@@ -28,6 +28,8 @@
 import logging
 from typing import Any, Dict, Generator, List, Optional, override
 
+import pandas as pd
+
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -80,10 +82,50 @@ class ClusteringController(MetaController):
         """
         Connect internal view signals to their corresponding controller slots.
         """
-        # Implement any required connections here
-        # This function can remain empty if no additional setup is needed,
-        # but it must exist to satisfy the abstract base class requirement.
-        pass
+        self.view.cluster_requested.connect(self.cluster)
+
+    @log(logger=logger)
+    def cluster(
+        self,
+        frame: pd.DataFrame,
+        exclude_cols: List[str],
+        method: str,
+        params: Dict[str, Any],
+    ) -> None:
+        """
+        Cluster a frame the View has loaded, and hand the result back to it.
+
+        Decision B's command path, the same shape as
+        ``RawDataController.calculate_psd``: the View emits an intent, this slot calls
+        the Model, and the result goes back through a setter on the View. Step 4c
+        introduced it, when the clustering moved off the widget.
+
+        A failure is reported on the status panel rather than raised, because nothing
+        above this slot is a call site that could handle it - Qt invoked it from a
+        signal.
+
+        :param frame: the rows to cluster, already filtered and log-scaled
+        :type frame: pd.DataFrame
+        :param exclude_cols: columns to leave un-normalized
+        :type exclude_cols: List[str]
+        :param method: the clustering method the user chose
+        :type method: str
+        :param params: that method's already-parsed parameters
+        :type params: Dict[str, Any]
+        :return: None
+        :rtype: None
+        """
+        try:
+            clustered, labels, confidence = self.model.cluster(
+                frame, exclude_cols, method, params
+            )
+        except (ValueError, KeyError, TypeError) as e:
+            self.logger.error(f"Unable to cluster data: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to cluster data: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_clustering_result(clustered, labels, confidence)
 
     @log(logger=logger)
     def relay_query(self, query: str, debug: str, table_name: str) -> None:
