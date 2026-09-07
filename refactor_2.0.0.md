@@ -1097,6 +1097,39 @@ Verified rather than assumed:
 
 ## Step 4 — View code that is Model code
 
+#### 4c Clustering pilot — LANDED 2026-09-07
+
+**Boundary allowlist 106 → 103, and rule 2 falls for the first time in the refactor.**
+`hdbscan`, `pandas.api.types` and `sklearn.mixture` were each used by exactly one moving
+method, so all three imports left `ClusteringView`, which drops from 5 forbidden imports to
+2. `numpy` and `pandas` stay — `update_plot` uses both, which is correctly View code.
+Duplication unmoved (single copies). Suite 3,346 passed / 4 skipped.
+
+`ClusteringModel` went from `def _init: pass` to owning `normalize_column_data`,
+`cluster_hdbscan`, `cluster_gaussian_mixture` and `cluster()`.
+
+**The caller restructure was the work, exactly as the fifth pass predicted.**
+`_load_metadata_and_cluster` → `_load_metadata_and_request_clustering`: it no longer returns
+a 7-tuple, it emits `cluster_requested`. `ClusteringController.cluster` calls the Model and
+hands the answer to `ClusteringView.set_clustering_result`, which does the display message,
+the axes reset and the plot that used to follow the call inline.
+
+Kept in the View deliberately: the two `global_signal` emits (**4a**), the logscale call
+(**3d**, blocked on 4a), and parsing the settings dialog's parameter strings — so a malformed
+parameter is reported against the form it came from, and the Model takes typed values it
+cannot fault. The per-column display flags are held on the View between the emit and the
+answer rather than round-tripped through a Controller with no use for them, and
+`set_clustering_result` refuses a result with no request outstanding rather than plotting
+against another run's flags.
+
+**Two things worth carrying to the other 4c tabs.** First, the win to aim at is *which
+import leaves*: check that each forbidden import is used by exactly one moving method before
+starting, because that is what makes the allowlist fall. Second, extracting an inline branch
+finds coverage that never existed — the Gaussian-mixture branch was fifteen lines inside a
+136-line View method reachable only by constructing the widget and answering two bus emits,
+and it now has four direct tests including one pinning that 1.9.0's seeding survived the
+move.
+
 ### Fifth verification pass — Step 4 re-checked after Step 3, 2026-09-06
 
 Step 3 moved a great deal of what Step 4 names, so every checkable claim below was

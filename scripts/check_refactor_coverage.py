@@ -120,15 +120,23 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "check_column_exists",
         "3e",
     ),
-    # Step 4c - scientific computation out of the widgets
+    # Step 4c - scientific computation out of the widgets. The Clustering pilot landed
+    # 2026-09-07: these two moved to ClusteringModel and lost their leading underscore,
+    # since the Controller calls them now, and the Gaussian-mixture branch of
+    # _load_metadata_and_cluster became a third method beside them.
     (
-        "poriscope/plugins/analysistabs/ClusteringView.py",
-        "_normalize_column_data",
+        "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "normalize_column_data",
         "4c",
     ),
     (
-        "poriscope/plugins/analysistabs/ClusteringView.py",
-        "_update_clusters_hdbscan",
+        "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "cluster_hdbscan",
+        "4c",
+    ),
+    (
+        "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "cluster_gaussian_mixture",
         "4c",
     ),
     ("poriscope/plugins/analysistabs/MetadataView.py", "_calculate_heatmap", "4c"),
@@ -180,7 +188,11 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # error the audit exists to prevent, made one level up in the audit itself.
     (
         "poriscope/plugins/analysistabs/ClusteringView.py",
-        "_load_metadata_and_cluster",
+        # Renamed by the Step 4c Clustering pilot, 2026-09-07: it no longer clusters,
+        # it asks ClusteringModel to. The rows it loads and log-scales are still its
+        # own work, so it stays a 4c target - what remains to move is the bus emits
+        # (4a) and the logscale call (3d).
+        "_load_metadata_and_request_clustering",
         "4c",
     ),
     (
