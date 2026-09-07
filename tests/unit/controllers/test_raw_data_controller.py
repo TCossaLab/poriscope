@@ -58,7 +58,70 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> RawDataController
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
+    # Real MetaController signal, needed by any slot that reports a failure to the
+    # status panel. Added when Step 4a gave this controller its first such slot.
+    ctrl.add_text_to_display = mocker.Mock()
+    ctrl.add_text_to_display.emit = mocker.Mock()
     return ctrl
+
+
+# ----------------------- request_reader_channels (Step 4a) -----------
+
+
+class TestRequestReaderChannels:
+    """
+    The Step 4a replacement for a ``global_signal`` round trip.
+
+    The View asked a reader for its channel list over the bus and the answer came back
+    seven hops later through a return function named by string. It is one call now, and
+    a reader that cannot be read leaves the channel combobox alone instead of being
+    reported nowhere the user can see it.
+    """
+
+    def test_it_asks_the_reader_through_the_model(
+        self, controller: RawDataController
+    ) -> None:
+        """By key, through the sanctioned API."""
+        controller.model.call.return_value = [0, 1, 2]
+
+        controller.request_reader_channels("BinaryReader1X_0")
+
+        controller.model.call.assert_called_once_with(
+            "MetaReader", "BinaryReader1X_0", "get_channels"
+        )
+
+    def test_it_hands_the_channels_to_the_view(
+        self, controller: RawDataController
+    ) -> None:
+        """The result path, which populates the channel combobox."""
+        controller.model.call.return_value = [0, 1, 2]
+
+        controller.request_reader_channels("BinaryReader1X_0")
+
+        controller.view.update_channels.assert_called_once_with([0, 1, 2])
+
+    def test_a_failure_leaves_the_combobox_alone(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Not repopulated with nothing.
+
+        Clearing it would look to the user like a reader with no channels, which is a
+        different and more alarming thing than a reader that could not be read.
+        """
+        controller.model.call.side_effect = KeyError("no such plugin")
+
+        controller.request_reader_channels("gone")
+
+        controller.view.update_channels.assert_not_called()
+
+    def test_it_does_not_raise_out_of_the_slot(
+        self, controller: RawDataController
+    ) -> None:
+        """Qt invoked this from a signal; an exception must not escape into C++."""
+        controller.model.call.side_effect = RuntimeError("reader failed")
+
+        controller.request_reader_channels("BinaryReader1X_0")
 
 
 # ----------------------- _init / _setup_connections ------------------

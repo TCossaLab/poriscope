@@ -57,6 +57,33 @@ class RawDataController(MetaEventTabController):
     def _setup_connections(self) -> None:
         self.view.calculate_psd.connect(self.calculate_psd)
         self.view.baseline_stats_requested.connect(self.compute_baseline_stats)
+        self.view.reader_channels_requested.connect(self.request_reader_channels)
+
+    @log(logger=logger)
+    def request_reader_channels(self, reader: str) -> None:
+        """
+        Fetch a reader's channel list and hand it to the View.
+
+        Step 4a: this replaces a ``global_signal`` round trip whose answer arrived seven
+        hops later through a return function named by string. A reader that cannot be
+        read leaves the channel combobox alone rather than clearing it - an empty
+        combobox reads as "this reader has no channels", which is a different and more
+        alarming thing than "this reader could not be read".
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            channels = self.model.call("MetaReader", reader, "get_channels")
+        except Exception as e:
+            self.logger.error(f"Unable to read channels from {reader}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read channels from {reader}: {e}", self.__class__.__name__
+            )
+            return
+        self.view.update_channels(channels)
 
     @log(logger=logger)
     def compute_baseline_stats(

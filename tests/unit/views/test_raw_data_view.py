@@ -92,6 +92,11 @@ def view(mocker, mock_logging):
     v.canvas = mocker.Mock()
     v.global_signal = mocker.Mock()
     v.add_text_to_display = mocker.Mock()
+    # Step 4a's intent signals. Mocked by hand like the rest here: this fixture builds
+    # the view with __new__, so a class-level Signal has no C++ object behind it and
+    # emitting one would raise "Signal source has been deleted".
+    v.reader_channels_requested = mocker.Mock()
+    v.baseline_stats_requested = mocker.Mock()
     v.export_plot_data = mocker.Mock()
     v.run_generators = mocker.Mock()
 
@@ -484,18 +489,30 @@ def test_handle_load_data_success_with_filter(view, mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_handle_other_actions_with_reader_emits_signal(view):
+def test_handle_other_actions_with_reader_requests_its_channels(view):
+    """
+    Step 4a: an intent naming the reader, not a bus call describing the dispatch.
+
+    The View no longer names the plugin method or the return function - which is the
+    point, since it was naming both by string across seven hops.
+    """
     view._handle_other_actions("something", {"reader": "R1"})
-    view.global_signal.emit.assert_called_once()
-    args = view.global_signal.emit.call_args[0]
-    assert args[0] == "MetaReader"
-    assert args[1] == "R1"
-    assert args[2] == "get_channels"
+
+    view.reader_channels_requested.emit.assert_called_once_with("R1")
 
 
 def test_handle_other_actions_without_reader_does_nothing(view):
+    """The placeholder is a normal empty state, not a plugin key."""
     view._handle_other_actions("something", {"reader": None})
-    view.global_signal.emit.assert_not_called()
+
+    view.reader_channels_requested.emit.assert_not_called()
+
+
+def test_handle_other_actions_ignores_the_placeholder_reader(view):
+    """ "No Reader" is what the combobox shows before anything is chosen."""
+    view._handle_other_actions("something", {"reader": "No Reader"})
+
+    view.reader_channels_requested.emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

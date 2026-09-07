@@ -58,6 +58,12 @@ class RawDataView(MetaEventTabView):
     #: baseline_stats argument of update_plot.
     baseline_stats_requested = Signal(object, list, object)
 
+    #: Asks the Controller for a reader's channel list. Step 4a replaced a
+    #: ``global_signal`` emit whose answer came back seven hops later through
+    #: ``update_channels``; the answer now arrives one hop later, and a reader that
+    #: cannot be read is reported instead of failing silently inside the dispatcher.
+    reader_channels_requested = Signal(str)
+
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
 
@@ -1308,9 +1314,7 @@ class RawDataView(MetaEventTabView):
         """
         reader = parameters.get("reader")
         if reader and reader != "No Reader":
-            self.global_signal.emit(
-                "MetaReader", reader, "get_channels", (), "update_channels", ()
-            )
+            self.reader_channels_requested.emit(reader)
 
     @log(logger=logger)
     def update_channels(self, channels: Sequence[int]) -> None:
