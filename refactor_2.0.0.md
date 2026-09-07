@@ -1097,6 +1097,35 @@ Verified rather than assumed:
 
 ## Step 4 — View code that is Model code
 
+### Fifth verification pass — Step 4 re-checked after Step 3, 2026-09-06
+
+Step 3 moved a great deal of what Step 4 names, so every checkable claim below was
+re-measured at `5c4ea613`. **All named targets survive** — nothing has been deleted out from
+under the step — but ten claims moved, and two change what the work *is*.
+
+| Claim as written | Verdict | What is actually true |
+| --- | --- | --- |
+| 4a · **75** emits | **72**, and one is on a base | 3b collapsed 3+3 duplicated emits to 3 on `MetaSubsetTabView`. Views: Clustering 7, EventAnalysis 13, Metadata 17, Protein 18, RawData 14, `MetaSubsetTabView` 3. The repo total is 74; the other two are in `MetaController` and `MetaModel`, where an emit is legitimate and **not 4a's business**. So 4a now touches a shared base as well as five tabs |
+| 4a · `global_signal` in **142** test functions, **46** assert on the emit | **156** and **37** | Counting rule, stated so it can be re-derived: a test function counts if `global_signal` appears anywhere in its source segment; it counts as *asserting* if that segment matches `assert.*global_signal` or `global_signal.*assert_` on one line. Step 2 added references, hence 142 → 156; the assertion figure is lower than 46 under this definition and 46 was never written down precisely enough to reproduce |
+| 4a · the stale-read guard is at `MetadataView.py:2334-2336` | **8 sites, two files** | `MetadataView.py:1369, 1982, 2238, 2257` and `ProteinView.py:1499, 1678, 1694, 1852`. All eight are clear-before-emit guards and all eight are code this step deletes |
+| 4d · **eight** further `self.view.subset_filters` reach-ins, **two** `restore_subset_filters` calls | **six**, and **zero** | 3 per Controller, not 4, and `restore_subset_filters` is no longer called from either Controller at all — 3b promoted `get_session_state`/`restore_session_state` to `MetaSubsetTabController` and took those reach-ins with them. **4d's Controller-side surface shrank from 10 to 6, and part of it is now on a base.** The 10 `self.view._pending` private reads are unchanged, 5 per Controller |
+| 4d · 15 of 16 `subset_filters` reads are synchronous | **shape changed** | The reads now span three files: 13 mentions in `MetadataView`, 14 in `ProteinView` and 5 in `MetaSubsetTabView` (`_save_filter`). The synchronous-access problem is unchanged in kind, but the fix now lands once on the base for `_save_filter`, `show_edit_filter_dialog`, `_delete_filter` and `get_selected_filters` |
+| 4d · `hist_data` · 21 tests | **confirmed exactly** | 21 test functions, 13 mentions in `MetadataView` and 4 in `ProteinView` |
+| 4c · Clustering pilot has **6** existing tests | **understated** | 5 for `_update_clusters_hdbscan`, 8 for `_load_metadata_and_cluster`, 6 for `_normalize_column_data`. The "6" matches one method, not the trio |
+| 4e · `_save_filter`/`_load_filter` | **half shared now** | `_save_filter` moved to `MetaSubsetTabView` in 3b (one copy); `_load_filter` is still per-tab (two copies). `_export_csv_subset` exists only in `MetadataView` |
+| 4b · `MetadataView.py:2351`'s raw `SELECT` | moved, and **the surface is wider than recorded** | That site is now `_handle_plot_events:2253`. The full raw-SQL surface in the View layer: `_rebuild_event_id_cache` (Metadata `:1957`, Protein `:1476`), `_resolve_event_db_ids` (`:1693`), `_handle_plot_events` (`:2253`), **plus `_show_add_filter_dialog` and `show_edit_filter_dialog` in both subset tabs — four sites the plan does not mention at all** — and the two commit methods `ClusteringView._commit_clusters` and `ProteinView._commit_fits`, which are 4e's |
+| 4b · `_build_where_clause` is gone | **still true** | Confirmed absent from `poriscope/` and `tests/` |
+
+**The one thing that makes Step 4 possible at all, verified rather than assumed.**
+Decision B's template is real and works: `RawDataView` declares `calculate_psd = Signal(list, float)`
+and emits it; `RawDataController.calculate_psd` (`:62`) calls `self.model.calculate_psd(...)`
+**synchronously inside its own slot** and hands the result to `self.view.set_psd(...)`. So a
+View→Model round trip exists today; what it does not offer is a *return value to the emitting
+line*. That is why 3d is blocked and why every 4b/4c move is a restructure of its caller —
+everything after the computation has to move into the `set_*` handler — rather than a
+relocation. **Budget for the caller rewrite, not the method move.**
+
+
 - **4a** The **75** emits become `self.call(...)` in the Model. Highest value in the refactor.
   Note the cost on the test side: `global_signal` appears in 142 test functions and **46 assert
   on the emit**, so those assertions are rewritten rather than re-pointed. The stale-read guard
