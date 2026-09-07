@@ -86,6 +86,17 @@ class ClusteringView(MetaView):
     #: Asks the Controller for one column's unit string. Same conversion as above.
     column_units_requested = Signal(str, str)
 
+    #: Asks whether the database already holds a clustering result. Step 4a: the answer
+    #: used to be parked on ``self.cluster_column_table`` by a bus callback and read
+    #: back on the next statement; it now arrives at ``on_cluster_column_checked``,
+    #: which is also where the overwrite confirmation lives.
+    cluster_column_check_requested = Signal(str)
+
+    #: Asks the Controller to commit the current clustering result, dropping an
+    #: existing one first when the last argument names its table. Two round trips
+    #: rather than one because a modal confirmation sits between them.
+    cluster_commit_requested = Signal(str, object, str, object)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -247,29 +258,15 @@ class ClusteringView(MetaView):
         )
 
     @log(logger=logger)
-    def set_cluster_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Sets the status indicating if cluster columns already exist.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.cluster_column_table = exists_in_table
-
-    @log(logger=logger)
-    def set_alter_database_status(self, status: bool) -> None:
-        """
-        Sets the success status of a database operation.
-
-        :param status: True if successful, False otherwise.
-        :type status: bool
-        """
-        self.operation_success = status
-
-    @log(logger=logger)
     def _commit_clusters(self, loader: str) -> None:
         """
-        Commits clustered data to the database, optionally overwriting existing clustering columns.
+        Begin committing the clustering result, checking for an existing one first.
+
+        Step 4a split this into three parts. It used to make three bus calls and read
+        each answer back off an attribute on the next statement, with a modal
+        confirmation in the middle - so a dispatch that failed silently left it acting
+        on the *previous* commit's answers. Now it asks, and
+        :meth:`on_cluster_column_checked` continues when the answer arrives.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
@@ -277,59 +274,59 @@ class ClusteringView(MetaView):
         """
         if self.cluster_data is None:
             raise AttributeError("cluster data has not been set, unable to commit")
-        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
-        units = [None, None]
-        table_name = self.table_name
+        self.cluster_column_check_requested.emit(loader)
 
-        self.cluster_column_table = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_table_by_column",
-            ("cluster_label",),
-            "check_cluster_column_exists",
-            (),
-        )
-        if self.cluster_column_table is not None:
+    @log(logger=logger)
+    def on_cluster_column_checked(
+        self, loader: str, existing_table: Optional[str]
+    ) -> None:
+        """
+        Confirm an overwrite if needed, then ask the Controller to commit.
+
+        The confirmation stays in the View - it is a modal dialog - which is why this
+        is two round trips rather than one. ``existing_table`` being None means there
+        is nothing to overwrite and the commit proceeds without asking.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param existing_table: The table already holding cluster columns, or None.
+        :type existing_table: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if self.cluster_data is None:
+            self.logger.error("Cluster column check returned with no data to commit")
+            return
+        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
+
+        if existing_table is not None:
             reply = QMessageBox.question(
                 self,
                 "Confirm Overwrite",
                 "Clustering data already exists, are you sure you want to overwrite? This action cannot be undone.",
                 QMessageBox.Ok | QMessageBox.Cancel,
             )
-            if reply == QMessageBox.Ok:
-                self.operation_success = False
-                queries = [
-                    f"ALTER TABLE {self.cluster_column_table} DROP COLUMN cluster_label",
-                    f"ALTER TABLE {self.cluster_column_table} DROP COLUMN cluster_confidence",
-                    "DELETE FROM columns WHERE name = 'cluster_label'",
-                    "DELETE FROM columns WHERE name = 'cluster_confidence'",
-                ]
-
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "alter_database",
-                    (queries,),
-                    "alter_database_status",
-                    (),
-                )
-                if self.operation_success is not True:
-                    self.add_text_to_display.emit(
-                        "Unable to delete clustering data, you will have to clean it up manually",
-                        self.__class__.__name__,
-                    )
-                    return
-            else:
+            if reply != QMessageBox.Ok:
                 return
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "add_columns_to_table",
-            (cluster_data, units, table_name),
-            "display_write_status",
-            (),
+
+        self.cluster_commit_requested.emit(
+            loader, cluster_data, self.table_name, existing_table
         )
+
+    @log(logger=logger)
+    def on_clusters_committed(self, loader: str, status: bool) -> None:
+        """
+        Refresh this tab and tell the rest of the app, once the write has landed.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param status: True if the write succeeded.
+        :type status: bool
+        :return: None
+        :rtype: None
+        """
+        if not status:
+            return
         self.update_available_columns(loader)  # refresh this tab locally
         self.plugin_state_changed.emit(
             "MetaDatabaseLoader", loader, "columns"

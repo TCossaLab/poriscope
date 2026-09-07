@@ -57,26 +57,6 @@ class ClusteringController(MetaController):
         self.model = ClusteringModel()
 
     @log(logger=logger)
-    def check_cluster_column_exists(self, table_name: str) -> None:
-        """
-        Notify the view to check if a cluster column exists in the given table.
-
-        :param table_name: Name of the table to check.
-        :type table_name: str
-        """
-        self.view.set_cluster_column_exists(table_name)
-
-    @log(logger=logger)
-    def alter_database_status(self, status: bool) -> None:
-        """
-        Inform the view whether database alteration was successful.
-
-        :param status: Result of the database alteration operation.
-        :type status: bool
-        """
-        self.view.set_alter_database_status(status)
-
-    @log(logger=logger)
     @override
     def _setup_connections(self) -> None:
         """
@@ -85,6 +65,8 @@ class ClusteringController(MetaController):
         self.view.cluster_requested.connect(self.cluster)
         self.view.column_names_requested.connect(self.request_column_names)
         self.view.column_units_requested.connect(self.request_column_units)
+        self.view.cluster_column_check_requested.connect(self.check_cluster_column)
+        self.view.cluster_commit_requested.connect(self.commit_clusters)
 
     @log(logger=logger)
     def cluster(
@@ -174,6 +156,79 @@ class ClusteringController(MetaController):
         :type units: Dict[str, Optional[str]]
         """
         self.view.set_units(units)
+
+    @log(logger=logger)
+    def check_cluster_column(self, loader: str) -> None:
+        """
+        Ask the database whether a clustering result is already stored.
+
+        First of the commit path's two round trips; the View shows the overwrite
+        confirmation when this comes back non-None.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            existing_table = self.model.find_cluster_column_table(loader)
+        except Exception as e:
+            self.logger.error(f"Unable to check for cluster columns: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to check for existing clustering data: {e}",
+                self.__class__.__name__,
+            )
+            return
+        self.view.on_cluster_column_checked(loader, existing_table)
+
+    @log(logger=logger)
+    def commit_clusters(
+        self,
+        loader: str,
+        cluster_data: Any,
+        table_name: str,
+        drop_from_table: Optional[str],
+    ) -> None:
+        """
+        Write the clustering result, dropping any existing one first.
+
+        Second of the commit path's two round trips. **A failed drop stops the
+        commit**, which is what the View's ``operation_success`` check did before Step
+        4a - writing the new columns on top of a half-deleted old result would leave
+        the database in a state the user has to repair by hand.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param cluster_data: the id, label and confidence columns to write
+        :type cluster_data: Any
+        :param table_name: the table to write them into
+        :type table_name: str
+        :param drop_from_table: the table to drop an existing result from, or None
+        :type drop_from_table: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if drop_from_table is not None:
+            try:
+                dropped = self.model.drop_cluster_columns(loader, drop_from_table)
+            except Exception as e:
+                self.logger.error(f"Unable to delete clustering data: {repr(e)}")
+                dropped = False
+            if dropped is not True:
+                self.add_text_to_display.emit(
+                    "Unable to delete clustering data, you will have to clean it up manually",
+                    self.__class__.__name__,
+                )
+                return
+
+        try:
+            status = self.model.commit_cluster_columns(loader, cluster_data, table_name)
+        except Exception as e:
+            self.logger.error(f"Unable to write clustering data: {repr(e)}")
+            status = False
+
+        self.display_write_status(status)
+        self.view.on_clusters_committed(loader, bool(status))
 
     @log(logger=logger)
     def request_column_names(self, loader: str) -> None:

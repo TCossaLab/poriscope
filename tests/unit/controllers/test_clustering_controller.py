@@ -5,8 +5,9 @@ Covers:
 - _init creates view and model
 - _setup_connections is a no-op that does not raise
 - display_write_status (success and failure branches)
-- check_cluster_column_exists delegation
-- alter_database_status delegation
+- check_cluster_column / commit_clusters, the Step 4a commit path: two round trips
+  with the overwrite confirmation in the View between them, and a failed drop that
+  stops the commit rather than writing on top of a half-deleted result
 - relay_query (query present, debug-only path)
 - relay_event_data_generator delegation
 - relay_plot_data delegation
@@ -135,54 +136,6 @@ def test_display_write_status_emits_failure_message(
     )
 
 
-# ---------------- check_cluster_column_exists ------------------------
-
-
-def test_check_cluster_column_exists_delegates_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the table name to the view to check for a cluster column.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    controller.check_cluster_column_exists("events")
-    mock_view.set_cluster_column_exists.assert_called_once_with("events")
-
-
-# ------------------- alter_database_status ---------------------------
-
-
-def test_alter_database_status_delegates_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the alteration status to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    controller.alter_database_status(True)
-    mock_view.set_alter_database_status.assert_called_once_with(True)
-
-
-def test_alter_database_status_delegates_false_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a False alteration status to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    controller.alter_database_status(False)
-    mock_view.set_alter_database_status.assert_called_once_with(False)
-
-
 # ------------------------- relay_query -------------------------------
 
 
@@ -269,6 +222,120 @@ def test_relay_units_delegates_to_view(
     units = {"current": "pA", "time": "s"}
     controller.relay_units(units)
     mock_view.set_units.assert_called_once_with(units)
+
+
+# -------------------- the commit path (Step 4a) -----------------------
+
+
+class TestCheckClusterColumn:
+    """First of the commit path's two round trips."""
+
+    def test_it_asks_the_model(self, controller) -> None:
+        """The lookup is the Model's now, by key rather than by bus."""
+        controller.model.find_cluster_column_table.return_value = "events"
+
+        controller.check_cluster_column("L")
+
+        controller.model.find_cluster_column_table.assert_called_once_with("L")
+
+    def test_it_hands_the_answer_to_the_view(self, controller) -> None:
+        """The View needs it to decide whether to ask the user about overwriting."""
+        controller.model.find_cluster_column_table.return_value = "events"
+
+        controller.check_cluster_column("L")
+
+        controller.view.on_cluster_column_checked.assert_called_once_with("L", "events")
+
+    def test_none_means_nothing_to_overwrite(self, controller) -> None:
+        """
+        None is a real answer, not a failure.
+
+        It is what says the commit can proceed without a confirmation, so it must
+        reach the View rather than being treated as an error.
+        """
+        controller.model.find_cluster_column_table.return_value = None
+
+        controller.check_cluster_column("L")
+
+        controller.view.on_cluster_column_checked.assert_called_once_with("L", None)
+
+    def test_a_failure_stops_the_flow_and_tells_the_user(self, controller) -> None:
+        """
+        The View is not called, so no confirmation dialog appears.
+
+        Before Step 4a this failure was swallowed inside ``_dispatch_to`` and the View
+        read a stale ``cluster_column_table``, so it could ask about overwriting a
+        result that was not there - or fail to ask about one that was.
+        """
+        controller.model.find_cluster_column_table.side_effect = KeyError("gone")
+
+        controller.check_cluster_column("L")
+
+        controller.view.on_cluster_column_checked.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+
+class TestCommitClusters:
+    """Second round trip: drop if asked, then write."""
+
+    def test_it_writes_when_there_is_nothing_to_drop(self, controller) -> None:
+        """The common path: no existing result, so straight to the write."""
+        controller.model.commit_cluster_columns.return_value = True
+
+        controller.commit_clusters("L", "frame", "events", None)
+
+        controller.model.drop_cluster_columns.assert_not_called()
+        controller.model.commit_cluster_columns.assert_called_once_with(
+            "L", "frame", "events"
+        )
+
+    def test_it_drops_before_writing_when_asked(self, controller) -> None:
+        """Order matters: the old columns must go before the new ones arrive."""
+        controller.model.drop_cluster_columns.return_value = True
+        controller.model.commit_cluster_columns.return_value = True
+
+        controller.commit_clusters("L", "frame", "events", "events")
+
+        controller.model.drop_cluster_columns.assert_called_once_with("L", "events")
+        controller.model.commit_cluster_columns.assert_called_once()
+
+    def test_a_failed_drop_stops_the_commit(self, controller) -> None:
+        """
+        The guard the View's ``operation_success`` check used to provide.
+
+        Writing on top of a half-deleted result leaves the database in a state the
+        user has to repair by hand, which is what the message says.
+        """
+        controller.model.drop_cluster_columns.return_value = False
+
+        controller.commit_clusters("L", "frame", "events", "events")
+
+        controller.model.commit_cluster_columns.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_a_raising_drop_also_stops_the_commit(self, controller) -> None:
+        """A raise and a False must lead to the same place."""
+        controller.model.drop_cluster_columns.side_effect = RuntimeError("locked")
+
+        controller.commit_clusters("L", "frame", "events", "events")
+
+        controller.model.commit_cluster_columns.assert_not_called()
+
+    def test_the_view_is_told_the_outcome(self, controller) -> None:
+        """It refreshes its own columns and notifies the other tabs on success."""
+        controller.model.commit_cluster_columns.return_value = True
+
+        controller.commit_clusters("L", "frame", "events", None)
+
+        controller.view.on_clusters_committed.assert_called_once_with("L", True)
+
+    def test_a_failed_write_is_reported_as_such(self, controller) -> None:
+        """False reaches the View, which then does not notify anyone of a change."""
+        controller.model.commit_cluster_columns.side_effect = RuntimeError("disk full")
+
+        controller.commit_clusters("L", "frame", "events", None)
+
+        controller.view.on_clusters_committed.assert_called_once_with("L", False)
 
 
 # -------------------- request_column_names (Step 4a) ------------------

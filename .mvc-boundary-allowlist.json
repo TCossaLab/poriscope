@@ -1,6 +1,6 @@
 {
   "emits": {
-    "poriscope/plugins/analysistabs/ClusteringView.py": 5,
+    "poriscope/plugins/analysistabs/ClusteringView.py": 2,
     "poriscope/plugins/analysistabs/EventAnalysisView.py": 13,
     "poriscope/plugins/analysistabs/MetadataView.py": 17,
     "poriscope/plugins/analysistabs/ProteinView.py": 18,

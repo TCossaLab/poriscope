@@ -10,8 +10,14 @@ View-fixture methods (setup, handle_parameter_change routing, update_plot,
 update_available_plugins) are tested through a real ClusteringView instance
 using the same pattern as test_protein_view.py.
 
-Bus-dependent methods (_commit_clusters, update_available_columns,
-update_units, _handle_clustering_settings) are covered at the boundary
+Step 4a converted this tab's bus calls to ``call()``, so ``set_cluster_column_exists``
+and ``set_alter_database_status`` no longer exist - they were parking spots for answers
+that arrived from a bus callback, and the answers are return values now. Their tests went
+with them; the commit path they served is covered in
+``tests/unit/controllers/test_clustering_controller.py``.
+
+The remaining bus-dependent methods (_load_metadata_and_request_clustering,
+_handle_clustering_settings) are covered at the boundary
 via patching.
 
 Run with:
@@ -188,36 +194,6 @@ class TestUpdateColumnUnits:
         view.update_column_units("ms", "duration")
         view.update_column_units("s", "duration")
         assert view.units["duration"] == "s"
-
-
-# ===========================================================================
-# set_cluster_column_exists
-# ===========================================================================
-
-
-class TestSetClusterColumnExists:
-    def test_stores_table_name(self, view):
-        view.set_cluster_column_exists("events")
-        assert view.cluster_column_table == "events"
-
-    def test_stores_none(self, view):
-        view.set_cluster_column_exists(None)
-        assert view.cluster_column_table is None
-
-
-# ===========================================================================
-# set_alter_database_status
-# ===========================================================================
-
-
-class TestSetAlterDatabaseStatus:
-    def test_true(self, view):
-        view.set_alter_database_status(True)
-        assert view.operation_success is True
-
-    def test_false(self, view):
-        view.set_alter_database_status(False)
-        assert view.operation_success is False
 
 
 # ===========================================================================
