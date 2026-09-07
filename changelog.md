@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* The baseline statistics behind the Raw Data tab's green baseline band are now computed in that tab's model rather than in its plot widget
+
+* Removed an unused Gaussian function from the Raw Data view; the baseline fit never called it
+
 * The clustering computation now lives in the clustering tab's model rather than in its plot widget, so the tab no longer carries the clustering libraries itself
 
 * `MetaView._set_control_area` is no longer abstract: it now builds the control area for you from a new `_build_controls` hook and connects the four signals every controls panel carries, so a new tab writes three lines instead of twenty-five; a tab that lays out its own control area can still override it
