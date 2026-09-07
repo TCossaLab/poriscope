@@ -77,6 +77,15 @@ class ClusteringView(MetaView):
     #: :meth:`set_clustering_result`.
     cluster_requested = Signal(object, list, str, dict)
 
+    #: Asks the Controller for the column names a database loader offers. Step 4a
+    #: replaced a ``global_signal`` emit whose answer came back seven hops later
+    #: through ``update_column_names``; the answer now arrives one hop later, and a
+    #: failed lookup raises in the Controller's slot instead of being swallowed.
+    column_names_requested = Signal(str)
+
+    #: Asks the Controller for one column's unit string. Same conversion as above.
+    column_units_requested = Signal(str, str)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -352,29 +361,28 @@ class ClusteringView(MetaView):
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:
         """
-        Requests updated column names from the specified database loader.
+        Ask the Controller for the column names the given loader offers.
+
+        The answer arrives at ``update_column_names``. Step 4a replaced the
+        ``global_signal`` emit this used to make: the try/except around it went too,
+        because it guarded against a Qt emit raising rather than against the plugin
+        call failing - the call is the Controller's now, and a failure raises there
+        where it can be reported.
 
         :param loader: Identifier for the loader plugin.
         :type loader: str
         """
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
+        self.column_names_requested.emit(loader)
 
     @log(logger=logger)
     def update_units(self, loader: str, column: str) -> None:
         """
-        Requests units for a specific column from the database loader.
+        Ask the Controller for one column's unit string.
+
+        The answer arrives at ``update_column_units``. Step 4a replaced the
+        ``global_signal`` emit this used to make.
 
         :param loader: Plugin name or ID.
         :type loader: str
@@ -385,17 +393,7 @@ class ClusteringView(MetaView):
         # rather than an error, so do not dispatch it as a plugin key.
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (column,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
+        self.column_units_requested.emit(loader, column)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:

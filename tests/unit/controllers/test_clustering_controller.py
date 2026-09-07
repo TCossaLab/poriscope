@@ -13,6 +13,9 @@ Covers:
 - relay_units delegation
 - update_column_names (names provided with info log, empty list with warning log)
 - update_column_units (units provided with info log, empty dict skips view)
+- request_column_names / request_column_units, the Step 4a replacements for two
+  ``global_signal`` round trips: they call the plugin through ``self.model.call`` and
+  report a failure instead of leaving the View with the previous loader's answer
 """
 
 from __future__ import annotations
@@ -266,6 +269,117 @@ def test_relay_units_delegates_to_view(
     units = {"current": "pA", "time": "s"}
     controller.relay_units(units)
     mock_view.set_units.assert_called_once_with(units)
+
+
+# -------------------- request_column_names (Step 4a) ------------------
+
+
+class TestRequestColumnNames:
+    """
+    The Step 4a replacement for a ``global_signal`` round trip.
+
+    What it replaces mattered: the bus resolved the return function by string seven
+    hops away, and ``_dispatch_to`` logged and returned on four separate conditions -
+    so a loader that could not be read left the View showing the *previous* loader's
+    columns, with nothing the View could detect.
+    """
+
+    def test_it_calls_the_plugin_through_the_model(
+        self, controller: ClusteringController
+    ) -> None:
+        """One hop, by key, through the sanctioned API."""
+        controller.model.call.return_value = ["duration", "current"]
+
+        controller.request_column_names("SQLiteDBLoader_0")
+
+        controller.model.call.assert_called_once_with(
+            "MetaDatabaseLoader", "SQLiteDBLoader_0", "get_column_names_by_table"
+        )
+
+    def test_it_hands_the_result_to_the_view(
+        self, controller: ClusteringController
+    ) -> None:
+        """The result path, which Decision B routes through the Controller."""
+        controller.model.call.return_value = ["duration", "current"]
+
+        controller.request_column_names("SQLiteDBLoader_0")
+
+        controller.view.update_column_names.assert_called_once_with(
+            ["duration", "current"]
+        )
+
+    def test_a_failure_is_reported_and_the_view_is_left_alone(
+        self, controller: ClusteringController
+    ) -> None:
+        """
+        The whole point of the change.
+
+        The View must not be updated with anything, and the user must be told - rather
+        than the failure being logged several hops away where nobody sees it.
+        """
+        controller.model.call.side_effect = KeyError("no such plugin")
+
+        controller.request_column_names("gone")
+
+        controller.view.update_column_names.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_it_does_not_raise_out_of_the_slot(
+        self, controller: ClusteringController
+    ) -> None:
+        """
+        Qt invoked this from a signal, so an exception must not escape into C++.
+
+        ``call()`` raising is the correct behaviour one level down; catching it here is
+        what turns that into something the user sees.
+        """
+        controller.model.call.side_effect = RuntimeError("the plugin failed")
+
+        controller.request_column_names("SQLiteDBLoader_0")
+
+
+# -------------------- request_column_units (Step 4a) ------------------
+
+
+class TestRequestColumnUnits:
+    """The same conversion, for one column's unit string."""
+
+    def test_it_passes_the_column_to_the_plugin(
+        self, controller: ClusteringController
+    ) -> None:
+        """The column name is an argument now, not a ``ret_args`` tuple."""
+        controller.model.call.return_value = "ms"
+
+        controller.request_column_units("SQLiteDBLoader_0", "duration")
+
+        controller.model.call.assert_called_once_with(
+            "MetaDatabaseLoader", "SQLiteDBLoader_0", "get_column_units", "duration"
+        )
+
+    def test_it_hands_the_unit_and_the_column_to_the_view(
+        self, controller: ClusteringController
+    ) -> None:
+        """
+        Both halves, in the order the View's setter expects.
+
+        The bus carried the column back as ``ret_args`` appended after the result,
+        which is why the receiver's parameter is still called ``axis``.
+        """
+        controller.model.call.return_value = "ms"
+
+        controller.request_column_units("SQLiteDBLoader_0", "duration")
+
+        controller.view.update_column_units.assert_called_once_with("ms", "duration")
+
+    def test_a_failure_leaves_the_view_alone(
+        self, controller: ClusteringController
+    ) -> None:
+        """A unit that cannot be read must not overwrite the label that is showing."""
+        controller.model.call.side_effect = KeyError("no such plugin")
+
+        controller.request_column_units("gone", "duration")
+
+        controller.view.update_column_units.assert_not_called()
 
 
 # -------------------- update_column_names ----------------------------

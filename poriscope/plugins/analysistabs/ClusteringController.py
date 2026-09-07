@@ -83,6 +83,8 @@ class ClusteringController(MetaController):
         Connect internal view signals to their corresponding controller slots.
         """
         self.view.cluster_requested.connect(self.cluster)
+        self.view.column_names_requested.connect(self.request_column_names)
+        self.view.column_units_requested.connect(self.request_column_units)
 
     @log(logger=logger)
     def cluster(
@@ -172,6 +174,58 @@ class ClusteringController(MetaController):
         :type units: Dict[str, Optional[str]]
         """
         self.view.set_units(units)
+
+    @log(logger=logger)
+    def request_column_names(self, loader: str) -> None:
+        """
+        Fetch the loader's column names and hand them to the View.
+
+        Step 4a: this replaces a ``global_signal`` round trip whose answer arrived
+        seven hops later through a return function named by string. A failed lookup is
+        reported on the status panel here rather than being logged inside
+        ``_dispatch_to`` and leaving the View with the previous loader's columns.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_names = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_names_by_table"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to read column names from {loader}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read columns from {loader}: {e}", self.__class__.__name__
+            )
+            return
+        self.update_column_names(column_names)
+
+    @log(logger=logger)
+    def request_column_units(self, loader: str, column: str) -> None:
+        """
+        Fetch one column's unit string and hand it to the View.
+
+        Same conversion as ``request_column_names``.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param column: the column whose unit is wanted
+        :type column: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_units = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_units", column
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to read units for {column} from {loader}: {repr(e)}"
+            )
+            return
+        self.update_column_units(column_units, column)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
