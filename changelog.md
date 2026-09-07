@@ -1,6 +1,6 @@
 ## Poriscope 2.0.0: in progress
 
-* **Fixed a tab being unable to use a plugin it was showing in its dropdown** after a saved session was restored: the tab was told which plugins existed but not given access to them, so selecting one reported that it did not exist
+* **Fixed a tab being unable to use a plugin it was showing in its dropdown**, reported when restoring a saved session: the tab was given the list of plugins before it was given access to them, and filling the dropdown immediately asks the selected plugin for its columns
 
 * **Fixed the clustering settings dialog failing with an error instead of opening** when the column list could not be read from the database
 

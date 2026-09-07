@@ -680,46 +680,18 @@ class MainController(QObject):
             f"Available {metaclass} plugins updates to {available_plugins}"
         )
         self.data_plugins[metaclass] = available_plugins
-        instances = self._live_plugin_instances()
+        instances = self.data_plugin_controller.get_plugin_instances()
         for val in self.analysis_tabs.values():
             if val:
-                val.update_available_plugins(self.data_plugins)
-                # Step 4a: the instances travel the same path as the names, so a tab
-                # cannot end up able to see a plugin in its combobox but unable to
-                # call it, or vice versa.
+                # Step 4a: instances BEFORE names, and the order is load-bearing.
+                # Handing a tab the names populates its comboboxes, and populating a
+                # combobox fires a selection change *synchronously* - which is when the
+                # tab asks the selected loader for its columns. Push the names first and
+                # that call finds an empty instance map, so the tab reports a plugin it
+                # is displaying as not registered. Both come from the same registry, so
+                # they cannot disagree about what exists; only the order can be wrong.
                 val.set_plugin_instances(instances)
-
-    @log(logger=logger)
-    def _live_plugin_instances(self) -> Dict[str, Dict[str, object]]:
-        """
-        Resolve every registered plugin key to its live instance.
-
-        Built fresh on each lifecycle event rather than maintained incrementally: the
-        set is small, and rebuilding it is what makes a rename or a re-instantiation
-        impossible to miss. A key that no longer resolves is skipped rather than
-        stored as None, so ``get_plugin`` raises for it as it would for an unknown key.
-
-        :return: metaclass name -> plugin key -> live instance
-        :rtype: Dict[str, Dict[str, object]]
-        """
-        instances: Dict[str, Dict[str, object]] = {}
-        for metaclass, keys in self.data_plugins.items():
-            resolved: Dict[str, object] = {}
-            for key in keys:
-                try:
-                    instance = self.data_plugin_controller.get_plugin_instance(
-                        metaclass, key
-                    )
-                except Exception:
-                    self.logger.exception(
-                        f"Unable to resolve {metaclass}/{key} while pushing plugin "
-                        f"instances; it will not be callable from a tab"
-                    )
-                    continue
-                if instance is not None:
-                    resolved[key] = instance
-            instances[metaclass] = resolved
-        return instances
+                val.update_available_plugins(self.data_plugins)
 
     @log(logger=logger)
     @Slot(dict, str)
@@ -859,13 +831,14 @@ class MainController(QObject):
             self.analysis_tabs[subclass].save_tab_action_history.connect(
                 self.save_tab_action_history
             )
-            self.analysis_tabs[subclass].update_available_plugins(self.data_plugins)
-            # Step 4a: and the instances, or a tab created after the plugins
-            # already exist - which is exactly what restoring a session does -
-            # gets a populated combobox and an empty instance map.
+            # Step 4a: instances before names, for the reason given in
+            # update_available_plugins. A tab created after the plugins already exist -
+            # which is what restoring a session does - would otherwise get a populated
+            # combobox and an empty instance map.
             self.analysis_tabs[subclass].set_plugin_instances(
-                self._live_plugin_instances()
+                self.data_plugin_controller.get_plugin_instances()
             )
+            self.analysis_tabs[subclass].update_available_plugins(self.data_plugins)
             self.logger.debug(f"New analysis tab of type {subclass} added")
             self.update_plugin_history(history, "")
 
