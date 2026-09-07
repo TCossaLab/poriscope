@@ -1182,6 +1182,67 @@ finds coverage that never existed — the Gaussian-mixture branch was fifteen li
 and it now has four direct tests including one pinning that 1.9.0's seeding survived the
 move.
 
+#### 4a — IN PROGRESS. Mechanism + Clustering landed 2026-09-07
+
+**Allowlist 102 → 95.** `ClusteringView` is the **first View in the repo at zero emits**;
+the View-layer total is 72 → 65.
+
+| Commit | What | Allowlist |
+| --- | --- | --- |
+| 1 | `call()` on `MetaController`/`MetaModel`, instances pushed | 102 (unchanged, by design) |
+| 2 | Clustering's column lookups | 100 |
+| 3 | The cluster commit path, and its SQL (4b for that path) | 97 |
+| 4 | Clustering's metadata load | 95 |
+| 5-6 | The regression below | 95 |
+
+**Design decisions taken in commit 1**, all measured free before being taken: `call()`
+refuses a `_`-prefixed method name (all 75 bus calls targeted public methods, so nothing
+broke); `get_plugin` is **private**, so `call()` is the only public door; and
+`check_mvc_boundary` gained **rule 5**, counting the ways around it, reading **zero**
+across 32 tab-layer modules. `call()` also takes `**kwargs`, which the bus could not — 48
+methods on the data-plugin bases have default parameters, several last in the signature.
+Deliberately **no call-stack inspection**: it would cost real time on a path that runs per
+chunk and per event, reject the worker-thread path whose stack starts at Qt's thread entry,
+and fail on a user's machine rather than on the developer's commit. `DECISIONS.md` carries
+the reasoning.
+
+##### The first escaped regression of the refactor, and why it escaped
+
+Reported from a real run: restoring a session with one clustering tab and one loader gave
+`KeyError("No MetaDatabaseLoader plugin registered under 'SQLiteDBLoader_0'")` for a key
+listed one widget away. **Two faults**, and it took two attempts:
+
+1. `instantiate_analysis_tab` pushed plugin *names* to a new tab but not the instances.
+2. **The ordering.** Fixing (1) was not enough. Handing a tab the names populates its
+   comboboxes, and populating a combobox fires a selection change **synchronously** —
+   which is when the tab asks the selected loader for its columns. Names were pushed
+   first, so that call ran against an empty map. Instances now go first at both sites, and
+   the instances come from `DataPluginModel.get_plugin_instances()` — the same dict the
+   *names* are read from — rather than being rebuilt key by key inside `MainController`.
+   Every create/delete/rename route already emitted, so the creation path was never the
+   problem: the payload and the order were.
+
+It also unmasked a latent fault: `ClusteringView.columns` was created only by the
+`update_column_names` callback and never initialised, so **any** failed column fetch left
+the settings dialog raising `AttributeError` instead of opening empty.
+
+**Why no gate caught it.** Steps 0–3 were all *moves*, and the three gates are built for
+moves: the ratchet checks that copies vanished, the allowlist that nothing crossed a layer,
+the audit that everything moved stays pinned. This was the refactor's first new **runtime
+mechanism**, and a missing call at one of two sites is not duplication, not a boundary
+crossing and not an uncovered target — **absence has no signature**. It also only bit under
+session restore, the one ordering nothing exercises: the e2e suite builds a tab and *then*
+creates plugins, which is the order that works.
+
+Two standing rules came out of it: **new runtime mechanisms are written test-first,
+verified red-then-green**, and **any regression the suite missed gets a test once
+positively diagnosed**. The first regression test written here was itself too weak — it
+asserted both pushes happen, which the broken code satisfied, because the counts were right
+and only the order was wrong. Stating the invariant as *"a tab can call what it is being
+told about, at the moment it is told"* has the ordering in it; asserting that two calls
+happened does not. Verified on Windows against a live session and a restored one,
+2026-09-07.
+
 ### Fifth verification pass — Step 4 re-checked after Step 3, 2026-09-06
 
 Step 3 moved a great deal of what Step 4 names, so every checkable claim below was
