@@ -739,19 +739,22 @@ Protein); `MetaEventTabView`/`Controller`/`Controls` (RawData, EventAnalysis).
 **Next: Step 4**, then **3d after 4a** — see the reordering note below, and section 05 of the
 artifact. 3d needs Decision A's `call()` before it can move anything.
 
-**Owed — a manual Windows pass, and it is a big one.** None has been run since 3a. Since then
-3f moved the walkthrough widgets, 3g changed how every tab is constructed (`_init` now runs once
-instead of twice) and folded the mixin into `MetaView`, and 3a-bis changed how every control
-area is built and wired. Check: all five tabs open and their controls respond; the walkthrough
-runs from Help ▸ Tutorial on each tab and the nested dialog walkthroughs still launch
-(Clustering settings, Add subset filter) and force-close with their dialog; the Metadata and
-Protein filter edit/delete buttons still reach their handlers; no widget outlives the app on
-close.
+**Manual Windows pass — CLEAR, 2026-09-06, all of Step 3.** Run against `5c4ea613`, covering
+all five tabs' controls, both channel multiselects, the event-index field and navigation arrows
+on all four tabs that have them, subset filter add/edit/delete/save/load on Metadata and
+Protein, the selection tree, CSV export, progress bars appearing *and* clearing, the
+Clustering and Protein second-commit overwrite dialogs, the walkthrough on every tab from
+Help ▸ Tutorial, both nested dialog walkthroughs, and clean shutdown with a worker running.
+So 3f's widget move, 3g's construction change and 3a-bis's control-area template are all
+confirmed in the running app, not only in the suite.
 
-**Owed — contributor docs on what to inherit from.** Now overdue: Step 3 leaves an
-analysis-tab author choosing between `MetaView` and four intermediates, and the plugin manual
-still describes only the one-base world. `metaview_base.rst` has been updated for `3a-bis`'s
-hook, but the "which base" question is unwritten.
+**Contributor docs on what to inherit from — WRITTEN 2026-09-06.**
+`docs/.../ready_to_build/choosing_a_base.rst`, first in that section's toctree, covers the two
+tab families, all three choices (View, Controller, controls panel), what each base demands and
+supplies, the `_build_controls` hook, and the rule for deciding when only half of an
+intermediate is wanted. It records the non-obvious part explicitly: **an intermediate does not
+always ask less than the base** — `MetaEventTabView` needs two methods where `MetaView` needs
+four, while `MetaSubsetTabView` needs six.
 
 **Still open from 3f:** `WalkthroughStep` as a frozen dataclass — 90 tuple literals across 7
 files, moves no gate.

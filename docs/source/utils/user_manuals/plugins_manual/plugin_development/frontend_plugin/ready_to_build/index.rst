@@ -21,9 +21,14 @@ Let’s start with the **View**, because if you’re anything like me — a visu
    :ref:`pre_pr_checklist` — it applies just as much to a new analysis tab as it does
    to a new data plugin.
 
+Before you start, :ref:`choosing_a_base` covers which of the shipped base classes your
+tab should inherit from, and why - the answer is different for a tab that queries a
+results database than for one that finds events in a raw signal.
+
 .. toctree::
    :maxdepth: 1
 
+   choosing_a_base
    metaview_base
    metamodel_base
    metacontroller_base
