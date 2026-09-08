@@ -279,6 +279,12 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
 
+- **`RawDataView._handle_plot_events` catches only `ValueError`, but extraction raises
+  `KeyError`.** `_extract_plot_event_parameters` reaches `parameters["channel"]` directly,
+  so a dict without that key escapes the guard that advertises "Parameter extraction
+  failed". Latent: the controls panel always supplies `channel`. Found 2026-09-08 while
+  pinning the method before Step 4a moves it, and pinned as current behaviour in
+  `tests/unit/views/test_raw_data_view_characterization.py`.
 - **`ProteinView` has no `update_column_units`, but `ProteinController.py:290` calls it**, and
   `ProteinView.py:3508` also names it as a bus return function.
   Not inherited from `MetaView` either; the `AttributeError` is swallowed by

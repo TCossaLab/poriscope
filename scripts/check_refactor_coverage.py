@@ -239,6 +239,13 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/ProteinView.py", "_plot_xyerr_scatterplot", "4c"),
     ("poriscope/plugins/analysistabs/ProteinView.py", "_report_ensemble_fit", "4c"),
     ("poriscope/plugins/analysistabs/RawDataView.py", "update_psd", "4c"),
+    # Step 4a - the bus round trips the hand-typed list had missed. Added 2026-09-08
+    # after checking coverage rather than assuming it: every reference to
+    # _handle_plot_events in tests/ replaced it with a Mock, and _load_event_data was
+    # named by no test at all, so both read as covered and were not. This is the exit
+    # review's own finding (a curated list narrows silently) recurring in the same list.
+    ("poriscope/plugins/analysistabs/RawDataView.py", "_handle_plot_events", "4a"),
+    ("poriscope/plugins/analysistabs/RawDataView.py", "_load_event_data", "4a"),
     # Step 4e - file I/O to the Model, dialog selection left in the View
     ("poriscope/plugins/analysistabs/MetadataView.py", "_export_csv_subset", "4e"),
 )
