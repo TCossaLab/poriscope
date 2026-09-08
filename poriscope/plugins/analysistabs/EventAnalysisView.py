@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, 
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
@@ -54,6 +54,17 @@ class EventAnalysisView(MetaEventTabView):
 
     Handles event plotting, plugin integration, and user-triggered actions.
     """
+
+    #: Asks the Controller for an event loader's channel list. Step 4a's first intent in
+    #: this tab, and the same conversion RawData's reader lookup got: the answer arrives
+    #: one hop later through ``update_channels`` instead of seven, and a loader that
+    #: cannot be read is reported instead of failing silently inside the dispatcher.
+    loader_channels_requested = Signal(str)
+
+    #: Asks the Controller to write this tab's fitted events through a database writer,
+    #: one channel at a time. No answer is expected: the plugin hands back a generator,
+    #: which the Controller registers with the Model and runs.
+    write_requested = Signal(str, list)
 
     logger = logging.getLogger(__name__)
 
@@ -569,38 +580,6 @@ class EventAnalysisView(MetaEventTabView):
         self.eventfitting_status = status
 
     @log(logger=logger)
-    def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
-        """
-        Start the process of writing committed events to the database for the given channels.
-
-        :param writer: Identifier of the database writer plugin.
-        :type writer: str
-        :param channels: Channel index, or list of channel indices, for which to write events.
-        :type channels: Union[int, List[int]]
-        """
-        if not isinstance(channels, list):
-            channels = [channels]
-        try:
-            for channel in channels:
-                write_events_args = (channel,)
-                # Emit the signal with the correct handler name for when the data is ready
-                ret_args = (channel, writer, "MetaDatabaseWriter")
-                self.global_signal.emit(
-                    "MetaDatabaseWriter",
-                    writer,
-                    "write_events",
-                    write_events_args,
-                    "set_generator",
-                    ret_args,
-                )  # update here to unify generators
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to set up database writer {writer} for channel {channel}: {repr(e)}"
-            )
-        else:
-            self.run_generators.emit(writer)
-
-    @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:
         """
         Set the maximum number of events allowed to be plotted.
@@ -856,7 +835,10 @@ class EventAnalysisView(MetaEventTabView):
             return
 
         if writer is not None and channels is not None:
-            self._start_writer(writer, channels)
+            # Step 4a: the write call itself is the Controller's.
+            self.write_requested.emit(
+                writer, channels if isinstance(channels, list) else [channels]
+            )
 
     @log(logger=logger)
     def _start_eventfitter(
@@ -995,9 +977,7 @@ class EventAnalysisView(MetaEventTabView):
         """
         loader = parameters.get("loader")
         if loader and loader != "No Loader":
-            self.global_signal.emit(
-                "MetaEventLoader", loader, "get_channels", (), "update_channels", ()
-            )
+            self.loader_channels_requested.emit(loader)
 
     def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [

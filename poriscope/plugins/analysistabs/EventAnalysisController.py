@@ -56,7 +56,78 @@ class EventAnalysisController(MetaEventTabController):
     @log(logger=logger)
     @override
     def _setup_connections(self) -> None:
-        pass
+        self.view.loader_channels_requested.connect(self.request_loader_channels)
+        self.view.write_requested.connect(self.write_events)
+
+    @log(logger=logger)
+    @Slot(str)
+    def request_loader_channels(self, loader: str) -> None:
+        """
+        Fetch an event loader's channel list and hand it to the View.
+
+        Step 4a, and the direct analogue of ``RawDataController.request_reader_channels``:
+        the same conversion against ``MetaEventLoader`` rather than ``MetaReader``. A
+        loader that cannot be read leaves the channel combobox alone rather than clearing
+        it - an empty combobox reads as "this loader has no channels", which is a
+        different and more alarming thing than "this loader could not be read".
+
+        :param loader: the event loader plugin's key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            channels = self.model.call("MetaEventLoader", loader, "get_channels")
+        except Exception as e:
+            self.logger.error(f"Unable to read channels from {loader}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read channels from {loader}: {e}", self.__class__.__name__
+            )
+            return
+        self.view.update_channels(channels)
+
+    @log(logger=logger)
+    @Slot(str, list)
+    def write_events(self, writer: str, channels: List[int]) -> None:
+        """
+        Hand each channel's fitted events to a database writer and run the generators.
+
+        The analogue of ``RawDataController.commit_events``, against
+        ``MetaDatabaseWriter.write_events``. Like that one it was never an emit-then-read:
+        the plugin returns a generator and the bus passed it straight into
+        ``set_generator`` as an argument, so there was no attribute to park it on and no
+        stale value to inherit.
+
+        The same deliberate behaviour change applies. The View wrapped the whole loop in
+        ``except (IndexError, ValueError)`` and skipped ``run_generators`` entirely if it
+        fired - a guard that could not catch a plugin failure, because the bus swallowed
+        those first. Now that ``call()`` raises, a channel that cannot be written is
+        reported and skipped and the rest still run, rather than an arbitrary writer
+        exception escaping a Qt slot.
+
+        :param writer: the database writer plugin's key
+        :type writer: str
+        :param channels: the channels whose events are being written
+        :type channels: List[int]
+        :return: None
+        :rtype: None
+        """
+        for channel in channels:
+            try:
+                generator = self.model.call(
+                    "MetaDatabaseWriter", writer, "write_events", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to set up database writer {writer} for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to write channel {channel} with {writer}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            self.model.set_generator(generator, channel, writer, "MetaDatabaseWriter")
+        self.model.run_generators(writer)
 
     @log(logger=logger)
     def set_event_filter(self, data_filter: Callable) -> None:

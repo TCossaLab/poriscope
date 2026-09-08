@@ -749,8 +749,8 @@ working tree; suite **3,449 passed / 4 skipped**.
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **81** | 0 |
-| — rule 1, View emits | 75 | **51** | 0 |
+| Boundary allowlist | 111 | **79** | 0 |
+| — rule 1, View emits | 75 | **49** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -793,7 +793,18 @@ the View emits a **typed intent**, the Controller's slot calls the plugin throug
   come forward again. The filter key travels through both halves rather than being held
   on the View between them.
 
-- **EventAnalysis 13, Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
+- **EventAnalysis, 11 left.** Its two single-emit paths landed 2026-09-08 as
+  `EventAnalysisController.request_loader_channels` and `write_events` — exact analogues
+  of RawData's reader lookup and commit path, against `MetaEventLoader` and
+  `MetaDatabaseWriter`. `_start_writer` is deleted. Neither was an emit-then-read.
+  Remaining, derived by AST: **`_handle_plot_events` 8** and **`_start_eventfitter` 3**.
+  `_start_eventfitter` is RawData's two-phase launch again — filter, per-channel status
+  behind an overwrite prompt, then `fit_events` → `set_generator` — so that pattern
+  transfers. `_handle_plot_events` is the largest single method left in 4a and is its own
+  problem: eight emits over `MetaEventLoader`, `MetaFilter` and `MetaEventFitter`,
+  including two `load_event` calls and a `get_plot_features` whose answer feeds
+  `update_features`.
+- **Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much
 cheaper after 4a for the reason recorded under 4c below.

@@ -546,18 +546,23 @@ class TestHandleParameterChange:
 
 
 class TestHandleOtherActions:
-    def test_with_loader_emits_signal(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view._handle_other_actions("any", {"loader": "my_loader"})
-        assert any("get_channels" in str(a) for a in emitted)
+    """
+    Step 4a: a typed intent naming the loader, not a bus call describing the dispatch.
 
-    def test_without_loader_no_signal(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        before = len(emitted)
+    Both tests target ``loader_channels_requested``. The second one used to assert that
+    ``global_signal`` did not fire, which is trivially true of a method that no longer
+    emits it - re-pointed rather than left passing for the wrong reason.
+    """
+
+    def test_with_loader_requests_its_channels(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
+        mock_view._handle_other_actions("any", {"loader": "my_loader"})
+        mock_view.loader_channels_requested.emit.assert_called_once_with("my_loader")
+
+    def test_without_loader_requests_nothing(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any", {"loader": None})
-        assert len(emitted) == before
+        mock_view.loader_channels_requested.emit.assert_not_called()
 
 
 # ===========================================================================
@@ -671,46 +676,53 @@ class TestHandleFitEvents:
 
 
 class TestHandleCommitEvents:
+    """Step 4a: the write call is the Controller's, so this emits and stops."""
+
     def test_bad_params_returns_gracefully(self, mock_view):
-        # Patch the extractor to raise ValueError — _handle_commit_events must catch it
-        # and return without calling _start_writer.
+        mock_view.write_requested = MagicMock()
         with patch.object(
             EventAnalysisView,
             "_extract_commit_event_parameters",
             side_effect=ValueError("bad params"),
         ):
-            with patch.object(EventAnalysisView, "_start_writer") as mock:
-                mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_not_called()
-
-    def test_valid_params_calls_start_writer(self, mock_view):
-        with patch.object(EventAnalysisView, "_start_writer") as mock:
             mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_called_once()
-        all_args = mock.call_args[0]
-        flat = [a for a in all_args if a is not mock_view]
-        assert "w" in flat
-        assert [0] in flat
+        mock_view.write_requested.emit.assert_not_called()
 
-    def test_none_writer_does_not_call_start(self, mock_view):
+    def test_valid_params_emit_a_typed_intent(self, mock_view):
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [0])
+
+    def test_none_writer_requests_nothing(self, mock_view):
+        mock_view.write_requested = MagicMock()
         with patch.object(
             EventAnalysisView,
             "_extract_commit_event_parameters",
             return_value=(None, [0]),
         ):
-            with patch.object(EventAnalysisView, "_start_writer") as mock:
-                mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_not_called()
+            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_not_called()
 
-    def test_none_channels_does_not_call_start(self, mock_view):
+    def test_none_channels_requests_nothing(self, mock_view):
+        mock_view.write_requested = MagicMock()
         with patch.object(
             EventAnalysisView,
             "_extract_commit_event_parameters",
             return_value=("w", None),
         ):
-            with patch.object(EventAnalysisView, "_start_writer") as mock:
-                mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_not_called()
+            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_not_called()
+
+    def test_a_bare_channel_is_normalised_to_a_list(self, mock_view):
+        """``_start_writer`` used to coerce this; the intent carries a list either way."""
+        mock_view.write_requested = MagicMock()
+        with patch.object(
+            EventAnalysisView,
+            "_extract_commit_event_parameters",
+            return_value=("w", 0),
+        ):
+            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [0])
 
 
 # ===========================================================================
@@ -718,31 +730,11 @@ class TestHandleCommitEvents:
 # ===========================================================================
 
 
-class TestStartWriter:
-    def test_emits_signal_per_channel(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [0, 1])
-        write_calls = [e for e in emitted if "write_events" in str(e)]
-        assert len(write_calls) == 2
-        mock_view.run_generators.emit.assert_called_once_with("w1")
-
-    def test_single_channel_as_int_converted(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", 0)  # non-list
-        # non-list is converted to list internally
-        mock_view.run_generators.emit.assert_called_once_with("w1")
-
-    def test_index_error_logged(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit.side_effect = IndexError("bad index")
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [0])
-        # Should not raise; run_generators not called on error
-        mock_view.run_generators.emit.assert_not_called()
+# _start_writer is gone: Step 4a moved the write call to
+# EventAnalysisController.write_events, which registers each generator with the Model and
+# runs them itself. Its per-channel behaviour, the bare-channel coercion and the
+# failure path are asserted in tests/unit/controllers/test_event_analysis_controller.py
+# and in TestHandleCommitEvents above.
 
 
 # ===========================================================================
@@ -1566,27 +1558,41 @@ class TestExtractCommitEventParametersExtended:
 
 
 class TestHandleOtherActionsExtended:
-    def test_loader_none_does_not_emit(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view._handle_other_actions("any_action", {"loader": None})
-        mock_view.global_signal.emit.assert_not_called()
+    """
+    The same intent, over the parameter shapes the controls panel can produce.
 
-    def test_loader_present_emits_get_channels(self, mock_view):
-        mock_view.global_signal = MagicMock()
+    Three of these asserted that ``global_signal`` did not fire and would have gone on
+    passing for the wrong reason after the conversion; all four target the intent now.
+    """
+
+    def test_loader_none_does_not_request(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
+        mock_view._handle_other_actions("any_action", {"loader": None})
+        mock_view.loader_channels_requested.emit.assert_not_called()
+
+    def test_loader_present_requests_channels(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any_action", {"loader": "my_loader"})
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_channels" in actions
+        mock_view.loader_channels_requested.emit.assert_called_once()
 
     def test_loader_present_targets_correct_loader(self, mock_view):
-        mock_view.global_signal = MagicMock()
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any_action", {"loader": "specific_loader"})
-        args = mock_view.global_signal.emit.call_args[0]
-        assert args[1] == "specific_loader"
+        assert (
+            mock_view.loader_channels_requested.emit.call_args[0][0]
+            == "specific_loader"
+        )
 
     def test_missing_loader_key_treated_as_none(self, mock_view):
-        mock_view.global_signal = MagicMock()
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any_action", {})
-        mock_view.global_signal.emit.assert_not_called()
+        mock_view.loader_channels_requested.emit.assert_not_called()
+
+    def test_the_no_loader_placeholder_is_not_a_loader(self, mock_view):
+        """The dropdown's empty-state text must not be dispatched as a plugin key."""
+        mock_view.loader_channels_requested = MagicMock()
+        mock_view._handle_other_actions("any_action", {"loader": "No Loader"})
+        mock_view.loader_channels_requested.emit.assert_not_called()
 
 
 # ===========================================================================
@@ -1629,18 +1635,14 @@ class TestHandleFitEventsExtended:
 
 class TestHandleCommitEventsExtended:
     def test_channels_passed_as_ints(self, mock_view):
-        with patch.object(EventAnalysisView, "_start_writer") as mock:
-            mock_view._handle_commit_events({"writer": "w", "channel": ["2"]})
-        mock.assert_called_once()
-        all_args = mock.call_args[0]
-        assert [2] in all_args
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["2"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [2])
 
     def test_multiple_channels_passed_correctly(self, mock_view):
-        with patch.object(EventAnalysisView, "_start_writer") as mock:
-            mock_view._handle_commit_events({"writer": "w", "channel": ["0", "1"]})
-        mock.assert_called_once()
-        all_args = mock.call_args[0]
-        assert [0, 1] in all_args
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["0", "1"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [0, 1])
 
 
 # ===========================================================================
@@ -1648,27 +1650,12 @@ class TestHandleCommitEventsExtended:
 # ===========================================================================
 
 
-class TestStartWriterExtended:
-    def test_empty_channels_does_not_emit_write(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [])
-        write_calls = [e for e in emitted if "write_events" in str(e)]
-        assert len(write_calls) == 0
-
-    def test_run_generators_called_with_writer_name(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("my_writer", [0])
-        mock_view.run_generators.emit.assert_called_once_with("my_writer")
-
-    def test_value_error_prevents_run_generators(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit.side_effect = ValueError("bad value")
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [0])
-        mock_view.run_generators.emit.assert_not_called()
+# _start_writer's extended cases moved with it, to
+# tests/unit/controllers/test_event_analysis_controller.py. The old
+# test_value_error_prevents_run_generators pinned the abort-the-whole-batch behaviour that
+# the conversion deliberately changed: a channel the writer cannot accept is now reported
+# and skipped while the rest still run, because that except clause could never catch a
+# plugin failure through the bus anyway.
 
 
 # ===========================================================================

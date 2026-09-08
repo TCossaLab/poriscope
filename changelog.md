@@ -6,6 +6,8 @@
 
 * Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
 
+* Writing the Event Analysis tab's fitted events now reports a channel the database writer cannot accept and writes the rest, instead of abandoning the whole write; and a loader whose channels cannot be read is reported rather than leaving the channel list silently unchanged
+
 * Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit
 
 * The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
