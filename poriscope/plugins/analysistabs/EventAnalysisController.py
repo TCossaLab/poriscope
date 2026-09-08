@@ -58,6 +58,99 @@ class EventAnalysisController(MetaEventTabController):
     def _setup_connections(self) -> None:
         self.view.loader_channels_requested.connect(self.request_loader_channels)
         self.view.write_requested.connect(self.write_events)
+        self.view.fitting_statuses_requested.connect(self.request_fitting_statuses)
+        self.view.fitting_requested.connect(self.start_fitting)
+
+    @log(logger=logger)
+    @Slot(str, list, str)
+    def request_fitting_statuses(
+        self, eventfitter: str, channels: List[int], data_filter: str
+    ) -> None:
+        """
+        Ask the fitter which channels it has already fitted, for the View to confirm.
+
+        Step 4a's first half of the fitting launch, and the analogue of
+        ``RawDataController.request_eventfinding_statuses``. The View used to emit this
+        per channel inside its own loop and read the answer back off
+        ``self.eventfitting_status``, which nothing cleared - so a dispatch the bus
+        swallowed left the *previous* channel's fitted-ness in place and the "start over?"
+        prompt was shown, or skipped, for the wrong channel.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :param channels: the channels the user asked to fit
+        :type channels: List[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        statuses: List[Tuple[int, bool]] = []
+        for channel in channels:
+            try:
+                fitted = self.model.call(
+                    "MetaEventFitter", eventfitter, "get_eventfitting_status", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to read fitting status for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to read the state of channel {channel}, so it was skipped: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            statuses.append((channel, bool(fitted)))
+        self.view.set_fitting_statuses(eventfitter, statuses, data_filter)
+
+    @log(logger=logger)
+    @Slot(str, list, str)
+    def start_fitting(
+        self, eventfitter: str, channels: List[int], data_filter: str
+    ) -> None:
+        """
+        Fit the approved channels and run the resulting generators.
+
+        ``silent`` and ``indices`` are passed explicitly as False and None because the
+        View always did, even though both match their defaults - keeping them makes the
+        move visibly behaviour-preserving rather than relying on the defaults not
+        changing (rule 42).
+
+        A channel that cannot be launched is reported and skipped, and the ones that did
+        register still run, for the same reason as ``write_events``.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :param channels: the channels the user approved
+        :type channels: List[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        callable_filter = self._resolve_callable_filter(data_filter)
+        for channel in channels:
+            try:
+                generator = self.model.call(
+                    "MetaEventFitter",
+                    eventfitter,
+                    "fit_events",
+                    channel,
+                    False,
+                    callable_filter,
+                    None,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to start fitting on channel {channel}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            self.model.set_generator(generator, channel, eventfitter, "MetaEventFitter")
+        self.model.run_generators(eventfitter)
 
     @log(logger=logger)
     @Slot(str)

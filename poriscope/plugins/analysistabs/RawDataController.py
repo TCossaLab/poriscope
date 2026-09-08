@@ -408,32 +408,6 @@ class RawDataController(MetaEventTabController):
         self.view.set_event_plot_data(event_data, kept)
 
     @log(logger=logger)
-    def _resolve_callable_filter(self, data_filter: str) -> Optional[Callable]:
-        """
-        Fetch the filter's callable, or proceed without one.
-
-        A filter that cannot be fetched is a warning rather than a failure, because
-        plotting unfiltered events is still useful - which is what the View did.
-
-        :param data_filter: the filter plugin's key, or "" for no filtering
-        :type data_filter: str
-        :return: the callable, or None if none was asked for or it could not be fetched
-        :rtype: Optional[Callable]
-        """
-        if not data_filter:
-            return None
-        try:
-            resolved: Callable = self.model.call(
-                "MetaFilter", data_filter, "get_callable_filter"
-            )
-        except Exception:
-            self.logger.warning(
-                f"Unable to load filter {data_filter}, proceeding without a filter"
-            )
-            return None
-        return resolved
-
-    @log(logger=logger)
     def _event_samplerate(self, eventfinder: str) -> float:
         """
         The event finder's samplerate, or 1 so the axis falls back to raw indices.

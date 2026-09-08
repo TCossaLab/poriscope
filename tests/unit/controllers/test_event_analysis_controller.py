@@ -63,7 +63,201 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> EventAnalysisCont
     return ctrl
 
 
-# ----------------------- Step 4a: the two single-emit paths ----------
+# ----------------------- Step 4a -------------------------------------
+
+
+class TestFittingLaunch:
+    """
+    The three bus round trips ``EventAnalysisView._start_eventfitter`` used to make.
+
+    Split across two slots because the launch has a question for the user in the middle
+    of it, exactly as RawData's event finding does. These invariants were pinned against
+    the View before the conversion and moved here with the calls; two of the old ones
+    would have gone on passing for the wrong reason instead of failing, since they
+    asserted that something was *not* emitted.
+    """
+
+    def test_the_status_is_asked_per_channel_and_handed_back_with_the_filter(
+        self,
+        controller: EventAnalysisController,
+        mock_view: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        One call per channel, and the filter key travels through untouched.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = [True, False]
+
+        controller.request_fitting_statuses("ef1", [0, 1], "MyFilter")
+
+        assert controller.model.call.call_args_list == [
+            mocker.call("MetaEventFitter", "ef1", "get_eventfitting_status", 0),
+            mocker.call("MetaEventFitter", "ef1", "get_eventfitting_status", 1),
+        ]
+        mock_view.set_fitting_statuses.assert_called_once_with(
+            "ef1", [(0, True), (1, False)], "MyFilter"
+        )
+
+    def test_a_channel_whose_status_cannot_be_read_is_dropped(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        **The stale read this half closes.** The View parked each answer on
+        ``self.eventfitting_status``, which nothing cleared, so a swallowed failure left
+        the *previous* channel's fitted-ness in place - and the "start over?" prompt was
+        then shown, or skipped, for the wrong channel.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        controller.model.call.side_effect = [True, RuntimeError("boom"), False]
+
+        controller.request_fitting_statuses("ef1", [0, 1, 2], "")
+
+        assert mock_view.set_fitting_statuses.call_args[0][1] == [(0, True), (2, False)]
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_the_status_is_coerced_to_a_bool(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        The View branches on it, so a truthy non-bool must not reach the prompt as-is.
+
+        Asserted with ``is True`` and a non-int value: ``== True`` cannot see a missing
+        ``bool()`` because ``1 == True`` in Python, which is how the equivalent RawData
+        test passed against perturbed code.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        controller.model.call.return_value = "fitted"
+
+        controller.request_fitting_statuses("ef1", [0], "")
+
+        handed_back = mock_view.set_fitting_statuses.call_args[0][1]
+        assert handed_back == [(0, True)]
+        assert handed_back[0][1] is True
+
+    def test_fit_events_is_called_per_channel_with_the_real_signature(
+        self, controller: EventAnalysisController, mocker: MockerFixture
+    ) -> None:
+        """
+        ``fit_events(channel, silent=False, data_filter=None, indices=None)``.
+
+        ``silent`` and ``indices`` are passed explicitly because the View always did,
+        even though both match their defaults - written from the signature rather than
+        the old call site (rule 42).
+
+        :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.start_fitting("ef1", [0, 2], "")
+
+        assert controller.model.call.call_args_list == [
+            mocker.call("MetaEventFitter", "ef1", "fit_events", 0, False, None, None),
+            mocker.call("MetaEventFitter", "ef1", "fit_events", 2, False, None, None),
+        ]
+
+    def test_each_generator_is_registered_against_its_channel_and_fitter(
+        self, controller: EventAnalysisController, mocker: MockerFixture
+    ) -> None:
+        """
+        What the bus used to carry as the return function's extra arguments.
+
+        :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.start_fitting("ef1", [0, 1], "")
+
+        assert controller.model.set_generator.call_args_list == [
+            mocker.call("gen0", 0, "ef1", "MetaEventFitter"),
+            mocker.call("gen1", 1, "ef1", "MetaEventFitter"),
+        ]
+
+    def test_the_generators_run_once_for_the_fitter(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """
+        Registration and running stay separate steps, as through the bus.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.start_fitting("ef1", [0, 1], "")
+
+        controller.model.run_generators.assert_called_once_with("ef1")
+
+    def test_a_named_filter_is_fetched_once_and_passed_to_every_channel(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """
+        One fetch for the batch, through the helper now shared with RawData.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["a-callable", "gen0", "gen1"]
+
+        controller.start_fitting("ef1", [0, 1], "MyFilter")
+
+        fit_calls = [
+            call.args
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "fit_events"
+        ]
+        assert len(fit_calls) == 2
+        for args in fit_calls:
+            assert args[5] == "a-callable"
+
+    def test_an_empty_filter_key_fetches_no_callable(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """
+        Replaces the old test that asserted the View did not emit get_callable_filter -
+        which would have passed trivially once the View stopped emitting anything.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0"]
+
+        controller.start_fitting("ef1", [0], "")
+
+        assert not [
+            call
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "get_callable_filter"
+        ]
+
+    def test_a_channel_that_cannot_launch_is_skipped_and_the_rest_run(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """
+        Replaces the old test_index_error_logged_not_raised, whose assertion that
+        ``run_generators`` was not called became trivially true.
+
+        The behaviour is deliberately different: the View abandoned the whole batch, and
+        losing one channel beats losing every channel's fit.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0", RuntimeError("boom"), "gen2"]
+
+        controller.start_fitting("ef1", [0, 1, 2], "")
+
+        registered = [
+            call.args[1] for call in controller.model.set_generator.call_args_list
+        ]
+        assert registered == [0, 2]
+        controller.model.run_generators.assert_called_once_with("ef1")
+        controller.add_text_to_display.emit.assert_called_once()
 
 
 class TestRequestLoaderChannels:

@@ -6,6 +6,10 @@
 
 * Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
 
+* **Fixed the Event Analysis tab asking about the wrong channel before re-fitting**: if it could not read whether a channel was already fitted, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not fitted or be skipped for one that was
+
+* Event fitting now reports a channel it cannot read or start and continues with the others, instead of abandoning the whole batch
+
 * Writing the Event Analysis tab's fitted events now reports a channel the database writer cannot accept and writes the rest, instead of abandoning the whole write; and a loader whose channels cannot be read is reported rather than leaving the channel list silently unchanged
 
 * Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit

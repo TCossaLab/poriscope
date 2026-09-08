@@ -66,6 +66,17 @@ class EventAnalysisView(MetaEventTabView):
     #: which the Controller registers with the Model and runs.
     write_requested = Signal(str, list)
 
+    #: Asks the Controller which of these channels the fitter has already completed.
+    #: eventfitter, channels, filter key. The answer arrives as
+    #: ``set_fitting_statuses``, because the prompt that follows it belongs to the View
+    #: and the call that answers it does not - the same two-phase launch RawData's event
+    #: finding uses.
+    fitting_statuses_requested = Signal(str, list, str)
+
+    #: The second half: the channels the user approved, plus the filter key. No answer
+    #: is expected; each channel's generator is registered and run by the Controller.
+    fitting_requested = Signal(str, list, str)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -845,7 +856,14 @@ class EventAnalysisView(MetaEventTabView):
         self, eventfitter: str, data_filter: str, channels: Union[int, List[int]]
     ) -> None:
         """
-        Start the event fitting process for the selected channel(s) using the given fitter and filter.
+        Ask the Controller which of these channels the fitter has already completed.
+
+        Step 4a, and the same two-phase launch RawData's event finding uses: this method
+        interleaved a plugin call with a question for the user, asking each channel's
+        fitting status over the bus and prompting before redoing a finished channel. The
+        prompt stays here and the call leaves, so the statuses go out, the answers come
+        back, and the approved channels go out again. The reply arrives as
+        ``set_fitting_statuses``.
 
         :param eventfitter: Identifier of the event fitter plugin.
         :type eventfitter: str
@@ -853,66 +871,51 @@ class EventAnalysisView(MetaEventTabView):
         :type data_filter: str
         :param channels: Channel index, or list of integer channel indices.
         :type channels: Union[int, List[int]]
+        :return: None
+        :rtype: None
         """
         if not isinstance(channels, list):
             channels = [channels]
 
-        try:
-            # If channels is not a list, make it a list
-            data_filter_args = ()
-            self.data_filter = None
-            if data_filter != "No Filter":
-                self.global_signal.emit(
-                    "MetaFilter",
-                    data_filter,
-                    "get_callable_filter",
-                    data_filter_args,
-                    "set_event_filter",
-                    (),
-                )
-        except Exception:
-            self.data_filter = None
-            self.logger.warning(
-                f"Unable to load filter {data_filter}, proceeding without a filter"
-            )
+        filter_key = "" if data_filter in (None, "No Filter") else str(data_filter)
+        self.fitting_statuses_requested.emit(eventfitter, channels, filter_key)
 
-        try:
-            for channel in channels:
-                self.global_signal.emit(
-                    "MetaEventFitter",
-                    eventfitter,
-                    "get_eventfitting_status",
-                    (channel,),
-                    "relay_eventfitting_status",
-                    (),
-                )  # update here to unify generators
-                if self.eventfitting_status is True:
-                    reply = QMessageBox.question(
-                        self,
-                        "Confirmation",
-                        f"Fitting was already completed in channel {channel}. Start over anyway?",
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.No,
-                    )
-                    if reply == QMessageBox.No:
-                        continue
-                fit_events_args = (channel, False, self.data_filter, None)
-                # Emit the signal with the correct handler name for when the data is ready
-                ret_args = (channel, eventfitter, "MetaEventFitter")
-                self.global_signal.emit(
-                    "MetaEventFitter",
-                    eventfitter,
-                    "fit_events",
-                    fit_events_args,
-                    "set_generator",
-                    ret_args,
-                )  # update here to unify generators
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
-            )
-        else:
-            self.run_generators.emit(eventfitter)
+    @log(logger=logger)
+    def set_fitting_statuses(
+        self, eventfitter: str, statuses: List[Tuple[int, bool]], data_filter: str
+    ) -> None:
+        """
+        Confirm any already-fitted channels, then ask for the approved ones to run.
+
+        The per-channel prompt is kept exactly as it was, including that declining one
+        channel skips only that channel. There are no stored ranges to look up here, so
+        unlike RawData's equivalent nothing in this half can fail.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :param statuses: (channel, already_fitted) for each channel that answered
+        :type statuses: List[Tuple[int, bool]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        approved: List[int] = []
+        for channel, fitted in statuses:
+            if fitted:
+                reply = QMessageBox.question(
+                    self,
+                    "Confirmation",
+                    f"Fitting was already completed in channel {channel}. Start over anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.No:
+                    continue
+            approved.append(channel)
+
+        if approved:
+            self.fitting_requested.emit(eventfitter, approved, data_filter)
 
     @log(logger=logger)
     def _extract_plot_event_parameters(

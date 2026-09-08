@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from tests.unit.views._qt_mocks import mock_axes, mock_figure, shadow_signals
@@ -743,53 +743,87 @@ class TestHandleCommitEvents:
 
 
 class TestStartEventfitter:
-    def _setup(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.run_generators = MagicMock()
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
+    """
+    The View half of the fitting launch after Step 4a: ask, prompt, ask again.
 
-    def test_emits_fit_events_signal(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        emitted_actions = [
-            c.args[2] for c in mock_view.global_signal.emit.call_args_list
-        ]
-        assert "fit_events" in emitted_actions
+    All three bus round trips - the filter callable, the per-channel status, and the
+    per-channel ``fit_events`` - are the Controller's now, and asserted in
+    ``tests/unit/controllers/test_event_analysis_controller.py``. What stays here is
+    coercing the channel argument, collapsing the filter placeholder, and prompting
+    before refitting a finished channel.
+    """
 
-    def test_run_generators_called(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        mock_view.run_generators.emit.assert_called_once_with("ef1")
-
-    def test_with_filter_emits_get_callable_filter(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "MyFilter", [0])
-        emitted_actions = [
-            c.args[2] for c in mock_view.global_signal.emit.call_args_list
-        ]
-        assert "get_callable_filter" in emitted_actions
-
-    def test_non_list_channels_converted(self, mock_view):
-        self._setup(mock_view)
-        # Should not raise even if channels is not a list
+    def test_a_bare_channel_is_coerced_to_a_list(self, mock_view):
+        """Callers pass either shape, and a bare int must not be iterated as one."""
+        mock_view.fitting_statuses_requested = MagicMock()
         mock_view._start_eventfitter("ef1", "No Filter", 0)
-        mock_view.run_generators.emit.assert_called_once_with("ef1")
+        mock_view.fitting_statuses_requested.emit.assert_called_once_with(
+            "ef1", [0], ""
+        )
 
-    def test_already_fitted_and_no_skipped(self, mock_view):
-        """If status is True but user would say No in dialog, we patch QMessageBox."""
-        self._setup(mock_view)
-        mock_view.eventfitting_status = True
+    def test_no_filter_is_carried_as_an_empty_key(self, mock_view):
+        """The Controller never has to know the placeholder's spelling."""
+        mock_view.fitting_statuses_requested = MagicMock()
+        mock_view._start_eventfitter("ef1", "No Filter", [0])
+        assert mock_view.fitting_statuses_requested.emit.call_args[0][2] == ""
+
+    def test_a_named_filter_is_carried_by_key(self, mock_view):
+        """Fetching the callable is the Controller's job; naming it is the View's."""
+        mock_view.fitting_statuses_requested = MagicMock()
+        mock_view._start_eventfitter("ef1", "MyFilter", [0, 1])
+        mock_view.fitting_statuses_requested.emit.assert_called_once_with(
+            "ef1", [0, 1], "MyFilter"
+        )
+
+    def test_an_unfitted_channel_is_approved_without_asking(self, mock_view):
+        """No prompt where there is nothing to overwrite."""
+        mock_view.fitting_requested = MagicMock()
+        with patch(
+            "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question"
+        ) as question:
+            mock_view.set_fitting_statuses("ef1", [(0, False)], "")
+        question.assert_not_called()
+        mock_view.fitting_requested.emit.assert_called_once_with("ef1", [0], "")
+
+    def test_accepting_the_refit_prompt_approves_the_channel(self, mock_view):
+        """A finished channel asks first, and Yes means go."""
+        mock_view.fitting_requested = MagicMock()
         with patch(
             "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question",
-            return_value=MagicMock(),  # anything that isn't QMessageBox.No
+            return_value=QMessageBox.Yes,
         ):
-            mock_view._start_eventfitter("ef1", "No Filter", [0])
-        # Should still emit fit_events since we didn't return early
-        emitted_actions = [
-            c.args[2] for c in mock_view.global_signal.emit.call_args_list
-        ]
-        assert "fit_events" in emitted_actions
+            mock_view.set_fitting_statuses("ef1", [(0, True)], "")
+        mock_view.fitting_requested.emit.assert_called_once_with("ef1", [0], "")
+
+    def test_declining_the_refit_prompt_skips_only_that_channel(self, mock_view):
+        """The other channels still run, rather than the batch being abandoned."""
+        mock_view.fitting_requested = MagicMock()
+        with patch(
+            "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question",
+            side_effect=[QMessageBox.No, QMessageBox.Yes],
+        ):
+            mock_view.set_fitting_statuses("ef1", [(0, True), (1, True)], "")
+        mock_view.fitting_requested.emit.assert_called_once_with("ef1", [1], "")
+
+    def test_declining_every_channel_launches_nothing(self, mock_view):
+        """An empty approval list is not a launch."""
+        mock_view.fitting_requested = MagicMock()
+        with patch(
+            "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question",
+            return_value=QMessageBox.No,
+        ):
+            mock_view.set_fitting_statuses("ef1", [(0, True)], "")
+        mock_view.fitting_requested.emit.assert_not_called()
+
+    def test_the_filter_key_is_carried_through_to_the_launch(self, mock_view):
+        """
+        The Controller hands it back rather than the View holding it between halves.
+
+        One less piece of state that could go stale across a round trip.
+        """
+        mock_view.fitting_requested = MagicMock()
+        mock_view.set_fitting_statuses("ef1", [(0, False)], "MyFilter")
+        assert mock_view.fitting_requested.emit.call_args[0][2] == "MyFilter"
 
 
 # ===========================================================================
@@ -1663,35 +1697,13 @@ class TestHandleCommitEventsExtended:
 # ===========================================================================
 
 
-class TestStartEventfitterExtended:
-    def _setup(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.run_generators = MagicMock()
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
-
-    def test_no_filter_does_not_emit_get_callable_filter(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_callable_filter" not in actions
-
-    def test_multiple_channels_emits_fit_per_channel(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0, 1])
-        fit_calls = [
-            c
-            for c in mock_view.global_signal.emit.call_args_list
-            if len(c.args) > 2 and c.args[2] == "fit_events"
-        ]
-        assert len(fit_calls) == 2
-
-    def test_index_error_logged_not_raised(self, mock_view):
-        self._setup(mock_view)
-        mock_view.global_signal.emit.side_effect = IndexError("bad")
-        # Should not raise — error is caught
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        mock_view.run_generators.emit.assert_not_called()
+# TestStartEventfitterExtended's cases moved with the calls, to
+# tests/unit/controllers/test_event_analysis_controller.py. Two of its three would have
+# gone on passing for the wrong reason rather than failing:
+# test_no_filter_does_not_emit_get_callable_filter and
+# test_index_error_logged_not_raised both asserted that something was *not* called,
+# which is trivially true of a View that no longer makes the call at all. The third,
+# test_multiple_channels_emits_fit_per_channel, is asserted on the Controller.
 
 
 # ===========================================================================
