@@ -201,11 +201,12 @@ def test_protein_individual_ensemble_flow(
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
     import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = protein_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         tree = selection_widget.tree
         first_exp_name = tree.topLevelItem(0).text(0)
@@ -224,7 +225,7 @@ def test_protein_individual_ensemble_flow(
         return result
 
     monkeypatch.setattr(
-        protein_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,

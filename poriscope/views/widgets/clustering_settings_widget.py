@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
+from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughMixin,
     WalkthroughStep,
 )

@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING, Callable, Optional
 from PySide6.QtCore import QRect, QSize, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QApplication,
     QPushButton,
     QSizePolicy,
     QSpacerItem,
@@ -58,7 +57,6 @@ class IconMenuWidget(QWidget):
     pluginsToggled = Signal(bool)
     helpToggled = Signal(bool)
     settingsToggled = Signal(bool)
-    exitToggled = Signal(bool)
     menuToggled = Signal(bool)
 
     switchToRawData = Signal()
@@ -68,7 +66,6 @@ class IconMenuWidget(QWidget):
     switchToPlugins = Signal()
     switchToHelp = Signal()
     switchToSettings = Signal()
-    switchToExit = Signal()
 
     logger = logging.getLogger(__name__)
 
@@ -168,16 +165,6 @@ class IconMenuWidget(QWidget):
             self.handleSettings,
             "Settings",
         )
-        self.exit_icon_button = self.createIconButton(
-            layout,
-            "exit",
-            os.path.join(self.icon_path, "exit-white.svg"),
-            os.path.join(self.icon_path, "exit-black.svg"),
-            25,
-            self.handleExit,
-            "Exit application",
-        )
-
         layout.addItem(QSpacerItem(20, 5, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     @log(logger=logger)
@@ -303,7 +290,6 @@ class IconMenuWidget(QWidget):
         self.add_icon_button.clicked.connect(self.switchToPlugins.emit)
         self.settings_icon_button.clicked.connect(self.switchToSettings.emit)
         self.help_icon_button.clicked.connect(self.switchToHelp.emit)
-        self.exit_icon_button.clicked.connect(self.switchToExit.emit)
 
     @log(logger=logger)
     def emitSignal(self, buttonName: str, checked: bool) -> None:
@@ -315,7 +301,6 @@ class IconMenuWidget(QWidget):
             "add": self.pluginsToggled,
             "help": self.helpToggled,
             "settings": self.settingsToggled,
-            "exit": self.exitToggled,
         }
         if buttonName in signals:
             signals[buttonName].emit(checked)
@@ -350,12 +335,6 @@ class IconMenuWidget(QWidget):
     def handleSettings(self) -> None:
         self.switchToSettings.emit()
 
-    @log(logger=logger)
-    def handleExit(self) -> None:
-        self.logger.info("Exit clicked")
-        self.switchToExit.emit()
-        QApplication.quit()
-
     # Slot methods to update button states
     @log(logger=logger)
     def setMenuChecked(self, checked: bool) -> None:
@@ -386,8 +365,29 @@ class IconMenuWidget(QWidget):
         self.settings_icon_button.setChecked(checked)
 
     @log(logger=logger)
-    def setExitChecked(self, checked: bool) -> None:
-        self.exit_icon_button.setChecked(checked)
+    def uncheckAll(self) -> None:
+        """
+        Uncheck whichever sidebar icon button is currently highlighted, if any.
+
+        These buttons are all ``autoExclusive`` and share this widget as their
+        parent, so Qt treats them as one radio-button-style group: a plain
+        ``setChecked(False)`` is a no-op on the sole checked member, since Qt
+        refuses to leave an autoExclusive group with nothing checked once
+        anything has been. Toggling ``autoExclusive`` off just long enough to
+        release it is the standard workaround.
+        """
+        for button in (
+            self.raw_data_icon_button,
+            self.event_analysis_icon_button,
+            self.metadata_icon_button,
+            self.add_icon_button,
+            self.help_icon_button,
+            self.settings_icon_button,
+        ):
+            if button.isChecked():
+                button.setAutoExclusive(False)
+                button.setChecked(False)
+                button.setAutoExclusive(True)
 
     @log(logger=logger)
     def setHelpUnchecked(self) -> None:

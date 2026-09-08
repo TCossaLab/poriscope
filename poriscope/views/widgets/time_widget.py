@@ -185,9 +185,13 @@ class TimeWidget(QDialog):
             segment = segment.strip()
             if "-" in segment:
                 try:
-                    start_str, end_str = segment.split("-")
+                    start_str, end_str = segment.split("-", 1)
                     start = float(start_str)
-                    end = float(end_str)
+                    # An omitted end means "until the end of the signal", which
+                    # is what an end of 0 encodes below. TimeRangeValidator makes
+                    # the same substitution, so an input it calls Acceptable must
+                    # parse here rather than being dropped as invalid.
+                    end = float(end_str) if end_str.strip() else 0.0
                     if start == 0.0 and end == 0.0:
                         result.append((0.0, 0.0))
                     elif start > end and end == 0.0:
@@ -195,5 +199,5 @@ class TimeWidget(QDialog):
                     else:
                         result.append((start, end))
                 except ValueError:
-                    continue  # Skip invalid parts; already filtered
+                    continue  # Skip parts the validator would have rejected
         return result

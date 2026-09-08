@@ -25,10 +25,9 @@
 
 import logging
 import re
-from typing import List
+from typing import List, override
 
 import numpy as np
-from typing_extensions import override
 
 from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
 from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader

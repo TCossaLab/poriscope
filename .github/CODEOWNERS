@@ -1,0 +1,56 @@
+# Poriscope code owners
+#
+# ADVISORY ONLY. This file exists so that a pull request automatically requests review
+# from whoever knows the code it touches. It is NOT a merge gate: "Require review from
+# Code Owners" is deliberately switched off in branch protection, and nothing here
+# blocks a contribution. If you are contributing a plugin from a fork, you do not need
+# an owner's approval to merge.
+#
+# Ownership here reflects who maintains a file today, which is not always the same as
+# the "# Contributors:" header at the top of it -- headers record authorship, including
+# that of people no longer with the lab, whose files have passed to @shadowk29.
+#
+# Patterns are last-match-wins, so the order below matters: the global fallback first,
+# then broad rules, then the file-level carve-outs.
+#
+# GitHub only auto-requests users with write access to the repository; a line naming
+# anyone else is silently ignored.
+#
+# See docs/source/utils/user_manuals/plugins_manual/development_workflow/code_ownership.rst
+
+# Global fallback.
+*                                                     @shadowk29
+
+# App shell.
+/poriscope/controllers/                               @shadowk29
+/poriscope/models/                                    @shadowk29
+/poriscope/utils/                                     @shadowk29
+/poriscope/views/                                     @shadowk29 @Carogg28
+
+# Analysis-tab plugins. Jointly maintained; the tab-local helpers are Carolina's.
+/poriscope/plugins/analysistabs/                      @shadowk29 @Carogg28
+/poriscope/plugins/analysistabs/utils/                @Carogg28
+
+# Data plugins.
+/poriscope/plugins/datareaders/                       @shadowk29
+/poriscope/plugins/datawriters/                       @shadowk29
+/poriscope/plugins/dbwriters/                         @shadowk29
+/poriscope/plugins/db_loaders/                        @shadowk29
+/poriscope/plugins/eventfinders/                      @shadowk29
+/poriscope/plugins/eventfitters/                      @shadowk29
+/poriscope/plugins/eventloaders/                      @shadowk29
+/poriscope/plugins/filters/                           @shadowk29
+
+# The PeakFinder family. future_fixes.md records a standing policy that the *logic* in
+# these files belongs to @nkerr091; docstring, signature and type-hint changes do not.
+/poriscope/plugins/eventfitters/PeakFinder.py         @nkerr091 @shadowk29
+/poriscope/plugins/eventfitters/Basic_PeakFinder.py   @nkerr091 @shadowk29
+/poriscope/plugins/db_loaders/SQLitePeakDBLoader.py   @shadowk29 @nkerr091
+
+# Test suites. Test-writing is Carolina's per standing project policy.
+/tests/                                               @Carogg28
+
+# Repository infrastructure and docs.
+/.github/                                             @Carogg28 @shadowk29
+/scripts/                                             @shadowk29 @Carogg28
+/docs/                                                @Carogg28 @shadowk29

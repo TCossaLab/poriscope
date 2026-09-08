@@ -27,11 +27,10 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
     NavigationToolbar2QT as NavigationToolbar,
@@ -54,10 +53,12 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
+from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
-class MetaView(QWidget, metaclass=QWidgetABCMeta):
+class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
     """
     Abstract base class designed to provide a unified interface for different analysis tabs.
 
@@ -69,6 +70,11 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     global_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
+    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
+    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
+    # that passes a return_function_name reads the result back off an attribute the
+    # callback sets, on the very next statement after .emit() - a queued connection
+    # would silently degrade that read to stale/None data with no error and no log line.
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (cane be None), added args for retval
@@ -82,12 +88,10 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     cache_plot_data = Signal(list, list)
     create_plugin = Signal(str, str)  # metaclass, subclass
     logger = logging.getLogger(__name__)
-    save_requested = Signal(str)
     export_plot_data = Signal()
     run_generators = Signal(str)
     add_text_to_display = Signal(str, str)
     load_actions_from_json = Signal(str)  # filename
-    lock = threading.Lock()
 
     def __init__(self) -> None:
         """
@@ -96,8 +100,17 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         super().__init__()
         self.available_plugins: Dict[str, List[str]] = {}
         self.progress_bars: Dict[str, Dict[str, Any]] = {}
+        # Guards progress_bars, which is per-instance - so this is too. It was a
+        # class attribute until Step 3e, which serialised every tab against every
+        # other for a dict none of them share.
+        self.lock = threading.Lock()
         self._init()
         self._setup_ui()
+        # Every tab used to repeat this pair in its own __init__, calling _init() a
+        # second time after _setup_ui(). Measured as a no-op before removing it: no
+        # attribute _init assigns is also assigned anywhere in the _setup_ui call
+        # tree, in any of the five tabs, so the second call rewrote its own values.
+        self._init_walkthrough()
         self.plot_data: Optional[Any] = None
         self.threads: List[Any] = []
         self.layout().setContentsMargins(0, 0, 0, 0)
@@ -203,20 +216,68 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         # Add display container to the provided layout
         layout.addWidget(display_container, stretch=4)  # Adjusted stretch factor
 
-    @abstractmethod
+    def _build_controls(self) -> MetaControls:
+        """
+        Build this tab's controls panel and return it.
+
+        The subclass also stores it under whatever name the rest of that tab uses -
+        ``self.metadatacontrols``, ``self.rawdatacontrols`` and so on - because those
+        names appear throughout each tab and in its saved action history. This hook
+        only has to hand the widget back, so the base can wire it and place it.
+
+        Concrete rather than abstract, returning an empty panel, so that a tab which
+        lays out its own control area can override ``_set_control_area`` instead and
+        never implement this. Making it abstract would leave such a tab uninstantiable
+        - including the ``HelloWorldView`` the plugin tutorial is built around.
+
+        :return: the tab's controls panel
+        :rtype: MetaControls
+        """
+        return MetaControls()
+
+    def _connect_control_signals(self, controls: MetaControls) -> None:
+        """
+        Connect any signals beyond the four that every controls panel carries.
+
+        A no-op by default. ``MetaSubsetTabView`` overrides it for the two filter
+        signals that only ``MetaSubsetTabControls`` declares.
+
+        :param controls: the panel just built by ``_build_controls``
+        :type controls: MetaControls
+        """
+
+    @log(logger=logger)
     def _set_control_area(self, layout: QBoxLayout) -> None:
         """
-        Create and set up the control area for user interaction elements.
+        Build the tab's controls panel, wire it up, and place it in the layout.
+
+        Concrete since Step 3a-bis. All five tabs carried a copy of this differing only
+        in the widget class, the attribute name it was stored under, and - for the two
+        subset tabs - two extra signal connections. Those three differences are now
+        ``_build_controls`` and ``_connect_control_signals``.
 
         :param layout: The main layout to which the control area will be added. A box layout specifically, since implementations nest a sub-layout with addLayout().
         :type layout: QBoxLayout
         """
-        pass
+        controls = self._build_controls()
+        controls.actionTriggered.connect(self.handle_parameter_change)
+        controls.edit_processed.connect(self.handle_edit_triggered)
+        controls.add_processed.connect(self.handle_add_triggered)
+        controls.delete_processed.connect(self.handle_delete_triggered)
+        self._connect_control_signals(controls)
+
+        controlsAndAnalysisLayout = QHBoxLayout()
+        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
+        controlsAndAnalysisLayout.addWidget(controls, stretch=1)
+        layout.setSpacing(0)
+        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def _setup_canvas(self, num_channels: int = 1) -> None:
+    def _setup_canvas(self) -> None:
         """
-        Set up the canvas with a given number of subplots corresponding to the number of channels.
+        Build the figure and its canvas, and parent the canvas to this widget.
+
+        Subclasses lay out their own subplots afterwards; this makes one empty figure.
         """
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
@@ -253,16 +314,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.progress_bar_layout.addWidget(
             self.kill_all_button, alignment=Qt.AlignRight
         )
-
-    @log(logger=logger)
-    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Sets the status indicating if cluster columns already exist.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.column_table = exists_in_table
 
     @log(logger=logger)
     @Slot(float, str)
@@ -546,106 +597,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
         pass
 
-    @log(logger=logger)
-    def _parse_event_indices(
-        self, indices: str, allow_floats: bool
-    ) -> list[tuple[float, float]]:
-        """
-        Parse '7-10,12' → [(7,10), (12,12)]
-        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
-        otherwise every bound is parsed with int().
-        """
-        result: list[tuple[float, float]] = []
-        caster = float if allow_floats else int
-
-        for segment in indices.split(","):
-            segment = segment.strip()
-            if "-" in segment:
-                try:
-                    start, end = map(caster, segment.split("-"))
-                    result.append((start, end))
-                except ValueError:
-                    self.logger.warning(f"Invalid range segment: {segment}")
-            elif segment:
-                try:
-                    val = caster(segment)
-                    result.append((val, val))
-                except ValueError:
-                    self.logger.warning(f"Invalid index segment: {segment}")
-
-        return result
-
-    @log(logger=logger)
-    def _shift_ranges(
-        self, ranges: Sequence[tuple[float, float]], direction: str, offset: float
-    ) -> list[tuple[float, float]]:
-        """Shift each tuple range left or right."""
-        shifted: list[tuple[float, float]] = []
-        for start, end in ranges:
-            if start == end:  # Sigle index
-                val = start + offset if direction == "right" else start - offset
-                shifted.append((val, val))
-            else:  # Range
-                new_start = (
-                    end + offset
-                    if direction == "right"
-                    else ((2 * start) - end) - offset
-                )
-                new_end = (
-                    ((2 * end) - start) + offset
-                    if direction == "right"
-                    else start - offset
-                )
-                shifted.append((new_start, new_end))
-        return shifted
-
-    @log(logger=logger)
-    def _merge_ranges(
-        self, ranges: Sequence[tuple[float, float]]
-    ) -> list[tuple[float, float]]:
-        """Merge overlapping or contiguous ranges."""
-        merged: list[tuple[float, float]] = []
-        for start, end in sorted(ranges):
-            if not merged or merged[-1][1] < start - 1:
-                merged.append((start, end))
-            else:
-                last_start, last_end = merged[-1]
-                merged[-1] = (last_start, max(last_end, end))
-        return merged
-
-    @log(logger=logger)
-    def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
-        """Format list of tuples into '8-11,13'"""
-        return ",".join(
-            f"{start}-{end}" if start != end else str(start) for start, end in ranges
-        )
-
-    @log(logger=logger)
-    def _expand_event_indices(self, indices_str: str) -> list[int]:
-        """
-        Expand '1,3-5' → [1,3,4,5], exclude segments with negatives.
-        """
-        result: Set[int] = set()
-        for segment in indices_str.split(","):
-            segment = segment.strip()
-            try:
-                if "-" in segment:
-                    parts = segment.split("-")
-                    if len(parts) != 2:
-                        raise ValueError
-                    start, end = map(int, parts)
-                    if start < 0 or end < 0:
-                        continue
-                    result.update(range(start, end + 1))
-                else:
-                    val = int(segment)
-                    if val < 0:
-                        continue
-                    result.add(val)
-            except ValueError:
-                continue
-        return sorted(result)
-
     # private API, should generally be left alone by subclasses
 
     @log(logger=logger)
@@ -781,81 +732,3 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
             )
 
         return tuple(current_data)
-
-    def _logscale_and_filter_dataframe(
-        self, df: pd.DataFrame, log_columns: Optional[List[str]] = None
-    ) -> pd.DataFrame:
-        """
-        Filters a DataFrame for NaN values and applies logarithmic scaling to specified columns, returning a new DataFrame; the input is not modified.
-
-        This function:
-
-        - Removes rows with NaN values in any column.
-        - Applies log10 scaling to specified columns after rectifying based on average sign.
-        - Sequentially removes rows with non-positive values in log columns.
-
-        Args:
-            df (pd.DataFrame): Input DataFrame with numerical data. Not modified; a copy is filtered and transformed internally.
-            log_columns (list of str, optional): List of column names to apply log scaling.
-            If None, no log scaling is applied.
-
-        Returns:
-            pd.DataFrame: A new, filtered and transformed DataFrame.
-        """
-
-        if df.empty:
-            return df
-
-        # Create a copy to avoid SettingWithCopyWarning
-        df = df.copy()
-
-        if log_columns is None:
-            log_columns = []
-
-        if not all(col in df.columns for col in log_columns):
-            missing = [col for col in log_columns if col not in df.columns]
-            raise ValueError(f"Columns not found in DataFrame: {missing}")
-
-        num_points_init = len(df)
-
-        # Drop NaNs in place
-        df.dropna(inplace=True)
-        num_points_after_nan = len(df)
-        num_points_nan = num_points_init - num_points_after_nan
-
-        if num_points_nan > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_nan} out of {num_points_init} points that contained NaN",
-                self.__class__.__name__,
-            )
-
-        num_points_before_log = len(df)
-
-        for col in log_columns:
-            if df.empty:
-                break
-
-            d = df[col].values
-            avg = np.average(d)
-            sign = np.sign(avg) if avg != 0 else 1
-
-            rectified = sign * d
-            log_mask = rectified > 0
-
-            # Filter rows based on log_mask
-            df = df.loc[log_mask].copy()
-
-            # Apply log10 transformation using .loc
-            df[col] = df[col].astype(np.float64)
-            df.loc[:, col] = np.log10(sign * df[col]).astype(np.float64)
-
-        num_points_final = len(df)
-        num_points_log_removed = num_points_before_log - num_points_final
-
-        if num_points_log_removed > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_log_removed} out of {num_points_before_log} points that could not be logscaled",
-                self.__class__.__name__,
-            )
-
-        return df

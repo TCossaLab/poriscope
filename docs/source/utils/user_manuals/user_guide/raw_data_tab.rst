@@ -115,7 +115,7 @@ Step 3: Finding Events
 
 .. note::
 
-   A range like ``0-0`` means “start to end” of the loaded signal. You can also specify ranges such as ``0-4``, ``6-7``, or even wrap-around intervals like ``9-0``.
+   A range like ``0-0`` means “start to end” of the loaded signal. You can also specify ranges such as ``0-4``, ``6-7``, or even wrap-around intervals like ``9-0``. An omitted end has the same meaning as an end of ``0``, so ``3.0-`` and ``3.0-0`` both run from 3 seconds to the end of the signal.
 
 6. Once events are detected (you will see confirmation in the right-hand panel), **enter the event indices** you wish to inspect.
 

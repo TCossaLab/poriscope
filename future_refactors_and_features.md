@@ -752,7 +752,7 @@ and may drift — re-check the citation before acting on it.
 
 ## Findings, roughly in order of expected value if pursued
 
-1. **`LogDecorator.py:96-104` and `111-119` — duplicated exception-suppression
+1. **`LogDecorator.py:120-128` and `135-143` — duplicated exception-suppression
    logic.** The inner `log_call` and `log_return` closures inside `log()`
    each carry an identical try/except that swallows a logging failure and
    sets a one-shot `logger.root.ignore_exceptions` flag (via `hasattr`/
@@ -762,18 +762,7 @@ and may drift — re-check the citation before acting on it.
    whoever picks this up should scope how wide `@log`'s usage actually is
    before touching it.
 
-2. **`LogDecorator.py:34,79-80` — `debug_only` parameter looks dead.**
-   `log(_func=None, *, logger, debug_only=False)` documents `debug_only` as
-   controlling whether the decorator "is only to run in debug mode," but
-   nothing in `decorator_log`/`log_call`/`log_return`/`generator_wrapper`/
-   `wrapper` ever reads it, and a repo-wide search found no call site passing
-   `debug_only=True`. Unlike `register_action`'s reserved-for-extension
-   no-arg factory (Part 3 above), nothing in this file or elsewhere
-   documents `debug_only` as an intentional future hook. Worth confirming
-   it's genuinely unused (not, say, read by something outside this file via
-   introspection) before deciding whether to delete it or wire it up.
-
-3. **`EventWorker.py:70-84` — three near-identical `except` clauses in
+2. **`EventWorker.py:70-84` — three near-identical `except` clauses in
    `Worker.process_generator`.** `RuntimeError`, `ValueError`, and `IOError`
    each get their own clause doing the same thing (log at `error`, `break`),
    differing only in which exception type the log message names. (Also note
@@ -781,7 +770,7 @@ and may drift — re-check the citation before acting on it.
    whether that aliasing was intentional or just how the list grew over
    time.) Candidate for collapsing into one tuple-based `except` clause.
 
-4. **`EventWorker.py:85-90` vs. `run()`'s `finally` at line 112 — possibly
+3. **`EventWorker.py:85-90` vs. `run()`'s `finally` at line 112 — possibly
    redundant progress-bar emission.** The catch-all `except Exception`
    branch inside `process_generator` explicitly emits
    `update_progressbar.emit(100, ...)` before breaking, but `run()` (the
@@ -792,13 +781,13 @@ and may drift — re-check the citation before acting on it.
    of `process_generator` that doesn't go through `run()`) before removing
    it — a grep for direct callers of `process_generator` would settle it.
 
-5. **`EventWorker.py:103-110` — `except Exception: raise` inside `run()`
+4. **`EventWorker.py:103-110` — `except Exception: raise` inside `run()`
    appears to be a no-op.** It catches every exception only to re-raise it
    unchanged, which reads as behaviorally identical to omitting the
    `except` clause and keeping just `try`/`finally`. Cheap to verify and
    cheap to remove if confirmed inert.
 
-6. **`EventWorker.py:57-61` — `send`-vs-`next` dispatch via catching
+5. **`EventWorker.py:57-61` — `send`-vs-`next` dispatch via catching
    `TypeError`.**
    ```python
    try:
@@ -817,12 +806,12 @@ and may drift — re-check the citation before acting on it.
    finder/fitter's generator, so any change here needs real test coverage,
    not just a read-through.
 
-7. **`QObjectABCMeta.py:34` / `QWidgetABCMeta.py:34` — leftover commented-out
+6. **`QObjectABCMeta.py:34` / `QWidgetABCMeta.py:34` — leftover commented-out
    line.** Both files contain the identical dead comment
    `# abc._abc_init(cls)` inside `__new__`. Trivial to remove; flagged only
    for completeness.
 
-8. **`QObjectABCMeta.py` / `QWidgetABCMeta.py` — duplicated `__call__`/
+7. **`QObjectABCMeta.py` / `QWidgetABCMeta.py` — duplicated `__call__`/
    `__new__` across two files.** The two metaclasses are identical except
    for which Qt base (`QObject` vs `QWidget`) they combine with. Real
    duplication, but these are two of the most foundational, most widely
@@ -831,7 +820,7 @@ and may drift — re-check the citation before acting on it.
    that against the blast radius of touching either file, not just the
    line count saved.
 
-9. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
+8. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
    class attributes mutated as de facto process-wide globals**, toggled by
    a `QApplication`-wide event filter that reacts to *any* `QMessageBox`
    shown anywhere in the app (lines 91-97). Not a concurrency bug (Qt event
@@ -1009,14 +998,26 @@ the facts.
   hand-repeated "call restore, then return" at each point — the current
   shape is exactly the kind of thing that silently breaks if a future edit
   adds another exit path and forgets the call.
-- `DataPluginController.validate_and_instantiate_plugin`'s settings-from-
-  history block (`:388-446`) reads `self.historical_settings` immediately
-  after emitting `get_settings_from_history` (`:396-397`), relying on the
-  connected slot having already run synchronously by the time execution
-  resumes — true today only because of same-thread direct Qt signal
-  delivery, and not signaled anywhere in the code as a hard requirement.
-  Worth a comment at minimum if this file is touched again; a return-value-
-  based relay would make the dependency explicit instead of implicit.
+- **Fixed** (2026-08-31): `DataPluginController.validate_and_instantiate_plugin`'s
+  settings-from-history block used to read `self.historical_settings` immediately
+  after emitting `get_settings_from_history`, relying on the connected slot having
+  already run synchronously by the time execution resumed. It now calls a
+  constructor-injected `history_lookup` callable directly and uses its return value -
+  see `changelog.md` and `future_fixes.md`'s structural-audit entry.
+- **`sys.path` only ever grows** (surfaced 2026-08-31, comparing Reset Session
+  against an actual relaunch, not from a targeted audit of this file).
+  `MainController.update_user_plugin_location` (`main_controller.py:177-179`)
+  and the equivalent startup path in `main_app.py` (`:127-128`) both append
+  the plugin folder's parent directory to `sys.path` if it is not already
+  present, but nothing ever removes an entry once the folder is pointed
+  somewhere else. Across a long session that changes the plugin folder
+  several times - directly, or via repeated Settings resets - `sys.path`
+  keeps every location it was ever pointed at, where a relaunch always
+  starts with exactly the one currently in `config.json`. Not observed to
+  cause any actual problem (Python does not care how long `sys.path` is),
+  and no `isinstance`/lookup anywhere depends on stale entries being absent
+  either - this is tidiness, not a correctness risk. Low value, low risk;
+  worth a look only if this area is being touched for another reason.
 
 None of these change the overall value/risk conclusions already reached for
 this part; fold them in whenever findings #1-#3 above are next revisited.
@@ -1126,6 +1127,172 @@ small, self-contained, and rarely called with large `n`. `MetaModel.stop_workers
 self-recursion for the "all keys / all channels / one channel" cases reads
 fine as written. `MetaController.__init__`'s dozen-plus signal connections
 are a flat, unavoidable enumeration of wiring, not complexity to simplify.
+
+## Addendum (2026-08-31): Reset Session's correctness is only as good as every plugin's own `close_resources()`
+
+Not from the original audit — surfaced while reviewing the new Reset Session
+feature (`MainController.reset_session`) and discussing, in a live session,
+how it differs from an actual quit-and-relaunch.
+
+**The gap.** `DataPluginModel.unregister_plugin` (called once per plugin by
+`DataPluginController.delete_all_plugins`, which `reset_session` drives) does:
+
+```python
+try:
+    self.plugins[metaclass][key].close_resources()
+except Exception as e:
+    self.logger.error(f"Error closing resources for plugin {key} in {metaclass}: {e}")
+del self.plugins[metaclass][key]
+```
+
+This protects against a plugin's `close_resources()` *raising* - the error is
+logged and teardown moves on. It does **not** protect against one that
+*hangs*. `close_resources()` is declared per `Meta*` base (`BaseDataPlugin.py:134`
+and overridden in `MetaReader`/`MetaWriter`/`MetaFilter`/`MetaEventLoader`/
+`MetaEventFinder`/`MetaEventFitter`/`MetaDatabaseLoader`/`MetaDatabaseWriter`),
+so this is every plugin category, not a specific one. Reset Session's own
+worker-killing loop already blocks with `thread.wait()` before this point
+(see `main_controller.py:276-284` and its own `future_fixes.md`-adjacent
+reasoning), so the app-owned half of teardown is provably bounded - but
+`close_resources()` runs *after* that, and nothing bounds it. A plugin whose
+`close_resources()` blocks forever (a socket read with no timeout, a lock
+never released, a hung native call) freezes Reset Session - and, on today's
+code, quit too, since `MainController.handle_about_to_quit` /
+`DataPluginModel.handle_exit` call the same method the same way - with no
+diagnostic naming which plugin caused it.
+
+**Why a relaunch doesn't have this problem:** quitting the process and
+starting a new one reclaims every resource unconditionally, regardless of
+whether any plugin's cleanup code is correct. Reset Session, by design, keeps
+the process alive and asks each plugin to clean up after itself - so its
+correctness is bounded by the weakest `close_resources()` implementation
+among every plugin ever instantiated in that session, built-in or
+community-contributed. This is structural, not a bug in today's `close_resources()`
+implementations specifically - none were audited here as suspect - it's a
+property of the design that only becomes visible once a "come back to a
+clean state without restarting" feature exists to depend on it.
+
+**Is there a way to actually guarantee this? No - and worth saying plainly
+why, rather than chasing it.** Verifying that arbitrary third-party cleanup
+code releases everything it opened is not something reflection or a
+signature check can do - this is the same category of limit already
+acknowledged elsewhere in this codebase (`test_plugin_compliance.py` checks
+that `close_resources()` *exists* with the right signature, never that it
+*works*; pydoclint checks docstring/signature agreement, never behavior).
+What's realistic is defense-in-depth, roughly in order of value for the
+effort:
+
+1. **A timeout around the `close_resources()` call itself, scoped to Reset
+   Session specifically.** This is the highest-value, most concretely
+   buildable piece: run each plugin's `close_resources()` with a bounded wait
+   (e.g. on a worker thread, joined with a timeout) so a hung plugin becomes
+   a *named, logged, reported* failure - "plugin X did not finish closing
+   within N seconds" - added to the same `undeleted`/"partial reset" reporting
+   path `delete_all_plugins()` already has, instead of an unexplained frozen
+   UI. Reset Session specifically (more than quit) needs this, because the
+   whole point is that the app stays open and responsive afterward - a hang
+   here is a much worse outcome than a hang during quit, where the user is
+   already leaving anyway. Quit could reuse the same mechanism for the same
+   reason, once it exists.
+2. **A post-teardown diagnostic, not a hard gate.** After a round of deletes,
+   compare `threading.enumerate()` (or similar) before and after; if the
+   count hasn't returned to baseline, log a warning naming what's still
+   running. Inherently approximate - legitimate Qt/GUI threads exist
+   regardless of plugins, so this needs a calibrated baseline and will have
+   false positives/negatives - but as a warning surfaced to whoever's
+   debugging a leak report, it beats nothing.
+3. **Write the contract down, and give plugin authors a way to check their
+   own work.** Nothing today documents what `close_resources()` is actually
+   promising - "must join any thread you started," "must close any file/DB
+   handle/socket you opened," "must be safe to call at most once." Stating
+   that explicitly on `BaseDataPlugin.close_resources()`'s docstring (which
+   every override then inherits the contract from) is close to free. Pairing
+   it with a reusable test pattern in the plugin-authoring docs - "instantiate,
+   run something that opens a resource, call `close_resources()`, assert no
+   extra live threads and nothing still open" - moves the check into the
+   *contributor's* own test suite, where a mistake is caught before it ships,
+   rather than being discovered later as an unexplained hang in someone
+   else's running app. This is the same "cheap and mechanical vs. the actual
+   hazard is harder to catch mechanically" split Part 2 already draws for
+   `@register_action` - don't oversell either piece as sufficient alone.
+
+None of this needs to happen before Reset Session ships - the feature's own
+teardown is solid, and this is a pre-existing structural property of the
+plugin system, not something Reset Session introduced. It's recorded here
+because Reset Session is the first feature whose UX (a responsive app,
+immediately after teardown, without restarting) actually depends on
+`close_resources()` finishing promptly - quit's teardown gets a "pass" today
+only because a hang there is much less noticeable to a user who already
+expects the app to be closing.
+
+### Attempt at mitigation #1 (2026-08-31): built, then reverted - not a dead end, but not this shape
+
+Mitigation #1 above was implemented in a live session immediately after this
+addendum was first written: `DataPluginModel.unregister_plugin` ran
+`close_resources()` on a `threading.Thread`, joined with a new
+`CLOSE_RESOURCES_TIMEOUT_S` (10s default), logging a named failure and
+still proceeding with deletion if the thread didn't finish in time - matching
+how an exception there has always been handled, and for the same reason
+(the caller has already unregistered this plugin from its parents'
+dependent lists by that point, so leaving the registry entry in place on a
+timeout would make that inconsistent). 3 tests were added and passing, the
+full suite (2716 tests) passed, and the pre-commit gate was clean.
+
+**It was reverted before committing, for a real reason found by a
+before-commit audit, not a hypothetical one.** Running `close_resources()`
+on a new thread breaks any plugin holding a persistent, thread-affine
+resource created on a different thread than the one now closing it. A
+read-only audit across every `close_resources()` implementation in the tree
+(17 concrete overrides, 9 base-class abstracts) found this is narrower than
+it could have been, but real:
+
+- **Exactly two plugins are affected**, and they are the only ones with any
+  persistent state in `close_resources()` at all - everything else in the
+  tree is a no-op `pass`: `poriscope/plugins/dbwriters/SQLiteDBWriter.py`
+  (`self.conn = sqlite3.connect(...)` at `:243`, touched at `:119,123-124`
+  with **no try/except** - the connection and its file lock would leak
+  silently) and `poriscope/plugins/datawriters/SQLiteEventWriter.py`
+  (`self.conn` at `:496`, touched at `:298,306-307`, wrapped in try/except
+  logging at `.info()` - would silently fail to commit/close while looking
+  fine in the logs).
+- **Correction to the initial assumption:** these connections are not opened
+  on the GUI thread. `MetaWriter.commit_events`/`MetaDatabaseWriter.write_events`
+  are generators driven by a `WorkerThread(QThread)` (`EventWorker.py:34,55,132,145-149`),
+  and the connection is normally closed on that same worker thread via the
+  `last_call` branch and a `finally: self.close_resources(channel)`
+  (`MetaWriter.py:477`). `unregister_plugin` only ever finds a live
+  connection if a run aborted or errored before reaching `last_call`. This
+  narrows *when* the problem is hit, but does not remove it - a spawned
+  closer thread is a third thread relative to whichever thread actually
+  created the connection, regardless of whether that was the GUI thread or
+  a worker thread.
+- Python's `sqlite3` connections default to `check_same_thread=True`, which
+  raises `sqlite3.ProgrammingError` on cross-thread use. Since `.join()`
+  already guarantees the calling thread isn't touching the connection while
+  the closer thread runs, `check_same_thread=False` on these two connections
+  specifically would be safe (no real concurrency introduced, just relaxing
+  an overcautious check for an access pattern already serialized by
+  construction) - but that's a change to two plugin files beyond the
+  original scope of "add a timeout," and was not made.
+- **Two more coverage gaps, found by the same audit, not yet addressed
+  either way:** `DataPluginModel.handle_exit` (the quit path) and
+  `BaseDataPlugin.__exit__` (the context-manager path) both still call
+  `close_resources()` directly, unguarded - so even the reverted version
+  would have left quit exactly as exposed as before, undermining half the
+  point of building this.
+
+**For whoever picks this up next:** the fix is not "don't do this," it's
+"do this *and* fix the two plugins in the same change," specifically:
+(a) add `check_same_thread=False` to both `sqlite3.connect()` calls above,
+(b) route `handle_exit`/`__exit__` through the same timeout-guarded call
+`unregister_plugin` would use rather than calling `close_resources()`
+directly, and (c) add "must tolerate being closed from a different thread
+than the one that created your resources" to the `close_resources()`
+contract discussion in mitigation #3 above, since this attempt is exactly
+the reason that constraint would exist. Re-running the same read-only audit
+first is not necessary - the two-plugin finding above is exhaustive for the
+codebase as it stands - but re-confirm it if new writer plugins have been
+added since 2026-08-31.
 
 ---
 
@@ -1474,6 +1641,24 @@ tour feature that's easy to subtly break. `SettingsWindow`'s per-widget
 stylesheet strings are already centralized through the `Theme` class with
 an explanatory docstring — working as intended.
 
+## Addendum (2026-08-31, resolved on merge): Abort Analysis only ever targeted one hardcoded tab
+
+**Fixed independently on `develop`** (merged into this feature's history via
+the `feature/resetSettingsAndSession` → `develop` merge) before this note
+was ever acted on here. `MainView.on_abort_analysis_click` used to emit a
+`kill_all_workers` signal hardcoded to `"RawDataController"`, so clicking
+Abort Analysis only ever asked the RawData tab to stop, regardless of which
+tab (if any) actually had a worker running. `develop` replaced this with
+`abort_all_analysis` (a plain `Signal()`) routed to
+`MainController.handle_abort_all_analysis`, which iterates
+`self.analysis_tabs.items()` and calls `handle_kill_all_workers` on each -
+exactly the pattern this note recommended, resolving the "every tab vs. only
+the focused one" question in favor of every tab, matching Reset Session's
+own breadth. The now-dead `MainView.kill_all_workers` signal declaration
+(zero connections once the fix landed) was dropped as part of reconciling
+the merge conflict this caused with `reset_session`'s own signal
+declarations in the same class body.
+
 ---
 
 # Part 11: Shared Dialog/Menu Widgets, Group 1
@@ -1504,28 +1689,7 @@ and multiple plugin families.
    restoring a preselected config fires the check-callback mid-construction,
    easy to miss when copy-pasted three times. Medium-high value, low risk.
 
-3. **Confirmed dead/broken methods that would raise `AttributeError` if
-   called**: `clustering_settings_widget.py`'s `update_unit_label`
-   (`:376-379`) and `reset_top_inputs` (`:526-532`) reference `self.unit_label`,
-   `self.column_combo`, `self.log_cb`, `self.norm_cb`, `self.plot_cb` — none
-   of which are ever assigned anywhere in the class (confirmed via grep),
-   leftovers from an earlier single-row design predating the current multi-
-   row rewrite. Recommend deleting both, after confirming no external caller
-   depends on them.
-
-4. **The same dead-code pattern recurs in the menu widgets**:
-   `icon_menu_widget.py:390-396` and `text_menu_widget.py:308-317`'s
-   `setLanguageChecked`/`setThemeChecked` reference button attributes never
-   created in either file's `setupUi`. Same fix — delete, unless a planned
-   feature these are stubs for is confirmed with whoever owns the file.
-
-5. **`text_menu_widget.py:206-212` (`menu_button_clicked`)**: a
-   `QTimer.singleShot(100, self.uncheckMenuButton)` call is duplicated
-   (lines 209 and 211), with a leftover `print("text_menu_button_clicked")`
-   sitting next to the proper `self.logger.info(...)` doing the same thing.
-   Trivial, zero-risk cleanup.
-
-6. **`dict_dialog_widget.py:105-238` (`init_ui`)** does three jobs at once:
+3. **`dict_dialog_widget.py:105-238` (`init_ui`)** does three jobs at once:
    builds the Name row, loops over `params` dispatching on key/type across 6
    widget kinds, and lays everything into the grid — with the "Input File"
    (`:125-142`) and "Output File" (`:144-161`) branches near-identical,
@@ -1535,21 +1699,9 @@ and multiple plugin families.
    parameterized helper, is medium value; moderate risk since the lambda
    variable-capture (`s=`, `f=`) needs to survive the extraction carefully.
 
-7. **`walkthrough_steps.py`'s `get_global_walkthrough_steps`**
-   (`:30-420`) is a single 390-line function returning a flat list of ~40
-   tuples spanning 4 tabs, identified only by comments. **Contains a real
-   bug**, not just a style issue: lines 257-264 and 265-272 are byte-for-byte
-   duplicate tuples (same title "Event Analysis Tab", same "Click 'Commit'..."
-   text, same lambda) — one walkthrough step is silently shown twice to
-   users. Fix the duplicate outright; separately, splitting the function into
-   `_raw_data_steps(pages)`/`_event_analysis_steps(pages)`/
-   `_metadata_steps(pages)`/`_clustering_steps(pages)` (concatenated at the
-   end) would make one tab's steps findable without scrolling through 400
-   unrelated lines. Low risk either way (mostly pure data); the duplicate-
-   tuple fix is a genuine bug fix, the split is a navigability improvement.
-
-8. **`icon_menu_widget.py`/`text_menu_widget.py` share extensive structural
-   duplication** beyond the dead-code overlap in #4: repeated inline QSS
+4. **`icon_menu_widget.py`/`text_menu_widget.py` share extensive structural
+   duplication** beyond the abandoned language/theme controls already removed
+   from both: repeated inline QSS
    blocks (the same `QPushButton:hover/:checked/:pressed` styling appears
    5+ times across the two files), a byte-identical `emitSignal` dispatch-
    dict method in both, and the same `setXChecked` slot pattern — suggesting
@@ -1560,7 +1712,7 @@ and multiple plugin families.
    shared QSS constants, `emitSignal`, and the `setXChecked`/signal
    declarations into a small mixin rather than merging the classes outright.
 
-9. **`clustering_settings_widget.py:207-234`** (tail of `init_ui`, the
+5. **`clustering_settings_widget.py:207-234`** (tail of `init_ui`, the
    preselected-config restore block) wraps ~25 lines of unrelated restore
    logic in one broad `try/except Exception` inside an already-140-line
    method. Extracting `_restore_preselected_config(self)` is low-medium
@@ -1602,17 +1754,22 @@ Read-only audit (2026-08) of `poriscope/views/widgets/multiselect_filter.py`,
    implementations already agree almost line-for-line.
 
 2. **Range-parsing/formatting logic is duplicated *and* subtly
-   inconsistent** across `float_range_line_edit.py` (`get_values:98-128`,
-   `get_start:141-165`, `get_duration:167-179`), `integer_range_line_edit.py`
+   inconsistent** across `float_range_line_edit.py` (`get_start`,
+   `get_duration`), `integer_range_line_edit.py`
    (`get_values:167-196`, `RangeValidator:37-157`),
-   `comma_delimited_float_range_edit.py` (`get_values:117-156`), and
+   `comma_delimited_float_range_edit.py` (deleted in `0abd08c`), and
    `time_widget.py` (`FloatRangeValidator.validate:18-95`,
    `_parse_ranges:179-196`). Each re-implements "split on `,`, strip, split
    on `-`, parse number(s), handle malformed segments" from scratch, with
    **divergent edge-case handling for what's meant to be the same grammar**
-   — e.g. `IntegerRangeLineEdit.get_values` explicitly skips segments
-   starting with `-` (`:176-180`); `FloatRangeLineEdit.get_values` has no
-   such guard at all. `time_widget.py` derives the same "0-0"/open-ended
+   — though note the one divergence originally cited here, that
+   `IntegerRangeLineEdit.get_values` skips segments starting with `-` while
+   `FloatRangeLineEdit.get_values` had no such guard, was **structural only**:
+   re-checked 2026-09-04, no input produced different output, because every
+   leading-`-` shape fell into the float version's bare `except ValueError`.
+   That method has since been deleted as uncalled, so this file now
+   contributes only `get_start`/`get_duration` to the duplication.
+   `time_widget.py` derives the same "0-0"/open-ended
    special cases twice within one file (once in the validator, again in
    `_parse_ranges`) with subtly different rules each time (see #6). A shared
    module (e.g. `poriscope/utils/range_parsing.py`) with `split_segments(text)`
@@ -1643,11 +1800,12 @@ Read-only audit (2026-08) of `poriscope/views/widgets/multiselect_filter.py`,
    in `SelectionTree`, folding the `total == 0` case into the same `else`)
    is low risk, modest readability win.
 
-5. **`multiselect_filter.py:299-306` nests a function inside a method**
-   (`open_dialog_then_reopen` inside `_handle_internal_edit`), violating this
-   project's no-nested-functions convention — a plain closure capturing only
-   `self` and `name`, easily hoisted to a private method called via a
-   lambda. Low risk, direct convention compliance.
+5. ~~**`multiselect_filter.py` nests a function inside a method**~~
+   (`open_dialog_then_reopen` inside `_handle_internal_edit`). **Withdrawn
+   2026-09-01.** Its only justification was the no-nested-functions convention,
+   and that convention was relaxed: a short, simple closure handed to a
+   callback is now explicitly fine. Hoisting this three-line closure to a
+   private method plus `functools.partial` is more code for no gain. Leave it.
 
 6. **`TimeWidget.FloatRangeValidator.validate`** (`time_widget.py:18-95`,
    ~75 lines) independently re-derives the same "0-0"/open-ended special
@@ -1716,13 +1874,21 @@ blocks (Part 10 #3); `SettingsWindow`'s ~8x-repeated row pattern (Part 10
 ~90%-duplicate classes (Part 12 #1).
 
 **Recurring pattern: nested functions, several of which are also duplicated
-copies of each other** — violating this project's own stated convention.
-`MetaWriter._commit_events`'s `lookahead_generator` (Part 7 #1),
-`MetaDatabaseWriter.write_events`'s near-identically-named `lookahead_generator`
-(Part 9 #1), `MetaDatabaseLoader`'s `tuple_builder` copy-pasted 3 times plus
-`_qualify_conditions_for_events_sublevels_join` (Part 9 #1, #5), and
-`multiselect_filter.py`'s `open_dialog_then_reopen` (Part 12 #5). Hoisting
-these fixes a convention violation and a duplication finding simultaneously.
+copies of each other.** `MetaWriter._commit_events`'s `lookahead_generator`
+(Part 7 #1), `MetaDatabaseWriter.write_events`'s near-identically-named
+`lookahead_generator` (Part 9 #1), and `MetaDatabaseLoader`'s `tuple_builder`
+copy-pasted 3 times plus `_qualify_conditions_for_events_sublevels_join`
+(Part 9 #1, #5).
+
+**Read these for the duplication, not for convention compliance.** As of
+2026-09-01 `CLAUDE.md` no longer prohibits nesting outright - a short, simple
+closure is fine where it is the simpler option - so "it is nested" is no longer
+by itself a reason to hoist anything, and the parenthetical convention
+references in Part 9 #1/#5 and Part 11 are stale in that respect. What still
+justifies these entries is that the same function is defined several times over,
+so a fix applied to one copy silently misses the others. `multiselect_filter.py`'s
+`open_dialog_then_reopen` was withdrawn outright (Part 12 #5): it is a three-line
+closure with no duplicate, which is exactly what the revised convention permits.
 
 **Recurring pattern: exception-driven dispatch used where an explicit check
 would be clearer.** Two are correctness-relevant (`BaseDataPlugin.apply_settings`,

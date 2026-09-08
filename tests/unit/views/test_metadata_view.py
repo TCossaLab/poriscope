@@ -16,7 +16,9 @@ Comprehensive test coverage for:
 
 from __future__ import annotations
 
-from typing import Any
+import ast
+from pathlib import Path
+from typing import Any, Callable
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -29,19 +31,19 @@ from poriscope.plugins.analysistabs.MetadataView import MetadataView
 # ----------------------------- Fixtures ------------------------------
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
 @pytest.fixture
 def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
+    mocker.patch("poriscope.utils.MetaSubsetTabView.QFileDialog")
+    mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
-        return_value=None,
-    )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.WalkthroughMixin.__init__",
+        "poriscope.utils.MetaView.MetaView.__init__",
         return_value=None,
     )
 
@@ -226,7 +228,13 @@ def test_init_sets_allowed_sizes_none(view: MetadataView) -> None:
 def test_set_control_area_creates_metadata_controls(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify MetadataControls instance is created."""
+    """
+    Verify MetadataControls instance is created.
+
+    Still patched in the tab module: Step 3a-bis moved the wiring and layout up to
+    ``MetaView``, but ``_build_controls`` - which constructs the widget and stores it
+    under this tab's own name - stayed here, which is the whole point of that hook.
+    """
     mock_layout: MagicMock = mocker.Mock()
     mock_controls_cls: MagicMock = mocker.patch(
         "poriscope.plugins.analysistabs.MetadataView.MetadataControls"
@@ -254,9 +262,14 @@ def test_set_control_area_connects_action_triggered_signal(
 def test_set_control_area_adds_controls_to_layout(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify controls are added to layout."""
+    """
+    Verify controls are added to layout.
+
+    Since Step 3a-bis the layout is built by ``MetaView._set_control_area``, which the
+    tab inherits, so the ``QHBoxLayout`` to patch is the base module's.
+    """
     mock_layout: MagicMock = mocker.Mock()
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
+    mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
 
     view._set_control_area(mock_layout)
 
@@ -271,7 +284,7 @@ def test_get_save_filename_opens_dialog(
 ) -> None:
     """Verify QFileDialog.getSaveFileName is called."""
     mock_dialog: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
     )
 
@@ -286,7 +299,7 @@ def test_get_save_filename_returns_empty_on_cancel(
 ) -> None:
     """Verify empty string is returned when user cancels."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
 
@@ -611,24 +624,66 @@ def test_plot_1d_density_sets_log10_label_when_logscale_true(
     assert "log10" in call_args
 
 
-def test_dunder_init_calls_super_and_initializers(mocker: MockerFixture) -> None:
-    """Verify __init__ delegates to the parent and helper initializers."""
-    mock_super_init: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
-        return_value=None,
+def test_metaview_runs_each_initializer_exactly_once() -> None:
+    """
+    ``MetaView.__init__`` is the only constructor, and it calls each hook once.
+
+    Step 3g deleted ``MetadataView.__init__``, which was byte-identical in all five
+    tabs. It called ``self._init()`` after ``super().__init__(...)`` - and
+    ``MetaView.__init__`` already calls ``_init()`` itself, so **every tab ran it
+    twice**, once before ``_setup_ui()`` and once after. That was measured to be a
+    no-op before it was removed: no attribute ``_init`` assigns is also assigned
+    anywhere in the ``_setup_ui`` call tree, in any of the five tabs, so the second
+    call only rewrote its own values.
+
+    Asserted against the source rather than by constructing a tab, because reaching
+    ``MetaView.__init__`` at all means building a real ``QWidget``, and the only way
+    this file's fixtures avoid that is by patching that very method away.
+    """
+    source = Path(REPO_ROOT, "poriscope", "utils", "MetaView.py").read_text(
+        encoding="utf-8"
     )
-    mock_init: MagicMock = mocker.patch.object(MetadataView, "_init", autospec=True)
-    mock_init_walkthrough: MagicMock = mocker.patch.object(
+    tree = ast.parse(source)
+    cls = next(
+        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MetaView"
+    )
+    init = next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+    )
+    called = [
+        n.func.attr
+        for n in ast.walk(init)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "self"
+    ]
+
+    assert called.count("_init") == 1, called
+    assert called.count("_init_walkthrough") == 1, called
+    assert called.count("_setup_ui") == 1, called
+
+
+def test_no_tab_defines_its_own_dunder_init() -> None:
+    """
+    All five tabs inherit construction, so the duplicate cannot creep back.
+
+    Asserted across the family rather than on Metadata alone: the five copies were
+    identical, so a regression would most likely reintroduce all five.
+    """
+    from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+    from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
+    from poriscope.plugins.analysistabs.ProteinView import ProteinView
+    from poriscope.plugins.analysistabs.RawDataView import RawDataView
+
+    for cls in (
+        ClusteringView,
+        EventAnalysisView,
         MetadataView,
-        "_init_walkthrough",
-        autospec=True,
-    )
-
-    view = MetadataView("arg", key="value")
-
-    mock_super_init.assert_called_once_with("arg", key="value")
-    mock_init.assert_called_once_with(view)
-    mock_init_walkthrough.assert_called_once_with(view)
+        ProteinView,
+        RawDataView,
+    ):
+        assert "__init__" not in cls.__dict__, f"{cls.__name__} regrew an __init__"
 
 
 def test_plot_1d_density_uses_first_bins_entry(
@@ -1882,6 +1937,41 @@ def test_overlay_plot_rejects_multiple_filters_for_filtered_event_overlay(
     view.add_text_to_display.emit.assert_called()
 
 
+def _bus_sets_plot_data(
+    view: MetadataView, plot_data: pd.DataFrame
+) -> Callable[[str, str, str, tuple, str, tuple], None]:
+    """
+    Stand in for the global signal bus on a ``load_metadata`` call.
+
+    The real bus dispatches synchronously and its return function assigns
+    ``view.plot_data``, which ``_overlay_plot`` clears immediately before
+    emitting and reads back on the next statement - so that a dispatch which
+    never returns cannot be mistaken for a successful one. A bare ``Mock()``
+    leaves the attribute cleared, so a stub of the bus has to make the same
+    assignment the real return function would.
+
+    :param view: The view whose plot_data the bus would set.
+    :type view: MetadataView
+    :param plot_data: The frame the loader is standing in for.
+    :type plot_data: pd.DataFrame
+    :return: A side_effect for the mocked emit.
+    :rtype: Callable[[str, str, str, tuple, str, tuple], None]
+    """
+
+    def _emit(
+        metaclass: str,
+        key: str,
+        call_function: str,
+        call_args: tuple,
+        return_function: str,
+        ret_args: tuple,
+    ) -> None:
+        if call_function == "load_metadata":
+            view.plot_data = plot_data
+
+    return _emit
+
+
 def test_overlay_plot_constructs_histogram_columns_correctly(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -1899,9 +1989,11 @@ def test_overlay_plot_constructs_histogram_columns_correctly(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -1932,9 +2024,11 @@ def test_overlay_plot_constructs_scatterplot_columns_correctly(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -1965,15 +2059,17 @@ def test_overlay_plot_constructs_3d_scatterplot_columns_correctly(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame(
+    plot_data = pd.DataFrame(
         {
             "duration": [1.0, 2.0],
             "current": [3.0, 4.0],
             "voltage": [5.0, 6.0],
         }
     )
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
+    view.query = "SELECT * FROM events"
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -2000,11 +2096,13 @@ def test_overlay_plot_constructs_capture_rate_with_start_time(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame(
+    plot_data = pd.DataFrame(
         {"start_time": [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]}
     )
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
+    view.query = "SELECT * FROM events"
     view.units = "s"
     view.update_plot = mocker.Mock()
 
@@ -2332,9 +2430,11 @@ def test_overlay_plot_emits_row_count_message(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0, 4.0, 5.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -2390,9 +2490,11 @@ def test_overlay_plot_calls_update_plot_with_correct_arguments(
 
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [2]}}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -2426,9 +2528,11 @@ def test_overlay_plot_updates_allowed_properties_after_successful_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -2458,9 +2562,11 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
 
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [2]}}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -2677,9 +2783,11 @@ def test_overlay_plot_returns_true_on_success(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
+    plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.global_signal.emit = mocker.Mock(
+        side_effect=_bus_sets_plot_data(view, plot_data)
+    )
     view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.units = "ms"
     view.update_plot = mocker.Mock()
 
@@ -3018,7 +3126,7 @@ def test_save_filter_returns_early_when_no_filters(
     """Verify returns early when subset_filters is empty."""
     view.subset_filters = {}
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName"
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName"
     )
 
     view._save_filter()
@@ -3032,7 +3140,7 @@ def test_save_filter_opens_file_dialog(
     """Verify file dialog is opened."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("builtins.open", mocker.mock_open())
@@ -3049,7 +3157,7 @@ def test_save_filter_returns_when_no_path_selected(
     """Verify returns when user cancels file dialog."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -3065,7 +3173,7 @@ def test_save_filter_writes_json_to_file(
     """Verify filters are written to JSON file."""
     view.subset_filters = {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -3083,7 +3191,7 @@ def test_save_filter_logs_error_on_exception(
     """Verify error is logged when save fails."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
@@ -3246,6 +3354,39 @@ def test_load_filter_logs_error_on_exception(
     view._load_filter(parameters)
 
     # Should log error but not crash
+
+
+# ------------------------ Restore Subset Filters (Session Load) Tests --------------------
+
+
+def test_restore_subset_filters_adds_filters_directly(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify restored filters are added to subset_filters and the combo box without validation."""
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox = mocker.Mock()
+
+    view.restore_subset_filters({"Filter1": "WHERE x > 1"})
+
+    assert view.subset_filters == {"Filter1": "WHERE x > 1"}
+    view.metadatacontrols.filter_comboBox.addItem.assert_called_once_with("Filter1")
+    view.metadatacontrols.filter_comboBox.selectItem.assert_called_once_with(
+        "Filter1", select=True
+    )
+
+
+def test_restore_subset_filters_skips_existing_names(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify a restored filter whose name already exists is skipped rather than overwritten."""
+    view.subset_filters = {"Filter1": "WHERE x > 999"}
+    view.metadatacontrols = mocker.Mock()
+    view.metadatacontrols.filter_comboBox = mocker.Mock()
+
+    view.restore_subset_filters({"Filter1": "WHERE x > 1"})
+
+    assert view.subset_filters == {"Filter1": "WHERE x > 999"}
+    view.metadatacontrols.filter_comboBox.addItem.assert_not_called()
 
 
 # ----------------------------- Handle Parameter Change Tests ------------------------------
@@ -4261,9 +4402,7 @@ def test_show_selection_tree_creates_tree_if_not_exists(
     if hasattr(view, "selection_tree"):
         delattr(view, "selection_tree")
 
-    mock_tree_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.SelectionTree"
-    )
+    mock_tree_class = mocker.patch("poriscope.utils.MetaSubsetTabView.SelectionTree")
     mock_tree = mocker.Mock()
     mock_tree.show_dialog.return_value = {"exp1": [1, 2]}
     mock_tree_class.return_value = mock_tree
@@ -5073,16 +5212,6 @@ class TestSimpleSetters:
         view.set_experiment_id(None)
         assert view.experiment_id is None
 
-    def test_set_table_by_column_appends(self, view: MetadataView) -> None:
-        view.involved_tables = []
-        view.set_table_by_column("events")
-        assert "events" in view.involved_tables
-
-    def test_set_table_by_column_none_does_not_append(self, view: MetadataView) -> None:
-        view.involved_tables = []
-        view.set_table_by_column(None)
-        assert view.involved_tables == []
-
     def test_set_channel_db_id(self, view: MetadataView) -> None:
         view.set_channel_db_id(7)
         assert view.channel_db_id == 7
@@ -5507,9 +5636,12 @@ class TestOverlayPlotCategoricalHistogram:
         view.figure.axes = []
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
+        plot_data = pd.DataFrame({"category": ["A", "B", "A"]})
         view.global_signal = mocker.Mock()
+        view.global_signal.emit = mocker.Mock(
+            side_effect=_bus_sets_plot_data(view, plot_data)
+        )
         view.query = "SELECT * FROM events"
-        view.plot_data = pd.DataFrame({"category": ["A", "B", "A"]})
         view.units = ""
         view.update_plot = mocker.Mock()
 
@@ -5524,9 +5656,12 @@ class TestOverlayPlotCategoricalHistogram:
         view.figure.axes = []
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
+        plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
         view.global_signal = mocker.Mock()
+        view.global_signal.emit = mocker.Mock(
+            side_effect=_bus_sets_plot_data(view, plot_data)
+        )
         view.query = "SELECT * FROM events"
-        view.plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
         view.units = ""
         view.update_plot = mocker.Mock()
 
@@ -5541,9 +5676,12 @@ class TestOverlayPlotCategoricalHistogram:
         view.figure.axes = []
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
+        plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
         view.global_signal = mocker.Mock()
+        view.global_signal.emit = mocker.Mock(
+            side_effect=_bus_sets_plot_data(view, plot_data)
+        )
         view.query = "SELECT * FROM events"
-        view.plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
         view.units = ""
         view.update_plot = mocker.Mock()
 
@@ -5613,12 +5751,12 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
     view.global_signal = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame()
 
     view.global_signal.emit.side_effect = side_effect
 
-    result = view._rebuild_event_id_cache("loader", "", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None)
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -5628,16 +5766,16 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
 def test_rebuild_event_id_cache_stores_event_ids(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filtered_event_ids is populated from the query result."""
+    """Verify filtered_event_ids is populated, and sorted, from the query result."""
     view.global_signal = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"event_id": [0, 5, 10]})
+        if args[2] == "load_metadata":
+            view.relayed_query_result = pd.DataFrame({"event_id": [10, 0, 5]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    result = view._rebuild_event_id_cache("loader", "", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None)
 
     assert result is True
     assert view.filtered_event_ids == [0, 5, 10]
@@ -5650,14 +5788,12 @@ def test_rebuild_event_id_cache_updates_current_trackers(
     view.global_signal = mocker.Mock()
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [1, 2, 3]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache(
-        "loader", "WHERE duration > 1", "duration > 1", "exp1", 2
-    )
+    view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2)
 
     assert view.current_sql_filter == "duration > 1"
     assert view.current_experiment == "exp1"
@@ -5672,12 +5808,12 @@ def test_rebuild_event_id_cache_emits_all_events_when_no_filter(
     view.get_selected_filters = mocker.Mock(return_value={})
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [0, 1, 2]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache("loader", "", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None)
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "All events" in msg
@@ -5691,14 +5827,12 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
     view.get_selected_filters = mocker.Mock(return_value={"my_filter": "duration > 1"})
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [3, 7]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache(
-        "loader", "WHERE duration > 1", "duration > 1", None, None
-    )
+    view._rebuild_event_id_cache("loader", "duration > 1", None, None)
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "my_filter" in msg
@@ -5713,12 +5847,12 @@ def test_rebuild_event_id_cache_emits_total_and_bounds(
     view.get_selected_filters = mocker.Mock(return_value={})
 
     def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
+        if args[2] == "load_metadata":
             view.relayed_query_result = pd.DataFrame({"event_id": [2, 5, 9]})
 
     view.global_signal.emit.side_effect = side_effect
 
-    view._rebuild_event_id_cache("loader", "", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None)
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "3 total" in msg
@@ -5753,7 +5887,6 @@ def test_shift_range_and_update_plot_rebuilds_cache_when_stale(
     view.filtered_event_ids = []
     view.current_sql_filter = None
     view._rebuild_event_id_cache = mocker.Mock(return_value=False)
-    view._build_where_clause = mocker.Mock(return_value="")
 
     view._shift_range_and_update_plot(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1}, "right"
@@ -5896,7 +6029,6 @@ def test_handle_plot_events_rebuilds_cache_on_filter_change(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._rebuild_event_id_cache = mocker.Mock(return_value=False)
-    view._build_where_clause = mocker.Mock(return_value="WHERE duration > 5")
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}

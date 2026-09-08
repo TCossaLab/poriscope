@@ -60,6 +60,27 @@ def view(qt_app):
 # ===========================================================================
 
 
+def _answer_load_metadata(view, plot_data):
+    """
+    Connect a stand-in for the signal bus that answers a load_metadata call.
+
+    _load_metadata_and_cluster clears plot_data before emitting and reads it
+    back on the next statement, so that a dispatch which never returns cannot
+    be mistaken for a successful one. A test therefore has to answer the emit
+    the way main_controller._dispatch_to does - by calling the named return
+    function - rather than pre-assigning the attribute and relying on the emit
+    being a no-op.
+    """
+
+    def _dispatch(metaclass, key, call_function, call_args, return_function, ret_args):
+        if call_function == "load_metadata":
+            view.update_plot_data(plot_data)
+
+    view.global_signal.connect(_dispatch)
+    # Held so the connection outlives this call for the rest of the test.
+    view._test_bus = _dispatch
+
+
 def _make_df(*cols):
     """Small DataFrame with the given column names (float data)."""
     rng = np.random.default_rng(42)
@@ -244,93 +265,6 @@ class TestHandleOtherActions:
 
 
 # ===========================================================================
-# _normalize_column_data
-# ===========================================================================
-
-
-class TestNormalizeColumnData:
-    def test_normalises_float_columns(self, view):
-        df = _make_df("a", "b")
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        # Median of normalised column should be ~0
-        assert abs(norm["a"].median()) < 0.1
-
-    def test_excludes_specified_columns(self, view):
-        df = _make_df("a", "b")
-        original_a = df["a"].copy()
-        norm = view._normalize_column_data(df, exclude_cols=["a", "id"])
-        pd.testing.assert_series_equal(norm["a"], original_a)
-
-    def test_id_column_excluded(self, view):
-        df = _make_df("a")
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        assert list(norm["id"]) == list(df["id"])
-
-    def test_zero_mad_column_unchanged(self, view):
-        df = pd.DataFrame({"a": [5.0] * 50, "id": range(50)})
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        pd.testing.assert_series_equal(norm["a"], df["a"])
-
-    def test_does_not_modify_original(self, view):
-        df = _make_df("a")
-        original = df["a"].copy()
-        view._normalize_column_data(df, exclude_cols=["id"])
-        pd.testing.assert_series_equal(df["a"], original)
-
-    def test_int_columns_not_normalised(self, view):
-        df = pd.DataFrame({"a": np.arange(50, dtype=int), "id": range(50)})
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        pd.testing.assert_series_equal(norm["a"], df["a"])
-
-
-# ===========================================================================
-# _update_clusters_hdbscan
-# ===========================================================================
-
-
-class TestUpdateClustersHDBSCAN:
-    def _data(self):
-        rng = np.random.default_rng(1)
-        df = pd.DataFrame(
-            {
-                "a": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
-                "b": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
-                "id": np.arange(200),
-            }
-        )
-        return df
-
-    def test_returns_labels_and_probs(self, view):
-        labels, probs = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        assert len(labels) == 200
-        assert len(probs) == 200
-
-    def test_labels_are_integers(self, view):
-        labels, _ = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        assert labels.dtype in (np.int32, np.int64, int)
-
-    def test_probs_between_0_and_1(self, view):
-        _, probs = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        assert np.all(probs >= 0) and np.all(probs <= 1)
-
-    def test_finds_two_clusters(self, view):
-        labels, _ = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        unique = set(labels)
-        # At least 2 non-noise clusters expected (-1 is noise)
-        non_noise = unique - {-1}
-        assert len(non_noise) >= 1
-
-    def test_custom_params(self, view):
-        labels, _ = view._update_clusters_hdbscan(
-            self._data(),
-            min_cluster_size=10,
-            min_samples=2,
-            cluster_selection_epsilon=0.5,
-        )
-        assert len(labels) == 200
-
-
-# ===========================================================================
 # _merge_clusters
 # ===========================================================================
 
@@ -436,55 +370,74 @@ class TestLoadMetadataAndCluster:
             "method_params": {},
         }
         with pytest.raises(KeyError, match="different"):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
     def test_empty_query_raises(self, view):
         config = self._config_hdbscan()
         view.query = ""
         with pytest.raises(ValueError, match="metadata query"):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
     def test_none_plot_data_raises(self, view):
         config = self._config_hdbscan()
         view.query = "SELECT * FROM events"
         view.plot_data = None
         with pytest.raises(ValueError, match="No data"):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
     def test_missing_column_raises(self, view):
         config = self._config_hdbscan()
         view.query = "SELECT * FROM events"
-        view.plot_data = pd.DataFrame({"other": [1.0], "id": [0]})
+        _answer_load_metadata(view, pd.DataFrame({"other": [1.0], "id": [0]}))
         with pytest.raises(KeyError):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
     def test_hdbscan_bad_params_raises(self, view):
         config = self._config_hdbscan()
         config["method_params"]["HDBSCAN_Cluster_Size_input"] = "not_a_number"
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(0)
-        view.plot_data = pd.DataFrame(
-            {"duration": rng.random(50), "current": rng.random(50), "id": range(50)}
+        _answer_load_metadata(
+            view,
+            pd.DataFrame(
+                {"duration": rng.random(50), "current": rng.random(50), "id": range(50)}
+            ),
         )
         with pytest.raises(ValueError, match="parameters"):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
-    def test_hdbscan_success(self, view):
+    def test_hdbscan_emits_a_request_with_parsed_params(self, view, qtbot):
+        """
+        Step 4c: this used to return a 7-tuple it had clustered itself.
+
+        The clustering is ``ClusteringModel``'s now, so what is asserted here is the
+        request: the frame reached the emit, and the parameters the user typed as
+        strings arrive as the ``int``/``float`` the model expects. The clustering
+        result itself is covered in ``tests/unit/models/test_clustering_model.py``.
+        """
         config = self._config_hdbscan()
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(42)
-        view.plot_data = pd.DataFrame(
-            {
-                "duration": rng.random(100),
-                "current": rng.random(100),
-                "id": np.arange(100),
-            }
+        _answer_load_metadata(
+            view,
+            pd.DataFrame(
+                {
+                    "duration": rng.random(100),
+                    "current": rng.random(100),
+                    "id": np.arange(100),
+                }
+            ),
         )
-        result = view._load_metadata_and_cluster(config, "loader1")
-        assert len(result) == 7
-        df, labels, probs, logs, norm, units, plot = result
-        assert len(labels) == len(df)
-        assert len(probs) == len(df)
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view._load_metadata_and_request_clustering(config, "loader1")
+
+        frame, exclude_cols, method, params = caught.args
+        assert len(frame) == 100
+        assert "id" in exclude_cols
+        assert method == "HDBSCAN"
+        assert isinstance(params["min_cluster_size"], int)
+        assert isinstance(params["cluster_selection_epsilon"], float)
 
     def test_gaussian_mixtures_bad_params_raises(self, view):
         config = {
@@ -498,13 +451,15 @@ class TestLoadMetadataAndCluster:
         }
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(1)
-        view.plot_data = pd.DataFrame(
-            {"a": rng.random(50), "b": rng.random(50), "id": range(50)}
+        _answer_load_metadata(
+            view,
+            pd.DataFrame({"a": rng.random(50), "b": rng.random(50), "id": range(50)}),
         )
         with pytest.raises(ValueError, match="parameters"):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
-    def test_gaussian_mixtures_success(self, view):
+    def test_gaussian_mixtures_emits_a_request_with_parsed_params(self, view, qtbot):
+        """The other branch, asserted the same way. See the HDBSCAN case above."""
         config = {
             "method": "Gaussian Mixtures",
             "filter": "",
@@ -516,13 +471,105 @@ class TestLoadMetadataAndCluster:
         }
         view.query = "SELECT * FROM events"
         rng = np.random.default_rng(7)
-        view.plot_data = pd.DataFrame(
-            {"a": rng.random(60), "b": rng.random(60), "id": range(60)}
+        _answer_load_metadata(
+            view,
+            pd.DataFrame({"a": rng.random(60), "b": rng.random(60), "id": range(60)}),
         )
-        df, labels, probs, logs, norm, units, plot = view._load_metadata_and_cluster(
-            config, "loader1"
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view._load_metadata_and_request_clustering(config, "loader1")
+
+        frame, _, method, params = caught.args
+        assert len(frame) == 60
+        assert method == "Gaussian Mixtures"
+        assert params == {"n_components": 2}
+
+
+class TestSetClusteringResult:
+    """
+    The other half of ``cluster_requested``, introduced by Step 4c.
+
+    ``_handle_clustering_settings`` used to do all of this inline after the clustering
+    call returned; it now happens when the Controller hands the answer back.
+    """
+
+    def _request(self, view):
+        """Put a request in flight so a result has display context to read."""
+        view._pending_cluster_display = (
+            "HDBSCAN",
+            [False, False],
+            [True, True],
+            ["s", "nA"],
+            [True, True],
         )
-        assert len(labels) == 60
+
+    def test_it_plots_the_result(self, view, mocker):
+        """The plot is the point of the whole round trip."""
+        self._request(view)
+        update_plot = mocker.patch.object(view, "update_plot")
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        update_plot.assert_called_once()
+
+    def test_it_resets_the_axes_before_plotting(self, view, mocker):
+        """
+        Ordering matters: the axes are cleared, then drawn.
+
+        Reversed, the new plot would be wiped by the reset.
+        """
+        self._request(view)
+        calls = []
+        mocker.patch.object(
+            view, "_reset_actions", side_effect=lambda *a, **k: calls.append("reset")
+        )
+        mocker.patch.object(
+            view, "update_plot", side_effect=lambda *a, **k: calls.append("plot")
+        )
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        assert calls == ["reset", "plot"]
+
+    def test_a_result_with_no_request_outstanding_is_refused(self, view, mocker):
+        """
+        Nothing is plotted, and it is logged as an error.
+
+        The display context lives on the View between the emit and the answer, so a
+        result arriving without one means the two have got out of step - which must
+        not silently plot against another run's column flags.
+        """
+        view._pending_cluster_display = None
+        update_plot = mocker.patch.object(view, "update_plot")
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        update_plot.assert_not_called()
+
+    def test_the_request_context_is_consumed(self, view, mocker):
+        """
+        One answer per request.
+
+        Cleared on read, so a second result cannot reuse the first request's flags.
+        """
+        self._request(view)
+        mocker.patch.object(view, "update_plot")
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        assert view._pending_cluster_display is None
 
 
 # ===========================================================================

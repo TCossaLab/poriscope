@@ -27,41 +27,39 @@
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import numpy as np
 import numpy.typing as npt
-from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
-from typing_extensions import override
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.time_widget import TimeWidget
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 
 @inherit_docstrings
-class RawDataView(MetaView, WalkthroughMixin):
+class RawDataView(MetaEventTabView):
     """
-    Subclass of MetaView for visualizing raw signal data and PSD plots.
+    Subclass of MetaEventTabView for visualizing raw signal data and PSD plots.
 
     Handles plot rendering, signal responses, and interactions with readers, filters, and event finders.
     """
 
+    #: Asks the Controller for the baseline statistics of the channels about to be
+    #: plotted. Step 4c introduced it: the fitting moved to RawDataModel, and this
+    #: is Decision B's command path to it. The answer arrives as the
+    #: baseline_stats argument of update_plot.
+    baseline_stats_requested = Signal(object, list, object)
+
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override
@@ -69,41 +67,21 @@ class RawDataView(MetaView, WalkthroughMixin):
         """Initialize the RawDataView-specific attributes."""
 
         self.analysis_time_limits: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        self.timer_channels: Sequence[int] = []
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> RawDataControls:
         """
-        Set up the control area layout by embedding the RawDataControls widget.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout where controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: RawDataControls
         """
         self.rawdatacontrols = RawDataControls()
-        self.rawdatacontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.rawdatacontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.rawdatacontrols.add_processed.connect(self.handle_add_triggered)
-        self.rawdatacontrols.delete_processed.connect(self.handle_delete_triggered)
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.rawdatacontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
-
-    @log(logger=logger)
-    @override
-    def _reset_actions(self, axis_type: str = "2d") -> None:
-        """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
-
-        :param axis_type: Either '2d' or '3d' to determine plot projection.
-        :type axis_type: str
-        """
-        pass
+        return self.rawdatacontrols
 
     @log(logger=logger)
     def _factors(self, n: int) -> Tuple[int, int]:
@@ -148,7 +126,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         data: Sequence[npt.NDArray[np.float64]],
         channels: Sequence[int],
         start: float = 0,
-        baseline: bool = False,
+        baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]] = None,
     ) -> None:
         """
         Update the plot area with the provided data across multiple channels in a grid layout.
@@ -159,8 +137,8 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type channels: Sequence[int]
         :param start: Time offset added to the plotted time axis, in seconds.
         :type start: float
-        :param baseline: If True, overlay baseline mean and standard deviation statistics on each subplot.
-        :type baseline: bool
+        :param baseline_stats: Per-channel (amplitude, mean, stdev) from the Model, index-aligned with data, or None to draw no baseline overlay at all. An individual entry may be None where that channel's fit failed.
+        :type baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]]
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -178,14 +156,13 @@ class RawDataView(MetaView, WalkthroughMixin):
             time = np.arange(len(channel_data)) / self.plot_samplerate + float(start)
             ax.plot(time, channel_data / 1000, zorder=1)
 
-            if baseline is True:
-                try:
-                    amp, mean, std = self._get_baseline_stats(channel_data / 1000)
-                except ValueError as e:
-                    self.logger.warning(
-                        f"Unable to compute baseline stats for channel {channel}: {e}"
-                    )
-                else:
+            # Computed by RawDataModel since Step 4c and handed over by the
+            # Controller. A None entry is a channel whose fit failed, which the
+            # Controller has already logged - the trace is still drawn, without a band.
+            stats = baseline_stats[i] if baseline_stats is not None else None
+            if stats is not None:
+                amp, mean, std = stats
+                if True:
                     # Add green rectangle for mean ± 3*std
                     ax.axhspan(
                         mean - 3 * std,
@@ -373,7 +350,10 @@ class RawDataView(MetaView, WalkthroughMixin):
 
             for finder in eventfinders:
                 if finder not in self.analysis_time_limits.keys():
-                    self.analysis_time_limits[finder] = {}
+                    # Cleared first so that a failed dispatch cannot seed this
+                    # finder with the previous finder's channels, and the finder
+                    # is registered only on success so the next call retries it.
+                    self.timer_channels = []
                     self.global_signal.emit(
                         "MetaEventFinder",
                         finder,
@@ -382,35 +362,18 @@ class RawDataView(MetaView, WalkthroughMixin):
                         "update_timer_channels",
                         (),
                     )
-                    for ch in self.timer_channels:
-                        self.analysis_time_limits[finder][ch] = {}
-                        self.analysis_time_limits[finder][ch]["start"] = 0
-                        self.analysis_time_limits[finder][ch]["end"] = 0
+                    if not self.timer_channels:
+                        self.logger.error(
+                            f"Could not get channels for {finder}, not registering it yet"
+                        )
+                        continue
+                    self.analysis_time_limits[finder] = {
+                        ch: {"start": 0, "end": 0} for ch in self.timer_channels
+                    }
 
             self.logger.info("ComboBoxes updated with available readers and filters")
         except Exception as e:
             self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
-
-    @log(logger=logger)
-    def notify_plugin_state_changed(
-        self, metaclass: str, plugin_key: str, reason: str
-    ) -> None:
-        """
-        This tab does not currently react to any plugin_state_changed
-        notifications.
-
-        :param metaclass: The metaclass of the plugin instance whose state
-                        changed.
-        :type metaclass: str
-        :param plugin_key: The unique key identifying the plugin instance that
-                        changed.
-        :type plugin_key: str
-        :param reason: A short string identifying what kind of change occurred.
-        :type reason: str
-        :return: None
-        :rtype: None
-        """
-        pass
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -457,215 +420,6 @@ class RawDataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _get_baseline_stats(
-        self, data: npt.NDArray[np.float64]
-    ) -> npt.NDArray[np.float64]:
-        """
-        Get the local amplitude, mean, and standard deviation for a chunk of data. Assumes data is rectified.
-
-
-        :param data: Chunk of timeseries data to compute statistics on.
-        :type data: npt.NDArray[np.float64]
-        :return: Array of local amplitude, mean, and standard deviation, in that order.
-        :rtype: npt.NDArray[np.float64]
-        :raises ValueError: If a baseline histogram width cannot be estimated for this chunk (no variation in the data), or if the underlying Gaussian fit fails.
-        """
-        top = np.max(data)
-        bottom = np.min(data)
-
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        if width <= 0:
-            raise ValueError(
-                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
-            )
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
-        max_index = np.argmax(hist)
-
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= maxval/5 starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= maxval/5 going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        half_width = np.minimum(top_index - max_index, max_index - bottom_index)
-        top_index = max_index + half_width
-        bottom_index = max_index - half_width
-
-        top = centers[top_index]
-        bottom = centers[bottom_index]
-
-        hist = hist[bottom_index:top_index]
-        centers = centers[bottom_index:top_index]
-
-        max_index = np.argmax(hist)
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= 0.6*maxval starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= 0.6*maxval going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        try:
-            baseline_params = np.array(
-                self._gaussian_fit(
-                    hist,
-                    centers,
-                    centers[max_index],
-                    np.absolute(
-                        centers[top_index] - centers[bottom_index]
-                    ),  # take an overestimate for std, seems to perform better overall
-                )
-            )
-        except ValueError:
-            raise
-        return baseline_params
-
-    @log(logger=logger)
-    def _gaussian(self, x: float, A: float, m: float, s: float) -> float:
-        """
-        Calculate the value of a 1D gaussian distribution at a location x with the given paramters
-
-        :param x: location to calculate the value
-        :type x: float
-        :param A: amplitude of the gaussian
-        :type A: float
-        :param m: mean of the gaussian
-        :type m: float
-        :param s: standard deviation of the gaussian
-        :type s: float
-        :return: value of the gaussian distribution at x
-        :rtype: float
-        """
-        return A * np.exp(-((x - m) ** 2) / (2 * s**2))
-
-    @log(logger=logger)
-    def _gaussian_fit(
-        self,
-        histogram: npt.NDArray[np.float64],
-        bins: npt.NDArray[np.float64],
-        mean_guess: float,
-        stdev_guess: float,
-    ) -> tuple[float, float, float]:
-        """
-        Fit a Gaussian function to histogram data using a linearized least squares approach.
-
-        :param histogram: Array of counts in each histogram bin.
-        :type histogram: npt.NDArray[np.float64]
-        :param bins: Center positions of histogram bins.
-        :type bins: npt.NDArray[np.float64]
-        :param mean_guess: Initial estimate of the Gaussian mean.
-        :type mean_guess: float
-        :param stdev_guess: Initial estimate of the Gaussian standard deviation.
-        :type stdev_guess: float
-        :return: Tuple containing (amplitude, mean, standard deviation) of the fitted Gaussian.
-        :rtype: tuple[float, float, float]
-        :raises ValueError: If standard deviation guess is invalid or the fit fails.
-        """
-        if stdev_guess <= 0:
-            raise ValueError("Invalid standard deviation guess")
-
-        amp = np.max(histogram)
-        max_loc = int(np.argmax(histogram))
-
-        # Clean Windowing: A gaussian drops to ~1.1% height at 3 standard deviations.
-        threshold = np.exp(-4.5) * amp
-
-        # --- CONTIGUOUS MASKING LOGIC ---
-        # Walk left from the peak until we hit the threshold or the array edge
-        left_bound = max_loc
-        while left_bound > 0 and histogram[left_bound - 1] > threshold:
-            left_bound -= 1
-
-        # Walk right from the peak until we hit the threshold or the array edge
-        right_bound = max_loc
-        while (
-            right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold
-        ):
-            right_bound += 1
-
-        # Slice the arrays using the exclusive right bound
-        y_slice = histogram[left_bound : right_bound + 1]
-        x_slice = bins[left_bound : right_bound + 1]
-
-        localy = y_slice / amp
-        localx = (x_slice - mean_guess) / stdev_guess
-
-        # Vectorized Matrix Math
-        x0 = localy
-        x1 = localx * x0
-        x2 = localx * x1
-        x3 = localx * x2
-        x4 = localx * x3
-
-        x0_sum = np.sum(x0)
-        x1_sum = np.sum(x1)
-        x2_sum = np.sum(x2)
-        x3_sum = np.sum(x3)
-        x4_sum = np.sum(x4)
-
-        # localy is strictly > 0 because of the threshold mask, so log is safe
-        lny = np.log(localy) * localy
-        xlny = localx * lny
-        x2lny = localx * xlny
-
-        lny_sum = np.sum(lny)
-        xlny_sum = np.sum(xlny)
-        x2lny_sum = np.sum(x2lny)
-
-        xTx = np.array(
-            [
-                [x4_sum, x3_sum, x2_sum],
-                [x3_sum, x2_sum, x1_sum],
-                [x2_sum, x1_sum, x0_sum],
-            ]
-        )
-
-        xnlny = np.array([x2lny_sum, xlny_sum, lny_sum])
-        xTxinv = np.linalg.inv(xTx)
-        params = np.dot(xTxinv, xnlny)
-
-        if params[0] >= 0:
-            raise ValueError("Unable to estimate standard deviation (inverted fit)")
-
-        stdev = np.sqrt(-1.0 / (2 * params[0]))
-
-        # 'mean_offset' here is the shift in standardized units (mlocal)
-        mean_offset = stdev**2 * params[1]
-        amplitude = np.exp(params[2] + mean_offset**2 / (2 * stdev**2))
-
-        # --- THE CRITICAL MATH FIX ---
-        stdev *= stdev_guess
-        mean = (mean_offset * stdev_guess) + mean_guess  # The missing multiplier
-        amplitude *= amp
-
-        return amplitude, mean, np.absolute(stdev)
-
-    @log(logger=logger)
     def _handle_timer(self, parameters: Dict[str, Any]) -> None:
         """
         Open a time range selection dialog for a given event finder and update the internal time limits.
@@ -709,7 +463,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         original_str = self._get_event_index_text()
         self.logger.debug(f"Original GUI input string: {original_str}")
         if not original_str:
-            self.logger.error("Event index input is empty.")
+            self.logger.debug("Event index input is empty.")
             return
 
         parsed = self._parse_event_indices(original_str, False)
@@ -750,20 +504,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         :rtype: str
         """
         return self.rawdatacontrols.event_index_lineEdit.text().strip()
-
-    @log(logger=logger)
-    def validate_single_channel(self, channels: Sequence[int]) -> None:
-        """
-        Ensure only one channel is selected.
-
-        :param channels: List of selected channel indices.
-        :type channels: Sequence[int]
-        :raises ValueError: If more than one channel is selected.
-        """
-        if len(channels) > 1:
-            raise ValueError(
-                "Unable to plot events from multiple channels, select only one"
-            )
 
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
@@ -886,7 +626,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                 if data_list:
                     self._update_event_plot(data_list, events)
                 else:
-                    self.logger.error("No data available for plotting")
+                    self.add_text_to_display.emit(
+                        "No data available for plotting", self.__class__.__name__
+                    )
             except Exception:
                 self.logger.error("Unable to plot event data")
 
@@ -902,26 +644,25 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         if not isinstance(channels, list):
             channels = [channels]
-        else:
-            try:
-                for channel in channels:
-                    write_events_args = (channel,)
-                    # Emit the signal with the correct handler name for when the data is ready
-                    ret_args = (channel, writer, "MetaWriter")
-                    self.global_signal.emit(
-                        "MetaWriter",
-                        writer,
-                        "commit_events",
-                        write_events_args,
-                        "set_generator",
-                        ret_args,
-                    )
-            except (IndexError, ValueError) as e:
-                self.logger.error(
-                    f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
+        try:
+            for channel in channels:
+                write_events_args = (channel,)
+                # Emit the signal with the correct handler name for when the data is ready
+                ret_args = (channel, writer, "MetaWriter")
+                self.global_signal.emit(
+                    "MetaWriter",
+                    writer,
+                    "commit_events",
+                    write_events_args,
+                    "set_generator",
+                    ret_args,
                 )
-            else:
-                self.run_generators.emit(writer)
+        except (IndexError, ValueError) as e:
+            self.logger.error(
+                f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
+            )
+        else:
+            self.run_generators.emit(writer)
 
     @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:
@@ -1205,32 +946,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         return eventfinder, data_filter, channels
 
     @log(logger=logger)
-    def _extract_commit_event_parameters(
-        self, parameters: Dict[str, Any]
-    ) -> Tuple[Optional[str], List[int]]:
-        """
-        Extract writer and channels from parameters.
-
-        :param parameters: Input dictionary.
-        :type parameters: Dict[str, Any]
-        :return: (writer, channels)
-        :rtype: Tuple[Optional[str], List[int]]
-        """
-        writer = parameters.get("writer")
-        channels = [int(ch) for ch in parameters["channel"]]
-        return writer, channels
-
-    @log(logger=logger)
-    def set_data_filter_function(self, data_filter: Callable) -> None:
-        """
-        Set the callcable function to filter data
-
-        :param data_filter: a callable function
-        :type data_filter: Callable
-        """
-        self.data_filter = data_filter
-
-    @log(logger=logger)
     def _shift_range_and_update_trace(
         self, parameters: Dict[str, Any], direction: str
     ) -> None:
@@ -1322,7 +1037,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 if self.plot_data is not None:
                     data_list.append(self.plot_data)
                 else:
-                    self.logger.error(f"No data loaded for channel {channel}, skipping")
+                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
                     channels.remove(channel)
 
             # Apply filter if needed
@@ -1335,9 +1050,16 @@ class RawDataView(MetaView, WalkthroughMixin):
                 data_list = filtered_data_list
 
             if data_list:
-                self.update_plot(data_list, channels, start, baseline=baseline)
+                if baseline:
+                    # The fitting is the Model's since Step 4c, so the plot happens
+                    # when the Controller hands the statistics back.
+                    self.baseline_stats_requested.emit(data_list, channels, start)
+                else:
+                    self.update_plot(data_list, channels, start)
             else:
-                self.logger.error("No data available for plotting")
+                self.add_text_to_display.emit(
+                    "No data available for plotting", self.__class__.__name__
+                )
         else:
             self.logger.error("Invalid parameters for plotting data")
 
@@ -1366,7 +1088,7 @@ class RawDataView(MetaView, WalkthroughMixin):
                 if self.plot_data is not None:
                     data_list.append(self.plot_data)
                 else:
-                    self.logger.error(f"No data loaded for channel {channel}, skipping")
+                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
                     channels.remove(channel)
 
             # Apply filter if needed
@@ -1384,7 +1106,9 @@ class RawDataView(MetaView, WalkthroughMixin):
                     self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels
                 )
             else:
-                self.logger.error("No data available for psd calculation")
+                self.add_text_to_display.emit(
+                    "No data available for psd calculation", self.__class__.__name__
+                )
         else:
             self.logger.error("Invalid parameters for plotting data")
 

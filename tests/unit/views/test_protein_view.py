@@ -465,14 +465,12 @@ class TestGenerateVmEnsemble:
     MMAX, SMAX, MMIN, SMIN = 0.30, 0.03, 0.10, 0.02
 
     def test_prolate_count(self, mock_view):
-        np.random.seed(0)
         V, m = mock_view._generate_vm_ensemble(
             20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
         )
         assert len(V) == 20 and len(m) == 20
 
     def test_oblate_count(self, mock_view):
-        np.random.seed(1)
         V, m = mock_view._generate_vm_ensemble(
             20,
             self.MMAX,
@@ -486,14 +484,12 @@ class TestGenerateVmEnsemble:
         assert len(V) == 20 and len(m) == 20
 
     def test_prolate_m_gt1(self, mock_view):
-        np.random.seed(2)
         _, m = mock_view._generate_vm_ensemble(
             20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
         )
         assert np.all(m >= 1.0)
 
     def test_oblate_m_lt1(self, mock_view):
-        np.random.seed(3)
         _, m = mock_view._generate_vm_ensemble(
             20,
             self.MMAX,
@@ -507,7 +503,6 @@ class TestGenerateVmEnsemble:
         assert np.all(m > 0) and np.all(m <= 1.0)
 
     def test_volumes_positive(self, mock_view):
-        np.random.seed(4)
         for p in (True, False):
             V, _ = mock_view._generate_vm_ensemble(
                 20,
@@ -522,19 +517,16 @@ class TestGenerateVmEnsemble:
             assert np.all(V > 0)
 
     def test_unphysical_bails_out(self, mock_view):
-        np.random.seed(5)
         V, m = mock_view._generate_vm_ensemble(50, 5.0, 0.01, 4.0, 0.01, self.D, self.L)
         assert len(V) < 50
 
     def test_zero_target(self, mock_view):
-        np.random.seed(6)
         V, m = mock_view._generate_vm_ensemble(
             0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
         )
         assert len(V) == 0 and len(m) == 0
 
     def test_accepted_within_cutoff(self, mock_view):
-        np.random.seed(7)
         cutoff = 4
         V, m = mock_view._generate_vm_ensemble(
             30,
@@ -777,21 +769,6 @@ class TestStateSetters:
     def test_set_experiment_id(self, mock_view):
         mock_view.set_experiment_id(99)
         assert mock_view.experiment_id == 99
-
-    def test_set_table_by_column_appends(self, mock_view):
-        if not hasattr(mock_view, "involved_tables"):
-            mock_view.involved_tables = []
-        before = len(mock_view.involved_tables)
-        mock_view.set_table_by_column("events")
-        assert len(mock_view.involved_tables) == before + 1
-        assert "events" in mock_view.involved_tables
-
-    def test_set_table_by_column_none_ignored(self, mock_view):
-        if not hasattr(mock_view, "involved_tables"):
-            mock_view.involved_tables = []
-        before = len(mock_view.involved_tables)
-        mock_view.set_table_by_column(None)
-        assert len(mock_view.involved_tables) == before
 
     def test_set_units(self, mock_view):
         mock_view.set_units("nm")
@@ -1143,65 +1120,19 @@ class TestUpdatePlot:
 # ===========================================================================
 
 
-class TestRangeHelpers:
-    def test_parse_single(self, mock_view):
-        assert mock_view._parse_event_indices("5", False) == [(5, 5)]
+class TestFactors:
+    """
+    ``MetaView._factors``, the subplot-grid helper.
 
-    def test_parse_range(self, mock_view):
-        assert mock_view._parse_event_indices("3-7", False) == [(3, 7)]
-
-    def test_parse_mixed(self, mock_view):
-        assert mock_view._parse_event_indices("1,3-5,8", False) == [
-            (1, 1),
-            (3, 5),
-            (8, 8),
-        ]
-
-    def test_shift_right_increases_values(self, mock_view):
-        before = mock_view._shift_ranges([(3, 3)], "right", 1)
-        assert before[0][0] > 3 or before[0][1] > 3 or before[0] == (4, 4)
-
-    def test_shift_left_decreases_values(self, mock_view):
-        result = mock_view._shift_ranges([(5, 5)], "left", 1)
-        # Left shift should move the range downward
-        assert result[0][0] <= 5 and result[0][1] <= 5
-
-    def test_shift_left_does_not_go_below_one(self, mock_view):
-        # Shifting left from 1 should not produce 0 or negative
-        result = mock_view._shift_ranges([(1, 1)], "left", 1)
-        assert result[0][0] >= 0  # at worst 0; real impls clamp to 1
-
-    def test_merge_adjacent(self, mock_view):
-        assert mock_view._merge_ranges([(1, 2), (3, 4)]) == [(1, 4)]
-
-    def test_merge_disjoint(self, mock_view):
-        assert mock_view._merge_ranges([(1, 2), (5, 6)]) == [(1, 2), (5, 6)]
-
-    def test_merge_empty(self, mock_view):
-        assert mock_view._merge_ranges([]) == []
-
-    def test_format_single(self, mock_view):
-        assert mock_view._format_ranges([(5, 5)]) == "5"
-
-    def test_format_range(self, mock_view):
-        assert mock_view._format_ranges([(3, 7)]) == "3-7"
-
-    def test_format_mixed(self, mock_view):
-        assert mock_view._format_ranges([(1, 1), (3, 5)]) == "1,3-5"
-
-    def test_expand_single(self, mock_view):
-        assert mock_view._expand_event_indices("5") == [5]
-
-    def test_expand_range(self, mock_view):
-        assert mock_view._expand_event_indices("3-5") == [3, 4, 5]
-
-    def test_expand_mixed(self, mock_view):
-        assert mock_view._expand_event_indices("1,3-5,8") == [1, 3, 4, 5, 8]
-
-    def test_expand_positive_only(self, mock_view):
-        # Only positive indices should appear
-        result = mock_view._expand_event_indices("1,2,3")
-        assert all(i > 0 for i in result)
+    This class held sixteen more tests, for the five event-index range helpers. Step 3e
+    moved those helpers off ``MetaView`` and onto ``MetaEventTabView``, whose only
+    subclasses are the two event tabs - the protein tab never had a claim on them, and
+    reaching a base method through an unrelated tab is what let that go unnoticed.
+    ``tests/unit/views/test_meta_view_characterization.py`` pins all five properly, with
+    28 tests asserting literal values; the ones deleted here asserted an ``or``-chain of
+    three alternatives, and one asserted ``>= 0`` under a comment claiming a clamp the
+    implementation does not have.
+    """
 
     def test_factors_perfect_square(self, mock_view):
         assert mock_view._factors(4) == (2, 2)
@@ -1441,7 +1372,7 @@ class TestOnRawFilterValidated:
 
 
 class TestSaveLoadFilter:
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
     def test_save_filter_writes_json(self, mock_dialog, mock_view):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fp:
             path = fp.name
@@ -1453,7 +1384,7 @@ class TestSaveLoadFilter:
         assert data == {"f1": "dur>100", "f2": "dur<500"}
         os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
     def test_save_filter_empty_is_noop(self, mock_dialog, mock_view):
         mock_view.subset_filters = {}
         mock_view._save_filter()
@@ -1487,6 +1418,17 @@ class TestSaveLoadFilter:
     def test_load_filter_no_path_is_noop(self, mock_dialog, mock_view):
         mock_dialog.return_value = ("", "")
         mock_view._load_filter({})
+
+
+class TestRestoreSubsetFilters:
+    def test_restore_subset_filters_adds_filters_directly(self, mock_view):
+        mock_view.restore_subset_filters({"f1": "dur>100"})
+        assert mock_view.subset_filters == {"f1": "dur>100"}
+
+    def test_restore_subset_filters_skips_existing_names(self, mock_view):
+        mock_view.subset_filters = {"f1": "dur>999"}
+        mock_view.restore_subset_filters({"f1": "dur>100"})
+        assert mock_view.subset_filters == {"f1": "dur>999"}
 
 
 # ===========================================================================
@@ -1570,7 +1512,6 @@ class TestPipeline:
             pytest.skip("fit did not converge")
         means = sorted([popt[1], popt[4]])
         stds = [abs(popt[2]), abs(popt[5])]
-        np.random.seed(42)
         V, m = mock_view._generate_vm_ensemble(
             20, max(means), stds[1], min(means), stds[0], self.D, self.L
         )

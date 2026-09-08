@@ -126,6 +126,25 @@ class DataPluginModel(QObject):
         return self.available_plugins[metaclass][subclass]()
 
     @log(logger=logger)
+    def set_available_plugins(
+        self, available_plugin_classes: Mapping[str, Mapping[str, Type[BaseDataPlugin]]]
+    ) -> None:
+        """
+        Replace the set of plugin classes available for instantiation.
+
+        Instances already created are untouched: they hold their own class
+        reference, and a re-scan returns the same class objects for anything
+        still on disk.
+
+        :param available_plugin_classes: Dict of available plugin classes, keyed
+            by metaclass then subclass name.
+        :type available_plugin_classes: Mapping[str, Mapping[str, Type[BaseDataPlugin]]]
+        """
+        self.available_plugins = available_plugin_classes
+        for metaclass in available_plugin_classes:
+            self.plugins.setdefault(metaclass, {})
+
+    @log(logger=logger)
     def get_instantiated_plugins_list(self) -> Dict[str, List[str]]:
         """
         Get a dict keyed by metaclass with a list of all keys for plugins that have been instantiated
@@ -214,25 +233,3 @@ class DataPluginModel(QObject):
         :rtype: Optional[BaseDataPlugin]
         """
         return self.plugins[metaclass].get(key)
-
-    @log(logger=logger)
-    def get_plugin_details(self, metaclass: str, key: str) -> Optional[dict]:
-        """
-        Retrieve the raw settings associated to an already-instantiated plugin by metaclass and key.
-
-        :param metaclass: The metaclass of the plugin.
-        :type metaclass: str
-        :param key: The key of the plugin instance to remove.
-        :type key: str
-
-        :return: the dict that must be filled in to initialize the plugin, or None on failure
-        :rtype: Optional[dict]
-        """
-        plugin_instance = self.get_plugin_instance(metaclass, key)
-        if not plugin_instance:
-            self.logger.error(
-                f"No plugin instance found for key {key} in metaclass {metaclass}."
-            )
-            return None
-        settings = plugin_instance.get_raw_settings()
-        return settings

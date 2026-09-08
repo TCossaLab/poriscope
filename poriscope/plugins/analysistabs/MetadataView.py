@@ -31,7 +31,18 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    override,
+)
 
 import matplotlib.pyplot as pl
 import numpy as np
@@ -43,31 +54,25 @@ from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QCheckBox,
     QDialog,
     QFileDialog,
-    QHBoxLayout,
     QMessageBox,
 )
 from scipy import stats
 from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
-from poriscope.views.widgets.multiselect import MultiSelectComboBox
-from poriscope.views.widgets.SelectionTree import SelectionTree
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 warnings.filterwarnings(
     "ignore",
@@ -76,9 +81,9 @@ warnings.filterwarnings(
 
 
 @inherit_docstrings
-class MetadataView(MetaView, WalkthroughMixin):
+class MetadataView(MetaSubsetTabView):
     """
-    Subclass of MetaView for visualizing and interacting with metadata plots.
+    Subclass of MetaSubsetTabView for visualizing and interacting with metadata plots.
 
     This view supports a wide variety of statistical visualizations, including:
     1D histograms, KDEs, capture rates, scatterplots, heatmaps, and event overlays.
@@ -93,11 +98,6 @@ class MetadataView(MetaView, WalkthroughMixin):
     """
 
     logger = logging.getLogger(__name__)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override
@@ -129,26 +129,29 @@ class MetadataView(MetaView, WalkthroughMixin):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
+        # Bus results, written by relay_experiment_id/relay_query_result and read
+        # back by the emitter on the next statement. Declared here so the type is
+        # stated once and the callers' cleared-before-emit assignment type-checks.
+        self.relayed_experiment_id: Optional[int] = None
+        self.relayed_query_result: Optional[pd.DataFrame] = None
         # Heterogeneous by design: the histogram paths append 1-D arrays, the
         # density path appends whole DataFrames, and the all-points path appends
         # (x, y) tuples. Flagged for review.
         self.hist_data: List[Any] = []
         self.hist_labels: List[Any] = []
-        self.subset_filters: Dict[str, str] = {}
+        self.subset_filters = {}
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
-        self.selected_experiment_and_channels_by_loader: Dict[
-            str, Dict[str, List[str]]
-        ] = {}
+        self.selected_experiment_and_channels_by_loader = {}
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Union[int, float]] = None
         self.allowed_sizes: Optional[bool] = None
 
-        self._show_sql_in_display: bool = False
-        self._show_event_sql_in_display: bool = False
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
 
         self.plotted_datasets: Set[
             Tuple[
@@ -166,9 +169,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.hlabels: Optional[List[str]] = None
         self.plabels: Optional[List[str]] = None
         self._heatmap_colorbar: Optional[Colorbar] = None
-        self._pending_filter_name: Optional[str] = None
-        self._pending_filter_text: Optional[str] = None
-        self._pending_old_filter_name: Optional[str] = None
+        self._pending_filter_name = None
+        self._pending_filter_text = None
+        self._pending_old_filter_name = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
@@ -178,50 +181,18 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.current_channel: Optional[int] = None
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> MetadataControls:
         """
-        Set up the control area layout by inserting metadata controls.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout to which the controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: MetadataControls
         """
         self.metadatacontrols = MetadataControls()
-        self.metadatacontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.metadatacontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.metadatacontrols.add_processed.connect(self.handle_add_triggered)
-        self.metadatacontrols.delete_processed.connect(self.handle_delete_triggered)
-        self.metadatacontrols.edit_filter_requested.connect(
-            self.show_edit_filter_dialog
-        )
-        self.metadatacontrols.delete_filter_requested.connect(
-            self._delete_filter_by_name
-        )
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.metadatacontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog for the user to choose a save location.
-
-        :return: Selected filename.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
+        return self.metadatacontrols
 
     @log(logger=logger)
     def _clear_figure_state(
@@ -1195,27 +1166,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides an experiment id for a given filter.
-
-        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
-        :type experiment_id: Optional[int]
-        """
-        self.experiment_id = experiment_id
-
-    @log(logger=logger)
-    def set_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Get a list of tables affected by an SQL query.
-
-        :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
-        :type table: Optional[str]
-        """
-        if table is not None:
-            self.involved_tables.append(table)
-
-    @log(logger=logger)
     @register_action()
     def _overlay_plot(self, parameters: Dict[str, Any]) -> bool:
         """
@@ -1411,6 +1361,12 @@ class MetadataView(MetaView, WalkthroughMixin):
                         if self.query == "":
                             return False
 
+                        # Cleared first: a dispatch that fails never calls
+                        # update_plot_data, so without this the guard below would
+                        # read the previous subset's rows and plot them under this
+                        # subset's label. .empty as well as None because the loader
+                        # returns an empty frame for a query that matched nothing.
+                        self.plot_data = None
                         self.global_signal.emit(
                             "MetaDatabaseLoader",
                             loader,
@@ -1420,7 +1376,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                             (),
                         )
 
-                        if self.plot_data is None:
+                        if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
                                 f"No data matching the subset {dataset_label}, skipping",
                                 self.__class__.__name__,
@@ -1763,44 +1719,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.no_cached_data = True
 
     @log(logger=logger)
-    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
-        """
-        Set the event data generator for event-based plots.
-
-        :param generator: A generator that yields event data.
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.event_data_generator = generator
-
-    @log(logger=logger)
     def _undo_plot(self) -> None:
         """
         Undo the last plotted action and update the action history.
         """
         self.update_tab_action_history.emit(None, True)
-
-    @log(logger=logger)
-    def _save_filter(self) -> None:
-        """
-        Save the current filters to a JSON file.
-
-        """
-        if not self.subset_filters:
-            self.logger.info("There are no filters to save.")
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "w") as f:
-                json.dump(self.subset_filters, f, indent=4)
-            self.logger.info(f"Filters saved to {path}")
-        except Exception as e:
-            self.logger.error(f"Failed to save filters: {e}")
 
     @log(logger=logger)
     def _load_filter(self, parameters: Dict[str, Any]) -> None:
@@ -1880,6 +1803,29 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         combo.refreshDisplayText()
         self.logger.info(f"Filters loaded from {path}")
+
+    @log(logger=logger)
+    def restore_subset_filters(self, filters: Dict[str, str]) -> None:
+        """
+        Restore subset filters captured in a saved session.
+
+        Unlike :meth:`_load_filter`, this does not re-validate the filters against a
+        database loader, since they were already valid when the session was saved.
+
+        :param filters: Mapping of filter name to filter expression to restore.
+        :type filters: Dict[str, str]
+        """
+        combo = self.metadatacontrols.filter_comboBox
+        for name, filter_text in filters.items():
+            if name in self.subset_filters:
+                self.logger.warning(
+                    f"Filter '{name}' already exists; skipping restore of duplicate."
+                )
+                continue
+            self.subset_filters[name] = filter_text
+            combo.addItem(name)
+            combo.selectItem(name, select=True)
+        combo.refreshDisplayText()
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -1992,52 +1938,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _build_where_clause(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> str:
-        """
-        Build a WHERE clause for direct DB queries on the events table, scoped to
-        the current filter, experiment, and channel.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        :param sql_filter: SQL filter string (may be empty).
-        :type sql_filter: str
-        :param exp: Experiment name.
-        :type exp: Optional[str]
-        :param channel: Channel identifier.
-        :type channel: Optional[int]
-        :return: WHERE clause string (including the WHERE keyword), or empty string.
-        :rtype: str
-        """
-        filter_parts = []
-        if sql_filter:
-            filter_parts.append(sql_filter)
-        if exp is not None:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_experiment_id_by_name",
-                (exp,),
-                "relay_experiment_id",
-                (),
-            )
-            exp_id = getattr(self, "relayed_experiment_id", None)
-            if exp_id is not None:
-                filter_parts.append(f"experiment_id = {exp_id}")
-                if channel is not None:
-                    filter_parts.append(f"channel_id = {channel}")
-        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
-
-    @log(logger=logger)
     def _rebuild_event_id_cache(
         self,
         loader: str,
-        where_clause: str,
         sql_filter: str,
         exp: Optional[str],
         channel: Optional[int],
@@ -2046,10 +1949,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         Rebuild the filtered event_id cache when filter or scope changes.
         Also emits the display panel message (first plot or filter change only).
 
+        Goes through ``load_metadata`` rather than querying the events table
+        directly, so that the filter is evaluated against the same joins the
+        subset and scatter paths give it. A filter on a sublevels column -
+        ``filtered = 5``, meaning every event with at least one sublevel that
+        matches - is only meaningful against ``events JOIN sublevels``, and the
+        hand-built ``SELECT event_id FROM events`` this replaces made every such
+        filter fail as an unknown column and then report itself as an empty
+        subset.
+
         :param loader: Name of the active database loader.
         :type loader: str
-        :param where_clause: Pre-built WHERE clause for the events table.
-        :type where_clause: str
         :param sql_filter: Current SQL filter string.
         :type sql_filter: str
         :param exp: Current experiment name.
@@ -2059,24 +1969,45 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: True if cache was rebuilt successfully, False otherwise.
         :rtype: bool
         """
-        cache_query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        # event_id is only unique within an experiment/channel, so without this
+        # scoping the cache mixes duplicate ids from every channel and navigation
+        # jumps to ids the active channel does not have.
+        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
+        if exp is not None:
+            exp_and_ch = {exp: [channel] if channel is not None else None}
+
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
-            "query_database_directly",
-            (cache_query,),
+            "load_metadata",
+            (["event_id"], sql_filter or None, exp_and_ch),
             "relay_query_result",
             (),
         )
         cache_result = getattr(self, "relayed_query_result", None)
-        if cache_result is None or cache_result.empty:
+        if cache_result is None:
+            # None means the query could not be built or run at all, which is a
+            # real problem and not an empty subset. Logged at ERROR so QtHandler
+            # raises its dialog from the place that can tell the two apart.
+            self.logger.error(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+        if cache_result.empty:
             self.add_text_to_display.emit(
                 "No filtered events found",
                 self.__class__.__name__,
             )
             return False
 
-        self.filtered_event_ids = cache_result["event_id"].tolist()
+        # load_metadata applies no ORDER BY of its own, and the navigation that
+        # reads this list bisects it.
+        self.filtered_event_ids = sorted(cache_result["event_id"].tolist())
         self.current_sql_filter = sql_filter
         self.current_experiment = exp
         self.current_channel = channel
@@ -2122,7 +2053,11 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
         if exp_and_ch is None:
-            self.logger.error("No experiments or channels in scope for navigation.")
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to "
+                "navigate events",
+                self.__class__.__name__,
+            )
             return
 
         exp = next(iter(exp_and_ch.keys()))
@@ -2136,10 +2071,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             or channel != self.current_channel
             or not self.filtered_event_ids
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         if not self.filtered_event_ids:
@@ -2265,10 +2197,7 @@ class MetadataView(MetaView, WalkthroughMixin):
             or not self.filtered_event_ids
         )
         if cache_needs_rebuild:
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
         elif not self.filtered_event_ids:
             self.add_text_to_display.emit(
@@ -2303,6 +2232,10 @@ class MetadataView(MetaView, WalkthroughMixin):
         id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
         where_parts = [f"event_id IN {id_tuple}"]
 
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_experiment_id = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2318,6 +2251,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 where_parts.append(f"channel_id = {channel}")
 
         db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
+        # Cleared first: a dispatch that fails never calls the return
+        # function, so without this the read below sees the previous call's
+        # value and treats it as this call's answer.
+        self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -2448,9 +2385,13 @@ class MetadataView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
-        A callback from a global_signal call that stores the result of a direct DB query.
+        A callback from a global_signal call that stores the result of a DB query.
 
-        :param result: DataFrame returned by query_database_directly.
+        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
+        which return the same thing: the rows, an empty frame if none matched, or
+        None if the query could not be built or run.
+
+        :param result: DataFrame returned by the query, or None if it failed.
         :type result: Optional[pd.DataFrame]
         """
         self.relayed_query_result = result
@@ -2547,6 +2488,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         num_rows, num_cols = self._factors(num_events)
         j = 0
         for i, (event, vlines, hlines, pts, vlabels, hlabels, plabels) in enumerate(
+            # strict: the caller appends to all seven lists once per event, so a
+            # length mismatch is structurally impossible and means the caller is
+            # broken. Silently truncating would instead leave the whole bottom
+            # row of subplots without an x-axis label, since labelnum below is
+            # computed from num_events rather than from the trip count.
             zip(
                 event_data,
                 vertical_lines,
@@ -2555,6 +2501,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 vertical_labels,
                 horizontal_labels,
                 point_labels,
+                strict=True,
             )
         ):
             color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -2764,160 +2711,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.exported_event_count = written
 
     @log(logger=logger)
-    def set_query(self, query: str, table_name: str) -> None:
-        """
-        Set the SQL query and table name used in plotting.
-
-        :param query: SQL query string.
-        :type query: str
-        :param table_name: Name of the database table.
-        :type table_name: str
-        """
-        self.query = query
-        self.table_name = table_name
-        if not query:
-            return
-
-        # Only display SQL for filter creation/edit validation
-        if self._show_sql_in_display:
-            self.add_text_to_display.emit(
-                f"SQL ({table_name}):\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            # one-shot so normal plot queries never show
-            self._show_sql_in_display = False
-
-    @log(logger=logger)
-    def set_event_query(self, query: str) -> None:
-        """
-        A global signal callback that provides a valid SQL query for fetching event data.
-
-        :param query: SQL query string for fetching event data.
-        :type query: str
-        """
-        self.event_query = query
-        if not query:
-            return
-
-        if self._show_event_sql_in_display:
-            self.add_text_to_display.emit(
-                f"Event SQL:\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            self._show_event_sql_in_display = False
-
-    @log(logger=logger)
-    def set_units(self, units: Any) -> None:
-        """
-        Set the units returned from the database for use in axis labels.
-
-        :param units: List or string representing units.
-        :type units: Any
-        """
-        self.units = units
-
-    @log(logger=logger)
-    def update_available_columns(self, loader: str) -> None:
-        """
-        Request available columns from the database loader.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
-
-    @log(logger=logger)
-    def request_experiment_structure(self, loader_name: str) -> None:
-        """
-        Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.
-
-        :param loader_name: the key of the loader
-        :type loader_name: str
-        """
-        if not loader_name or loader_name == "No Event Database":
-            return
-
-        self.logger.debug(
-            f"Requesting experiment-channel structure from loader: {loader_name}"
-        )
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader_name,
-            "get_experiments_and_channels",
-            (),
-            "get_experiment_structure_ready",
-            (loader_name,),
-        )
-
-    @log(logger=logger)
-    def show_selection_tree(
-        self,
-        structure: dict[str, list[str]],
-        loader_name: str,
-        selection: Optional[dict[str, list[str]]] = None,
-    ) -> None:
-        """
-        Displays the selection tree for a given loader using the full structure and current selection.
-        """
-        self.logger.debug(
-            f"Displaying selection tree with structure: {structure} for loader: {loader_name}"
-        )
-
-        if not hasattr(self, "selection_tree"):
-            self.selection_tree = SelectionTree()
-
-        selected = self.selection_tree.show_dialog(
-            structure,
-            loader_name,
-            title="Select Experiment and Channels",
-            selected=selection,
-        )
-
-        self.selected_experiment_and_channels_by_loader[loader_name] = selected
-        self.logger.debug(f"Updated selection for {loader_name}: {selected}")
-
-    @log(logger=logger)
-    def update_units(self, loader: str, column: str, axis: str) -> None:
-        """
-        Request units for a specific column from the loader.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param column: Name of the column to get units for.
-        :type column: str
-        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
-        :type axis: str
-        """
-        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
-        # rather than an error, so do not dispatch it as a plugin key.
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (axis,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
-
-    @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
         """
         Relay function to update the list of available columns.
@@ -3084,7 +2877,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             loader = parameters["db_loader"]
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             # Store pending data for use in relay_query
@@ -3159,7 +2954,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             # Store pending update info to be committed in relay_query after validation
@@ -3200,47 +2997,6 @@ class MetadataView(MetaView, WalkthroughMixin):
                 "relay_query",
                 ("validate_edited_filter",),
             )
-
-    @log(logger=logger)
-    def clear_pending_filter_state(self) -> None:
-        """
-        reset all filters to factory settings
-        """
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
-
-    @log(logger=logger)
-    def _show_filter_info_dialog(
-        self, comboBox: MultiSelectComboBox, parameters: Dict[str, Any]
-    ) -> None:
-        """
-        Called when clicking the edit button for filters with multiple selection.
-
-        Validates that exactly one filter is selected and delegates to the edit dialog.
-
-        :param comboBox: The combo box containing the list of selectable filters.
-        :type comboBox: MultiSelectComboBox
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        loader = parameters["db_loader"]
-        selected = comboBox.getSelectedItems()
-        if len(selected) != 1:
-            self.logger.warning("Please select exactly one filter to edit.")
-            return
-
-        self.show_edit_filter_dialog(selected[0], loader)
-
-    @log(logger=logger)
-    def _delete_filter_by_name(self, name: str) -> None:
-        """
-        Deletes a single filter by name.
-
-        :param name: The name of the filter to delete.
-        :type name: str
-        """
-        self._delete_filter(name)
 
     @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:

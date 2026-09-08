@@ -45,6 +45,11 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     global_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
+    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
+    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
+    # that passes a return_function_name reads the result back off an attribute the
+    # callback sets, on the very next statement after .emit() - a queued connection
+    # would silently degrade that read to stale/None data with no error and no log line.
     data_plugin_controller_signal = Signal(
         str, str, str, tuple, str, tuple
     )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
@@ -67,10 +72,10 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         ] = {}
         self.threads: Dict[str, Dict[int, WorkerThread]] = (
             {}
-        )  # Holds worker objects per key/channel
+        )  # Holds worker threads per key/channel
         self.workers: Dict[str, Dict[int, Worker]] = (
             {}
-        )  # Holds worker threads per key/channel
+        )  # Holds worker objects per key/channel
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
@@ -151,6 +156,11 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                 self.workers[key][channel].update_progressbar.connect(
                     self.emit_progress_update, Qt.QueuedConnection
                 )
+                # A worker that stops early reports why on the status panel rather
+                # than through a modal dialog; see Worker.process_generator.
+                self.workers[key][channel].add_text_to_display.connect(
+                    self.emit_text_to_display, Qt.QueuedConnection
+                )
                 self.threads[key][channel] = WorkerThread(
                     self.workers[key][channel], channel, key
                 )
@@ -165,7 +175,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     @log(logger=logger)
     @Slot(int, str)
     def discard_generator(self, channel: int, key: str) -> None:
-        """
+        r"""
         Clear the run state for one (key, channel) once its worker thread has finished.
 
         Formerly ``reset_lock``, which reset no lock - it clears the ``thread_running``
@@ -180,6 +190,15 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         error. ``close()`` is a harmless no-op on a generator that already ran to
         completion.
 
+        The finished ``Worker``/``WorkerThread`` pair is also popped out of
+        ``self.workers``/``self.threads`` and scheduled for deletion here, for the same
+        reason: leaving them in the dicts kept every generator closure and the channel
+        data it touched alive for the rest of the session, and made
+        ``stop_workers``/``handle_kill_worker`` log "Stopping worker for channel N" for
+        runs that had finished hours earlier. Both are ``QObject``s created on (and never
+        moved from) this thread, so ``deleteLater()`` is the correct way to release them
+        rather than waiting on Python's reference counting.
+
         :param channel: the channel whose run has finished
         :type channel: int
         :param key: the plugin key whose run has finished
@@ -191,6 +210,16 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         except KeyError:
             return
         generator.close()
+
+        # workers/threads[key][channel] are always created together with
+        # generators[key][channel] in run_generators, so the pop above succeeding
+        # guarantees both of these exist too.
+        worker = self.workers[key].pop(channel)
+        thread = self.threads[key].pop(channel)
+        thread.wait()  # run() has already returned by the time this queued slot
+        # fires from workerthread_finished; this confirms it rather than blocking.
+        thread.deleteLater()
+        worker.deleteLater()
 
     @log(logger=logger)
     @Slot(int, str)
@@ -264,9 +293,12 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             return  # Exit after stopping all workers
 
         if key not in self.workers:
-            self.logger.warning(
-                f"No active workers found for key '{key}'. Full dictionary: {self.workers}"
-            )
+            # INFO, not WARNING: this is reached routinely, and it duplicates the
+            # message MetaController.handle_kill_worker already produced for the
+            # same abort. The panel message belongs to the controller, which knows
+            # whether the user asked for this or whether it is a shutdown sweep.
+            self.logger.info(f"No active workers found for key '{key}'.")
+            self.logger.debug(f"Full workers dictionary: {self.workers}")
             return
 
         if channel is None:
@@ -279,20 +311,27 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                     self.stop_workers(key, chan, exiting=exiting)
         else:
             # Stop only the specific channel's worker within the given key
-            if channel in self.workers[key]:
-                self.logger.info(f"Stopping worker for key: {key}, channel: {channel}")
-                if self.thread_running[key][channel] is True:
-                    self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
-
-                if exiting:
-                    # On app exit we must block until the thread actually
-                    # finishes, otherwise Qt destroys a QThread still running.
-                    self.threads[key][channel].wait()
-                # Otherwise let workerthread_finished emit and trigger
-                # discard_generator() asynchronously - avoid blocking here.
-                self.logger.debug(
-                    f"Worker and thread stopped for key: {key}, channel: {channel}"
+            if channel not in self.workers[key]:
+                # Previously this `if` had no `else` at all, so a stale channel was
+                # a completely silent no-op even in the log.
+                self.logger.info(
+                    f"No worker to stop for key: {key}, channel: {channel}"
                 )
+                return
+
+            self.logger.info(f"Stopping worker for key: {key}, channel: {channel}")
+            if self.thread_running[key][channel] is True:
+                self.workers[key][channel].stop_signal.emit()  # Ask worker to stop
+
+            if exiting:
+                # On app exit we must block until the thread actually
+                # finishes, otherwise Qt destroys a QThread still running.
+                self.threads[key][channel].wait()
+            # Otherwise let workerthread_finished emit and trigger
+            # discard_generator() asynchronously - avoid blocking here.
+            self.logger.debug(
+                f"Worker and thread stopped for key: {key}, channel: {channel}"
+            )
 
     # private API, should generally be left alone by subclasses
 
@@ -306,3 +345,19 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         """
         self.logger.info(f"Progress update received: {progress}% for {identifier}")
         self.update_progressbar.emit(progress, identifier)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def emit_text_to_display(self, text: str, identifier: str) -> None:
+        """
+        Relay a worker's message to the status panel.
+
+        Workers run on their own thread and report an early stop this way rather than by
+        raising it as an ERROR record, which QtHandler would turn into a modal dialog.
+
+        :param text: The message to show the user.
+        :type text: str
+        :param identifier: The reporting worker's key/channel identifier.
+        :type identifier: str
+        """
+        self.add_text_to_display.emit(text, identifier)

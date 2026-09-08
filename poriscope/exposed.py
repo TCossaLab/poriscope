@@ -72,14 +72,21 @@ from poriscope.utils.EventWorker import Worker
 
 # --- Meta Interfaces ---
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
 from poriscope.utils.MetaEventFinder import MetaEventFinder
 from poriscope.utils.MetaEventFitter import MetaEventFitter
 from poriscope.utils.MetaEventLoader import MetaEventLoader
+from poriscope.utils.MetaEventTabController import MetaEventTabController
+from poriscope.utils.MetaEventTabControls import MetaEventTabControls
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.utils.MetaFilter import MetaFilter
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
+from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
@@ -127,14 +134,21 @@ __all__ = [
     "WaveletFilter",
     # --- Meta Interfaces ---
     "MetaController",
+    "MetaControls",
     "MetaDatabaseLoader",
     "MetaDatabaseWriter",
     "MetaEventFinder",
     "MetaEventFitter",
     "MetaEventLoader",
+    "MetaEventTabController",
+    "MetaEventTabControls",
+    "MetaEventTabView",
     "MetaFilter",
     "MetaModel",
     "MetaReader",
+    "MetaSubsetTabController",
+    "MetaSubsetTabControls",
+    "MetaSubsetTabView",
     "MetaView",
     "MetaWriter",
     # --- Base Classes ---

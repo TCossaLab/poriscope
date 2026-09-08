@@ -34,16 +34,29 @@ The following tools are used in Poriscope:
   raised exceptions actually match the function's real signature and body (see
   :ref:`docstring_consistency` below)
 - **settings-schema** – checks that every plugin's ``get_empty_settings()`` is
-  internally self-consistent (see :ref:`plugin_settings_schema_testing` below)
+  internally self-consistent (see :ref:`settings_schema_checking` below)
 - **check-added-large-files** – prevents accidental commits of large files
+- **Ruff security rules** – a second, separately scoped Ruff pass over
+  ``poriscope/plugins/`` only, flagging code execution, unsafe deserialization and
+  process spawning; see :ref:`plugin_trust_boundary` below
+- **plugin module-level code check** – rejects code that runs when a plugin is merely
+  discovered; see :ref:`plugin_trust_boundary` below
 
-All six are managed through the **pre-commit** framework.
+All eight are managed through the **pre-commit** framework.
 
-Alongside these, a dedicated automated test — :ref:`plugin_compliance_testing` below —
-checks that any plugin you add or modify actually implements the interface its base
-class requires. It isn't a pre-commit hook (it runs as part of the normal test suite),
-but for anyone contributing a plugin, it is just as much a compliance gate as the
-tools above, and often the one that matters most.
+Two further gates are not pre-commit hooks but are enforced just as strictly:
+
+- a dedicated automated test — :ref:`plugin_compliance_testing` below — checks that any
+  plugin you add or modify actually implements the interface its base class requires. It
+  runs as part of the normal test suite, but for anyone contributing a plugin it is just
+  as much a compliance gate as the tools above, and often the one that matters most. A
+  companion test, :ref:`settings_schema_checking`, does the same for the settings schema
+  your plugin declares.
+- the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
+  Sphinx documentation on every pull request with warnings treated as errors. pydoclint
+  checks that a docstring *describes the right things*; it does not check that the
+  docstring is valid reStructuredText. Those are different failure modes, and only this
+  gate catches the second one.
 
 Pre-commit Hooks (Validation)
 -----------------------------
@@ -54,15 +67,19 @@ When committing code (either via the command line or GitHub Desktop), the follow
 run automatically:
 
 - ``ruff`` (strict mode) – validates code without modifying files
+- ``ruff-plugin-security`` – security-relevant rules, plugin tree only
 - ``mypy`` – validates static typing
 - ``pydoclint`` – validates that docstrings match real signatures and behavior
+- ``plugin-module-level`` – blocks import-time code in a data plugin
 - ``settings-schema`` – validates every plugin's declared settings schema
 - ``check-added-large-files`` – blocks files larger than 123 KB
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
-``tests/``. ``settings-schema`` is scoped tighter still, to ``poriscope/plugins/**``
-only, and only needs to run when a plugin's settings could have changed. Everything
-else runs against every tracked file.
+``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/``,
+``plugin-module-level`` more narrowly still to the eight data-plugin families, and
+``settings-schema`` to ``poriscope/plugins/**`` - it only needs to run when a
+plugin's settings could have changed. Everything else runs against every tracked
+file.
 
 These checks **never modify files**.
 
@@ -190,12 +207,64 @@ Run individual validation tools:
 .. warning::
 
    Use ``pre-commit run mypy`` rather than a bare ``mypy poriscope``. The hook runs
-   mypy in an isolated environment with a pinned version and no project dependencies,
-   which is exactly what CI does. Running mypy directly from your own virtual
-   environment uses a different version *and* sees the real PySide6/numpy/pandas type
-   stubs, and it will report several hundred additional messages that the gate does
-   not care about. Those are not failures you need to fix — they are a different tool
-   configuration answering a different question. **The hook is the gate.**
+   mypy in an isolated environment with no project dependencies, which is exactly what
+   CI does. Running mypy directly from your own virtual environment sees the real
+   PySide6/numpy/pandas type stubs, and it will report several hundred additional
+   messages that the gate does not care about. Those are not failures you need to fix —
+   they are a different tool configuration answering a different question.
+   **The hook is the gate.**
+
+   The version is pinned in two places and they are deliberately kept equal:
+   ``.pre-commit-config.yaml`` runs mirrors-mypy ``rev: v1.17.1``, and
+   ``pyproject.toml``'s ``[dev]`` extra and ``requirements-dev.txt`` both declare
+   ``mypy==1.17.1``. If you bump one, bump the other in the same commit — the two drifted
+   apart until 2026-09-04, and the resulting version gap was mistaken for the dependency
+   blindness described above. See ``DECISIONS.md``.
+
+.. _docs_render_check:
+
+Checking That the Documentation Still Renders
+---------------------------------------------
+
+Most of Poriscope's documentation is generated from the docstrings you write, so a
+malformed directive or a broken cross-reference in a docstring is a documentation bug.
+``pydoclint`` will not catch it: it verifies that the parameters, return type and
+exceptions a docstring documents match the real function, not that the surrounding
+reStructuredText is well formed. Sphinx catches it, so Sphinx is a gate.
+
+Every pull request targeting ``main``, ``develop`` or a ``release/*`` branch runs the
+**Docs Render Check** workflow, which regenerates the autodoc ``.rst`` files and builds
+the HTML with ``-W`` — warnings are errors. To run exactly what it runs:
+
+.. code-block:: bash
+
+   python scripts/generate_all_autodoc_rst.py
+   sphinx-build -W --keep-going -b html docs/source docs/build
+
+``--keep-going`` reports every warning in one pass instead of stopping at the first, so
+you can fix them all in a single edit. The ``post-merge`` git hook uses the same flags
+(see :doc:`post_merge_automation`), so if hooks are installed you will usually see a
+rendering problem the moment you merge rather than when you open a pull request.
+
+.. note::
+
+   The generator step is not optional. ``docs/source/autodoc/`` is git-ignored and
+   regenerated from the source tree, so a build without it fails on missing table-of-
+   contents entries rather than on anything you did.
+
+.. note::
+
+   **The build imports the real package, PySide6 included.** ``autodoc`` does not mock
+   Qt - ``docs/source/conf.py`` explains at length why mocking it is not an option here -
+   so ``sphinx-build`` needs an environment in which ``import poriscope`` works fully. On
+   a development machine with the project installed that is automatic. In CI both docs
+   workflows install ``libegl1``, ``libgl1`` and ``libxkbcommon0`` first: those are the
+   libraries the bundled ``libQt6Gui``/``libQt6Widgets``/``libQt6Svg`` link against that
+   the runner image does not already provide, and the dynamic loader resolves all three
+   the moment the module is imported. Without them the import fails halfway through
+   ``poriscope.exposed`` and the build fills with unrelated autodoc errors. Xvfb and the
+   ``libxcb-*`` packages the test workflows install are not needed, since those load with
+   the xcb platform plugin and a docs build never instantiates a ``QApplication``.
 
 Running Auto-fix Hooks Manually
 -------------------------------
@@ -221,8 +290,15 @@ After running:
 
 .. note::
 
-   **Which rules are enabled.** On top of Ruff's default rule set,
-   ``pyproject.toml`` selects:
+   **Which rules are enabled.** Ruff's default rule set is in force and
+   ``pyproject.toml`` uses ``extend-select``, which adds to those defaults rather
+   than replacing them. That matters more than it looks: several conventions this
+   project cares about are already enforced without appearing anywhere in the
+   config. The one worth knowing is ``E722``, **no bare** ``except:`` -- narrow to
+   ``except Exception:`` at minimum, so that the exceptions you are actually
+   swallowing can be named in a ``:raises:`` docstring section.
+
+   On top of the defaults, ``pyproject.toml`` selects:
 
    - ``I`` -- import ordering (isort).
    - ``B006`` -- a mutable data structure used as an argument default. A ``[]`` or
@@ -234,9 +310,73 @@ After running:
      assignment, but it makes the original sequence unreachable for the rest of the
      loop body and forces the parameter to be annotated loosely.
 
-   The other ``flake8-bugbear`` rules are deliberately **not** enabled yet. The
-   measured backlog and the case for adopting them are recorded in
-   ``future_fixes.md``.
+   The other ``flake8-bugbear`` and ``bandit`` rules are deliberately **not** enabled
+   *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
+   ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
+   maintained code fixed. What keeps each one from becoming a gate differs by rule.
+   ``S101`` would flag every ``assert`` in the test suite, where 2,243 of its 2,250 sites
+   are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
+   per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
+   advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
+   spread across the test suite, the ``scripts/autodoc/`` generators and the fitter
+   plugins another developer maintains. In each case enabling the rule would require a
+   ``per-file-ignores`` entry that hides a real check rather than satisfying it. The
+   reasoning, and the separate acceptance of the ``S608`` hardcoded-SQL sites, are
+   recorded in ``DECISIONS.md``; what each audit found is in ``changelog.md``. Please do
+   not re-propose them without reading that entry first.
+
+   **This is a different question from the security rules that do run on the plugin
+   tree.** ``ruff-plugin-security`` selects a separate, narrower set of ``S`` rules and
+   applies them only under ``poriscope/plugins/`` -- see
+   :ref:`plugin_trust_boundary`. The two do not overlap: none of the audited-and-declined
+   rules above is in that selection, and ``S608`` is not either.
+
+.. _plugin_trust_boundary:
+
+Plugin Code Runs on Your Machine
+--------------------------------
+
+Two of the hooks exist for one reason: **plugin discovery executes every Python file it
+finds.** ``MainModel.populate_available_plugins()`` walks ``poriscope/plugins/`` and your
+configured user-plugin folder recursively, and for each file it calls
+``spec.loader.exec_module()``. Python runs module-level code unconditionally, before
+anything has inspected the class -- so a plugin file is a code-execution boundary in a way
+that the rest of the application is not.
+
+For code written inside the lab that is an accepted convenience. For a plugin arriving in
+a pull request from outside it is worth a check, so two hooks police it:
+
+``ruff-plugin-security``
+   A second Ruff pass over ``poriscope/plugins/``, selecting only rules a
+   nanopore-analysis plugin has no legitimate reason to trip: ``exec`` and ``eval``
+   (``S102``, ``S307``), unsafe deserialization (``S301`` pickle, ``S302`` marshal,
+   ``S506`` yaml), process spawning (``S601``--``S607``, ``S609``), and network or
+   temp-file risks (``S310`` urlopen, ``S306`` mktemp).
+
+``plugin-module-level``
+   Rejects any module-level statement in a data plugin that runs code. The rule is that
+   **module-level assignment is fine but module-level invocation is not**, so a type alias
+   such as ``Numeric = Union[int, float, np.number]`` passes while
+   ``logger = logging.getLogger(__name__)`` does not -- move that kind of thing into a
+   method. Only imports, constants, classes and functions belong at the top level of a
+   plugin. Decorators on a class or function are not examined, since ``@log`` is part of
+   the plugin pattern.
+
+   Run it yourself on the plugin you are writing::
+
+      python scripts/check_plugin_module_level.py poriscope/plugins/eventfinders/MyFinder.py
+
+Both are measured at zero findings on the shipped tree, so neither has a baseline or any
+exemptions -- if one fires on your plugin, it has found something real.
+
+.. important::
+
+   These checks raise the bar against a careless submission. They are **not** a sandbox
+   and not a defence against a determined adversary: a plugin can still do as it likes
+   inside a method body that only runs once the plugin is instantiated, and neither hook
+   sees a file you drop straight into your user-plugin folder without a pull request.
+   Plugins are reviewed by a human before they are merged, and that review remains the
+   real gate.
 
 
 Skipping Hooks (Advanced Use Only)
@@ -373,6 +513,50 @@ exclusions, and ``mypy.ini`` enforces that:
 
 .. _plugin_compliance_testing:
 
+Test Suite Configuration
+-------------------------
+
+``pytest.ini`` is the only pytest configuration in the repository. Three settings there are
+worth knowing about before you add tests:
+
+- ``timeout = 300`` — a per-test backstop in seconds, supplied by ``pytest-timeout``. It
+  exists because a hung Qt test otherwise runs to GitHub Actions' six-hour job limit. It
+  is not a performance budget: the slowest unit test measures about 1.4 seconds, and the
+  explicit ``@pytest.mark.timeout`` markers under ``tests/e2e/`` and
+  ``tests/integration/`` are all 90 seconds or less and still override the default. **If
+  your test trips this value, that is a finding about the test, not a reason to raise
+  the number.**
+- ``--strict-markers`` — an unregistered marker name is a collection error rather than an
+  expression that matches nothing. Register any new marker in the ``markers`` list.
+- ``pythonpath = .`` — puts the repository root on ``sys.path`` so the shared test helpers
+  (``tests/unit/views/_qt_mocks.py``, ``tests/e2e/_helpers.py``, the
+  ``tests/synthetic_data/`` generators) are importable as ``tests.<module>``. The editable
+  install exposes only ``poriscope``, so without this setting those imports resolve only
+  when a conftest higher up the tree happens to be collected first — which made running a
+  single test file on its own fail with ``No module named 'tests'`` while the same file
+  passed in a full run.
+
+.. note::
+
+   If you add a dev dependency, it must go in **both** ``pyproject.toml``'s ``[dev]`` extra
+   and ``requirements-dev.txt``. They are byte-for-byte mirrors of each other and nothing
+   enforces that, but different CI workflows read different ones: ``ci-branches.yml`` and
+   ``ci-fork-pr.yml`` install only from ``requirements-dev.txt``, while ``release.yml``
+   installs only ``.[dev]``. Adding it to one file alone breaks half of CI. Pin it exactly
+   with ``==``, as every other entry in both files is.
+
+Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` extra but is
+**not** wired into ``addopts``:
+
+.. code-block:: bash
+
+   pytest --cov=poriscope --cov-report=term-missing
+
+Run it deliberately when you want the number. The plain ``pytest`` invocation is the
+pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
+the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
+drop, so treat it as information rather than a gate.
+
 Plugin Interface Compliance Testing
 ------------------------------------
 
@@ -417,54 +601,52 @@ how good the underlying science is.
    test, and fix any interface mismatches immediately. It is much cheaper to fix a
    wrong argument name before you've written 200 lines of logic around it than after.
 
-.. _plugin_settings_schema_testing:
+.. _settings_schema_checking:
 
-Settings Schema Checking
+Settings-Schema Checking
 -------------------------
 
-The inspector above reads the blueprint. ``tests/unit/plugins/test_settings_schema.py``
-reads the *parts list*: the dict your plugin returns from
-:py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings`.
+Interface compliance above checks the *methods* your plugin implements. A separate check
+covers the *settings schema* it declares — the dict your ``get_empty_settings()`` returns,
+where each parameter carries a ``Type`` and optionally a ``Value``, ``Options``, ``Min``,
+``Max`` and ``Units``.
 
-That method's docstring is a contract, not a suggestion. ``Min``, ``Max`` and
-``Options`` are optional, but **``Type`` and ``Value`` are required on every
-parameter, and any value you supply must be consistent with its ``Type``.** This test
-instantiates each plugin, asks it for its schema, and checks that:
+The reason this needs its own check is that nothing else looks at the schema until a user
+tries to use your plugin. ``BaseDataPlugin`` validates a *supplied* settings dict at
+instantiation, so a contradiction baked into the schema itself — a ``Min`` above its
+``Max``, an ``Options`` list whose entries are not of the declared ``Type``, a default that
+is not among its own ``Options`` — surfaces as a ``TypeError`` or ``ValueError`` raised
+from inside the base class, with nothing pointing at your schema as the cause.
 
-* every parameter declares both ``Type`` and ``Value``, and ``Type`` is a real class,
-* ``Min <= Max`` wherever both are given,
-* every entry in ``Options`` is an instance of the declared ``Type``,
-* any default you *do* ship would survive your own plugin's validators - it is fed
-  straight to ``_validate_param_types`` and ``_validate_param_ranges``.
+The single most common version of this, and the one that caught real plugins in the
+codebase when the check was introduced, is declaring ``"Type": float`` and then writing an
+int default:
 
-Two mistakes this catches that nothing else does, because both are invisible through
-the GUI - the settings dialog reads values with ``.get("Value")`` and coerces each one
-through its declared ``Type`` before you ever see it:
+.. code-block:: python
 
-* **Omitting ``Value``** for a parameter the user must fill in. Write
-  ``"Value": None`` explicitly. Leaving the key out raises a bare
-  ``KeyError: 'Value'`` from the validator instead of a message naming your
-  parameter, and it breaks any script that drives your plugin without the GUI.
-* **An ``int`` default on a ``float`` parameter** - ``{"Type": float, "Value": 500}``.
-  The validator uses ``isinstance``, under which ``isinstance(500, float)`` is
-  ``False``, so your plugin rejects its own default. Write ``500.0``.
+   settings["Min Height"] = {"Type": float, "Value": 500}     # wrong
+   settings["Min Height"] = {"Type": float, "Value": 500.0}   # right
+
+The runtime check is a bare ``isinstance``, and ``isinstance(500, float)`` is ``False``.
+
+Run the check over every plugin, or just yours:
 
 .. code-block:: bash
 
-   pytest tests/unit/plugins/test_settings_schema.py
+   python scripts/check_plugin_schemas.py
+   python scripts/check_plugin_schemas.py MyEventFinder
 
-The first three checks above (everything except the default-value check, which needs
-a live plugin instance) also run outside pytest, as
-:py:func:`poriscope.utils.settings_schema.validate_settings_schema`. A local
-pre-commit hook, ``settings-schema``, runs this on every commit touching
-``poriscope/plugins/**`` via ``scripts/check_settings_schema.py`` - so a schema
-mistake like the two above is caught at commit time, before you ever run the full
-test suite:
+It is also part of the normal test suite, as
+``tests/unit/plugins/test_plugin_settings_schema.py``, so CI enforces it whether or not
+you run the script. To call the check on a schema directly — from your own test, say —
+use ``poriscope.utils.settings_schema.validate_settings_schema()``, which takes a schema
+and returns a list of human-readable problems.
 
-.. code-block:: bash
+.. note::
 
-   python scripts/check_settings_schema.py
-
+   Omitting ``Value`` entirely is fine and means the same as ``Value: None``: no default,
+   the user must supply one. Most shipped readers do exactly this. What is *not* fine is
+   supplying a ``Value`` that contradicts the ``Type`` beside it.
 .. _plugin_conformance_testing:
 
 Behavioural Conformance Testing
@@ -600,6 +782,149 @@ scattered across plugin files.
    conformance checks instead is that ``get_raw_dtype()`` resolves to a real, usable
    dtype and that the raw-data call returns the same number of samples as the normal
    one - the parts that genuinely can go wrong per plugin.
+.. _duplication_ratchet:
+
+Analysis-Tab Duplication Ratchet
+---------------------------------
+
+This one only affects you if you edit the analysis tabs — the five ``*View.py`` and
+``*Controller.py`` files under ``poriscope/plugins/analysistabs/`` or the five
+``*controls.py`` under its ``utils/``. Those three families carry a large amount of
+byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists so
+that removal is *demonstrated* rather than asserted.
+
+``scripts/measure_duplication.py`` counts, per family, how many function bodies are
+byte-identical across more than one file and how many lines would be deleted by promoting
+one copy to a shared base. ``.duplication-baseline.json`` records those counts, and
+``tests/unit/scripts/test_duplication_ratchet.py`` fails if the measurement disagrees.
+
+.. code-block:: bash
+
+   python scripts/measure_duplication.py             # the table
+   python scripts/measure_duplication.py --verbose   # every duplicate group, largest first
+   python scripts/measure_duplication.py --check     # compare against the baseline
+
+**The check is exact, not "no worse than".** A rise means duplication was added. A fall is
+a win — and it fails too, so the win is recorded in the same commit that earned it. Under
+a "no worse than" rule the baseline would quietly overstate the duplication still present
+and the slack would accumulate unnoticed. If your change legitimately removed duplication,
+rerun with ``--update`` and commit the new baseline alongside it.
+
+.. warning::
+
+   Read the failure message before running ``--update``. Byte identity is brittle in one
+   direction: editing a few characters in *one* copy of a five-way duplicate drops that
+   copy out of its group, so the removable count falls by a whole copy's worth while
+   nothing was deduplicated — and the duplication is actually *worse*, five near-identical
+   bodies instead of five identical ones. The check tells the two apart without any
+   similarity measure, because promoting a method to a base **deletes** the copies, so the
+   function count falls too, while an edit into divergence leaves it untouched. When it
+   sees that shape it says so explicitly.
+
+   If you are fixing a bug in one of these methods, the fix almost certainly belongs in
+   every copy.
+
+.. _mvc_boundary:
+
+Analysis-Tab MVC Boundary
+--------------------------
+
+Like the ratchet above, this one affects you if you edit the analysis tabs, the widgets they
+are built from, the app shell's own views and controllers, or the shared bases under
+``poriscope/utils/``. The analysis-tab layer never grew a real Model, so its Views absorbed
+work a Model should do. Four rules describe the boundary the 2.0.0 refactor is putting back:
+
+1. **No View emits on the plugin bus.** A ``global_signal.emit`` inside a widget means a
+   cross-plugin call originates in the View.
+2. **No View imports a computation library** — ``numpy``, ``scipy``, ``sklearn``,
+   ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``.
+3. **No Controller reads a View private.** ``self.view._x`` reaches past the View's
+   interface into its internals.
+4. **No app-shell module imports from a plugin package.** ``poriscope/views/`` importing
+   ``poriscope.plugins.analysistabs.utils.walkthrough`` is a layering inversion: the shell
+   depending on a plugin.
+
+``.mvc-boundary-allowlist.json`` records every violation that exists today, and
+``tests/unit/scripts/test_mvc_boundary_allowlist.py`` fails if the measurement disagrees.
+
+**Which files each rule reads.** Rules 1–3 classify every module under ``poriscope/`` into
+a layer, by two tests: a directory whose contents are all one layer (``poriscope/views/`` and
+``poriscope/plugins/analysistabs/utils/`` are View, ``poriscope/controllers/`` is Controller),
+or a filename suffix that names the role wherever the module lives (``*View.py`` and
+``*Controls.py`` are View, ``*Controller.py`` is Controller). The suffix test is what covers
+``poriscope/utils/``, which is flat and holds bases for every layer — including eight
+data-plugin bases that import ``numpy`` legitimately and are therefore in neither layer. Rule
+4 is narrower on purpose: it reads only ``poriscope/views/``, ``poriscope/controllers/`` and
+``poriscope/models/``, because ``poriscope/utils/plugin_schemas.py`` imports the plugin
+package deliberately, to discover schemas.
+
+If you add a widget or a base, name it for its role and it is measured with no edit to the
+script. If you must name it something else, add its directory to ``VIEW_DIRS`` or
+``CONTROLLER_DIRS`` — a module that falls into neither layer is silently unmeasured.
+
+.. code-block:: bash
+
+   python scripts/check_mvc_boundary.py             # the current state of each rule
+   python scripts/check_mvc_boundary.py --verbose   # name every import and private attribute
+   python scripts/check_mvc_boundary.py --check     # compare against the allowlist
+
+This is a **progress metric**, not a pass/fail gate. Every entry on the allowlist is a known
+violation that the refactor will remove; the allowlist reaching zero is that work finishing.
+What it prevents is a *new* violation slipping in unnoticed beside the known ones. As with
+the duplication ratchet, the comparison is exact in both directions — if your change removes
+a violation, rerun with ``--update`` and commit the new allowlist alongside it.
+
+.. note::
+
+   The counting rule is stated exactly in the script's module docstring, because the
+   definition *is* the number. In particular an import contributes **one entry per import
+   statement**, keyed by the dotted path as written: ``import numpy`` and
+   ``import numpy.typing`` are two entries, not one module. An earlier hand count that
+   conflated statements with distinct modules could not be reproduced, which is the reason
+   the rule is now executable rather than described.
+
+.. _refactor_coverage_audit:
+
+Refactor-Coverage Audit
+------------------------
+
+The third of the analysis-tab gates, and like the other two it only affects you if you edit
+those files while the 2.0.0 refactor is in progress. The rule it holds is that **every method
+the refactor moves or deduplicates must be pinned by a test that names it** — the target list
+is derived from the refactor's own move and deduplication lists rather than from a judgement
+about which methods look under-tested.
+
+.. code-block:: bash
+
+   pytest --cov=poriscope --cov-report=json:coverage.json
+   python scripts/check_refactor_coverage.py --coverage coverage.json
+
+It reports one of four verdicts per target. ``UNTESTED`` means the body never ran, which is
+what catches a method that every test replaces with a ``Mock``. ``RUNS ONLY`` means the body
+ran but no test names it — it is exercised in passing, usually by a click-driven end-to-end
+flow, with nothing checking what it produced. ``PINNED`` means both signals are present.
+Anything that is not ``PINNED`` exits non-zero.
+
+**Why it is shaped differently from the other two gates.** Deciding whether a method is
+covered needs to know whether its body executed, which only coverage data can say, and a
+plain ``pytest`` run carries none. So the check is split: the structural half — every target
+resolves to a file that defines it, and every deduplicated method is named by some test —
+runs under plain ``pytest`` in ``tests/unit/scripts/test_refactor_coverage_gate.py``, and the
+execution half runs in ``ci-internal-pr.yml``, which already performs a coverage run. Locally,
+the two coverage-dependent tests skip with a message telling you the command above.
+
+.. note::
+
+   ``PINNED`` is deliberately the weak verdict. The "a test names it" signal is syntactic, so
+   a call on a ``MagicMock`` reads the same as a call on a real instance. Read the ``patch``
+   column beside it: many substitutions and few direct calls is the shape that hid
+   ``MetaView._logscale_and_filter_multiple_columns``, which had 38 references in the suite
+   and was replaced by a ``Mock`` in every one of them.
+
+   Line-coverage percentages are deliberately not used anywhere in this check. The five
+   analysis-tab Views were at 87–91% before a single characterization test existed, because
+   those lines already executed under the end-to-end suite with nothing asserting the values
+   they produced. "Executed" and "pinned" are different properties.
 
 .. _pre_pr_checklist:
 
@@ -613,6 +938,15 @@ Pre-Pull-Request Compliance Checklist
    these steps in order. They mirror exactly what CI will check, so a clean run here
    means CI should pass too, and a maintainer won't send your PR back with something
    you could have caught yourself in thirty seconds.
+
+.. tip::
+
+   If you are *starting* a data plugin rather than finishing one, generate it with
+   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script`. Every step below
+   passes against the generated skeleton before you have written any of your own code,
+   which means the first failure you see is one you actually caused. Getting a signature
+   or a docstring field wrong by hand is by far the most common reason a first plugin PR
+   comes back, and the generator copies both verbatim out of the base class.
 
 ☐ **1. Apply automatic formatting and safe fixes.**
 
@@ -649,14 +983,18 @@ plugin gates.**
 .. code-block:: bash
 
    pytest tests/unit/plugins
+   python scripts/check_plugin_schemas.py
 
-That covers all three: interface compliance, settings-schema consistency, and
-behavioural conformance. See :ref:`plugin_compliance_testing`,
-:ref:`plugin_settings_schema_testing` and :ref:`plugin_conformance_testing` above for
-what each one actually checks. A new filter, event finder or event fitter needs a
-settings recipe added to ``tests/unit/plugins/conformance/_recipes.py`` - conformance
-fails with a message telling you exactly where; the other plugin families usually need
-nothing added. See :ref:`plugin_conformance_testing` above for the full breakdown.
+The first covers all three at once: interface compliance, settings-schema
+consistency, and behavioural conformance. The second is the fast, pytest-independent
+settings-schema check, useful when you only want to check the one plugin you are
+working on (``python scripts/check_plugin_schemas.py MyEventFinder``). See
+:ref:`plugin_compliance_testing`, :ref:`settings_schema_checking` and
+:ref:`plugin_conformance_testing` above for what each one actually checks - they
+catch different mistakes. A new filter, event finder or event fitter needs a settings
+recipe added to ``tests/unit/plugins/conformance/_recipes.py``; conformance fails
+with a message telling you exactly where. The other plugin families usually need
+nothing added - see :ref:`plugin_conformance_testing` above for the full breakdown.
 
 ☐ **4. Run the test suite** — the same suite continuous integration runs on every
 branch push:
@@ -671,22 +1009,37 @@ tests included.
 For per-marker counts and mean
 durations, run ``pytest --marker-stats``.
 
-☐ **5. Update the changelog.**
+☐ **5. Check that the documentation still renders.**
 
-Add a short, plain-language entry to ``changelog.md`` describing what changed, under
-the appropriate existing heading.
+.. code-block:: bash
+
+   python scripts/generate_all_autodoc_rst.py
+   sphinx-build -W --keep-going -b html docs/source docs/build
+
+Warnings are errors here, and the same build runs on your pull request. See
+:ref:`docs_render_check` above for why this is a separate gate from ``pydoclint``.
+
+☐ **6. Update the changelog.**
+
+Add a plain-language entry to ``changelog.md`` describing what changed, under the
+appropriate existing heading — **one line per change, and no more**. The changelog is
+written for users, so it carries the essential user-facing information and nothing else:
+no sub-bullets, no measurements, and no explanation of why the change was made or what was
+rejected along the way. A breaking change is still called out explicitly as breaking,
+because that *is* user-facing. Reasoning that needs preserving belongs in ``DECISIONS.md``
+instead.
 
 .. warning::
 
    **If you are contributing from a fork** (the typical path for an external/
-   community contribution), steps 1–4 above must be completed *before you push*.
+   community contribution), steps 1–5 above must be completed *before you push*.
    Fork-originated pull requests run in a restricted, read-only CI workflow that
    performs strict validation and the full test suite — it deliberately cannot
    auto-fix formatting or push corrections back to your branch, for security reasons.
    If you skip step 1 or 2 locally, CI will simply fail on something a maintainer has
    no way to fix for you, and you'll need to push a follow-up commit anyway.
 
-Once all five boxes are checked, you're ready to open (or re-request review on) your
+Once all six boxes are checked, you're ready to open (or re-request review on) your
 pull request.
 
 Summary for New Developers
@@ -702,4 +1055,6 @@ Summary for New Developers
   :ref:`type_checking_policy`
 - New or modified plugins must also pass ``test_plugin_compliance.py`` — see
   :ref:`plugin_compliance_testing`
+- Docstrings must render, not just describe the right parameters — every pull request
+  rebuilds the docs with warnings as errors; see :ref:`docs_render_check`
 - Before opening a pull request, work through :ref:`pre_pr_checklist` in full

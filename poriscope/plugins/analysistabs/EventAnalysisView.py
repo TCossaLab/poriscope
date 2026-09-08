@@ -28,41 +28,34 @@
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
-from typing_extensions import override
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
 )
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaEventTabView import MetaEventTabView
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 
 @inherit_docstrings
-class EventAnalysisView(MetaView, WalkthroughMixin):
+class EventAnalysisView(MetaEventTabView):
     """
-    Subclass of MetaView for visualizing and interacting with event-based signal analysis.
+    Subclass of MetaEventTabView for visualizing and interacting with event-based signal analysis.
 
     Handles event plotting, plugin integration, and user-triggered actions.
     """
 
     logger = logging.getLogger(__name__)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override
@@ -82,41 +75,18 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         pass
 
     @log(logger=logger)
-    @override
-    def _reset_actions(self, axis_type: str = "2d") -> None:
+    def _build_controls(self) -> EventAnalysisControls:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param axis_type: Either '2d' or '3d' to determine plot projection.
-        :type axis_type: str
-        """
-        pass
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
 
-    @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
-        """
-        Set up the control area with widgets for user interaction.
-
-        :param layout: Layout to which the controls will be added.
-        :type layout: QBoxLayout
+        :return: the controls panel
+        :rtype: EventAnalysisControls
         """
         self.eventAnalysisControls = EventAnalysisControls()
-        self.eventAnalysisControls.actionTriggered.connect(self.handle_parameter_change)
-        self.eventAnalysisControls.edit_processed.connect(self.handle_edit_triggered)
-        self.eventAnalysisControls.add_processed.connect(self.handle_add_triggered)
-        self.eventAnalysisControls.delete_processed.connect(
-            self.handle_delete_triggered
-        )
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the eventAnalysisControls directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.eventAnalysisControls, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.eventAnalysisControls
 
     @log(logger=logger)
     def _factors(self, n: int) -> Tuple[int, int]:
@@ -243,27 +213,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
             self.logger.debug(f"Updating ComboBoxes failed: {repr(e)}")
 
     @log(logger=logger)
-    def notify_plugin_state_changed(
-        self, metaclass: str, plugin_key: str, reason: str
-    ) -> None:
-        """
-        This tab does not currently react to any plugin_state_changed
-        notifications.
-
-        :param metaclass: The metaclass of the plugin instance whose state
-                        changed.
-        :type metaclass: str
-        :param plugin_key: The unique key identifying the plugin instance that
-                        changed.
-        :type plugin_key: str
-        :param reason: A short string identifying what kind of change occurred.
-        :type reason: str
-        :return: None
-        :rtype: None
-        """
-        pass
-
-    @log(logger=logger)
     @Slot(str, str, tuple)
     def handle_parameter_change(
         self, submodel_name: str, action_name: str, args: tuple
@@ -321,7 +270,7 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         original_str = self._get_event_index_text()
         self.logger.debug(f"Original GUI input string: {original_str}")
         if not original_str:
-            self.logger.error("Event index input is empty.")
+            self.logger.debug("Event index input is empty.")
             return
 
         parsed = self._parse_event_indices(original_str, False)
@@ -603,7 +552,9 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
                         use_raw=parameters.get("raw", False),
                     )
                 else:
-                    self.logger.error("No data available for plotting")
+                    self.add_text_to_display.emit(
+                        "No data available for plotting", self.__class__.__name__
+                    )
             except Exception as e:
                 self.logger.error(f"Unable to plot event data: {e}")
 
@@ -616,20 +567,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         :type status: bool
         """
         self.eventfitting_status = status
-
-    @log(logger=logger)
-    def validate_single_channel(self, channels: Sequence[int]) -> None:
-        """
-        Ensure only one channel is selected.
-
-        :param channels: List of selected channel indices.
-        :type channels: Sequence[int]
-        :raises ValueError: If more than one channel is selected.
-        """
-        if len(channels) > 1:
-            raise ValueError(
-                "Unable to plot events from multiple channels, select only one"
-            )
 
     @log(logger=logger)
     def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
@@ -1026,32 +963,6 @@ class EventAnalysisView(MetaView, WalkthroughMixin):
         data_filter = parameters.get("filter")
         channels = [int(ch) for ch in parameters["channel"]]
         return eventfitter, data_filter, channels
-
-    @log(logger=logger)
-    def _extract_commit_event_parameters(
-        self, parameters: Dict[str, Any]
-    ) -> Tuple[Optional[str], List[int]]:
-        """
-        Extract writer and channels from parameters.
-
-        :param parameters: Input dictionary.
-        :type parameters: Dict[str, Any]
-        :return: (writer, channels)
-        :rtype: Tuple[Optional[str], List[int]]
-        """
-        writer = parameters.get("writer")
-        channels = [int(ch) for ch in parameters["channel"]]
-        return writer, channels
-
-    @log(logger=logger)
-    def set_data_filter_function(self, data_filter: Callable) -> None:
-        """
-        Set the callcable function to filter data
-
-        :param data_filter: a callable function
-        :type data_filter: Callable
-        """
-        self.data_filter = data_filter
 
     @log(logger=logger)
     def update_channels(self, channels: List[int]) -> None:

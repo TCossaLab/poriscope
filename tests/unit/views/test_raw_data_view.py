@@ -25,7 +25,6 @@ Coverage targets:
 - _handle_other_actions (with reader, without reader)
 - handle_parameter_change dispatch (load_data_and_update_plot, some_other_action)
 - _factors
-- _get_baseline_stats (degenerate guard)
 - update_available_plugins (success + exception path)
 - _start_writer
 - _shift_range_and_update_trace (left shift, negative guard)
@@ -36,6 +35,11 @@ Coverage targets:
 - set_data_filter_function
 - set_psd
 - _get_event_index_text
+
+Not covered here: the numeric methods ``_get_baseline_stats``, ``_gaussian_fit``
+and ``_gaussian`` live in ``test_raw_data_view_characterization.py``. This roster
+used to claim ``_get_baseline_stats (degenerate guard)`` while no such test
+existed anywhere in the repository.
 """
 
 from __future__ import annotations
@@ -762,8 +766,9 @@ def test_start_writer_emits_signal_per_channel(view):
     view.run_generators.emit.assert_called_once_with("W1")
 
 
-def test_start_writer_non_list_channels_does_not_crash(view):
-    # When channels is not a list, the method logs a warning and returns early
+def test_start_writer_single_channel_as_int_converted(view):
+    # A non-list channel is normalised to a one-element list and committed, the
+    # same way EventAnalysisView._start_writer handles it.
     view._start_writer("W1", 0)
-    # Should not raise; run_generators should NOT be emitted (non-list path)
-    view.run_generators.emit.assert_not_called()
+    assert view.global_signal.emit.call_count == 1
+    view.run_generators.emit.assert_called_once_with("W1")

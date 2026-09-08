@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QStyle,
@@ -132,6 +133,7 @@ class SettingsWindow(QWidget):
     get_shared_logging_level = Signal()
     update_log_level = Signal(int)
     clear_cache = Signal()
+    reset_app_config = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -693,7 +695,14 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.create_section_layout(logging_level_widget))
 
         layout_clearCache = QHBoxLayout()
-        layout_clearCache.addWidget(self.create_label(parent_widget, "Clear Cache", 10))
+        layout_clearCache.addWidget(
+            self.create_label(
+                parent_widget,
+                "Empties the application log file. Past diagnostic output is\n"
+                "discarded and cannot be recovered.",
+                10,
+            )
+        )
         self.clear_cache_button = self.create_push_button(
             parent_widget,
             "Clear Cache",
@@ -712,7 +721,13 @@ class SettingsWindow(QWidget):
 
         layout_resetSettings = QHBoxLayout()
         layout_resetSettings.addWidget(
-            self.create_label(parent_widget, "Reset to Default Settings", 10)
+            self.create_label(
+                parent_widget,
+                "Restores the data server location, user plugin folder and\n"
+                "logging level above to their defaults. Configured plugins and\n"
+                "saved sessions are not affected.",
+                10,
+            )
         )
         self.reset_settings_button = self.create_push_button(
             parent_widget,
@@ -721,6 +736,7 @@ class SettingsWindow(QWidget):
             "#FFFFFF",
             max_width=self.width() // 3,
         )
+        self.reset_settings_button.clicked.connect(self.handle_reset_app_config)
         layout_resetSettings.addWidget(
             self.reset_settings_button, alignment=Qt.AlignLeft
         )
@@ -730,6 +746,7 @@ class SettingsWindow(QWidget):
 
         layout.addWidget(self.add_horizontal_line())
         layout.addWidget(self.create_section_layout(reset_settings_widget))
+
         layout.addWidget(self.add_horizontal_line())
 
     @log(logger=logger)
@@ -785,6 +802,28 @@ class SettingsWindow(QWidget):
 
     def handle_clear_cache(self) -> None:
         self.clear_cache.emit()
+
+    @log(logger=logger)
+    def handle_reset_app_config(self) -> None:
+        """
+        Confirm, then ask for the stored settings to be restored to defaults.
+
+        Confirmed because reverting the parent folder silently re-points every
+        live data plugin at a different root, which is not obvious from the
+        button alone.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Reset Settings",
+            "Restore the data server location, user plugin folder and logging "
+            "level to their defaults?\n\n"
+            "Configured plugins and saved sessions are not affected.\n\n"
+            "A changed plugin folder takes effect when you next start "
+            "Poriscope.",
+            QMessageBox.Ok | QMessageBox.Cancel,
+        )
+        if reply == QMessageBox.Ok:
+            self.reset_app_config.emit()
 
     @log(logger=logger)
     def update_data_server(self) -> None:

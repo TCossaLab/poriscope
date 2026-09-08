@@ -13,10 +13,25 @@ You get a built-in plot canvas, a navigation toolbar, and a dedicated control ar
 **Abstract methods** — You’ll have to implement these yourself:
 
 - ``_init``
-- ``_set_control_area``
 - ``_reset_actions``
 - ``update_plot``
 - ``update_available_plugins``
+
+**Building your control area.** ``_set_control_area`` is *not* abstract. It builds the
+control-area layout for you: it calls ``_build_controls()``, connects the four signals
+every controls panel carries — ``actionTriggered``, ``add_processed``,
+``edit_processed`` and ``delete_processed`` — and places the widget. So the usual thing
+to write is ``_build_controls``, returning your ``MetaControls`` subclass:
+
+.. code-block:: python
+
+   def _build_controls(self) -> MyTabControls:
+       self.mytabcontrols = MyTabControls()
+       return self.mytabcontrols
+
+``_build_controls`` is not abstract either; the default returns an empty panel. If your
+tab lays out its own control area rather than using a ``MetaControls`` panel, override
+``_set_control_area`` directly and ignore ``_build_controls`` entirely.
 
 **Reusable features:**
 

@@ -26,6 +26,7 @@ from collections import OrderedDict
 from unittest.mock import MagicMock, mock_open
 
 import pytest
+from PySide6.QtCore import Qt
 from pytest_mock import MockerFixture
 
 from poriscope.utils.MetaController import MetaController
@@ -253,16 +254,18 @@ def test_connect_global_signal_wires_view_and_model_signals(
     controller._connect_global_signal()
 
     mock_view.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal
+        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
     )
     mock_model.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal
+        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
     )
     mock_view.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal
+        controller._relay_data_plugin_controller_signal,
+        type=Qt.ConnectionType.DirectConnection,
     )
     mock_model.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal
+        controller._relay_data_plugin_controller_signal,
+        type=Qt.ConnectionType.DirectConnection,
     )
 
 
@@ -361,6 +364,11 @@ def test_handle_kill_worker_stops_worker_when_key_and_channel_match(
     controller.handle_kill_worker("MyReader", "key1/0")
 
     mock_model.stop_workers.assert_called_once_with("key1", 0)
+    # The success path used to log at INFO only, which is below the default log
+    # level, so an abort that worked gave the user no confirmation at all.
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
+    text, _source = controller.add_text_to_display.emit.call_args[0]  # type: ignore[attr-defined]
+    assert "key1" in text
 
 
 def test_handle_kill_worker_logs_error_on_invalid_identifier_format(
@@ -375,16 +383,23 @@ def test_handle_kill_worker_logs_error_on_invalid_identifier_format(
     """
     controller.handle_kill_worker("MyReader", "bad_format")
 
+    # Stays at ERROR: unlike the "nothing running" branches this is a real defect
+    # rather than a routine state, so a dialog is warranted.
     controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
     mock_model.stop_workers.assert_not_called()
 
 
-def test_handle_kill_worker_logs_warning_when_key_missing(
+def test_handle_kill_worker_reports_to_panel_when_key_missing(
     controller: MetaController,
     mock_model: MagicMock,
 ) -> None:
     """
-    Log a warning when the key is not present in the workers dict.
+    Tell the user nothing is running when the key is not present in the workers dict.
+
+    Reported on the display panel at INFO rather than as a WARNING: a finished run
+    is popped out of the workers dict, so pressing kill just after one completes
+    reaches this branch routinely and must not raise a modal dialog.
 
     :param controller: Controller under test.
     :param mock_model: Mocked meta model.
@@ -393,16 +408,19 @@ def test_handle_kill_worker_logs_warning_when_key_missing(
 
     controller.handle_kill_worker("MyReader", "missing_key/0")
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.warning.assert_not_called()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
+    text, _source = controller.add_text_to_display.emit.call_args[0]  # type: ignore[attr-defined]
+    assert "missing_key" in text
     mock_model.stop_workers.assert_not_called()
 
 
-def test_handle_kill_worker_logs_warning_when_channel_missing(
+def test_handle_kill_worker_reports_to_panel_when_channel_missing(
     controller: MetaController,
     mock_model: MagicMock,
 ) -> None:
     """
-    Log a warning when the key exists but the channel is not present.
+    Tell the user nothing is running when the key exists but the channel does not.
 
     :param controller: Controller under test.
     :param mock_model: Mocked meta model.
@@ -411,7 +429,10 @@ def test_handle_kill_worker_logs_warning_when_channel_missing(
 
     controller.handle_kill_worker("MyReader", "key1/99")
 
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
+    controller.logger.warning.assert_not_called()  # type: ignore[attr-defined]
+    controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
+    text, _source = controller.add_text_to_display.emit.call_args[0]  # type: ignore[attr-defined]
+    assert "99" in text
     mock_model.stop_workers.assert_not_called()
 
 

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 
 from poriscope.models.main_model import MainModel
+from poriscope.utils.QtHandler import QtHandler
 
 # Set up logging for the tests
 logger = logging.getLogger("MainModelTest")
@@ -228,18 +229,25 @@ def test_update_app_config(main_model):
 
 def test_update_logging_level_handlers(main_model):
     mock_handler = MagicMock()
+    # QtHandler raises a modal dialog per record, so its level is a decision about
+    # interrupting the user rather than about how much to record, and it must keep
+    # its own ERROR floor. Before this carve-out it was the only handler whose level
+    # was ever set here, so picking a more verbose log level in the settings window
+    # silently turned every routine warning back into a dialog.
+    mock_qt_handler = MagicMock(spec=QtHandler)
     with (
         patch("builtins.open", MagicMock()),
         patch("logging.getLogger") as mock_get_logger,
     ):
         mock_logger = MagicMock()
-        mock_logger.handlers = [mock_handler]
+        mock_logger.handlers = [mock_handler, mock_qt_handler]
         mock_get_logger.return_value = mock_logger
 
         main_model.update_logging_level(20)
 
         mock_logger.setLevel.assert_called_once_with(20)
         mock_handler.setLevel.assert_called_once_with(20)
+        mock_qt_handler.setLevel.assert_not_called()
 
 
 def test_save_tab_actions(main_model):
@@ -360,3 +368,41 @@ def test_populate_available_plugins_load_plugin_fails(main_model):
     # Ensure the plugin was not added due to load_plugin failure
     assert isinstance(available_plugin_classes, dict)
     assert all(not v for v in available_plugin_classes.values())
+
+
+class TestResetAppConfig:
+    """Reset of the three stored settings, and what it leaves alone."""
+
+    def test_restores_defaults_in_memory(self, main_model):
+        main_model.update_app_config("Parent Folder", "/somewhere/else")
+        main_model.update_app_config("Log Level", logging.DEBUG)
+
+        defaults = main_model.reset_app_config()
+
+        assert main_model.get_app_config("Parent Folder") == str(Path.home())
+        assert main_model.get_app_config("Log Level") == logging.WARNING
+        assert defaults["Parent Folder"] == str(Path.home())
+
+    def test_persists_to_config_file(self, main_model):
+        main_model.update_app_config("Parent Folder", "/somewhere/else")
+        main_model.reset_app_config()
+
+        config_file = Path(main_model.config_path, "config.json")
+        with open(config_file) as f:
+            written = json.load(f)
+        assert written["Parent Folder"] == str(Path.home())
+        assert written["Log Level"] == logging.WARNING
+
+    def test_returns_a_fresh_dict_each_call(self, main_model):
+        first = main_model.reset_app_config()
+        first["Parent Folder"] = "mutated"
+        second = main_model.reset_app_config()
+        assert second["Parent Folder"] == str(Path.home())
+
+    def test_leaves_the_saved_session_alone(self, main_model):
+        session_file = Path(main_model.session_path, "plugin_history.json")
+        session_file.write_text('{"kept": true}', encoding="utf-8")
+
+        main_model.reset_app_config()
+
+        assert session_file.exists(), "resetting settings must not touch the session"

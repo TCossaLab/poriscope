@@ -31,7 +31,18 @@ import logging
 import os
 import re
 import warnings
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -44,7 +55,6 @@ from matplotlib.backends.backend_qt5agg import (
 from matplotlib.figure import Figure
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QCheckBox,
     QDialog,
     QFileDialog,
@@ -58,20 +68,16 @@ from PySide6.QtWidgets import (
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
 from scipy.stats import t
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
-from poriscope.views.widgets.multiselect import MultiSelectComboBox
-from poriscope.views.widgets.SelectionTree import SelectionTree
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 warnings.filterwarnings(
     "ignore",
@@ -80,9 +86,9 @@ warnings.filterwarnings(
 
 
 @inherit_docstrings
-class ProteinView(MetaView, WalkthroughMixin):
+class ProteinView(MetaSubsetTabView):
     """
-    Subclass of MetaView for estimating translocating protein size and shape from nanopore blockage events.
+    Subclass of MetaSubsetTabView for estimating translocating protein size and shape from nanopore blockage events.
 
     Given pore diameter/length, fits a two-population (prolate/oblate) volume-and-shape-factor model via Monte Carlo rejection sampling, either per event (Individual mode) or across the aggregate distribution (Ensemble mode). Also supports subset filtering, per-event trace/histogram inspection, and committing or reporting fit results.
     """
@@ -179,11 +185,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         else:
             self.canvas_vm_ensemble = value
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
-
     @log(logger=logger)
     @override
     def _init(self) -> None:
@@ -215,27 +216,25 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.current_sql_filter: Optional[str] = None
         self.current_experiment: Optional[str] = None
         self.current_channel: Optional[int] = None
-        self._pending_filter_name: Optional[str] = None
-        self._pending_filter_text: Optional[str] = None
-        self._pending_old_filter_name: Optional[str] = None
+        self._pending_filter_name = None
+        self._pending_filter_text = None
+        self._pending_old_filter_name = None
         self.filtered_event_ids: List[int] = []
-        self.subset_filters: Dict[str, str] = {}
+        self.subset_filters = {}
         self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
         self.available_columns: List[str] = []
-        self.selected_experiment_and_channels_by_loader: Dict[
-            str, Dict[str, List[str]]
-        ] = {}
+        self.selected_experiment_and_channels_by_loader = {}
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Any] = None
         self.allowed_sizes: Optional[bool] = None
 
-        self._show_sql_in_display: bool = False
-        self._show_event_sql_in_display: bool = False
+        self._show_sql_in_display = False
+        self._show_event_sql_in_display = False
 
         self._last_event_action: str = "plot_events"  # or "plot_histogram"
 
@@ -409,7 +408,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         ]
         table_name = "events"
 
-        self.column_table = None
+        self.column_table: Optional[str] = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
@@ -567,6 +566,16 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.add_text_to_display.emit("<br>".join(lines), self.__class__.__name__)
 
     @log(logger=logger)
+    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
+        """
+        Record which table already holds committed fit-data columns.
+
+        :param exists_in_table: Name of table where columns exist or None.
+        :type exists_in_table: Optional[str]
+        """
+        self.column_table = exists_in_table
+
+    @log(logger=logger)
     def set_alter_database_status(self, status: bool) -> None:
         """
         Sets the success status of a database operation.
@@ -577,32 +586,18 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.operation_success = status
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> ProteinControls:
         """
-        Set up the control area layout by inserting metadata controls.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout to which the controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: ProteinControls
         """
         self.proteincontrols = ProteinControls()
-        self.proteincontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.proteincontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.proteincontrols.add_processed.connect(self.handle_add_triggered)
-        self.proteincontrols.delete_processed.connect(self.handle_delete_triggered)
-        self.proteincontrols.edit_filter_requested.connect(self.show_edit_filter_dialog)
-        self.proteincontrols.delete_filter_requested.connect(
-            self._delete_filter_by_name
-        )
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.proteincontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.proteincontrols
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
@@ -624,22 +619,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         :type channel_db_id: Optional[int]
         """
         self.channel_db_id = channel_db_id
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog for the user to choose a save location.
-
-        :return: Selected filename.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
 
     @log(logger=logger)
     def _clear_figure_state(
@@ -1038,27 +1017,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides an experiment id for a given filter.
-
-        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
-        :type experiment_id: Optional[int]
-        """
-        self.experiment_id = experiment_id
-
-    @log(logger=logger)
-    def set_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Get a list of tables affected by an SQL query.
-
-        :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
-        :type table: Optional[str]
-        """
-        if table is not None:
-            self.involved_tables.append(table)
-
-    @log(logger=logger)
     def _construct_all_points_histogram(
         self,
         event_generator: Iterator[Dict[str, Any]],
@@ -1265,39 +1223,6 @@ class ProteinView(MetaView, WalkthroughMixin):
         self.baseline_duration = duration
 
     @log(logger=logger)
-    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
-        """
-        Set the event data generator for event-based plots.
-
-        :param generator: A generator that yields event data.
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.event_data_generator = generator
-
-    @log(logger=logger)
-    def _save_filter(self) -> None:
-        """
-        Save the current filters to a JSON file.
-
-        """
-        if not self.subset_filters:
-            self.logger.info("There are no filters to save.")
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "w") as f:
-                json.dump(self.subset_filters, f, indent=4)
-            self.logger.info(f"Filters saved to {path}")
-        except Exception as e:
-            self.logger.error(f"Failed to save filters: {e}")
-
-    @log(logger=logger)
     def _load_filter(self, parameters: Dict[str, Any]) -> None:
         """
         Append filters from a JSON file, warn if duplicates are found,
@@ -1381,6 +1306,29 @@ class ProteinView(MetaView, WalkthroughMixin):
 
         combo.refreshDisplayText()
         self.logger.info(f"Filters loaded from {path}")
+
+    @log(logger=logger)
+    def restore_subset_filters(self, filters: Dict[str, str]) -> None:
+        """
+        Restore subset filters captured in a saved session.
+
+        Unlike :meth:`_load_filter`, this does not re-validate the filters against a
+        database loader, since they were already valid when the session was saved.
+
+        :param filters: Mapping of filter name to filter expression to restore.
+        :type filters: Dict[str, str]
+        """
+        combo = self.proteincontrols.filter_comboBox
+        for name, filter_text in filters.items():
+            if name in self.subset_filters:
+                self.logger.warning(
+                    f"Filter '{name}' already exists; skipping restore of duplicate."
+                )
+                continue
+            self.subset_filters[name] = filter_text
+            combo.addItem(name)
+            combo.selectItem(name, select=True)
+        combo.refreshDisplayText()
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -1489,67 +1437,22 @@ class ProteinView(MetaView, WalkthroughMixin):
     @log(logger=logger)
     def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
         """
-        A global signal callback that stores the result of a direct database query.
+        A global signal callback that stores the result of a database query.
         Used by _rebuild_event_id_cache to receive the list of filtered event_ids.
 
-        :param result: DataFrame returned by query_database_directly, or None if the query failed.
+        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
+        which return the same thing: the rows, an empty frame if none matched, or
+        None if the query could not be built or run.
+
+        :param result: DataFrame returned by the query, or None if it failed.
         :type result: Optional[pd.DataFrame]
         """
         self.relayed_query_result = result
 
     @log(logger=logger)
-    def _build_where_clause(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> str:
-        """
-        Build a WHERE clause string suitable for the event_id cache query,
-        scoped to the current experiment and channel. event_id is only unique
-        within an experiment/channel scope, not across the whole events table,
-        so without this scoping filtered_event_ids mixes duplicate event_ids
-        from every channel, causing navigation to jump to ids that don't exist
-        in the active channel and inflating the reported total count.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param sql_filter: SQL filter expression without the WHERE keyword, e.g. "duration > 1000".
-        :type sql_filter: str
-        :param exp: Experiment name, or None.
-        :type exp: Optional[str]
-        :param channel: Channel identifier, or None.
-        :type channel: Optional[int]
-        :return: Full WHERE clause string (including the WHERE keyword), or "" if no predicate applies.
-        :rtype: str
-        """
-        filter_parts = []
-        if sql_filter:
-            filter_parts.append(sql_filter)
-
-        if exp is not None:
-            self.experiment_id = None
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_experiment_id_by_name",
-                (exp,),
-                "set_experiment_id",
-                (),
-            )
-            if self.experiment_id is not None:
-                filter_parts.append(f"experiment_id = {self.experiment_id}")
-                if channel is not None:
-                    filter_parts.append(f"channel_id = {channel}")
-
-        return f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
-
-    @log(logger=logger)
     def _rebuild_event_id_cache(
         self,
         loader: str,
-        where_clause: str,
         sql_filter: str,
         exp: Optional[str],
         channel: Optional[int],
@@ -1563,12 +1466,19 @@ class ProteinView(MetaView, WalkthroughMixin):
         _handle_plot_events/_handle_plot_histogram can detect scope changes.
 
         Emits a display-panel message with the total count and first/last
-        event_id (mirrors ProteinView._rebuild_event_id_cache behaviour).
+        event_id (mirrors MetadataView._rebuild_event_id_cache behaviour).
+
+        Goes through ``load_metadata`` rather than querying the events table
+        directly, so that the filter is evaluated against the same joins the
+        subset and scatter paths give it. A filter on a sublevels column -
+        ``filtered = 5``, meaning every event with at least one sublevel that
+        matches - is only meaningful against ``events JOIN sublevels``, and the
+        hand-built ``SELECT event_id FROM events`` this replaces made every such
+        filter fail as an unknown column and then report itself as an empty
+        subset.
 
         :param loader: Name of the database loader.
         :type loader: str
-        :param where_clause: Full WHERE clause string (may be empty).
-        :type where_clause: str
         :param sql_filter: Raw filter expression without WHERE (used for label and staleness tracking).
         :type sql_filter: str
         :param exp: Experiment name.
@@ -1578,25 +1488,43 @@ class ProteinView(MetaView, WalkthroughMixin):
         :return: True if the cache was populated, False if no events were found.
         :rtype: bool
         """
-        query = f"SELECT event_id FROM events {where_clause} ORDER BY event_id"
+        # event_id is only unique within an experiment/channel, so without this
+        # scoping the cache mixes duplicate ids from every channel, navigation
+        # jumps to ids the active channel does not have, and the reported total
+        # is inflated.
+        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
+        if exp is not None:
+            exp_and_ch = {exp: [channel] if channel is not None else None}
+
         self.relayed_query_result = None
         self.global_signal.emit(
             "MetaDatabaseLoader",
             loader,
-            "query_database_directly",
-            (query,),
+            "load_metadata",
+            (["event_id"], sql_filter or None, exp_and_ch),
             "relay_query_result",
             (),
         )
         result = getattr(self, "relayed_query_result", None)
-        if result is None or result.empty or "event_id" not in result.columns:
+        if result is None or "event_id" not in result.columns:
+            # None means the query could not be built or run at all, which is a
+            # real problem and not an empty subset. Logged at ERROR so QtHandler
+            # raises its dialog from the place that can tell the two apart.
+            self.logger.error(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+        if result.empty:
             self.add_text_to_display.emit(
                 "No filtered events found for the current scope.",
                 self.__class__.__name__,
             )
             return False
 
-        self.filtered_event_ids = result["event_id"].tolist()
+        # load_metadata applies no ORDER BY of its own, and the navigation that
+        # reads this list bisects it.
+        self.filtered_event_ids = sorted(result["event_id"].tolist())
         self.current_sql_filter = sql_filter
         self.current_experiment = exp
         self.current_channel = channel
@@ -1656,10 +1584,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         cache = self.filtered_event_ids
@@ -2007,10 +1932,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         cache = self.filtered_event_ids
@@ -2104,10 +2026,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            where_clause = self._build_where_clause(loader, sql_filter, exp, channel)
-            if not self._rebuild_event_id_cache(
-                loader, where_clause, sql_filter, exp, channel
-            ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
 
         cache = self.filtered_event_ids
@@ -3214,6 +3133,10 @@ class ProteinView(MetaView, WalkthroughMixin):
         """
         accepted_V: list[float] = []
         accepted_m: list[float] = []
+        # Seeded and local: the ensemble is reproducible for a given geometry,
+        # and drawing here no longer perturbs the global NumPy RNG for the rest
+        # of the process. 42 matches the convention already used in PeakFinder.
+        rng = np.random.default_rng(42)
         x = np.minimum(d, L)
         # --- Dynamic Bounds Calculation ---
         K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
@@ -3242,7 +3165,7 @@ class ProteinView(MetaView, WalkthroughMixin):
         ):
             batches += 1
             # 1. Propose physically valid uniform samples
-            V_prop_raw = np.random.uniform(V_min, V_max, batch_size)
+            V_prop_raw = rng.uniform(V_min, V_max, batch_size)
             ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
             if prolate:
                 m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
@@ -3258,7 +3181,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(1, m_upper_bounds)
+                m_prop = rng.uniform(1, m_upper_bounds)
 
             else:
                 m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
@@ -3274,7 +3197,7 @@ class ProteinView(MetaView, WalkthroughMixin):
                     consecutive_zeros += 1
                     continue
 
-                m_prop = np.random.uniform(m_lower_bounds, 1)
+                m_prop = rng.uniform(m_lower_bounds, 1)
 
             # 2. Forward Calculation
 
@@ -3326,7 +3249,7 @@ class ProteinView(MetaView, WalkthroughMixin):
             prob_accept = likelihood / max_likelihood
 
             # 4. Accept / Reject
-            random_thresh = np.random.uniform(0, 1, len(prob_accept))
+            random_thresh = rng.uniform(0, 1, len(prob_accept))
             accepted_indices = random_thresh < prob_accept
 
             new_V = V_prop[accepted_indices]
@@ -3348,160 +3271,6 @@ class ProteinView(MetaView, WalkthroughMixin):
             )
 
         return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
-
-    @log(logger=logger)
-    def set_query(self, query: str, table_name: str) -> None:
-        """
-        Set the SQL query and table name used in plotting.
-
-        :param query: SQL query string.
-        :type query: str
-        :param table_name: Name of the database table.
-        :type table_name: str
-        """
-        self.query = query
-        self.table_name = table_name
-        if not query:
-            return
-
-        # Only display SQL for filter creation/edit validation
-        if self._show_sql_in_display:
-            self.add_text_to_display.emit(
-                f"SQL ({table_name}):\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            # one-shot so normal plot queries never show
-            self._show_sql_in_display = False
-
-    @log(logger=logger)
-    def set_event_query(self, query: str) -> None:
-        """
-        A global signal callback that provides a valid SQL query for fetching event data.
-
-        :param query: SQL query string for fetching event data.
-        :type query: str
-        """
-        self.event_query = query
-        if not query:
-            return
-
-        if self._show_event_sql_in_display:
-            self.add_text_to_display.emit(
-                f"Event SQL:\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            self._show_event_sql_in_display = False
-
-    @log(logger=logger)
-    def set_units(self, units: Any) -> None:
-        """
-        Set the units returned from the database for use in axis labels.
-
-        :param units: List or string representing units.
-        :type units: Any
-        """
-        self.units = units
-
-    @log(logger=logger)
-    def update_available_columns(self, loader: str) -> None:
-        """
-        Request available columns from the database loader.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
-
-    @log(logger=logger)
-    def request_experiment_structure(self, loader_name: str) -> None:
-        """
-        Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.
-
-        :param loader_name: the key of the loader
-        :type loader_name: str
-        """
-        if not loader_name or loader_name == "No Event Database":
-            return
-
-        self.logger.debug(
-            f"Requesting experiment-channel structure from loader: {loader_name}"
-        )
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader_name,
-            "get_experiments_and_channels",
-            (),
-            "get_experiment_structure_ready",
-            (loader_name,),
-        )
-
-    @log(logger=logger)
-    def show_selection_tree(
-        self,
-        structure: dict[str, list[str]],
-        loader_name: str,
-        selection: Optional[dict[str, list[str]]] = None,
-    ) -> None:
-        """
-        Displays the selection tree for a given loader using the full structure and current selection.
-        """
-        self.logger.debug(
-            f"Displaying selection tree with structure: {structure} for loader: {loader_name}"
-        )
-
-        if not hasattr(self, "selection_tree"):
-            self.selection_tree = SelectionTree()
-
-        selected = self.selection_tree.show_dialog(
-            structure,
-            loader_name,
-            title="Select Experiment and Channels",
-            selected=selection,
-        )
-
-        self.selected_experiment_and_channels_by_loader[loader_name] = selected
-        self.logger.debug(f"Updated selection for {loader_name}: {selected}")
-
-    @log(logger=logger)
-    def update_units(self, loader: str, column: str, axis: str) -> None:
-        """
-        Request units for a specific column from the loader.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param column: Name of the column to get units for.
-        :type column: str
-        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
-        :type axis: str
-        """
-        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
-        # rather than an error, so do not dispatch it as a plugin key.
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (axis,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
 
     @log(logger=logger)
     def _handle_other_actions(
@@ -3604,7 +3373,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             loader = parameters["db_loader"]
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             self._pending_filter_name = name
@@ -3679,7 +3450,9 @@ class ProteinView(MetaView, WalkthroughMixin):
             self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
 
             if not loader:
-                self.logger.error("No database loader selected")
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
                 return
 
             self._pending_filter_name = new_name
@@ -3724,47 +3497,6 @@ class ProteinView(MetaView, WalkthroughMixin):
                 "relay_query",
                 ("validate_edited_filter",),
             )
-
-    @log(logger=logger)
-    def clear_pending_filter_state(self) -> None:
-        """
-        reset all filters to factory settings
-        """
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
-
-    @log(logger=logger)
-    def _show_filter_info_dialog(
-        self, comboBox: MultiSelectComboBox, parameters: Dict[str, Any]
-    ) -> None:
-        """
-        Called when clicking the edit button for filters with multiple selection.
-
-        Validates that exactly one filter is selected and delegates to the edit dialog.
-
-        :param comboBox: The combo box containing the list of selectable filters.
-        :type comboBox: MultiSelectComboBox
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        loader = parameters["db_loader"]
-        selected = comboBox.getSelectedItems()
-        if len(selected) != 1:
-            self.logger.warning("Please select exactly one filter to edit.")
-            return
-
-        self.show_edit_filter_dialog(selected[0], loader)
-
-    @log(logger=logger)
-    def _delete_filter_by_name(self, name: str) -> None:
-        """
-        Deletes a single filter by name.
-
-        :param name: The name of the filter to delete.
-        :type name: str
-        """
-        self._delete_filter(name)
 
     @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:
@@ -4028,4 +3760,4 @@ def format_axis_label(label: str, unit: Optional[str]) -> str:
     Removes any existing trailing unit in parentheses.
     """
     label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-    return f"{label} ({unit})" if unit else label
+    return f"{label} ({unit})" if unit and unit.strip() else label

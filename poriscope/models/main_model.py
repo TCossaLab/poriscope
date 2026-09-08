@@ -32,11 +32,12 @@ import logging
 import os
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
@@ -50,6 +51,7 @@ from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
+from poriscope.utils.QtHandler import QtHandler
 
 #: Maps the class names written into session JSON back to real types.
 _JSON_CLASS_NAMES: Mapping[str, Any] = {
@@ -57,7 +59,6 @@ _JSON_CLASS_NAMES: Mapping[str, Any] = {
     "int": int,
     "float": float,
     "bool": bool,
-    "null": None,
 }
 
 
@@ -66,10 +67,7 @@ class MainModel(QObject):
     App-shell model: owns app configuration (loaded from/saved to config.json), discovers and holds every available plugin class under poriscope/plugins/ and the user plugin folder, and persists/restores session and tab-action history.
     """
 
-    configUpdated = Signal()
-    errorOccurred = Signal(str)
-    dataReadInstancesUpdated = Signal(dict)
-    fileLoaded = Signal(object)
+    add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
 
     def __init__(self, app_config: Dict[str, Any]) -> None:
@@ -174,8 +172,16 @@ class MainModel(QObject):
             else:
                 return plugin_class
         except Exception as e:
+            # Logged at ERROR on purpose: QtHandler raises that as a dialog, and on
+            # the startup scan - which runs from MainModel's constructor, before
+            # MainController exists to connect anything - it is the only signal the
+            # user can get. The panel message below lands on the runtime re-scans
+            # (changing the user plugin folder, resetting the session), where today
+            # the dialog is likewise all there is.
             self.logger.error(f"Error loading plugin {plugin_key}: {e}", exc_info=True)
-            self.errorOccurred.emit(f"Error loading plugin {plugin_key}: {e}")
+            self.add_text_to_display.emit(
+                f"Error loading plugin {plugin_key}: {e}", self.__class__.__name__
+            )
             return None
 
     @log(logger=logger)
@@ -208,6 +214,12 @@ class MainModel(QObject):
             k: [] for k in allowed_base_classes
         }
 
+        # plugin names are unique across the whole app, not per metaclass, so this is
+        # keyed by name alone. Built-ins are walked before the user plugin folder, so
+        # without this check a user file of the same name silently replaced the shipped
+        # plugin and there was no way to tell which one had run.
+        seen_plugin_names: Set[str] = set()
+
         plugin_dirs_to_search = [
             self.plugin_path,
             Path(self.get_app_config("User Plugin Folder")),
@@ -223,9 +235,7 @@ class MainModel(QObject):
             for root_dir, _, files in os.walk(base_path):
                 try:
                     files = [
-                        f
-                        for f in files
-                        if f.endswith(".py") and f not in ("__init__.py", "__pycache__")
+                        f for f in files if f.endswith(".py") and f != "__init__.py"
                     ]
                 except Exception as e:
                     self.logger.warning(f"Error reading files in {root_dir}: {e}")
@@ -257,10 +267,44 @@ class MainModel(QObject):
                     # plugin_class is necessarily non-None whenever metaclass was
                     # set above; the explicit check is what lets mypy see that.
                     if metaclass and plugin_class is not None:
+                        if subclass in seen_plugin_names:
+                            self.logger.error(
+                                f"More than one plugin is named {subclass}. The copy at "
+                                f"{Path(plugin_folder, plugin_name)} is ignored; rename it "
+                                f"to load it."
+                            )
+                            continue
+                        seen_plugin_names.add(subclass)
                         available_plugin_classes[metaclass][subclass] = plugin_class
                         available_plugins_list[metaclass].append(subclass)
 
         return available_plugin_classes, available_plugins_list
+
+    @log(logger=logger)
+    def refresh_available_plugins(self) -> None:
+        """
+        Re-scan the plugin directories and replace the cached results.
+
+        The scan otherwise runs once, in the constructor, so a user who points
+        the app at a different plugin folder sees no change until the next
+        launch. Each plugin file is loaded fresh via
+        ``importlib.util.spec_from_file_location``/``exec_module`` rather than
+        through ``sys.modules``, so an edited file's new code is always picked
+        up on the next scan - but that also means every scan hands back a new
+        class object, never the one a previous scan produced. This does not
+        break anything already instantiated: an instance keeps working
+        through its own ``__class__`` reference regardless of what this cache
+        holds, it just does not become an instance of the freshly-scanned
+        class - the two are distinct objects until nothing references the
+        older one any more. Files that have since been deleted simply are not
+        walked, and so drop out.
+
+        Callers are responsible for propagating the new lists - the controllers
+        and the view each hold a copy taken at construction.
+        """
+        self.available_plugin_classes, self.available_plugins_list = (
+            self.populate_available_plugins()
+        )
 
     @log(logger=logger)
     def get_available_plugins(self) -> Dict[str, List[str]]:
@@ -310,12 +354,49 @@ class MainModel(QObject):
         plugin_history: Dict[str, Any],
         save_file: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Write the plugin history to disk as JSON
+
+        A write failure is logged rather than raised. Every caller is a Qt slot, and
+        PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
+        read-only or otherwise unwritable destination would take the process down.
+        ``except Exception`` rather than ``except OSError`` because ``json.dump`` also
+        raises ``TypeError`` for a value it cannot serialize.
+
+        The level depends on who asked for the save. An autosave - ``save_file`` is
+        ``None``, which includes the app-shutdown path - logs at WARNING, which
+        ``QtHandler`` does not raise a dialog for; a modal dialog during
+        ``aboutToQuit`` would be its own bug. It also emits ``add_text_to_display``,
+        so the status panel says autosaving has stopped: the failure is rare and
+        non-blocking, but a user whose work is no longer being persisted needs to know
+        they are operating unprotected. A save to a path the user chose logs at ERROR
+        instead, and therefore does raise a dialog, so that a Save Session which did
+        not happen is not mistaken for one that did.
+
+        :param plugin_history: the session state to persist
+        :type plugin_history: Dict[str, Any]
+        :param save_file: path to write to, or None to use the default session file
+        :type save_file: Optional[Union[str, Path]]
+        """
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
+        user_specified = save_file is not None
         if save_file is None:
             save_file = Path(self.session_path, "plugin_history.json")
-        with open(save_file, "w") as jf:
-            json.dump(json_dump, jf, indent=4)
+        try:
+            with open(save_file, "w") as jf:
+                json.dump(json_dump, jf, indent=4)
+        except Exception as e:
+            message = f"Unable to save session to {save_file}: {e}"
+            if user_specified:
+                self.logger.error(message)
+            else:
+                self.logger.warning(message)
+                self.add_text_to_display.emit(
+                    f"Session autosave failed: {e}. Your session is no longer being "
+                    "saved automatically until this is resolved.",
+                    self.__class__.__name__,
+                )
 
     @log(logger=logger)
     def save_tab_actions(
@@ -323,12 +404,38 @@ class MainModel(QObject):
         plugin_history: Dict[str, Any],
         save_file: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Write the tab action history to disk as JSON
+
+        Failures are handled exactly as in :py:meth:`save_session`, and for the same
+        reasons: logged rather than raised because the callers are Qt slots, at
+        WARNING plus a status-panel message for an autosave, and at ERROR for a save
+        to a path the user chose.
+
+        :param plugin_history: the tab action history to persist
+        :type plugin_history: Dict[str, Any]
+        :param save_file: path to write to, or None to use the default session file
+        :type save_file: Optional[Union[str, Path]]
+        """
         json_dump = copy.deepcopy(plugin_history)
         self.replace_classes_with_class_names(json_dump)
+        user_specified = save_file is not None
         if save_file is None:
             save_file = Path(self.session_path, "tab_action_history.json")
-        with open(save_file, "w") as jf:
-            json.dump(json_dump, jf, indent=4)
+        try:
+            with open(save_file, "w") as jf:
+                json.dump(json_dump, jf, indent=4)
+        except Exception as e:
+            message = f"Unable to save tab action history to {save_file}: {e}"
+            if user_specified:
+                self.logger.error(message)
+            else:
+                self.logger.warning(message)
+                self.add_text_to_display.emit(
+                    f"Tab action autosave failed: {e}. Tab state is no longer being "
+                    "saved automatically until this is resolved.",
+                    self.__class__.__name__,
+                )
 
     @log(logger=logger)
     def load_session(
@@ -387,6 +494,30 @@ class MainModel(QObject):
                         d[i] = class_dict[d[i]]
 
     @log(logger=logger)
+    def reset_app_config(self) -> Dict[str, Any]:
+        """
+        Restore the three stored settings to their defaults and persist them.
+
+        Only ``config/config.json`` is touched. Saved sessions, plugin history
+        and log files are left alone.
+
+        This writes the file and updates the in-memory config, but does not
+        apply the values to anything already running: reverting the parent
+        folder has to reach live data plugins, and reverting the log level has
+        to reconfigure the logger. ``MainController.reset_app_config`` routes
+        the returned values back through the same paths a manual edit uses, so
+        those side effects are not duplicated here.
+
+        :return: The defaults that were applied, so the caller can act on them.
+        :rtype: Dict[str, Any]
+        """
+        defaults = default_app_config(Path(self.appdata_path, "user_plugins"))
+        for key, value in defaults.items():
+            self.update_app_config(key, value)
+        self.logger.info("Application settings reset to defaults by user")
+        return defaults
+
+    @log(logger=logger)
     def get_app_config(self, key: str) -> Any:
         return self.app_config.get(key)
 
@@ -420,5 +551,13 @@ class MainModel(QObject):
         logger = logging.getLogger()
         logger.setLevel(level)
         for handler in logger.handlers:
+            # QtHandler is excluded on purpose. It raises a modal dialog per record,
+            # so its level is a decision about how much to interrupt the user, not
+            # about how much to record - and it is the only handler whose level was
+            # ever set here, which meant choosing a more verbose log level silently
+            # turned every routine warning back into a dialog. It keeps its own
+            # ERROR floor; see QtHandler's docstring.
+            if isinstance(handler, QtHandler):
+                continue
             handler.setLevel(level)
         self.update_app_config("Log Level", level)

@@ -21,108 +21,244 @@
 # SOFTWARE.
 #
 # Contributors:
-# Alejandra Carolina González González
+# Kyle Briggs
 
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
 
-#: Keys :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings`'s
-#: docstring documents as part of a parameter entry.
-DOCUMENTED_KEYS: Set[str] = {"Type", "Value", "Options", "Min", "Max"}
+#: Keys a settings-schema entry is allowed to carry.
+#:
+#: ``Type``, ``Value``, ``Options``, ``Min`` and ``Max`` are the five documented by
+#: :meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings`.
+#: ``Units`` is not in that docstring but is used by most shipped plugins to label
+#: the GUI field, so it is legitimate rather than a typo.
+ALLOWED_KEYS = frozenset({"Type", "Value", "Options", "Min", "Max", "Units"})
 
-#: Consumed as real data by at least one plugin (``SQLiteEventWriter`` and
-#: ``SQLiteDBWriter`` both read ``base_settings["Voltage"]["Units"]`` when writing
-#: channel metadata) but declared in neither the ``get_empty_settings()`` docstring
-#: contract nor :py:class:`~poriscope.utils.BaseDataPlugin.Setting`. Tolerated here
-#: rather than rejected, since the fix belongs to that contract, not to the plugins
-#: already relying on it - see ``DECISIONS.md``.
-UNDOCUMENTED_KEYS: Set[str] = {"Units"}
+#: Parameter names whose ``Options`` list holds file-dialog filters
+#: (``"ABF2 Files (*.abf)"``) rather than permissible values, so a ``Value`` is not
+#: expected to appear in it. These are the three names
+#: :class:`~poriscope.utils.MetaReader.MetaReader` documents as reserved.
+#:
+#: ``BaseDataPlugin._validate_param_ranges`` imports this rather than keeping its own
+#: list. It used to hardcode ``"Input File"`` and ``"Output File"`` and omit ``"Folder"``,
+#: which meant the runtime check and this one disagreed about a name the GUI already
+#: treats specially (``DataPluginController`` pre-populates ``Folder`` from the data
+#: server). Defining it once is what stops them drifting apart again.
+FILE_DIALOG_PARAMS = frozenset({"Input File", "Output File", "Folder"})
 
-#: ``Options`` on these two reserved parameters holds a Qt file-dialog filter glob
-#: (e.g. ``['Chimera Logfiles (*.log)']``), not a set of permitted values.
-#: :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._validate_param_ranges`
-#: exempts exactly these two keys from its ``Options`` membership check; this mirrors
-#: that exemption so a file parameter's glob isn't flagged as mistyped ``Options``.
-FILE_PARAM_KEYS: Set[str] = {"Input File", "Output File"}
+#: Types for which ``Value`` and ``Options`` entries can be checked against ``Type``.
+#: These are the same four ``_validate_param_types`` checks at runtime; anything else
+#: (a ``Meta*`` class, say) is left alone.
+PRIMITIVE_TYPES = (int, float, bool, str)
 
 
-def validate_settings_schema(schema: Dict[str, Any]) -> List[str]:
+def validate_settings_schema(schema: Dict[str, Dict[str, Any]]) -> List[str]:
     """
-    Check a ``get_empty_settings()`` schema for internal self-consistency.
+    Check a plugin's settings schema for internal self-consistency.
 
-    This is a static check: it never instantiates a plugin or supplies a value, and
-    it looks only at the schema's own shape. It cannot tell you whether a plugin's
-    *default* values would actually pass that plugin's validators - that requires a
-    live instance and its own ``_validate_param_types``/``_validate_param_ranges``,
-    which is deliberately not reimplemented here so this check cannot drift from the
-    rules it would be duplicating. ``tests/unit/plugins/test_settings_schema.py``
-    covers that half directly against each plugin.
+    This is a static check of the schema a plugin *declares* — the dict returned by its
+    ``get_empty_settings()`` — rather than of any particular settings dict a user
+    supplies. ``BaseDataPlugin._validate_param_types`` and ``_validate_param_ranges``
+    already do the latter, per instantiation. Nothing checked the schema itself, so a
+    contradiction baked into a plugin (a ``Min`` above its ``Max``, an ``Options`` list
+    whose entries do not match the declared ``Type``) only surfaced when a user tried to
+    instantiate that plugin and got a ``TypeError`` from inside the base class.
 
-    Per parameter, checks that:
+    A missing ``Value`` key is **not** reported. The docstring on ``get_empty_settings``
+    says ``Value`` is required, but the base implementations themselves omit it — a
+    reader's schema is literally ``{"Input File": {"Type": str}}`` — and
+    ``_validate_param_ranges`` reads it with ``.get("Value")``, treating absent as unset.
+    Reporting it would flag roughly a third of every entry shipped today.
 
-    1. Both ``Type`` and ``Value`` are present. The
-       :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.get_empty_settings`
-       docstring calls both required, and
-       :py:class:`~poriscope.utils.BaseDataPlugin.Setting` declares both
-       non-optional. A missing ``Value`` is not merely undocumented: the base
-       validator subscripts ``val["Value"]`` unguarded, so an unfilled parameter
-       raises ``KeyError: 'Value'`` instead of a message naming the parameter.
-    2. ``Type`` is actually a class, since both the validators and the settings
-       dialog call it.
-    3. No unrecognised keys are present, so a typo'd key (e.g. ``"Minimum"``)
-       cannot silently disable a range check.
-    4. ``Min`` does not exceed ``Max``, when both are given.
-    5. Every entry in ``Options`` is an instance of the declared ``Type``. A file
-       parameter (``Input File``/``Output File``) is exempt, since its ``Options``
-       holds a dialog filter glob rather than a set of permitted values.
-
-    :param schema: A settings schema, as returned by a plugin's
-        ``get_empty_settings()``.
-    :type schema: Dict[str, Any]
-    :return: Human-readable problem descriptions, one per violation found. An empty
-        list means the schema is self-consistent.
+    :param schema: a settings schema as returned by ``get_empty_settings()``, keyed by
+        parameter name, each entry carrying ``Type`` plus optionally ``Value``,
+        ``Options``, ``Min``, ``Max`` and ``Units``
+    :type schema: Dict[str, Dict[str, Any]]
+    :return: one human-readable message per problem found, empty if the schema is clean
     :rtype: List[str]
     """
-    errors: List[str] = []
-    allowed = DOCUMENTED_KEYS | UNDOCUMENTED_KEYS
-
-    for param, entry in schema.items():
+    problems: List[str] = []
+    for name, entry in schema.items():
         if not isinstance(entry, dict):
-            errors.append(f"{param!r}: entry is {type(entry).__name__}, not a dict")
+            problems.append(f"{name}: entry must be a dict, got {type(entry).__name__}")
             continue
+        problems.extend(_validate_entry(name, entry))
+    return problems
 
-        for required in ("Type", "Value"):
-            if required not in entry:
-                errors.append(
-                    f"{param!r}: missing required key {required!r} "
-                    f"(has {sorted(entry)})"
+
+def _validate_entry(name: str, entry: Dict[str, Any]) -> List[str]:
+    """
+    Check one parameter's entry in a settings schema.
+
+    :param name: the parameter name this entry is keyed by, used in the messages
+    :type name: str
+    :param entry: the entry itself, already known to be a dict
+    :type entry: Dict[str, Any]
+    :return: one human-readable message per problem found with this entry
+    :rtype: List[str]
+    """
+    problems: List[str] = []
+
+    for key in sorted(set(entry) - ALLOWED_KEYS):
+        problems.append(
+            f"{name}: unknown key {key!r}; expected one of {sorted(ALLOWED_KEYS)}"
+        )
+
+    if "Type" not in entry:
+        problems.append(f"{name}: missing required key 'Type'")
+        return problems
+
+    declared = entry["Type"]
+    if not isinstance(declared, type):
+        problems.append(
+            f"{name}: 'Type' must be a type, got {declared!r} "
+            f"({type(declared).__name__})"
+        )
+        return problems
+
+    value = entry.get("Value")
+    problems.extend(_validate_value_type(name, declared, value))
+    problems.extend(_validate_bounds(name, entry, value))
+    problems.extend(_validate_options(name, declared, entry, value))
+    return problems
+
+
+def _validate_value_type(name: str, declared: type, value: Any) -> List[str]:
+    """
+    Check that a default ``Value`` matches the ``Type`` its entry declares.
+
+    ``_validate_param_types`` uses a bare ``isinstance`` at runtime, so this is strict in
+    the same way: an ``int`` default under a ``float`` declaration really does raise
+    there, because ``isinstance(500, float)`` is False. ``bool`` is rejected for an
+    ``int`` declaration despite ``isinstance(True, int)`` being True, since a checkbox and
+    a number field are not interchangeable in the settings dialog.
+
+    :param name: the parameter name, used in the messages
+    :type name: str
+    :param declared: the type the entry declares under ``Type``
+    :type declared: type
+    :param value: the entry's ``Value``, or None if absent or explicitly unset
+    :type value: Any
+    :return: one human-readable message per problem found, empty if clean
+    :rtype: List[str]
+    """
+    if value is None or declared not in PRIMITIVE_TYPES:
+        return []
+    if declared is not bool and isinstance(value, bool):
+        return [
+            f"{name}: 'Value' is a bool ({value!r}) but 'Type' is {declared.__name__}"
+        ]
+    if not isinstance(value, declared):
+        return [
+            f"{name}: 'Value' {value!r} is a {type(value).__name__}, "
+            f"but 'Type' is {declared.__name__}"
+        ]
+    return []
+
+
+def _validate_bounds(name: str, entry: Dict[str, Any], value: Any) -> List[str]:
+    """
+    Check that ``Min`` and ``Max`` are ordered and that any default lies between them.
+
+    Comparisons are wrapped because ``Min``/``Max`` are typed ``Any`` and a schema can
+    pair bounds with a value they cannot be compared to. A ``TypeError`` from the
+    comparison is itself a finding, and is a far better one than the
+    ``'<' not supported between instances of 'NoneType' and 'float'`` a user gets today.
+
+    :param name: the parameter name, used in the messages
+    :type name: str
+    :param entry: the parameter's entry
+    :type entry: Dict[str, Any]
+    :param value: the entry's ``Value``, or None if absent or explicitly unset
+    :type value: Any
+    :return: one human-readable message per problem found, empty if clean
+    :rtype: List[str]
+    """
+    problems: List[str] = []
+    minimum = entry.get("Min")
+    maximum = entry.get("Max")
+
+    for bound, label, ordering in (
+        (minimum, "Min", "below"),
+        (maximum, "Max", "above"),
+    ):
+        if bound is None or value is None:
+            continue
+        try:
+            out_of_range = value < bound if label == "Min" else value > bound
+        except TypeError as exc:
+            problems.append(
+                f"{name}: 'Value' {value!r} cannot be compared to '{label}' "
+                f"{bound!r} ({exc})"
+            )
+            continue
+        if out_of_range:
+            problems.append(
+                f"{name}: default 'Value' {value!r} is {ordering} its own "
+                f"'{label}' of {bound!r}"
+            )
+
+    if minimum is not None and maximum is not None:
+        try:
+            inverted = minimum > maximum
+        except TypeError as exc:
+            problems.append(
+                f"{name}: 'Min' {minimum!r} cannot be compared to 'Max' "
+                f"{maximum!r} ({exc})"
+            )
+        else:
+            if inverted:
+                problems.append(
+                    f"{name}: 'Min' {minimum!r} is greater than 'Max' {maximum!r}"
                 )
 
-        if "Type" in entry and not isinstance(entry["Type"], type):
-            errors.append(f"{param!r}: Type is {entry['Type']!r}, which is not a class")
+    return problems
 
-        unknown = set(entry) - allowed
-        if unknown:
-            errors.append(f"{param!r}: unrecognised keys {sorted(unknown)}")
 
-        minimum, maximum = entry.get("Min"), entry.get("Max")
-        if minimum is not None and maximum is not None and minimum > maximum:
-            errors.append(f"{param!r}: Min={minimum!r} exceeds Max={maximum!r}")
+def _validate_options(
+    name: str, declared: type, entry: Dict[str, Any], value: Any
+) -> List[str]:
+    """
+    Check an ``Options`` list against the entry's ``Type`` and default ``Value``.
 
-        # An option the declared Type cannot hold can never be selected, so the
-        # parameter is unsatisfiable. File parameters need no explicit exemption
-        # here: their Options hold Qt dialog filter globs, which are strings under
-        # a str Type, so they pass this check on their own terms.
-        declared = entry.get("Type")
-        options = entry.get("Options")
-        if options is not None and isinstance(declared, type):
-            mistyped = [
-                opt
-                for opt in options
-                if declared in (int, float, bool, str) and not isinstance(opt, declared)
-            ]
-            if mistyped:
-                errors.append(
-                    f"{param!r}: Options {mistyped!r} are not {declared.__name__}"
+    The ``Value in Options`` check is skipped for the reserved file-dialog parameter
+    names, whose ``Options`` are file filters rather than permissible values;
+    ``_validate_param_ranges`` skips two of the three for the same reason.
+
+    :param name: the parameter name, used in the messages and to spot a reserved name
+    :type name: str
+    :param declared: the type the entry declares under ``Type``
+    :type declared: type
+    :param entry: the parameter's entry
+    :type entry: Dict[str, Any]
+    :param value: the entry's ``Value``, or None if absent or explicitly unset
+    :type value: Any
+    :return: one human-readable message per problem found, empty if clean
+    :rtype: List[str]
+    """
+    if "Options" not in entry or entry["Options"] is None:
+        return []
+
+    options = entry["Options"]
+    if not isinstance(options, list):
+        return [f"{name}: 'Options' must be a list, got {type(options).__name__}"]
+    if not options:
+        return [f"{name}: 'Options' is an empty list; omit it or set it to None"]
+
+    problems: List[str] = []
+    if declared in PRIMITIVE_TYPES:
+        for option in options:
+            if declared is not bool and isinstance(option, bool):
+                problems.append(
+                    f"{name}: option {option!r} is a bool but 'Type' is "
+                    f"{declared.__name__}"
+                )
+            elif not isinstance(option, declared):
+                problems.append(
+                    f"{name}: option {option!r} is a {type(option).__name__}, "
+                    f"but 'Type' is {declared.__name__}"
                 )
 
-    return errors
+    if value is not None and name not in FILE_DIALOG_PARAMS and value not in options:
+        problems.append(f"{name}: default 'Value' {value!r} is not one of {options}")
+
+    return problems

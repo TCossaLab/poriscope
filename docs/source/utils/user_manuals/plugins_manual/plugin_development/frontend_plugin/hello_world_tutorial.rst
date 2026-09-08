@@ -57,7 +57,10 @@ Inside the HelloWorld Analysis Tab Plugin
                  pass
 
              def _set_control_area(self, layout):
-                 # This is where you'd add controls (e.g. buttons, dropdowns)
+                 # Overriding this is optional. MetaView's own version builds a
+                 # controls panel from _build_controls() and wires up its signals,
+                 # which is what a real tab wants. Override it, as here, only when
+                 # your tab lays out its control area itself.
                  label = QLabel("Hello, world!")
                  layout.addWidget(label)
 

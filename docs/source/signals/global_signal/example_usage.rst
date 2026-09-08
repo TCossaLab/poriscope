@@ -42,11 +42,19 @@ This enables fully decoupled, modular plugin communication.
 .. warning::
 
    ``_apply_filter`` reads ``self.plot_data`` on the line after the ``emit`` and returns
-   it. That works only because every hop in this chain is a same-thread automatic
-   connection, which Qt resolves as a direct call, so the callback has already run by
-   the time the next statement executes. Nothing in the signal's contract guarantees
-   that. If you are writing new code, prefer doing the work *in* the callback rather
-   than emitting and then reading an attribute the callback happens to have set.
+   it. That works only because every hop in this chain is a synchronous call: the
+   connections carrying ``global_signal``/``data_plugin_controller_signal``
+   (``MetaController._connect_global_signal``, ``MainController.instantiate_analysis_tab``)
+   are wired with ``type=Qt.ConnectionType.DirectConnection`` explicitly, precisely so
+   the callback has already run by the time the next statement executes. Before
+   2026-08-31 this relied on Qt's default ``AutoConnection`` happening to resolve to a
+   direct call because sender and receiver were on the same thread - true, but nowhere
+   stated as a requirement. The explicit ``DirectConnection`` closes that gap: it cannot
+   silently degrade to a deferred, queued call the way ``AutoConnection`` would if a
+   future refactor ever moved a View/Controller onto its own ``QThread``. It still means
+   this pattern must never be used from anything but the GUI thread. If you are writing
+   new code, prefer doing the work *in* the callback rather than emitting and then
+   reading an attribute the callback happens to have set.
 
 .. tip::
 

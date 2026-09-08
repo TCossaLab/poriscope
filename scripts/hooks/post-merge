@@ -16,6 +16,10 @@
 # interpreter by *executing* each candidate rather than by looking it up on PATH,
 # which is the only check that distinguishes a working Python from the stub.
 #
+# The probe it executes has to be the project's own import rather than a bare
+# "import sys": a Python can be entirely real and still be the wrong one. See
+# the comment above the probe below for what that cost.
+#
 # Keep the real logic in post-merge.py; this file should stay a launcher.
 
 set -e
@@ -32,24 +36,49 @@ if [ ! -f "$hook_script" ]; then
     exit 0
 fi
 
-# Probe candidates by running them. "python3" and "python" may both exist on
-# Windows while only one of them works, and "py -3" is the launcher that ships
-# with python.org installs.
+# Probe candidates by running them, and require that the candidate can import
+# *this project* - not merely that it starts. Two Pythons can both be perfectly
+# real interpreters while only one of them has the project's dependencies: under
+# Git Bash on Windows, "python3" resolves to the msys2 interpreter, which starts
+# fine but has no numpy, PySide6 or sphinx. It therefore satisfied the old
+# "import sys" probe and won, being first in the list.
+#
+# That mattered more than a failed docs build. Every step downstream inherits
+# this choice through sys.executable, so post-merge-update_requirements.py ran
+# "pip install -r requirements.txt" against the wrong interpreter, and the
+# autodoc pipeline then failed on the missing sphinx.
+#
+# "import poriscope" is deliberately NOT the test. poriscope/__init__.py wraps
+# "from .exposed import *" in try/except ImportError so that a half-installed
+# dependency set cannot break "pip install", which means it succeeds even when
+# numpy is missing - both interpreters above pass it. Importing the submodule
+# directly is what actually proves the dependencies are there.
+probe='import poriscope.exposed'
+
+# Run the probe from the repository root so a working tree that has its
+# dependencies but has not been pip-installed still resolves the package. This
+# matches post-merge.py, which chdirs to the repo root before doing anything.
+cd "$repo_root" || exit 0
+
 for candidate in python3 python; do
-    if "$candidate" -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+    if "$candidate" -c "$probe" >/dev/null 2>&1; then
         exec "$candidate" "$hook_script" "$@"
     fi
 done
 
-if py -3 -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+# "py -3" is the launcher that ships with python.org installs.
+if py -3 -c "$probe" >/dev/null 2>&1; then
     exec py -3 "$hook_script" "$@"
 fi
 
 # A post-merge hook cannot undo the merge, so this is a warning rather than a
 # failure - but it must be loud, because being silent is what made the original
-# breakage survive unnoticed.
-echo "post-merge hook: no working Python interpreter found." >&2
+# breakage survive unnoticed. Skipping is the right outcome here: running the
+# pipeline under an interpreter that cannot import the project is what this
+# probe exists to prevent.
+echo "post-merge hook: no Python found that can import poriscope." >&2
 echo "  Tried: python3, python, py -3" >&2
 echo "  Skipped: autodoc regeneration, requirements refresh, wavelet DLL build." >&2
-echo "  Run 'python scripts/hooks/post-merge.py' by hand to catch up." >&2
+echo "  Install the project first ('pip install -e \".[dev]\"'), then run" >&2
+echo "  'python scripts/hooks/post-merge.py' by hand to catch up." >&2
 exit 0

@@ -36,6 +36,7 @@ from PySide6.QtWidgets import QApplication
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
+from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.QtHandler import QtHandler
 from poriscope.views.main_view import MainView
@@ -74,16 +75,12 @@ class App(QApplication):
         self.config_path = Path(self.app_folder, "config")
         config_file_path = Path(self.config_path, "config.json")
 
-        # stored as str, not Path: these round-trip through JSON, and a
-        # Path left in the dict fails the isinstance(value, str) check in
-        # BaseDataPlugin._validate_param_types when it is used to
-        # pre-populate a plugin's Folder setting
-        self.app_config: Dict[str, Any] = {
-            "Parent Folder": str(Path.home()),
-            "User Plugin Folder": str(self.user_plugin_path),
-            "Log Level": logging.WARNING,
-        }
-        default_app_config = self.app_config
+        # default_app_config() is the single definition of these defaults,
+        # shared with the settings reset so the two cannot drift apart. Called
+        # afresh at each of its three sites deliberately: the backfill and the
+        # fallback below each need a dict that later edits to self.app_config
+        # cannot have mutated.
+        self.app_config: Dict[str, Any] = default_app_config(self.user_plugin_path)
 
         if not self.config_path.exists():
             self.config_path.mkdir(parents=True, exist_ok=True)
@@ -100,8 +97,20 @@ class App(QApplication):
             try:
                 with open(config_file_path, "r") as f:
                     self.app_config = json.load(f)
-                if "User Plugin Folder" not in self.app_config.keys():
-                    self.app_config["User Plugin Folder"] = str(self.user_plugin_path)
+                # Backfill every default, not just the key added most recently.
+                # A config written by an older version, or hand-edited, can be
+                # missing any of them, and "Log Level" is read by subscript in
+                # __init__ before configure_logger has installed a handler - so
+                # a missing key there is a KeyError that nothing can record.
+                defaults = default_app_config(self.user_plugin_path)
+                missing = [key for key in defaults if key not in self.app_config]
+                if missing:
+                    for key in missing:
+                        self.app_config[key] = defaults[key]
+                    self.logger.warning(
+                        f"Config file {config_file_path} was missing "
+                        f"{', '.join(missing)}; restored to default"
+                    )
                     try:
                         with open(config_file_path, "w") as f:
                             json.dump(
@@ -115,7 +124,7 @@ class App(QApplication):
                 self.logger.warning(
                     f"Unable to load config file {config_file_path}, regenerating defaults: {e}"
                 )
-                self.app_config = default_app_config
+                self.app_config = default_app_config(self.user_plugin_path)
                 try:
                     with open(config_file_path, "w") as f:
                         json.dump(
@@ -157,9 +166,18 @@ class App(QApplication):
         fileHandler.setFormatter(formatter)
         root_logger.addHandler(fileHandler)
 
-        # display error messages in dialog box
+        # display error messages in dialog box.
+        #
+        # Deliberately NOT given `formatter`: that format is right for a log line and
+        # wrong for a dialog, which would otherwise show the user a timestamp, a thread
+        # name and id, and a dotted module path before the message they need to read.
+        # The console and file handlers above still record all of it.
+        #
+        # QtHandler defaults to ERROR rather than inheriting the root logger's level;
+        # see its docstring for why, and note MainModel.update_logging_level skips it
+        # when applying a new level to the root logger's handlers.
         qtHandler = QtHandler()
-        qtHandler.setFormatter(formatter)
+        qtHandler.setFormatter(logging.Formatter("%(message)s"))
         root_logger.addHandler(qtHandler)
 
         root_logger.debug(

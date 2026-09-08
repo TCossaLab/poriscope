@@ -24,6 +24,7 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
+import copy
 import inspect
 import logging
 import sys
@@ -31,7 +32,7 @@ import typing
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Qt, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
 from poriscope.models.main_model import MainModel
@@ -63,16 +64,25 @@ class MainController(QObject):
         )  # a dict keyed by metaclass with lists of keys for instances of subclasses of that metaclass
 
         # keyed by metaclass, same key set as available_plugin_classes
+        # history_lookup is a bound method, so it resolves self.plugin_history and
+        # self.previous_plugin_history (set below) lazily at call time, not here
         self.data_plugin_controller = DataPluginController(
             {
                 metaclass: self.main_model.get_plugin_classes(metaclass)
                 for metaclass in self.main_model.get_available_plugins()
             },
             self.main_model.get_data_server_location(),
+            self._lookup_historical_settings,
         )
 
         self.plugin_history: Dict[str, Any] = {}
         self.tab_action_history: Dict[str, Any] = {}
+
+        # Both histories persist themselves on every change. Reset Session
+        # empties them on its way to a clean workspace, and without this guard
+        # that teardown would write an empty session over the file the user
+        # expects Restore Session to read back.
+        self._suppress_session_save: bool = False
 
         previous_plugin_history = self.main_model.load_session(None)
         self.previous_plugin_history: Dict[str, Any] = (
@@ -88,9 +98,6 @@ class MainController(QObject):
         self.main_view.instantiate_plugin.connect(
             self.data_plugin_controller.validate_and_instantiate_plugin
         )
-        self.data_plugin_controller.get_settings_from_history.connect(
-            self.get_settings_from_history
-        )
         self.data_plugin_controller.update_available_plugins.connect(
             self.update_available_plugins
         )
@@ -100,6 +107,7 @@ class MainController(QObject):
         self.data_plugin_controller.add_text_to_display.connect(
             self.main_view.add_text_to_display
         )
+        self.main_model.add_text_to_display.connect(self.main_view.add_text_to_display)
 
         # main component connections
         self.main_view.instantiate_analysis_tab.connect(self.instantiate_analysis_tab)
@@ -120,11 +128,37 @@ class MainController(QObject):
             self.main_model.update_logging_level
         )
         self.main_view.clear_cache.connect(self.main_model.clear_cache)
+        self.main_view.abort_all_analysis.connect(self.handle_abort_all_analysis)
+        self.main_view.reset_app_config.connect(self.reset_app_config)
+        self.main_view.reset_session.connect(self.reset_session)
         self.main_view.request_analysis_tabs.connect(self.send_analysis_tabs)
 
     @log(logger=logger)
     @Slot()
+    def handle_abort_all_analysis(self) -> None:
+        """
+        Stop running operations in every open analysis tab.
+
+        Backs the Analysis -> Abort Analysis menu item, which previously emitted a
+        signal that was connected to nothing and named a single hard-coded tab, so
+        it never aborted anything. Each tab reports its own outcome on the display
+        panel, so nothing is emitted here.
+        """
+        if not self.analysis_tabs:
+            self.logger.info("Abort requested with no analysis tabs instantiated.")
+            return
+        for key, val in self.analysis_tabs.items():
+            if val:
+                val.handle_kill_all_workers(key)
+
+    @log(logger=logger)
+    @Slot()
     def handle_about_to_quit(self) -> None:
+        # Flush tab state (e.g. Metadata/Protein subset filters) that only lives on the
+        # view and is otherwise persisted lazily, only when some other plugin-history
+        # event happens to fire. Without this, editing filters and quitting without
+        # touching a data plugin or clicking Save Session would silently lose them.
+        self.save_session()
         for key, val in self.analysis_tabs.items():
             if val:
                 val.handle_kill_all_workers(key, exiting=True)
@@ -162,6 +196,181 @@ class MainController(QObject):
         parent_path = plugin_path.parent
         if str(parent_path) not in sys.path:
             sys.path.append(str(parent_path))
+        self.refresh_available_plugins()
+
+    @log(logger=logger)
+    def refresh_available_plugins(self) -> None:
+        """
+        Re-scan the plugin directories and push the result to everyone holding it.
+
+        The scan ran once, in ``MainModel``'s constructor, and its results were
+        copied into three places at construction: this controller's data plugin
+        controller, that controller's model, and the view's menus. Changing the
+        user plugin folder therefore had no visible effect until the next launch.
+
+        Instantiated plugins are untouched. ``self.data_plugins`` is the list of
+        *instantiated* plugins rather than available classes, so it is not part
+        of this refresh, and an existing instance keeps working through its own
+        class reference regardless - see ``MainModel.refresh_available_plugins``
+        for why a re-scan does not hand back the same class object it did
+        before.
+        """
+        self.main_model.refresh_available_plugins()
+        available_classes = {
+            metaclass: self.main_model.get_plugin_classes(metaclass)
+            for metaclass in self.main_model.get_available_plugins()
+        }
+        self.data_plugin_controller.set_available_plugins(available_classes)
+        self.main_view.refresh_available_plugins(
+            self.main_model.get_available_plugins()
+        )
+
+    @log(logger=logger)
+    @Slot()
+    def reset_app_config(self) -> None:
+        """
+        Restore the stored settings to their defaults and apply them live.
+
+        The model persists the defaults; each is then routed back through the
+        same path a manual edit takes, because rewriting ``config.json`` alone
+        would leave the running application on the old values until restart -
+        data plugins keep the previous parent folder, and the logger keeps the
+        previous level. Finally the settings window is refreshed, which would
+        otherwise go on displaying what the user had before.
+
+        Saved sessions and log files are not affected.
+
+        Resetting the user plugin folder re-scans it immediately, the same way
+        editing it in Settings does: this routes through
+        ``update_user_plugin_location`` below, which already calls
+        ``refresh_available_plugins()`` at the end of its own path. The plugin
+        menus reflect the default folder right away rather than waiting for
+        the next launch.
+        """
+        defaults = self.main_model.reset_app_config()
+
+        self.update_data_server_location(defaults["Parent Folder"])
+        self.update_user_plugin_location(defaults["User Plugin Folder"])
+        self.main_model.update_logging_level(defaults["Log Level"])
+
+        self.main_view.set_data_server(defaults["Parent Folder"])
+        self.main_view.set_user_plugin_location(defaults["User Plugin Folder"])
+        self.main_view.set_logging_level(defaults["Log Level"])
+
+    @log(logger=logger)
+    @Slot()
+    def reset_session(self) -> None:
+        """
+        Return the application to the state it has when launched from scratch.
+
+        Deletes every instantiated data plugin, closes every analysis tab, drops
+        both in-memory histories and returns to the landing page - so the user
+        gets a clean workspace without quitting and starting the app again.
+
+        The saved session files are deliberately left on disk, because that is
+        what launching from scratch does: ``load_session`` reads them at startup
+        and nothing applies them until the user chooses Restore Session. Leaving
+        them means this is reversible - reset, then Restore, and the workspace
+        comes back.
+
+        Keeping them takes active effort. Both histories save themselves on every
+        change, and deleting a plugin emits a history update per plugin, so the
+        teardown below would otherwise write an empty session over the file
+        before the user ever got the chance to restore it. ``_suppress_session_save``
+        holds that off for the duration.
+
+        Anything that refuses to delete is reported rather than passed over, so
+        a partial clear is never announced as a complete one.
+
+        The Settings page, if it was open, is removed too rather than kept
+        around - a freshly launched application has never opened it either.
+        Its widget is a singleton rather than something disposable, though, so
+        ``close_settings_page()`` detaches it first; see that method for why.
+
+        Running workers are stopped first, as they are on quit - deleting a
+        plugin closes its resources, so a worker still running against one would
+        be reading from a handle that has just been closed.
+
+        The sidebar highlight, the sidebar layout, the status/log panel and the
+        floating Help window are reset too. None of those follow from tearing
+        down tabs and plugins on their own: the sidebar only ever gains a
+        checked button, never loses one; an expanded sidebar stays expanded;
+        the log panel only ever grows; and Help is a separate top-level window
+        that closing tabs never touches. Left alone, the landing page would
+        still show whichever section was last open, whichever sidebar layout
+        was last chosen, everything logged before the reset, and a Help window
+        a fresh launch would never have open.
+
+        The plugin menus are re-scanned too, the same way changing the user
+        plugin folder already does. ``populate_available_plugins()`` otherwise
+        only ever runs once, in ``MainModel``'s constructor, so a plugin file
+        dropped into the plugin folder mid-session would be invisible in the
+        menus after a reset even though a genuine relaunch would pick it up.
+        """
+        self._suppress_session_save = True
+        try:
+            # Stop workers before deleting anything they run against. exiting=True
+            # blocks until each thread actually finishes, which is needed here for
+            # a stronger reason than on quit: the teardown below closes every
+            # plugin's resources, and a worker still reading a file handle that
+            # has just been closed is a use-after-close. The flag is named for the
+            # exit path, but the semantics wanted are simply "wait for the thread".
+            for tab_key, tab in list(self.analysis_tabs.items()):
+                if tab:
+                    tab.handle_kill_all_workers(tab_key, exiting=True)
+
+            undeleted = self.data_plugin_controller.delete_all_plugins()
+
+            self.analysis_tabs.clear()
+            self.plugin_history.clear()
+            self.tab_action_history.clear()
+        finally:
+            self._suppress_session_save = False
+
+        # A walkthrough or milestone in progress makes switch_to_page refuse to
+        # move, so the return to the landing page below would be silently ignored
+        # and the user left on a page that has just been destroyed. A freshly
+        # launched application has neither active.
+        self.main_view.cancel_walkthrough()
+        # Settings' widget is a singleton, not a disposable per-open instance
+        # like an analysis tab's view, so it has to be detached from its page
+        # wrapper before that wrapper is destroyed below - otherwise Qt would
+        # destroy the singleton along with it. A freshly launched application
+        # has never opened Settings, so this is a no-op if it wasn't open.
+        self.main_view.close_settings_page()
+        # Everything but the landing page is an analysis tab or Settings, both
+        # of which a freshly launched application starts without.
+        self.main_view.remove_pages_except(["MainView"])
+        self.main_view.received_analysis_tabs.emit(self.analysis_tabs)
+        self.main_view.switch_to_page("MainView")
+        # switch_to_page only ever checks a sidebar button, it never unchecks
+        # the one it replaces, so whichever section was open before the reset
+        # would otherwise stay highlighted on a landing page with nothing open.
+        self.main_view.clear_sidebar_highlight()
+        # An expanded sidebar stays expanded otherwise - nothing about tearing
+        # down tabs collapses it back to the default icon-only layout.
+        self.main_view.reset_sidebar_layout()
+        # A fresh launch starts with an empty panel; without this the reset
+        # message would just be appended under everything logged before it.
+        self.main_view.clear_display()
+        # Help is a separate top-level window; closing tabs never touches it,
+        # and a fresh launch never has it open.
+        self.main_view.close_help_window()
+        # populate_available_plugins() otherwise only ever runs once, at
+        # startup, so a plugin file added since would stay invisible in the
+        # menus here even though a genuine relaunch would pick it up.
+        self.refresh_available_plugins()
+
+        if undeleted:
+            message = (
+                f"Partial reset - {', '.join(undeleted)} could not be removed "
+                "and are still loaded. Everything else was cleared."
+            )
+            self.logger.warning(message)
+        else:
+            message = "Session reset. Saved session files are untouched."
+            self.logger.info(message)
+        self.main_view.add_text_to_display(message, "MainController")
 
     @log(logger=logger)
     @Slot(str, str, object)
@@ -171,17 +380,29 @@ class MainController(QObject):
         callback(self.data_plugin_controller.get_plugin_instance(metaclass, key))
 
     @log(logger=logger)
-    @Slot(str, str)
-    def get_settings_from_history(self, metaclass: str, subclass: str) -> None:
+    def _lookup_historical_settings(
+        self, metaclass: str, subclass: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Look up the most recently used settings for a plugin type, called directly by
+        DataPluginController.validate_and_instantiate_plugin rather than over the signal
+        bus, so the result comes back as a genuine return value instead of a signal
+        relay that the caller reads back off an attribute on trust.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :return: The historical settings dict for this plugin type, or None if none exists.
+        :rtype: Optional[Dict[str, Any]]
+        """
         for val in self.plugin_history.values():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
-                self.data_plugin_controller.set_settings(val.get("settings"))
-                return
+                return val.get("settings")
         for val in self.previous_plugin_history.values():
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
-                self.data_plugin_controller.set_settings(val.get("settings"))
-                return
-        self.data_plugin_controller.set_settings(None)
+                return val.get("settings")
+        return None
 
     @log(logger=logger)
     def _binding_error(self, func: Callable, args: tuple) -> Optional[str]:
@@ -481,7 +702,30 @@ class MainController(QObject):
                 else:
                     new_history[key] = val
             self.plugin_history = new_history
-        self.main_model.save_session(self.plugin_history)
+        self._sync_tab_session_state_into_history()
+        if not self._suppress_session_save:
+            self.main_model.save_session(self.plugin_history)
+
+    @log(logger=logger)
+    def _sync_tab_session_state_into_history(self) -> None:
+        """
+        Snapshot each open analysis tab's extra session state into its plugin history entry.
+
+        A tab may keep state beyond what MainController already tracks (e.g. Metadata
+        and Protein build a filter list entirely on their own view) via
+        ``MetaController.get_session_state()``, which defaults to returning nothing.
+        This merges whatever a tab does return into its corresponding history entry so
+        it round-trips through session save/load along with the rest of the tab's state.
+        """
+        for subclass, tab in self.analysis_tabs.items():
+            if tab is None:
+                continue
+            entry = self.plugin_history.get(subclass)
+            if entry is None:
+                continue
+            state = tab.get_session_state()
+            if state:
+                entry.update(copy.deepcopy(state))
 
     @Slot(str, str, str)
     def handle_plugin_state_changed(
@@ -495,15 +739,17 @@ class MainController(QObject):
     @Slot(str, object)
     def update_tab_action_history(self, key: str, history: Any) -> None:
         self.tab_action_history[key] = history
-        self.main_model.save_tab_actions(self.tab_action_history)
+        if not self._suppress_session_save:
+            self.main_model.save_tab_actions(self.tab_action_history)
 
     @log(logger=logger)
     @Slot(str)
     def instantiate_analysis_tab(self, subclass: str) -> None:
         """
         Instantiate a new analysis-tab controller of the given subclass and wire it into the app
-        (add its page, connect its signals, register it in plugin history), or reuse the existing
-        instance if a tab of that type has already been instantiated.
+        (add its page, sync the sidebar highlight to it, connect its signals, register it in
+        plugin history), or reuse the existing instance if a tab of that type has already been
+        instantiated.
 
         Exceptions raised while instantiating the controller itself are caught and logged here.
         Exceptions raised afterward, while wiring up or registering the new tab, are not caught
@@ -535,20 +781,34 @@ class MainController(QObject):
             history["subclass"] = subclass
             self.analysis_tabs[subclass] = new_analysis_tab
 
-            self.main_view.add_page(
-                new_analysis_tab.view.__class__.__name__,
-                self.analysis_tabs[subclass].view,
-            )
+            view_name = new_analysis_tab.view.__class__.__name__
+            self.main_view.add_page(view_name, self.analysis_tabs[subclass].view)
+            # The button-click handlers that normally open a tab
+            # (on_raw_data_view_click and friends) sync the sidebar highlight
+            # themselves alongside emitting the signal that reaches here, so
+            # this looks redundant for that path - but callers that reach this
+            # method directly, like load_session restoring a saved session,
+            # never go through a click handler at all, and the sidebar was
+            # left showing nothing (or whatever was highlighted before) with no
+            # tab actually behind it.
+            self.main_view.sync_sidebar_highlight(view_name)
 
             # Connect other necessary signals and update plugins
+            # DirectConnection is required, not cosmetic: callers on the other end of
+            # this bus (e.g. RawDataView._apply_filter) emit global_signal/
+            # data_plugin_controller_signal and then synchronously read back a result
+            # via a return_function_name callback on the very next statement. A queued
+            # connection would silently degrade that read to stale/None data with no
+            # error and no log line.
             self.analysis_tabs[subclass].global_signal.connect(
-                self.handle_global_signal
+                self.handle_global_signal, type=Qt.ConnectionType.DirectConnection
             )
             self.analysis_tabs[subclass].create_plugin.connect(
                 self.data_plugin_controller.validate_and_instantiate_plugin
             )
             self.analysis_tabs[subclass].data_plugin_controller_signal.connect(
-                self.handle_data_plugin_controller_signal
+                self.handle_data_plugin_controller_signal,
+                type=Qt.ConnectionType.DirectConnection,
             )
             self.analysis_tabs[subclass].plugin_state_changed.connect(
                 self.handle_plugin_state_changed
@@ -569,6 +829,7 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str)
     def save_session(self, save_file: Optional[Union[str, Path]] = None) -> None:
+        self._sync_tab_session_state_into_history()
         self.main_model.save_session(self.plugin_history, save_file)
 
     @log(logger=logger)
@@ -581,24 +842,54 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str)
     def load_session(self, file_name: Optional[Union[str, Path]] = None) -> None:
+        """
+        Load a saved session, replacing whatever is currently instantiated.
+
+        Applying the loaded plugin history on top of an already-populated
+        workspace collided with anything the current session already held
+        under the same key or name - a plugin key already registered, a
+        named filter already added - and surfaced as an "already exists"
+        error for state the user never meant to keep. ``reset_session()``
+        clears the workspace first, the same as it does for its own menu
+        action, so a load always starts from nothing regardless of what was
+        open before it. Both "Load Session" (a chosen file) and "Restore
+        Session" (``file_name=None``, the last saved session) route through
+        this same method.
+
+        A message naming what was loaded is left on the status/log panel,
+        since ``reset_session()`` above already leaves one there of its own -
+        without this, the user would see that the workspace was cleared but
+        not what, if anything, replaced it.
+
+        :param file_name: Path to the session file to load, or None to
+            restore the last saved session.
+        :type file_name: Optional[Union[str, Path]]
+        """
         self.logger.debug(f"Loading session from file {file_name}")
         plugin_history = self.main_model.load_session(file_name)
-        if plugin_history is not None:
-            self.plugin_history = plugin_history
-            self.main_model.save_session(self.plugin_history)
-        else:
+        if plugin_history is None:
             self.logger.info(f"Unable to recover plugin history from {file_name}")
             return
+        self.reset_session()
+        self.plugin_history = plugin_history
+        self.main_model.save_session(self.plugin_history)
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
             if metaclass == "MetaController":
+                # reset_session() above has already cleared every tab, so this
+                # is always a fresh instantiation - never one already open
+                # whose live state should be left alone.
                 try:
                     self.instantiate_analysis_tab(subclass)
                 except Exception as e:
                     self.logger.error(
                         f"Unable to restore Analysis Tab {key} of type {subclass} due to {str(e)}"
                     )
+                    continue
+                tab = self.analysis_tabs.get(subclass)
+                if tab is not None:
+                    tab.restore_session_state(plugin)
             else:
                 settings = plugin.get("settings")
                 try:
@@ -613,6 +904,12 @@ class MainController(QObject):
                         f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
 
+        if file_name:
+            message = f"Loaded session from {file_name}."
+        else:
+            message = "Restored last saved session."
+        self.main_view.add_text_to_display(message, "MainController")
+
     @log(logger=logger)
     @Slot()
     def send_analysis_tabs(self) -> None:
@@ -620,9 +917,9 @@ class MainController(QObject):
         self.logger.debug("Sending instantiated analysis tabs to MainView.")
 
         if not self.analysis_tabs:
-            self.logger.warning(
-                "No instantiated analysis tabs found in MainController."
-            )
+            # Normal at startup and after a session reset, so not a warning:
+            # QtHandler promotes WARNING to a modal dialog.
+            self.logger.debug("No instantiated analysis tabs in MainController.")
 
         # Emit the correct signal with the current analysis tabs
         self.main_view.received_analysis_tabs.emit(self.analysis_tabs)

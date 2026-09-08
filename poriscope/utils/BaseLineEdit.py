@@ -95,7 +95,14 @@ class BaseLineEdit(QLineEdit):
             BaseLineEdit.suspend_validation = True  # Suspend validation
         elif isinstance(obj, QMessageBox) and event.type() == QEvent.Hide:
             BaseLineEdit.suspend_validation = False  # Resume validation
-        return super().eventFilter(obj, event)
+        # QLineEdit does not reimplement eventFilter, so the inherited
+        # QObject::eventFilter is `return false`. Returning it directly matters
+        # here: this filter is installed on the application and never removed,
+        # so it keeps running after the widget behind it is destroyed. Nothing
+        # above touches a C++ member of `self`, but calling up into the base
+        # class does, and that is what raises "Internal C++ object already
+        # deleted" on a stale filter.
+        return False
 
     def on_app_about_to_quit(self) -> None:
         """Handle the application's about to quit signal."""

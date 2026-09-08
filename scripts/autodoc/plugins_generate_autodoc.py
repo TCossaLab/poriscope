@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 
 import ast
+import shutil
 from pathlib import Path
 from typing import Dict, List
 
@@ -37,12 +38,25 @@ FOLDER_ORIGIN = PROJECT_ROOT / "poriscope" / "plugins"
 
 # Where generated .rst documentation should be written
 OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "autodoc" / "plugins"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Optional: generate .rst files for a single category like "filters"
 ONLY_CATEGORY = (
     None  # Set to "filters" to restrict to just one, or leave as None for all
 )
+
+# This directory is generated output, gitignored, and owned entirely by this
+# script - every file in it is rewritten on every run. Clearing it first is what
+# prunes the .rst for a plugin that no longer exists: writing is unconditional,
+# so a stale file would otherwise survive forever, dropped from its index but
+# still on disk and still autodoc-ing a module that is gone, which fails
+# sphinx-build -W. CI never saw this because it builds from a clean checkout.
+#
+# Scoped to the one category when ONLY_CATEGORY is set: that mode deliberately
+# leaves every other category ungenerated, so wiping the whole tree would delete
+# sibling docs this run is not going to rewrite.
+PRUNE_ROOT = OUTPUT_DIR if ONLY_CATEGORY is None else OUTPUT_DIR / ONLY_CATEGORY
+shutil.rmtree(PRUNE_ROOT, ignore_errors=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Base package used for internal references
 BASE_PACKAGE = "poriscope.plugins"
@@ -64,6 +78,29 @@ EXTERNAL_BASES = {
 
 def classify_method(method_node):
     return "private" if method_node.name.startswith("_") else "public"
+
+
+def is_property_accessor(method_node):
+    """Return True if the method is a property getter, setter or deleter.
+
+    A getter is decorated ``@property``, which parses to an ``ast.Name``. A setter
+    or deleter is decorated ``@<name>.setter`` / ``@<name>.deleter``, which parses
+    to an ``ast.Attribute`` instead. Matching only the ``ast.Name`` form emitted the
+    accessors as ordinary methods, so a property with a setter was written out as
+    both ``.. automethod::`` and ``.. autoattribute::`` under the same name - one
+    "duplicate object description" warning and one "not a callable object" warning
+    per property.
+    """
+    for decorator in method_node.decorator_list:
+        if isinstance(decorator, ast.Name) and decorator.id == "property":
+            return True
+        if isinstance(decorator, ast.Attribute) and decorator.attr in (
+            "setter",
+            "getter",
+            "deleter",
+        ):
+            return True
+    return False
 
 
 def find_classes_and_nodes(py_file):
@@ -195,11 +232,11 @@ def write_class_rst(category_dir, class_node, import_path, class_name, exclusion
     properties: List[str] = []
     for item in class_node.body:
         if isinstance(item, ast.FunctionDef):
-            if any(
-                isinstance(d, ast.Name) and d.id == "property"
-                for d in item.decorator_list
-            ):
-                properties.append(item.name)
+            if is_property_accessor(item):
+                # A property with a setter yields two accessors under one name; emit
+                # the attribute once.
+                if item.name not in properties:
+                    properties.append(item.name)
             else:
                 visibility = classify_method(item)
                 methods[visibility].append(item.name)
@@ -219,8 +256,12 @@ def write_class_rst(category_dir, class_node, import_path, class_name, exclusion
             base_refs.append(f":class:`~{BASE_PACKAGE}.{base}`")
 
     with open(rst_file, "w", encoding="utf-8") as f:
-        # Anchor and title
-        f.write(f".. _{class_name}:\n\n")
+        # Anchor and title. A private class's leading underscore cannot survive into
+        # the anchor: ".. __Name:" parses as a malformed anonymous target rather than
+        # as a label. The title below still carries the real name. Two classes whose
+        # names differ only by leading underscores would collide here, and Sphinx
+        # fails the -W build on a duplicate label rather than resolving it silently.
+        f.write(f".. _{class_name.lstrip('_')}:\n\n")
         f.write(f"{class_name}\n{'=' * len(class_name)}\n\n")
 
         # Bold class signature

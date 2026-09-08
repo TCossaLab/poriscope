@@ -64,28 +64,6 @@ def sandbox_appdata(monkeypatch, tmp_path):
     )
 
 
-# Prevent AttributeError in RawDataView during first plugin refresh
-@pytest.fixture(autouse=True)
-def init_rawdataview_timer_channels(monkeypatch):
-    """
-    The view uses self.timer_channels in update_available_plugins() before
-    it's guaranteed to be set. Give it a safe default to avoid Qt-loop exceptions.
-    """
-    try:
-        from poriscope.plugins.analysistabs.RawDataView import RawDataView
-    except ModuleNotFoundError:
-        return
-
-    original_init = RawDataView._init
-
-    def _patched_init(self, *a, **kw):
-        original_init(self, *a, **kw)
-        if not hasattr(self, "timer_channels"):
-            self.timer_channels = []
-
-    monkeypatch.setattr(RawDataView, "_init", _patched_init, raising=True)
-
-
 # Opt-in: auto-dismiss any QMessageBox popped during a test instead of
 # letting it block forever - real .exec() on a QMessageBox is modal, and
 # unless something is actively watching for/dismissing it, the test hangs.

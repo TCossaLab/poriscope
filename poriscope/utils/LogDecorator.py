@@ -37,29 +37,29 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 @overload
-def log(_func: F, *, logger: logging.Logger, debug_only: bool = False) -> F: ...
+def log(_func: F, *, logger: logging.Logger) -> F: ...
 
 
 @overload
-def log(
-    _func: None = None, *, logger: logging.Logger, debug_only: bool = False
-) -> Callable[[F], F]: ...
+def log(_func: None = None, *, logger: logging.Logger) -> Callable[[F], F]: ...
 
 
 def log(
     _func: Optional[F] = None,
     *,
     logger: logging.Logger,
-    debug_only: bool = False,
 ) -> Union[F, Callable[[F], F]]:
     """
     @log(logger): A decorator that logs the entry and exit of a function. Exceptions raised by the decorated function are not caught or logged here; they propagate to the caller unchanged.
 
-    The decorator logs:
-    - Entry into the function with the function name.
-    - Arguments passed to the function if the logging level is DEBUG.
-    - The result returned by the function if the logging level is DEBUG.
-    - Exit from the function with the function name.
+    The decorator logs, and only when the decorated module's logger is enabled
+    for DEBUG:
+    - Entry into the function, qualified by its class name, with the arguments it was called with.
+    - The result it returned.
+
+    Nothing is logged at any other level. The check is ``logger.isEnabledFor``,
+    so a single module can be turned up to DEBUG on its own without raising the
+    level of the whole application, and nothing is formatted until it passes.
 
 
     Example usage:
@@ -96,8 +96,6 @@ def log(
     :type _func: Optional[F]
     :param logger: The logger instance used for logging.
     :type logger: logging.Logger
-    :param debug_only: a flag to indicate whether the decorator is only to run in debug mode, default False
-    :type debug_only: bool
     :return: The decorated function or the decorator itself.
     :rtype: Union[F, Callable[[F], F]]
     """
@@ -106,9 +104,15 @@ def log(
         def log_call(args: tuple, kwargs: dict) -> str:
             name = getattr(func, "__name__", "?")
             try:
-                self = args[0]
-                name = f"{self.__class__.__name__}.{func.__name__}"
-                if logger.root.level == logging.DEBUG:
+                # The level is consulted before anything is built. This runs on
+                # every call into all ~977 decorated methods, so the qualified
+                # name and the argument reprs must not be paid for when debug
+                # logging is off. `name` is only ever read back by log_return,
+                # which is gated the same way, so leaving it unqualified here
+                # costs nothing.
+                if logger.isEnabledFor(logging.DEBUG):
+                    self = args[0]
+                    name = f"{self.__class__.__name__}.{func.__name__}"
                     args_repr = [repr(a) for a in args]
                     kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]
                     signature = ", ".join(args_repr + kwargs_repr)
@@ -126,7 +130,7 @@ def log(
 
         def log_return(name: str, result: Any) -> None:
             try:
-                if logger.root.level == logging.DEBUG:
+                if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"{name} returned ({result})")
             except Exception as e:
                 if (

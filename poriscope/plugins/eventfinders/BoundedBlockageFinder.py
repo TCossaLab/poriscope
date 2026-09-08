@@ -25,12 +25,11 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
-from typing_extensions import override
 
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -61,7 +60,7 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         """
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
         EventFinder objects MUST include a MetaReader object in settings
 
         .. code-block:: python

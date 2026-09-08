@@ -25,11 +25,10 @@
 
 import logging
 import warnings
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, override
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -60,7 +59,7 @@ class CUSUM(MetaEventFitter):
 
         Get a dict populated with keys needed to initialize the filter if they are not set yet.
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Value and Type are required. All values provided must be consistent with Type.
+        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
         Your Eventfinder MUST include at least the "MetaReader" key, which can be ensured by calling super().get_empty_settings(globally_available_plugins, standalone) before adding any additional settings keys
 
@@ -103,19 +102,9 @@ class CUSUM(MetaEventFitter):
         :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Step Size"] = {
-            "Type": float,
-            "Value": None,
-            "Min": 0.0,
-            "Units": "pA",
-        }
-        settings["Sensitivity"] = {"Type": float, "Value": 1.0, "Min": 1, "Max": 5}
-        settings["Rise Time"] = {
-            "Type": float,
-            "Value": None,
-            "Min": 0.0,
-            "Units": "us",
-        }
+        settings["Step Size"] = {"Type": float, "Min": 0.0, "Units": "pA"}
+        settings["Sensitivity"] = {"Type": float, "Value": 1.0, "Min": 1.0, "Max": 5.0}
+        settings["Rise Time"] = {"Type": float, "Min": 0.0, "Units": "us"}
         settings["Max Sublevels"] = {"Type": int, "Value": 0, "Min": 0}
         return settings
 
@@ -345,7 +334,14 @@ class CUSUM(MetaEventFitter):
                         gneg[0 : len(gneg)] = 0
                         mean = data[anchor]
                         varM = data[anchor]
-            varS = 0
+                        # Welford's accumulator restarts with the new anchor, the
+                        # same way varM does. Carrying varS over from the previous
+                        # anchor while the divisor (k - anchor) restarts at 1
+                        # inflates the variance estimate, and logp/logn scale as
+                        # 1/variance, so the decision functions are suppressed
+                        # across exactly the window where the next transition is
+                        # most likely.
+                        varS = 0
             edges = np.append(edges, length)  # mark the end of the event as an edge
             num_states += 1
 

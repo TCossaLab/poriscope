@@ -198,12 +198,12 @@ def test_protein_events_nav_and_filters(
 
     # SelectionTree.show_dialog() bypass -- same Qt.Popup/offscreen
     # rationale as metadata's own test files.
-    import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = protein_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
         if select_all_btn.text() == "Select All":
@@ -213,7 +213,7 @@ def test_protein_events_nav_and_filters(
         return result
 
     monkeypatch.setattr(
-        protein_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,

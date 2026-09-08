@@ -26,22 +26,21 @@
 
 
 import logging
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, override
 
 from PySide6.QtCore import Slot
-from typing_extensions import override
 
 from poriscope.plugins.analysistabs.EventAnalysisModel import EventAnalysisModel
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
 @inherit_docstrings
-class EventAnalysisController(MetaController):
+class EventAnalysisController(MetaEventTabController):
     """
-    Subclass of MetaController for for managing event analysis view-model logic.
+    Subclass of MetaEventTabController for for managing event analysis view-model logic.
 
     Connects the EventAnalysisModel and EventAnalysisView.
     """
@@ -58,21 +57,6 @@ class EventAnalysisController(MetaController):
     @override
     def _setup_connections(self) -> None:
         pass
-
-    @log(logger=logger)
-    @Slot(dict)
-    def update_available_plugins(self, available_plugins: dict) -> None:
-        """
-        Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
-
-        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
-        """
-        self.logger.debug(
-            f"Controller received available plugins update: {available_plugins}"
-        )
-        self.model.update_available_plugins(available_plugins)
-        self.view.update_available_plugins(available_plugins)
 
     @log(logger=logger)
     def set_event_filter(self, data_filter: Callable) -> None:
@@ -156,16 +140,6 @@ class EventAnalysisController(MetaController):
         self.view.update_plot_features(
             vertical, horizontal, points, vlabels, hlabels, plabels
         )
-
-    @log(logger=logger)
-    def update_plot_samplerate(self, samplerate: float) -> None:
-        """
-        Set the sampling rate to be used for time axis conversion in the plot.
-
-        :param samplerate: Sampling rate in Hz.
-        :type samplerate: float
-        """
-        self.view.update_plot_samplerate(samplerate)
 
     @log(logger=logger)
     @Slot(list)
