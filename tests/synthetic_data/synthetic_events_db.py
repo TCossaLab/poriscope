@@ -287,9 +287,7 @@ def _build_event_trace(
         # extremum, unlike a rectangular step. See the docstring above for why
         # that matters.
         n = np.arange(sublevel_dip_width_samples)
-        taper = 0.5 * (
-            1 - np.cos(2 * np.pi * n / (sublevel_dip_width_samples - 1))
-        )
+        taper = 0.5 * (1 - np.cos(2 * np.pi * n / (sublevel_dip_width_samples - 1)))
         trace[dip_start : dip_start + sublevel_dip_width_samples] += (
             sublevel_dip_pA * taper
         )

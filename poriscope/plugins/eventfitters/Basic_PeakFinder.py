@@ -818,25 +818,27 @@ class Basic_PeakFinder(MetaEventFitter):
                 (
                     0.0
                     if sublevel_starts[i]["index"] == sublevel_starts[i + 1]["index"]
-                    else np.max(
-                        np.absolute(
-                            data[
-                                int(sublevel_starts[i]["index"]) : int(
-                                    sublevel_starts[i + 1]["index"]
-                                )
-                            ]
-                            - event_baseline
+                    else (
+                        np.max(
+                            np.absolute(
+                                data[
+                                    int(sublevel_starts[i]["index"]) : int(
+                                        sublevel_starts[i + 1]["index"]
+                                    )
+                                ]
+                                - event_baseline
+                            )
                         )
-                    )
-                    if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
-                    else np.max(
-                        np.absolute(
-                            data[
-                                int(sublevel_starts[i + 1]["index"]) : int(
-                                    sublevel_starts[i]["index"]
-                                )
-                            ]
-                            - event_baseline
+                        if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
+                        else np.max(
+                            np.absolute(
+                                data[
+                                    int(sublevel_starts[i + 1]["index"]) : int(
+                                        sublevel_starts[i]["index"]
+                                    )
+                                ]
+                                - event_baseline
+                            )
                         )
                     )
                 )
