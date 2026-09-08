@@ -12,6 +12,16 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
+## `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
+
+`get_table_by_column:454` and `get_column_names_by_table:382` each call
+`sqlite3.connect(self.db_path)` per invocation, with no cache. Measured: **10 connections
+per `construct_metadata_query`** with a WHERE body, 4 without. Cheap on a local file
+(1.5 ms/call, so 0.08 s to validate 50 filters) and not the cause of the filter-loading
+pause, but the schema cannot change while a loader is open, so a dict cache built in
+`_finalize_initialization` would remove all of them. Re-measure on a network-mounted
+database before deciding it does not matter.
+
 ## The Metadata tab has no downstream handling for raw SQL filters (2026-09-08)
 
 It can create, save and load them, but every plotting path takes
