@@ -279,6 +279,19 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
 
+- **`EventAnalysisView._handle_plot_events` reads three attributes that `_init` never
+  declares**, found 2026-09-08 while pinning it before Step 4a moves it.
+  `EventAnalysisView._init` is `pass`, and `num_events_allowed` plus the six feature
+  attributes (`vertical`, `vlabels`, `horizontal`, `hlabels`, `points`, `plabels`) are
+  assigned *only* by their bus callbacks. On a freshly built tab whose first dispatch
+  fails, reading them raises `AttributeError`. The feature read is inside the outer
+  handler and reports "Unable to plot event data"; **the `num_events_allowed` read is
+  outside every `try`, and `handle_parameter_change` has none either, so it escapes into
+  Qt.** Declaring all seven in `_init` is the fix. Pinned as current behaviour in
+  `tests/unit/views/test_event_analysis_view_characterization.py`.
+- **`EventAnalysisView._handle_plot_events` catches only `(IndexError, ValueError)`, but
+  extraction raises `KeyError`** — the same defect as RawData's below, in the sibling
+  tab's own copy of the extractor. Both pinned as current behaviour.
 - **`RawDataView._handle_plot_events` catches only `ValueError`, but extraction raises
   `KeyError`.** `_extract_plot_event_parameters` reaches `parameters["channel"]` directly,
   so a dict without that key escapes the guard that advertises "Parameter extraction

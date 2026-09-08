@@ -244,6 +244,14 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # _handle_plot_events in tests/ replaced it with a Mock, and _load_event_data was
     # named by no test at all, so both read as covered and were not. This is the exit
     # review's own finding (a curated list narrows silently) recurring in the same list.
+    # EventAnalysis's own copy, added 2026-09-08 for the same reason RawData's was: no
+    # test named it, so it read as covered and was not. Its 8 emits are the largest
+    # single conversion left in 4a.
+    (
+        "poriscope/plugins/analysistabs/EventAnalysisView.py",
+        "_handle_plot_events",
+        "4a",
+    ),
     ("poriscope/plugins/analysistabs/RawDataView.py", "_handle_plot_events", "4a"),
     ("poriscope/plugins/analysistabs/RawDataView.py", "_start_eventfinder", "4a"),
     ("poriscope/plugins/analysistabs/RawDataView.py", "_handle_commit_events", "4a"),
