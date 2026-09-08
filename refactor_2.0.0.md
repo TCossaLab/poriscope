@@ -842,11 +842,15 @@ cheaper after 4a for the reason recorded under 4c below.
 
 ### Owed
 
-- A **manual Windows pass on the trace and PSD plots** (`a572644`). The 2026-09-08 pass
-  cleared everything up to `1ff9e92`, but this commit rewrote how both plots get their
-  data. Load a multi-channel trace with and without a filter, and the noise spectrum, and
-  confirm each subplot carries its own channel — that is precisely the fault this commit
-  fixed, so it is the thing to look at.
+- A **manual Windows pass on the three RawData plots** rewritten after the 2026-09-08
+  pass, which cleared everything up to `1ff9e92`:
+  - **Trace and noise spectrum** (`a572644`): load a multi-channel trace with and without
+    a filter, and the PSD, and confirm each subplot carries its own channel — the fault
+    that commit fixed.
+  - **Event plots** (`8446eb4`): plot several events with and without a filter, and check
+    the traces are labelled with the right indices and the time axis is right. Worth also
+    trying an out-of-range index, since the bound now comes from a call that can fail
+    loudly instead of silently reusing another channel's count.
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
   gate. Still open from 3f.
 
