@@ -749,8 +749,8 @@ working tree; suite **3,449 passed / 4 skipped**.
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **76** | 0 |
-| — rule 1, View emits | 75 | **46** | 0 |
+| Boundary allowlist | 111 | **68** | 0 |
+| — rule 1, View emits | 75 | **38** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -793,17 +793,31 @@ the View emits a **typed intent**, the Controller's slot calls the plugin throug
   come forward again. The filter key travels through both halves rather than being held
   on the View between them.
 
-- **EventAnalysis, 8 left — all in `_handle_plot_events`.** Three commits, 2026-09-08.
-  The two single-emit paths became `request_loader_channels` and `write_events`, exact
-  analogues of RawData's reader lookup and commit path; `_start_eventfitter` became the
-  two-phase launch, the same shape as `_start_eventfinder` minus the stored ranges. Its
-  per-channel `get_eventfitting_status` was the same unguarded stale read that decided
-  whether the "already completed" prompt appeared for the wrong channel.
+- **EventAnalysis is done — the third View at zero emits**, after Clustering and
+  RawData. Four commits, 2026-09-08, taking it 13 → 0. `_handle_plot_events` was the
+  largest single conversion in 4a at 243 lines and all eight of its remaining emits, and
+  it was **pinned as its own commit first** (24 tests) precisely because RawData's
+  equivalent had shown what a one-line plan description can hide.
 
-  **`_resolve_callable_filter` was promoted to `MetaEventTabController` rather than
-  copied.** Both tabs need it, and a second identical body in the `*Controller.py`
-  family would have *added* removable lines to the ratchet — so this is a case where the
-  right move was chosen to keep a gate from going the wrong way, not to move it.
+  **The pinning pass is what made the conversion correct**, and three of its five
+  findings would otherwise have shipped silently:
+  - **The bus applies three unpacking rules in that one method**, chosen from each
+    callee's declared return type by `MainController._unpack_result`: `load_event`
+    returns a dict whose `data` key is the samples, `get_fitted_event` returns a bare
+    array that must *not* be unwrapped, and `get_plot_features` returns a six-tuple that
+    is **splatted** across `update_features`' six parameters. None of it is visible at a
+    call site.
+  - **Two return-function names differ from their View methods** — `set_event_filter` →
+    `set_data_filter_function`, `update_features` → `update_plot_features` — because the
+    bus resolves them on the Controller.
+  - **The per-event feature alignment.** `event_data` and `labels` take one to three
+    entries per event; the six feature lists take exactly one placeholder each. Breaking
+    it attaches a fit's features to another event's subplot, which no gate would notice.
+    Perturbation confirmed three tests catch it.
+
+  Only two of the eight emits were stale reads, not the four-plus RawData had — this
+  method cleared most of its parked answers, which is worth having measured rather than
+  assumed.
 
 - **Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
 

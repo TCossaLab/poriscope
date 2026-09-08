@@ -1,6 +1,5 @@
 {
   "emits": {
-    "poriscope/plugins/analysistabs/EventAnalysisView.py": 8,
     "poriscope/plugins/analysistabs/MetadataView.py": 17,
     "poriscope/plugins/analysistabs/ProteinView.py": 18,
     "poriscope/utils/MetaSubsetTabView.py": 3

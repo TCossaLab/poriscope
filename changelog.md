@@ -6,6 +6,10 @@
 
 * Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
 
+* The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
+
+* An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
+
 * **Fixed the Event Analysis tab asking about the wrong channel before re-fitting**: if it could not read whether a channel was already fitted, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not fitted or be skipped for one that was
 
 * Event fitting now reports a channel it cannot read or start and continues with the others, instead of abandoning the whole batch

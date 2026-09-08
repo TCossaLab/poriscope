@@ -926,128 +926,12 @@ class TestShiftRangeAndUpdatePlot:
 # ===========================================================================
 
 
-class TestHandlePlotEvents:
-    def _params(self, events=None):
-        return {
-            "loader": "ldr",
-            "eventfitter": "No Event Fitter",
-            "filter": "No Filter",
-            "channel": ["0"],
-            "event_index": events if events is not None else [0],
-            "raw": False,
-        }
-
-    def _setup(self, mock_view, plot_data=None):
-        """Replace global_signal with a MagicMock so we can inspect emissions."""
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit = MagicMock()
-        mock_view.global_signal.connect = MagicMock()
-        mock_view.num_events_allowed = 999
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
-        mock_view.plot_data = plot_data
-        mock_view.plot_samplerate = 1_000_000
-
-    @pytest.fixture(autouse=True)
-    def _patch_update_event_plot(self):
-        """
-        Keep _update_event_plot patched for every test in this class.
-
-        This patch used to be started inside the setup helper and stopped by an
-        explicit teardown call at the end of each test body. A test that failed
-        before reaching that call left the patch installed for the rest of the
-        session, so a single genuine failure here surfaced as a cascade of
-        unrelated failures in later classes. As a yielding fixture the patch is
-        always undone, pass or fail.
-        """
-        with patch.object(EventAnalysisView, "_update_event_plot") as mock:
-            self._mock_update = mock
-            yield
-
-    def test_no_events_skips_plot(self, mock_view):
-        self._setup(mock_view)
-        mock_view._handle_plot_events(self._params(events=[]))
-        self._mock_update.assert_not_called()
-
-    def test_valid_event_calls_update_plot(self, mock_view):
-        self._setup(mock_view, plot_data=np.ones(10) * 100.0)
-
-        def side_effect(*args):
-            # When load_event is called, set plot_data so the handler sees data
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(10) * 100.0
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(self._params(events=[0]))
-        self._mock_update.assert_called_once()
-
-    def test_events_truncated_when_above_allowed(self, mock_view):
-        self._setup(mock_view)
-        mock_view.num_events_allowed = 3
-        # Events [0, 1, 2, 5] — index 5 should be dropped
-        params = self._params(events=[0, 1, 2, 5])
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5) * 50.0
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(params)
-        # _update_event_plot should be called with at most 3 data entries
-        if self._mock_update.called:
-            data_list = self._mock_update.call_args[0][1]
-            assert len(data_list) <= 3
-
-    def test_no_data_loaded_skips_event(self, mock_view):
-        self._setup(mock_view, plot_data=None)
-        mock_view._handle_plot_events(self._params(events=[0]))
-        self._mock_update.assert_not_called()
-
-    def test_multiple_channels_handled_gracefully(self, mock_view):
-        self._setup(mock_view)
-        params = self._params()
-        params["channel"] = ["0", "1"]
-        # Should not raise — extract will raise ValueError caught internally
-        mock_view._handle_plot_events(params)
-
-    def test_get_num_events_signal_emitted(self, mock_view):
-        self._setup(mock_view)
-        mock_view._handle_plot_events(self._params(events=[0]))
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_num_events" in actions
-
-    def test_with_filter_emits_get_callable_filter(self, mock_view):
-        self._setup(mock_view, plot_data=np.ones(5) * 10.0)
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5) * 10.0
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        params = self._params(events=[0])
-        params["filter"] = "MyFilter"
-        mock_view._handle_plot_events(params)
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_callable_filter" in actions
-
-    def test_with_raw_flag_and_filter_loads_raw(self, mock_view):
-        """When raw=True and data_filter is set, a second load_event for raw is emitted."""
-        self._setup(mock_view)
-        mock_view.data_filter = MagicMock()  # simulate active filter
-
-        load_event_calls = []
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5) * 10.0
-                load_event_calls.append(args)
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        params = self._params(events=[0])
-        params["raw"] = True
-        mock_view._handle_plot_events(params)
-        # At least one load_event for filtered data; raw=True should trigger a second
-        assert len(load_event_calls) >= 1
+# TestHandlePlotEvents' cases moved with the calls. Every one of them stubbed
+# global_signal and pre-set num_events_allowed, eventfitting_status, data_filter and
+# plot_data - all of which are the Controller's locals now, asserted in
+# tests/unit/controllers/test_event_analysis_controller.py::TestLoadEventPlot. What the
+# View still owns is covered in test_event_analysis_view_characterization.py: the
+# parameter guards, the typed intent, and set_event_plot_data.
 
 
 # ===========================================================================
@@ -1751,82 +1635,9 @@ class TestHandleParameterChangeExtended:
 # ===========================================================================
 
 
-class TestHandlePlotEventsExtended:
-    def _params(self, events=None):
-        return {
-            "loader": "ldr",
-            "eventfitter": "No Event Fitter",
-            "filter": "No Filter",
-            "channel": ["0"],
-            "event_index": events if events is not None else [0],
-            "raw": False,
-        }
-
-    def _setup(self, mock_view, plot_data=None):
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit = MagicMock()
-        mock_view.global_signal.connect = MagicMock()
-        mock_view.num_events_allowed = 999
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
-        mock_view.plot_data = plot_data
-        mock_view.plot_samplerate = 1_000_000
-
-    @pytest.fixture(autouse=True)
-    def _patch_update_event_plot(self):
-        """
-        Keep _update_event_plot patched for every test in this class.
-
-        This patch used to be started inside the setup helper and stopped by an
-        explicit teardown call at the end of each test body. A test that failed
-        before reaching that call left the patch installed for the rest of the
-        session, so a single genuine failure here surfaced as a cascade of
-        unrelated failures in later classes. As a yielding fixture the patch is
-        always undone, pass or fail.
-        """
-        with patch.object(EventAnalysisView, "_update_event_plot") as mock:
-            self._mock_update = mock
-            yield
-
-    def test_events_within_bounds_not_truncated(self, mock_view):
-        self._setup(mock_view)
-        mock_view.num_events_allowed = 10
-        params = self._params(events=[0, 1, 2])
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5)
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(params)
-        # All 3 events within bounds — update_plot should be called
-        self._mock_update.assert_called_once()
-
-    def test_samplerate_signal_emitted(self, mock_view):
-        self._setup(mock_view)
-        mock_view._handle_plot_events(self._params(events=[0]))
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_samplerate" in actions
-
-    def test_load_event_signal_emitted(self, mock_view):
-        self._setup(mock_view)
-        params = self._params(events=[0])
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5)
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(params)
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "load_event" in actions
-
-    def test_all_events_out_of_bounds_no_plot(self, mock_view):
-        self._setup(mock_view)
-        mock_view.num_events_allowed = 3
-        params = self._params(events=[5, 6, 7])  # all >= 3
-        mock_view._handle_plot_events(params)
-        self._mock_update.assert_not_called()
+# TestHandlePlotEventsExtended' cases moved with the calls, for the same reason. Its
+# truncation and samplerate assertions are on the Controller now, where the count and
+# the samplerate are held.
 
 
 # ===========================================================================
