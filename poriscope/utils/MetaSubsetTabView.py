@@ -68,6 +68,9 @@ class MetaSubsetTabView(MetaView):
       what was chosen per loader.
     - **The selected filters.** ``get_selected_filters`` reads the filter combobox
       through ``_subset_controls``, the property each tab implements below.
+    - **The filtered event_id cache.** ``_rebuild_event_id_cache`` queries every
+      event_id matching the current filter and scope, sorted, and keeps the four
+      ``current_*``/``filtered_event_ids`` values the staleness checks compare.
 
     What a subclass owes it:
 
@@ -145,6 +148,116 @@ class MetaSubsetTabView(MetaView):
         """
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
+
+    @log(logger=logger)
+    def _rebuild_event_id_cache(
+        self,
+        loader: str,
+        sql_filter: str,
+        exp: Optional[str],
+        channel: Optional[int],
+    ) -> bool:
+        """
+        Fetch every event_id matching the current filter, sorted, in one query.
+
+        Also updates ``current_sql_filter``, ``current_experiment`` and
+        ``current_channel``, which is what the staleness checks in
+        ``_shift_range_and_update_plot`` and the plot handlers compare against to
+        decide whether the scope has moved, and reports the resulting total and
+        bounds on the status panel.
+
+        Goes through ``load_metadata`` rather than querying the events table
+        directly, so that the filter is evaluated against the same joins the
+        subset and scatter paths give it. A filter on a sublevels column -
+        ``filtered = 5``, meaning every event with at least one sublevel that
+        matches - is only meaningful against ``events JOIN sublevels``, and the
+        hand-built ``SELECT event_id FROM events`` this replaces made every such
+        filter fail as an unknown column and then report itself as an empty
+        subset.
+
+        Promoted from both subset tabs in Step 4a. The copies diverged three ways
+        and each was resolved to ``ProteinView``'s: it also rejects a result with
+        no ``event_id`` column, where Metadata indexed straight into it and would
+        have raised; its empty-subset message names the scope; and when a filter
+        is active but no filter name is selected it labels the subset with the
+        filter expression rather than the bare word "Filter". The order of the
+        first two checks is reversed from either copy, so that a result with no
+        rows is an empty subset whether or not the loader returned columns with
+        it, and only a *populated* result missing ``event_id`` is an error.
+
+        :param loader: Name of the active database loader.
+        :type loader: str
+        :param sql_filter: Raw filter expression without WHERE, used for the label and for staleness tracking.
+        :type sql_filter: str
+        :param exp: Current experiment name.
+        :type exp: Optional[str]
+        :param channel: Current channel identifier.
+        :type channel: Optional[int]
+        :return: True if the cache was populated, False if it could not be or no events matched.
+        :rtype: bool
+        """
+        # event_id is only unique within an experiment/channel, so without this
+        # scoping the cache mixes duplicate ids from every channel, navigation
+        # jumps to ids the active channel does not have, and the reported total
+        # is inflated.
+        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
+        if exp is not None:
+            exp_and_ch = {exp: [channel] if channel is not None else None}
+
+        # Cleared first: a dispatch that fails never calls the return function,
+        # so without this the read below sees the previous call's value and
+        # treats it as this call's answer.
+        self.relayed_query_result = None
+        self.global_signal.emit(
+            "MetaDatabaseLoader",
+            loader,
+            "load_metadata",
+            (["event_id"], sql_filter or None, exp_and_ch),
+            "relay_query_result",
+            (),
+        )
+        result = getattr(self, "relayed_query_result", None)
+        if result is not None and result.empty:
+            self.add_text_to_display.emit(
+                "No filtered events found for the current scope.",
+                self.__class__.__name__,
+            )
+            return False
+        if result is None or "event_id" not in result.columns:
+            # None means the query could not be built or run at all, and a
+            # populated result with no event_id means the loader did not honour
+            # its own contract - both are real problems rather than an empty
+            # subset. Logged at ERROR so QtHandler raises its dialog from the
+            # place that can tell the two apart.
+            self.logger.error(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+
+        # load_metadata applies no ORDER BY of its own, and the navigation that
+        # reads this list bisects it.
+        self.filtered_event_ids = sorted(result["event_id"].tolist())
+        self.current_sql_filter = sql_filter
+        self.current_experiment = exp
+        self.current_channel = channel
+
+        total = len(self.filtered_event_ids)
+        first_id = self.filtered_event_ids[0]
+        last_id = self.filtered_event_ids[-1]
+        if sql_filter:
+            # Falls back to the expression itself rather than a placeholder, so
+            # the panel still says which subset it is reporting on.
+            selected_filters = self.get_selected_filters()
+            filter_name = next(iter(selected_filters.keys()), sql_filter)
+            label = f'"{filter_name}" subset'
+        else:
+            label = "All events"
+        self.add_text_to_display.emit(
+            f"{label}: {total} total | first event_id: {first_id} | last event_id: {last_id}",
+            self.__class__.__name__,
+        )
+        return True
 
     @log(logger=logger)
     def get_selected_filters(self) -> dict:

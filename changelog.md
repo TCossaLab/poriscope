@@ -10,6 +10,10 @@
 
 * The Metadata and Protein tabs now report a database whose columns or experiment list cannot be read, instead of leaving the pickers silently unchanged
 
+* Fixed the Metadata tab failing with an unhandled error, rather than reporting it, when the database returned rows with no `event_id` column while rebuilding its filtered-event cache
+
+* The Metadata tab now says the current scope when no events match a filter, and labels a subset with the filter expression when no filter name is selected instead of the word "Filter" - both matching the Protein tab
+
 * **Breaking:** `get_selected_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires subclasses to implement a `_subset_controls` property returning their controls panel
 
 * **Breaking:** `update_units` has moved from `MetaSubsetTabView` to `MetadataView` and `update_column_units` is no longer on `MetaSubsetTabController`; only the metadata tab displays column units, so a plugin subclassing the shared subset-tab base no longer inherits either

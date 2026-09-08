@@ -10,6 +10,30 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - `_rebuild_event_id_cache` merges to ProteinView's copy, with the guards reordered
+
+**Context.** Both subset tabs carried it, 61 diff lines apart - the largest diff of the four
+methods Step 4a promotes, and the smallest merge. Three of those differences were real.
+
+**Decision.** All three resolve to **ProteinView's**, the two user-visible ones by the user's
+choice: it rejects a result with no `event_id` column; its empty-subset message names the
+scope; and an active filter with no name selected is labelled with the filter expression
+rather than the word "Filter". **The two failure checks are reordered from either copy** -
+emptiness first, then the missing column.
+
+**Evidence.** Metadata indexed straight into `result["event_id"]`, so a loader returning rows
+without it raised a `KeyError` out of a Qt slot; the guard costs nothing on the normal path,
+since `pd.read_sql` returns a zero-row frame that still carries its columns (measured). That
+same measurement is why the order matters only for a synthetic frame - `pd.DataFrame()`, which
+`test_metadata_view.py` feeds - and under Protein's order that columnless frame was reported as
+a malformed query rather than as no matching events. Emptiness is the more specific fact.
+Coverage was lopsided: **6 tests on Metadata's copy, 0 on Protein's**, so the three branches
+only Protein's version had were unpinned; `test_duplicated_helpers.py` now pins them for both
+tabs, and 6 of its 13 fail against the unpromoted code.
+
+**Revisit if** a loader plugin legitimately returns a subset without `event_id`, which would
+make the guard wrong rather than defensive.
+
 ## 2026-09-08 - A promoted subset-tab method reaches its controls panel through a property
 
 **Context.** `MetadataView` and `ProteinView` hold their controls panel as

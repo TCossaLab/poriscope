@@ -65,8 +65,9 @@ What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query and colu
 setters (``set_query``, ``set_event_query``, ``update_available_columns``,
 ``set_units``), subset-filter management (``_save_filter``,
 ``_delete_filter_by_name``, ``_show_filter_info_dialog``,
-``clear_pending_filter_state``, ``get_selected_filters``), the experiment-selection tree
-(``show_selection_tree``, ``request_experiment_structure``) and ``get_save_filename``.
+``clear_pending_filter_state``, ``get_selected_filters``), the filtered-event cache
+(``_rebuild_event_id_cache``), the experiment-selection tree (``show_selection_tree``,
+``request_experiment_structure``) and ``get_save_filename``.
 
 What ``MetaEventTabView`` gives you: the event-index range helpers
 (``_parse_event_indices``, ``_expand_event_indices``, ``_shift_ranges``,

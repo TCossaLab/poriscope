@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is merged by Step 3 or Step 4, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Four groups:
+Five groups:
 
 - ``_factors`` exists three times - ``MetaView.py:139`` plus byte-identical
   overrides in ``RawDataView.py:109`` and ``EventAnalysisView.py:121`` that shadow
@@ -31,10 +31,20 @@ Four groups:
   already holds its panel under, so there is still only one copy of the panel. Every unit test that touches this method
   mocks it, so its real body had no unit coverage at all before the promotion -
   which is exactly the shape rule 43 warns about, and why it is pinned here.
+- ``_rebuild_event_id_cache`` existed twice and **the copies diverged three ways**.
+  ``ProteinView``'s also rejected a result with no ``event_id`` column, named the
+  scope in its empty-subset message, and labelled an unnamed active filter with the
+  filter expression instead of the word "Filter". **Step 4a promoted Protein's, by
+  decision, on all three** - and reordered its first two checks, so that a result
+  with no rows is an empty subset whether or not the loader returned columns with
+  it. ``MetadataView`` had six tests for its copy and ``ProteinView`` had none, so
+  the three branches only Protein's version had are pinned here.
 """
 
+import logging
 from typing import Dict, List, Optional
 
+import pandas as pd
 import pytest
 from PySide6.QtWidgets import QBoxLayout
 
@@ -486,3 +496,149 @@ class TestGetSelectedFiltersWasPromoted:
         view._subset_controls.filter_comboBox.selectItem("Full Dataset")
 
         assert view.get_selected_filters() == {"Full Dataset": ""}
+
+
+# ===========================================================================
+# _rebuild_event_id_cache - two copies, three divergences, promoted by Step 4a
+# ===========================================================================
+
+
+def answer_query_with(view: object, frame: object) -> None:
+    """
+    Make the view's next ``load_metadata`` round-trip park ``frame``.
+
+    ``_rebuild_event_id_cache`` clears ``relayed_query_result`` before it emits,
+    precisely so a failed dispatch cannot be read as this call's answer, so a
+    test cannot simply assign the attribute up front. Step 4a's next commit
+    replaces the emit with a direct call and this helper goes with it.
+
+    :param view: the view whose bus round-trip should be answered
+    :type view: object
+    :param frame: whatever the loader should appear to have returned
+    :type frame: object
+    """
+
+    def deliver(*_args: object) -> None:
+        view.relayed_query_result = frame
+
+    view.global_signal.emit.side_effect = deliver
+
+
+class TestRebuildEventIdCacheWasPromoted:
+    """
+    One copy, on the base, carrying ProteinView's answer to all three divergences.
+
+    ``MetadataView``'s six tests for its own copy still pass unchanged and are
+    left where they are; what is pinned here is the three behaviours only
+    ``ProteinView``'s copy had, plus the reordering of the two failure checks.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """Neither tab may keep its own, or the promotion was partial."""
+        assert "_rebuild_event_id_cache" in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert "_rebuild_event_id_cache" not in view_cls.__dict__, view_cls.__name__
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_populated_result_without_event_id_is_an_error(
+        self, qapp: object, view_cls: type, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """
+        ProteinView's guard, which MetadataView lacked.
+
+        Metadata indexed straight into ``result["event_id"]``, so a loader that
+        returned rows without that column raised a ``KeyError`` out of a Qt slot
+        rather than reporting anything. The promoted copy reports it.
+        """
+        view = build_subset_tab(view_cls)
+        answer_query_with(view, pd.DataFrame({"something_else": [1, 2]}))
+
+        with caplog.at_level(logging.ERROR):
+            assert (
+                view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is False
+            )
+
+        assert "Could not query event ids" in caplog.text
+        view.add_text_to_display.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_no_result_at_all_is_an_error(
+        self, qapp: object, view_cls: type, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``None`` means the query could not be built or run, not an empty subset."""
+        view = build_subset_tab(view_cls)
+        answer_query_with(view, None)
+
+        with caplog.at_level(logging.ERROR):
+            assert (
+                view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is False
+            )
+
+        assert "Could not query event ids" in caplog.text
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        "frame",
+        [pd.DataFrame(), pd.DataFrame({"event_id": []})],
+        ids=["no_columns", "with_columns"],
+    )
+    def test_a_result_with_no_rows_is_an_empty_subset_either_way(
+        self, qapp: object, view_cls: type, frame: object
+    ) -> None:
+        """
+        Why the two failure checks are reordered from either original copy.
+
+        A real loader returns a zero-row frame that still carries its columns, so
+        both orders agree in production - but ``MetadataView``'s own test feeds a
+        bare ``pd.DataFrame()``, and under Protein's order that columnless frame
+        was reported as a malformed query rather than as no matching events.
+        Emptiness is the more specific fact, so it is checked first.
+        """
+        view = build_subset_tab(view_cls)
+        answer_query_with(view, frame)
+
+        assert view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is False
+
+        message = view.add_text_to_display.emit.call_args[0][0]
+        assert message == "No filtered events found for the current scope."
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_an_unnamed_active_filter_is_labelled_with_its_expression(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        ProteinView's fallback, chosen over Metadata's placeholder word "Filter".
+
+        The combobox can hold no selection while a filter is still in force, and
+        the status line is more use naming the expression than saying "Filter".
+        """
+        view = build_subset_tab(view_cls)
+        answer_query_with(view, pd.DataFrame({"event_id": [7, 2, 5]}))
+
+        assert view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is True
+
+        message = view.add_text_to_display.emit.call_args[0][0]
+        assert message.startswith('"dwell > 1" subset: 3 total')
+        assert "first event_id: 2" in message
+        assert "last event_id: 7" in message
+        assert view.filtered_event_ids == [2, 5, 7]
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_the_scope_is_recorded_for_the_staleness_checks(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        The four navigation values, whose annotations moved to the base in 2a.
+
+        The scope is what the plot handlers compare against to decide whether the
+        cache still applies, so a rebuild that populated the ids but forgot the
+        scope would leave navigation reading a cache for the wrong channel.
+        """
+        view = build_subset_tab(view_cls)
+        answer_query_with(view, pd.DataFrame({"event_id": [1, 2]}))
+
+        view._rebuild_event_id_cache("loader", "dwell > 1", "exp1", 2)
+
+        assert view.current_sql_filter == "dwell > 1"
+        assert view.current_experiment == "exp1"
+        assert view.current_channel == 2
