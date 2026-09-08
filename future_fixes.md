@@ -703,11 +703,6 @@ past six - are in `DECISIONS.md` (2026-09-02); the contributor-facing version is
 **Gotcha.** `ci-fork-pr.yml`'s permissions are deliberately `contents: read`; do not add
 anything needing write access. That is `ci-internal-pr.yml`, which is not fork-safe.
 
-**Gated on this block:** `scripts/check_plugin_schemas.py` has no pre-commit hook, deliberately
-- it would have blocked commits on the six owner-held `Basic_PeakFinder` findings before the
-owning developer had seen them. The test suite covers the same ground on every push meanwhile.
-`CODEOWNERS` landing does not release this. Wire the hook once the owner has ruled on the six.
-
 ## 7. Fuzz / malformed-input testing for data readers — test developer
 
 **Goal.** Readers parse arbitrary externally-produced files; none of the current checks
