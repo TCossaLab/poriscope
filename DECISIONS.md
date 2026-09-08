@@ -10,6 +10,40 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-08-31 - `Basic_PeakFinder`'s conformance fixture uses a raised-cosine taper, not a rectangle
+
+**Context.** `Basic_PeakFinder` crashed (`ValueError: zero-size array...`) on a zero-width
+sublevel, reachable whenever `scipy.signal.find_peaks`'s interpolated half-height crossing
+lands on the same sample twice - itself only reachable once the fitter was driven against a
+fixture with an actual intra-event dip to find (block 1 of `future_fixes.md`).
+
+**Decision.** Fix the crash by returning `0.0` for a zero-width sublevel (no data to take a
+deviation over, matching `sublevel_raw_ecd`'s existing empty-slice tolerance). For the new
+fixture knob (`peaked_events_db_path`), use a smooth Hann-window taper rather than a
+rectangular dip.
+
+**Evidence.** A rectangular dip was tried first and made the crash *more* frequent (its
+abrupt edges resolve into two close peaks under noise), not less.
+
+---
+
+## 2026-08-30 - `MetaReader` conformance does not assert a raw-dtype reconstruction formula
+
+**Context.** The original conformance plan for `MetaReader` included asserting
+`load_data(raw_data=True).dtype == get_raw_dtype()`.
+
+**Decision.** Don't; assert only that `get_raw_dtype()` resolves to a real dtype and the raw
+path returns the same sample count as the normal one.
+
+**Evidence.** `MetaReader.load_data` always finishes its raw-data branch with
+`.astype(self.get_raw_dtype())`, so the dtype equality holds by construction for every
+reader regardless of whether `get_raw_dtype()` bears any relationship to the file's actual
+on-disk type - not a per-plugin invariant. A literal `raw*scale+offset` reconstruction was
+also considered and rejected: `ChimeraReaderVC100._convert_data` reinterprets the raw code
+through a bitmask/uint16 step that `(scale, offset)` alone doesn't capture.
+
+---
+
 ## 2026-09-06 - Shared tab behaviour goes in a base class; no new mixins
 
 **Context.** Step 3b could have shared the Metadata/Protein code through a

@@ -1,5 +1,21 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
+
+* Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite
+
+* The settings-schema check is extracted for reuse outside pytest (`poriscope/utils/settings_schema.py::validate_settings_schema`) and gated in pre-commit
+
+* `MetaReader` conformance lands: all 24 data plugins across all 8 `Meta*` families now run against real synthetic data
+
+* Behavioural conformance extended to six more plugin families (filters, event finders/loaders, db loaders, writers): 22 of 24 data plugins now run against real data
+
+* Event fitters gain behavioural conformance tests (new `conformance` marker), driven against real data rather than mocked loaders
+
+* Fixed: `pytest tests/unit/views` failed when run on its own; the missing `sys.path` shim now lives in the root `tests/conftest.py`
+
+* Every plugin's `get_empty_settings()` is now checked against its own declared contract; 21 violations fixed (15 missing `Value` keys, 11 `int`-vs-`float` defaults). **Breaking for programmatic callers:** an unfilled required parameter now raises `TypeError` instead of `KeyError`
+
 * The baseline statistics behind the Raw Data tab's green baseline band are now computed in that tab's model rather than in its plot widget
 
 * Removed an unused Gaussian function from the Raw Data view; the baseline fit never called it

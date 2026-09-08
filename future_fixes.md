@@ -629,36 +629,21 @@ owning developer.
 
 Designed as a set: a pipeline that lets a community-contributed plugin be verified as safe
 and correct to merge with a bounded amount of human review. Blocks 2, 6 and 8, and block 3
-for data plugins, are done and their sections are gone. What is left is **5**
-(free-standing), **4**, block 3's analysis-tab half, and **1** and **7**, which are pytest
-suites and so the test developer's.
+for data plugins, are done and their sections are gone (block 8's "no custom lint rules"
+call is recorded in `DECISIONS.md`, 2026-09-01). What is left is **5** (free-standing),
+**4**, block 3's analysis-tab half, and **1** and **7**, which are pytest suites and so the
+test developer's.
 
-## 1. Behavioural conformance suite (not just signature compliance) — test developer
+## 1. Behavioural conformance suite — remaining gaps
 
-**Goal.** Instantiate every discovered plugin and actually run its core methods against
-small synthetic data, asserting it behaves like a well-formed member of its `Meta*` family.
-`test_plugin_compliance.py` already does the discovery (`pkgutil.walk_packages` plus
-`BASE_CLASS_DATA`) but never calls the plugin, so a contribution can satisfy every signature
-check and still crash on real data, leak resources, or produce garbage.
-
-**Shape.** A `tests/unit/plugins/test_plugin_conformance.py` reusing that discovery loop but
-parametrized over *concrete* classes. One canonical fixture per family from
-`tests/synthetic_data/`, and a minimal settings dict built from each plugin's own
-`get_empty_settings()` (fill required `Value`s with the `Min`/`Max` midpoint or the first
-`Options` entry). One generic check per family, not per plugin: instantiate, drive the real
-lifecycle (a finder's event boundaries monotonic, in-bounds and non-overlapping; a reader's
-`load_data` dtype/shape matching `get_raw_dtype()`; a fitter's metadata dict carrying the
-documented keys), then `close_resources()` and assert no exception and no dangling handles.
-Register a `conformance` marker so block 5 can scope it to changed files.
-
-**Gotchas.** It is only as strong as the fixtures are representative - keep trace length,
-noise level and event count realistic enough that a finder cannot pass by doing nothing.
-Prefer a small dedicated fixture per family over one mega-fixture, so failures stay
-attributable. Run it against every existing in-repo plugin first.
-
-**Worth slightly less than it was**, since `scripts/new_plugin.py`'s generated skeleton is now
-the first thing such a suite would run against, and that script's own tests already assert
-every family's skeleton instantiates and declares a self-consistent schema.
+All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`; see
+`changelog.md`. Still open:
+- No fixture knob for the CUSUM family's planted *sublevel* count in `_recipes.py`
+  (fitters are only checked against a known *event* count).
+- `test_writers.py`'s `os.unlink`-after-`close_resources()` leak check covers writers
+  only, not readers' `numpy.memmap` or loaders' SQLite connections.
+- `PeakFinder` stays skipped (`FITTERS_SKIPPED` in `_recipes.py`): needs a two-level
+  signal fixture, not a tuning fix.
 
 ## 3. Contribution scaffold: the analysis-tab half
 
@@ -725,20 +710,23 @@ owning developer had seen them. The test suite covers the same ground on every p
 
 ## 7. Fuzz / malformed-input testing for data readers — test developer
 
-**Goal.** Catch unhandled crashes in community-contributed parsers on truncated, corrupted or
-off-spec binary input - the most likely crash surface for a new `MetaReader`, since readers
-parse arbitrary externally-produced files. No current check exercises a reader against
-anything but a well-formed synthetic file.
+**Goal.** Readers parse arbitrary externally-produced files; none of the current checks
+exercise one against anything but a well-formed synthetic file, so a malformed one
+(truncated, wrong magic bytes) can crash or hang instead of raising a caught exception.
 
-**Shape.** A `tests/unit/plugins/datareaders/test_reader_fuzz.py` parametrized over every
-concrete `MetaReader` the way `test_plugin_compliance.py` discovers them. Take each family's
-valid synthetic fixture and apply a small, fixed set of *deterministic* mutations - truncate at
-several byte offsets, flip the header magic, zero a middle section - rather than open-ended
-random fuzzing, which would risk flaky CI. Assert only that each mutation yields either a clean
-successful read or a caught, well-typed exception: never an unhandled crash, a hang, or a
-silently truncated array. The mutation generation is necessarily format-specific (one "corrupt
-this fixture" helper per reader family, not per reader); the assertion logic and discovery loop
-are shared.
+**Plan.** New `tests/unit/plugins/datareaders/test_reader_fuzz.py`, parametrized over
+`discover_concrete(MetaReader)`. Reuse `READER_DATASET_BUILDERS` (`_recipes.py`) and
+apply a small fixed set of deterministic mutations (truncate to 0 bytes / mid-payload,
+zero a middle section, flip the per-format header marker) rather than open-ended
+fuzzing, to avoid flaky CI. Assert in three tiers: construction never hangs or raises
+uncaught; a successful `get_channel_length()` must be deliverable via `load_data`
+exactly; over-requesting must raise (`MetaReader.load_data` now does, see
+`changelog.md`). Keep mutations in a `MUTATIONS` dict in `_recipes.py`, shared set plus
+per-format layering, not per-reader duplication.
 
-**Gotcha.** This applies meaningfully only to `MetaReader`. Finders, fitters and filters
-operate on already-validated in-memory arrays, so the risk does not transfer.
+**Notes from scoping (2026-08-31).** Exception types vary by format on a 0-byte file
+(`ValueError` for Chimera/BinaryReader1X, `struct.error` for ABF2) - inconsistent but
+none hang. On Windows, `close_resources()` does not reliably release the reader's
+`numpy.memmap` handle immediately; rewriting the same path right after raised
+`PermissionError` until GC ran - relevant if a reader is ever added to block 1's
+writer-only leak check.

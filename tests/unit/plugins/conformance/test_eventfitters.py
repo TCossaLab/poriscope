@@ -2,8 +2,10 @@
 Behavioural conformance for every discovered ``MetaEventFitter``.
 
 ``tests/unit/plugins/test_plugin_compliance.py`` checks that a fitter declares the
-right interface and ``test_settings_schema.py`` checks that its settings schema
-describes itself; neither runs the plugin. The per-fitter unit tests under
+right interface, ``test_plugin_settings_schema.py`` checks that its settings schema
+is internally self-consistent, and ``test_settings_defaults.py`` checks that its
+shipped defaults survive its own validators; none of the three runs the plugin. The
+per-fitter unit tests under
 ``tests/unit/plugins/eventfitters/`` do run the algorithms, but build instances via
 ``object.__new__`` and attach ``MagicMock()`` loaders, so they cannot see a broken
 ``__init__``/``apply_settings``/``_finalize_initialization`` lifecycle, and they pass
