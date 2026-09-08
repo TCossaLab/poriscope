@@ -804,18 +804,7 @@ cheaper after 4a for the reason recorded under 4c below.
 
 ### Owed
 
-- A **manual Windows pass** covering Step 4a's converted paths. The Clustering tab and
-  session restore were verified live on 2026-09-07 after the regression fix. Two RawData
-  paths have not been, and they are **different paths** — an earlier note conflated them:
-  - **The channel multiselect** (`f1fd81c`): pick a reader, confirm `channel_comboBox`
-    populates. This is the *reader's* channels via `request_reader_channels`, and it is a
-    `MultiSelectComboBox`, which `DECISIONS.md` 2026-09-01 records as structurally
-    unexercisable on Linux CI — so only a human can see it.
-  - **The event-finding time limits** (`1ff9e92`): create an event finder, open its Timer
-    dialog, confirm one row per channel defaulting to 0/0; set ranges and run find_events
-    over them; then add or delete another plugin and confirm the ranges you set survive.
-    This is `analysis_time_limits`, reached only through `_handle_timer` and
-    `_start_eventfinder` — **no combobox is involved.**
+- Nothing on the manual pass — **cleared 2026-09-08**, see the Verification section.
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
   gate. Still open from 3f.
 
@@ -1074,6 +1063,18 @@ select-all, dismiss on an outside click, reopen with the selection intact); and 
 outliving the app on close. That is the pre-refactor baseline, so a later failure is
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
+
+**Step 4a RawData manual pass: run 2026-09-08, all clear.** The two paths that had no
+cover, verified as separate checks because they exercise different widgets and would fail
+in different places. **The channel multiselect** (`f1fd81c`): a reader's channels populate
+`channel_comboBox`, which `DECISIONS.md` 2026-09-01 records as structurally unexercisable
+on Linux CI. **The event-finding time limits** (`1ff9e92`): a new event finder's Timer
+dialog opens with one row per channel, ranges set there survive a later plugin
+add/delete, and `find_events` runs over them — `analysis_time_limits` is reached only
+through `_handle_timer` and `_start_eventfinder`, so no combobox is involved. Together
+with the Clustering tab and session restore verified 2026-09-07, **every path Step 4a has
+converted so far has now been seen working on Windows.** The next one is owed after the
+remaining RawData conversions.
 
 **Post-3a manual pass: run 2026-09-06, all clear.** Same scope as the baseline, against a
 branch that had rewritten all five controls widgets — so the promoted widget factories, the
