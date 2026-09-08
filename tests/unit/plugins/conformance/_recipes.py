@@ -22,13 +22,9 @@ Values are not invented here either. The CUSUM numbers are the ones
 against this same synthetic signal.
 """
 
-import importlib
-import inspect
-import pkgutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Type
 
-import poriscope.plugins as _plugins_pkg
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
@@ -39,6 +35,7 @@ from poriscope.utils.MetaEventLoader import MetaEventLoader
 from poriscope.utils.MetaFilter import MetaFilter
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaWriter import MetaWriter
+from poriscope.utils.plugin_schemas import discover_plugin_classes
 from tests.synthetic_data.base_synthetic_recording import SyntheticDataset
 from tests.synthetic_data.synthetic_abf2 import (
     Abf2RecordingConfig,
@@ -61,38 +58,26 @@ from tests.synthetic_data.synthetic_chimera_vc100 import (
     generate_chimera_vc100_dataset,
 )
 
-# Import everything under poriscope.plugins so that __subclasses__() sees every
-# plugin. Done here rather than in each test module because every one of them
-# imports this module. Same approach, and same reason, as test_plugin_compliance.py.
-for _finder, _modname, _ispkg in pkgutil.walk_packages(
-    _plugins_pkg.__path__, prefix=f"{_plugins_pkg.__name__}."
-):
-    importlib.import_module(_modname)
-
 
 def discover_concrete(base: type) -> List[type]:
     """
     Collect every instantiable subclass of a ``Meta*`` base, however deeply nested.
 
-    Walks the whole subclass tree rather than ``__subclasses__()`` alone, because a
-    plugin may subclass another concrete plugin - ``BoundedBlockageFinder`` extends
-    ``ClassicBlockageFinder``, and ``ClassicCUSUM``/``IntraCUSUM`` extend ``CUSUM``.
+    Filters :func:`poriscope.utils.plugin_schemas.discover_plugin_classes` rather than
+    walking ``__subclasses__()`` directly, so a plugin whose class name doesn't match its
+    filename - which ``MainModel.populate_available_plugins`` would never actually load -
+    is not silently included here either. That sweep already imports every module under
+    ``poriscope.plugins``, which is what makes a deeply-nested subclass like
+    ``BoundedBlockageFinder`` (extends ``ClassicBlockageFinder``) or
+    ``ClassicCUSUM``/``IntraCUSUM`` (extend ``CUSUM``) visible in the first place.
 
     :param base: The ``Meta*`` base class to search beneath.
     :type base: type
     :return: Concrete subclasses, ordered by name so parametrised ids are stable.
     :rtype: List[type]
     """
-    found: set = set()
-    queue: List[type] = list(base.__subclasses__())
-    while queue:
-        cls = queue.pop()
-        if cls in found:
-            continue
-        found.add(cls)
-        queue.extend(cls.__subclasses__())
     return sorted(
-        (cls for cls in found if not inspect.isabstract(cls)),
+        (cls for cls in discover_plugin_classes().values() if issubclass(cls, base)),
         key=lambda cls: cls.__name__,
     )
 
