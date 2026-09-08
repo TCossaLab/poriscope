@@ -749,8 +749,8 @@ working tree; suite **3,449 passed / 4 skipped**.
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **85** | 0 |
-| — rule 1, View emits | 75 | **55** | 0 |
+| Boundary allowlist | 111 | **84** | 0 |
+| — rule 1, View emits | 75 | **54** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -772,12 +772,21 @@ commit.**
 the View emits a **typed intent**, the Controller's slot calls the plugin through
 `self.model.call(...)`, and the result goes back through a setter on the View. Remaining:
 
-- **RawData, 4 left.** Four commits landed 2026-09-08. `update_available_plugins` was
+- **RawData, 3 left.** Five commits landed 2026-09-08. `update_available_plugins` was
   the emit-then-read *inside the push path*; then `_load_data` (2) and `_apply_filter`
   (1) moved to `RawDataController._load_and_filter`, which **closed a live stale-read
   bug** — see below. The remainder, **derived by AST rather than listed by hand**:
-  `_start_eventfinder` (3) and `_start_writer` (1). Both pass arguments, so rule 42
-  applies to each.
+  `_start_eventfinder` (3). `_start_writer`'s one landed 2026-09-08 as
+  `RawDataController.commit_events` and the method is deleted.
+
+  **These two are the only 4a emits in the tab that were never emit-then-read.** Both
+  target `set_generator`, which the bus called with the generator as an *argument* rather
+  than parking it on an attribute, so there is no stale read to close - a relocation
+  rather than a fix, worth recording so the absence does not read as an oversight.
+  `commit_events` did take one deliberate behaviour change: the View aborted the whole
+  commit on failure via an `except (IndexError, ValueError)` that could never catch a
+  plugin error anyway, and a channel that cannot be committed is now reported and skipped
+  while the rest still run.
   *The old breakdown here summed to 12 against a claimed 13: the total was right and the
   enumeration had omitted `_start_writer`.*
 

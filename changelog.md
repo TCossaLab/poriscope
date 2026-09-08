@@ -2,6 +2,8 @@
 
 * **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
 
+* Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit
+
 * The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
 
 * Stepping the Raw Data tab's event index below 0 now says so on the status panel, instead of declining silently and only logging to the console

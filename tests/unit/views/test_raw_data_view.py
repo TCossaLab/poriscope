@@ -25,7 +25,6 @@ Coverage targets:
 - handle_parameter_change dispatch (load_data_and_update_plot, some_other_action)
 - _factors
 - update_available_plugins (success + exception path)
-- _start_writer
 - _shift_range_and_update_trace (left shift, negative guard)
 - _shift_range_and_update_plot (left, right, empty indices guard)
 - _handle_find_events (valid params, missing params)
@@ -98,6 +97,8 @@ def view(mocker, mock_logging):
     v.baseline_stats_requested = mocker.Mock()
     v.trace_data_requested = mocker.Mock()
     v.psd_data_requested = mocker.Mock()
+    v.event_plot_requested = mocker.Mock()
+    v.commit_requested = mocker.Mock()
     v.calculate_psd = mocker.Mock()
     v.export_plot_data = mocker.Mock()
     v.run_generators = mocker.Mock()
@@ -678,18 +679,24 @@ def test_handle_find_events_none_params_aborts(view, mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_handle_commit_events_calls_start_writer(view, mocker):
+def test_handle_commit_events_emits_a_typed_intent(view, mocker):
+    """Step 4a: the commit call itself is the Controller's."""
     view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", [0]))
-    view._start_writer = mocker.Mock()
     view._handle_commit_events({"writer": "W1", "channel": ["0"]})
-    view._start_writer.assert_called_once_with("W1", [0])
+    view.commit_requested.emit.assert_called_once_with("W1", [0])
+
+
+def test_handle_commit_events_normalises_a_bare_channel(view, mocker):
+    """``_start_writer`` used to coerce this; the intent carries a list either way."""
+    view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", 0))
+    view._handle_commit_events({"writer": "W1", "channel": ["0"]})
+    view.commit_requested.emit.assert_called_once_with("W1", [0])
 
 
 def test_handle_commit_events_extraction_failure(view, mocker):
     view._extract_commit_event_parameters = mocker.Mock(side_effect=ValueError("bad"))
-    view._start_writer = mocker.Mock()
     view._handle_commit_events({})
-    view._start_writer.assert_not_called()
+    view.commit_requested.emit.assert_not_called()
     view.logger.error.assert_called()
 
 
@@ -880,21 +887,6 @@ def test_a_selected_filter_is_not_second_guessed(view, mocker):
     view._start_eventfinder.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# _start_writer
-# ---------------------------------------------------------------------------
-
-
-def test_start_writer_emits_signal_per_channel(view):
-    view._start_writer("W1", [0, 1])
-    # Should emit for each channel then run_generators
-    assert view.global_signal.emit.call_count == 2
-    view.run_generators.emit.assert_called_once_with("W1")
-
-
-def test_start_writer_single_channel_as_int_converted(view):
-    # A non-list channel is normalised to a one-element list and committed, the
-    # same way EventAnalysisView._start_writer handles it.
-    view._start_writer("W1", 0)
-    assert view.global_signal.emit.call_count == 1
-    view.run_generators.emit.assert_called_once_with("W1")
+# _start_writer is gone: Step 4a moved the commit call to
+# RawDataController.commit_events, which registers the generator with the Model itself.
+# Its per-channel and bare-channel behaviour is asserted there and just above.

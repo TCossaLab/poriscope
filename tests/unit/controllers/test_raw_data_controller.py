@@ -13,6 +13,7 @@ Covers:
 - _load_and_filter reads each channel through call(), dropping what fails (4a)
 - load_trace_data / load_psd_data hand the result to the matching view setter
 - load_event_plot_data makes the five event-plot calls the View used to make (4a)
+- commit_events registers each channel's generator with the model and runs them (4a)
 - update_available_plugins resolves eventfinder channels before pushing names (4a)
 - _resolve_eventfinder_channels queries every finder and omits one that raises
 - set_num_events_allowed delegates to view
@@ -310,6 +311,92 @@ def test_update_channels_delegates_to_view(
     channels: dict[str, int] = {"num_channels": 4}
     controller.update_channels(channels)
     mock_view.update_channels.assert_called_once_with(channels)
+
+
+# ------------------- committing events (Step 4a) ---------------------
+
+
+class TestCommitEvents:
+    """
+    The one emit in this tab that was never an emit-then-read.
+
+    ``commit_events`` returns a generator and the bus passed it straight into
+    ``set_generator`` as an argument, so there was no attribute to park it on and no
+    stale value to inherit. These tests pin the relocation, not a fix.
+    """
+
+    def test_each_channel_is_committed_and_its_generator_registered(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        """
+        One call per channel, and the generator it returns goes to the Model.
+
+        :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.commit_events("W1", [0, 1])
+
+        assert controller.model.call.call_args_list == [
+            mocker.call("MetaWriter", "W1", "commit_events", 0),
+            mocker.call("MetaWriter", "W1", "commit_events", 1),
+        ]
+        assert controller.model.set_generator.call_args_list == [
+            mocker.call("gen0", 0, "W1", "MetaWriter"),
+            mocker.call("gen1", 1, "W1", "MetaWriter"),
+        ]
+
+    def test_the_generators_are_run_once_for_the_writer(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Registration and running are separate steps, as they were through the bus.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.commit_events("W1", [0, 1])
+
+        controller.model.run_generators.assert_called_once_with("W1")
+
+    def test_a_channel_that_cannot_be_committed_is_skipped_not_fatal(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        **The deliberate behaviour change.** The View aborted the whole commit.
+
+        Its ``except (IndexError, ValueError)`` skipped ``run_generators`` entirely, and
+        could not catch a plugin failure anyway because the bus swallowed those first.
+        Now that call() raises, losing one channel is better than losing every channel's
+        commit - and letting an arbitrary writer exception escape a Qt slot is worse than
+        either.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0", RuntimeError("boom"), "gen2"]
+
+        controller.commit_events("W1", [0, 1, 2])
+
+        registered = [call.args[1] for call in controller.model.set_generator.call_args_list]
+        assert registered == [0, 2]
+        controller.model.run_generators.assert_called_once_with("W1")
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_it_does_not_raise_out_of_the_slot(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Qt invoked this from a signal; an exception must not escape into C++.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = RuntimeError("writer failed")
+
+        controller.commit_events("W1", [0])
+
+        controller.model.set_generator.assert_not_called()
 
 
 # ------------- trace loading and filtering (Step 4a) -----------------

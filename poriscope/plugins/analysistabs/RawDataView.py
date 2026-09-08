@@ -90,6 +90,12 @@ class RawDataView(MetaEventTabView):
     #: the answer arrives as ``set_event_plot_data``.
     event_plot_requested = Signal(str, int, list, str)
 
+    #: Asks the Controller to commit this tab's found events through a writer, one
+    #: channel at a time. Unlike the other 4a intents this one expects no answer: the
+    #: plugin hands back a generator, which the Controller registers with the Model and
+    #: runs. There was never an attribute to park it on, so there is no stale read here.
+    commit_requested = Signal(str, list)
+
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
 
@@ -598,38 +604,6 @@ class RawDataView(MetaEventTabView):
         self._update_event_plot(event_data, event_indices)
 
     @log(logger=logger)
-    def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
-        """
-        Start a writer plugin to commit events for the specified channels.
-
-        :param writer: Identifier for the writer plugin.
-        :type writer: str
-        :param channels: Channel index, or list of channel indices.
-        :type channels: Union[int, List[int]]
-        """
-        if not isinstance(channels, list):
-            channels = [channels]
-        try:
-            for channel in channels:
-                write_events_args = (channel,)
-                # Emit the signal with the correct handler name for when the data is ready
-                ret_args = (channel, writer, "MetaWriter")
-                self.global_signal.emit(
-                    "MetaWriter",
-                    writer,
-                    "commit_events",
-                    write_events_args,
-                    "set_generator",
-                    ret_args,
-                )
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
-            )
-        else:
-            self.run_generators.emit(writer)
-
-    @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:
         """
         Set the number of events available for display.
@@ -756,7 +730,11 @@ class RawDataView(MetaEventTabView):
             return
 
         if writer is not None and channels is not None:
-            self._start_writer(writer, channels)
+            # Step 4a: the commit call itself is the Controller's, so this is the whole
+            # of the View's part now.
+            self.commit_requested.emit(
+                writer, channels if isinstance(channels, list) else [channels]
+            )
 
     @log(logger=logger)
     def _start_eventfinder(

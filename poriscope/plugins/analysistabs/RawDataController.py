@@ -61,6 +61,53 @@ class RawDataController(MetaEventTabController):
         self.view.trace_data_requested.connect(self.load_trace_data)
         self.view.psd_data_requested.connect(self.load_psd_data)
         self.view.event_plot_requested.connect(self.load_event_plot_data)
+        self.view.commit_requested.connect(self.commit_events)
+
+    @log(logger=logger)
+    @Slot(str, list)
+    def commit_events(self, writer: str, channels: List[int]) -> None:
+        """
+        Hand each channel's found events to a writer and run the resulting generators.
+
+        Step 4a, and the one emit in this tab that was **not** an emit-then-read: the
+        plugin returns a generator and the bus passed it straight into ``set_generator``
+        as an argument, so there was never an attribute to park it on and no stale value
+        to inherit. This is a relocation rather than a fix.
+
+        **One deliberate behaviour change.** The View wrapped the whole loop in
+        ``except (IndexError, ValueError)`` and skipped ``run_generators`` entirely if it
+        fired. That guard could not catch a plugin failure, because the bus swallowed
+        those before they reached it - and now that ``call()`` raises, an arbitrary
+        exception from a writer would escape a Qt slot, which is worse than either. So a
+        channel that cannot be committed is reported and skipped, and the channels that
+        did register still run. Losing one channel's commit is better than losing all of
+        them.
+
+        :param writer: the writer plugin's key
+        :type writer: str
+        :param channels: the channels whose events are being committed
+        :type channels: List[int]
+        :return: None
+        :rtype: None
+        """
+        for channel in channels:
+            try:
+                generator = self.model.call(
+                    "MetaWriter", writer, "commit_events", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to commit channel {channel} with {writer}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            self.model.set_generator(generator, channel, writer, "MetaWriter")
+        # Called unconditionally, as the View did: with the bus swallowing failures it
+        # was already reached with nothing registered, so that case is the proven one.
+        self.model.run_generators(writer)
 
     @log(logger=logger)
     @Slot(str, list, float, float, str, bool)
