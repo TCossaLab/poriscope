@@ -1448,8 +1448,11 @@ class TestMiscMethods:
     def test_update_available_columns_no_error(self, mock_view):
         mock_view.update_available_columns("my_loader")
 
-    def test_update_units_no_error(self, mock_view):
-        mock_view.update_units("ldr", "duration", "x_axis")
+    # update_units is gone from this tab: Step 4a moved it down to MetadataView, which
+    # was its only caller. The protein tab has no units label, keeps no units cache and
+    # labels its axes with hardcoded literals, so there was nothing here for the answer
+    # to reach - which is also why ProteinView's missing update_column_units was
+    # unreachable rather than merely swallowed.
 
     def test_update_available_plugins_no_error(self, mock_view):
         mock_view.update_available_plugins({"MetaDatabaseLoader": ["ldr1"]})

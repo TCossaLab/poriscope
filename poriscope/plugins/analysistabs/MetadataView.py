@@ -52,7 +52,7 @@ from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -96,6 +96,12 @@ class MetadataView(MetaSubsetTabView):
         plot_initialized (bool): Indicates whether a plot is currently initialized.
         no_cached_data (bool): True if data is not cached due to size.
     """
+
+    #: Asks the Controller for one column's units, for one axis label. The axis is
+    #: carried so the answer can be applied to the right label, which is what the bus
+    #: used its ``ret_args`` for. This tab is the only caller, which is why
+    #: ``update_units`` moved down here from ``MetaSubsetTabView``.
+    column_units_requested = Signal(str, str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -2709,6 +2715,33 @@ class MetadataView(MetaSubsetTabView):
         :type written: int
         """
         self.exported_event_count = written
+
+    @log(logger=logger)
+    def update_units(self, loader: str, column: str, axis: str) -> None:
+        """
+        Ask the Controller for a column's units, for this tab's axis unit labels.
+
+        Moved down from ``MetaSubsetTabView`` in Step 4a, and converted in the same
+        commit. It sat on the shared base but was only ever called from here: the protein
+        tab has no units label, keeps no units cache and labels its axes with hardcoded
+        literals, so it had nothing to do with the answer - and ``ProteinView``'s missing
+        ``update_column_units`` was unreachable rather than merely swallowed. Same shape
+        as the Clustering-only helpers Step 3e moved down.
+
+        :param loader: Name of the database loader.
+        :type loader: str
+        :param column: Name of the column to get units for.
+        :type column: str
+        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
+        :type axis: str
+        :return: None
+        :rtype: None
+        """
+        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
+        # rather than an error, so do not dispatch it as a plugin key.
+        if not loader or loader == "No Event Database":
+            return
+        self.column_units_requested.emit(loader, column, axis)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:

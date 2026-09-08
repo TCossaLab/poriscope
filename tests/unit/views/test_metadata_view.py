@@ -4347,49 +4347,52 @@ def test_set_units_accepts_list(view: MetadataView, mocker: MockerFixture) -> No
 # ----------------------------- Update Available Columns Tests ------------------------------
 
 
-def test_update_available_columns_emits_signal(
+def test_update_available_columns_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify global signal is emitted to request columns."""
-    view.global_signal = mocker.Mock()
+    """Step 4a: an intent naming the loader, not a bus call describing the dispatch."""
+    view.column_names_requested = mocker.Mock()
 
     view.update_available_columns("test_loader")
 
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[0] == "MetaDatabaseLoader"
-    assert call_args[1] == "test_loader"
-    assert call_args[2] == "get_column_names_by_table"
+    view.column_names_requested.emit.assert_called_once_with("test_loader")
 
 
-def test_update_available_columns_handles_exception(
+def test_update_available_columns_ignores_the_placeholder(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify exception is logged when signal emission fails."""
-    view.global_signal = mocker.Mock()
-    view.global_signal.emit = mocker.Mock(side_effect=Exception("Signal failed"))
+    """
+    Replaces test_update_available_columns_handles_exception.
 
-    view.update_available_columns("test_loader")
+    That test made ``global_signal.emit`` raise, which was worth guarding while the emit
+    ran the whole dispatch synchronously. A typed intent has nothing to fail, and the
+    Controller slot carries the try/except now - so the property left to assert here is
+    the empty-state guard, which is what the method still decides.
+    """
+    view.column_names_requested = mocker.Mock()
 
-    view.logger.error.assert_called()
+    view.update_available_columns("No Event Database")
+
+    view.column_names_requested.emit.assert_not_called()
 
 
 # ----------------------------- Request Experiment Structure Tests ------------------------------
 
 
-def test_request_experiment_structure_emits_signal(
+def test_request_experiment_structure_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify global signal is emitted to request structure."""
-    view.global_signal = mocker.Mock()
+    """
+    The loader key travels with the request.
+
+    The bus carried it as ``ret_args`` so the answer could be filed under the loader it
+    came from; the intent carries it for the same reason.
+    """
+    view.experiment_structure_requested = mocker.Mock()
 
     view.request_experiment_structure("test_loader")
 
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[0] == "MetaDatabaseLoader"
-    assert call_args[1] == "test_loader"
-    assert call_args[2] == "get_experiments_and_channels"
+    view.experiment_structure_requested.emit.assert_called_once_with("test_loader")
 
 
 # ----------------------------- Show Selection Tree Tests ------------------------------
@@ -4451,30 +4454,34 @@ def test_show_selection_tree_updates_selection(
 # ----------------------------- Update Units Tests ------------------------------
 
 
-def test_update_units_emits_signal(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify global signal is emitted to request units."""
-    view.global_signal = mocker.Mock()
-
-    view.update_units("test_loader", "duration", "x_axis")
-
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[0] == "MetaDatabaseLoader"
-    assert call_args[1] == "test_loader"
-    assert call_args[2] == "get_column_units"
-    assert call_args[3] == ("duration",)
-
-
-def test_update_units_handles_exception(
+def test_update_units_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify exception is logged when signal emission fails."""
-    view.global_signal = mocker.Mock()
-    view.global_signal.emit = mocker.Mock(side_effect=Exception("Signal failed"))
+    """
+    The column and the axis both travel with the request.
+
+    ``update_units`` moved down here from ``MetaSubsetTabView`` in the same commit that
+    converted it: it sat on the shared base but only this tab ever called it, because the
+    protein tab has no units label to write an answer to.
+    """
+    view.column_units_requested = mocker.Mock()
 
     view.update_units("test_loader", "duration", "x_axis")
 
-    view.logger.error.assert_called()
+    view.column_units_requested.emit.assert_called_once_with(
+        "test_loader", "duration", "x_axis"
+    )
+
+
+def test_update_units_ignores_the_placeholder(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Replaces test_update_units_handles_exception, for the reason given above."""
+    view.column_units_requested = mocker.Mock()
+
+    view.update_units("No Event Database", "duration", "x_axis")
+
+    view.column_units_requested.emit.assert_not_called()
 
 
 # ----------------------------- Update Column Names Tests ------------------------------

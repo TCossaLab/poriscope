@@ -27,6 +27,8 @@
 import logging
 from typing import Any, Dict, Generator, Optional, override
 
+from PySide6.QtCore import Slot
+
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 
@@ -149,6 +151,96 @@ class MetaSubsetTabController(MetaController):
         self.view.set_units(units)
 
     @log(logger=logger)
+    @override
+    def _setup_connections(self) -> None:
+        """
+        Wire the two lookups both subset tabs share.
+
+        Step 4a. A subclass with intents of its own overrides this and calls
+        ``super()._setup_connections()`` first, so the shared pair is wired once here
+        rather than repeated in each tab.
+
+        :return: None
+        :rtype: None
+        """
+        self.view.column_names_requested.connect(self.request_column_names)
+        self.view.experiment_structure_requested.connect(
+            self.request_experiment_structure
+        )
+
+    @log(logger=logger)
+    @Slot(str)
+    def request_column_names(self, loader: str) -> None:
+        """
+        Fetch a loader's column names and hand them to the View.
+
+        Step 4a: the same conversion the reader and loader channel lookups got, against
+        ``MetaDatabaseLoader``. An empty answer is logged rather than pushed, as before -
+        clearing the axis comboboxes would read as "this database has no columns".
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_names = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_names_by_table"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to request column data: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read the columns of {loader}: {e}", self.__class__.__name__
+            )
+            return
+        if column_names:
+            self.view.update_column_names(column_names)
+            self.logger.info("Axis comboboxes updated with new column names.")
+        else:
+            self.logger.warning("No column names received to update.")
+
+    @log(logger=logger)
+    @Slot(str)
+    def request_experiment_structure(self, loader_name: str) -> None:
+        """
+        Fetch a loader's experiment-and-channel structure and file it under its key.
+
+        The loader key was the bus's ``ret_args`` here: the answer has to be filed under
+        the loader it came from, and passing it forward explicitly is what replaces that.
+        Channels are stringified for display, as they were.
+
+        :param loader_name: the database loader plugin's key
+        :type loader_name: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            structure = self.model.call(
+                "MetaDatabaseLoader", loader_name, "get_experiments_and_channels"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to read the experiment structure of {loader_name}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to read the experiments in {loader_name}: {e}",
+                self.__class__.__name__,
+            )
+            return
+        self.logger.debug(
+            f"Received full experiment-channel structure for {loader_name}: {structure}"
+        )
+        str_structure = {
+            exp: [str(ch) for ch in ch_list] for exp, ch_list in structure.items()
+        }
+        self.view.available_experiment_and_channels_by_loader[loader_name] = (
+            str_structure
+        )
+        self.view.selected_experiment_and_channels_by_loader[loader_name] = (
+            str_structure.copy()
+        )
+
+    @log(logger=logger)
     def update_column_names(self, column_names: list[str]) -> None:
         """
         Update the view with new column names.
@@ -162,19 +254,6 @@ class MetaSubsetTabController(MetaController):
             self.logger.info("Axis comboboxes updated with new column names.")
         else:
             self.logger.warning("No column names received to update.")
-
-    @log(logger=logger)
-    def update_column_units(self, column_units: Optional[str], axis: str) -> None:
-        """
-        Update the view with the unit label for a specific axis.
-
-        :param column_units: Unit string for the column plotted on this axis, or None if the loader could not resolve one.
-        :type column_units: Optional[str]
-        :param axis: Axis to apply the units to (e.g., 'x' or 'y').
-        :type axis: str
-        """
-        # Handle the units fetched for the columns
-        self.view.update_column_units(column_units, axis)
 
     @log(logger=logger)
     def get_experiment_names_for_tree(

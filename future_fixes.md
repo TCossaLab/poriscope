@@ -286,11 +286,16 @@ Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`,
   (`update_features`, `set_num_events_allowed`) either. The plan's 4a bullet predicts
   ~30 such `relay_*`/`set_*` sinks across the tabs. Check for callers in `tests/` and
   the other tabs before deleting any, and do it per tab as each hits zero.
-- **`ProteinView` has no `update_column_units`, but `ProteinController.py:290` calls it**, and
-  `ProteinView.py:3508` also names it as a bus return function.
-  Not inherited from `MetaView` either; the `AttributeError` is swallowed by
-  `main_controller._dispatch_to`, so protein-tab unit labels silently never update. The other
-  four tabs either define the method or use `set_units`.
+- **`MetaSubsetTabView.update_units` is Metadata-only behaviour on a shared base.**
+  Re-diagnosed 2026-09-08; the earlier entry here said "protein-tab unit labels silently
+  never update", which implied Protein has unit labels it should be updating. It has none:
+  `proteincontrols` contains no units label, `ProteinView` keeps no units cache, and its
+  axis labels use hardcoded unit literals. `update_units` is called from
+  `MetadataView:1878` and nowhere else, so `ProteinView`'s missing `update_column_units`
+  is **unreachable rather than swallowed**. The fix is to move `update_units` down to
+  `MetadataView` and make `MetaSubsetTabController.update_column_units` a Metadata-only
+  relay — the same shape as the Clustering-only `check_column_exists`/`set_column_exists`
+  that Step 3e moved down. Folded into Step 4a's first subset-tab commit.
 - **`MetaDatabaseLoader.export_subset_to_csv:605` assumes one `data` row per event id.**
   `data["filename"] = filenames` raises a length mismatch if the `data` table holds rows for
   only some of the selected events. An empty `data` table is now rejected explicitly; a

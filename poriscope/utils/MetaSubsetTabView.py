@@ -30,6 +30,7 @@ import os
 from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFileDialog
 
 from poriscope.utils.LogDecorator import log
@@ -55,7 +56,7 @@ class MetaSubsetTabView(MetaView):
     - **Query state.** ``set_query``, ``set_event_query`` and ``set_experiment_id``
       receive the SQL and the scope the Controller
       resolved, and optionally echo it to the status panel.
-    - **Column and unit state.** ``update_available_columns``, ``update_units`` and
+    - **Column and experiment state.** ``update_available_columns`` and
       ``set_units`` keep the tab's column comboboxes and axis labels in step with the
       loader's description of the database.
     - **Subset filters.** ``_save_filter``, ``_delete_filter_by_name``,
@@ -87,6 +88,17 @@ class MetaSubsetTabView(MetaView):
     :ivar subset_filters: named subset filters, filter name to SQL WHERE clause
     :ivar selected_experiment_and_channels_by_loader: per-loader selection tree state
     """
+
+    #: Asks the Controller for a loader's column names. Step 4a replaced a
+    #: ``global_signal`` emit whose answer came back through ``update_column_names``
+    #: several hops later; the answer arrives one hop later now and a loader that
+    #: cannot be read is reported instead of failing silently in the dispatcher.
+    column_names_requested = Signal(str)
+
+    #: Asks the Controller for a loader's experiment-and-channel structure. The loader
+    #: key is carried so the answer can be filed under it, which is what the bus used
+    #: its ``ret_args`` for.
+    experiment_structure_requested = Signal(str)
 
     logger = logging.getLogger(__name__)
 
@@ -273,17 +285,7 @@ class MetaSubsetTabView(MetaView):
         """
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
+        self.column_names_requested.emit(loader)
 
     @log(logger=logger)
     def request_experiment_structure(self, loader_name: str) -> None:
@@ -300,14 +302,7 @@ class MetaSubsetTabView(MetaView):
             f"Requesting experiment-channel structure from loader: {loader_name}"
         )
 
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader_name,
-            "get_experiments_and_channels",
-            (),
-            "get_experiment_structure_ready",
-            (loader_name,),
-        )
+        self.experiment_structure_requested.emit(loader_name)
 
     @log(logger=logger)
     def show_selection_tree(
@@ -335,34 +330,6 @@ class MetaSubsetTabView(MetaView):
 
         self.selected_experiment_and_channels_by_loader[loader_name] = selected
         self.logger.debug(f"Updated selection for {loader_name}: {selected}")
-
-    @log(logger=logger)
-    def update_units(self, loader: str, column: str, axis: str) -> None:
-        """
-        Request units for a specific column from the loader.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param column: Name of the column to get units for.
-        :type column: str
-        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
-        :type axis: str
-        """
-        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
-        # rather than an error, so do not dispatch it as a plugin key.
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (axis,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
 
     @log(logger=logger)
     def clear_pending_filter_state(self) -> None:

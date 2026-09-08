@@ -29,6 +29,7 @@ import logging
 from typing import Optional, override
 
 import pandas as pd
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -61,14 +62,42 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Setup signal-slot connections between view and controller.
+        Wire this tab's own intent on top of the two the subset base wires.
 
-        This method is required to satisfy the abstract base class but may remain empty.
+        :return: None
+        :rtype: None
         """
-        # Implement any required connections here
-        # This function can remain empty if no additional setup is needed,
-        # but it must exist to satisfy the abstract base class requirement.
-        pass
+        super()._setup_connections()
+        self.view.column_units_requested.connect(self.request_column_units)
+
+    @log(logger=logger)
+    @Slot(str, str, str)
+    def request_column_units(self, loader: str, column: str, axis: str) -> None:
+        """
+        Fetch one column's units and apply them to one axis label.
+
+        Step 4a. The axis travels with the request and back out again, which is what the
+        bus carried in its ``ret_args``. This is Metadata's alone: ``update_units`` moved
+        down from ``MetaSubsetTabView`` in the same commit, because the protein tab has no
+        units label to write to.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param column: the column whose units are wanted
+        :type column: str
+        :param axis: the axis whose label they belong to
+        :type axis: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_units = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_units", column
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
+            return
+        self.view.update_column_units(column_units, axis)
 
     @log(logger=logger)
     def relay_column_type(self, column_type: Optional[str]) -> None:

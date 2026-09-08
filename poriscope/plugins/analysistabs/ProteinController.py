@@ -63,9 +63,14 @@ class ProteinController(MetaSubsetTabController):
     def _setup_connections(self) -> None:
         """
         Connect internal view signals to their corresponding controller slots.
+
+        This tab adds none of its own yet; the two the subset base wires are the whole
+        of it.
+
+        :return: None
+        :rtype: None
         """
-        # No view-side connections currently required.
-        pass
+        super()._setup_connections()
 
     @log(logger=logger)
     def check_column_exists(self, table_name: Optional[str]) -> None:

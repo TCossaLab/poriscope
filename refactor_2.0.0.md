@@ -749,8 +749,8 @@ working tree; suite **3,449 passed / 4 skipped**.
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **68** | 0 |
-| — rule 1, View emits | 75 | **38** | 0 |
+| Boundary allowlist | 111 | **65** | 0 |
+| — rule 1, View emits | 75 | **35** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -819,7 +819,21 @@ the View emits a **typed intent**, the Controller's slot calls the plugin throug
   method cleared most of its parked answers, which is worth having measured rather than
   assumed.
 
-- **Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
+- **`MetaSubsetTabView` is at zero emits**, landed 2026-09-08. Its two genuinely shared
+  lookups — `get_column_names_by_table` and `get_experiments_and_channels` — became
+  intents wired by a shared `_setup_connections` on `MetaSubsetTabController`, so the
+  pair is connected once rather than in each tab. Both threaded a `ret_args` the
+  conversion had to carry: the loader key, so the experiment structure can be filed
+  under it.
+
+  **The third emit was not a base concern at all.** `update_units` moved *down* to
+  `MetadataView`, its only caller, which is 3e's category rather than 4a's. That also
+  retired the base's now-dead `update_column_units` relay and settled the
+  `future_fixes.md` entry that had been misdiagnosed since 2026-09-04 — `ProteinView`'s
+  missing `update_column_units` was **unreachable**, not swallowed, because the protein
+  tab has no units label, no units cache, and hardcoded axis-label units.
+- **Metadata 17, Protein 18.** Next: promote the four shared-name methods, then convert
+  their six emits once on the base.
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much
 cheaper after 4a for the reason recorded under 4c below.
