@@ -625,7 +625,9 @@ class TestUpdateFilters:
 
     def test_no_filter_stays_available_once_filters_exist(self, ec):
         ec.update_filters(["f1", "f2"])
-        items = [ec.filters_comboBox.itemText(i) for i in range(ec.filters_comboBox.count())]
+        items = [
+            ec.filters_comboBox.itemText(i) for i in range(ec.filters_comboBox.count())
+        ]
         assert items == ["No Filter", "f1", "f2"]
 
     def test_a_new_filter_does_not_override_the_no_filter_choice(self, ec):

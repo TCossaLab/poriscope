@@ -50,7 +50,7 @@ GOLDEN_FIXTURES = (
 INSTALL_HINT = (
     "The characterization golden net is NOT running. Install the dev extras with "
     '`pip install -e ".[dev]"` (or `pip install pytest-regressions==2.11.0`). '
-    "Until then every golden errors at setup with \"fixture not found\" rather than "
+    'Until then every golden errors at setup with "fixture not found" rather than '
     "failing, so the numeric and SQL surface Step 4 moves is unpinned while the "
     "suite still reports a pass."
 )

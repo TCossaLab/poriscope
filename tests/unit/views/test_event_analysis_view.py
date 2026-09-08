@@ -464,7 +464,9 @@ class TestUpdateAvailablePlugins:
             }
         )
         assert real_view.eventAnalysisControls.loaders_comboBox.count() == 1
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 2  # + No Filter
+        assert (
+            real_view.eventAnalysisControls.filters_comboBox.count() == 2
+        )  # + No Filter
         assert real_view.eventAnalysisControls.writers_comboBox.count() == 1
         assert real_view.eventAnalysisControls.eventfitters_comboBox.count() == 1
 
@@ -614,9 +616,7 @@ class TestHandleFitEvents:
         """The confirmation covers the unfiltered case only."""
         params = dict(self._params(), filter="LowPass_0")
         with patch.object(EventAnalysisView, "_start_eventfitter") as start:
-            with patch.object(
-                EventAnalysisView, "confirm_unfiltered_run"
-            ) as confirm:
+            with patch.object(EventAnalysisView, "confirm_unfiltered_run") as confirm:
                 mock_view._handle_fit_events(params)
 
         confirm.assert_not_called()

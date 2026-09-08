@@ -836,8 +836,6 @@ def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     view._handle_plot_events.assert_not_called()
 
 
-
-
 # ---------------------------------------------------------------------------
 # the unfiltered-run confirmation
 # ---------------------------------------------------------------------------
@@ -876,9 +874,7 @@ def test_declining_the_unfiltered_confirmation_runs_nothing(view, mocker):
 def test_a_selected_filter_is_not_second_guessed(view, mocker):
     """The confirmation is about the unfiltered case only; a real filter just runs."""
     view._start_eventfinder = mocker.Mock()
-    view._extract_event_parameters = mocker.Mock(
-        return_value=("EF1", "LowPass_0", [0])
-    )
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "LowPass_0", [0]))
     view.confirm_unfiltered_run = mocker.Mock(return_value=True)
 
     view._handle_find_events({})

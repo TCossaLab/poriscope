@@ -379,7 +379,9 @@ class TestCommitEvents:
 
         controller.commit_events("W1", [0, 1, 2])
 
-        registered = [call.args[1] for call in controller.model.set_generator.call_args_list]
+        registered = [
+            call.args[1] for call in controller.model.set_generator.call_args_list
+        ]
         assert registered == [0, 2]
         controller.model.run_generators.assert_called_once_with("W1")
         controller.add_text_to_display.emit.assert_called_once()
@@ -733,7 +735,9 @@ class TestLoadEventPlotData:
 
         controller.load_event_plot_data("finder", 0, [0, 1, 2, 7], "")
 
-        assert [args[4] for args in self.asked(controller, "get_single_event_data")] == [
+        assert [
+            args[4] for args in self.asked(controller, "get_single_event_data")
+        ] == [
             0,
             1,
         ]
@@ -787,7 +791,7 @@ class TestLoadEventPlotData:
     def test_an_empty_filter_key_asks_for_no_callable(
         self, controller: RawDataController
     ) -> None:
-        """"No Filter" reaches the Controller as "", and consults nothing."""
+        """ "No Filter" reaches the Controller as "", and consults nothing."""
         self.answers(controller, get_single_event_data=[{"data": "a"}])
 
         controller.load_event_plot_data("finder", 0, [0], "")
@@ -799,9 +803,7 @@ class TestLoadEventPlotData:
         self, controller: RawDataController
     ) -> None:
         """One fetch, then the same callable for each event."""
-        self.answers(
-            controller, get_single_event_data=[{"data": "a"}, {"data": "b"}]
-        )
+        self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
         controller.load_event_plot_data("finder", 0, [0, 1], "F1")
 
@@ -831,9 +833,7 @@ class TestLoadEventPlotData:
         self, controller: RawDataController, mock_view: MagicMock
     ) -> None:
         """From the finder, not the reader, and not once per event."""
-        self.answers(
-            controller, get_single_event_data=[{"data": "a"}, {"data": "b"}]
-        )
+        self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
         controller.load_event_plot_data("finder", 0, [0, 1], "")
 
@@ -871,9 +871,7 @@ class TestLoadEventPlotData:
         tuple said only ``False`` and the method has two boolean parameters, so this is
         written from the signature rather than from the call site (rule 42).
         """
-        self.answers(
-            controller, get_single_event_data=[{"data": "a"}, {"data": "b"}]
-        )
+        self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
         controller.load_event_plot_data("finder", 2, [5, 6], "")
 
