@@ -1,895 +1,744 @@
 # Future Fixes
 
-Queued work and standing policy for the Poriscope codebase. Keep this terse: prune
-items as they land rather than leaving completed-work narrative behind. Reasoning about
-things deliberately *not* done lives in `DECISIONS.md`; what changed lives in
-`changelog.md`.
+Queued work and standing policy for the Poriscope codebase.
 
-**The full-codebase type-annotation pass is complete (2026-08-26).** Every function
-under `poriscope/` is annotated with no exclusions, `.pydoclint-baseline.txt` is a
-zero-byte file, and `mypy.ini` enforces `disallow_untyped_defs`, `check_untyped_defs`
-and `strict_equality`. All four pre-commit gates are green. The step-by-step plan, the
-batch tables and the retrospective that used to fill this file have been removed now
-that they describe finished work; the narrative is in `changelog.md` and the standing
-rules that came out of it are in `CLAUDE.md` and `DECISIONS.md`. What remains below is
-only what is still open.
+**Only future-facing work belongs here.** When something lands, delete its entry rather
+than annotating it as done - the narrative belongs in `changelog.md`. When something is
+settled as deliberately not worth doing, move the reasoning to `DECISIONS.md` and delete
+the entry. Keep finished-work context only where an open item cannot be understood
+without it. Keep entries terse: one to three lines, with the file:line and the measured
+number, not the narrative.
 
-## Structural audit findings (2026-08-25)
+Everything outside the tooling tiers is a logic change and needs an approved plan first.
+Read-only investigation and measurement do not.
 
-A read of the app shell, plugin contract and threading layer - the paths every analysis
-tab traverses. None of these were already recorded here or in `DECISIONS.md`. Full
-write-up with per-finding reasoning:
-<https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>
+## The 2.0.0 refactor plan claims much of this queue (2026-09-03)
 
-Everything here is a logic change, so it needs an approved plan first. **This section
-outranks "What to pick up next" below until it is cleared.** The common thread: the app's
-main control path is a method name passed as a string and resolved with `getattr`, which
-none of the four pre-commit gates can see.
+**Read `refactor_2.0.0.md` before picking anything up here**, and check whether the item is
+already assigned to a step. Plan artifact:
+<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>
 
-**All four Critical items are cleared** (2026-08-31): the signal dispatcher's `TypeError`
-retries, CI's marker filter, the generator failure reported as success, and the
-serial-channel lock granularity. What they had in common is that each failed silently in
-the `getattr` blind spot; the narrative is in `changelog.md` and the limitations the last
-two left behind are under "Still queued" below. **High is now the top of this section.**
+Root cause behind most of the findings below: the analysis-tab Models are empty (298 lines
+across five, four of them `def _init(self): pass`) while the Views are 11,557 lines and carry
+75 of the 77 `global_signal.emit` sites - re-measured at `062ef6f`. Decisions A-E are recorded
+in `DECISIONS.md`.
 
-### High - working today, but for reasons nothing records or tests
+- **1.9.0 is Tier A + B2 + C of the plan's Step 1** - the defects in code the refactor moves,
+  the zero-risk deletions, and the CI/tooling tier. Everything else in the High/Moderate tiers
+  below ships inside 2.0.0.
+- **Do not fix duplication findings here.** The ~1,900 removable lines, the three
+  `format_axis_label` copies, `_factors`, `_setup_canvas`'s dead `num_channels`, `hist_data`'s
+  three shapes and the five oversized `setupUi` are the refactor itself, not work to do ahead
+  of it.
+- **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
+  structural change in Steps 3-5.
+- **The person-blocker is cleared.** The four-part ask in `refactor_2.0.0.md` was sent
+  2026-09-04 and **agreed the same day** - green light to proceed. Decision E is satisfied, so
+  Step 2 is unblocked and so are Steps 3a/3f in `analysistabs/utils/`. **The whole plan is ours,
+  tests included** - all five Step 2 deliverables plus re-pointing the existing suites. A standing
+  exception to "test-writing is hers" for this plan only; blocks 1 and 7 below remain hers. The
+  fitter owner still must be consulted before any `MetaEventFitter` signature change, which moves
+  all three owner-held fitters in lockstep.
+- `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
 
-- **Two paths use a signal as a synchronous call and read the answer from an attribute.**
-  `MetaModel.py:118-128` emits `force_serial_channel_operations` then reads
-  `self.serial_ops` on the next line; `DataPluginController.py:428-433` emits
-  `get_settings_from_history` then reads `self.historical_settings`. Correct only because
-  every hop is a same-thread automatic connection that Qt resolves as a direct call.
-  Nothing states that requirement and no test covers it. One `Qt.QueuedConnection` in
-  either chain silently degrades the item above to `lock = None` - no error, no log line.
-  Both sites want a direct call, or an explicit synchronous relay entry point that returns
-  a value so the coupling lives in a signature instead of in statement order.
-- **Every `WARNING` and `ERROR` record raises a modal dialog.** `QtHandler.py:38-60`, on
-  the root logger with no level filter, so log severity doubles as a UI modality decision.
-  Routine states hit it: `handle_kill_worker`'s "No active worker found",
-  `send_analysis_tabs`' "No instantiated analysis tabs found" (true at every cold start),
-  `populate_available_plugins`' skipped-directory warning (fires before the main window
-  shows). The `_dialog_open` guard also *discards* records arriving while a dialog is up,
-  so a burst of real errors shows the first and drops the rest. Minimum:
-  `qtHandler.setLevel(logging.ERROR)`. Better: route user-facing messages through the
-  existing `add_text_to_display` channel and let the log be a log.
-- **A user plugin silently replaces a built-in of the same filename.**
-  `main_model.py:174-246`. The walk visits `poriscope/plugins/` then the user folder into
-  one flat `{subclass_name: class}` map, so a user `ClassicBlockageFinder.py` overwrites
-  the shipped one with no warning and no way to tell which ran - a reproducibility problem,
-  not just a packaging one. Related: `load_plugin` calls `exec_module` on every `.py` file
-  *before* checking whether it holds a plugin, and never registers modules in
-  `sys.modules`, so two plugins importing a shared helper by file each get their own copy.
-  Minimum fix: detect the collision and log it loudly, keyed by resolved path. Worth
-  folding into compliance-gate block 4 below.
-- **Finished `Worker`/`WorkerThread` objects are retained for the whole session.**
-  `MetaModel.py:129-140` assigns them; nothing ever pops them - there is no `pop` or `del`
-  against `self.workers`/`self.threads` anywhere under `poriscope/`. `discard_generator` clears
-  only `thread_running` and `generators`, so every dead `QThread` stays alive holding the
-  generator closure and the data it touched. Also why `handle_kill_worker` reports
-  "Stopping worker for channel N" for runs that finished hours ago (harmless -
-  `stop_workers` skips them on `thread_running`, but the log misleads). Pop both entries in
-  `discard_generator` and `deleteLater()` the thread. (The rename half of this item is
-  done: `reset_lock` is now `discard_generator`, and it closes the spent generator as well
-  as dropping it. Popping the worker and thread is still open.)
+## Review findings (2026-09-03)
+
+Six-slice review: app shell, `Meta*` ABCs, algorithmic plugins, database layer, Qt/GUI,
+test/CI surface, docs. Full write-up with reproductions:
+<https://claude.ai/code/artifact/0886d408-06de-488d-8a8e-7f6a68206651>
+
+Already recorded under the 2026-08-25 audit below and not repeated here: the
+emit-then-read-an-attribute pattern, the plugin loader executing modules before it knows
+they are plugins, the `apply_settings` alias, the `except Exception` inconsistency, and
+the oversized `setupUi` methods. This review re-confirmed each with fresh counts.
+
+### High
+
+- **`test_plugin_compliance` parametrizes from `__subclasses__()` at import time**, so which
+  test doubles it audits depends on module import order. `pytest tests/unit/utils
+  tests/unit/plugins` (inverted) picks up `ConcreteDatabaseLoader`, `ConcreteEventFitter`
+  and `MockEventLoader` and reports 4 failures that natural order never sees. Skip classes
+  defined under `tests/`.
+- **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection reason.**
+  `SQLiteDBWriter._insert_event`/`_insert_sublevels` infer failure from `cursor.rowcount`,
+  so a `NOT NULL` violation surfaces as `IOError("Cannot Overwrite Existing Event")`. Hit
+  twice while building the writer-fix harnesses (metadata missing `channel_id`, sublevel
+  missing `levels_left`). `OR IGNORE` is there to make a genuine re-write a no-op, so
+  distinguish the two: check required columns up front, or use `ON CONFLICT ... DO NOTHING`
+  on the uniqueness constraint only.
+- **Neither writer has any unit tests.** No `tests/unit/plugins/dbwriters/` and no test file
+  for `MetaWriter` or `MetaDatabaseWriter`, so the component owning the whole database
+  schema is unverified. Test authoring is another developer's remit - a coverage gap, not
+  work to pick up here.
+- **`Optional[int] = None` channel dispatch is documented 21 times and implemented almost
+  nowhere.** `close_resources` is `@abstractmethod` in all six bases, none implements the
+  dispatch, and 18 of 21 shipped plugins ignore the argument.
+  `MetaEventFitter.reset_channel:336-340` self-documents the failure, then `:354` writes
+  `self.eventfitting_status[None] = False` into a `Dict[int, bool]` behind a
+  `type: ignore[index]` guarded by an `except KeyError` that cannot fire. It clears 4 of 7
+  per-channel dicts, so `sublevel_starts`, `event_lengths` and `applied_filters` survive an
+  abort holding stale data. One template method on `BaseDataPlugin` plus a
+  `_close_one_channel(channel: int)` hook fixes all of it and removes four `type: ignore`s.
+- **`MetaEventFinder`'s base loop reads a setting no schema declares.** `:459` reads
+  `self.settings["Threshold"]["Value"]` from base-class code, but `get_empty_settings:1056`
+  declares only `MetaReader` and `scripts/new_plugin.py` emits no `Threshold`, so any
+  generated eventfinder `KeyError`s inside the base. `:459` also compares it against a mean
+  in pA while `ThresholdBlockageFinder:83` declares it in σ.
+- **Baseline σ is biased high, and the bias depends on `chunk_length`.**
+  `ClassicBlockageFinder.py:316` and `BoundedBlockageFinder.py:133` build
+  `np.linspace(bottom, top, len(hist))` across the full edge-to-edge span, stretching the
+  axis by `bins/(bins-1)`. Measured on pure noise: +14.7% at 10k samples, +4.8% at 100k,
+  +2.1% at 1M - so `ThresholdBlockageFinder`'s σ-denominated threshold moves with chunk
+  length. Two adjacent defects: `:309-314`'s bin-width algebra cancels to
+  `int(n**(1/3)/2)` regardless of noise, and `:336-347`'s window is right-exclusive so it
+  holds `2*half_width` bins instead of `2*half_width+1`, leaving the peak off-centre.
+- **Session restore corrupts any setting whose value is a type name.**
+  `MainModel.replace_class_names_with_classes` converts any string equal to
+  `"str"`/`"int"`/`"float"`/`"bool"` into the type object regardless of key - reproduced,
+  `Value: "float"` returns as `<class 'float'>`. Both walkers' list branches are unreachable
+  as called (a list nested in a dict is never visited), and the two session writes omit the
+  `default=serialize_object` the config write at `:530` uses. Writes are non-atomic, so a
+  crash mid-write truncates the file `_suppress_session_save` exists to protect.
+- **No schema version, and the compatibility check has a dead branch.** No
+  `PRAGMA user_version` anywhere. `SQLiteDBLoader._finalize_initialization:1042-1047` guards
+  `extra_tables` against `"event_counts"`, already in `expected_tables` (`:1012`) and so
+  never present - net effect, any table a newer writer adds makes the loader refuse the
+  file. `_ensure_event_counts:1122` uses `executescript`, which commits pending work and
+  runs each statement unwrapped, so a failure leaves the table created but empty and the
+  `table exists` guard (`:1116`) never retries - every count reads 0 forever. It also runs a
+  full-table aggregate on the GUI thread at plugin load.
+- **`None` means both "query failed" and "no rows".** `SQLiteDBLoader._load_metadata:840-847`
+  returns `None` for an empty result set *and* for `sqlite3.Error`, logging only a warning,
+  and `query_database_directly`/`load_metadata` propagate it. Same shape in
+  `get_column_units:316-324`; `SQLitePeakDBLoader.py:151-154` documents having been bitten.
+  `MetaDatabaseLoader.load_metadata` is declared `-> pd.DataFrame` but returns `None` at
+  `:1106` and `:1111`; the mypy hook runs without pandas, so this is invisible to the gate.
+- **The Protein tab blocks the GUI thread with no progress and no cancel.** `ProteinView.py`
+  contains no `update_progressbar`/`progress`/`kill_`/`abort`/`cancel` across 4,058 lines,
+  while `_update_distribution_individual:2462` runs a rejection sampler bounded at
+  200 x 50,000 twice per event plus up to two `curve_fit` calls, over an unbounded event
+  count. No `processEvents()` anywhere in the repo. The threaded path exists but is reached
+  from 5 view sites, all writes. **Blocked on** converting the emit-then-read sites in the
+  2026-08-25 tier to real callbacks.
 
 ### Moderate
 
-- **`@log`'s debug gate reads the root logger's exact level.** `LogDecorator.py:106,128`:
-  `if logger.root.level == logging.DEBUG`. Testing the root rather than the decorated
-  module's effective level makes per-module debug logging impossible, and `==` disables
-  argument logging at any level that is not exactly 10 (confirmed at level 5).
-  `logger.isEnabledFor(logging.DEBUG)` fixes both. Separately, across 949 decorated
-  methods the per-call cost is paid whether logging is on or not - `log_call` builds the
-  f-string name before the level is consulted. Build it lazily inside the check, and
-  consider dropping the decorator from `get_key()` and `WaveletFilter._apply_filter`,
-  which run per dependency-wiring call and per data chunk respectively.
-- **`get_raw_settings()` hands out live internal state and callers write to it.**
-  `DataPluginController.py:169-185`. On rename, `edit_plugin` mutates each dependent's dict
-  directly (`dsettings[metaclass]["Value"] = key`, `Options.remove(...)`) *and* calls
-  `update_raw_settings`, which does the same write through the accessor - drop the direct
-  one. Worse, `dhistory["settings"] = dsettings` stores a live reference to plugin-internal
-  state in session history, so a later mutation retroactively changes what is persisted.
-  `BaseDataPlugin.apply_settings:266` compounds it by aliasing rather than copying
-  (`self.raw_settings = settings`). Return a copy; make `update_raw_settings` the only
-  writer.
-- **`save_session` has no error handling, unlike `update_app_config` beside it.**
-  `main_model.py:307-316` opens a user-supplied path and calls `json.dump` bare, from a Qt
-  slot - and PySide6 does not tolerate an exception escaping a slot invoked from C++, so a
-  read-only destination can take the process down. It also re-serializes the whole history
-  on the GUI thread on every plugin change. Contrast the 161 `except Exception` handlers
-  elsewhere: `validate_and_instantiate_plugin` alone has six sequential
-  try/except/log/return blocks, so a failure leaves the UI partially updated with no
-  indication of which stage failed.
+- **`BesselFilter` uses the wrong filter form and guards it with a magic constant.** `:212`
+  builds `(b, a)` and `:124` runs `filtfilt`, guarded by `if any(np.absolute(p) >= 0.975)`
+  at `:96`. Measured against `sosfiltfilt`: at the allowed limit (Wn=0.02) `filtfilt(b,a)`
+  already deviates by 6.3e-4 σ, and just past it by 22.6%. `output="sos"` + `sosfiltfilt`
+  makes the guard unnecessary *and* unblocks the low cutoffs it rejects today (25 kHz at
+  4.17 MHz is refused). Also `:186` makes the user re-enter `Samplerate` the reader already
+  knows, so a mismatch silently mis-designs the filter.
+- **Windows logging drops any record containing `μ`.** `main_app.py:165` constructs
+  `logging.FileHandler` with no `encoding=`, so cp1252 cannot encode U+03BC and the record
+  is discarded with `--- Logging error ---` on stderr (reproduced). Six sites write `"μs"`,
+  including `metadata_units["duration"]` in both PeakFinders, which reaches the database,
+  against 65 writing ASCII `"us"` - one physical unit with two spellings in the database.
+- **Severity is doing double duty as the UI's interruption policy.** `QtHandler` is attached
+  to the root logger with no name filter, so any third-party library logging at ERROR pops a
+  dialog at the user. Code is now written to game it: `main_model.py:170` chooses ERROR
+  *because* it raises a dialog, `EventWorker`'s docstring explains that the progress bar must
+  be emitted before the ERROR log or it strands behind the dialog, and
+  `MainModel.update_logging_level` special-cases skipping the handler. The fix is to separate
+  "how loud is this" from "should this interrupt".
+- **Parameter semantics are encoded in the parameter's display name.** Verified: renaming a
+  parameter to `"Data File"` makes the same dict raise
+  `ValueError: Data File must be one of ['Chimera Logfiles (*.log)']`. `FILE_DIALOG_PARAMS`
+  exists for this and is used twice while `dict_dialog_widget.py:216,370` hardcodes the
+  literal list. Also `_validate_param_types` is strictly nominal: `Type: float` rejects an
+  integer `5` while `Type: int` accepts `True`. **See `DECISIONS.md`** - the
+  `"Validate Options"` flag is rejected and the `"Kind"` key is the recorded better fix.
+- **`MetaReader.load_data`'s return annotation is false, with a `cast()` over it.**
+  `:137-139` declares `-> npt.NDArray[np.float64]` but `:244-248` returns a 3-tuple when
+  `raw_data=True`, with `cast(np.ndarray, data)` at `:245`. Per `DECISIONS.md` the remedy is
+  splitting `raw_data` into a second method, not widening the union.
+- **Chunk boundaries can duplicate a sample through a float round-trip.**
+  `MetaReader.py:389-394` converts an integer sample index to seconds and `:160-161`
+  truncates it back; measured, `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at
+  100 kHz, and when it slips low `i += len(data)` compounds it. Pass sample counts, or
+  `round()`.
+- **Duplication, measured at 1,400 removable lines** (was 1,889; Step 3a's `MetaControls`
+  took 489). `CUSUM.py`/`NoFitter.py` share 411 identical lines;
+  `ClassicCUSUM` is a 195-line override differing in 2 lines and wants to be `CUSUM` with a
+  `_normalize_step_size()` hook; the two Chimera readers differ in 23 lines of 390;
+  `_get_baseline_stats` and `_find_events_in_chunk` are each duplicated across two finders
+  (which is why the baseline-σ bug above has two copies); `QObjectABCMeta.py` and
+  `QWidgetABCMeta.py` are 49 lines each differing in 2, and their `__new__` overrides are
+  dead - only `__call__` is load-bearing, and it is genuinely required (verified: without
+  it Shiboken's metaclass lets an abstract QObject subclass instantiate).
+- **`format_axis_label` still exists in three places** - a module function in `ProteinView.py`,
+  a method in `MetadataView.py` and inlined in `ClusteringView.py`. The behavioural drift is
+  gone (2026-09-04); merging the copies is the refactor's Step 3.
+- **`MainView`'s navigation state is a QLabel's rendered text.** `get_current_view:1079`
+  returns `self.page_title_label.text()`, keyed into `self.pages` at `:1052` to decide
+  whether to launch a walkthrough; the label starts as `"Home"`, in neither, so the app logs
+  a misleading "does not support walkthrough" before the first switch. `on_view_switched`
+  writes `self._current_view` at `:1094` and nothing reads it. The five tab Views do this
+  correctly with a hardcoded literal.
+- **~75 attributes are assigned only outside `__init__`** across the five Views, with 26
+  guards papering over it (6 `hasattr`, 20 `getattr(self, ..., default)`) - re-measured
+  2026-09-04, the earlier "28 and 23" was wrong. `ClusteringView.axes` is the clearest case,
+  assigned only in `_reset_actions:158/160` and read unguarded at `:739`/`:762`, though it is
+  latent: both reads are immediately preceded by a `_reset_actions()` call, and `update_plot`
+  carries no `@register_action` so replay cannot reach it out of order. Fixing it properly
+  means an `Optional[Axes]` declared in `_init` plus handling at both reads, which belongs
+  with the canvas-lifecycle work in Step 3, not ahead of it. **`ProteinView.ax_hist`/`ax_vm`
+  are not instances of this** - both are properties over axes built eagerly by
+  `_set_custom_display_area`, which is on the construction path.
+- **`MetaFilter.force_serial_channel_operations` is unenforceable.**
+  `get_callable_filter:105` hands out `self.filter_data` as a bare bound method invoked
+  inside another plugin's generator, and `@serialize_channels` is restricted to generator
+  functions. Either delete the declaration for this family or route `filter_data` through
+  the guard.
+- **Half-finished multi-channel plotting left dead code in the base.**
+  `MetaView._setup_canvas:221` never uses its `num_channels` parameter though its docstring
+  promises subplots per channel; `MetaView._factors:139` is duplicated verbatim into
+  `RawDataView.py:109` and `EventAnalysisView.py:122`, shadowing the base the other two tabs
+  inherit; and `main_view.py:110-111` allocates a `Figure` + `FigureCanvas` never referenced
+  again.
+- **`SQLiteEventLoader` opens one connection per event** (`:127`, from
+  `MetaEventLoader.get_event_generator:320` per index); `construct_metadata_query` opens ten
+  connections for a single call, measured. No connection reuse and no `PRAGMA journal_mode`
+  anywhere.
+- **`columns.name` is globally `UNIQUE`** (`SQLiteDBWriter.py:529`) with `INSERT OR IGNORE`
+  (`:608-616`), so a metric named identically in event and sublevel metadata registers once
+  and `get_table_by_column` routes every query for it to the wrong table. Separately
+  `level_id`/`levels_left`/sublevel `channel_id` are attached at runtime
+  (`MetaEventFitter.py:674-685`) and never registered, so
+  `construct_metadata_query(["level_id"])` raises.
+- **`fit_events` turns plugin bugs into scientific rejection reasons.**
+  `MetaEventFitter.py:578-717` has four near-identical `except` pairs keying
+  `self.rejected[channel][str(e)]`, so a `TypeError` from a plugin defect lands in the
+  user-facing rejection table beside "Too Few Levels" and the channel still finishes with
+  `eventfitting_status = True`. Also `:601` checks `isinstance(..., Iterable)` then `:605`
+  calls `len()` - a generator passes and dies on the call - and `fit_events(indices=[])`
+  marks the channel fully fitted while the docstring at `:481` says it fits everything.
+- **`_write_data` takes 13 parameters** (`MetaWriter.py:255-270`) where the caller
+  (`:438-452`) unpacks one dict. Related: `get_single_event_data` really returns `None`
+  (`MetaEventFinder.py:835`) and its only caller subscripts it unchecked
+  (`MetaWriter.py:427`), producing a swallowed rejection reading
+  `'NoneType' object is not subscriptable`. It should raise.
+- **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel
+  shorter than `rise_time`: `sublevel_current` becomes a single sample from the next level's
+  onset instead of a median (`:446`), `sublevel_stdev` becomes `baseline_std` (`:474`), and
+  `sublevel_blockage` becomes an unsigned max-absolute instead of a signed mean deviation
+  (`:501-510`). The retry loop at `:377-380` fits different events in one channel at 1.5^0
+  to 1.5^4 times the user's step size and records which nowhere. `:229`'s
+  `np.std(data[-padding_after:])` returns the whole event when `padding_after == 0` and its
+  sibling returns `nan` when `padding_before == 0`, poisoning `step_size` at `:235` (both
+  verified). `Step Size` has no default and `_validate_settings` is `pass`, so `None`/`0.0`
+  reach the division and every event is rejected with an opaque key.
+- **`replace_raw_settings_option` is dead in practice.** `BaseDataPlugin.py:356-387` exists
+  to track a parent rename into a dependency's `Options`, but both paths reaching
+  `apply_settings` blank it first (`DataPluginController.py:233`, `:576`), so it always
+  returns at `if options is None`. Its covering test mocks the instance and asserts only
+  that it was called, with fixture data production never produces.
+- **`BaseDataPlugin.__init__` registers dependencies under an empty key.** `apply_settings`
+  runs at `:114` before any `set_key`, so the scripted `Plugin(settings)` path records `""`.
+  The GUI is safe (`DataPluginController.py:551` sets the key first); the documented
+  standalone path is not.
+- **`edit_plugin` mutates the dependency graph partway through with a hand-rolled undo.**
+  `DataPluginController.py:77-260` re-points dependents one at a time and calls
+  `instance.set_key` only *after* the loop, so a mid-loop failure leaves some dependents
+  pointing at a key that does not exist, logged per-dependent while the method continues.
+  Wants validate-then-commit rather than compensating undo.
+
+### CI, packaging and tooling (not logic changes - no plan needed)
+
+- **`ci-internal-pr.yml:108-116` pushes from a detached HEAD.** `git add -A && git commit
+  && git push` on a `pull_request` event, where `actions/checkout` leaves no branch to push -
+  guarded by `if ! git diff --quiet`, so it only fires when the manual hooks change a file.
+  There is still **no coverage gate**: the step now runs (`pytest-cov` landed 2026-09-04) and
+  prints `::notice::Line Coverage`, but nothing fails on a drop. Baseline 83%.
+- **No Windows CI job.** Every matrix is single-entry and none runs `windows-latest`, so
+  Linux takes the opposite branch from the shipped platform at 6 of 11
+  platform-conditional sites - including `WaveletFilter.py:192`'s `os.add_dll_directory`, in
+  the one module that loads a native binary and is referenced nowhere in `tests/`.
+- **`release.yml` holds `contents: write` plus a PyPI OIDC token while calling four floating
+  third-party action tags**, none SHA-pinned. It installs `mingw-w64` nothing in the job
+  uses, and runs no lint gate and no `twine check`. `CITATION.cff`'s version is a
+  hand-maintained copy of `poriscope/constants.py` and the workflow validates the CFF schema
+  but never that the version matches the tag, so Zenodo can publish under a stale version.
+- **No pip cache in `ci-internal-pr.yml` or `release.yml`**, and `ci-branches.yml:101` runs
+  `pre-commit clean`, discarding the hook-env cache every run.
+- **`.pre-commit-config.yaml` housekeeping.** `black` runs only at the manual stage, so
+  formatting is enforced by CI rewriting contributors' commits rather than by failing them;
+  and `scripts/check_plugin_schemas.py` is documented as a gate on the Sphinx QA page but
+  wired into no hook or workflow.
+- **`scripts/new_plugin.py`'s family table is guarded one-directionally.**
+  `tests/unit/scripts/test_new_plugin.py:466-472` asserts each `FAMILIES` entry appears in
+  `main_model.py`, not the reverse, so adding a ninth `Meta*` base leaves the generator and
+  `--list` silently blind with no test failing. That guard is also a regex over another
+  file's source text, so reformatting `main_model.py`'s dict breaks it spuriously.
+- **`test_mapping_audit.csv` is stale and nothing executable reads it.** Its
+  `LooseMatchFound` column still names files renamed by the very commit that added it
+  (`43d556d`). Referenced only from the `test_event_worker.py` note below. Regenerate or drop.
+
+### Found while verifying the 2.0.0 plan (2026-09-04)
+
+Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
+
+- **`ProteinView` has no `update_column_units`, but `ProteinController.py:290` calls it**, and
+  `ProteinView.py:3508` also names it as a bus return function.
+  Not inherited from `MetaView` either; the `AttributeError` is swallowed by
+  `main_controller._dispatch_to`, so protein-tab unit labels silently never update. The other
+  four tabs either define the method or use `set_units`.
+- **`MetaDatabaseLoader.export_subset_to_csv:605` assumes one `data` row per event id.**
+  `data["filename"] = filenames` raises a length mismatch if the `data` table holds rows for
+  only some of the selected events. An empty `data` table is now rejected explicitly; a
+  partially-populated one is not.
+- **`SQLitePeakDBLoader.get_plot_features:176-178` indexes `result.iloc[1]`** but the guard at
+  `:154` only rules out zero rows, so a single-row result raises `IndexError`.
+- **`SQLiteDBLoader._load_metadata_generator:886` returns bare on `sqlite3.Error`** (method at
+  `:859`), which
+  inside a generator is an ordinary `StopIteration` and so is indistinguishable from
+  exhaustion. Same conflation the `None`-sentinel split fixed for `_load_metadata`
+  (2026-09-04), but a generator needs its own contract.
+- **Five methods on the 2.0.0 move list have zero test coverage**, so moving them is unobservable
+  by the current suite: `MetaView._logscale_and_filter_dataframe:789`,
+  `RawDataView._gaussian:556`, `RawDataView._gaussian_fit:574`, `ProteinView._summarize_vm:497`
+  and `RawDataView._get_baseline_stats:467` (the two hits for that name belong to the
+  `MetaEventFinder` copy). Closing this is the Step 2 gate's job, not separate work.
+- **The destination layer for Steps 3d and 4a-4e is unverified.** `MetaModel` is 363 lines over
+  12 methods with no dedicated test file, and `tests/unit/models/` covers the tab Models only
+  through `test_protein_model.py` (64 lines, 8 tests). A coverage gap, and test authoring is the
+  test developer's remit.
+
+### CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
+
+- **The C resets the counters on any threshold crossing; this implementation resets only on
+  an accepted jump**, so a crossing rejected by the `rise_time` guard still accumulates
+  `varS` across the rejected boundary - the same bias the landed fix removed, just rarer. It
+  also leaves `gpos`/`gneg` above threshold, so the next iteration re-detects and re-rejects
+  the same jump. Moving to the unconditional form changes detection behaviour and needs
+  validating against reference data first.
+- **The `length - jump > rise_time` half of the C's edge guard is still missing**, already
+  flagged by a comment in the loop. Adding it would suppress a transition detected too close
+  to the end of an event, which the C refuses.
+
+### Docs
+
+- **Autodoc publishes 478 private methods.** `plugins_generate_autodoc.py` emits 1,119
+  `automethod` directives across 78 pages, 43% single-underscore privates, so
+  `peakfinder.rst` publishes 45 members (32 private) inlining 1,528 lines of internal
+  rationale onto one public API page. The generator should omit a private-methods section.
+  Precedent for moving that prose exists - `fit_fallbacks.md` holds the narrative that was
+  "too large to carry in docstrings", and `PeakFinder`'s class docstring points at it.
+- **One stale doc claim.** `future_refactors_and_features.md:283` still asks someone to
+  confirm whether `PluginManagerPopup.py` is dead code; it was deleted in `d0dbc53`.
+- **Four `Meta*` bases carry a byte-identical 3,584-character `get_empty_settings`
+  docstring** (`MetaEventFitter`, `MetaDatabaseLoader`, `MetaEventLoader`,
+  `SQLiteEventLoader`) - four copies of one document that can drift independently.
+
+## Structural audit findings (2026-08-25)
+
+A read of the app shell, plugin contract and threading layer. Full write-up:
+<https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>
+
+The common thread: the app's main control path is a method name passed as a string and
+resolved with `getattr`, which none of the four pre-commit gates can see.
+
+### High - working today, but for reasons nothing records or tests
+
+- **Emit-then-read-an-attribute, in the analysis-tab View layer.** Emit
+  `global_signal`/`data_plugin_controller_signal` with a `return_function_name` callback,
+  then read the result off an attribute on the next statement. Fixed at the two sites the
+  audit counted; recurs roughly a dozen more times, uncounted:
+  `RawDataView.py:1416-1443`; `MetadataView.py:1411-1445`, `:1472-1490`, `:2021-2030`,
+  `:2063-2072`, `:2306-2330`, `:2340-2348`; `ProteinView.py:421`, `:1583-1592`,
+  `:1770-1779`, `:1872-1881`; `ClusteringView.py:286-295`, `:579-601`;
+  `EventAnalysisView.py:940-964`. **Deferred deliberately, and not a correctness problem
+  today**: the six `.connect()` calls carrying this bus pass
+  `type=Qt.ConnectionType.DirectConnection` explicitly, so the callback is guaranteed to have
+  run and a future thread move fails loudly instead of degrading to a stale read. It also
+  cannot be fixed the way the two counted sites were - `MetaController`/`MetaView`
+  deliberately hold no reference back to `MainController`, which is what keeps analysis tabs
+  pluggable, and a real `Signal.emit()` cannot hand back a return value even over a direct
+  connection. What is left is structural clarity, at the cost of a multi-file refactor over
+  Views with heavy test coverage.
+- **Routine states still logged at `WARNING`.** ~109 `logger.warning` + 16
+  `logger.exception` sites under `poriscope/`. **None interrupts anyone**, since `QtHandler`
+  floors at `ERROR`, so this is a log-signal problem and deliberately not urgent. Families
+  worth working from:
+  - Per-event/per-channel "skipping"/"proceeding without" notes logged at WARNING from inside
+    worker generators: `RawDataView.py:853, 869, 881, 1071, 1549`,
+    `EventAnalysisView.py:419, 436, 588, 950`, `ProteinView.py:1103, 1152`,
+    `RawDataModel.py:101, 109`, `MetaDatabaseWriter.py:178-180`.
+  - "No selection"/"select only one" user guidance at WARNING across `MetadataView`,
+    `ProteinView`, `RawDataView` and the three controllers' `"No column names received"`.
+    These belong on the panel rather than in the log at all.
+  - Sites already emitting to the panel *and* logging at WARNING for the same event
+    (`DataPluginController.py:155-161`, `:470-476`; `MetadataView.py:1848-1849`;
+    `ProteinView.py:1343-1344`) are the model for the intended pattern.
+  Deliberately staying at `ERROR`, so do not "finish the job" on these:
+  `main_model.py`'s plugin-import failure, `ClusteringView.py:530`'s empty dataframe, and
+  `SQLiteDBLoader.py:605`'s missing `id` column.
+- **The plugin loader executes modules before knowing they are plugins.** `load_plugin`
+  calls `exec_module` on every `.py` file before checking whether it holds a plugin, so a
+  helper module executes during discovery and reports as a plugin failure if it raises; and
+  it never registers modules in `sys.modules`, so two plugins importing a shared helper by
+  file each get their own copy. Worth folding into compliance-gate block 4.
+
+### Moderate
+
+- **`@log` costs roughly 291 ns per call above an undecorated method, with logging off.**
+  Measured 2026-09-02 over 300,000 calls: 330 ns/call against 39 ns undecorated, after the
+  lazy-name fix. Almost all of it is the wrapper's own call machinery rather than anything a
+  level check can skip, so the only lever is not decorating the hottest methods -
+  `get_key()` and `WaveletFilter._apply_filter` are the candidates. Profile a real analysis
+  run before removing either; 291 ns only matters at a call rate nothing has demonstrated.
+- **`apply_settings` aliases the settings dict it is handed, and session history holds the
+  same object.** Do **not** fix this by copying at `self.raw_settings = settings` - measured,
+  the alias is load-bearing. `DictDialog.__init__` aliases the dict it is handed and
+  `get_result` returns that same object, so in `edit_plugin` `new_settings is app_settings`;
+  `history["settings"]` therefore holds `app_settings`, filed into `plugin_history` by
+  reference. `edit_plugin` then swaps plugin-typed `Value`s for live plugin instances, and it
+  is `apply_settings` writing back *through the alias* that repairs the dict history holds.
+  Copy there without first fixing that ordering and session history holds live `QObject`s for
+  `save_session` to serialise. **Fix the ordering first, then the alias.**
+- **`save_session` re-serializes the whole history on the GUI thread on every plugin
+  change**, deep-copying and rewriting the entire session file whether or not the change
+  touched most of it.
+- **The 161 `except Exception` handlers are inconsistent about what they leave behind.**
+  `validate_and_instantiate_plugin` alone has six sequential try/except/log/return blocks, so
+  a failure leaves the UI partially updated with no indication of which stage failed.
 - **Oversized units, measured.** Five functions exceed 300 lines:
   `metadatacontrols.setupUi` (524), `PeakFinder._classify_folded_unfolded` (446),
   `proteincontrols.setupUi` (439), `_classify_translocation_direction` (391),
   `_locate_sublevel_transitions` (377). `ProteinView.py` is 4,027 lines across 83 methods;
   `MetadataView.py` 3,598 across 70. `MetaDatabaseLoader` declares 21 abstract methods over
-  1,344 lines, which is the real implementation burden behind the community-plugin gate
-  below. The mechanical win is the `setupUi` methods - straight-line widget construction,
-  extractable into per-panel builders without touching behaviour.
+  1,344 lines, which is the real implementation burden behind the compliance gate below. The
+  mechanical win is the `setupUi` methods - straight-line widget construction, extractable
+  into per-panel builders without touching behaviour.
 
-### Minor
+## What to pick up next
 
-- **`_validate_param_ranges` raises the exception its docstring rules out.**
-  `BaseDataPlugin.py:437-455`. The bound comparisons run before any `None` check, so
-  `Value: None` with a `Min` set raises `TypeError: '<' not supported between instances of
-  'NoneType' and 'float'` (confirmed) where the docstring promises `ValueError`. The caller
-  reports every failure with one generic message, so the user sees a type error instead of
-  "Threshold is required". Same method: the `Options` check special-cases the literal names
-  `"Output File"` and `"Input File"` - plugin-specific knowledge in the universal validator.
-  A `"Validate Options": False` flag in the settings schema expresses it without the base
-  class knowing any names.
-- **The docs workflow triggers on `main` while its comments say `develop`.**
-  `.github/workflows/build_and_deploy_docs.yml:5-12,27` - header comment "Run automatically
-  on pushes to develop", step named "Checkout (develop)", trigger `branches: ["main"]`.
-  Under git flow publishing from `main` is very likely correct, so fix the comments; left
-  alone, someone will eventually "fix" the trigger instead.
-- **Two dead conditions in the plugin loader.** `main_model.py:190` filters
-  `f.endswith(".py") and f not in ("__init__.py", "__pycache__")` - no filename both ends in
-  `.py` and equals `__pycache__`, which is a directory `os.walk` yields in the dirs list the
-  code ignores, so the clause has never excluded anything. `main_model.py:55`'s
-  `_JSON_CLASS_NAMES` maps `"null"` to `None`, but the writer emits `type.__name__`, which
-  for `None`'s type is `"NoneType"` - the entry can never match.
-- **A missing config key at startup is fatal before logging exists.** `main_app.py:31`
-  reads `self.app_config["Log Level"]` by subscript, but the backfill at `:96-104` covers
-  only `"User Plugin Folder"`. A hand-edited or older `config.json` therefore dies with a
-  `KeyError` before any handler exists to record it. Backfill every key from
-  `default_app_config`, or read through `.get()` with a default.
+Two standing constraints reshape the queue:
 
-## What to pick up next (order revised 2026-08-25)
+- **Another developer owns test-writing.** Do not edit her existing suites. A new test file
+  overlapping no existing suite is acceptable for covering tooling you have just built (as
+  `tests/unit/scripts/test_new_plugin.py` does), but taking on a test suite as the piece of
+  work itself is hers. Blocks 1 and 7 were handed to her on 2026-09-02.
+- **Logic changes need a plan the user approves first.**
 
-The structural audit section above outranks this list until it is cleared. One standing
-constraint also reshapes the queue below, so read this before working down it in file
-order:
+1. **Block 5, the CI half.** Marking the Docs Render Check (`docs-check.yml`) as a required
+   status check is an admin-only step outside the repo. Block 5's step 2 wants block 1's
+   conformance suite, now the test developer's; its schema-check half needs nothing built,
+   since `tests/unit/plugins/test_plugin_settings_schema.py` already sweeps all 24 plugins
+   and `ci-fork-pr.yml` runs `pytest -q` with no marker filter. The required-review toggle
+   is **not** outstanding work - advisory-only was chosen deliberately.
 
-- **Logic changes need a plan the user approves first.** Read-only investigation and
-  measurement do not.
-
-(Test-writing was out of scope here as of 2026-08-25, which had pushed blocks 1 and 7
-down the queue indefinitely and split block 2. That restriction no longer holds - block
-1's pytest harness has since landed in full, across all eight `Meta*` families, and
-block 2 is now fully landed, harness and reusable-module halves both. Block 7 is still
-open.)
-
-Ranked, cheapest real value first:
-
-1. **Block 6, the Sphinx docs-render check in CI.** Pure workflow config, no test
-   writing. Highest value-per-effort item in this file - see the block for why.
-2. **The abort-with-no-panel-message bug** in "Still queued" below. The only open item
-   a user would actually notice, and the routing is already worked out.
-3. **The duplicated `QTimer.singleShot`** in "Still queued" - one line.
-4. **Block 8, custom lint rules for the conventions `CLAUDE.md` only documents.**
-   Well-motivated: no-nested-functions, no-bare-except and explicit sqlite cleanup were
-   all enforced by hand during the 2026-08-25 lint sweep.
-5. **Block 5, the CI gate and `CODEOWNERS`.** There is still no `CODEOWNERS` file, so
-   the per-file ownership this project actually operates under is enforced by nothing.
-
-Then blocks 3 and 4, the `hist_data` refactor, and the parked histogram cut-off.
+Then the rest of the Moderate audit tier, the `hist_data` refactor, and the parked
+histogram cut-off. **Block 3's analysis-tab half is deferred** until the planned frontend
+refactoring lands, to avoid generating triads against a layout about to change.
 
 ## Still queued
 
-- **Aborting any operation produces no message in the panel.** `MetaController`'s
-  `handle_kill_worker`/`handle_kill_all_workers` only call `self.logger`, so a user whose
-  log level is above INFO gets no confirmation that a stop took effect - for every
-  operation, not just CSV export. Note a data plugin **cannot** emit to the panel: it is a
-  plain `ABC` with no signals, and the established route is returning a string from
-  `report_channel_status()`, which `MetaModel.generate_report` relays. `add_text_to_display`
-  exists only on `MetaController`/`MetaModel`/`MetaView`, so that is where any fix belongs.
-  Interacts with the `QtHandler` finding above: the `warning` calls on that path *do*
-  currently surface, as modal dialogs, while the `info` ones do not - so fix the two
-  together rather than routing more traffic into a handler that pops a dialog per record.
-- **`RawDataView.commit_events` never fires for a single non-list channel.**
-  Around `RawDataView.py:903`, `if not isinstance(channels, list): channels = [channels]`
-  normalises the argument, but the loop that emits `commit_events` sits in that `if`'s
-  `else` branch - so the normalised single channel is built and then never iterated.
-  Only a caller that already passed a list commits anything. Found while correcting the
-  `call_args` payload at that emit site; the payload fix is unrelated to and does not
-  mask this. Not fixed there because it is a behavioural change to the commit path that
-  wants its own look at what the callers actually pass.
+- **`MetadataView._handle_plot_events` builds SQL inline, 120 lines into a 244-line method.**
+  `MetadataView.py:2351` emits `SELECT id FROM events WHERE {' AND '.join(where_parts)}`, the
+  near-twin of `ProteinView._resolve_event_db_ids:1778`'s `SELECT id, event_id FROM events
+  WHERE ...` - different projection, same scoping. The Protein one is pinned directly; this one
+  is not, because pinning its text means driving the whole orchestrator. **Extract it before
+  Step 4b moves it**, then pin it the same way. The projection difference is recorded in
+  `tests/unit/views/test_view_authored_sql.py` so the merge cannot assume they are identical.
+- **The metadata query's table aliases are only half parameterised.**
+  `MetaDatabaseLoader.py:1021-1029` builds an alias map that feeds the projection and the
+  WHERE qualification, but the JOIN's `ON` clause hardcodes `s.event_db_id`. Renaming the
+  `sublevels` alias emits `JOIN sublevels sl ON e.id = s.event_db_id`, which is invalid SQL.
+  Latent - nothing changes the aliases today - and live the moment Step 4b does. Found by
+  perturbing the alias to verify `tests/unit/utils/test_metadata_query_goldens.py` was
+  actually sensitive.
+- **`format_axis_label` truncates a column name containing parentheses.** The pattern
+  `\s*\(.*?\)$` is anchored at `$`, so the leftmost match wins and the lazy `.*?` expands
+  across every intervening `)`: the strip reaches back to the **first** parenthesis, not the
+  last. A column named `Rate (per pore)` plotted with unit `Hz` is labelled `Rate (Hz)`,
+  silently losing `per pore`; `a (b) (c) (d)` collapses to `a`. Two copies,
+  `ProteinView.py:4037` and `MetadataView.py:3645`; `ClusteringView.py:731-742`'s inline
+  builder is unaffected because it never receives a label with a parenthetical. Behaviour is
+  pinned in `tests/unit/views/test_duplicated_helpers.py`, so a fix must update those tests.
+- **`pytest.ini` sets no `pythonpath`, so `tests.*` imports resolve only by luck.**
+  `pytest tests/unit/views/test_event_analysis_view.py` alone fails with
+  `ModuleNotFoundError: No module named 'tests'`; it works only when `tests/e2e/conftest.py`
+  is collected first. Step 2 branch 1 adds `pythonpath = .`. **The 13 dead `sys.path` shims
+  in the e2e test modules are then deletable** - each is placed *after* the import it exists
+  to enable, so none of them ever did anything.
+- **Two view test modules mock the view's `logger`**, which `tests/unit/views/_qt_mocks.py`'s
+  module docstring explicitly warns against: `test_raw_data_view.py:73` and
+  `test_metadata_view.py:97`. Every `caplog` assertion in those two files is blind. They also
+  hand-mock `global_signal` instead of using `shadow_signals`.
+- **`tests/conftest.py:8-15` describes a `tests/unit/models/conftest.py` deleted in
+  `c99249ea`.** The `main_model` fixture now lives at `tests/unit/models/test_main_model.py:25`
+  and relies wholly on the autouse `sandbox_user_data_dir`.
+- **`ProteinView._build_load_event_data_args:1957-1967` appends a scope clause to arbitrary
+  user SQL on a naive `"WHERE" in scoped_query.upper()` test**, so a `WHERE` inside a subquery
+  or a string literal mis-fires. This is exactly what `MetaDatabaseLoader._split_on_opaque_spans`
+  exists to handle, and this path does not use it. `MetadataView` has no equivalent. Step 2
+  branch 5 pins the current behaviour; the fix is separate.
+- **`test_raw_data_view.py:28`'s module docstring lists `_get_baseline_stats` as covered and
+  no such test exists.** Corrected by Step 2 branch 4, which also adds the missing test.
+- **Three `scripts/autodoc/` lint sites are ours to fix, and are the only part of the
+  declined-rules sweep that is.** Two `S110` in `metaclasses_generate_autodoc.py` and
+  `plugins_generate_autodoc.py`, one `S112` in the latter. Fixing them would not enable
+  either rule. **Not licence to re-propose the rules** - `DECISIONS.md` records why all six
+  stay off, per rule.
 - **The transitive serial declaration is not fully honoured.** `MetaEventFinder` defers to
-  `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its
-  `eventloader`, so a finder declares serial *because its reader is not threadsafe*. The
-  per-instance guard locks the finder, which does not protect a reader shared by two
-  finders. Latent today: every reader and loader returns `False` and no concrete plugin
-  overrides. A future reader returning `True` would not actually be protected. Deliberately
-  not solved with dependency-chain lock ordering, which risks deadlock - see the guard's
-  docstring.
+  `self.reader.force_serial_channel_operations()` and `MetaEventFitter` to its `eventloader`,
+  so a finder declares serial *because its reader is not threadsafe* - but the per-instance
+  guard locks the finder, which does not protect a reader shared by two finders. Latent
+  today: every reader and loader returns `False`. Deliberately not solved with
+  dependency-chain lock ordering, which risks deadlock; see the guard's docstring.
 - **`MetaEventFinder.force_serial_channel_operations` raises `AttributeError` when
-  `self.reader is None`.** Now called from inside the generator by the serialization guard
-  rather than over the signal bus, so it surfaces at the first advance instead of being
-  swallowed by the dispatcher. A finder without a reader raises `AttributeError` from
-  `find_events` anyway, two lines later, so this is a change of messenger and not of
-  outcome - but it is the guard that speaks first now.
-- **`MultiSelectFilterComboBox` installs an application-wide event filter and never
-  removes it.** `views/widgets/multiselect_filter.py:125` does
-  `QApplication.instance().installEventFilter(self)`; there is no `removeEventFilter`
-  anywhere in the file. Every instance ever created stays registered on the
-  process-lifetime `QApplication`, so once a widget's C++ side is gone the next event
-  routed to the stale filter raises `RuntimeError: Internal C++ object
-  (MultiSelectFilterComboBox) already deleted` from `eventFilter`.
-  **This makes `pytest tests/unit` intermittently error at setup of a
-  `TestRelayQuery` case in `test_protein_controller.py`** - a different case each run,
-  because the victim is whichever test next builds a widget. Measured on 2026-08-31:
-  1 failure in 3 runs on `develop`, 3 in 3 on `feature/per-plugin-locks`. The per-plugin
-  lock work does not cause it - it very likely shifts allocation and therefore GC timing,
-  which is enough to change how often a latent lifetime bug surfaces. Fix the leak, not
-  the symptom; a `try/except RuntimeError` in `eventFilter` would hide it while the
-  filters keep accumulating for the whole session in the real app too.
+  `self.reader is None`.** Now called from inside the generator by the serialization guard,
+  so it surfaces at the first advance rather than being swallowed by the dispatcher. A finder
+  without a reader raises from `find_events` two lines later anyway, so this is a change of
+  messenger, not of outcome.
 - **Placeholder guards on UI-supplied plugin keys are applied inconsistently.** A scan of
-  every `global_signal` emit in the analysis-tab views whose plugin key is a
-  UI-supplied parameter found 19 sites with no placeholder check in the emitting method.
-  Two were traced and are guarded by their callers (`_apply_filter` behind
-  `if data_filter and data_filter != "No Filter"`, `_commit_clusters` behind a deliberate
-  user action), which is very likely true of most of the rest - they are private helpers
-  reached from action handlers. The three that were *not* guarded anywhere were the
-  reactive `update_units` methods, now fixed. Worth auditing the remaining 17 properly
-  rather than assuming; the distinction that matters is whether a path is reactive
-  (runs on plugin-state change or combobox repopulation, so the placeholder is live) or
-  action-driven (the user already chose a real plugin).
-- **`EventWorker` still has no test coverage.** The generator-failure fix landed verified
-  only by a throwaway script (four scenarios: happy path, mid-run `TypeError`, abort, empty
-  generator). `test_event_worker.py` does not exist - see `test_mapping_audit.csv` - and
-  this is the single dispatch loop behind every event finder, fitter and writer run. Owed by
-  whoever owns test-writing; the scenarios above are the ones worth encoding.
+  every `global_signal` emit in the analysis-tab views whose plugin key is a UI-supplied
+  parameter found 19 sites with no placeholder check in the emitting method. Two were traced
+  and are guarded by their callers, which is very likely true of most of the rest. The three
+  that were not guarded anywhere were the reactive `update_units` methods, now fixed. Audit
+  the remaining 17 properly: the distinction that matters is reactive (runs on plugin-state
+  change or combobox repopulation, so the placeholder is live) versus action-driven.
+- **`EventWorker`/`MetaModel`'s worker lifecycle has no test coverage**, nor do
+  `QtHandler.py` and `App.configure_logger`. All of that work landed verified by throwaway
+  scripts. Owed by whoever owns test-writing; the scenarios worth encoding are:
+  - *Generator failure*: happy path, mid-run `TypeError`, abort, empty generator.
+  - *Worker cleanup*: two independent runs to completion, each popped from
+    `workers`/`threads`/`generators` without affecting the other, `deleteLater()` not raising.
+  - *`QtHandler`*: default `ERROR` level; DEBUG/INFO/WARNING raising no dialog; one ERROR
+    raising exactly one; four distinct errors behind an open dialog all shown; fifty
+    *identical* errors collapsing to one; `update_logging_level` lowering every other handler
+    but leaving `QtHandler` at `ERROR`; the dialog body carrying the bare message.
+  - *Abort*: `MetaModel.stop_workers` logging INFO rather than WARNING for a stale key and no
+    longer being silent for a stale channel; `MainController.handle_abort_all_analysis`
+    reaching every open tab without `exiting=True`.
 - **A worker blocked on a lock cannot observe an abort.** `Worker.stop()` only sets
-  `stop_requested`, which is read on the generator's next turn, so a channel queued behind a
-  serial-mode lock keeps waiting until it acquires. Pre-existing and unrelated to the
-  granularity fix; per-instance locks shorten the queues but do not change this.
-- **`MetaView.lock` is a class attribute shared by every tab view.** `MetaView.py:90`. It
-  guards `progress_bars` in `remove_progress_bar` only; the other three accesses
-  (`:282`, `:287`, `:325`) are unguarded, so the lock does not actually establish the
-  invariant it looks like it establishes.
-- **A duplicated call** in `IconTextMenuWidget.menu_button_clicked`: it schedules
-  `QTimer.singleShot(100, self.uncheckMenuButton)` twice in a row. Idempotent, so
-  harmless, but plainly a copy-paste artifact.
+  `stop_requested`, read on the generator's next turn, so a channel queued behind a
+  serial-mode lock keeps waiting until it acquires. Pre-existing; per-instance locks shorten
+  the queues but do not change this.
+- **`tests/unit/plugins/` has no `conftest.py`, so its widget tests leak real windows.**
+  Observed 2026-09-02 on Windows: dialogs and console windows flash throughout, and a
+  `StepDialog` built with the walkthrough tests' placeholder steps outlived the run as a
+  ghost window. Nothing sets `QT_QPA_PLATFORM=offscreen` locally, so on Windows every test
+  widget is a real on-screen window and this tree gets none of the teardown
+  `tests/unit/views/conftest.py` provides. Cosmetic, and belongs to whoever owns the test
+  suites; mirroring the views conftest is the obvious fix. Setting the offscreen platform in
+  `pytest.ini` would silence it globally but should be measured against the full suite first,
+  since it can change widget behaviour.
+- **`MetaView.lock` is a class attribute shared by every tab view** (`MetaView.py:90`). It
+  guards `progress_bars` in `remove_progress_bar` only; the other three accesses (`:282`,
+  `:287`, `:325`) are unguarded, so the lock does not establish the invariant it appears to.
+- **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it receives
+  1-D arrays from the histogram path, whole DataFrames from the density path, and `(x, y)`
+  tuples from the all-points path. Widened to `List[Any]` with a comment; unifying it is a
+  real refactor.
+- **`pydoclint` class-attribute bug - filed upstream, awaiting a fix.**
+  https://github.com/jsh9/pydoclint/issues/304. Nothing to do here until a release lands;
+  `check-class-attributes` stays `false`. Kept in case the report needs restating: the
+  one-line fix is to replace the two hardcoded `".. attribute ::"` literals in
+  `rest_attr_parser.py` with `re.compile(r"^\.\.\s+attribute\s*::\s*(?P<name>.+)$")`, which
+  accepts both spellings. Reproduction: a class documented with the *correct*
+  `.. attribute::` directive plus any `:param:` block reports `DOC601` + `DOC603`; adding a
+  space before the `::` makes it pass. Full diagnosis in `DECISIONS.md`.
+
+## Widget ownership left over from the event-filter work
+
+Neither is a crash risk; both are ownership tidiness. `DECISIONS.md` records why the filter
+itself stays on the application.
+
+- **`containerWidget` is still parentless** in both comboboxes (`QDialog(None)`;
+  `QWidget(None)` on the Linux branch), so it is owned by nobody and is not destroyed with
+  its combobox. Note the original rationale for parenting it - that it would stop
+  `_close_leftover_widgets` sweeping it as a top-level - **was measured and is false**: a
+  parented widget that keeps its window flags is still returned by `topLevelWidgets()`.
+- **`BaseLineEdit` still registers one application-wide filter and one `aboutToQuit`
+  connection per instance** (3 per controls build). Both are now harmless - its `eventFilter`
+  returns `False` directly and nothing in its body touches a C++ member of `self`. Replacing
+  them with a single application-owned watcher would remove the leak outright, but it is a
+  new class and a breaking change to something re-exported from `exposed.py`.
 
 ## Exclusions (standing project policy)
 
-Revised 2026-08-25. These three files are no longer excluded wholesale; the exclusion
-now splits by *kind of change*.
+- `NanoTrees.py` — a **deprecation candidate**, not an ownership question: its co-author has
+  left the lab and `CODEOWNERS` assigns it to `@shadowk29` with the rest of `eventfitters/`.
+  Fixing anything in it is permitted but not worth the effort while deprecation is on the
+  table.
+- `Basic_PeakFinder.py` / `PeakFinder.py` — logic owned by another developer, who is active.
 
-- `NanoTrees.py` — likely to be deprecated soon.
-- `Basic_PeakFinder.py` / `PeakFinder.py` — owned by another developer.
+**Docstring, signature and type-hint changes: in scope.** All three are fully annotated and
+report zero pydoclint violations.
 
-**Docstring, signature and type-hint changes: in scope.** All three are now fully
-annotated and report zero pydoclint violations.
-
-**Logic changes: out of scope, unconditionally.** This holds even when annotating
-surfaces a real bug, and several did. Write the honest annotation describing what the
-code does today, mark the defect with a narrow `# type: ignore` and a `NOTE:` at the
-site, record it under "Defects in the formerly excluded fitter plugins" below, and leave
-the fix to the owning developer.
+**Logic changes: out of scope, unconditionally**, even when annotating surfaces a real bug.
+Write the honest annotation describing what the code does today, mark the defect with a
+narrow `# type: ignore` and a `NOTE:` at the site, record it below, and leave the fix to the
+owning developer.
 
 ## Defects in the formerly excluded fitter plugins - flagged, never to be fixed here
 
-Policy as of 2026-08-25: `NanoTrees.py`, `PeakFinder.py` and `Basic_PeakFinder.py` are
-**in scope for docstring, signature and type-hint work but never for logic changes**,
-even when annotating surfaces a real bug. The logic in these files belongs to another
-developer. Everything below was found while annotating and left in place, marked with a
-narrow `# type: ignore` and a `NOTE:` comment at the site.
-
 - **`find_mode_blockage_level` guards two of its three Optional parameters.** The body
-  explicitly handles `data is None` and `baseline_std is None`, then computes
-  `abs(data_min - baseline_mean)` with no guard at all on `baseline_mean`, which is
-  equally `Optional[float]` under the `MetaEventFitter` contract. A caller with no
-  baseline estimate gets a `TypeError`. The asymmetry looks like a simple oversight
-  rather than a decision. **Now open only in `Basic_PeakFinder.py`** - `PeakFinder.py`
-  has since gained an explicit `if baseline_mean is None: raise RuntimeError(...)`,
-  matching its docstring.
-- **`PeakFinder.filter_peaks` multiplies by a possibly-`None` `baseline_std`** at three
-  adjacent lines (`type0_thresh`/`type1_thresh`/`type2_thresh`). Same root cause.
-- **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata.**
-  It assigns `baseline_mean` and `baseline_std` straight into `event_metadata`, whose
+  handles `data is None` and `baseline_std is None`, then computes
+  `abs(data_min - baseline_mean)` with no guard on `baseline_mean`, equally `Optional[float]`
+  under the contract. **Now open only in `Basic_PeakFinder.py`** - `PeakFinder.py` has since
+  gained an explicit `raise RuntimeError`.
+- **`PeakFinder.filter_peaks` multiplies by a possibly-`None` `baseline_std`** at
+  `type0_thresh`/`type1_thresh`/`type2_thresh`. Same root cause.
+- **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata**, whose
   declared value type is `Union[int, float, str, bool]`. A `None` reaching the database
-  writer downstream is not something that contract allows for.
-- **`PeakFinder.filter_peaks` treats a sample count as microseconds.** Its only caller
-  passes `len(data[padding_before:-padding_after])` as `event_length`, and the body then
-  computes `event_length * samplerate * 1e-6` and logs it as
-  `f"event_length={event_length:.1f} us"`. Either the argument or the label is wrong.
-- **`NanoTrees._DNA` slices with two unguarded `Optional[int]` paddings.**
-  `data[:padding_before]` and `data[-padding_after:]` are computed with no `None`
-  check, so the negation raises `TypeError` for any event loader that supplies
-  neither. The method has no live caller today - the only call site is commented out
-  inside `_locate_sublevel_transitions` - which is presumably why it has gone unnoticed.
-- **`NanoTrees._locate_sublevel_transitions` overwrites both baseline arguments.**
-  Its first two statements recompute `baseline_std` and `baseline_mean` from
-  `data[:padding_before]`, discarding whatever the event loader passed in. That may
-  well be deliberate, but it means the two parameters are inert and the docstring's
-  promise to "handle gracefully the case where any of the arguments except data are
-  None" is met by accident rather than by design.
-- **Both PeakFinders' `sublevel_starts` really holds dicts, not indices.** Their
-  `_locate_sublevel_transitions` returns a list of dicts keyed `"type"` and friends. This
-  is now consistent rather than broken - the `MetaEventFitter` contract was widened to
-  `List[Any]` to match what it has always actually produced - but it is worth knowing
-  that the parameter name still says "starts" while the payload is per-sublevel records.
+  writer is not something that contract allows for.
+- **`NanoTrees._DNA` slices with two unguarded `Optional[int]` paddings**
+  (`data[:padding_before]`, `data[-padding_after:]`), so the negation raises `TypeError` for
+  any event loader supplying neither. It has no live caller - the only call site is commented
+  out inside `_locate_sublevel_transitions`.
+- **`NanoTrees._locate_sublevel_transitions` overwrites both baseline arguments**, recomputing
+  `baseline_std`/`baseline_mean` from `data[:padding_before]` and discarding what the loader
+  passed. Possibly deliberate, but the two parameters are inert and the docstring's promise to
+  handle `None` arguments is met by accident.
+- **`PeakFinder` carries a third copy of the CUSUM variance-reset bug.**
+  `PeakFinder.py:736`'s `varS = 0` sits at the `while` loop's indentation rather than inside
+  the jump-accepted block, so the Welford accumulator is never reset at a detected changepoint
+  and the variance estimate is inflated (~586x one sample after a transition, ~5x after a
+  hundred). Fixed in `CUSUM.py`/`ClassicCUSUM.py` on 2026-09-03 against the C reference; this
+  copy is left for its owner. Note `PeakFinder` uses `threshold = step_size` directly rather
+  than `_calculate_threshold`, so the magnitude above is indicative, not transferred.
+- **Both PeakFinders' `sublevel_starts` really holds dicts, not indices.** Now consistent
+  rather than broken - the `MetaEventFitter` contract was widened to `List[Any]` to match what
+  it has always produced - but the parameter name still says "starts" while the payload is
+  per-sublevel records.
 
-## Open against the PeakFinder integration (2026-08-26)
+## Open against the PeakFinder integration
 
-Found while merging `feature_Peakfinder_classifier` into the docstring/type work. The
-defects below were **authorised for repair** and have been fixed - each carries a
-`NOTE (integration):` comment at the site explaining what changed and why, so the owning
-developer can see it when she re-branches. What remains open is listed under "Still open"
-at the end of this section.
-
-### Fixed during the integration
-
-- **`fit_2_gauss` could never succeed.** Its nested `Gauss` declared four parameters
-  (`x, Amplitude, mean, stdev`) but was called with five in both places inside `Gauss_2`,
-  so every call raised `TypeError`; the `curve_fit` call is wrapped in a bare
-  `except Exception`, which swallowed it and took the `popt is None` path forever. Since
-  the return statement unpacks `popt` in two groups of four, four parameters per Gaussian
-  is the intended shape, so `Gauss` gained an `offset` term and `Gauss_2`'s parameters
-  were renamed from `A/x/m/s` to `A/u/s/c` to say which is which.
-- **`find_mode_blockage_level` used `baseline_mean` unguarded.** Now raises `RuntimeError`
-  up front. Its `baseline_std` handling was also a `float()` inside a bare
-  `except Exception`, which made a legitimately-`None` value indistinguishable from a
-  conversion failure; the `None` case now selects the `'auto'` binning path explicitly.
-- **`redefine_padding` divided by `2 * baseline_std` with no `None` check.** Now raises.
-- **`filter_peaks` scaled every threshold by a possibly-`None` `baseline_std`** at seven
-  sites. Guarded once at function entry with a raise.
-- **`_populate_event_metadata` passed metadata-dict values straight into
-  `find_mode_blockage_level`**, where the base contract's
-  `Union[int, float, str, bool]` is wider than the `Optional[float]` accepted. Now
-  narrowed with explicit `isinstance` checks that raise on a non-numeric value, and the
-  returned primary level is checked for `None` before being stored.
-- **A dead `None` test in `_save_classification_report`.** It called
-  `float(prominence_stats.get("threshold"))` and only *then* tested
-  `threshold is not None` - a test that can never fire, since `float()` either returns a
-  float or raises. A missing key therefore raised `TypeError` instead of skipping the
-  line. The check now guards the conversion, and the `cast()` it needed is gone.
-- **Two `float(bt.get("midpoint"))` calls** on an `Optional` lookup, in
-  `_classify_peak_prominences` and `_classify_translocation_direction`. Both now raise.
-- **`test_cluster_of_type1_labeled_type3` deleted** as out of date, on instruction: it
-  asserted that two nearby type-2 peaks both become type 3, which the current clustering
-  logic does not do.
-
-### Closed by decision, not by code
-
-Both settled 2026-08-25; the reasoning is in `DECISIONS.md`. Recorded here only so they
-are not re-raised as open work.
-
-- The four `# type: ignore[assignment]` on the deliberate `None` placeholder writes in
-  `_populate_event_metadata` **stay**. They are safe and correct; clearing them would mean
-  widening a `Meta*` ABC across six fitter plugins.
-- The **double-Gaussian consolidation is not being pursued here.** The owning developer is
-  rewriting that fitting code from scratch, which supersedes it. `fit_2_gauss`, the dead
-  third implementation, has already been deleted.
-
-### Still open
-
-- **`SQLitePeakDBLoader` no longer casts its interpolated SQL values to `int`.** Reviewed
-  and **deliberately accepted**: the database is a local file owned by the user running
-  the app, so there is no privilege boundary for an injection to cross. Recorded here
-  only so the same finding is not re-raised. This also downgrades the `S608` item in the
-  bandit proposal below, which described these sites as "worth real scrutiny".
-- **Three nested function definitions** remain: `dgfit` inside `bitthresh`, and formerly
-  `Gauss`/`Gauss_2` inside the now-deleted `fit_2_gauss`. `CLAUDE.md` forbids nested
-  functions but nothing enforces it (that is block 8 below). Annotated in place and left
-  nested, on instruction.
-- **The histogram low-end cut-off in the classifier plots.** Diagnosed but not fixed, and
-  parked pending the double-Gaussian rewrite: the "All Events (incl. outliers)" bar chart
-  is binned against edges `bitthresh` computed from a *filtered subset*, and
-  `np.histogram` silently discards values outside the given bin range. Which subset wins
-  is decided by discrete ratio tests, so the plot's left edge jumps to the 25th percentile
-  when the blockage-filter re-run branch fires - which is why the cut-off appears at
-  certain threshold settings and not others. Three call sites share the pattern
-  (`_classify_folded_unfolded`, `_classify_peak_prominences`,
-  `_classify_translocation_direction`). The fix is to build the histogram once from the
-  full data and pass it into the fit, rather than letting the fit dictate the plot's bins.
-
-## Also queued - found during the type-annotation pass, not part of it
-
-- **`pydoclint` class-attribute bug - filed upstream, now awaiting a fix.** Reported to
-  the maintainer as https://github.com/jsh9/pydoclint/issues/304; jsh9 maintains both
-  `pydoclint` and `docstring_parser_fork`. Nothing to do here until a release lands -
-  `check-class-attributes` stays `false` in `pyproject.toml` in the meantime. Kept in
-  case the report needs restating: the one-line fix is to replace the two hardcoded
-  `".. attribute ::"` literals in `rest_attr_parser.py` with
-  `re.compile(r"^\.\.\s+attribute\s*::\s*(?P<name>.+)$")`, which accepts both spellings
-  so no existing docstring breaks. Reproduction: a class documented with the *correct*
-  `.. attribute::` directive plus any `:param:` block reports `DOC601` + `DOC603`;
-  adding a space before the `::` makes it pass. Full diagnosis in `DECISIONS.md` under
-  the `IntroDialog` entry.
-
-- **Adopt the rest of ruff `bugbear` (B) and `bandit` (S).** Proposed in review on the
-  grounds that both run against real code logic and so complement pydoclint's
-  docstring/signature checking for catching silent bugs. `B006` and `B020` are **done**
-  and are now enforced through `extend-select` in `pyproject.toml`; everything below is
-  what is left. Re-measured on `poriscope/` (2026-08-25): **B = 104, S = 54**. `tests/`
-  adds 10 more B hits, one of which is a `B023` closure-over-a-loop-variable - a real
-  bug class, but test code belongs to another developer.
-
-  | Rule | Hits | Character |
-  | --- | --- | --- |
-  | `B905` zip-without-explicit-strict | 54 | **Audited and closed 2026-08-25; deliberately not enabled as a gate.** 50 sites were in scope (the other 7 are in owner-held fitter files); 43 zipped sequences that are built together and need nothing. The 4 that mattered are fixed: 3 in `MetadataView` were silently dropping plot features that had no label, and `ClusteringView` no longer mutates `columns`, so its two zips now assert their alignment with `strict=True` rather than depending on truncation to hide the appended `"id"`. `SQLiteDBWriter`'s sublevel transpose was verified equal-length upstream and now says so with `strict=True`. Not enabled because the 54 remaining sites would each need their own `strict=` decision, and at least one - the list-against-generator zip in `MetaDatabaseLoader` CSV export - cannot be proven equal-length in advance. The rule earned its keep as a one-time audit. |
-  | `B904` raise-without-from-inside-except | 1 | **Done 2026-08-25; not enabled as a gate.** All 23 in-scope sites now chain with `from e`; the one remaining is in `PeakFinder.py` (owner-held), so enabling the rule would need a `per-file-ignores` entry that hides a real check rather than satisfying it. Worth recording that this was not purely cosmetic: the 12 data-reader sites were discarding the name of the missing file, leaving the user with "at least one of the input raw data files is missing" and no way to tell which. |
-  | `B007` unused-loop-control-variable | 3 | **Done 2026-08-25.** 17 of 20 cleared: 13 `dict.items()` loops became `.values()` or plain key iteration, one pointless `enumerate` dropped, and 3 `zip` sites underscore-prefixed rather than restructured so their iteration count is untouched. The 3 remaining are in `PeakFinder.py`. |
-  | `B010` set-attr-with-constant | 2 | both in `LogDecorator.py`; cosmetic |
-  | `B028` no-explicit-stacklevel | 1 | one `warnings.warn` in `MetaWriter.py`; cosmetic |
-  | `S608` hardcoded-sql-expression | 25 | **downgraded.** The database is a local file owned by the user running the app, so there is no privilege boundary for an injection to cross. Settled - see the `SQLitePeakDBLoader` note above. |
-  | `S110` try-except-pass | 13 | **Triaged 2026-08-25; all 13 remaining are in `PeakFinder.py`.** The 6 that were in our own code are fixed: two `set.remove()` handlers became `set.discard()`, one settings-value type test narrowed to `except AttributeError`, and three cosmetic `tight_layout` handlers now log at debug. Enabling the rule would need either the owner to fix hers or a `per-file-ignores` entry for `PeakFinder.py` - the latter hides a real check rather than satisfying it, so it is not proposed. |
-  | `S101` assert | 7 | **Done 2026-08-25.** The one site in non-owner code, `ClassicBlockageFinder._filter_events`, now raises `RuntimeError` rather than asserting - asserts vanish under `python -O`, which would have left an opaque `AttributeError` instead. The 7 remaining are all in `NanoTrees.py`, owner-held and a deprecation candidate. |
-  | `S112` try-except-continue | 1 | the single site is in `PeakFinder.py` (`_classify_folded_unfolded`, a bare `continue` on an array index); see the `S110` row. |
-
-  Almost every remaining fix is a logic change, so this is unclaimed rather than
-  blocked. **This block is now essentially finished.** `B905`, `S110`, `S112`, `B904`,
-  `S101` and `B007` are all closed (see their rows above): what each surfaced in our own
-  code is fixed, and every site that remains sits in an owner-held file - which is also
-  why none of them is enabled as a gate. What is left is `S608` (25, accepted: the
-  database is a local file owned by the user running the app) and 3 cosmetic
-  `B010`/`B028` sites. There is no further bug-finding value in this block; treat it as
-  done unless the owner-held files change hands.
-
-  Note this overlaps, but is not the same as, the bandit proposal in the
-  community-plugin block below: that one is scoped to `poriscope/plugins/` as a trust
-  boundary for unvetted contributions, this one is codebase-wide as a bug-catcher.
-
-- **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it
-  receives 1-D arrays from the histogram path, whole DataFrames from the density path,
-  and `(x, y)` tuples from the all-points path. Widened to `List[Any]` with a comment;
-  unifying it is a real refactor.
+- **The histogram low-end cut-off in the classifier plots.** The "All Events" bar chart is
+  binned against edges computed from a *filtered subset*, and `np.histogram` silently discards
+  values outside the given range. Which subset wins is decided by discrete ratio tests, so the
+  left edge jumps to the 25th percentile when the blockage-filter re-run branch fires - which
+  is why the cut-off appears at some threshold settings and not others. Three call sites share
+  the pattern. The fix is to build the histogram once from the full data and pass it into the
+  fit, rather than letting the fit dictate the plot's bins.
+- **A log-normal higher component in `PeakFinder.fit_threshold`.** The upper population of a
+  real prominence dataset is right-skewed (skew +2.09), and a log-normal beat a Gaussian on it
+  by 24% RMS (12.4 vs 16.4) when both were fit above the valley. Deferred because it breaks
+  the six-element `params` contract that the plotting code and all three `_classify_*` methods
+  unpack, and needs a decision on how a mixed Gaussian/log-normal result should be reported.
+  Do **not** revisit Poisson-weighted `curve_fit` alongside it: measured on the same data it
+  makes the fit worse unless paired with tail trimming, and the pairing is cliff-edged.
 
 ---
 
 # Future Fix: Community-Contributed-Plugin Compliance Gate
 
-The context blocks below were designed together, as a set: the goal is a pipeline that
-lets a community-contributed data plugin (or, occasionally, a frontend analysis-tab
-plugin family) be verified as safe and correct to merge with a bounded amount of human
-review, instead of relying entirely on a reviewer reading the diff. Each block below is
-independently actionable and can be picked up in its own future session.
+Designed as a set: a pipeline that lets a community-contributed plugin be verified as safe
+and correct to merge with a bounded amount of human review. Blocks 2, 6 and 8, and block 3
+for data plugins, are done and their sections are gone. What is left is **5**
+(free-standing), **4**, block 3's analysis-tab half, and **1** and **7**, which are pytest
+suites and so the test developer's.
 
-**The set's original order no longer applies.** It was 1 → 2 (cheap, static, highest
-signal) → 3 (makes 1/2 easy to satisfy from the start) → 4/5 (merge-gating
-infrastructure) → 6/7/8 (rounding out coverage). That sequence assumed blocks 1 and 2
-could be built first, and both are pytest suites, which are owned by another developer
-and therefore out of scope here. Blocks **6, 8 and 5** are the ones that stand alone
-with nothing built before them, and they are the order given at the top of this file.
-Note in particular that block 3 exists largely to make blocks 1 and 2 easy to satisfy
-from a blank file, so building 3 while they do not exist loses most of its value.
+## 1. Behavioural conformance suite (not just signature compliance) — test developer
 
-## 1. Behavioral conformance suite (not just signature compliance)
+**Goal.** Instantiate every discovered plugin and actually run its core methods against
+small synthetic data, asserting it behaves like a well-formed member of its `Meta*` family.
+`test_plugin_compliance.py` already does the discovery (`pkgutil.walk_packages` plus
+`BASE_CLASS_DATA`) but never calls the plugin, so a contribution can satisfy every signature
+check and still crash on real data, leak resources, or produce garbage.
 
-**Goal.** A test suite that instantiates every discovered plugin and actually runs its
-core method(s) against small synthetic data, asserting it behaves like a well-formed
-member of its `Meta*` family — not just that it has the right method names.
+**Shape.** A `tests/unit/plugins/test_plugin_conformance.py` reusing that discovery loop but
+parametrized over *concrete* classes. One canonical fixture per family from
+`tests/synthetic_data/`, and a minimal settings dict built from each plugin's own
+`get_empty_settings()` (fill required `Value`s with the `Min`/`Max` midpoint or the first
+`Options` entry). One generic check per family, not per plugin: instantiate, drive the real
+lifecycle (a finder's event boundaries monotonic, in-bounds and non-overlapping; a reader's
+`load_data` dtype/shape matching `get_raw_dtype()`; a fitter's metadata dict carrying the
+documented keys), then `close_resources()` and assert no exception and no dangling handles.
+Register a `conformance` marker so block 5 can scope it to changed files.
 
-**Why.** `tests/unit/plugins/test_plugin_compliance.py` already does the hard part of
-discovery: it walks `poriscope.plugins` with `pkgutil.walk_packages`, imports every
-module, and (via `BASE_CLASS_DATA`) knows which concrete classes implement which
-`Meta*` base. But it only checks `__abstractmethods__`/type-hint compliance — it never
-calls the plugin. A community-contributed plugin can satisfy every signature check and
-still crash immediately on real data, leak resources, or silently produce garbage.
+**Gotchas.** It is only as strong as the fixtures are representative - keep trace length,
+noise level and event count realistic enough that a finder cannot pass by doing nothing.
+Prefer a small dedicated fixture per family over one mega-fixture, so failures stay
+attributable. Run it against every existing in-repo plugin first.
 
-**All eight families have landed** as `tests/unit/plugins/conformance/`, with the
-`conformance` marker and a `_recipes.py` holding per-plugin settings, per-format
-fixture builders, and the discovery helper. All 24 concrete data plugins are now
-driven against real data; see `changelog.md` for what each family checks and what it
-found. The notes below are what is still open, plus the findings that reshaped the
-plan.
+**Worth slightly less than it was**, since `scripts/new_plugin.py`'s generated skeleton is now
+the first thing such a suite would run against, and that script's own tests already assert
+every family's skeleton instantiates and declares a self-consistent schema.
 
-**Partially landed (2026-08-31): a fixture that plants intra-event structure.**
-`_build_event_trace` in `tests/synthetic_data/synthetic_events_db.py` gained
-`sublevel_dip_pA`/`sublevel_dip_width_samples`: a smooth (raised-cosine/Hann) taper
-added on top of the flat blockage, one resolvable local extremum per event. A second,
-separate database (`peaked_events_db_path` in `tests/unit/plugins/conformance/conftest.py`)
-uses it; the original flat one is untouched, so the five fitters already passing
-against it carry zero risk from this. `Basic_PeakFinder` now fits all 25 planted
-events and is fully in the conformance suite (`test_eventfitters.py`, no longer
-skipped).
+## 3. Contribution scaffold: the analysis-tab half
 
-Un-skipping `Basic_PeakFinder` surfaced a real bug, since fixed:
-`_populate_sublevel_metadata`'s `sublevel_max_deviation` computation had a ternary
-whose both arms slice to an empty array when two consecutive sublevel-transition
-indices land on the exact same sample (`np.max` on that raises "zero-size array to
-reduction operation maximum which has no identity") - reachable whenever
-`scipy.signal.find_peaks`'s interpolated half-height width crossing truncates to the
-peak's own index under noise, confirmed via direct reproduction (a transition list
-containing `..., 227, 227, ...`). Fixed by returning `0.0` for a zero-width sublevel,
-matching `sublevel_raw_ecd`'s existing `np.sum`-over-empty-slice precedent two lines
-above it. A rectangular dip was tried first and made this worse, not better (edge
-ripple resolving into two close peaks); the smooth taper reduces but does not by
-itself eliminate the underlying edge case - the plugin fix is what actually closed it.
+`scripts/new_plugin.py` generates data plugins for all eight families. The analysis-tab half
+is **deferred until the planned frontend refactoring has landed**, so triads are not generated
+against a layout about to change. `FAMILIES` is shaped so the three can be added without
+rework.
 
-`PeakFinder` stays skipped, with a more precise reason than before: it was tried
-against the same peaked database and rejected all 25 events as "No Peaks Found" under
-every setting tried, because its internal minimum peak prominence
-(`PeakFinder._locate_sublevel_transitions`) is derived from `carrier_blockage` - the
-depth of the blockage itself (~400 pA here), not from the "Min Carrier Blockage"
-setting - so a modest intra-event dip can never clear it regardless of tuning. It
-would need a genuinely different fixture shape: a two-level signal with both levels
-comparable in depth, and even that would only reach the entry point to its own
-downstream folded/unfolded and translocation-direction classification stages, which
-remain unexplored. See `FITTERS_SKIPPED` in `_recipes.py`.
+A triad is 8 abstract methods across three files (`MetaController` 2, `MetaModel` 1,
+`MetaView` 5) plus the class-name-equals-filename rule and `_init` assigning
+`self.view`/`self.model`; nothing else needs registering, which is why a ~100-line triad is a
+valid runnable tab.
 
-Still open: extending the same knob to let the CUSUM family be tested against a known
-sublevel count, not just a known event count - untouched by the above, since CUSUM
-et al. use the original flat database.
+Two things to know first:
 
-**Landed, and worth extending: the resource-leak check.** `psutil` was never needed - on
-Windows an open handle blocks `os.unlink`, so unlinking a plugin's output after
-`close_resources()` *is* a leak assertion, and this project is Windows-focused. Both
-writer families are checked this way and both pass. It only covers plugins that own an
-output *file*; extending it to the input side (readers hold a `numpy.memmap`, loaders a
-SQLite connection) means unlinking a per-test copy of the fixture rather than the shared
-session one. On POSIX the check degrades to a no-op, where diffing
-`len(os.listdir('/proc/self/fd'))` would cover it.
+- **The `HelloWorld` example under `docs/source/_static/images/examples/` is stale** and would
+  not instantiate: it implements 4 of `MetaView`'s 5 abstract methods (missing
+  `notify_plugin_state_changed`) and imports `from utils.MetaView import MetaView`. A
+  generator should replace it.
+- **The generator's stub-body policy was measured, not chosen.** Re-run the four probes rather
+  than reasoning about them: `pass` under a non-`None` return is mypy `empty-body`; a copied
+  `:raises X:` above a `pass` body is DOC502; the same field above `raise NotImplementedError`
+  is DOC503; raising with no field is DOC501.
 
-**Rejected: running conformance only for changed plugin files in CI.** Block 5 proposed
-this. CI runs the entire suite on every branch push, fork PR, internal PR and release,
-with no subset and no marker filter, so a changed-files-only job is a new CI pattern
-rather than a filter on the existing one. The marker exists for local runs
-(`pytest -m conformance`), not to carve up CI.
+## 4. The plugin trust boundary — largely settled
 
-**Findings worth keeping (these cost real time to discover).**
-1. Reuse `test_plugin_compliance.py`'s discovery approach - parametrize over *concrete*
-   plugin classes rather than base classes.
-2. For each `Meta*` family, define one canonical synthetic fixture already present
-   under `tests/synthetic_data/` (`synthetic_chimera.py`/`multichannel_chimera.py` for
-   readers, `synthetic_events_db.py` for db loaders/writers, `synthetic_metadata_db.py`
-   for metadata-consuming plugins) and a minimal valid `settings` dict per family.
-   **Not** by auto-filling from the schema: that was the original plan and it cannot
-   work. `Options` on a file parameter is a Qt dialog filter glob, not a value domain
-   (`_validate_param_ranges` exempts `Input File`/`Output File` from its Options check
-   for exactly this reason); most numeric parameters have `Max=None`, so no midpoint
-   exists; and a parent-plugin parameter declares `Type` `str` while the family
-   validator requires a live instance inheriting the `Meta*` base, with `Type` reset to
-   `None` - so every finder, fitter and writer needs a real parent chain built first.
-   Use a declarative per-family recipe plus a generic filler for leftover scalars.
-   Two traps: `apply_settings` mutates the dict passed to it (it rewrites plugin values
-   to `get_key()`), so hand each plugin a fresh deepcopy; and it discards
-   `Type`/`Min`/`Max`/`Options`, keeping only `Value`, so post-apply assertions must
-   read `get_raw_settings()`. Schema self-consistency is block 2's job, now landed.
-3. Write one generic conformance check per `Meta*` family (not per plugin), driving it
-   through that family's real lifecycle. For `MetaEventFinder`: assert boundaries are
-   monotonic, in-bounds and non-overlapping, and that the count matches what the
-   fixture planted. For `MetaReader`, the argument order is
-   `(start, length, channel, raw_data)` with both times in seconds - but see finding 10
-   below before writing the raw-data assertion; the pairing originally planned here
-   (`load_data(raw_data=True).dtype == get_raw_dtype()`) is not a real per-plugin check.
-4. **Separate what the base class produces from what the subclass owes.** The fitter
-   check needed this and the first version of the assertion was wrong without it:
-   `MetaEventFitter.fit_events` injects `channel_id`/`event_id` into event metadata and
-   `event_id`/`channel_id`/`level_id`/`levels_left` into sublevel metadata, while
-   `_define_metadata_types` declares only `event_id`, `start_time` and `num_sublevels`.
-   Comparing produced against declared naively flags all five working fitters.
-5. **Assert against planted ground truth, not just "did not raise".** A fitter that
-   rejects every event still completes cleanly; `tests/e2e/event_analysis` pins
-   `step_size_1000_too_few_levels` as exactly that outcome from plausible settings.
-6. **Units differ between siblings in a family.** `ClassicCUSUM`'s `Step Size` and
-   `ThresholdBlockageFinder`'s `Threshold` are in sigma while their siblings' are in pA,
-   so one recipe value cannot serve a whole family. Read the `Units` entry; do not copy
-   a sibling's number. Both cases were invisible until the plugin was driven on data.
-7. **Assert positions by containment, not equality.** `ClassicBlockageFinder` backtracks
-   its boundaries to the local baseline and reports a start a few samples before the
-   planted index; `ThresholdBlockageFinder` reports it exactly. Both are correct.
-8. **A margin above the noise floor is not the same as a margin below the signal.**
-   `ThresholdBlockageFinder` at 3 sigma trips on noise excursions; each is discarded as
-   Too Short or Too Close, but one landing beside a real event costs that event too, so
-   it found 4 of 5. Pick a threshold clear of the noise, not merely under the signal.
-9. **`with sqlite3.connect(...)` commits but does not close.** A test that inspects a
-   writer's output that way holds the handle open and looks like the leaking party
-   itself - this cost real time to attribute. Close explicitly in a `finally`.
-10. **`load_data(raw_data=True).dtype == get_raw_dtype()` is a tautology, not a check.**
-    `MetaReader.load_data` finishes its raw-data branch with
-    `.astype(self.get_raw_dtype())` right before returning, so this equality holds for
-    every reader by construction - it would pass even if `_set_raw_dtype()` returned
-    something with no relationship to the file's actual on-disk type. Caught by tracing
-    `load_data`'s full body, not by trusting the docstring. What's actually worth
-    asserting: `get_raw_dtype()` resolves to a usable dtype, and the raw path returns
-    the same sample count as the non-raw path.
-11. **A reconstruct-via-scale-and-offset check is not valid across the whole
-    `MetaReader` family, and this needed empirical proof, not just a read of the
-    contract.** `ChimeraReaderVC100._convert_data` reinterprets the raw code through a
-    bitmask/uint16 step before applying `(scale, offset)`, so `raw*scale+offset` alone
-    reproduces the non-raw value only for readers with no such step. A literal
-    `raw.astype(float64)*scale+offset` check against a hand-verification script first
-    looked like a real bug (off by exactly one offset term, uniformly) before turning
-    out to be the verification script's own bug: it skipped the `uint16` reinterpretation
-    `_scale_data` applies. Confirmed by fixing the script, not by assuming either side.
-12. **A reader plugin can disagree with itself about the channel a file is on, and only
-    an end-to-end check against the real reader catches it.** The ABF2 writer built for
-    `TCossaLabABFReader` set `SyntheticDataset.channel = 0` while hardcoding `CH003` in
-    the filename; `_get_file_channel_stamps` parses the channel back out of that exact
-    token, so the real reader reported channel 3, not 0 - a `KeyError` two calls later,
-    not where the actual mistake was. Fixed by deriving the filename's channel token
-    from the same `channel` value the dataset object claims, so the two cannot drift
-    apart. `LegacyElementsReader`, by contrast, hardcodes channel 0 unconditionally
-    regardless of filename - the fix does not generalise to it and does not need to.
+Both static gates exist (`ruff-plugin-security`, `plugin-module-level`). `DECISIONS.md`
+(2026-09-02) records why there is no `bandit`, why the module-level check skips
+`analysistabs/`, and that this is explicitly not a sandbox. What remains is the loader item in
+the 2026-08-25 audit above: `exec_module` runs before the file is known to be a plugin, and
+modules are never registered in `sys.modules`.
 
-**Gotchas.** This will only be as strong as the synthetic fixtures are representative —
-keep the fixtures' parameters (trace length, noise level, event count) realistic enough
-that a finder/fitter can't trivially pass by doing nothing. Don't try to make one
-mega-fixture cover every family; a small dedicated fixture per family, reused across
-all plugins in that family, is easier to reason about and keeps failures attributable
-to the plugin under test rather than the fixture. Note the fitter family shows one
-fixture per *family* is not always enough either: step/level fitters and peak fitters
-need structurally different events.
+## 5. Scoped CI gate for `poriscope/plugins/**`
 
-**Verification.** Run against every *existing* in-repo plugin first before treating a
-conformance failure on a new contribution as meaningful signal — but do not expect a
-clean sweep. The fitter pass needed `ClassicCUSUM` retuned and two plugins skipped for
-want of a fixture, and neither was a plugin defect.
+**Goal.** A plugin-touching PR gets checks scoped to just the changed plugin, and reaches the
+person who maintains it.
 
-## 2. Settings-schema linter for `get_empty_settings()` - landed (2026-08-31)
+**Ownership: done, and deliberately not a gate.** `.github/CODEOWNERS` routes review requests
+and nothing more; *Require review from Code Owners* is off on every branch on purpose. **Do
+not read the CI work below as gated on turning that toggle on, and do not "finish" this block
+by doing so.** Reasoning and the single reopening condition - the contributor list growing
+past six - are in `DECISIONS.md` (2026-09-02); the contributor-facing version is in
+`development_workflow/code_ownership.rst`.
 
-`tests/unit/plugins/test_settings_schema.py` walks every concrete `BaseDataPlugin`
-subclass and checks `Type`/`Value` presence, `Min <= Max`, `Options` element types,
-`isinstance(Value, Type)` for shipped defaults, and `Value in Options`. The 21
-violations it found are fixed - see `changelog.md`.
+**What remains.**
 
-The static (schema-only) half now lives in
-`poriscope/utils/settings_schema.py::validate_settings_schema(schema: dict) -> list[str]`,
-reusable outside pytest; the test imports it rather than duplicating it. The
-default-value half still delegates to each plugin's own `_validate_param_types` /
-`_validate_param_ranges` rather than reimplementing them - deliberately: it cannot
-drift from the rules it enforces, and it inherently needs a live instance, so it stays
-pytest-only rather than moving into the static module.
+1. In `ci-fork-pr.yml` (which already exists for fork PRs and runs strict
+   `pre-commit run --all-files` plus the full `pytest` with fork-safe `contents: read`), add a
+   step after checkout computing
+   `git diff --name-only origin/${{ github.base_ref }}...HEAD` and, for matches under
+   `poriscope/plugins/**`, run block 1's conformance suite scoped to those files
+   (`pytest -m conformance -k <derived from changed filenames>`). The schema-check half needs
+   nothing: `test_plugin_settings_schema.py` already sweeps all 24 plugins on every push.
+2. Mark that step and the existing strict `pre-commit` step as required status checks for
+   `main`/`develop`. Automated checks only - this does not extend to code-owner review.
 
-`scripts/check_settings_schema.py` runs the static half standalone (no pytest), and a
-new local `settings-schema` pre-commit hook (`.pre-commit-config.yaml`) runs it on
-every commit touching `poriscope/plugins/**`, ahead of the much more expensive
-conformance suite in block 1. Verified to actually catch a violation before landing:
-a deliberately injected `Min > Max` was caught and reported with the offending
-plugin/parameter named, then reverted.
+**Gotcha.** `ci-fork-pr.yml`'s permissions are deliberately `contents: read`; do not add
+anything needing write access. That is `ci-internal-pr.yml`, which is not fork-safe.
 
-**Open contract question surfaced by the above.** `Units` is a sixth schema field that
-`SQLiteEventWriter` and `SQLiteDBWriter` both read (`base_settings["Voltage"]["Units"]`)
-but which appears in neither the `get_empty_settings()` docstring contract nor the
-`Setting` TypedDict. The test tolerates it rather than failing, since the fix is to the
-contract - document it and add it to `Setting` - not to the plugins relying on it.
+**Gated on this block:** `scripts/check_plugin_schemas.py` has no pre-commit hook, deliberately
+- it would have blocked commits on the six owner-held `Basic_PeakFinder` findings before the
+owning developer had seen them. The test suite covers the same ground on every push meanwhile.
+`CODEOWNERS` landing does not release this. Wire the hook once the owner has ruled on the six.
 
-## 3. Contribution scaffold / template generator
+## 7. Fuzz / malformed-input testing for data readers — test developer
 
-**Goal.** Shift compliance left: a new plugin should start out already satisfying
-pydoclint, mypy, `test_plugin_compliance.py`, and (once built) blocks 1 and 2 above,
-rather than a contributor discovering violations only after opening a PR.
+**Goal.** Catch unhandled crashes in community-contributed parsers on truncated, corrupted or
+off-spec binary input - the most likely crash surface for a new `MetaReader`, since readers
+parse arbitrary externally-produced files. No current check exercises a reader against
+anything but a well-formed synthetic file.
 
-**Why.** Every plugin family's abstract method list, docstring style (sphinx-style,
-per `[tool.pydoclint] style = "sphinx"`), and settings-schema shape is already fully
-determined by its `Meta*` base — there's no reason a contributor should hand-write
-this from a blank file when it can be generated correctly the first time.
+**Shape.** A `tests/unit/plugins/datareaders/test_reader_fuzz.py` parametrized over every
+concrete `MetaReader` the way `test_plugin_compliance.py` discovers them. Take each family's
+valid synthetic fixture and apply a small, fixed set of *deterministic* mutations - truncate at
+several byte offsets, flip the header magic, zero a middle section - rather than open-ended
+random fuzzing, which would risk flaky CI. Assert only that each mutation yields either a clean
+successful read or a caught, well-typed exception: never an unhandled crash, a hang, or a
+silently truncated array. The mutation generation is necessarily format-specific (one "corrupt
+this fixture" helper per reader family, not per reader); the assertion logic and discovery loop
+are shared.
 
-**Implementation plan.**
-1. Add `scripts/new_plugin.py`, invoked like
-   `python scripts/new_plugin.py --family MetaEventFinder --name MyEventFinder`.
-2. For the given `--family`, use `inspect` on the corresponding `Meta*` class (same
-   introspection `test_plugin_compliance.py` already does via
-   `get_required_methods`/`__abstractmethods__`) to generate a stub subclass in the
-   right `poriscope/plugins/<category>/` folder, with:
-   - one method stub per abstract method, each with a sphinx-style docstring skeleton
-     whose `:param:`/`:return:`/`:rtype:` entries are pre-filled from the base method's
-     own signature and docstring (so pydoclint passes on the stub immediately),
-   - a `get_empty_settings()` stub returning one example parameter entry with a comment
-     showing the full `{"Type", "Value", "Options", "Min", "Max"}` shape,
-   - a matching `tests/unit/plugins/<category>/test_my_event_finder.py` stub that
-     imports the new class (so `test_plugin_compliance.py`'s discovery picks it up
-     immediately) and includes a placeholder for the block-1 conformance test.
-3. Document the script in `CLAUDE.md` under "Where to add a new plugin" as the
-   recommended starting point (the existing prose there, pointing at "an existing tab
-   (e.g. `Protein*`) as a template," is a weaker substitute for a scaffold that's
-   guaranteed to already pass every check).
-
-**Gotchas.** Keep the generated stub minimal (raise `NotImplementedError` in method
-bodies) — the goal is a compliant skeleton, not a working plugin; don't try to
-generate real algorithmic logic.
-
-## 4. Static security review for module-level plugin code
-
-**Goal.** Reduce the trust risk inherent in blindly executing arbitrary community-
-submitted `.py` files inside a desktop app running with the user's full privileges.
-
-**Why.** Per `MainModel.populate_available_plugins()`'s documented behavior, plugin
-discovery imports *every* `.py` file found under `poriscope/plugins/` (and the user
-plugin folder) — and Python import always executes module-level code unconditionally,
-before any of `test_plugin_compliance.py`'s reflection even runs. For in-house
-contributors this is an accepted, low-risk convenience; for unvetted community
-submissions landing in the same discovery path, it's a real code-execution trust
-boundary that none of the current tooling (ruff/mypy/pydoclint) is designed to police.
-
-**Implementation plan.**
-1. Add `bandit` to `requirements-dev.txt` and run it as a `pre-commit` `repo: local`
-   hook scoped to `files: ^poriscope/plugins/` (mirroring how the pydoclint hook is
-   already scoped), using a conservative rule subset first (e.g. flag
-   `subprocess`/`eval`/`exec`/`pickle.load`/dynamic `importlib` calls, network access,
-   and filesystem writes outside of an expected data directory) to avoid a noisy
-   first run.
-2. Additionally add a narrow, purpose-built AST check (simpler and more targeted than
-   general-purpose `bandit` rules) that flags any *module-level* statement in a plugin
-   file other than imports, constants, and class/function definitions — since a
-   compliant plugin should never need top-level side effects, and "module-level code
-   that does something when merely imported" is the single highest-risk pattern for
-   this specific discovery mechanism.
-3. Triage findings as blocking (network/subprocess/eval/exec) vs. advisory (everything
-   else) — don't try to make `bandit`'s full default rule set blocking on day one, or
-   it will generate enough noise to undermine trust in the check.
-
-**Gotchas.** This is a deliberately narrow first pass, not a sandbox — it raises the
-bar for a careless or lazy submission but is not a defense against a determined
-adversary (a plugin can still do plenty of damage inside a legitimate-looking method
-body that only runs once instantiated). True sandboxing (subprocess isolation,
-restricted execution) is a much larger architectural change and is explicitly out of
-scope here; if that level of isolation is ever wanted, treat it as a separate,
-much larger design discussion, not an incremental addition to this one.
-
-## 5. Required, scoped CI gate + CODEOWNERS for `poriscope/plugins/**`
-
-**Goal.** No plugin file merges without both automated checks (scoped to just the
-changed plugin) and a human sign-off — formalizing, for everyone, the informal
-per-plugin "ownership" that already exists for a few plugins today.
-
-**Why.** `.github/workflows/ci-fork-pr.yml` already exists specifically for
-fork-originated PRs (the realistic path for a community contribution) and already runs
-strict `pre-commit run --all-files` plus the full `pytest` suite with `contents: read`
-fork-safe permissions — this is the right place to add plugin-specific gating rather
-than inventing a parallel workflow. There is currently no `CODEOWNERS` file in the
-repo, so plugin review isn't enforced by GitHub at all today.
-
-**Implementation plan.**
-1. Add a `CODEOWNERS` file at the repo root mapping each
-   `poriscope/plugins/<category>/` folder (and, once it exists, `poriscope/utils/Meta*`)
-   to the relevant maintainer(s)/owner(s) — this only takes effect as a *required*
-   review gate once "Require review from Code Owners" is turned on for the target
-   branch's protection rule in repo Settings (an out-of-repo, admin-only config step;
-   note it explicitly here so it isn't forgotten as "already handled" just because the
-   file exists).
-2. In `ci-fork-pr.yml`, add a step after checkout that computes the changed files
-   (`git diff --name-only origin/${{ github.base_ref }}...HEAD`) and, if any match
-   `poriscope/plugins/**`, runs the block-2 settings-schema check and block-1
-   conformance suite scoped to just those files (e.g.
-   `pytest -m conformance -k <derived from changed filenames>`), in addition to the
-   existing full `pytest` step — so a plugin-touching PR gets strictly more
-   scrutiny than a non-plugin PR, without slowing down every PR with the full
-   conformance suite.
-3. Mark this new step (and the existing strict `pre-commit` step) as required status
-   checks in branch protection for `main`/`develop`.
-
-**Gotchas.** `ci-fork-pr.yml`'s permissions are deliberately `contents: read` for fork
-safety — don't add anything to this workflow that needs write access (e.g. auto-fix
-commits); that's what `ci-internal-pr.yml` is for, and it isn't fork-safe.
-
-## 6. Docs-render check in CI (Sphinx warnings-as-errors)
-
-**Goal.** Catch a plugin whose docstrings are pydoclint-compliant but still break
-Sphinx rendering, before merge rather than after.
-
-**Why.** `.github/workflows/build_and_deploy_docs.yml` only runs
-`scripts/generate_all_autodoc_rst.py` + `sphinx-build -b html docs/source docs/build`
-on push to `main` (or manual dispatch) — never on a PR, and without `-W`
-(warnings-as-errors), so a bad cross-reference or malformed directive in a new
-plugin's docstring currently surfaces, if at all, only after it's already merged and
-deployed.
-
-**Implementation plan.**
-1. Add a `docs-check` job to `ci-fork-pr.yml`/`ci-internal-pr.yml` (or a new dedicated
-   PR-triggered workflow) that runs the same two commands
-   (`python scripts/generate_all_autodoc_rst.py` then
-   `sphinx-build -b html docs/source docs/build`) but with `-W --keep-going` so
-   warnings fail the build and all of them are reported in one pass rather than
-   stopping at the first.
-2. This job doesn't need the full Qt/Xvfb system dependency set that the test jobs
-   need (autodoc generation and Sphinx build don't launch the app) — keep it as a
-   lighter, faster job so it doesn't slow down the PR feedback loop.
-3. No need to deploy anything from this job — it's a build-only check; reuse
-   `actions/upload-artifact` only if reviewers want a preview of the rendered docs.
-
-**Gotchas.** Turning on `-W` will likely surface pre-existing warnings from plugins
-already in the repo, not just future ones — expect an initial cleanup pass (grandfather
-via a suppression list keyed by warning text, mirroring the `.pydoclint-baseline.txt`
-pattern, if the initial warning count is large) before this can be made blocking.
-
-## 7. Fuzz / malformed-input testing for data readers
-
-**Goal.** Catch unhandled crashes in community-contributed parsers on truncated,
-corrupted, or otherwise malformed binary input — the single most likely crash surface
-for a new `MetaReader` subclass, since readers parse arbitrary externally-produced
-files by nature.
-
-**Why.** None of the current checks (compliance, conformance from block 1, pydoclint,
-mypy) exercise a reader against anything but a well-formed synthetic file. A community-
-contributed reader for a new hardware/file format is exactly the plugin family most
-likely to choke on a real-world file that's merely slightly off-spec (truncated
-mid-record, wrong header magic, unexpected byte order) — the app should degrade
-gracefully (raise a clear, caught exception) rather than crash or hang.
-
-**One defect this scoping work found is already fixed (2026-08-31), independent of the
-fuzz suite itself.** `MetaReader.load_data()` clamped `end_index`/`start_index` to
-`total_samples` *before* its own bounds check ran, so a request extending past a
-channel's real end silently returned fewer samples than asked for instead of raising
-the `ValueError` its docstring already promised — not a fuzzing-specific finding, a
-plain over-long request on a valid file already reached it. See `changelog.md` for the
-fix and the trace confirming no in-tree caller relied on the old clamping. A
-regression test for this contract (`test_load_data_rejects_an_out_of_bounds_request`)
-already exists in `tests/unit/plugins/conformance/test_readers.py`, parametrized across
-all 7 readers — the fuzz suite below is about malformed *bytes*, a different risk
-surface from this, and doesn't need to re-cover it.
-
-**Real evidence gathered while scoping this (2026-08-31), not hypothetical.** Confirmed
-directly against real readers via `READER_DATASET_BUILDERS` (already exists in
-`_recipes.py`, built for block-1 conformance — the fuzz suite reuses it rather than
-generating its own fixtures):
-- Truncating to 0 bytes raises a *different* exception type per reader family -
-  `ValueError: cannot mmap an empty file` (Chimera, BinaryReader1X) vs.
-  `struct.error: unpack requires a buffer of 4 bytes` (ABF2). Inconsistent, but at
-  least none of them hang or crash uncaught.
-- Breaking record alignment (`BinaryReader1X`, chopping a few trailing bytes) is
-  caught cleanly at `apply_settings` time by numpy's own structured-dtype memmap
-  construction — a genuine positive case, not every reader is unsafe.
-- Truncating a Chimera recording mid-payload does *not* raise: `apply_settings`
-  succeeds, and `get_channel_length()` correctly reports the truncated size (not the
-  size implied by the untouched sidecar `.json` metadata) — so this specific "trusts
-  metadata over reality" failure mode, worth checking for on paper, turned out not to
-  be real. Good to have confirmed rather than assumed either way.
-- On Windows, a reader's `close_resources()` does not reliably release its underlying
-  `numpy.memmap` file handle immediately — attempting to rewrite the same path right
-  after `close_resources()` raised `PermissionError` until the object was actually
-  garbage-collected. Worth a look independent of this block: it could affect the
-  writer-family file-handle-leak check's Windows story (block 1) if a reader is ever
-  added to that check.
-
-**Implementation plan.**
-1. Add `tests/unit/plugins/datareaders/test_reader_fuzz.py`, parametrized over
-   `discover_concrete(MetaReader)` (already in `_recipes.py`).
-2. For each reader, take the *already-built* valid fixture from
-   `READER_DATASET_BUILDERS[name]` (no new fixture-generation code needed) and apply a
-   small, fixed set of deterministic mutations rather than open-ended random fuzzing —
-   truncate to 0 bytes, truncate to a few fixed offsets short of the header, truncate
-   mid-payload, zero out a middle section, and (per format, since magic bytes differ)
-   flip the header marker where one exists: Chimera 2024-01's `<END HEADER>` string,
-   ABF2's `b"ABF2"` signature. Deterministic mutations keep this reproducible and avoid
-   the flaky-CI risk open-ended `hypothesis`-style fuzzing would carry here.
-3. Assert in three tiers, not one blanket "doesn't crash":
-   - construction (`apply_settings`) either succeeds or raises a caught `Exception`
-     subclass — never hangs, never raises something uncatchable;
-   - if construction succeeds, `get_channel_length()` must be internally consistent
-     with what `load_data` can actually deliver: requesting exactly that many samples
-     must succeed and return exactly that many;
-   - requesting more than `get_channel_length()` reports must raise (now that the
-     `load_data` fix above landed) rather than silently returning a shorter array.
-4. The magic-byte/marker mutations are necessarily per-format; keep them in a
-   `MUTATIONS: Dict[str, List[Callable[[Path], None]]]` in `_recipes.py` alongside
-   `READER_DATASET_BUILDERS`, with a small shared set (truncate/zero-middle) applied to
-   every reader and format-specific ones layered on top — not per-reader duplication.
-
-**Gotchas.** This only meaningfully applies to `MetaReader`; don't try to generalize it
-to every plugin family — event finders/fitters/filters operate on already-validated
-in-memory arrays, not raw external files, so this specific risk doesn't apply to them.
-
-## 8. Custom lint rules encoding existing tribal knowledge
-
-**Goal.** Make the project's already-established-but-only-documented-in-CLAUDE.md/
-memory conventions mechanically enforced, so they don't depend on a human reviewer
-remembering to check for them on every plugin PR.
-
-**Why.** Several patterns are currently enforced only by convention and review
-attentiveness: no nested function definitions, no bare `except:` (narrow to
-`except Exception:` at minimum so a `Raises` docstring section is even possible), and
-explicit `finally`-block cleanup of sqlite3 cursors/connections. These are exactly the
-kind of thing a first-time community contributor won't know to do unless a machine
-tells them.
-
-**Implementation plan.**
-1. No nested functions: a straightforward `ast`-based check (walk each `FunctionDef`
-   node's body for a nested `FunctionDef`/`AsyncFunctionDef`) — add as a `ruff`
-   custom rule if ruff's plugin API supports it cleanly for this project's ruff
-   version, otherwise a small standalone script run as a `pre-commit` `repo: local`
-   hook (same pattern as the pydoclint hook), scoped to `files: ^poriscope/`.
-2. Bare `except:`: `ruff` already has a built-in rule for this
-   (`E722`/`BLE001`-family, depending on ruleset naming in the installed ruff
-   version) — check whether it's already enabled in this project's `pyproject.toml`
-   ruff config before writing a custom check; if not, this is a one-line config
-   addition, not new code.
-3. Explicit sqlite3 resource cleanup in a `finally` block: harder to express as a
-   generic AST rule (requires tracking whether a `sqlite3.connect`/`.cursor()` call's
-   result is closed on every exit path) — likely not worth a fully general static
-   checker; instead, cover this via the block-1 conformance suite's open-file-handle
-   check for `MetaDatabaseLoader`/`MetaDatabaseWriter`/`MetaWriter` plugins
-   specifically, which catches the same defect empirically rather than syntactically.
-4. Document whichever of these become real automated checks in `CLAUDE.md`'s
-   "General Instructions" section, replacing the current prose-only statement of the
-   rule with a note that it's now enforced by `<tool>`.
-
-**Gotchas.** Don't over-invest in generalized static analysis for the sqlite3-cleanup
-rule specifically — it's a narrow, semantic (not syntactic) pattern where a runtime
-conformance check is a better cost/benefit trade than a bespoke AST checker.
+**Gotcha.** This applies meaningfully only to `MetaReader`. Finders, fitters and filters
+operate on already-validated in-memory arrays, so the risk does not transfer.
