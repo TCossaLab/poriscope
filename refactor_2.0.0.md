@@ -740,17 +740,17 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 ## Next up — state as of 2026-09-08
 
-**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **10 commits,
+**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **12 commits,
 not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
-working tree; suite **3,411 passed / 4 skipped**.
+working tree; suite **3,423 passed / 4 skipped**.
 
 | Gate | Start of refactor | Now | Target |
 | --- | --- | --- | --- |
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **93** | 0 |
-| — rule 1, View emits | 75 | **63** | 0 |
+| Boundary allowlist | 111 | **90** | 0 |
+| — rule 1, View emits | 75 | **60** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -772,15 +772,40 @@ commit.**
 the View emits a **typed intent**, the Controller's slot calls the plugin through
 `self.model.call(...)`, and the result goes back through a setter on the View. Remaining:
 
-- **RawData, 12 left.** `update_available_plugins` landed 2026-09-08 — it was the
-  awkward one, an emit-then-read *inside the push path*, and `RawDataController` now
-  resolves every finder's channels and hands the View a ready-made map. The remainder,
-  **derived by AST rather than listed by hand**: `_handle_plot_events` (4),
-  `_start_eventfinder` (3), `_load_data` (2), `_apply_filter` (1), `_load_event_data`
-  (1), `_start_writer` (1). All but the two orchestrators are emit-then-read on
-  `self.plot_data`, so take those first. *The old breakdown here summed to 12 against a
-  claimed 13: the total was right and the enumeration had simply omitted
-  `_start_writer`.*
+- **RawData, 9 left.** Two commits landed 2026-09-08. `update_available_plugins` was
+  the emit-then-read *inside the push path*; then `_load_data` (2) and `_apply_filter`
+  (1) moved to `RawDataController._load_and_filter`, which **closed a live stale-read
+  bug** — see below. The remainder, **derived by AST rather than listed by hand**:
+  `_handle_plot_events` (4), `_start_eventfinder` (3), `_load_event_data` (1),
+  `_start_writer` (1). `_load_event_data` is called only from `_handle_plot_events`, so
+  those five are one commit; `_start_writer` is separate.
+  *The old breakdown here summed to 12 against a claimed 13: the total was right and the
+  enumeration had omitted `_start_writer`.*
+
+  **The `plot_data` stale read was live, and unmitigated.** The plan described these as
+  "all emit-then-read on `self.plot_data`", which flattened three different shapes and
+  missed the defect. `self.plot_data` is written *only* in `update_plot_data`, i.e. only
+  on success, and **was never cleared before any emit** — the eight clear-before-emit
+  guards the fifth pass counted are all in the two subset Views. Since `_dispatch_to`
+  swallows the failure, a channel the reader could not supply left the *previous*
+  channel's array in place and the caller's `if self.plot_data is not None` guard passed,
+  so **channel N−1's trace was plotted under channel N's label**. `_apply_filter` had the
+  identical shape, returning the last successfully filtered array instead of its own
+  input — which is what its `except` branch meant to do and could not reach.
+  `call()` raising fixes both structurally, on the trace path and the PSD path, which
+  shared these two helpers. **One instance of the shape is left** — `_handle_plot_events`
+  loops over *events* the same way — and the next commit closes it.
+
+  **Read the target's signature before converting an emit that passes arguments.** The bus
+  packs them into a *tuple*; `call(metaclass, key, method, *args, **kwargs)` takes them
+  *spread*. Carrying the tuple across broke the RawData e2e flow with
+  `TypeError: load_data() missing 1 required positional argument: 'length'`, and **every
+  controller unit test still passed**, because `self.model` is a `Mock` that accepts any
+  shape — the new test even asserted the tuple form, since it was written from the
+  implementation instead of from `load_data(start, length, channel=0, raw_data=False)`.
+  Method rule 42. **All four remaining RawData emits pass arguments**, so each one needs
+  its target's real signature read first; the first four 4a commits never hit this because
+  they passed none.
 - **EventAnalysis 13, Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much
@@ -799,7 +824,7 @@ cheaper after 4a for the reason recorded under 4c below.
   how `1,889 → 31` happened.
 - **A safety net's absence has no signature, so assert the net is armed.** A missing test
   dependency errors at setup rather than failing, which reads as a pass.
-- Method notes are at **41 rules** in the artifact, grouped by refactor phase; the
+- Method notes are at **42 rules** in the artifact, grouped by refactor phase; the
   artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
 ### Owed

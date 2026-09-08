@@ -10,6 +10,8 @@ Covers:
 - update_plot_data delegates to view
 - update_plot_samplerate delegates to view
 - update_channels delegates to view
+- _load_and_filter reads each channel through call(), dropping what fails (4a)
+- load_trace_data / load_psd_data hand the result to the matching view setter
 - update_available_plugins resolves eventfinder channels before pushing names (4a)
 - _resolve_eventfinder_channels queries every finder and omits one that raises
 - set_num_events_allowed delegates to view
@@ -307,6 +309,190 @@ def test_update_channels_delegates_to_view(
     channels: dict[str, int] = {"num_channels": 4}
     controller.update_channels(channels)
     mock_view.update_channels.assert_called_once_with(channels)
+
+
+# ------------- trace loading and filtering (Step 4a) -----------------
+
+
+def test_load_and_filter_returns_data_and_surviving_channels(
+    controller: RawDataController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Each channel is read through call(), and the two lists stay index-aligned.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.model.call.side_effect = [250000.0, "ch0", "ch1"]
+
+    data, kept = controller._load_and_filter("R", [0, 1], 2.0, 9.0, "")
+
+    assert (data, kept) == (["ch0", "ch1"], [0, 1])
+    assert controller.model.call.call_args_list[1:] == [
+        mocker.call("MetaReader", "R", "load_data", 2.0, 9.0, 0),
+        mocker.call("MetaReader", "R", "load_data", 2.0, 9.0, 1),
+    ]
+
+
+def test_load_and_filter_drops_a_channel_the_reader_cannot_supply(
+    controller: RawDataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    **The stale-read bug this step closes.** The View used to emit ``load_data`` per
+    channel and read the answer off ``self.plot_data``, which is written only on success
+    and never cleared before the emit. Because the dispatcher swallowed the failure, the
+    caller's ``is not None`` guard passed and the *previous* channel's array was appended
+    and plotted under this channel's label. ``call()`` raises, so the channel is dropped
+    and the lists stay aligned - asserted here as "channel 1 is absent and channel 0's
+    data appears exactly once".
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    """
+    controller.model.call.side_effect = [250000.0, "ch0", Exception("boom"), "ch2"]
+
+    data, kept = controller._load_and_filter("R", [0, 1, 2], 0.0, 1.0, "")
+
+    assert (data, kept) == (["ch0", "ch2"], [0, 2])
+    assert data.count("ch0") == 1
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
+
+
+def test_load_and_filter_drops_a_channel_that_returns_none(
+    controller: RawDataController,
+) -> None:
+    """
+    A reader that returns None rather than raising is also dropped, as before.
+
+    :param controller: Controller under test.
+    """
+    controller.model.call.side_effect = [250000.0, None, "ch1"]
+
+    data, kept = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "")
+
+    assert (data, kept) == (["ch1"], [1])
+
+
+def test_load_and_filter_filters_each_channel_when_asked(
+    controller: RawDataController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.model.call.side_effect = [250000.0, "raw0", "filtered0"]
+
+    data, kept = controller._load_and_filter("R", [0], 0.0, 1.0, "F1")
+
+    assert (data, kept) == (["filtered0"], [0])
+    assert controller.model.call.call_args_list[-1] == mocker.call(
+        "MetaFilter", "F1", "filter_data", "raw0"
+    )
+
+
+def test_load_and_filter_keeps_the_unfiltered_channel_when_the_filter_fails(
+    controller: RawDataController,
+) -> None:
+    """
+    A failed filter yields that channel's own input, not another channel's output.
+
+    This is what the old ``_apply_filter``'s except branch meant to do and could not:
+    the dispatcher swallowed the failure, so it returned ``self.plot_data`` - the last
+    array any successful filter had parked there.
+
+    :param controller: Controller under test.
+    """
+    controller.model.call.side_effect = [
+        250000.0,
+        "raw0",
+        "filtered0",
+        "raw1",
+        Exception("boom"),
+    ]
+
+    data, kept = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "F1")
+
+    assert (data, kept) == (["filtered0", "raw1"], [0, 1])
+
+
+def test_load_and_filter_fetches_the_samplerate_once_per_request(
+    controller: RawDataController,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    The old per-channel ``_load_data`` asked once per channel.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.model.call.side_effect = [250000.0, "ch0", "ch1", "ch2"]
+
+    controller._load_and_filter("R", [0, 1, 2], 0.0, 1.0, "")
+
+    samplerate_calls = [
+        c
+        for c in controller.model.call.call_args_list
+        if c == mocker.call("MetaReader", "R", "get_samplerate")
+    ]
+    assert len(samplerate_calls) == 1
+    mock_view.update_plot_samplerate.assert_called_once_with(250000.0)
+
+
+def test_load_and_filter_falls_back_to_samplerate_one(
+    controller: RawDataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    An unreadable samplerate plots against raw indices, as it did before.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    """
+    controller.model.call.side_effect = [Exception("boom"), "ch0"]
+
+    controller._load_and_filter("R", [0], 0.0, 1.0, "")
+
+    mock_view.update_plot_samplerate.assert_called_once_with(1)
+    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+
+
+def test_load_trace_data_hands_the_result_back_for_plotting(
+    controller: RawDataController,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0]))
+
+    controller.load_trace_data("R", [0], 3.0, 9.0, "", True)
+
+    mock_view.set_trace_data.assert_called_once_with(["d0"], [0], 3.0, True)
+
+
+def test_load_psd_data_hands_the_result_back_for_the_psd(
+    controller: RawDataController,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0]))
+
+    controller.load_psd_data("R", [0], 3.0, 9.0, "F1")
+
+    mock_view.set_trace_for_psd.assert_called_once_with(["d0"], [0])
 
 
 # ---------------- eventfinder channel resolution (4a) ----------------

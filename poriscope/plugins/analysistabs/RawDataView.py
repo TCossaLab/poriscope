@@ -75,6 +75,16 @@ class RawDataView(MetaEventTabView):
     #: cannot be read is reported instead of failing silently inside the dispatcher.
     reader_channels_requested = Signal(str)
 
+    #: Asks the Controller to load a trace and optionally filter it, for plotting.
+    #: reader, channels, start, length, filter key ("" for none), baseline wanted.
+    #: The answer arrives as ``set_trace_data``.
+    trace_data_requested = Signal(str, list, float, float, str, bool)
+
+    #: The same request, for the PSD path. Separate rather than a mode flag so each
+    #: intent names what it is for and carries only what that tail needs. The answer
+    #: arrives as ``set_trace_for_psd``.
+    psd_data_requested = Signal(str, list, float, float, str)
+
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
 
@@ -1042,37 +1052,71 @@ class RawDataView(MetaEventTabView):
 
         # Load data and update plot
         if self._validate_plot_parameters(reader, channels, start, length):
-            data_list = []
-            for channel in channels[:]:  # to allow removal if needed
-                self._load_data(reader, channel, start, length)
-                if self.plot_data is not None:
-                    data_list.append(self.plot_data)
-                else:
-                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
-                    channels.remove(channel)
-
-            # Apply filter if needed
-            data_filter = parameters.get("filter")
-            if data_filter and data_filter != "No Filter":
-                filtered_data_list = []
-                for channel_data in data_list:
-                    filtered_data = self._apply_filter(data_filter, channel_data)
-                    filtered_data_list.append(filtered_data)
-                data_list = filtered_data_list
-
-            if data_list:
-                if baseline:
-                    # The fitting is the Model's since Step 4c, so the plot happens
-                    # when the Controller hands the statistics back.
-                    self.baseline_stats_requested.emit(data_list, channels, start)
-                else:
-                    self.update_plot(data_list, channels, start)
-            else:
-                self.add_text_to_display.emit(
-                    "No data available for plotting", self.__class__.__name__
-                )
+            # Step 4a: loading and filtering are the Controller's now, so the plot
+            # happens in set_trace_data when it hands the channels back.
+            self.trace_data_requested.emit(
+                reader, channels, start, length, self._filter_key(parameters), baseline
+            )
         else:
             self.logger.error("Invalid parameters for plotting data")
+
+    @log(logger=logger)
+    def _filter_key(self, parameters: Dict[str, Any]) -> str:
+        """
+        Read the selected filter out of a parameter dict as a plain key.
+
+        The controls panel reports "no filter" as either a missing key or the literal
+        ``"No Filter"``; both collapse to the empty string here so the intent signals can
+        carry a plain ``str`` rather than an ``object``.
+
+        :param parameters: the parameter dict the controls panel emitted
+        :type parameters: Dict[str, Any]
+        :return: the filter plugin's key, or "" if none is selected
+        :rtype: str
+        """
+        data_filter = parameters.get("filter")
+        if not data_filter or data_filter == "No Filter":
+            return ""
+        return str(data_filter)
+
+    @log(logger=logger)
+    def set_trace_data(
+        self,
+        data_list: Sequence[npt.NDArray[np.float64]],
+        channels: Sequence[int],
+        start: float,
+        baseline: bool,
+    ) -> None:
+        """
+        Plot the trace the Controller loaded, or report that there was none.
+
+        Step 4a: this is the tail of ``_handle_load_data_and_update_plot``, which used to
+        run inline after a bus round trip per channel. ``channels`` is the surviving list
+        - a channel the reader could not supply is dropped by the Controller, so the two
+        stay index-aligned without this method having to prune anything.
+
+        :param data_list: one array per surviving channel
+        :type data_list: Sequence[npt.NDArray[np.float64]]
+        :param channels: the channels that produced data, index-aligned with data_list
+        :type channels: Sequence[int]
+        :param start: the start time being plotted from
+        :type start: float
+        :param baseline: whether the user asked for the baseline band
+        :type baseline: bool
+        :return: None
+        :rtype: None
+        """
+        if not len(data_list):
+            self.add_text_to_display.emit(
+                "No data available for plotting", self.__class__.__name__
+            )
+            return
+        if baseline:
+            # The fitting is the Model's since Step 4c, so the plot happens
+            # when the Controller hands the statistics back.
+            self.baseline_stats_requested.emit(data_list, channels, start)
+        else:
+            self.update_plot(data_list, channels, start)
 
     @log(logger=logger)
     def _handle_load_data_and_update_psd(self, parameters: Dict[str, Any]) -> None:
@@ -1093,35 +1137,45 @@ class RawDataView(MetaEventTabView):
 
         # Load data and update plot
         if self._validate_plot_parameters(reader, channels, start, length):
-            data_list = []
-            for channel in channels[:]:  # to allow removal if needed
-                self._load_data(reader, channel, start, length)
-                if self.plot_data is not None:
-                    data_list.append(self.plot_data)
-                else:
-                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
-                    channels.remove(channel)
-
-            # Apply filter if needed
-            data_filter = parameters.get("filter")
-            if data_filter and data_filter != "No Filter":
-                filtered_data_list = []
-                for channel_data in data_list:
-                    filtered_data = self._apply_filter(data_filter, channel_data)
-                    filtered_data_list.append(filtered_data)
-                data_list = filtered_data_list
-            if data_list:
-                self.calculate_psd.emit(data_list, self.plot_samplerate)
-                psd_channels = [channels[i] for i in self.psd_kept_indices]
-                self.update_psd(
-                    self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels
-                )
-            else:
-                self.add_text_to_display.emit(
-                    "No data available for psd calculation", self.__class__.__name__
-                )
+            # Step 4a: as for the trace path, the loading is the Controller's and the
+            # PSD happens in set_trace_for_psd.
+            self.psd_data_requested.emit(
+                reader, channels, start, length, self._filter_key(parameters)
+            )
         else:
             self.logger.error("Invalid parameters for plotting data")
+
+    @log(logger=logger)
+    def set_trace_for_psd(
+        self,
+        data_list: Sequence[npt.NDArray[np.float64]],
+        channels: Sequence[int],
+    ) -> None:
+        """
+        Compute and draw the PSD of the trace the Controller loaded.
+
+        Step 4a moved only the *loading* out of this path. The PSD computation below is
+        unchanged and is deliberately left as it was: ``calculate_psd`` is an intent
+        signal to this tab's own Controller rather than a ``global_signal`` bus call, and
+        it is Decision B's template working correctly, so it is not 4a's business. The
+        read-back off ``psd_kept_indices`` and friends is safe for the same reason it
+        always was - the connection is direct, so ``set_psd`` has already run.
+
+        :param data_list: one array per surviving channel
+        :type data_list: Sequence[npt.NDArray[np.float64]]
+        :param channels: the channels that produced data, index-aligned with data_list
+        :type channels: Sequence[int]
+        :return: None
+        :rtype: None
+        """
+        if not len(data_list):
+            self.add_text_to_display.emit(
+                "No data available for psd calculation", self.__class__.__name__
+            )
+            return
+        self.calculate_psd.emit(list(data_list), self.plot_samplerate)
+        psd_channels = [channels[i] for i in self.psd_kept_indices]
+        self.update_psd(self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels)
 
     @log(logger=logger)
     def set_psd(
@@ -1147,35 +1201,6 @@ class RawDataView(MetaEventTabView):
         self.rms_list = rms_list
         self.psd_frequency = frequency
         self.psd_kept_indices = kept_indices
-
-    @log(logger=logger)
-    def _apply_filter(
-        self, data_filter: str, channel_data: npt.NDArray[np.float64]
-    ) -> npt.NDArray[np.float64]:
-        """
-        Apply a data filter using a signal-based plugin system.
-
-        :param data_filter: Name of the filter plugin.
-        :type data_filter: str
-        :param channel_data: Data to filter.
-        :type channel_data: npt.NDArray[np.float64]
-        :return: Filtered data if successful, else the original data.
-        :rtype: npt.NDArray[np.float64]
-        """
-        try:
-            filter_data_args = (channel_data,)
-            self.global_signal.emit(
-                "MetaFilter",
-                data_filter,
-                "filter_data",
-                filter_data_args,
-                "update_plot_data",
-                (),
-            )
-            return self.plot_data  # Assuming the plot_data is updated by the filter
-        except Exception as e:
-            self.logger.error(f"Unable to filter data with {data_filter}: {repr(e)}")
-            return channel_data  # Return unfiltered data if the filter fails
 
     @log(logger=logger)
     def _extract_plot_parameters(
@@ -1253,56 +1278,6 @@ class RawDataView(MetaEventTabView):
         except (IndexError, ValueError) as e:
             self.logger.error(
                 f"Unable to retrieve requested data for event {event}: {repr(e)}"
-            )
-
-    @log(logger=logger)
-    def _load_data(
-        self,
-        reader: Optional[str],
-        channels: Union[int, List[int]],
-        start: float,
-        length: float,
-    ) -> None:
-        """
-        Load data from the specified reader plugin.
-
-        :param reader: Reader plugin name.
-        :type reader: Optional[str]
-        :param channels: Channel index, or list of channel indices.
-        :type channels: Union[int, List[int]]
-        :param start: Start time.
-        :type start: float
-        :param length: Duration.
-        :type length: float
-        """
-        try:
-            self.global_signal.emit(
-                "MetaReader", reader, "get_samplerate", (), "update_plot_samplerate", ()
-            )
-        except Exception as e:
-            self.plot_samplerate = 1
-            self.logger.warning(
-                f"Unable to get samplerate: {repr(e)}. X axis will denote raw data indices"
-            )
-        try:
-            # If channels is not a list, make it a list
-            if not isinstance(channels, list):
-                channels = [channels]
-
-            for channel in channels:
-                load_data_args = (start, length, channel)
-                # Emit the signal with the correct handler name for when the data is ready
-                self.global_signal.emit(
-                    "MetaReader",
-                    reader,
-                    "load_data",
-                    load_data_args,
-                    "update_plot_data",
-                    (),
-                )
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to retrieve requested data for channels {channels}: {repr(e)}"
             )
 
     @log(logger=logger)

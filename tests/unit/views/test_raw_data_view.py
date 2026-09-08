@@ -18,10 +18,9 @@ Coverage targets:
 - _extract_commit_event_parameters
 - _extract_plot_event_parameters
 - _validate_plot_parameters
-- _load_data (happy path + IndexError)
-- _apply_filter (happy path + Exception)
-- _handle_load_data_and_update_plot (success, invalid params, no data, with filter,
-  without filter, parameter extraction failure)
+- _filter_key (every "no filter" spelling)
+- _handle_load_data_and_update_plot / set_trace_data (Step 4a intent + result)
+- _handle_load_data_and_update_psd / set_trace_for_psd (Step 4a intent + result)
 - _handle_other_actions (with reader, without reader)
 - handle_parameter_change dispatch (load_data_and_update_plot, some_other_action)
 - _factors
@@ -97,6 +96,9 @@ def view(mocker, mock_logging):
     # emitting one would raise "Signal source has been deleted".
     v.reader_channels_requested = mocker.Mock()
     v.baseline_stats_requested = mocker.Mock()
+    v.trace_data_requested = mocker.Mock()
+    v.psd_data_requested = mocker.Mock()
+    v.calculate_psd = mocker.Mock()
     v.export_plot_data = mocker.Mock()
     v.run_generators = mocker.Mock()
 
@@ -380,75 +382,22 @@ def test_get_event_index_text_empty(view):
 
 
 # ---------------------------------------------------------------------------
-# _load_data
+# _filter_key
 # ---------------------------------------------------------------------------
 
 
-def test_load_data_emits_global_signal(view):
-    view._load_data("R1", 0, 0.0, 100.0)
-    view.global_signal.emit.assert_called()
-    # Verify the key args: plugin type, plugin name, method name
-    args = view.global_signal.emit.call_args[0]
-    assert args[0] == "MetaReader"
-    assert args[1] == "R1"
-    assert args[2] == "load_data"
+def test_filter_key_reads_the_selected_filter(view):
+    assert view._filter_key({"filter": "MyFilter"}) == "MyFilter"
 
 
-def test_load_data_passes_correct_data_args(view):
-    view._load_data("R1", 2, 5.0, 50.0)
-    args = view.global_signal.emit.call_args_list
-    # find the load_data call
-    load_call = next(a for a in args if a[0][2] == "load_data")
-    assert load_call[0][3] == (5.0, 50.0, 2)
-
-
-def test_load_data_handles_index_error(view):
-    view.global_signal.emit.side_effect = [None, IndexError("boom")]
-    # Should not raise
-    view._load_data("R1", 0, 0.0, 100.0)
-    view.logger.error.assert_called()
-
-
-def test_load_data_handles_list_of_channels(view):
-    """When channels is a list, _load_data should iterate and emit per channel."""
-    view._load_data("R1", [0, 1], 0.0, 100.0)
-    load_calls = [
-        a for a in view.global_signal.emit.call_args_list if a[0][2] == "load_data"
-    ]
-    assert len(load_calls) == 2
+@pytest.mark.parametrize("parameters", [{}, {"filter": None}, {"filter": "No Filter"}])
+def test_filter_key_collapses_every_no_filter_spelling(view, parameters):
+    """The controls panel reports "none" three ways; all mean no filtering."""
+    assert view._filter_key(parameters) == ""
 
 
 # ---------------------------------------------------------------------------
-# _apply_filter
-# ---------------------------------------------------------------------------
-
-
-def test_apply_filter_emits_global_signal(view):
-    view.plot_data = np.array([1.0, 2.0])
-    view._apply_filter("F1", view.plot_data)
-    args = view.global_signal.emit.call_args[0]
-    assert args[0] == "MetaFilter"
-    assert args[1] == "F1"
-    assert args[2] == "filter_data"
-
-
-def test_apply_filter_returns_plot_data_on_success(view):
-    expected = np.array([9.0, 8.0])
-    view.plot_data = expected
-    result = view._apply_filter("F1", np.array([1.0, 2.0]))
-    np.testing.assert_array_equal(result, expected)
-
-
-def test_apply_filter_returns_original_on_exception(view):
-    original = np.array([1.0, 2.0])
-    view.global_signal.emit.side_effect = Exception("boom")
-    result = view._apply_filter("F1", original)
-    np.testing.assert_array_equal(result, original)
-    view.logger.error.assert_called()
-
-
-# ---------------------------------------------------------------------------
-# _handle_load_data_and_update_plot
+# _handle_load_data_and_update_plot / set_trace_data  (Step 4a)
 # ---------------------------------------------------------------------------
 
 
@@ -456,52 +405,104 @@ def test_handle_load_data_parameter_extraction_failure(view, mocker):
     view._extract_plot_parameters = mocker.Mock(side_effect=ValueError("bad"))
     view._handle_load_data_and_update_plot({"channel": []})
     view.logger.error.assert_called()
+    view.trace_data_requested.emit.assert_not_called()
 
 
-def test_handle_load_data_invalid_params_logs_error(view, mocker):
+def test_handle_load_data_invalid_params_requests_nothing(view, mocker):
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=False)
-    view.update_plot = mocker.Mock()
     view._handle_load_data_and_update_plot({})
-    view.update_plot.assert_not_called()
+    view.trace_data_requested.emit.assert_not_called()
     view.logger.error.assert_called()
 
 
-def test_handle_load_data_no_data_skips_plot(view, mocker):
-    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
+def test_handle_load_data_emits_a_typed_intent(view, mocker):
+    """
+    Step 4a: the orchestrator asks, and stops. Loading is the Controller's.
+    """
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 2.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
-    view._load_data = mocker.Mock()
+    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "MyFilter"})
+    view.trace_data_requested.emit.assert_called_once_with(
+        "R", [0, 1], 2.0, 100.0, "MyFilter", False
+    )
+
+
+def test_handle_load_data_passes_the_baseline_flag_through(view, mocker):
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 1.0))
+    view._validate_plot_parameters = mocker.Mock(return_value=True)
+    view._handle_load_data_and_update_plot({"channel": ["0"]}, baseline=True)
+    assert view.trace_data_requested.emit.call_args[0][-1] is True
+
+
+def test_handle_load_data_makes_no_plugin_call_of_its_own(view, mocker):
+    """Step 4a: the bus round trip per channel is gone from this path entirely."""
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 0.0, 1.0))
+    view._validate_plot_parameters = mocker.Mock(return_value=True)
+    view._handle_load_data_and_update_plot({"channel": ["0"]})
+    view.global_signal.emit.assert_not_called()
+
+
+def test_set_trace_data_reports_when_nothing_loaded(view, mocker):
     view.update_plot = mocker.Mock()
-    view.plot_data = None
-    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "No Filter"})
+    view.set_trace_data([], [], 0.0, False)
+    view.update_plot.assert_not_called()
+    view.baseline_stats_requested.emit.assert_not_called()
+    view.add_text_to_display.emit.assert_called_once()
+
+
+def test_set_trace_data_plots_what_the_controller_loaded(view, mocker):
+    data = [np.array([1.0, 2.0])]
+    view.update_plot = mocker.Mock()
+    view.set_trace_data(data, [0], 3.0, False)
+    view.update_plot.assert_called_once_with(data, [0], 3.0)
+    view.baseline_stats_requested.emit.assert_not_called()
+
+
+def test_set_trace_data_asks_for_baseline_stats_instead_when_wanted(view, mocker):
+    data = [np.array([1.0, 2.0])]
+    view.update_plot = mocker.Mock()
+    view.set_trace_data(data, [0], 3.0, True)
+    view.baseline_stats_requested.emit.assert_called_once_with(data, [0], 3.0)
     view.update_plot.assert_not_called()
 
 
-def test_handle_load_data_success_no_filter(view, mocker):
-    data = np.array([1.0, 2.0, 3.0])
-    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
-    view._validate_plot_parameters = mocker.Mock(return_value=True)
-    view._load_data = mocker.Mock()
-    view._apply_filter = mocker.Mock()
-    view.update_plot = mocker.Mock()
-    view.plot_data = data
-    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "No Filter"})
-    view._apply_filter.assert_not_called()
-    view.update_plot.assert_called_once()
+# ---------------------------------------------------------------------------
+# _handle_load_data_and_update_psd / set_trace_for_psd  (Step 4a)
+# ---------------------------------------------------------------------------
 
 
-def test_handle_load_data_success_with_filter(view, mocker):
-    data = np.array([1.0, 2.0])
-    filtered = np.array([0.5, 1.0])
-    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
+def test_handle_load_data_psd_emits_a_typed_intent(view, mocker):
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 1.0, 9.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
-    view._load_data = mocker.Mock()
-    view._apply_filter = mocker.Mock(return_value=filtered)
-    view.update_plot = mocker.Mock()
-    view.plot_data = data
-    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "MyFilter"})
-    view._apply_filter.assert_called_once_with("MyFilter", data)
-    view.update_plot.assert_called_once()
+    view._handle_load_data_and_update_psd({"channel": ["0"], "filter": "No Filter"})
+    view.psd_data_requested.emit.assert_called_once_with("R", [0], 1.0, 9.0, "")
+    view.global_signal.emit.assert_not_called()
+
+
+def test_set_trace_for_psd_reports_when_nothing_loaded(view, mocker):
+    view.update_psd = mocker.Mock()
+    view.set_trace_for_psd([], [])
+    view.update_psd.assert_not_called()
+    view.calculate_psd.emit.assert_not_called()
+    view.add_text_to_display.emit.assert_called_once()
+
+
+def test_set_trace_for_psd_computes_and_draws(view, mocker):
+    """
+    The PSD computation path itself is unchanged by 4a and still reads back off the
+    attributes set_psd parks, which is safe because that connection is direct.
+    """
+    data = [np.array([1.0, 2.0])]
+    view.update_psd = mocker.Mock()
+    view.plot_samplerate = 100.0
+    view.psd_kept_indices = [0]
+    view.Pxx_list = ["pxx"]
+    view.rms_list = ["rms"]
+    view.psd_frequency = "freq"
+    view.set_trace_for_psd(data, [7])
+    view.calculate_psd.emit.assert_called_once_with(data, 100.0)
+    view.update_psd.assert_called_once_with(["pxx"], ["rms"], "freq", [7])
 
 
 # ---------------------------------------------------------------------------

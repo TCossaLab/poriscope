@@ -58,6 +58,153 @@ class RawDataController(MetaEventTabController):
         self.view.calculate_psd.connect(self.calculate_psd)
         self.view.baseline_stats_requested.connect(self.compute_baseline_stats)
         self.view.reader_channels_requested.connect(self.request_reader_channels)
+        self.view.trace_data_requested.connect(self.load_trace_data)
+        self.view.psd_data_requested.connect(self.load_psd_data)
+
+    @log(logger=logger)
+    @Slot(str, list, float, float, str, bool)
+    def load_trace_data(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+        baseline: bool,
+    ) -> None:
+        """
+        Load and optionally filter a trace, then hand it back for plotting.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels the user asked to plot
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :param baseline: whether the user asked for the baseline band
+        :type baseline: bool
+        :return: None
+        :rtype: None
+        """
+        data_list, kept = self._load_and_filter(
+            reader, channels, start, length, data_filter
+        )
+        self.view.set_trace_data(data_list, kept, start, baseline)
+
+    @log(logger=logger)
+    @Slot(str, list, float, float, str)
+    def load_psd_data(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+    ) -> None:
+        """
+        Load and optionally filter a trace, then hand it back for the PSD.
+
+        Same loading as load_trace_data; only the tail differs, which is why the two
+        intents are separate signals rather than one carrying a mode flag.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels the user asked to analyse
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        data_list, kept = self._load_and_filter(
+            reader, channels, start, length, data_filter
+        )
+        self.view.set_trace_for_psd(data_list, kept)
+
+    @log(logger=logger)
+    def _load_and_filter(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+    ) -> Tuple[List[Any], List[int]]:
+        """
+        Read each channel through call(), filter it if asked, and drop what fails.
+
+        **Step 4a closes a live stale-read bug here, not just a layering one.** The View
+        used to emit ``load_data`` per channel and read the answer back off
+        ``self.plot_data``, which is written *only* on success and was never cleared
+        before the emit. Because ``_dispatch_to`` swallows the failure, a channel the
+        reader could not supply left the *previous* channel's array in place, and the
+        caller's ``if self.plot_data is not None`` guard passed - so channel N-1's trace
+        was appended and plotted under channel N's label. That is the same defect the
+        subset Views were given clear-before-emit guards for; this path never had one.
+        ``call()`` raises instead, so a failed channel is dropped and the returned lists
+        stay index-aligned by construction. ``_apply_filter`` had the identical shape and
+        returned the last successfully filtered array rather than its own input.
+
+        The samplerate is fetched once per request rather than once per channel, which is
+        what the old per-channel ``_load_data`` did.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels to read
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: the loaded arrays and the channels that produced them, index-aligned
+        :rtype: Tuple[List[Any], List[int]]
+        """
+        try:
+            samplerate = self.model.call("MetaReader", reader, "get_samplerate")
+        except Exception as e:
+            samplerate = 1
+            self.logger.warning(
+                f"Unable to get samplerate: {repr(e)}. X axis will denote raw data indices"
+            )
+        self.view.update_plot_samplerate(samplerate)
+
+        data_list: List[Any] = []
+        kept: List[int] = []
+        for channel in channels:
+            try:
+                channel_data = self.model.call(
+                    "MetaReader", reader, "load_data", start, length, channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to retrieve requested data for channel {channel}: {repr(e)}"
+                )
+                continue
+            if channel_data is None:
+                self.logger.debug(f"No data loaded for channel {channel}, skipping")
+                continue
+            if data_filter:
+                try:
+                    channel_data = self.model.call(
+                        "MetaFilter", data_filter, "filter_data", channel_data
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Unable to filter data with {data_filter}: {repr(e)}"
+                    )
+            data_list.append(channel_data)
+            kept.append(channel)
+        return data_list, kept
 
     @log(logger=logger)
     def request_reader_channels(self, reader: str) -> None:
