@@ -1102,6 +1102,12 @@ outliving the app on close. That is the pre-refactor baseline, so a later failur
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
 
+**Step 4a EventAnalysis manual pass: run 2026-09-08, all clear.** Covers the four
+conversions that took the tab 13 emits to 0 — the loader channel lookup, the event write,
+the two-phase fitting launch, and the 243-line event-plot path. **Clustering, RawData and
+EventAnalysis are all at zero emits and every path they have converted has been seen
+working on Windows.** The next pass is owed after the subset tabs.
+
 **Third Step 4a RawData manual pass: run 2026-09-08, all clear.** Covers the event
 finding and commit paths rewritten by `ac26f71c` and `67f335b1` — including the two-phase
 launch, where the "already completed, start over?" prompt now follows a Controller-side
