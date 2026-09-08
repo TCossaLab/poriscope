@@ -32,15 +32,24 @@ codebase. Measured: `construct_metadata_query` does not refuse a complete SELECT
 `conditions` - it splices it in after `WHERE` and returns an empty debug message - so the
 failure is silent. Step 4a's commit 6 moves Protein's branch; sharing it is the fix.
 
-## The Metadata tab validates filters against three columns it never checked exist (2026-09-08)
+## `_validation_columns`' fallback triple is wrong twice over (2026-09-08)
 
-`MetaSubsetTabView._validation_columns` prefers `available_columns` and falls back to
-`["sublevel_current", "voltage", "duration"]`. Only `ProteinView.update_column_names:626`
-fills `available_columns`; `MetadataView.update_column_names:2677` updates its axis
-comboboxes and stores nothing, so the metadata tab always takes the fallback and a filter
-over a database without those three columns is rejected as invalid rather than validated.
-One line in Metadata's `update_column_names`; two tests in
-`tests/unit/views/test_duplicated_helpers.py` are written to flip when it lands.
+`MetaSubsetTabView._validation_columns` falls back to
+`["sublevel_current", "voltage", "duration"]`, which is one column from each of the three
+tables - so **every** filter validation joins all three, measured as 2 JOINs even for a
+filter with no conditions at all. A single events column yields the joins the filter itself
+needs and nothing more: 0 for `dwell_time < 300`, 1 for a sublevels- or experiments-only
+filter, and all of them still build, so validation is unaffected. The triple is also not
+guaranteed to exist in a given database, which is the second half of the same defect: only
+`ProteinView.update_column_names:626` fills `available_columns`, so
+`MetadataView.update_column_names:2677` - which updates its axis comboboxes and stores
+nothing - always takes the fallback.
+
+One fix, two lines: store `column_names` in Metadata's `update_column_names`, and narrow the
+fallback to a single column. **`["event_id"]` does not work** as that column - it is in
+`construct_metadata_query`'s `redundant_cols` and `get_table_by_column("event_id")` returns
+None, so it raises `ValueError: columns could not be mapped to tables`. Two tests in
+`tests/unit/views/test_duplicated_helpers.py` are written to flip when this lands.
 
 ## `MetaSubsetTabControls.get_selected_filter_names` has no production caller (2026-09-08)
 
