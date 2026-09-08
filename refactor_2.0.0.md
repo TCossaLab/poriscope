@@ -805,8 +805,17 @@ cheaper after 4a for the reason recorded under 4c below.
 ### Owed
 
 - A **manual Windows pass** covering Step 4a's converted paths. The Clustering tab and
-  session restore were verified live on 2026-09-07 after the regression fix; RawData's
-  channel combobox has not been.
+  session restore were verified live on 2026-09-07 after the regression fix. Two RawData
+  paths have not been, and they are **different paths** — an earlier note conflated them:
+  - **The channel multiselect** (`f1fd81c`): pick a reader, confirm `channel_comboBox`
+    populates. This is the *reader's* channels via `request_reader_channels`, and it is a
+    `MultiSelectComboBox`, which `DECISIONS.md` 2026-09-01 records as structurally
+    unexercisable on Linux CI — so only a human can see it.
+  - **The event-finding time limits** (`1ff9e92`): create an event finder, open its Timer
+    dialog, confirm one row per channel defaulting to 0/0; set ranges and run find_events
+    over them; then add or delete another plugin and confirm the ranges you set survive.
+    This is `analysis_time_limits`, reached only through `_handle_timer` and
+    `_start_eventfinder` — **no combobox is involved.**
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
   gate. Still open from 3f.
 
