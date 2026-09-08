@@ -66,6 +66,8 @@ class MetaSubsetTabView(MetaView):
     - **Experiment selection.** ``show_selection_tree`` and
       ``request_experiment_structure`` drive the ``SelectionTree`` dialog and remember
       what was chosen per loader.
+    - **The selected filters.** ``get_selected_filters`` reads the filter combobox
+      through ``_subset_controls``, the property each tab implements below.
 
     What a subclass owes it:
 
@@ -73,6 +75,8 @@ class MetaSubsetTabView(MetaView):
       the methods it defines itself stay attributed to its own module. Methods defined
       *here* log under this module, which is the convention ``MetaView`` already
       follows for its shared code.
+    - **``_subset_controls``**, a one-line property returning whatever name the tab
+      holds its controls panel under, so the shared methods here can reach it.
     - **``_delete_filter`` and ``show_edit_filter_dialog``**, declared abstract below.
       Both tabs implement them differently, because each rebuilds its own filter
       widgets afterwards.
@@ -80,9 +84,7 @@ class MetaSubsetTabView(MetaView):
       implements none of them.
 
     Deliberately *not* shared: ``relay_query`` and the pending-filter state it reads
-    stay per-tab until Step 4d moves that state to the Model, and ``update_filters``
-    stays per-tab because the two tabs hold their filter combobox under different
-    names.
+    stay per-tab until Step 4d moves that state to the Model.
 
     :ivar logger: the module logger the shared methods below log under
     :ivar subset_filters: named subset filters, filter name to SQL WHERE clause
@@ -105,6 +107,12 @@ class MetaSubsetTabView(MetaView):
     #: Assigned in each subclass's ``_init``, identically in both tabs today. The
     #: annotation moves here with the methods that read it; the assignment stays with
     #: the subclass, since ``MetaView`` gives this base no ``_init`` of its own.
+    #: The four ``current_*``/``filtered_event_ids`` values are the filter-aware event
+    #: navigation cache, rebuilt when the filter or the scope changes.
+    current_channel: Optional[int]
+    current_experiment: Optional[str]
+    current_sql_filter: Optional[str]
+    filtered_event_ids: List[int]
     _pending_filter_name: Optional[str]
     _pending_filter_text: Optional[str]
     _pending_old_filter_name: Optional[str]
@@ -137,6 +145,43 @@ class MetaSubsetTabView(MetaView):
         """
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
+
+    @log(logger=logger)
+    def get_selected_filters(self) -> dict:
+        """
+        The filters the user has selected for the current plotting or export task.
+
+        Promoted from both subset tabs, whose copies differed only in the name each
+        held its controls panel under, and otherwise verbatim - including reaching
+        past the panel to its combobox, which ``MetaSubsetTabControls`` already
+        wraps as ``get_selected_filter_names``. Delegating to that wrapper instead
+        would be an improvement but not this commit's; it would also change what
+        the existing tab tests have to mock, which is exactly the noise a promotion
+        should not carry.
+
+        :return: selected filter names mapped to their SQL WHERE clauses
+        :rtype: dict
+        """
+        return {
+            name: self.subset_filters.get(name, "")
+            for name in self._subset_controls.filter_comboBox.getSelectedItems()
+        }
+
+    @property
+    @abstractmethod
+    def _subset_controls(self) -> MetaSubsetTabControls:
+        """
+        This tab's controls panel, under a name the shared methods here can use.
+
+        Each tab stores the panel under a name of its own inside ``_build_controls``
+        and uses that name throughout, which is fine for tab-specific code; a method
+        promoted up to this base cannot know it. A property rather than a second
+        attribute assigned alongside, so there is still exactly one place the panel
+        is held and no chance of the two names drifting apart.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaSubsetTabControls
+        """
 
     @abstractmethod
     def _delete_filter(self, name: str) -> None:

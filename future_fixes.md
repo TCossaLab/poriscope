@@ -12,6 +12,13 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
+## `MetaSubsetTabControls.get_selected_filter_names` has no production caller (2026-09-08)
+
+`MetaSubsetTabControls.py:153` wraps `filter_comboBox.getSelectedItems()` and is called only
+from `tests/unit/views/utils/test_metadata_controls.py:544`. Its obvious caller,
+`MetaSubsetTabView.get_selected_filters`, reaches past it to the combobox. Either delegate or
+delete; delegating changes what the tab tests mock, so it was left out of the promotion.
+
 ## The 2.0.0 refactor plan claims much of this queue (2026-09-03)
 
 **Read `refactor_2.0.0.md` before picking anything up here**, and check whether the item is

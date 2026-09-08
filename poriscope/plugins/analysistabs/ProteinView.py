@@ -72,6 +72,7 @@ from scipy.stats import t
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
@@ -213,13 +214,13 @@ class ProteinView(MetaSubsetTabView):
         # tuples rather than plain arrays. Flagged for review.
         self.hist_data: List[Any] = []
         self.hist_labels: List[Optional[str]] = []
-        self.current_sql_filter: Optional[str] = None
-        self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[int] = None
+        self.current_sql_filter = None
+        self.current_experiment = None
+        self.current_channel = None
         self._pending_filter_name = None
         self._pending_filter_text = None
         self._pending_old_filter_name = None
-        self.filtered_event_ids: List[int] = []
+        self.filtered_event_ids = []
         self.subset_filters = {}
         self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
         self.available_experiment_and_channels_by_loader: Dict[
@@ -584,6 +585,20 @@ class ProteinView(MetaSubsetTabView):
         :type status: bool
         """
         self.operation_success = status
+
+    @property
+    def _subset_controls(self) -> MetaSubsetTabControls:
+        """
+        The controls panel, under the name ``MetaSubsetTabView``'s shared methods use.
+
+        Annotated with the base's type rather than ``ProteinControls`` so the override
+        matches the declaration verbatim, which is what the plugin compliance test
+        compares. Tab-specific code keeps using ``self.proteincontrols``.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaSubsetTabControls
+        """
+        return self.proteincontrols
 
     @log(logger=logger)
     def _build_controls(self) -> ProteinControls:
@@ -3532,16 +3547,6 @@ class ProteinView(MetaSubsetTabView):
                     break
 
         self.proteincontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
-    def get_selected_filters(self) -> dict:
-        """
-        Get a dict of the filters that the user has indicated should be active for the current plotting task
-        """
-        return {
-            name: self.subset_filters.get(name, "")
-            for name in self.proteincontrols.filter_comboBox.getSelectedItems()
-        }
 
     @log(logger=logger)
     def replace_filter_item(self, name: str) -> None:

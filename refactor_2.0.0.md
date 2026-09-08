@@ -966,7 +966,7 @@ under the step — but ten claims moved, and two change what the work *is*.
 | 4a · `global_signal` in **142** test functions, **46** assert on the emit | **156** and **37** | Counting rule, stated so it can be re-derived: a test function counts if `global_signal` appears anywhere in its source segment; it counts as *asserting* if that segment matches `assert.*global_signal` or `global_signal.*assert_` on one line. Step 2 added references, hence 142 → 156; the assertion figure is lower than 46 under this definition and 46 was never written down precisely enough to reproduce |
 | 4a · the stale-read guard is at `MetadataView.py:2334-2336` | **8 sites, two files** | `MetadataView.py:1369, 1982, 2238, 2257` and `ProteinView.py:1499, 1678, 1694, 1852`. All eight are clear-before-emit guards and all eight are code this step deletes |
 | 4d · **eight** further `self.view.subset_filters` reach-ins, **two** `restore_subset_filters` calls | **six**, and **zero** | 3 per Controller, not 4, and `restore_subset_filters` is no longer called from either Controller at all — 3b promoted `get_session_state`/`restore_session_state` to `MetaSubsetTabController` and took those reach-ins with them. **4d's Controller-side surface shrank from 10 to 6, and part of it is now on a base.** The 10 `self.view._pending` private reads are unchanged, 5 per Controller |
-| 4d · 15 of 16 `subset_filters` reads are synchronous | **shape changed** | The reads now span three files: 13 mentions in `MetadataView`, 14 in `ProteinView` and 5 in `MetaSubsetTabView` (`_save_filter`). The synchronous-access problem is unchanged in kind, but the fix now lands once on the base for `_save_filter`, `show_edit_filter_dialog`, `_delete_filter` and `get_selected_filters` |
+| 4d · 15 of 16 `subset_filters` reads are synchronous | **shape changed** | The reads now span three files: 13 mentions in `MetadataView`, 14 in `ProteinView` and 6 in `MetaSubsetTabView` (`_save_filter` and, since Step 4a promoted it, `get_selected_filters`). The synchronous-access problem is unchanged in kind, but the fix now lands once on the base for `_save_filter`, `show_edit_filter_dialog`, `_delete_filter` and `get_selected_filters` |
 | 4d · `hist_data` · 21 tests | **confirmed exactly** | 21 test functions, 13 mentions in `MetadataView` and 4 in `ProteinView` |
 | 4c · Clustering pilot has **6** existing tests | **understated** | 5 for `_update_clusters_hdbscan`, 8 for `_load_metadata_and_cluster`, 6 for `_normalize_column_data`. The "6" matches one method, not the trio |
 | 4e · `_save_filter`/`_load_filter` | **half shared now** | `_save_filter` moved to `MetaSubsetTabView` in 3b (one copy); `_load_filter` is still per-tab (two copies). `_export_csv_subset` exists only in `MetadataView` |
@@ -1021,8 +1021,8 @@ relocation. **Budget for the caller rewrite, not the method move.**
     references `self.model`** — verified 2026-09-06, zero occurrences across all five `*View.py`
     and `MetaView.py`. Views reach the Model only asynchronously, through `global_signal` via
     the Controller. But **15 of the 16 `subset_filters` reads are synchronous**: dialog
-    construction at `MetadataView.py:3108` and `:3195`, and `get_selected_filters` on every
-    plot. Moving the dict to the Model therefore needs either a synchronous View→Model accessor
+    construction at `MetadataView.py:3108` and `:3195`, and `get_selected_filters` - now one
+    copy on `MetaSubsetTabView` - on every plot. Moving the dict to the Model therefore needs either a synchronous View→Model accessor
     that Decision B currently forbids, or a View-side cache. That is a design decision, not a
     move, and doing it before 3b means taking it twice — once per tab — instead of once on the
     base.

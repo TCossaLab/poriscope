@@ -49,21 +49,23 @@ The View
      - ClusteringView
    * - ``MetaSubsetTabView``
      - queries a results database with user-defined subset filters
-     - the four above, plus ``_delete_filter`` and ``show_edit_filter_dialog``
+     - the four above, plus ``_delete_filter``, ``show_edit_filter_dialog`` and the
+       ``_subset_controls`` property
      - MetadataView, ProteinView
 
 Note the ordering: **an intermediate does not always ask less of you than the base.**
 ``MetaEventTabView`` asks for *two* methods rather than four, because it implements
 ``_reset_actions`` and ``notify_plugin_state_changed`` on your behalf — the two event
-tabs agree on both. ``MetaSubsetTabView`` asks for *six*, because subset filtering is a
+tabs agree on both. ``MetaSubsetTabView`` asks for *seven*, because subset filtering is a
 contract of its own: it manages the filters, and you supply the two operations that have
-to rebuild your tab's own filter widgets afterwards.
+to rebuild your tab's own filter widgets afterwards, plus a one-line ``_subset_controls``
+property returning your controls panel under a name its shared methods can use.
 
 What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query and column
 setters (``set_query``, ``set_event_query``, ``update_available_columns``,
-``update_units``), subset-filter management (``_save_filter``,
+``set_units``), subset-filter management (``_save_filter``,
 ``_delete_filter_by_name``, ``_show_filter_info_dialog``,
-``clear_pending_filter_state``), the experiment-selection tree
+``clear_pending_filter_state``, ``get_selected_filters``), the experiment-selection tree
 (``show_selection_tree``, ``request_experiment_structure``) and ``get_save_filename``.
 
 What ``MetaEventTabView`` gives you: the event-index range helpers

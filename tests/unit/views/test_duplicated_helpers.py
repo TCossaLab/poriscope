@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is merged by Step 3 or Step 4, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Three groups:
+Four groups:
 
 - ``_factors`` exists three times - ``MetaView.py:139`` plus byte-identical
   overrides in ``RawDataView.py:109`` and ``EventAnalysisView.py:121`` that shadow
@@ -24,6 +24,13 @@ Three groups:
   whitespace-only unit. The two callable copies are asserted equal here, and the
   two specific behaviours the inline copy lacks are pinned as named tests so that
   merging all three is an explicit decision.
+- ``get_selected_filters`` existed twice, in ``MetadataView`` and ``ProteinView``,
+  differing only in the name each tab held its controls panel under. **Step 4a
+  promoted it to** ``MetaSubsetTabView``, which reaches the panel through
+  ``_subset_controls`` - a one-line property each tab implements over the name it
+  already holds its panel under, so there is still only one copy of the panel. Every unit test that touches this method
+  mocks it, so its real body had no unit coverage at all before the promotion -
+  which is exactly the shape rule 43 warns about, and why it is pinned here.
 """
 
 from typing import Dict, List, Optional
@@ -33,7 +40,7 @@ from PySide6.QtWidgets import QBoxLayout
 
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
-from poriscope.plugins.analysistabs.ProteinView import format_axis_label
+from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
@@ -43,6 +50,7 @@ from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataContro
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from tests.unit.views._qt_mocks import shadow_signals
 
@@ -374,3 +382,107 @@ class TestCreateButtonWasPromoted:
         """
         widget = cls()
         assert widget.createButton(widget, "X").styleSheet() == ""
+
+
+# ===========================================================================
+# get_selected_filters - two copies, promoted by Step 4a
+# ===========================================================================
+
+
+SUBSET_TABS = (MetadataView, ProteinView)
+
+
+def build_subset_tab(view_cls: type) -> object:
+    """
+    A subset-tab view holding a real controls panel, without building the tab.
+
+    ``_build_controls`` is the one place either tab constructs its panel and
+    stores it under its own name, so calling it here is exactly what
+    ``MetaView._set_control_area`` does, and the ``_subset_controls`` property
+    then resolves the same way it does in the running app. The promoted method
+    therefore runs against a real ``MultiSelectFilterComboBox`` rather than a stub.
+
+    :param view_cls: the subset tab's view class
+    :type view_cls: type
+    :return: the view, with a panel built and no filters defined yet
+    :rtype: object
+    """
+    view = build(view_cls)
+    view._build_controls()
+    view.subset_filters = {}
+    return view
+
+
+class TestGetSelectedFiltersWasPromoted:
+    """
+    One copy, on the base, behaving as both tabs' copies did.
+
+    The two copies were identical but for ``self.metadatacontrols`` against
+    ``self.proteincontrols``, so there was no divergence to decide - but there was
+    also nothing asserting the behaviour, because all forty-odd unit tests that
+    reach this method replace it with a ``Mock``. The tests below run the real
+    body through a real ``MultiSelectFilterComboBox``.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """
+        Neither tab may keep its own, or the promotion was partial.
+
+        A leftover copy would shadow the base for that one tab, and every
+        behavioural test below would still pass, because they resolve through the
+        MRO.
+        """
+        assert "get_selected_filters" in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert "get_selected_filters" not in view_cls.__dict__, view_cls.__name__
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_nothing_selected_gives_nothing(self, qapp: object, view_cls: type) -> None:
+        """A freshly populated combobox selects nothing, so the result is empty."""
+        view = build_subset_tab(view_cls)
+        view.subset_filters = {"Short": "WHERE dwell < 1"}
+        view._subset_controls.update_filters(["Short"])
+
+        assert view.get_selected_filters() == {}
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_selected_names_come_back_mapped_to_their_sql(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """Each selected name carries the WHERE clause held in ``subset_filters``."""
+        view = build_subset_tab(view_cls)
+        view.subset_filters = {
+            "Short": "WHERE dwell < 1",
+            "Long": "WHERE dwell > 5",
+            "Unpicked": "WHERE dwell > 0",
+        }
+        view._subset_controls.update_filters(["Short", "Long", "Unpicked"])
+        view._subset_controls.filter_comboBox.selectItem("Long")
+
+        assert view.get_selected_filters() == {"Long": "WHERE dwell > 5"}
+
+        view._subset_controls.filter_comboBox.selectItem("Short")
+
+        assert view.get_selected_filters() == {
+            "Short": "WHERE dwell < 1",
+            "Long": "WHERE dwell > 5",
+        }
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_name_with_no_stored_sql_maps_to_the_empty_string(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        The ``.get(name, "")`` fallback, pinned because it is load-bearing.
+
+        "Full Dataset" is offered in the combobox with no WHERE clause behind it,
+        and the callers rely on the empty string rather than a ``KeyError`` or a
+        missing key - the query builders join these clauses, so an absent entry
+        and an empty one are not the same thing downstream.
+        """
+        view = build_subset_tab(view_cls)
+        view.subset_filters = {"Long": "WHERE dwell > 5"}
+        view._subset_controls.update_filters(["Full Dataset", "Long"])
+        view._subset_controls.filter_comboBox.selectItem("Full Dataset")
+
+        assert view.get_selected_filters() == {"Full Dataset": ""}

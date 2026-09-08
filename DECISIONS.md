@@ -10,6 +10,29 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - A promoted subset-tab method reaches its controls panel through a property
+
+**Context.** `MetadataView` and `ProteinView` hold their controls panel as
+`self.metadatacontrols` and `self.proteincontrols`. A method promoted to
+`MetaSubsetTabView` cannot know either name, so the promotion needs a shared handle. Four
+methods still to be promoted in Step 4a all touch the panel.
+
+**Decision.** An **abstract `_subset_controls` property**, one line per tab over the name it
+already uses - not a second attribute assigned beside the panel in
+`MetaView._set_control_area`.
+
+**Evidence.** The stored-attribute version was written first and measured: it breaks three
+existing tests, because `test_protein_view.py`'s `mock_view` fixture and two
+`test_metadata_view.py` tests replace the panel with a `Mock` under the tab's own name, which
+leaves the stored copy pointing at the real widget. The property version breaks **none** -
+those tests pass untouched - and there is no second reference that can go stale. Cost: the
+`*View.py` function count is unchanged at 215 (two bodies deleted, two accessors added), so
+the duplication ratchet does not move even though a duplicated body is gone. The
+promoted body is otherwise **verbatim**, including reaching past the panel to its combobox.
+
+**Revisit if** a promoted method needs something only one tab's panel has, which would mean
+the method was not shared after all.
+
 ## 2026-09-07 - `call()` is the only public door to a plugin, and `get_plugin` is private
 
 **Context.** Decision A named `get_plugin`/`call` as the pair replacing the return-value
