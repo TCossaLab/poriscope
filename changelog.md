@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Raw Data tab now asks each event finder for its channels through a direct call from its controller rather than through the signal bus, so a finder that cannot answer is reported rather than silently leaving its time ranges unset
+
 * The golden files that pin the app's numerical output are now checked to be running at all, so a missing test dependency can no longer leave those numbers unpinned while the test suite still reports a pass
 
 * **Fixed a tab being unable to use a plugin it was showing in its dropdown**, reported when restoring a saved session: the tab was given the list of plugins before it was given access to them, and filling the dropdown immediately asks the selected plugin for its columns

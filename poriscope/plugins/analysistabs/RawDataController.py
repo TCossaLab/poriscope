@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, List, Optional, Sequence, Tuple, override
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, override
 
 from PySide6.QtCore import Slot
 
@@ -170,14 +170,69 @@ class RawDataController(MetaEventTabController):
         self.view.update_channels(num_channels)
 
     @log(logger=logger)
-    def update_timer_channels(self, channels: Sequence[int]) -> None:
+    @override
+    @Slot(dict)
+    def update_available_plugins(self, available_plugins: dict) -> None:
         """
-        Update the view with the list of channels for timer-based processing.
+        Resolve every event finder's channels, then push the registry down as usual.
 
-        :param channels: Channel identifiers reported by the event finder.
-        :type channels: Sequence[int]
+        Step 4a: ``RawDataView.update_available_plugins`` used to make one bus call per
+        new event finder from inside this very push, reading the answer back off an
+        attribute a callback had set. That is the emit-then-read pattern in its most
+        awkward position - a synchronous round trip nested inside a method the Controller
+        is already running - so the finders are resolved here and handed down as a
+        ready-made map instead.
+
+        **The channels go down before the names, and that ordering is deliberate.**
+        Populating a combobox fires a selection change synchronously, which is what made
+        the plugin-instance push order load-bearing earlier on this branch. Checked here
+        rather than assumed: the event-finder combobox emits the action name
+        ``parameter_changed``, which lands in ``_handle_other_actions`` and reaches
+        nothing that reads ``analysis_time_limits``, so this order is defensive today
+        rather than load-bearing. It costs nothing and it is the order that stays correct
+        if a future handler does read that state.
+
+        :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
+        :type available_plugins: dict
+        :return: None
+        :rtype: None
         """
-        self.view.update_timer_channels(channels)
+        self.view.register_eventfinder_channels(
+            self._resolve_eventfinder_channels(
+                available_plugins.get("MetaEventFinder", [])
+            )
+        )
+        super().update_available_plugins(available_plugins)
+
+    @log(logger=logger)
+    def _resolve_eventfinder_channels(
+        self, eventfinders: Sequence[str]
+    ) -> Dict[str, Sequence[int]]:
+        """
+        Ask each event finder for its channels, skipping any that cannot answer.
+
+        A finder that raises is left out of the returned map rather than mapped to an
+        empty list, so the View can tell "no channels" from "did not answer" and leaves
+        it unregistered for the next push to retry. Every finder is asked, not only the
+        unregistered ones: this runs on plugin lifecycle events rather than per chunk,
+        and letting the View own "which finders are new" keeps that state in one place.
+
+        :param eventfinders: keys of the event finder plugins to query
+        :type eventfinders: Sequence[str]
+        :return: channels per finder, for the finders that answered
+        :rtype: Dict[str, Sequence[int]]
+        """
+        resolved: Dict[str, Sequence[int]] = {}
+        for finder in eventfinders:
+            try:
+                resolved[finder] = self.model.call(
+                    "MetaEventFinder", finder, "get_channels"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Could not get channels for {finder}, not registering it yet: {repr(e)}"
+                )
+        return resolved
 
     @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:

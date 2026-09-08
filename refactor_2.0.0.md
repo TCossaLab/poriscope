@@ -740,17 +740,17 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 ## Next up — state as of 2026-09-08
 
-**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **8 commits,
-not yet merged to `develop`**. Every row below re-measured at `28a7499`; suite
-**3,404 passed / 4 skipped**.
+**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **10 commits,
+not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
+working tree; suite **3,411 passed / 4 skipped**.
 
 | Gate | Start of refactor | Now | Target |
 | --- | --- | --- | --- |
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **94** | 0 |
-| — rule 1, View emits | 75 | **64** | 0 |
+| Boundary allowlist | 111 | **93** | 0 |
+| — rule 1, View emits | 75 | **63** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -772,15 +772,15 @@ commit.**
 the View emits a **typed intent**, the Controller's slot calls the plugin through
 `self.model.call(...)`, and the result goes back through a setter on the View. Remaining:
 
-- **RawData, 13 left.** The next one is *not* the same shape and needs care:
-  `update_available_plugins:357` is an emit-then-read **inside the push path**, with a
-  clear-before-emit guard, in a loop over finders. That is the same synchronous-callback
-  territory that produced this branch's regression. The likely right answer is that
-  `RawDataController` resolves each finder's channels and hands the View a ready-made map,
-  rather than the View making a bus call per finder inside a method the Controller is
-  calling. Then `_load_data` (2), `_apply_filter` (1), `_load_event_data` (1) — all
-  emit-then-read on `self.plot_data`; then the two orchestrators, `_handle_plot_events` (4)
-  and `_start_eventfinder` (3).
+- **RawData, 12 left.** `update_available_plugins` landed 2026-09-08 — it was the
+  awkward one, an emit-then-read *inside the push path*, and `RawDataController` now
+  resolves every finder's channels and hands the View a ready-made map. The remainder,
+  **derived by AST rather than listed by hand**: `_handle_plot_events` (4),
+  `_start_eventfinder` (3), `_load_data` (2), `_apply_filter` (1), `_load_event_data`
+  (1), `_start_writer` (1). All but the two orchestrators are emit-then-read on
+  `self.plot_data`, so take those first. *The old breakdown here summed to 12 against a
+  claimed 13: the total was right and the enumeration had simply omitted
+  `_start_writer`.*
 - **EventAnalysis 13, Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much

@@ -27,7 +27,18 @@
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -73,7 +84,6 @@ class RawDataView(MetaEventTabView):
         """Initialize the RawDataView-specific attributes."""
 
         self.analysis_time_limits: Dict[str, Dict[int, Dict[str, Any]]] = {}
-        self.timer_channels: Sequence[int] = []
 
     @log(logger=logger)
     def _build_controls(self) -> RawDataControls:
@@ -323,14 +333,32 @@ class RawDataView(MetaEventTabView):
         self.plot_samplerate = samplerate
 
     @log(logger=logger)
-    def update_timer_channels(self, channels: Sequence[int]) -> None:
+    def register_eventfinder_channels(
+        self, channels_by_finder: Mapping[str, Sequence[int]]
+    ) -> None:
         """
-        Update the list of channels for event timing.
+        Give each event finder not seen before a default time range for every channel.
 
-        :param channels: Valid channel indices.
-        :type channels: Sequence[int]
+        Step 4a: the channel lookup this used to do itself is now ``RawDataController``'s,
+        which resolves every finder up front and hands the answers down. A finder absent
+        from ``channels_by_finder``, or present with no channels, is left unregistered so
+        the next push retries it - the same "register only on success" rule the emit
+        version had, minus the emit-then-read and its clear-before-emit guard.
+
+        A finder already in ``analysis_time_limits`` keeps the ranges the user set on it;
+        only genuinely new finders get defaults.
+
+        :param channels_by_finder: channels per event finder, for finders that answered
+        :type channels_by_finder: Mapping[str, Sequence[int]]
+        :return: None
+        :rtype: None
         """
-        self.timer_channels = channels
+        for finder, channels in channels_by_finder.items():
+            if finder in self.analysis_time_limits or not channels:
+                continue
+            self.analysis_time_limits[finder] = {
+                ch: {"start": 0, "end": 0} for ch in channels
+            }
 
     @log(logger=logger)
     @override
@@ -353,29 +381,6 @@ class RawDataView(MetaEventTabView):
             self.rawdatacontrols.update_filters(filters)
             self.rawdatacontrols.update_writers(writers)
             self.rawdatacontrols.update_eventfinders(eventfinders)
-
-            for finder in eventfinders:
-                if finder not in self.analysis_time_limits.keys():
-                    # Cleared first so that a failed dispatch cannot seed this
-                    # finder with the previous finder's channels, and the finder
-                    # is registered only on success so the next call retries it.
-                    self.timer_channels = []
-                    self.global_signal.emit(
-                        "MetaEventFinder",
-                        finder,
-                        "get_channels",
-                        (),
-                        "update_timer_channels",
-                        (),
-                    )
-                    if not self.timer_channels:
-                        self.logger.error(
-                            f"Could not get channels for {finder}, not registering it yet"
-                        )
-                        continue
-                    self.analysis_time_limits[finder] = {
-                        ch: {"start": 0, "end": 0} for ch in self.timer_channels
-                    }
 
             self.logger.info("ComboBoxes updated with available readers and filters")
         except Exception as e:

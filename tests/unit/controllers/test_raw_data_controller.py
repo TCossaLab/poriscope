@@ -10,7 +10,8 @@ Covers:
 - update_plot_data delegates to view
 - update_plot_samplerate delegates to view
 - update_channels delegates to view
-- update_timer_channels delegates to view
+- update_available_plugins resolves eventfinder channels before pushing names (4a)
+- _resolve_eventfinder_channels queries every finder and omits one that raises
 - set_num_events_allowed delegates to view
 - set_eventfinding_status delegates to view
 - relay_eventfinding_status delegates to view
@@ -308,22 +309,75 @@ def test_update_channels_delegates_to_view(
     mock_view.update_channels.assert_called_once_with(channels)
 
 
-# ------------------- update_timer_channels ---------------------------
+# ---------------- eventfinder channel resolution (4a) ----------------
 
 
-def test_update_timer_channels_delegates_to_view(
+def test_update_available_plugins_registers_channels_before_pushing_names(
     controller: RawDataController,
     mock_view: MagicMock,
 ) -> None:
     """
-    Forward the timer channel list to the view.
+    The channel map reaches the View before the plugin names do.
+
+    Stated as an ordering invariant rather than as two independent calls. Populating a
+    combobox fires a selection change synchronously, which is the shape that made the
+    plugin-instance push order load-bearing earlier on this branch; a test asserting
+    only that both calls happened would pass against the wrong order, which is exactly
+    how the first regression test for that bug came out too weak.
 
     :param controller: Controller under test.
     :param mock_view: Mocked raw data view.
     """
-    channels: list[int] = [0, 1, 2]
-    controller.update_timer_channels(channels)
-    mock_view.update_timer_channels.assert_called_once_with(channels)
+    controller.model.call.return_value = [0, 1]
+    controller.update_available_plugins({"MetaEventFinder": ["EF1"]})
+
+    names: list[str] = [name for name, _, _ in mock_view.mock_calls]
+    assert names.index("register_eventfinder_channels") < names.index(
+        "update_available_plugins"
+    )
+
+
+def test_resolve_eventfinder_channels_asks_every_finder(
+    controller: RawDataController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Every finder is queried through call(), not only the ones not yet registered.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.model.call.return_value = [0, 1]
+
+    resolved = controller._resolve_eventfinder_channels(["EF1", "EF2"])
+
+    assert resolved == {"EF1": [0, 1], "EF2": [0, 1]}
+    assert controller.model.call.call_args_list == [
+        mocker.call("MetaEventFinder", "EF1", "get_channels"),
+        mocker.call("MetaEventFinder", "EF2", "get_channels"),
+    ]
+
+
+def test_resolve_eventfinder_channels_omits_a_finder_that_cannot_answer(
+    controller: RawDataController,
+) -> None:
+    """
+    A finder that raises is left out of the map rather than mapped to an empty list.
+
+    The distinction is load-bearing: the View registers defaults for a finder it finds
+    in the map and leaves the rest alone, so "did not answer" has to be absence. Mapping
+    it to ``[]`` would read as "this finder has no channels" and register nothing while
+    also never retrying.
+
+    :param controller: Controller under test.
+    """
+    controller.model.call.side_effect = [[0], Exception("boom"), [2]]
+
+    resolved = controller._resolve_eventfinder_channels(["EF1", "EF2", "EF3"])
+
+    assert resolved == {"EF1": [0], "EF3": [2]}
+    assert "EF2" not in resolved
+    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
 
 
 # ------------------- set_num_events_allowed --------------------------

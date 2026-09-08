@@ -3,7 +3,7 @@
     "poriscope/plugins/analysistabs/EventAnalysisView.py": 13,
     "poriscope/plugins/analysistabs/MetadataView.py": 17,
     "poriscope/plugins/analysistabs/ProteinView.py": 18,
-    "poriscope/plugins/analysistabs/RawDataView.py": 13,
+    "poriscope/plugins/analysistabs/RawDataView.py": 12,
     "poriscope/utils/MetaSubsetTabView.py": 3
   },
   "imports": {

@@ -9,7 +9,7 @@ Coverage targets:
 - update_plot_data
 - update_plot_samplerate
 - update_channels
-- update_timer_channels
+- register_eventfinder_channels
 - set_num_events_allowed
 - set_eventfinding_status
 - validate_single_channel
@@ -108,7 +108,6 @@ def view(mocker, mock_logging):
     # --- State attributes ---
     v.plot_data = None
     v.plot_samplerate = 1
-    v.timer_channels = []
     v.analysis_time_limits = {}
     v.eventfinding_status = False
     v.num_events_allowed = 0
@@ -161,13 +160,34 @@ def test_update_plot_samplerate(view):
 
 
 # ---------------------------------------------------------------------------
-# update_timer_channels
+# register_eventfinder_channels
 # ---------------------------------------------------------------------------
 
 
-def test_update_timer_channels(view):
-    view.update_timer_channels([0, 1, 2])
-    assert view.timer_channels == [0, 1, 2]
+def test_register_eventfinder_channels_gives_a_new_finder_defaults(view):
+    view.register_eventfinder_channels({"EF1": [0, 2]})
+    assert view.analysis_time_limits == {
+        "EF1": {0: {"start": 0, "end": 0}, 2: {"start": 0, "end": 0}}
+    }
+
+
+def test_register_eventfinder_channels_keeps_ranges_the_user_already_set(view):
+    """A finder already registered is not reset by a later plugin-registry push."""
+    view.analysis_time_limits = {"EF1": {0: {"start": 1.5, "end": 3.0}}}
+    view.register_eventfinder_channels({"EF1": [0, 1, 2]})
+    assert view.analysis_time_limits == {"EF1": {0: {"start": 1.5, "end": 3.0}}}
+
+
+def test_register_eventfinder_channels_leaves_a_silent_finder_unregistered(view):
+    """
+    No channels means no registration, so the next push retries the finder.
+
+    This is the surviving half of the 1.9.0 fix for ``timer_channels``: the finder key
+    used to be registered before its channels were known, so one failed lookup poisoned
+    that finder's time limits permanently.
+    """
+    view.register_eventfinder_channels({"EF1": []})
+    assert view.analysis_time_limits == {}
 
 
 # ---------------------------------------------------------------------------
@@ -584,7 +604,6 @@ def test_handle_parameter_change_dispatches_export_plot_data(view, mocker):
 def test_update_available_plugins_success(view, mocker):
     # super().update_available_plugins must not crash
     mocker.patch.object(MetaView, "update_available_plugins", return_value=None)
-    view.timer_channels = [0]
     plugins = {
         "MetaReader": ["R1"],
         "MetaFilter": ["F1"],
@@ -603,6 +622,25 @@ def test_update_available_plugins_exception_is_caught(view, mocker):
     # Should not raise
     view.update_available_plugins({"MetaReader": ["R1"]})
     view.logger.info.assert_called()
+
+
+def test_update_available_plugins_makes_no_plugin_call_of_its_own(view, mocker):
+    """
+    Step 4a: populating the comboboxes reaches no plugin, and registers no finder.
+
+    This method used to emit ``global_signal`` once per unregistered finder and read the
+    answer back off ``self.timer_channels`` - an emit-then-read nested inside a push the
+    Controller was already running. ``RawDataController`` resolves the channels now, so
+    what is left here is combobox population and nothing else.
+    """
+    mocker.patch.object(MetaView, "update_available_plugins", return_value=None)
+
+    view.update_available_plugins(
+        {"MetaReader": ["R1"], "MetaEventFinder": ["EF1", "EF2"]}
+    )
+
+    view.global_signal.emit.assert_not_called()
+    assert view.analysis_time_limits == {}
 
 
 # ---------------------------------------------------------------------------
