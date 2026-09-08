@@ -96,6 +96,17 @@ class RawDataView(MetaEventTabView):
     #: runs. There was never an attribute to park it on, so there is no stale read here.
     commit_requested = Signal(str, list)
 
+    #: Asks the Controller which of these channels the finder has already completed.
+    #: eventfinder, channels, filter key. The answer arrives as
+    #: ``set_eventfinding_statuses``, because the prompt that follows it belongs to the
+    #: View and the call that answers it does not.
+    eventfinding_statuses_requested = Signal(str, list, str)
+
+    #: The second half of the same launch: the channels the user approved, each paired
+    #: with the ranges to search, plus the filter key. Same generator shape as
+    #: ``commit_requested`` - no answer is expected.
+    eventfinding_requested = Signal(str, list, str)
+
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
 
@@ -741,7 +752,14 @@ class RawDataView(MetaEventTabView):
         self, eventfinder: str, data_filter: str, channels: Union[int, List[int]]
     ) -> None:
         """
-        Start the event finding operation on the specified channels with an optional filter.
+        Ask the Controller which of these channels the finder has already completed.
+
+        Step 4a, and the awkward one: this method interleaved a plugin call with a
+        question for the user, asking each channel's status over the bus and then
+        prompting before redoing a finished channel. The prompt has to stay in the View
+        and the call has to leave it, so the launch is two round trips now - statuses
+        out, answers back, then the approved channels out again. The reply arrives as
+        ``set_eventfinding_statuses``.
 
         :param eventfinder: Identifier for the event finder plugin.
         :type eventfinder: str
@@ -749,116 +767,101 @@ class RawDataView(MetaEventTabView):
         :type data_filter: str
         :param channels: Channel index, or list of channel indices, to run the event finder on.
         :type channels: Union[int, List[int]]
-        :raises Exception: If setting up the data filter fails.
+        :return: None
+        :rtype: None
         """
-        self.logger.debug(
-            "Starting event finder with eventfinder=%s, data_filter=%s, channels=%s",
-            eventfinder,
-            data_filter,
-            channels,
-        )
-
         if not isinstance(channels, list):
             self.logger.warning("Channels parameter is not a list, converting to list.")
             channels = [channels]
 
-        try:
-            self.data_filter = None
-            data_filter_args = ()
+        # "No Filter" collapses here, as it does for the other intents, so the Controller
+        # never has to know the placeholder's spelling.
+        filter_key = "" if data_filter in (None, "No Filter") else str(data_filter)
+        self.eventfinding_statuses_requested.emit(eventfinder, channels, filter_key)
 
-            if data_filter != "No Filter":
-                self.logger.info("Applying data filter: %s", data_filter)
-                self.global_signal.emit(
-                    "MetaFilter",
-                    data_filter,
-                    "get_callable_filter",
-                    data_filter_args,
-                    "set_event_filter",
-                    (),
+    @log(logger=logger)
+    def set_eventfinding_statuses(
+        self, eventfinder: str, statuses: List[Tuple[int, bool]], data_filter: str
+    ) -> None:
+        """
+        Confirm any already-finished channels, then ask for the approved ones to run.
+
+        The per-channel prompt is kept exactly as it was, including that declining one
+        channel skips only that channel - a coarser guard that abandoned the batch would
+        be a behaviour change.
+
+        A channel with no configured time limits stops the whole launch, as before.
+        **What changed is how it stops:** it used to raise ``KeyError`` out of this tab,
+        which was survivable while the call chain started at a Qt signal on the View. It
+        now runs inside a call from the Controller's slot, where an escaping exception
+        would reach Qt, so it is reported instead. Nothing launches either way.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param statuses: (channel, already_finished) for each channel that answered
+        :type statuses: List[Tuple[int, bool]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        approved: List[Tuple[int, List[Tuple[float, float]]]] = []
+        for channel, finished in statuses:
+            if finished:
+                reply = QMessageBox.question(
+                    self,
+                    "Confirmation",
+                    f"Event finding was already completed in channel {channel}. Start over anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
                 )
-            else:
-                self.logger.info("No data filter applied.")
-        except Exception as e:
-            self.logger.error("Error while setting up the data filter: %s", repr(e))
-            raise
-        else:
+                if reply == QMessageBox.No:
+                    continue  # Skip this channel
             try:
-                for channel in channels:
-                    # Check status before launching
-                    self.global_signal.emit(
-                        "MetaEventFinder",
-                        eventfinder,
-                        "get_eventfinding_status",
-                        (channel,),
-                        "relay_eventfinding_status",
-                        (),
-                    )
-
-                    if self.eventfinding_status is True:
-                        reply = QMessageBox.question(
-                            self,
-                            "Confirmation",
-                            f"Event finding was already completed in channel {channel}. Start over anyway?",
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.No,
-                        )
-                        if reply == QMessageBox.No:
-                            continue  # Skip this channel
-
-                    channel_limits = self.analysis_time_limits[eventfinder][channel]
-
-                    # Get list of ranges
-                    if "ranges" in channel_limits:
-                        ranges = list(
-                            channel_limits["ranges"]
-                        )  # Copy to avoid mutation
-                    else:
-                        start = channel_limits.get("start", 0.0)
-                        end = channel_limits.get("end", 0.0) or 0.0
-                        ranges = [(start, end)]
-
-                    self.logger.info(
-                        "Found %d range(s) for channel %s: %s",
-                        len(ranges),
-                        channel,
-                        ranges,
-                    )
-
-                    # Prepare args: ONE call to find_events per channel
-                    find_events_args = (
-                        channel,
-                        ranges,
-                        1.0,
-                        self.data_filter,
-                    )  # ranges is a list of (start, end)
-                    ret_args = (channel, eventfinder, "MetaEventFinder")  # unchanged
-
-                    self.logger.info(
-                        "Emitting bundled find_events for channel %s with %d range(s)",
-                        channel,
-                        len(ranges),
-                    )
-                    self.global_signal.emit(
-                        "MetaEventFinder",
-                        eventfinder,
-                        "find_events",
-                        find_events_args,
-                        "set_generator",
-                        ret_args,
-                    )
-
-                self.logger.info(
-                    "All channels processed. Triggering run_generators for eventfinder=%s",
-                    eventfinder,
-                )
-                self.run_generators.emit(eventfinder)
-
-            except (IndexError, ValueError) as e:
+                approved.append((channel, self._ranges_for_channel(eventfinder, channel)))
+            except KeyError:
                 self.logger.error(
-                    "Failed to set up generators for eventfinder=%s: %s",
-                    eventfinder,
-                    repr(e),
+                    f"No time limits configured for {eventfinder} channel {channel}; "
+                    "not starting event finding"
                 )
+                self.add_text_to_display.emit(
+                    f"No time range is set for channel {channel}, so event finding did "
+                    "not start",
+                    self.__class__.__name__,
+                )
+                return
+
+        if approved:
+            self.eventfinding_requested.emit(eventfinder, approved, data_filter)
+
+    @log(logger=logger)
+    def _ranges_for_channel(
+        self, eventfinder: str, channel: int
+    ) -> List[Tuple[float, float]]:
+        """
+        The time ranges the user set for one channel of one event finder.
+
+        An explicit ``ranges`` list is copied so the finder cannot mutate the tab's
+        state; otherwise the single start/end pair becomes a one-element list, where a
+        falsy end means "to the end of the signal" and the finder resolves it.
+
+        A finder or channel with no configured limits propagates ``KeyError`` from the
+        lookup, which the caller catches and reports. It is not declared as ``:raises:``
+        because there is no ``raise`` statement here for pydoclint to match it against.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel: the channel whose limits are wanted
+        :type channel: int
+        :return: the ranges to search, in seconds
+        :rtype: List[Tuple[float, float]]
+        """
+        channel_limits = self.analysis_time_limits[eventfinder][channel]
+        if "ranges" in channel_limits:
+            return list(channel_limits["ranges"])  # Copy to avoid mutation
+        start = channel_limits.get("start", 0.0)
+        end = channel_limits.get("end", 0.0) or 0.0
+        return [(start, end)]
 
     @log(logger=logger)
     def _extract_plot_event_parameters(

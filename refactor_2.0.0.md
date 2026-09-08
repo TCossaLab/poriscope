@@ -749,8 +749,8 @@ working tree; suite **3,449 passed / 4 skipped**.
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **84** | 0 |
-| — rule 1, View emits | 75 | **54** | 0 |
+| Boundary allowlist | 111 | **81** | 0 |
+| — rule 1, View emits | 75 | **51** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -772,62 +772,27 @@ commit.**
 the View emits a **typed intent**, the Controller's slot calls the plugin through
 `self.model.call(...)`, and the result goes back through a setter on the View. Remaining:
 
-- **RawData, 3 left.** Five commits landed 2026-09-08. `update_available_plugins` was
-  the emit-then-read *inside the push path*; then `_load_data` (2) and `_apply_filter`
-  (1) moved to `RawDataController._load_and_filter`, which **closed a live stale-read
-  bug** — see below. The remainder, **derived by AST rather than listed by hand**:
-  `_start_eventfinder` (3). `_start_writer`'s one landed 2026-09-08 as
-  `RawDataController.commit_events` and the method is deleted.
+- **RawData is done — the second View in the repo at zero emits**, after Clustering. Six
+  commits, 2026-09-08, taking it 14 → 0. The conversions in order:
+  `update_available_plugins`, the trace and PSD loading, the event plots,
+  `_handle_commit_events`, and `_start_eventfinder`.
 
-  **These two are the only 4a emits in the tab that were never emit-then-read.** Both
-  target `set_generator`, which the bus called with the generator as an *argument* rather
-  than parking it on an attribute, so there is no stale read to close - a relocation
-  rather than a fix, worth recording so the absence does not read as an oversight.
-  `commit_events` did take one deliberate behaviour change: the View aborted the whole
-  commit on failure via an `except (IndexError, ValueError)` that could never catch a
-  plugin error anyway, and a channel that cannot be committed is now reported and skipped
-  while the rest still run.
-  *The old breakdown here summed to 12 against a claimed 13: the total was right and the
-  enumeration had omitted `_start_writer`.*
+  **Nine unguarded stale reads were closed along the way**, all of the same shape: an
+  answer parked on a View attribute written only on success and never cleared before the
+  emit, with `_dispatch_to` swallowing the failure. The plan had described this whole
+  surface in one line as "all emit-then-read on `self.plot_data`". Two of the nine
+  decided *what the user saw*: the event count bounded which event indices were in range,
+  and the finder's status decided whether the "already completed, start over?" prompt was
+  shown — both for the previous channel rather than this one. Two emits genuinely had no
+  stale read (`commit_events` and `find_events` both hand back a generator as an argument
+  to `set_generator`), which is recorded so the absence does not read as an oversight.
 
-  **The `plot_data` stale read was live, and unmitigated.** The plan described these as
-  "all emit-then-read on `self.plot_data`", which flattened three different shapes and
-  missed the defect. `self.plot_data` is written *only* in `update_plot_data`, i.e. only
-  on success, and **was never cleared before any emit** — the eight clear-before-emit
-  guards the fifth pass counted are all in the two subset Views. Since `_dispatch_to`
-  swallows the failure, a channel the reader could not supply left the *previous*
-  channel's array in place and the caller's `if self.plot_data is not None` guard passed,
-  so **channel N−1's trace was plotted under channel N's label**. `_apply_filter` had the
-  identical shape, returning the last successfully filtered array instead of its own
-  input — which is what its `except` branch meant to do and could not reach.
-  `call()` raising fixes both structurally, on the trace path and the PSD path, which
-  shared these two helpers.
+  **`_start_eventfinder` was the awkward one**, and it is a two-phase launch now: it
+  interleaved a plugin call with a question for the user, so the Controller resolves the
+  statuses, the View prompts about already-finished channels, and the approved channels
+  come forward again. The filter key travels through both halves rather than being held
+  on the View between them.
 
-  **`_handle_plot_events` carried four more of the same shape, and it was pinned first.**
-  Coverage was checked rather than assumed and found absent: every reference to the
-  method in `tests/` *replaced* it with a `Mock`, `_load_event_data` was named by no test
-  at all, the integration flow drives `find_events` rather than `plot_events`, and the
-  audit's hand-typed `MOVED` list carried neither — so one e2e click was the whole net.
-  Both are audit targets now. Fifteen characterization tests went in first, which is what
-  surfaced that `get_single_event_data`'s trailing `False` is **`rectify`**, that it
-  returns a **dict**, and that the bus's return-function names are Controller-side with
-  `set_event_filter` not matching its View counterpart `set_data_filter_function`.
-  Then the conversion: `get_eventfinding_status`, `get_num_events_found`,
-  `get_samplerate` and `get_single_event_data` all parked answers on never-cleared
-  attributes, and the count one is the worst of the set because it **bounded which events
-  were plotted**. Ten of the fifteen pinned tests broke and the other five went vacuous,
-  so all fifteen were rewritten against the new structure rather than deleted (rule 23).
-
-  **Read the target's signature before converting an emit that passes arguments.** The bus
-  packs them into a *tuple*; `call(metaclass, key, method, *args, **kwargs)` takes them
-  *spread*. Carrying the tuple across broke the RawData e2e flow with
-  `TypeError: load_data() missing 1 required positional argument: 'length'`, and **every
-  controller unit test still passed**, because `self.model` is a `Mock` that accepts any
-  shape — the new test even asserted the tuple form, since it was written from the
-  implementation instead of from `load_data(start, length, channel=0, raw_data=False)`.
-  Method rule 42. **All four remaining RawData emits pass arguments**, so each one needs
-  its target's real signature read first; the first four 4a commits never hit this because
-  they passed none.
 - **EventAnalysis 13, Metadata 17, Protein 18, `MetaSubsetTabView` 3.**
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much

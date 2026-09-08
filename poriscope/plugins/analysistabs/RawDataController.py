@@ -62,6 +62,111 @@ class RawDataController(MetaEventTabController):
         self.view.psd_data_requested.connect(self.load_psd_data)
         self.view.event_plot_requested.connect(self.load_event_plot_data)
         self.view.commit_requested.connect(self.commit_events)
+        self.view.eventfinding_statuses_requested.connect(
+            self.request_eventfinding_statuses
+        )
+        self.view.eventfinding_requested.connect(self.start_eventfinding)
+
+    @log(logger=logger)
+    @Slot(str, list, str)
+    def request_eventfinding_statuses(
+        self, eventfinder: str, channels: List[int], data_filter: str
+    ) -> None:
+        """
+        Ask the finder which channels it has already completed, for the View to confirm.
+
+        Step 4a's first half of the event-finding launch. The View used to emit this per
+        channel inside its own loop and read the answer back off
+        ``self.eventfinding_status``, which nothing cleared - so a dispatch the bus
+        swallowed left the *previous* channel's finished-ness in place and the "start
+        over?" prompt was shown, or skipped, for the wrong channel.
+
+        A channel whose status cannot be read is dropped rather than guessed at, and the
+        remaining channels still get their prompt. ``data_filter`` is carried through
+        untouched so the View does not have to hold it between the two halves.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channels: the channels the user asked to run
+        :type channels: List[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        statuses: List[Tuple[int, bool]] = []
+        for channel in channels:
+            try:
+                finished = self.model.call(
+                    "MetaEventFinder", eventfinder, "get_eventfinding_status", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to read eventfinding status for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to read the state of channel {channel}, so it was skipped: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            statuses.append((channel, bool(finished)))
+        self.view.set_eventfinding_statuses(eventfinder, statuses, data_filter)
+
+    @log(logger=logger)
+    @Slot(str, list, str)
+    def start_eventfinding(
+        self,
+        eventfinder: str,
+        channel_ranges: List[Tuple[int, List[Tuple[float, float]]]],
+        data_filter: str,
+    ) -> None:
+        """
+        Launch the finder over the approved channels and run the resulting generators.
+
+        The second half. ``chunk_length`` is passed explicitly as 1.0 because the View
+        always did, even though it is also the parameter's default - keeping it makes the
+        move visibly behaviour-preserving rather than relying on the default not changing.
+
+        A channel that cannot be launched is reported and skipped, and the ones that did
+        register still run, for the same reason as ``commit_events``.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel_ranges: each approved channel with the ranges to search
+        :type channel_ranges: List[Tuple[int, List[Tuple[float, float]]]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        callable_filter = self._resolve_callable_filter(data_filter)
+        for channel, ranges in channel_ranges:
+            self.logger.info(
+                f"Launching find_events for channel {channel} over {len(ranges)} range(s)"
+            )
+            try:
+                generator = self.model.call(
+                    "MetaEventFinder",
+                    eventfinder,
+                    "find_events",
+                    channel,
+                    ranges,
+                    1.0,
+                    callable_filter,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to start event finding on channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to start event finding on channel {channel}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            self.model.set_generator(
+                generator, channel, eventfinder, "MetaEventFinder"
+            )
+        self.model.run_generators(eventfinder)
 
     @log(logger=logger)
     @Slot(str, list)

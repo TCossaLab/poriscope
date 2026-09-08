@@ -2,6 +2,10 @@
 
 * **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
 
+* **Fixed the Raw Data tab asking about the wrong channel before re-running event finding**: if it could not read whether a channel was already finished, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not finished or be skipped for one that was
+
+* Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
+
 * Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit
 
 * The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"

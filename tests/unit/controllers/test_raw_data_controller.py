@@ -14,6 +14,7 @@ Covers:
 - load_trace_data / load_psd_data hand the result to the matching view setter
 - load_event_plot_data makes the five event-plot calls the View used to make (4a)
 - commit_events registers each channel's generator with the model and runs them (4a)
+- request_eventfinding_statuses / start_eventfinding: the launch, in two halves (4a)
 - update_available_plugins resolves eventfinder channels before pushing names (4a)
 - _resolve_eventfinder_channels queries every finder and omits one that raises
 - set_num_events_allowed delegates to view
@@ -311,6 +312,213 @@ def test_update_channels_delegates_to_view(
     channels: dict[str, int] = {"num_channels": 4}
     controller.update_channels(channels)
     mock_view.update_channels.assert_called_once_with(channels)
+
+
+# ------------- launching event finding (Step 4a) ---------------------
+
+
+class TestEventfindingLaunch:
+    """
+    The three bus round trips ``RawDataView._start_eventfinder`` used to make.
+
+    Split across two slots because the launch has a question for the user in the middle
+    of it: the statuses come back so the View can prompt about already-finished channels,
+    and the approved ones come forward again. These invariants were pinned against the
+    View before the conversion and moved here with the calls.
+    """
+
+    def test_the_status_is_asked_per_channel_and_handed_back_with_the_filter(
+        self, controller: RawDataController, mock_view: MagicMock, mocker: MockerFixture
+    ) -> None:
+        """
+        One call per channel, and the filter key travels through untouched.
+
+        Carrying it through means the View holds nothing between the two halves.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = [True, False]
+
+        controller.request_eventfinding_statuses("finder", [0, 1], "F1")
+
+        assert controller.model.call.call_args_list == [
+            mocker.call("MetaEventFinder", "finder", "get_eventfinding_status", 0),
+            mocker.call("MetaEventFinder", "finder", "get_eventfinding_status", 1),
+        ]
+        mock_view.set_eventfinding_statuses.assert_called_once_with(
+            "finder", [(0, True), (1, False)], "F1"
+        )
+
+    def test_a_channel_whose_status_cannot_be_read_is_dropped(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        **The stale read this half closes.** The View parked each answer on
+        ``self.eventfinding_status``, which nothing cleared, so a swallowed failure left
+        the *previous* channel's finished-ness in place - and the "start over?" prompt was
+        then shown, or skipped, for the wrong channel.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        """
+        controller.model.call.side_effect = [True, RuntimeError("boom"), False]
+
+        controller.request_eventfinding_statuses("finder", [0, 1, 2], "")
+
+        handed_back = mock_view.set_eventfinding_statuses.call_args[0][1]
+        assert handed_back == [(0, True), (2, False)]
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_the_status_is_coerced_to_a_bool(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        The View branches on it, so a plugin returning something truthy-but-not-bool
+        must not reach the prompt as that object.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        """
+        controller.model.call.return_value = "finished"
+
+        controller.request_eventfinding_statuses("finder", [0], "")
+
+        handed_back = mock_view.set_eventfinding_statuses.call_args[0][1]
+        assert handed_back == [(0, True)]
+        # `== True` alone cannot see a missing bool(): `1 == True` in Python, so an
+        # int-returning plugin satisfied that assertion with the coercion removed.
+        # Found by perturbing the code rather than by reading the test.
+        assert handed_back[0][1] is True
+
+    # -- the second half -------------------------------------------------
+
+    def test_find_events_is_called_per_channel_with_the_real_signature(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        """
+        ``find_events(channel, ranges, chunk_length=1.0, data_filter=None)``.
+
+        ``chunk_length`` is passed explicitly because the View always did, even though it
+        matches the default - written from the signature rather than the old call site
+        (rule 42).
+
+        :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.start_eventfinding(
+            "finder", [(0, [(0.0, 1.0)]), (2, [(1.0, 2.0)])], ""
+        )
+
+        assert controller.model.call.call_args_list == [
+            mocker.call(
+                "MetaEventFinder", "finder", "find_events", 0, [(0.0, 1.0)], 1.0, None
+            ),
+            mocker.call(
+                "MetaEventFinder", "finder", "find_events", 2, [(1.0, 2.0)], 1.0, None
+            ),
+        ]
+
+    def test_each_generator_is_registered_against_its_channel_and_finder(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        """
+        What the bus used to carry as the return function's extra arguments.
+
+        :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.start_eventfinding(
+            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], ""
+        )
+
+        assert controller.model.set_generator.call_args_list == [
+            mocker.call("gen0", 0, "finder", "MetaEventFinder"),
+            mocker.call("gen1", 1, "finder", "MetaEventFinder"),
+        ]
+
+    def test_the_generators_run_once_for_the_finder(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Registration and running stay separate steps, as they were through the bus.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0", "gen1"]
+
+        controller.start_eventfinding(
+            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], ""
+        )
+
+        controller.model.run_generators.assert_called_once_with("finder")
+
+    def test_a_named_filter_is_fetched_once_and_passed_to_every_channel(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        One fetch for the batch, reusing the helper the event-plot path uses.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["a-callable", "gen0", "gen1"]
+
+        controller.start_eventfinding(
+            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], "F1"
+        )
+
+        find_calls = [
+            call.args
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "find_events"
+        ]
+        assert len(find_calls) == 2
+        for args in find_calls:
+            assert args[6] == "a-callable"
+
+    def test_an_empty_filter_key_fetches_no_callable(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0"]
+
+        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)])], "")
+
+        assert not [
+            call
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "get_callable_filter"
+        ]
+
+    def test_a_channel_that_cannot_launch_is_skipped_and_the_rest_run(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Same choice as commit_events: losing one channel beats losing the batch, and an
+        arbitrary finder exception must not escape a Qt slot.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = ["gen0", RuntimeError("boom"), "gen2"]
+
+        controller.start_eventfinding(
+            "finder",
+            [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)]), (2, [(0.0, 0.0)])],
+            "",
+        )
+
+        registered = [
+            call.args[1] for call in controller.model.set_generator.call_args_list
+        ]
+        assert registered == [0, 2]
+        controller.model.run_generators.assert_called_once_with("finder")
 
 
 # ------------------- committing events (Step 4a) ---------------------
