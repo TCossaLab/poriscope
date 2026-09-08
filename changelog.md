@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The golden files that pin the app's numerical output are now checked to be running at all, so a missing test dependency can no longer leave those numbers unpinned while the test suite still reports a pass
+
 * **Fixed a tab being unable to use a plugin it was showing in its dropdown**, reported when restoring a saved session: the tab was given the list of plugins before it was given access to them, and filling the dropdown immediately asks the selected plugin for its columns
 
 * **Fixed the clustering settings dialog failing with an error instead of opening** when the column list could not be read from the database

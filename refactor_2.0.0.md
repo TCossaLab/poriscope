@@ -657,6 +657,24 @@ unconditionally, which is asserted so the asymmetry is not rediscovered.
    delete the four pages they own (`IntroDialog`, `Overlay`, `StepDialog`, `WalkthroughMixin`).
    Gated by `tests/unit/scripts/test_autodoc_coverage.py`.
 
+#### A sixth gap, found 2026-09-08 — nothing asserted the golden net was armed
+
+`pytest-regressions` is declared correctly in **both** dependency sources and was
+nonetheless absent from one working environment. Every golden then errored at **setup**
+with `fixture 'num_regression' not found` — four errors beside 3,400 passes, which reads
+as an environment nit rather than as *the entire numeric golden net not running*. That net
+is what licenses Step 4 to move computation at all, including `RawDataModel.gaussian_fit`,
+whose own comment calls it "THE CRITICAL MATH FIX" and which the audit found had no
+behavioural coverage.
+
+None of the three gates can see it: the audit reads a coverage JSON, so an uncollected
+test is indistinguishable from one that never existed. **CLOSED** by
+`tests/test_safety_net_is_armed.py`, verified red-then-green — with `regressions`
+deregistered both tests fail naming the cause and the install command. The plugin
+registration name was measured, not guessed: it is **`regressions`**, and neither
+`pytest_regressions` nor `pytest-regressions` resolves; `pytest-datadir` is asserted too,
+since the goldens fail without it as well.
+
 #### Two things the review confirmed rather than found
 
 - **`createButton`'s divergence is real and unpinned.** `eventAnalysisControls.py` omits the
@@ -720,19 +738,33 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 `c99249ea`; `ProteinView`'s naive `WHERE` substring test; and `ClusteringView`'s GMM branch
 (`:660-670`), which has no extracted method to pin and gets one in Step 4c.
 
-## Next up — state as of 2026-09-07
+## Next up — state as of 2026-09-08
 
-**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **9 commits,
-not yet merged to `develop`**. Working tree clean at `f1fd81c2`; suite **3,403 passed / 4
-skipped**; duplication **31** removable; boundary allowlist **94**.
+**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **8 commits,
+not yet merged to `develop`**. Every row below re-measured at `28a7499`; suite
+**3,404 passed / 4 skipped**.
 
-| Gate | Start of refactor | Now |
-| --- | --- | --- |
-| Duplication, removable lines | 1,889 | **31** |
-| Boundary allowlist | 111 | **94** |
-| — rule 1, View emits | 75 | **64** |
-| — rule 4, layering | 4 | **0** |
-| — rule 5, tab reaches a plugin | — | **0** (added at zero) |
+| Gate | Start of refactor | Now | Target |
+| --- | --- | --- | --- |
+| Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
+| — the 3 analysis-tab families | 1,199 | **31** | 0 |
+| — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
+| Boundary allowlist | 111 | **94** | 0 |
+| — rule 1, View emits | 75 | **64** | 0 |
+| — rule 2, View computation imports | 22 | **20** | 0 |
+| — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
+| — rule 4, layering | 4 | **0** | 0 |
+| — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
+| Refactor-coverage audit | — | **100% pinned** | 100% |
+
+**Corrected 2026-09-08: the duplication row was comparing two scopes.** It read
+`1,889 → 31`. **1,889 is the six-family repo-wide total** — the ratchet was widened in
+the Step 2 exit review — while **31 is the three analysis-tab families alone**. Read
+against 31 the refactor looks finished when Step 5 has not begun, and the ≥ 2,500
+target in the Verification table is a repo-wide number. Method rule 2's fourth firing,
+and the first one that arose *after* the rule was written: **when a gate's scope is
+widened, every recorded before/after pair using the old scope becomes wrong in the same
+commit.**
 
 ### Resume here
 
@@ -762,7 +794,12 @@ cheaper after 4a for the reason recorded under 4c below.
 - **A regression the suite missed gets a test once positively diagnosed**, written against
   the *invariant* rather than the symptom, and seen red before it is trusted.
 - **New tests are owned by whoever adds the mechanism**, not the usual test owner.
-- Method notes are at **39 rules** in the artifact, now grouped by refactor phase; the
+- **When a gate's scope is widened, restate every recorded before/after pair for it in the
+  same commit** — otherwise the old-scope figures survive as a self-contradiction, which is
+  how `1,889 → 31` happened.
+- **A safety net's absence has no signature, so assert the net is armed.** A missing test
+  dependency errors at setup rather than failing, which reads as a pass.
+- Method notes are at **41 rules** in the artifact, grouped by refactor phase; the
   artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
 ### Owed
@@ -1011,7 +1048,8 @@ from `exposed.py` so changing it is breaking.
 | Metric | Baseline | Target | Instrument |
 | --- | --- | --- | --- |
 | MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates) | 0 | `ast` test (Step 2 branch 3) |
-| Duplicated lines removed | 0 of 1,199 (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet |
+| Duplicated lines removed | 0 of **1,889** repo-wide, 6 families (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet |
+| Golden net armed | unasserted | asserted | `tests/test_safety_net_is_armed.py` |
 | Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) |
 | Numerical output | unpinned | unchanged | golden files (2A) |
 | Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) |

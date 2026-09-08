@@ -787,6 +787,32 @@ the two coverage-dependent tests skip with a message telling you the command abo
    those lines already executed under the end-to-end suite with nothing asserting the values
    they produced. "Executed" and "pinned" are different properties.
 
+.. _golden_net_armed:
+
+Is the Golden Net Armed?
+-------------------------
+
+``tests/test_safety_net_is_armed.py`` asserts that ``pytest-regressions`` is registered with
+the running pytest session and that every fixture the checked-in golden files are written
+against resolves. It needs no arguments and runs as part of a plain ``pytest``.
+
+It exists because of how that dependency fails when it is missing. Every golden test requests
+a fixture such as ``num_regression``, so an absent plugin makes them **error during setup**
+rather than fail — which renders as a handful of errors beside several thousand passes, and
+looks like an environment nit rather than like the entire numerical golden net not running.
+
+.. note::
+
+   If this test fails, install the development extras and rerun:
+
+   .. code-block:: bash
+
+      pip install -e ".[dev]"
+
+   ``pytest-regressions`` is pinned in **both** ``pyproject.toml`` and
+   ``requirements-dev.txt``, because different CI workflows install from different files.
+   Adding it to only one is the mistake this test is positioned to catch early.
+
 .. _pre_pr_checklist:
 
 Pre-Pull-Request Compliance Checklist
