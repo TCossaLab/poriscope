@@ -10,6 +10,37 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - `ci-branches.yml`/`ci-fork-pr.yml` install `poriscope` itself, not just its dependencies
+
+**Context.** The `settings-schema` pre-commit hook (`scripts/check_plugin_schemas.py`) does a
+live `import poriscope.utils.plugin_schemas`, with no `sys.path` handling of its own. Both
+`ci-branches.yml` and `ci-fork-pr.yml` install only `requirements.txt`/`requirements-dev.txt`
+(third-party dependencies) - `pip install -e ".[dev]"` was removed from `ci-branches.yml` on
+2025-08-26, back when nothing in the pipeline needed `poriscope` importable outside of
+`pytest` (which gets it for free from `tests/conftest.py`'s own `sys.path` shim). Surfaced
+2026-09-08 when this branch's pre-commit run hit `ModuleNotFoundError: No module named
+'poriscope'` - the first hook this pipeline has ever had that imports it directly.
+
+**Decision.** Install the package (`pip install -e ".[dev]"`, with the same
+`|| pip install -r requirements-dev.txt` fallback `ci-internal-pr.yml` already uses - load
+bearing for `ci-fork-pr.yml`, where a broken fork `pyproject.toml` should degrade rather than
+hard-fail the job) rather than add a `sys.path` shim to the affected scripts.
+
+**Evidence.** `develop`'s own CI has never hit this: `db954c5b` added the validator and
+script but never wired them into `.pre-commit-config.yaml` at all - confirmed directly
+against `develop`'s tip, whose local hooks are only `pydoclint` and `plugin-module-level`.
+The hook itself is this branch's own contribution, retargeted at merge time to call
+`develop`'s script; `develop`'s CI run on that same commit (`350508b2`) is green via the
+GitHub API. A `sys.path` shim in the two affected scripts would also work and would need no
+CI change, but would diverge from `CLAUDE.md`'s own documented setup (`pip install
+-e ".[dev]"` is step 1) and would skip exercising `pyproject.toml`'s real dependency/
+entry-point metadata the way an actual install does.
+
+**Revisit if** a third CI workflow needs `poriscope` importable outside pytest and hits the
+same gap - `ci-internal-pr.yml` already has this right.
+
+---
+
 ## 2026-08-31 - `Basic_PeakFinder`'s conformance fixture uses a raised-cosine taper, not a rectangle
 
 **Context.** `Basic_PeakFinder` crashed (`ValueError: zero-size array...`) on a zero-width
