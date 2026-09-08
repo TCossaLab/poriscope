@@ -1,6 +1,6 @@
 ## Poriscope 2.0.0: in progress
 
-* **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time, cannot be cancelled once started, and is hard to tell apart from the application hanging
+* **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
 
 * The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
 

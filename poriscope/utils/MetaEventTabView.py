@@ -247,9 +247,10 @@ class MetaEventTabView(MetaView):
         Running an event finder or fitter on unfiltered data is a legitimate choice, but
         on a noisy trace it can be a **degenerate** one: the threshold is crossed
         constantly and effectively every sample registers as an event, which grinds for a
-        very long time and is indistinguishable from a hang. The progress dialog cannot
-        rescue it either, because the abort flag is only read between chunks and the first
-        chunk never finishes.
+        very long time and is easy to mistake for a hang. Cancelling does work -
+        ``find_events`` reads the abort flag at every chunk boundary and breaks out of the
+        range immediately - but with that many events a single chunk takes long enough
+        that the cancel can look as though it has not registered.
 
         Shared by the two tabs that launch this kind of work rather than copied into both.
         It is stateless and adds no contract, which is what makes it safe on the common
@@ -265,7 +266,8 @@ class MetaEventTabView(MetaView):
             "No filter selected",
             f"{operation} is about to run on unfiltered data."
             "\n\nOn a noisy trace this can register almost every sample as an event, "
-            "which may take a very long time and cannot be cancelled once it has started."
+            "which may take a very long time. Cancelling will work, but it only takes "
+            "effect at the end of the current chunk, so it may be slow to respond."
             "\n\nContinue without a filter?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,

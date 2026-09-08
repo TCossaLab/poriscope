@@ -840,9 +840,10 @@ def test_find_events_asks_before_running_unfiltered(view, mocker):
     """
     Running an event finder with no filter can register every sample as an event.
 
-    On a noisy trace that grinds for a very long time and looks like a hang, and the
-    progress dialog cannot be cancelled out of it because the abort flag is only read
-    between chunks. So the launch asks first.
+    On a noisy trace that grinds for a very long time and is easy to mistake for a hang.
+    Cancelling does work - the abort flag is read at every chunk boundary - but a chunk
+    holding that many events takes long enough that it can look unresponsive. So the
+    launch asks first.
     """
     view._start_eventfinder = mocker.Mock()
     view._extract_event_parameters = mocker.Mock(return_value=("EF1", "No Filter", [0]))
