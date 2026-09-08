@@ -55,7 +55,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
     QFileDialog,
     QMessageBox,
 )
@@ -68,9 +67,7 @@ from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
-from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
-from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
 )
@@ -2797,162 +2794,6 @@ class MetadataView(MetaSubsetTabView):
         y = y[:-1] + np.diff(y) / 2.0
 
         return x, y, logged_z.T
-
-    @log(logger=logger)
-    def _show_add_filter_dialog(self, parameters: dict) -> None:
-        """
-        Displays the dialog for adding a new subset filter. Validates filter syntax
-        before actually saving the filter.
-
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: dict
-        """
-        self._show_sql_in_display = True
-
-        dialog = AddSubsetFilterDialog(
-            self, existing_names=list(self.subset_filters.keys())
-        )
-
-        if self._walkthrough_active:
-            self.logger.info("Launching walkthrough from _show_add_filter_dialog()")
-            dialog._init_walkthrough()
-            dialog.launch_walkthrough()
-            if dialog.walkthrough_dialog:
-                dialog.finished.connect(
-                    lambda _: dialog.walkthrough_dialog.force_close()
-                )
-
-        if dialog.exec() == QDialog.Accepted:
-            # These are Optional[str] until the dialog's try_accept/accept
-            # fills them, and exec() cannot return Accepted without that
-            # having run - but the guarantee travels through a signal
-            # connection mypy cannot follow, so it is asserted here once
-            # rather than guarded at each of the six downstream uses.
-            name: str = dialog.name  # type: ignore[assignment]
-            filter_text: str = dialog.filter_text  # type: ignore[assignment]
-            loader = parameters["db_loader"]
-
-            if not loader:
-                self.add_text_to_display.emit(
-                    "No event database selected", self.__class__.__name__
-                )
-                return
-
-            # Store pending data for use in relay_query
-            self._pending_filter_name = name
-            self._pending_filter_text = filter_text
-            self._pending_old_filter_name = None
-
-            if dialog.is_raw:
-                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
-                if not filter_text.strip().upper().startswith("SELECT"):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Raw SQL Filter",
-                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                    )
-                    return
-                name = f"{name}_raw" if not name.endswith("_raw") else name
-                self._pending_filter_name = name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
-                )
-                return
-
-            self._show_sql_in_display = True
-
-            # Validate assisted filter via construct_metadata_query
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (
-                    ["sublevel_current", "voltage", "duration"],
-                    filter_text,
-                    None,
-                ),
-                "relay_query",
-                ("validate_new_filter",),
-            )
-
-    @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
-        """
-        Displays the dialog to edit an existing filter, and validates the updated
-        SQL filter syntax via construct_metadata_query before saving it.
-
-        :param name: The name of the filter to edit.
-        :type name: str
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        self._show_sql_in_display = True
-
-        self.logger.debug(f"Editing filter: {name}")
-        self.logger.debug(f"Filters available: {self.subset_filters}")
-
-        dialog = EditSubsetFilterDialog(self, name, self.subset_filters)
-
-        if dialog.exec():
-            # These are Optional[str] until the dialog's try_accept/accept
-            # fills them, and exec() cannot return Accepted without that
-            # having run - but the guarantee travels through a signal
-            # connection mypy cannot follow, so it is asserted here once
-            # rather than guarded at each of the six downstream uses.
-            new_name: str = dialog.new_name  # type: ignore[assignment]
-            new_filter: str = dialog.new_filter  # type: ignore[assignment]
-
-            self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
-
-            if not loader:
-                self.add_text_to_display.emit(
-                    "No event database selected", self.__class__.__name__
-                )
-                return
-
-            # Store pending update info to be committed in relay_query after validation
-            self._pending_filter_name = new_name
-            self._pending_filter_text = new_filter
-            self._pending_old_filter_name = name  # important for replacing key
-
-            if dialog.is_raw:
-                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
-                if not new_filter.strip().upper().startswith("SELECT"):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Raw SQL Filter",
-                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                    )
-                    return
-                new_name = (
-                    f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
-                )
-                self._pending_filter_name = new_name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
-                )
-                return
-
-            self._show_sql_in_display = True
-            # Emit signal to validate the updated assisted filter
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (["sublevel_current", "voltage", "duration"], new_filter, None),
-                "relay_query",
-                ("validate_edited_filter",),
-            )
 
     @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:

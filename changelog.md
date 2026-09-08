@@ -10,6 +10,10 @@
 
 * The Metadata and Protein tabs now report a database whose columns or experiment list cannot be read, instead of leaving the pickers silently unchanged
 
+* The Protein tab now reports a raw SQL filter that is not a complete SELECT statement in a dialog rather than on the status panel, matching the Metadata tab - the filter dialog has just closed at that point, so a status line was easy to miss
+
+* `show_edit_filter_dialog` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
+
 * Fixed the Metadata tab failing with an unhandled error, rather than reporting it, when the database returned rows with no `event_id` column while rebuilding its filtered-event cache
 
 * The Metadata tab now says the current scope when no events match a filter, and labels a subset with the filter expression when no filter name is selected instead of the word "Filter" - both matching the Protein tab

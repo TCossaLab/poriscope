@@ -10,6 +10,34 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - The promoted filter dialogs take Metadata's modal and Protein's columns
+
+**Context.** `_show_add_filter_dialog` and `show_edit_filter_dialog` existed twice, 14 diff
+lines apart - the smallest diff of the four methods Step 4a promotes, and the largest merge.
+Both divergences are in both methods.
+
+**Decision.** An invalid raw filter is reported in **Metadata's `QMessageBox.warning`**, by
+the user's choice, not Protein's status-panel line. The validation query is built from
+**Protein's** `available_columns[:3]`, falling back to the fixed triple. Each is now a named
+helper on the base - `_reject_non_select_raw_filter` and `_validation_columns` - so the two
+dialogs share one copy of each. `show_edit_filter_dialog` stops being abstract.
+
+**Evidence.** The modal wins because the filter dialog has just closed when the rejection is
+issued, so a status line is easy to miss. The columns matter because
+`construct_metadata_query` only has to *build* for a filter to count as valid, so a wrong
+guess rejects a filter that was fine. `show_edit_filter_dialog`'s abstractness was recorded
+as "each tab rebuilds its own filter widgets afterwards" - that is `_delete_filter`'s reason;
+neither copy of this method touches a filter widget.
+
+**The cost was test churn that no design avoids.** Both tabs' tests patch the dialog classes
+by module path (`patch("poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog")`),
+and a promoted method resolves those names in `MetaSubsetTabView` instead - so all **22**
+patch targets had to be re-pointed. Contorting the base to keep the old targets resolvable
+would be shaping production code around a test's patch string.
+
+**Revisit if** the status-panel report is wanted back, which would mean the modal is being
+dismissed without being read.
+
 ## 2026-09-08 - `_rebuild_event_id_cache` merges to ProteinView's copy, with the guards reordered
 
 **Context.** Both subset tabs carried it, 61 diff lines apart - the largest diff of the four

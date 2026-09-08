@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is merged by Step 3 or Step 4, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Five groups:
+Six groups:
 
 - ``_factors`` exists three times - ``MetaView.py:139`` plus byte-identical
   overrides in ``RawDataView.py:109`` and ``EventAnalysisView.py:121`` that shadow
@@ -39,10 +39,19 @@ Five groups:
   with no rows is an empty subset whether or not the loader returned columns with
   it. ``MetadataView`` had six tests for its copy and ``ProteinView`` had none, so
   the three branches only Protein's version had are pinned here.
+- ``_show_add_filter_dialog`` and ``show_edit_filter_dialog`` existed twice, only 14
+  diff lines apart, and carried **both** of the pair's real divergences: the columns
+  the throwaway validation query is built from, and whether an invalid raw filter is
+  reported in a modal or on the status panel. **Step 4a promoted both to**
+  ``MetaSubsetTabView``, taking Metadata's modal by the user's choice and Protein's
+  columns handling, each behind a named helper. The per-tab tests cover the modal;
+  what is pinned here is the column selection, whose fallback branch is the only one
+  the metadata tab can currently take.
 """
 
 import logging
 from typing import Dict, List, Optional
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -642,3 +651,104 @@ class TestRebuildEventIdCacheWasPromoted:
         assert view.current_sql_filter == "dwell > 1"
         assert view.current_experiment == "exp1"
         assert view.current_channel == 2
+
+
+# ===========================================================================
+# the two filter dialogs - two copies each, promoted by Step 4a
+# ===========================================================================
+
+
+class TestFilterDialogsWerePromoted:
+    """
+    One copy of each on the base, with the two divergences behind named helpers.
+
+    ``show_edit_filter_dialog`` was also **abstract** on the base until this
+    promotion. The reason recorded for that - each tab rebuilding its own filter
+    widgets - belonged to ``_delete_filter``; neither copy of this method touched
+    a filter widget.
+    """
+
+    @pytest.mark.parametrize(
+        "name", ["_show_add_filter_dialog", "show_edit_filter_dialog"]
+    )
+    def test_the_base_owns_the_only_copy(self, name: str) -> None:
+        """Neither tab may keep its own, or the promotion was partial."""
+        assert name in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert name not in view_cls.__dict__, f"{view_cls.__name__}.{name}"
+
+    def test_show_edit_filter_dialog_is_no_longer_abstract(self) -> None:
+        """
+        The base's abstract set is part of its published contract.
+
+        A plugin subclassing ``MetaSubsetTabView`` had to implement this and now
+        inherits it, so the count is asserted rather than left to be noticed.
+        """
+        assert "show_edit_filter_dialog" not in MetaSubsetTabView.__abstractmethods__
+        assert MetaSubsetTabView.__abstractmethods__ == frozenset(
+            {
+                "_delete_filter",
+                "_init",
+                "_reset_actions",
+                "_subset_controls",
+                "notify_plugin_state_changed",
+                "update_available_plugins",
+            }
+        )
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_validation_columns_prefers_the_database_s_own_columns(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        ProteinView's behaviour, promoted: validate against columns that exist.
+
+        ``construct_metadata_query`` only has to *build* for the filter to count as
+        valid, so three columns the database actually has beat a fixed guess - a
+        wrong guess rejects a filter that was fine.
+        """
+        view = build_subset_tab(view_cls)
+        view.available_columns = ["dwell", "amplitude", "baseline", "ignored"]
+
+        assert view._validation_columns() == ["dwell", "amplitude", "baseline"]
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_validation_columns_falls_back_to_the_fixed_triple(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        The branch the metadata tab always takes today.
+
+        Only ``ProteinView`` fills ``available_columns``; ``MetadataView``'s
+        ``update_column_names`` updates its axis comboboxes and stores nothing, so
+        the metadata tab still validates against the fixed triple. That is a
+        one-line follow-up queued in ``future_fixes.md``, and this test is what it
+        should flip.
+        """
+        view = build_subset_tab(view_cls)
+        view.available_columns = []
+
+        assert view._validation_columns() == [
+            "sublevel_current",
+            "voltage",
+            "duration",
+        ]
+
+    def test_the_metadata_tab_still_has_no_columns_to_offer(self, qapp: object) -> None:
+        """
+        Pins the gap itself, not just the fallback it causes.
+
+        Asserted through ``update_column_names`` rather than by reading the
+        attribute, so that filling it there - which is the queued fix - is what
+        makes this test fail.
+        """
+        view = build_subset_tab(MetadataView)
+        view.metadatacontrols.update_axes = MagicMock()
+
+        view.update_column_names(["dwell", "amplitude", "baseline"])
+
+        assert view._validation_columns() == [
+            "sublevel_current",
+            "voltage",
+            "duration",
+        ]

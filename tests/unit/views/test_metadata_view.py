@@ -4654,7 +4654,7 @@ def test_show_add_filter_dialog_sets_show_sql_flag(
     view._show_sql_in_display = False
     view._walkthrough_active = False  # Add this attribute
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0  # Rejected
@@ -4673,7 +4673,7 @@ def test_show_add_filter_dialog_opens_dialog(
     view._walkthrough_active = False
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
@@ -4692,7 +4692,7 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     """Verify filter is validated via global signal when accepted."""
     view._walkthrough_active = False
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1  # Accepted
@@ -4715,7 +4715,7 @@ def test_show_add_filter_dialog_returns_when_no_loader(
     """Verify early return when no loader is provided."""
     view._walkthrough_active = False
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1
@@ -4798,7 +4798,7 @@ def test_show_edit_filter_dialog_sets_show_sql_flag(
     view._show_sql_in_display = False
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
@@ -4816,7 +4816,7 @@ def test_show_edit_filter_dialog_opens_dialog(
     """Verify edit dialog is opened with correct parameters."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
@@ -4837,7 +4837,7 @@ def test_show_edit_filter_dialog_validates_on_accept(
     """Verify filter is validated when dialog is accepted."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1
@@ -4858,7 +4858,7 @@ def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
     """Verify pending data includes old filter name for replacement."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1

@@ -12,6 +12,16 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
+## The Metadata tab validates filters against three columns it never checked exist (2026-09-08)
+
+`MetaSubsetTabView._validation_columns` prefers `available_columns` and falls back to
+`["sublevel_current", "voltage", "duration"]`. Only `ProteinView.update_column_names:626`
+fills `available_columns`; `MetadataView.update_column_names:2677` updates its axis
+comboboxes and stores nothing, so the metadata tab always takes the fallback and a filter
+over a database without those three columns is rejected as invalid rather than validated.
+One line in Metadata's `update_column_names`; two tests in
+`tests/unit/views/test_duplicated_helpers.py` are written to flip when it lands.
+
 ## `MetaSubsetTabControls.get_selected_filter_names` has no production caller (2026-09-08)
 
 `MetaSubsetTabControls.py:153` wraps `filter_comboBox.getSelectedItems()` and is called only

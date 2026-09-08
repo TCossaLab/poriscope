@@ -31,11 +31,13 @@ from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaView import MetaView
+from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
+from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
 from poriscope.views.widgets.SelectionTree import SelectionTree
 
@@ -62,7 +64,9 @@ class MetaSubsetTabView(MetaView):
     - **Subset filters.** ``_save_filter``, ``_delete_filter_by_name``,
       ``_show_filter_info_dialog`` and ``clear_pending_filter_state`` manage the named
       filters in ``subset_filters`` and the three pending fields the Controller reads
-      back after a validation round-trip.
+      back after a validation round-trip. ``_show_add_filter_dialog`` and
+      ``show_edit_filter_dialog`` open the two filter dialogs and validate what they
+      return, through ``_validation_columns`` and ``_reject_non_select_raw_filter``.
     - **Experiment selection.** ``show_selection_tree`` and
       ``request_experiment_structure`` drive the ``SelectionTree`` dialog and remember
       what was chosen per loader.
@@ -80,9 +84,8 @@ class MetaSubsetTabView(MetaView):
       follows for its shared code.
     - **``_subset_controls``**, a one-line property returning whatever name the tab
       holds its controls panel under, so the shared methods here can reach it.
-    - **``_delete_filter`` and ``show_edit_filter_dialog``**, declared abstract below.
-      Both tabs implement them differently, because each rebuilds its own filter
-      widgets afterwards.
+    - **``_delete_filter``**, declared abstract below, because each tab rebuilds its
+      own filter widgets after a removal.
     - **The five abstract methods ``MetaView`` declares**, unchanged - this base
       implements none of them.
 
@@ -148,6 +151,200 @@ class MetaSubsetTabView(MetaView):
         """
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
+
+    @log(logger=logger)
+    def _validation_columns(self) -> List[str]:
+        """
+        Three columns to build the throwaway query that validates a filter.
+
+        ``construct_metadata_query`` needs a column list to build a query with, and
+        the filter dialogs only want to know whether the query *builds* - the query
+        itself is discarded. Columns the database actually has are therefore better
+        than a fixed guess, since a filter is otherwise rejected because the guess
+        was wrong rather than because the filter was.
+
+        Promoted with ``ProteinView``'s behaviour: only that tab fills
+        ``available_columns``, so the metadata tab still falls back to the fixed
+        triple until it does too. ``future_fixes.md`` carries that.
+
+        :return: up to three column names to validate against
+        :rtype: List[str]
+        """
+        available = getattr(self, "available_columns", None)
+        if available:
+            return list(available[:3])
+        return ["sublevel_current", "voltage", "duration"]
+
+    @log(logger=logger)
+    def _reject_non_select_raw_filter(self, filter_text: str) -> bool:
+        """
+        Report a raw filter that is not a complete SELECT, and say whether it was.
+
+        A raw filter is handed to the loader verbatim, so anything that is not a
+        SELECT cannot be validated and must not be saved. Reported in a modal
+        rather than on the status panel, which is ``MetadataView``'s behaviour of
+        the two and the one chosen: the dialog has just closed, and a line on the
+        status panel is easy to miss at that moment.
+
+        :param filter_text: the raw filter text the dialog returned
+        :type filter_text: str
+        :return: True if the filter was rejected and the caller should stop
+        :rtype: bool
+        """
+        if filter_text.strip().upper().startswith("SELECT"):
+            return False
+        QMessageBox.warning(
+            self,
+            "Invalid Raw SQL Filter",
+            "Raw SQL filters must be complete SELECT statements, e.g. SELECT "
+            "duration FROM events WHERE duration > 1000",
+        )
+        return True
+
+    @log(logger=logger)
+    def _show_add_filter_dialog(self, parameters: dict) -> None:
+        """
+        Open the dialog that adds a subset filter, and validate what it returns.
+
+        Promoted from both subset tabs in Step 4a. The copies diverged twice, in
+        the same two places as ``show_edit_filter_dialog``: the columns the
+        validation query is built from, now ``_validation_columns``, and how an
+        invalid raw filter is reported, now ``_reject_non_select_raw_filter``.
+
+        :param parameters: Dictionary with 'db_loader'.
+        :type parameters: dict
+        """
+        self._show_sql_in_display = True
+
+        dialog = AddSubsetFilterDialog(
+            self, existing_names=list(self.subset_filters.keys())
+        )
+
+        if self._walkthrough_active:
+            self.logger.info("Launching walkthrough from _show_add_filter_dialog()")
+            dialog._init_walkthrough()
+            dialog.launch_walkthrough()
+            if dialog.walkthrough_dialog:
+                dialog.finished.connect(
+                    lambda _: dialog.walkthrough_dialog.force_close()
+                )
+
+        if dialog.exec() == QDialog.Accepted:
+            # These are Optional[str] until the dialog's try_accept/accept
+            # fills them, and exec() cannot return Accepted without that
+            # having run - but the guarantee travels through a signal
+            # connection mypy cannot follow, so it is asserted here once
+            # rather than guarded at each of the six downstream uses.
+            name: str = dialog.name  # type: ignore[assignment]
+            filter_text: str = dialog.filter_text  # type: ignore[assignment]
+            loader = parameters["db_loader"]
+
+            if not loader:
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
+                return
+
+            # Read back by relay_query once the validation round-trip returns.
+            self._pending_filter_name = name
+            self._pending_filter_text = filter_text
+            self._pending_old_filter_name = None
+
+            if dialog.is_raw:
+                # Raw SQL is validated by validate_filter_query, not by
+                # construct_metadata_query, which builds its own SQL.
+                if self._reject_non_select_raw_filter(filter_text):
+                    return
+                name = f"{name}_raw" if not name.endswith("_raw") else name
+                self._pending_filter_name = name
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "validate_filter_query",
+                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
+                    "on_raw_filter_validated",
+                    (),
+                )
+                return
+
+            self._show_sql_in_display = True
+
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                (self._validation_columns(), filter_text, None),
+                "relay_query",
+                ("validate_new_filter",),
+            )
+
+    @log(logger=logger)
+    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
+        """
+        Open the dialog that edits a subset filter, and validate what it returns.
+
+        Promoted from both subset tabs in Step 4a, and no longer abstract. The
+        reason recorded for its being abstract - that each tab rebuilds its own
+        filter widgets afterwards - was ``_delete_filter``'s, not this method's:
+        neither copy touched a filter widget. They diverged in the same two places
+        as ``_show_add_filter_dialog``, resolved the same way.
+
+        :param name: the filter to edit
+        :type name: str
+        :param loader: the database loader the filter applies to
+        :type loader: str
+        """
+        self._show_sql_in_display = True
+
+        self.logger.debug(f"Editing filter: {name}")
+        self.logger.debug(f"Filters available: {self.subset_filters}")
+
+        dialog = EditSubsetFilterDialog(self, name, self.subset_filters)
+
+        if dialog.exec():
+            # Optional[str] until the dialog fills them; see _show_add_filter_dialog.
+            new_name: str = dialog.new_name  # type: ignore[assignment]
+            new_filter: str = dialog.new_filter  # type: ignore[assignment]
+
+            self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
+
+            if not loader:
+                self.add_text_to_display.emit(
+                    "No event database selected", self.__class__.__name__
+                )
+                return
+
+            self._pending_filter_name = new_name
+            self._pending_filter_text = new_filter
+            # The old name is what relay_query replaces, so it has to travel too.
+            self._pending_old_filter_name = name
+
+            if dialog.is_raw:
+                if self._reject_non_select_raw_filter(new_filter):
+                    return
+                new_name = (
+                    f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
+                )
+                self._pending_filter_name = new_name
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "validate_filter_query",
+                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
+                    "on_raw_filter_validated",
+                    (),
+                )
+                return
+
+            self._show_sql_in_display = True
+            self.global_signal.emit(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                (self._validation_columns(), new_filter, None),
+                "relay_query",
+                ("validate_edited_filter",),
+            )
 
     @log(logger=logger)
     def _rebuild_event_id_cache(
@@ -306,19 +503,6 @@ class MetaSubsetTabView(MetaView):
 
         :param name: the filter to remove
         :type name: str
-        """
-
-    @abstractmethod
-    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
-        """
-        Open the dialog that edits an existing subset filter, and validate the result.
-
-        Abstract for the same reason as ``_delete_filter``.
-
-        :param name: the filter to edit
-        :type name: str
-        :param loader: the database loader the filter applies to
-        :type loader: str
         """
 
     @log(logger=logger)

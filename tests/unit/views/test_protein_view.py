@@ -58,7 +58,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
 from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
 from tests.unit.views._qt_mocks import mock_axes, shadow_signals
@@ -2007,7 +2007,7 @@ class TestShowAddFilterDialog:
     def test_sets_show_sql_flag(self, mock_view):
         mock_view._walkthrough_active = False
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
@@ -2017,7 +2017,7 @@ class TestShowAddFilterDialog:
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
@@ -2027,7 +2027,7 @@ class TestShowAddFilterDialog:
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True),
         ):
             mock_view._show_add_filter_dialog({"db_loader": None})
@@ -2037,7 +2037,7 @@ class TestShowAddFilterDialog:
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True, is_raw=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
@@ -2045,26 +2045,34 @@ class TestShowAddFilterDialog:
         call_args = mock_view.global_signal.emit.call_args[0]
         assert call_args[2] == "construct_metadata_query"
 
-    def test_raw_filter_requires_select_statement(self, mock_view):
+    def test_raw_filter_requires_select_statement(self, mock_view, monkeypatch):
+        """
+        Reported in a modal since Step 4a promoted this method.
+
+        This tab used to put the rejection on the status panel and the metadata tab
+        put it in a QMessageBox; the promoted copy uses the modal, by decision,
+        because the dialog has just closed and a status line is easy to miss then.
+        """
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None, accepted=True, is_raw=True, text="dur > 100"
             ),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert any("SELECT statements" in m for m in received)
+        warned.assert_called_once()
+        assert "SELECT statements" in warned.call_args[0][2]
         mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None,
                 accepted=True,
@@ -2082,7 +2090,7 @@ class TestShowAddFilterDialog:
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None,
                 accepted=True,
@@ -2119,7 +2127,7 @@ class TestShowEditFilterDialog:
     def test_sets_show_sql_flag(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=False),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
@@ -2129,7 +2137,7 @@ class TestShowEditFilterDialog:
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=False),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
@@ -2139,7 +2147,7 @@ class TestShowEditFilterDialog:
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=True),
         ):
             mock_view.show_edit_filter_dialog("f1", None)
@@ -2150,7 +2158,7 @@ class TestShowEditFilterDialog:
         mock_view.global_signal = MagicMock()
         dialog = self._mock_dialog(accepted=True, is_raw=False)
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=dialog,
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
@@ -2159,25 +2167,27 @@ class TestShowEditFilterDialog:
             mock_view.global_signal.emit.call_args[0][2] == "construct_metadata_query"
         )
 
-    def test_raw_edit_requires_select(self, mock_view):
+    def test_raw_edit_requires_select(self, mock_view, monkeypatch):
+        """Modal rather than status panel, for the reason above."""
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
                 accepted=True, is_raw=True, new_filter="dur > 5"
             ),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert any("SELECT statements" in m for m in received)
+        warned.assert_called_once()
+        assert "SELECT statements" in warned.call_args[0][2]
 
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
                 accepted=True,
                 is_raw=True,
@@ -2193,7 +2203,7 @@ class TestShowEditFilterDialog:
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=True, is_raw=False, new_name="f2"),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
