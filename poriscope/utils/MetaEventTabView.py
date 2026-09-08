@@ -27,6 +27,8 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, override
 
+from PySide6.QtWidgets import QMessageBox
+
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
 
@@ -236,6 +238,42 @@ class MetaEventTabView(MetaView):
         writer = parameters.get("writer")
         channels = [int(ch) for ch in parameters["channel"]]
         return writer, channels
+
+    @log(logger=logger)
+    def confirm_unfiltered_run(self, operation: str) -> bool:
+        """
+        Ask the user to confirm launching an analysis with no filter selected.
+
+        Running an event finder or fitter on unfiltered data is a legitimate choice, but
+        on a noisy trace it can be a **degenerate** one: the threshold is crossed
+        constantly and effectively every sample registers as an event, which grinds for a
+        very long time and is indistinguishable from a hang. The progress dialog cannot
+        rescue it either, because the abort flag is only read between chunks and the first
+        chunk never finishes.
+
+        Shared by the two tabs that launch this kind of work rather than copied into both.
+        It is stateless and adds no contract, which is what makes it safe on the common
+        base rather than needing an intermediate (method rule 34).
+
+        :param operation: what is about to run, named for the prompt, e.g. "Event finding"
+        :type operation: str
+        :return: True to proceed, False if the user declined
+        :rtype: bool
+        """
+        reply = QMessageBox.question(
+            self,
+            "No filter selected",
+            f"{operation} is about to run on unfiltered data."
+            "\n\nOn a noisy trace this can register almost every sample as an event, "
+            "which may take a very long time and cannot be cancelled once it has started."
+            "\n\nContinue without a filter?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.No:
+            self.logger.info(f"{operation} cancelled: no filter selected")
+            return False
+        return True
 
     @log(logger=logger)
     def set_data_filter_function(self, data_filter: Callable) -> None:

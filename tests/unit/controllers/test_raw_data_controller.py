@@ -651,6 +651,52 @@ class TestLoadEventPlotData:
             1,
         ]
 
+    def test_out_of_range_indices_are_named_with_the_channel_bound(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        The dropped indices and the real bound, on the status panel.
+
+        Previously this was a ``logger.info`` only, so a partly out-of-range selection
+        plotted fewer traces than asked for with nothing said about why.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        """
+        self.answers(
+            controller,
+            get_num_events_found=2,
+            get_single_event_data=[{"data": "a"}, {"data": "b"}],
+        )
+
+        controller.load_event_plot_data("finder", 3, [0, 1, 7], "")
+
+        message = controller.add_text_to_display.emit.call_args[0][0]
+        assert "Channel 3 has 2 events (0-1)" in message
+        assert "event 7" in message
+        mock_view.set_event_plot_data.assert_called_once_with(["a", "b"], [0, 1])
+
+    def test_a_wholly_out_of_range_selection_does_not_report_missing_data(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        The reported clarity defect.
+
+        Every index being out of range used to fall through to the result path, where the
+        View reported "No data available for plotting" - true, but it reads as the events
+        being absent rather than the indices being wrong. The specific message has already
+        gone out by this point, so the generic one must not follow it.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        """
+        self.answers(controller, get_num_events_found=2)
+
+        controller.load_event_plot_data("finder", 0, [5, 7], "")
+
+        mock_view.set_event_plot_data.assert_not_called()
+        assert "events 5, 7" in controller.add_text_to_display.emit.call_args[0][0]
+
     def test_an_empty_filter_key_asks_for_no_callable(
         self, controller: RawDataController
     ) -> None:

@@ -52,6 +52,41 @@ CHIMERA_NUM_EVENTS = 5
 CHIMERA_DURATION_S = 2.0
 
 
+@pytest.fixture(autouse=True)
+def _prevent_blocking_dialogs(monkeypatch):
+    """
+    Auto-applied: make any modal dialog answer immediately instead of blocking.
+
+    The flow tests build a real View, so a confirmation dialog on a path they drive
+    opens a real modal event loop and the test hangs until the 300 s timeout rather
+    than failing. ``tests/unit/views/conftest.py`` carries the same guard for the same
+    reason; there was none here because nothing on these paths asked a question until
+    the unfiltered-run confirmation was added.
+
+    ``question`` answers Yes, so a confirmation reads as "the user agreed" and the flow
+    proceeds - which is what these tests are about. A flow that wants the No branch
+    should patch it itself.
+
+    :param monkeypatch: pytest's monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    """
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    for _static in ("warning", "information", "critical"):
+        monkeypatch.setattr(
+            QMessageBox,
+            _static,
+            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok),
+        )
+
+
 @pytest.fixture
 def sample_chimera(tmp_path) -> Dict[str, str]:
     """

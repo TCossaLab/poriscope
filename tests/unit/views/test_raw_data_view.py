@@ -800,6 +800,25 @@ def test_shift_range_and_update_plot_empty_indices_aborts(view, mocker):
     view._handle_plot_events.assert_not_called()
 
 
+def test_shift_below_zero_is_reported_on_the_status_panel(view, mocker):
+    """
+    Declining the shift is correct; saying so only on the console was not.
+
+    Shifting the event index left past 0 expands to nothing, which the method has always
+    logged as "Indices must be positive" - a string an EventAnalysis e2e test pins - while
+    the user saw the arrow simply stop responding.
+    """
+    _setup_shift_plot(view, mocker)
+    view._expand_event_indices.return_value = []
+    params = {"eventfinder": "EF", "filter": "F", "channel": ["0"], "event_index": [0]}
+
+    view._shift_range_and_update_plot(params, "left")
+
+    view._handle_plot_events.assert_not_called()
+    view.add_text_to_display.emit.assert_called_once()
+    assert "below 0" in view.add_text_to_display.emit.call_args[0][0]
+
+
 def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     view.rawdatacontrols.event_index_lineEdit.text.return_value = ""
     view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [0], []))
@@ -808,6 +827,56 @@ def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     params = {"eventfinder": "EF", "filter": "F", "channel": ["0"], "event_index": []}
     view._shift_range_and_update_plot(params, "left")
     view._handle_plot_events.assert_not_called()
+
+
+
+
+# ---------------------------------------------------------------------------
+# the unfiltered-run confirmation
+# ---------------------------------------------------------------------------
+
+
+def test_find_events_asks_before_running_unfiltered(view, mocker):
+    """
+    Running an event finder with no filter can register every sample as an event.
+
+    On a noisy trace that grinds for a very long time and looks like a hang, and the
+    progress dialog cannot be cancelled out of it because the abort flag is only read
+    between chunks. So the launch asks first.
+    """
+    view._start_eventfinder = mocker.Mock()
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "No Filter", [0]))
+    view.confirm_unfiltered_run = mocker.Mock(return_value=True)
+
+    view._handle_find_events({})
+
+    view.confirm_unfiltered_run.assert_called_once_with("Event finding")
+    view._start_eventfinder.assert_called_once()
+
+
+def test_declining_the_unfiltered_confirmation_runs_nothing(view, mocker):
+    """Answering No has to stop the launch, not merely warn about it."""
+    view._start_eventfinder = mocker.Mock()
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "No Filter", [0]))
+    view.confirm_unfiltered_run = mocker.Mock(return_value=False)
+
+    view._handle_find_events({})
+
+    view._start_eventfinder.assert_not_called()
+
+
+def test_a_selected_filter_is_not_second_guessed(view, mocker):
+    """The confirmation is about the unfiltered case only; a real filter just runs."""
+    view._start_eventfinder = mocker.Mock()
+    view._extract_event_parameters = mocker.Mock(
+        return_value=("EF1", "LowPass_0", [0])
+    )
+    view.confirm_unfiltered_run = mocker.Mock(return_value=True)
+
+    view._handle_find_events({})
+
+    view.confirm_unfiltered_run.assert_not_called()
+    view._start_eventfinder.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

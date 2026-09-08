@@ -73,6 +73,23 @@ def _prevent_blocking_dialogs(monkeypatch):
     monkeypatch.setattr(
         QMessageBox, "exec_", lambda self: QMessageBox.StandardButton.Ok
     )
+    # The *static* helpers block too, and patching only exec/exec_ did not cover them:
+    # QMessageBox.question() opens its own event loop without going through either. The
+    # gap was invisible until a confirmation was added on a path these tests drive, and
+    # the symptom is a hung test rather than a failing one. `question` answers Yes so a
+    # confirmation reads as "the user agreed"; a test that wants the No branch patches it
+    # itself, as the note above says.
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    for _static in ("warning", "information", "critical"):
+        monkeypatch.setattr(
+            QMessageBox,
+            _static,
+            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok),
+        )
 
 
 @pytest.fixture(autouse=True)

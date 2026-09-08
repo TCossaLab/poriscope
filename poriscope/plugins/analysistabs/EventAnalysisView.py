@@ -834,6 +834,11 @@ class EventAnalysisView(MetaEventTabView):
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
         if eventfitter is not None and channels is not None and data_filter is not None:
+            # See RawDataView._handle_find_events: asked where the click arrives.
+            if data_filter == "No Filter" and not self.confirm_unfiltered_run(
+                "Event fitting"
+            ):
+                return
             self._start_eventfitter(eventfitter, data_filter, channels)
 
     @log(logger=logger)
@@ -869,6 +874,7 @@ class EventAnalysisView(MetaEventTabView):
         """
         if not isinstance(channels, list):
             channels = [channels]
+
         try:
             # If channels is not a list, make it a list
             data_filter_args = ()

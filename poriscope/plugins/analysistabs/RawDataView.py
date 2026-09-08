@@ -508,7 +508,14 @@ class RawDataView(MetaEventTabView):
         self.logger.debug(f"Expanded list for plotting: {expanded}")
 
         if not expanded:
+            # The log line is kept verbatim: an EventAnalysis e2e test asserts on this
+            # exact text. What was missing is the user-visible half - the shift correctly
+            # declines to go below event 0, but said so only on the console.
             self.logger.warning("Indices must be positive")
+            self.add_text_to_display.emit(
+                "Cannot shift further: event indices cannot go below 0",
+                self.__class__.__name__,
+            )
             return
 
         # Proceed with valid shift
@@ -714,6 +721,13 @@ class RawDataView(MetaEventTabView):
             return
 
         if eventfinder is not None and channels is not None and data_filter is not None:
+            # Asked at the intent boundary rather than inside _start_eventfinder: this is
+            # where the user's click arrives, and it keeps the confirmation out of the
+            # mechanism that the characterization suite drives directly.
+            if data_filter == "No Filter" and not self.confirm_unfiltered_run(
+                "Event finding"
+            ):
+                return
             self.logger.info("Valid parameters found: Starting event finder.")
 
             self._start_eventfinder(eventfinder, data_filter, channels)

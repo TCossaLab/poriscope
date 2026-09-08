@@ -209,11 +209,25 @@ class RawDataController(MetaEventTabController):
         if not events:
             return
 
-        if max(events) >= num_events:
+        out_of_range = [event for event in events if event >= num_events]
+        events = [event for event in events if event < num_events]
+        if out_of_range:
             self.logger.info(
                 f"Some event indices were out of bounds, truncating indices above {num_events - 1}"
             )
-        events = [event for event in events if event < num_events]
+            # Said on the status panel as well as the log, and naming the bound. Without
+            # this, a selection entirely out of range fell through to the result path and
+            # reported "No data available for plotting" - true, but it reads like the
+            # events are missing rather than like the indices are wrong.
+            label = "event" if len(out_of_range) == 1 else "events"
+            indices = ", ".join(str(event) for event in out_of_range)
+            self.add_text_to_display.emit(
+                f"Channel {channel} has {num_events} events (0-{num_events - 1}), "
+                f"so {label} {indices} could not be plotted",
+                self.__class__.__name__,
+            )
+        if not events:
+            return
 
         callable_filter = self._resolve_callable_filter(data_filter)
         self.view.update_plot_samplerate(self._event_samplerate(eventfinder))

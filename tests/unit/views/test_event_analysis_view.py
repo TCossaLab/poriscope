@@ -585,6 +585,43 @@ class TestHandleFitEvents:
                 )
         mock.assert_not_called()
 
+    def test_it_asks_before_fitting_unfiltered(self, mock_view):
+        """
+        Fitting unfiltered inherits the event finder's problem: on a noisy trace almost
+        every sample is an event, so there are far more of them to fit than intended.
+        """
+        with patch.object(EventAnalysisView, "_start_eventfitter") as start:
+            with patch.object(
+                EventAnalysisView, "confirm_unfiltered_run", return_value=True
+            ) as confirm:
+                mock_view._handle_fit_events(self._params())
+
+        confirm.assert_called_once()
+        assert "Event fitting" in confirm.call_args[0]
+        start.assert_called_once()
+
+    def test_declining_the_unfiltered_confirmation_fits_nothing(self, mock_view):
+        """Answering No stops the launch."""
+        with patch.object(EventAnalysisView, "_start_eventfitter") as start:
+            with patch.object(
+                EventAnalysisView, "confirm_unfiltered_run", return_value=False
+            ):
+                mock_view._handle_fit_events(self._params())
+
+        start.assert_not_called()
+
+    def test_a_selected_filter_is_not_second_guessed(self, mock_view):
+        """The confirmation covers the unfiltered case only."""
+        params = dict(self._params(), filter="LowPass_0")
+        with patch.object(EventAnalysisView, "_start_eventfitter") as start:
+            with patch.object(
+                EventAnalysisView, "confirm_unfiltered_run"
+            ) as confirm:
+                mock_view._handle_fit_events(params)
+
+        confirm.assert_not_called()
+        start.assert_called_once()
+
     def test_valid_params_calls_start_eventfitter(self, mock_view):
         with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
             mock_view._handle_fit_events(self._params())

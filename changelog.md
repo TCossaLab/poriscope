@@ -1,5 +1,11 @@
 ## Poriscope 2.0.0: in progress
 
+* **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time, cannot be cancelled once started, and is hard to tell apart from the application hanging
+
+* The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
+
+* Stepping the Raw Data tab's event index below 0 now says so on the status panel, instead of declining silently and only logging to the console
+
 * **The "No Filter" option no longer disappears from the Raw Data and Event Analysis filter dropdowns once a filter exists**: choosing not to filter is a valid selection, so it stays available, and it is now also what a dropdown falls back to when the filter it was showing is deleted (a newly created filter is no longer selected for you)
 
 * **Fixed the Raw Data tab's event plots showing the wrong events**: if the tab could not read an event finder's state, it silently reused the previous channel's answers — including the event count that decides which event indices are in range — and an event that failed to load was replaced by the previous one under the wrong index
