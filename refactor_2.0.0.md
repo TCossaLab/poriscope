@@ -816,7 +816,7 @@ cheaper after 4a for the reason recorded under 4c below.
 
 ### Owed
 
-- Nothing on the manual pass — **cleared again 2026-09-08**, see the Verification section.
+- Nothing on the manual pass — **RawData cleared in full 2026-09-08**, see the Verification section.
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
   gate. Still open from 3f.
 
@@ -1075,6 +1075,12 @@ select-all, dismiss on an outside click, reopen with the selection intact); and 
 outliving the app on close. That is the pre-refactor baseline, so a later failure is
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
+
+**Third Step 4a RawData manual pass: run 2026-09-08, all clear.** Covers the event
+finding and commit paths rewritten by `ac26f71c` and `67f335b1` — including the two-phase
+launch, where the "already completed, start over?" prompt now follows a Controller-side
+status call rather than a bus emit. **RawData is at zero emits and every path it has
+converted has been seen working on Windows.** The next pass is owed after EventAnalysis.
 
 **Second Step 4a RawData manual pass: run 2026-09-08, all clear.** Covers the three plots
 rewritten after the first pass — the trace and noise spectrum (`a572644`) and the event
