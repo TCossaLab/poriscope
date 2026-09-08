@@ -793,24 +793,64 @@ likely to choke on a real-world file that's merely slightly off-spec (truncated
 mid-record, wrong header magic, unexpected byte order) — the app should degrade
 gracefully (raise a clear, caught exception) rather than crash or hang.
 
+**One defect this scoping work found is already fixed (2026-08-31), independent of the
+fuzz suite itself.** `MetaReader.load_data()` clamped `end_index`/`start_index` to
+`total_samples` *before* its own bounds check ran, so a request extending past a
+channel's real end silently returned fewer samples than asked for instead of raising
+the `ValueError` its docstring already promised — not a fuzzing-specific finding, a
+plain over-long request on a valid file already reached it. See `changelog.md` for the
+fix and the trace confirming no in-tree caller relied on the old clamping. A
+regression test for this contract (`test_load_data_rejects_an_out_of_bounds_request`)
+already exists in `tests/unit/plugins/conformance/test_readers.py`, parametrized across
+all 7 readers — the fuzz suite below is about malformed *bytes*, a different risk
+surface from this, and doesn't need to re-cover it.
+
+**Real evidence gathered while scoping this (2026-08-31), not hypothetical.** Confirmed
+directly against real readers via `READER_DATASET_BUILDERS` (already exists in
+`_recipes.py`, built for block-1 conformance — the fuzz suite reuses it rather than
+generating its own fixtures):
+- Truncating to 0 bytes raises a *different* exception type per reader family -
+  `ValueError: cannot mmap an empty file` (Chimera, BinaryReader1X) vs.
+  `struct.error: unpack requires a buffer of 4 bytes` (ABF2). Inconsistent, but at
+  least none of them hang or crash uncaught.
+- Breaking record alignment (`BinaryReader1X`, chopping a few trailing bytes) is
+  caught cleanly at `apply_settings` time by numpy's own structured-dtype memmap
+  construction — a genuine positive case, not every reader is unsafe.
+- Truncating a Chimera recording mid-payload does *not* raise: `apply_settings`
+  succeeds, and `get_channel_length()` correctly reports the truncated size (not the
+  size implied by the untouched sidecar `.json` metadata) — so this specific "trusts
+  metadata over reality" failure mode, worth checking for on paper, turned out not to
+  be real. Good to have confirmed rather than assumed either way.
+- On Windows, a reader's `close_resources()` does not reliably release its underlying
+  `numpy.memmap` file handle immediately — attempting to rewrite the same path right
+  after `close_resources()` raised `PermissionError` until the object was actually
+  garbage-collected. Worth a look independent of this block: it could affect the
+  writer-family file-handle-leak check's Windows story (block 1) if a reader is ever
+  added to that check.
+
 **Implementation plan.**
-1. Add `tests/unit/plugins/datareaders/test_reader_fuzz.py`, parametrized over every
-   concrete `MetaReader` subclass discovered the same way `test_plugin_compliance.py`
-   does.
-2. For each reader, take its family's existing valid synthetic fixture (e.g.
-   `synthetic_chimera.py`'s output for `ChimeraReader*`) and generate a small, fixed
-   set of deterministic mutations rather than open-ended random fuzzing (truncate to
-   several byte offsets, flip the header's magic bytes, zero out a middle section) —
-   deterministic mutations keep the test reproducible and avoid flaky CI, which
-   open-ended `hypothesis`-style fuzzing would risk here.
-3. Assert only that each mutation results in either a clean successful read (if the
-   mutation happened to still be valid) or a caught, well-typed exception — never an
-   unhandled crash, hang, or silent data corruption (e.g. returning a truncated array
-   without signaling the truncation).
-4. This test is necessarily reader-format-specific for the mutation *generation* step
-   (each format's header/magic bytes differ), but the assertion logic and discovery
-   loop should be shared/generic — write one small per-format "corrupt this fixture"
-   helper per reader family, not per individual reader.
+1. Add `tests/unit/plugins/datareaders/test_reader_fuzz.py`, parametrized over
+   `discover_concrete(MetaReader)` (already in `_recipes.py`).
+2. For each reader, take the *already-built* valid fixture from
+   `READER_DATASET_BUILDERS[name]` (no new fixture-generation code needed) and apply a
+   small, fixed set of deterministic mutations rather than open-ended random fuzzing —
+   truncate to 0 bytes, truncate to a few fixed offsets short of the header, truncate
+   mid-payload, zero out a middle section, and (per format, since magic bytes differ)
+   flip the header marker where one exists: Chimera 2024-01's `<END HEADER>` string,
+   ABF2's `b"ABF2"` signature. Deterministic mutations keep this reproducible and avoid
+   the flaky-CI risk open-ended `hypothesis`-style fuzzing would carry here.
+3. Assert in three tiers, not one blanket "doesn't crash":
+   - construction (`apply_settings`) either succeeds or raises a caught `Exception`
+     subclass — never hangs, never raises something uncatchable;
+   - if construction succeeds, `get_channel_length()` must be internally consistent
+     with what `load_data` can actually deliver: requesting exactly that many samples
+     must succeed and return exactly that many;
+   - requesting more than `get_channel_length()` reports must raise (now that the
+     `load_data` fix above landed) rather than silently returning a shorter array.
+4. The magic-byte/marker mutations are necessarily per-format; keep them in a
+   `MUTATIONS: Dict[str, List[Callable[[Path], None]]]` in `_recipes.py` alongside
+   `READER_DATASET_BUILDERS`, with a small shared set (truncate/zero-middle) applied to
+   every reader and format-specific ones layered on top — not per-reader duplication.
 
 **Gotchas.** This only meaningfully applies to `MetaReader`; don't try to generalize it
 to every plugin family — event finders/fitters/filters operate on already-validated
