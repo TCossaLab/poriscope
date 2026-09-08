@@ -10,6 +10,30 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - `_load_filter` promotes Protein's raw bypass, which fixes the metadata tab
+
+**Context.** The last of the four methods Step 4a promotes, and the only one where the
+divergence was a defect rather than a choice: only `ProteinView` let a filter whose name ends
+in `_raw` skip `construct_metadata_query`.
+
+**Decision.** Protein's version, so the promotion **fixes** the metadata tab rather than
+merging two behaviours. The hardcoded validation triple both copies carried is replaced by
+`_validation_columns`, promoted in the previous commit.
+
+**Evidence.** The consequence of not bypassing was measured rather than assumed, and it is
+not what the plan predicted. `construct_metadata_query` does **not** refuse a complete SELECT
+passed as `conditions`: it emits `... WHERE SELECT e.dwell_time FROM events WHERE ...` with an
+**empty debug message**, so `relay_query` takes the success path and commits the filter as
+`<name>_raw_assisted` - renamed, and reclassified as assisted. The filter is not dropped, as
+the plan said; it is silently mangled, which is worse to diagnose.
+
+**Not fixed here:** the metadata tab has no `endswith("_raw")` branch in any plotting path, so
+a raw filter selected there is still used as a WHERE-clause body. That is a larger gap, queued
+in `future_fixes.md`, and Step 4a's commit 6 is where Protein's branch moves.
+
+**Revisit if** raw filters are dropped from the metadata tab entirely, which would make both
+the bypass and the queued gap moot.
+
 ## 2026-09-08 - The promoted filter dialogs take Metadata's modal and Protein's columns
 
 **Context.** `_show_add_filter_dialog` and `show_edit_filter_dialog` existed twice, 14 diff

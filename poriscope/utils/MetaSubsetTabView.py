@@ -66,7 +66,9 @@ class MetaSubsetTabView(MetaView):
       filters in ``subset_filters`` and the three pending fields the Controller reads
       back after a validation round-trip. ``_show_add_filter_dialog`` and
       ``show_edit_filter_dialog`` open the two filter dialogs and validate what they
-      return, through ``_validation_columns`` and ``_reject_non_select_raw_filter``.
+      return, through ``_validation_columns`` and ``_reject_non_select_raw_filter``;
+      ``_save_filter`` and ``_load_filter`` write them to and read them back from a
+      JSON file.
     - **Experiment selection.** ``show_selection_tree`` and
       ``request_experiment_structure`` drive the ``SelectionTree`` dialog and remember
       what was chosen per loader.
@@ -151,6 +153,89 @@ class MetaSubsetTabView(MetaView):
         """
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
+
+    @log(logger=logger)
+    def _load_filter(self, parameters: Dict[str, Any]) -> None:
+        """
+        Append filters from a JSON file, rejecting the whole file on a name clash.
+
+        Promoted from both subset tabs in Step 4a. The copies diverged once, and
+        ``ProteinView``'s is taken: a filter whose name ends in ``_raw`` is stored
+        as it is instead of being sent through ``construct_metadata_query``, which
+        builds a WHERE clause and so cannot validate a complete SELECT. Measured
+        consequence of not bypassing it: the query is built anyway, with the raw
+        SELECT spliced in after ``WHERE`` and an empty debug message, so the
+        validation *succeeds* and the filter is committed as
+        ``<name>_raw_assisted`` - renamed, and reclassified as an assisted filter.
+
+        :param parameters: Dictionary with 'db_loader'.
+        :type parameters: Dict[str, Any]
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                new_filters = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            message = f"Failed to load filters from {path}: {e}"
+            self.logger.error(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
+
+        if not isinstance(new_filters, dict):
+            message = (
+                f"Invalid filter file format in {path}: expected a dictionary, "
+                f"got {type(new_filters).__name__}."
+            )
+            self.logger.error(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
+
+        # All or nothing: a partial load would leave the user guessing which half
+        # of the file arrived.
+        existing_names = set(self.subset_filters.keys())
+        duplicate_names = existing_names & set(new_filters.keys())
+        if duplicate_names:
+            message = (
+                f"Duplicate filter names found when loading from {path}: "
+                f"{', '.join(duplicate_names)}. No filters were loaded."
+            )
+            self.logger.warning(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
+
+        combo = self._subset_controls.filter_comboBox
+        loader = parameters.get("db_loader")
+
+        if not loader:
+            self.logger.warning("No loader found - filters loaded but not validated.")
+
+        for name, filter_text in new_filters.items():
+            # A raw filter is a complete SELECT the loader runs verbatim, and it
+            # was already validated when it was created, so it goes straight in.
+            if loader and not name.endswith("_raw"):
+                # Read back by relay_query once the round-trip returns.
+                self._pending_filter_name = name
+                self._pending_filter_text = filter_text
+                self.global_signal.emit(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "construct_metadata_query",
+                    (self._validation_columns(), filter_text, None),
+                    "relay_query",
+                    ("validate_new_filter",),
+                )
+            else:
+                self.subset_filters[name] = filter_text
+                combo.addItem(name)
+                combo.selectItem(name, select=True)
+
+        combo.refreshDisplayText()
+        self.logger.info(f"Filters loaded from {path}")
 
     @log(logger=logger)
     def _validation_columns(self) -> List[str]:

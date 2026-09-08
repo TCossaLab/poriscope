@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is merged by Step 3 or Step 4, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Six groups:
+Seven groups:
 
 - ``_factors`` exists three times - ``MetaView.py:139`` plus byte-identical
   overrides in ``RawDataView.py:109`` and ``EventAnalysisView.py:121`` that shadow
@@ -47,8 +47,13 @@ Six groups:
   columns handling, each behind a named helper. The per-tab tests cover the modal;
   what is pinned here is the column selection, whose fallback branch is the only one
   the metadata tab can currently take.
+- ``_load_filter`` existed twice and diverged once: only ``ProteinView`` let a filter
+  whose name ends in ``_raw`` skip validation. **Step 4a promoted Protein's**, which
+  fixes the metadata tab rather than merging it - see the group below for the measured
+  consequence of not bypassing.
 """
 
+import json
 import logging
 from typing import Dict, List, Optional
 from unittest.mock import MagicMock
@@ -752,3 +757,131 @@ class TestFilterDialogsWerePromoted:
             "voltage",
             "duration",
         ]
+
+
+# ===========================================================================
+# _load_filter - two copies, one of them missing the raw bypass
+# ===========================================================================
+
+
+def write_filter_file(tmp_path: object, filters: dict) -> str:
+    """
+    Write a filter file for ``_load_filter`` to read back.
+
+    :param tmp_path: pytest's per-test temporary directory
+    :type tmp_path: object
+    :param filters: the filter name to SQL mapping to save
+    :type filters: dict
+    :return: the path written
+    :rtype: str
+    """
+    path = tmp_path / "filters.json"
+    path.write_text(json.dumps(filters), encoding="utf-8")
+    return str(path)
+
+
+class TestLoadFilterWasPromoted:
+    """
+    One copy, on the base, carrying ProteinView's raw bypass.
+
+    This is the one promotion of the four that **fixes** a tab rather than merging
+    two behaviours. Without the bypass a raw filter is handed to
+    ``construct_metadata_query``, which builds a WHERE clause - and measurably does
+    not refuse a complete SELECT: it splices it in after ``WHERE`` and returns an
+    empty debug message, so validation *succeeds* and the filter is committed as
+    ``<name>_raw_assisted``, renamed and reclassified.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """Neither tab may keep its own, or the promotion was partial."""
+        assert "_load_filter" in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert "_load_filter" not in view_cls.__dict__, view_cls.__name__
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_raw_filter_is_stored_without_validation(
+        self,
+        qapp: object,
+        view_cls: type,
+        tmp_path: object,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """
+        ProteinView's bypass, which MetadataView lacked.
+
+        Saving a raw filter and loading it back has to return the same name, or the
+        filter stops being a raw filter - nothing downstream recognises
+        ``*_raw_assisted``.
+        """
+        view = build_subset_tab(view_cls)
+        path = write_filter_file(
+            tmp_path, {"big_events_raw": "SELECT event_id FROM events WHERE dwell > 5"}
+        )
+        monkeypatch.setattr(
+            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
+            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
+        )
+
+        view._load_filter({"db_loader": "a_loader"})
+
+        assert view.subset_filters == {
+            "big_events_raw": "SELECT event_id FROM events WHERE dwell > 5"
+        }
+        view.global_signal.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_an_assisted_filter_is_still_sent_for_validation(
+        self,
+        qapp: object,
+        view_cls: type,
+        tmp_path: object,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """
+        The bypass must not swallow the ordinary path.
+
+        A filter without the suffix still goes through
+        ``construct_metadata_query``, and is only committed once the round-trip
+        returns - which is why nothing is in ``subset_filters`` yet.
+        """
+        view = build_subset_tab(view_cls)
+        path = write_filter_file(tmp_path, {"long_events": "dwell > 5"})
+        monkeypatch.setattr(
+            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
+            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
+        )
+
+        view._load_filter({"db_loader": "a_loader"})
+
+        assert view.subset_filters == {}
+        view.global_signal.emit.assert_called_once()
+        emitted = view.global_signal.emit.call_args[0]
+        assert emitted[2] == "construct_metadata_query"
+        assert emitted[3][1] == "dwell > 5"
+        assert view._pending_filter_name == "long_events"
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_with_no_loader_everything_is_stored_unvalidated(
+        self,
+        qapp: object,
+        view_cls: type,
+        tmp_path: object,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Both copies already agreed on this; it is asserted so the merge kept it."""
+        view = build_subset_tab(view_cls)
+        path = write_filter_file(
+            tmp_path, {"long_events": "dwell > 5", "raw_one_raw": "SELECT 1"}
+        )
+        monkeypatch.setattr(
+            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
+            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
+        )
+
+        view._load_filter({"db_loader": None})
+
+        assert view.subset_filters == {
+            "long_events": "dwell > 5",
+            "raw_one_raw": "SELECT 1",
+        }
+        view.global_signal.emit.assert_not_called()

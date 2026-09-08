@@ -37,7 +37,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 @pytest.fixture
 def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
     mocker.patch("poriscope.utils.MetaSubsetTabView.QFileDialog")
     mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
@@ -3209,7 +3208,7 @@ def test_load_filter_opens_file_dialog(
 ) -> None:
     """Verify file dialog is opened."""
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
@@ -3227,7 +3226,7 @@ def test_load_filter_returns_when_no_path_selected(
 ) -> None:
     """Verify returns when user cancels file dialog."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("", ""),
     )
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
@@ -3243,7 +3242,7 @@ def test_load_filter_reads_json_from_file(
 ) -> None:
     """Verify filters are read from JSON file."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mock_open = mocker.patch(
@@ -3265,7 +3264,7 @@ def test_load_filter_raises_for_invalid_format(
 ) -> None:
     """Verify ValueError is raised for non-dict format."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("builtins.open", mocker.mock_open(read_data='["not", "a", "dict"]'))
@@ -3283,7 +3282,7 @@ def test_load_filter_warns_on_duplicate_names(
     """Verify warning when duplicate filter names found."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch(
@@ -3302,7 +3301,7 @@ def test_load_filter_validates_with_loader_when_provided(
 ) -> None:
     """Verify filters are validated when loader is provided."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch(
@@ -3324,7 +3323,7 @@ def test_load_filter_adds_filter_directly_when_no_loader(
 ) -> None:
     """Verify filter is added directly when no loader provided."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch(
@@ -3345,7 +3344,7 @@ def test_load_filter_logs_error_on_exception(
 ) -> None:
     """Verify error is logged when load fails."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
     mocker.patch("builtins.open", side_effect=OSError("File not found"))

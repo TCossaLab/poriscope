@@ -26,9 +26,7 @@
 
 import bisect
 import itertools
-import json
 import logging
-import os
 import re
 import warnings
 from typing import (
@@ -56,7 +54,6 @@ from matplotlib.figure import Figure
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QCheckBox,
-    QFileDialog,
     QHBoxLayout,
     QLayout,
     QMessageBox,
@@ -1233,91 +1230,6 @@ class ProteinView(MetaSubsetTabView):
         :type duration: Optional[float]
         """
         self.baseline_duration = duration
-
-    @log(logger=logger)
-    def _load_filter(self, parameters: Dict[str, Any]) -> None:
-        """
-        Append filters from a JSON file, warn if duplicates are found,
-        and apply all new filters only if none conflict with existing ones.
-
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "r") as f:
-                new_filters = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            message = f"Failed to load filters from {path}: {e}"
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        if not isinstance(new_filters, dict):
-            message = (
-                f"Invalid filter file format in {path}: expected a dictionary, "
-                f"got {type(new_filters).__name__}."
-            )
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        # Check for name conflicts
-        existing_names = set(self.subset_filters.keys())
-        new_names = set(new_filters.keys())
-        duplicate_names = existing_names & new_names
-
-        if duplicate_names:
-            message = (
-                f"Duplicate filter names found when loading from {path}: "
-                f"{', '.join(duplicate_names)}. No filters were loaded."
-            )
-            self.logger.warning(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        combo = self.proteincontrols.filter_comboBox
-        loader = parameters.get("db_loader")
-
-        if not loader:
-            self.logger.warning("No loader found – filters loaded but not validated.")
-
-        for name, filter_text in new_filters.items():
-            if loader:
-                # Raw filters bypass validation — suffix already baked in
-                if name.endswith("_raw"):
-                    self.subset_filters[name] = filter_text
-                    combo.addItem(name)
-                    combo.selectItem(name, select=True)
-                else:
-                    # Temporarily store to validate
-                    self._pending_filter_name = name
-                    self._pending_filter_text = filter_text
-
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "construct_metadata_query",
-                        (
-                            ["sublevel_current", "voltage", "duration"],
-                            filter_text,
-                            None,
-                        ),
-                        "relay_query",
-                        ("validate_new_filter",),
-                    )
-            else:
-                self.subset_filters[name] = filter_text
-                combo.addItem(name)
-                combo.selectItem(name, select=True)
-
-        combo.refreshDisplayText()
-        self.logger.info(f"Filters loaded from {path}")
 
     @log(logger=logger)
     def restore_subset_filters(self, filters: Dict[str, str]) -> None:

@@ -1390,7 +1390,7 @@ class TestSaveLoadFilter:
         mock_view._save_filter()
         mock_dialog.assert_not_called()
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_adds_filters(self, mock_dialog, mock_view):
         filters = {"loaded_f": "dur>50"}
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as fp:
@@ -1402,7 +1402,7 @@ class TestSaveLoadFilter:
         assert "loaded_f" in mock_view.subset_filters
         os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_blocks_duplicates(self, mock_dialog, mock_view):
         mock_view.subset_filters = {"existing": "dur>0"}
         filters = {"existing": "dur>999"}
@@ -1414,7 +1414,7 @@ class TestSaveLoadFilter:
         assert mock_view.subset_filters["existing"] == "dur>0"
         os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_no_path_is_noop(self, mock_dialog, mock_view):
         mock_dialog.return_value = ("", "")
         mock_view._load_filter({})
