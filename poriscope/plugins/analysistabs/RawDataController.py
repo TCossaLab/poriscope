@@ -163,9 +163,7 @@ class RawDataController(MetaEventTabController):
                     self.__class__.__name__,
                 )
                 continue
-            self.model.set_generator(
-                generator, channel, eventfinder, "MetaEventFinder"
-            )
+            self.model.set_generator(generator, channel, eventfinder, "MetaEventFinder")
         self.model.run_generators(eventfinder)
 
     @log(logger=logger)

@@ -818,7 +818,9 @@ class RawDataView(MetaEventTabView):
                 if reply == QMessageBox.No:
                     continue  # Skip this channel
             try:
-                approved.append((channel, self._ranges_for_channel(eventfinder, channel)))
+                approved.append(
+                    (channel, self._ranges_for_channel(eventfinder, channel))
+                )
             except KeyError:
                 self.logger.error(
                     f"No time limits configured for {eventfinder} channel {channel}; "
