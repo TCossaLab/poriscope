@@ -1116,6 +1116,12 @@ outliving the app on close. That is the pre-refactor baseline, so a later failur
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
 
+**Subset-base manual pass: run 2026-09-08, all clear.** The first of the five
+checkpoints scheduled for the subset tabs. Covers the column and experiment pickers on
+both Metadata and Protein — which now go through the two shared base slots — and
+Metadata's axis unit labels, which go through its own slot after `update_units` moved
+down. The next is owed after the filter dialogs are converted.
+
 **Step 4a EventAnalysis manual pass: run 2026-09-08, all clear.** Covers the four
 conversions that took the tab 13 emits to 0 — the loader channel lookup, the event write,
 the two-phase fitting launch, and the 243-line event-plot path. **Clustering, RawData and
