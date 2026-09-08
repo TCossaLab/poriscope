@@ -183,16 +183,11 @@ class MetaReader(BaseDataPlugin):
         start_index = start_sample
         end_index = start_sample + length_samples
 
-        if start_index > total_samples:
-            start_index = total_samples
-
-        if end_index > total_samples:
-            end_index = total_samples
-
         if (
             start_index < 0
             or start_index > total_samples
             or end_index < 0
+            or end_index > total_samples
             or start_index > end_index
         ):
             raise ValueError(

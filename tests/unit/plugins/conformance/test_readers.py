@@ -150,6 +150,35 @@ def test_load_data_matches_the_planted_signal(opened) -> None:
 
 
 @pytest.mark.conformance
+def test_load_data_rejects_an_out_of_bounds_request(opened) -> None:
+    """
+    A request extending past the end of the channel raises, rather than
+    silently returning fewer samples than asked for.
+
+    Regression test: ``load_data`` used to clamp ``end_index`` down to
+    ``total_samples`` *before* its own bounds check ran, so the check could
+    never see an overrun and the promised ``:raises ValueError:`` was
+    unreachable for this case - confirmed directly (requesting one sample
+    past a channel's real end returned a shorter array with no exception,
+    rather than raising) before being fixed. The exact-length request right
+    below the overrun is asserted too, so this cannot pass merely by making
+    every request fail.
+
+    :param opened: The reader and its dataset ground truth.
+    :type opened: tuple
+    """
+    reader, dataset = opened
+    channel = dataset.channel
+
+    exact = reader.load_data(0.0, dataset.duration_s, channel)
+    assert exact.size > 0, "the exact-length request itself returned nothing"
+
+    one_sample_s = 1.0 / dataset.samplerate
+    with pytest.raises(ValueError):
+        reader.load_data(0.0, dataset.duration_s + one_sample_s, channel)
+
+
+@pytest.mark.conformance
 def test_raw_data_path_is_self_consistent(opened) -> None:
     """
     ``get_raw_dtype()`` is usable, and the raw-data path returns matching shape.
