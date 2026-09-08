@@ -279,25 +279,13 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
 
-- **`EventAnalysisView._handle_plot_events` reads three attributes that `_init` never
-  declares**, found 2026-09-08 while pinning it before Step 4a moves it.
-  `EventAnalysisView._init` is `pass`, and `num_events_allowed` plus the six feature
-  attributes (`vertical`, `vlabels`, `horizontal`, `hlabels`, `points`, `plabels`) are
-  assigned *only* by their bus callbacks. On a freshly built tab whose first dispatch
-  fails, reading them raises `AttributeError`. The feature read is inside the outer
-  handler and reports "Unable to plot event data"; **the `num_events_allowed` read is
-  outside every `try`, and `handle_parameter_change` has none either, so it escapes into
-  Qt.** Declaring all seven in `_init` is the fix. Pinned as current behaviour in
-  `tests/unit/views/test_event_analysis_view_characterization.py`.
-- **`EventAnalysisView._handle_plot_events` catches only `(IndexError, ValueError)`, but
-  extraction raises `KeyError`** — the same defect as RawData's below, in the sibling
-  tab's own copy of the extractor. Both pinned as current behaviour.
-- **`RawDataView._handle_plot_events` catches only `ValueError`, but extraction raises
-  `KeyError`.** `_extract_plot_event_parameters` reaches `parameters["channel"]` directly,
-  so a dict without that key escapes the guard that advertises "Parameter extraction
-  failed". Latent: the controls panel always supplies `channel`. Found 2026-09-08 while
-  pinning the method before Step 4a moves it, and pinned as current behaviour in
-  `tests/unit/views/test_raw_data_view_characterization.py`.
+- **Step 4a leaves dead callback sinks behind it; sweep them once a tab reaches zero
+  emits.** In `EventAnalysisView` the seven attributes `update_plot_features` and
+  `set_num_events_allowed` assign are now written and never read, and with no emits left
+  in the View nothing reaches those methods or their Controller relays
+  (`update_features`, `set_num_events_allowed`) either. The plan's 4a bullet predicts
+  ~30 such `relay_*`/`set_*` sinks across the tabs. Check for callers in `tests/` and
+  the other tabs before deleting any, and do it per tab as each hits zero.
 - **`ProteinView` has no `update_column_units`, but `ProteinController.py:290` calls it**, and
   `ProteinView.py:3508` also names it as a bus return function.
   Not inherited from `MetaView` either; the `AttributeError` is swallowed by

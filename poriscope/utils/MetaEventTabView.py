@@ -51,6 +51,8 @@ class MetaEventTabView(MetaView):
       not their business - and ``_reset_actions`` clears the figure identically in
       each. ``MetaView`` still declares both abstract; satisfying them here is what
       keeps both subclasses instantiable without a per-tab copy.
+    - ``_channels_from``, which reads the channel selection out of a parameter dict
+      and reports a missing one as ``ValueError``, which every caller already guards.
     - **Commit-time helpers.** ``_extract_commit_event_parameters`` and
       ``validate_single_channel`` read the controls panel's channel selection and
       reject anything that is not exactly one channel.
@@ -210,6 +212,32 @@ class MetaEventTabView(MetaView):
         pass
 
     @log(logger=logger)
+    def _channels_from(self, parameters: Dict[str, Any]) -> List[int]:
+        """
+        The selected channels, as ints, from a controls-panel parameter dict.
+
+        Raises ``ValueError`` rather than letting ``KeyError`` out when the key is
+        absent. Every caller of the six extractors that need this already guards
+        ``ValueError`` and none guarded ``KeyError``, so a parameter dict without a
+        ``channel`` key escaped a handler advertising "Parameter extraction failed" -
+        in one case out of the tab entirely, since ``handle_parameter_change`` has no
+        handler of its own. Latent rather than live, because the controls panel always
+        supplies the key.
+
+        Those six extractors across the two event tabs each repeated this comprehension,
+        which is why the guard goes here rather than being written out six times.
+
+        :param parameters: the parameter dict the controls panel emitted
+        :type parameters: Dict[str, Any]
+        :raises ValueError: if the parameters carry no channel selection
+        :return: the selected channel numbers
+        :rtype: List[int]
+        """
+        if "channel" not in parameters:
+            raise ValueError("No channel supplied in the parameters")
+        return [int(ch) for ch in parameters["channel"]]
+
+    @log(logger=logger)
     def validate_single_channel(self, channels: Sequence[int]) -> None:
         """
         Ensure only one channel is selected.
@@ -236,7 +264,7 @@ class MetaEventTabView(MetaView):
         :rtype: Tuple[Optional[str], List[int]]
         """
         writer = parameters.get("writer")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         return writer, channels
 
     @log(logger=logger)

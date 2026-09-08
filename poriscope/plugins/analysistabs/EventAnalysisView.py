@@ -793,7 +793,7 @@ class EventAnalysisView(MetaEventTabView):
         loader = parameters.get("loader")
         eventfitter = parameters.get("eventfitter")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         events = parameters.get("event_index")
         return loader, eventfitter, data_filter, channels, events
 
@@ -811,7 +811,7 @@ class EventAnalysisView(MetaEventTabView):
         """
         eventfitter = parameters.get("eventfitter")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         return eventfitter, data_filter, channels
 
     @log(logger=logger)

@@ -75,23 +75,20 @@ def params(**over) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_a_missing_channel_key_escapes_as_a_keyerror(view):
+def test_a_missing_channel_key_is_reported_not_raised(view):
     """
-    Current behaviour, and the third instance of this defect in the tab layer.
+    Fixed 2026-09-08, having been pinned as a defect first.
 
-    ``_extract_plot_event_parameters`` reaches ``parameters["channel"]`` directly while
-    the guard beside it catches only ``(IndexError, ValueError)``, so a dict without that
-    key raises ``KeyError`` past a handler advertising "Parameter extraction failed".
-    RawData's ``_handle_plot_events`` has the identical shape. Latent, because the
-    controls panel always supplies ``channel``.
-
-    This is the one test in the original class that survived the conversion on its own
-    merits rather than by going quiet.
+    ``_channels_from`` on ``MetaEventTabView`` now reports an absent ``channel`` key as
+    ``ValueError``, which every caller of the six extractors already guarded - where a
+    ``KeyError`` escaped a handler advertising "Parameter extraction failed", and in
+    RawData's case escaped the tab entirely because ``handle_parameter_change`` has no
+    handler of its own.
     """
-    with pytest.raises(KeyError):
-        view._handle_plot_events({})
+    view._handle_plot_events({})
 
     view.event_plot_requested.emit.assert_not_called()
+    view._update_event_plot.assert_not_called()
 
 
 def test_a_non_numeric_channel_is_caught_and_requests_nothing(view):

@@ -439,20 +439,18 @@ class TestHandlePlotEvents:
 
     # -- what the View refuses on its own --------------------------------
 
-    def test_a_missing_channel_key_escapes_as_a_keyerror(
+    def test_a_missing_channel_key_is_reported_not_raised(
         self, wired: RawDataView
     ) -> None:
         """
-        Current behaviour, and a latent defect: only ``ValueError`` is caught.
+        Fixed 2026-09-08, having been pinned as a defect first.
 
-        ``_extract_plot_event_parameters`` reaches ``parameters["channel"]`` directly, so
-        a dict without that key raises ``KeyError`` straight out of the method while the
-        guard beside it advertises "Parameter extraction failed". Latent rather than live,
-        because the controls panel always supplies ``channel``. Pinned as-is; queued in
-        ``future_fixes.md``.
+        This one was the worse of the pair: the read sat outside every ``try`` and
+        ``handle_parameter_change`` has no handler, so the ``KeyError`` escaped the tab
+        into Qt. ``MetaEventTabView._channels_from`` now reports it as ``ValueError``,
+        which this method's existing guard already catches.
         """
-        with pytest.raises(KeyError):
-            wired._handle_plot_events({})
+        wired._handle_plot_events({})
 
         wired.event_plot_requested.emit.assert_not_called()
 

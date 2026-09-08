@@ -879,7 +879,7 @@ class RawDataView(MetaEventTabView):
         """
         eventfinder = parameters.get("eventfinder")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         events = parameters.get("event_index")
         return eventfinder, data_filter, channels, events
 
@@ -897,7 +897,7 @@ class RawDataView(MetaEventTabView):
         """
         eventfinder = parameters.get("eventfinder")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         return eventfinder, data_filter, channels
 
     @log(logger=logger)
@@ -1149,7 +1149,7 @@ class RawDataView(MetaEventTabView):
         :rtype: Tuple[Optional[str], List[int], float, float]
         """
         reader = parameters.get("reader")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         start = float(parameters["start_time"])
         length = float(parameters["length"])
         return reader, channels, start, length
