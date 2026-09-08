@@ -438,8 +438,10 @@ class TestUpdateAvailablePlugins:
         assert real_view.eventAnalysisControls.loaders_comboBox.count() == 2
 
     def test_updates_filters(self, real_view):
+        # 2, not 1: "No Filter" is a permanent option on filter dropdowns rather than
+        # an empty-list placeholder, because not filtering is a real choice.
         real_view.update_available_plugins({"MetaFilter": ["f1"]})
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 1
+        assert real_view.eventAnalysisControls.filters_comboBox.count() == 2
 
     def test_updates_writers(self, real_view):
         real_view.update_available_plugins({"MetaDatabaseWriter": ["w1"]})
@@ -462,7 +464,7 @@ class TestUpdateAvailablePlugins:
             }
         )
         assert real_view.eventAnalysisControls.loaders_comboBox.count() == 1
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 1
+        assert real_view.eventAnalysisControls.filters_comboBox.count() == 2  # + No Filter
         assert real_view.eventAnalysisControls.writers_comboBox.count() == 1
         assert real_view.eventAnalysisControls.eventfitters_comboBox.count() == 1
 
@@ -1856,4 +1858,4 @@ class TestUpdateAvailablePluginsExtended:
 
     def test_multiple_filters(self, real_view):
         real_view.update_available_plugins({"MetaFilter": ["f1", "f2"]})
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 2
+        assert real_view.eventAnalysisControls.filters_comboBox.count() == 3

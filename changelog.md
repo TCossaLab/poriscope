@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **The "No Filter" option no longer disappears from the Raw Data and Event Analysis filter dropdowns once a filter exists**: choosing not to filter is a valid selection, so it stays available, and it is now also what a dropdown falls back to when the filter it was showing is deleted (a newly created filter is no longer selected for you)
+
 * **Fixed the Raw Data tab plotting one channel's trace under another channel's label**, and the same fault when a filter failed: a channel the reader could not supply silently reused whichever channel was loaded before it, on both the trace and the noise-spectrum plots
 
 * The Raw Data tab now asks each event finder for its channels through a direct call from its controller rather than through the signal bus, so a finder that cannot answer is reported rather than silently leaving its time ranges unset
