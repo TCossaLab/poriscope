@@ -647,6 +647,15 @@ and returns a list of human-readable problems.
    Omitting ``Value`` entirely is fine and means the same as ``Value: None``: no default,
    the user must supply one. Most shipped readers do exactly this. What is *not* fine is
    supplying a ``Value`` that contradicts the ``Type`` beside it.
+
+The check above is static: it validates the schema's *shape* against hand-built rules, with
+no plugin instance involved. ``tests/unit/plugins/test_settings_defaults.py`` covers what
+that cannot - whether a plugin's *own real* defaults survive that *same plugin's* live
+``_validate_param_types``/``_validate_param_ranges`` at instantiation. The two can
+disagree even when the schema is self-consistent by the static rules, so both run; a
+plugin that ships no real defaults to check (every parameter omits ``Value`` or sets it to
+``None``) is reported as skipped rather than silently passing.
+
 .. _plugin_conformance_testing:
 
 Behavioural Conformance Testing

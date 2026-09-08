@@ -1146,7 +1146,6 @@ class TestGetEmptySettingsBase:
         assert settings == {
             "Input File": {
                 "Type": str,
-                "Value": None,
                 "Options": ["All Files (*.*)"],
             }
         }
