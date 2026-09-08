@@ -29,7 +29,6 @@ import os
 import warnings
 from typing import (
     Any,
-    Callable,
     Dict,
     List,
     Mapping,
@@ -84,6 +83,12 @@ class RawDataView(MetaEventTabView):
     #: intent names what it is for and carries only what that tail needs. The answer
     #: arrives as ``set_trace_for_psd``.
     psd_data_requested = Signal(str, list, float, float, str)
+
+    #: Asks the Controller for one channel's events, ready to plot. eventfinder,
+    #: channel, event indices, filter key ("" for none). The Controller checks the
+    #: finder's state, bounds the indices, resolves the filter and loads each event;
+    #: the answer arrives as ``set_event_plot_data``.
+    event_plot_requested = Signal(str, int, list, str)
 
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
@@ -529,11 +534,17 @@ class RawDataView(MetaEventTabView):
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
-        Handle loading and plotting of selected events based on provided parameters.
+        Ask the Controller for the selected events, ready to plot.
+
+        Step 4a: this used to run five bus round trips itself - the finder's status and
+        event count, the filter callable, the samplerate, then one load per event - each
+        one an emit whose answer arrived on an attribute the next line read back. All
+        five are the Controller's now, and the plot happens in ``set_event_plot_data``.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
-        :raises Exception: If retrieving the eventfinding status or the number of found events fails.
+        :return: None
+        :rtype: None
         """
         try:
             eventfinder, data_filter, channels, events = (
@@ -547,111 +558,37 @@ class RawDataView(MetaEventTabView):
                 "Unable to plot events from multiple channels, select only one"
             )
             return
-        else:
-            channel = channels[0]
 
-        try:
-            get_status_args = (channel,)
-            self.global_signal.emit(
-                "MetaEventFinder",
-                eventfinder,
-                "get_eventfinding_status",
-                get_status_args,
-                "set_eventfinding_status",
-                (),
-            )
-        except Exception as e:
-            raise e
+        self.event_plot_requested.emit(
+            eventfinder, channels[0], list(events or []), self._filter_key(parameters)
+        )
 
-        if self.eventfinding_status is False:
+    @log(logger=logger)
+    def set_event_plot_data(
+        self,
+        event_data: Sequence[npt.NDArray[np.float64]],
+        event_indices: Sequence[int],
+    ) -> None:
+        """
+        Plot the events the Controller loaded, or report that there were none.
+
+        ``event_indices`` is the surviving list: an event the finder could not supply is
+        dropped by the Controller, so the traces and the indices labelling them stay
+        aligned without this method having to prune anything.
+
+        :param event_data: one array of samples per surviving event
+        :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param event_indices: the event indices that produced data, index-aligned with event_data
+        :type event_indices: Sequence[int]
+        :return: None
+        :rtype: None
+        """
+        if not len(event_data):
             self.add_text_to_display.emit(
-                f"Eventfinding not finished in channel {channel}",
-                self.__class__.__name__,
+                "No data available for plotting", self.__class__.__name__
             )
             return
-
-        try:
-            get_num_events_args = (channel,)
-            self.global_signal.emit(
-                "MetaEventFinder",
-                eventfinder,
-                "get_num_events_found",
-                get_num_events_args,
-                "set_num_events_allowed",
-                (),
-            )
-        except Exception as e:
-            raise e
-
-        if self.num_events_allowed == 0:
-            self.add_text_to_display.emit(
-                f"No events to display from channel {channel}", self.__class__.__name__
-            )
-            return
-
-        if events and max(events) >= self.num_events_allowed:
-            self.logger.info(
-                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
-            )
-
-        if events:
-            events = [x for x in events if x < self.num_events_allowed]
-            # get the data filter to use
-            try:
-                data_filter_args = ()
-                self.data_filter: Optional[Callable] = None
-                if data_filter != "No Filter":
-                    self.global_signal.emit(
-                        "MetaFilter",
-                        data_filter,
-                        "get_callable_filter",
-                        data_filter_args,
-                        "set_event_filter",
-                        (),
-                    )
-            except Exception:
-                self.data_filter = None
-                self.logger.warning(
-                    f"Unable to load filter {data_filter}, proceeding without a filter"
-                )
-
-            # set plot samplerate
-            try:
-                self.global_signal.emit(
-                    "MetaEventFinder",
-                    eventfinder,
-                    "get_samplerate",
-                    (),
-                    "update_plot_samplerate",
-                    (),
-                )
-            except Exception:
-                self.plot_samplerate = 1
-                self.logger.warning(
-                    "Unable to get samplerate, time axis will indicate raw data index"
-                )
-
-            try:
-                # Load data and update plot
-                data_list = []
-                for event in events[:]:  # to allow removal if needed
-                    self._load_event_data(eventfinder, channel, event, self.data_filter)
-                    if self.plot_data is not None:
-                        data_list.append(self.plot_data)
-                    else:
-                        self.logger.warning(
-                            f"No data loaded for event {event}, skipping"
-                        )
-                        events.remove(event)
-
-                if data_list:
-                    self._update_event_plot(data_list, events)
-                else:
-                    self.add_text_to_display.emit(
-                        "No data available for plotting", self.__class__.__name__
-                    )
-            except Exception:
-                self.logger.error("Unable to plot event data")
+        self._update_event_plot(event_data, event_indices)
 
     @log(logger=logger)
     def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
@@ -1243,42 +1180,6 @@ class RawDataView(MetaEventTabView):
         :rtype: bool
         """
         return all([reader, channel is not None, start is not None, length is not None])
-
-    @log(logger=logger)
-    def _load_event_data(
-        self,
-        eventfinder: Optional[str],
-        channel: int,
-        event: int,
-        data_filter: Optional[Callable],
-    ) -> None:
-        """
-        Load data for a single event from the eventfinder.
-
-        :param eventfinder: Name of the event finder plugin.
-        :type eventfinder: Optional[str]
-        :param channel: Channel number.
-        :type channel: int
-        :param event: Event index.
-        :type event: int
-        :param data_filter: Callable filter to apply, if any.
-        :type data_filter: Optional[Callable]
-        """
-        try:
-            load_data_args = (channel, event, data_filter, False)
-            # Emit the signal with the correct handler name for when the data is ready
-            self.global_signal.emit(
-                "MetaEventFinder",
-                eventfinder,
-                "get_single_event_data",
-                load_data_args,
-                "update_plot_data",
-                (),
-            )
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to retrieve requested data for event {event}: {repr(e)}"
-            )
 
     @log(logger=logger)
     def _handle_other_actions(

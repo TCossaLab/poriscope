@@ -740,17 +740,17 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 ## Next up — state as of 2026-09-08
 
-**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **12 commits,
+**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **17 commits,
 not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
-working tree; suite **3,423 passed / 4 skipped**.
+working tree; suite **3,449 passed / 4 skipped**.
 
 | Gate | Start of refactor | Now | Target |
 | --- | --- | --- | --- |
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **90** | 0 |
-| — rule 1, View emits | 75 | **60** | 0 |
+| Boundary allowlist | 111 | **85** | 0 |
+| — rule 1, View emits | 75 | **55** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -772,13 +772,12 @@ commit.**
 the View emits a **typed intent**, the Controller's slot calls the plugin through
 `self.model.call(...)`, and the result goes back through a setter on the View. Remaining:
 
-- **RawData, 9 left.** Two commits landed 2026-09-08. `update_available_plugins` was
+- **RawData, 4 left.** Four commits landed 2026-09-08. `update_available_plugins` was
   the emit-then-read *inside the push path*; then `_load_data` (2) and `_apply_filter`
   (1) moved to `RawDataController._load_and_filter`, which **closed a live stale-read
   bug** — see below. The remainder, **derived by AST rather than listed by hand**:
-  `_handle_plot_events` (4), `_start_eventfinder` (3), `_load_event_data` (1),
-  `_start_writer` (1). `_load_event_data` is called only from `_handle_plot_events`, so
-  those five are one commit; `_start_writer` is separate.
+  `_start_eventfinder` (3) and `_start_writer` (1). Both pass arguments, so rule 42
+  applies to each.
   *The old breakdown here summed to 12 against a claimed 13: the total was right and the
   enumeration had omitted `_start_writer`.*
 
@@ -793,8 +792,22 @@ the View emits a **typed intent**, the Controller's slot calls the plugin throug
   identical shape, returning the last successfully filtered array instead of its own
   input — which is what its `except` branch meant to do and could not reach.
   `call()` raising fixes both structurally, on the trace path and the PSD path, which
-  shared these two helpers. **One instance of the shape is left** — `_handle_plot_events`
-  loops over *events* the same way — and the next commit closes it.
+  shared these two helpers.
+
+  **`_handle_plot_events` carried four more of the same shape, and it was pinned first.**
+  Coverage was checked rather than assumed and found absent: every reference to the
+  method in `tests/` *replaced* it with a `Mock`, `_load_event_data` was named by no test
+  at all, the integration flow drives `find_events` rather than `plot_events`, and the
+  audit's hand-typed `MOVED` list carried neither — so one e2e click was the whole net.
+  Both are audit targets now. Fifteen characterization tests went in first, which is what
+  surfaced that `get_single_event_data`'s trailing `False` is **`rectify`**, that it
+  returns a **dict**, and that the bus's return-function names are Controller-side with
+  `set_event_filter` not matching its View counterpart `set_data_filter_function`.
+  Then the conversion: `get_eventfinding_status`, `get_num_events_found`,
+  `get_samplerate` and `get_single_event_data` all parked answers on never-cleared
+  attributes, and the count one is the worst of the set because it **bounded which events
+  were plotted**. Ten of the fifteen pinned tests broke and the other five went vacuous,
+  so all fifteen were rewritten against the new structure rather than deleted (rule 23).
 
   **Read the target's signature before converting an emit that passes arguments.** The bus
   packs them into a *tuple*; `call(metaclass, key, method, *args, **kwargs)` takes them
@@ -824,7 +837,7 @@ cheaper after 4a for the reason recorded under 4c below.
   how `1,889 → 31` happened.
 - **A safety net's absence has no signature, so assert the net is armed.** A missing test
   dependency errors at setup rather than failing, which reads as a pass.
-- Method notes are at **42 rules** in the artifact, grouped by refactor phase; the
+- Method notes are at **43 rules** in the artifact, grouped by refactor phase; the
   artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
 ### Owed

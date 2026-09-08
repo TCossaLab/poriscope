@@ -389,77 +389,33 @@ class TestUpdatePsd:
 
 class TestHandlePlotEvents:
     """
-    The event-plotting path, a Step 4a target that no test had ever entered.
+    The View half of the event-plotting path after Step 4a: ask, then draw.
 
-    Every reference to ``_handle_plot_events`` in ``test_raw_data_view.py`` *replaces*
-    it with a ``Mock`` to assert that dispatch reaches it, so none of its 125 lines
-    were asserted; ``RawDataView._load_event_data`` was named by no test at all, and
-    the audit's hand-typed ``MOVED`` list did not carry either of them. The raw-data
-    e2e click flow executes both, which is what makes their behaviour worth pinning
-    before it moves rather than discovering it afterwards.
+    This class pinned all five bus round trips before the conversion - the finder's
+    status and event count, the filter callable, the samplerate, and one load per event.
+    Those assertions now live in ``tests/unit/controllers/test_raw_data_controller.py``
+    against ``load_event_plot_data``, because that is where the calls went. **Rewritten
+    rather than deleted**: ten of the fifteen failed outright when the emits vanished,
+    and the other five would have gone on passing *vacuously* - asserting that no bus
+    call was made, which is trivially true of a method that no longer makes any. A test
+    that survives a refactor by becoming empty is the failure mode worth designing
+    against.
 
-    Pinned here is what must **survive** the conversion: which plugin methods are
-    asked, in what order, with what arguments, and every branch that stops early.
-    Four stale-read behaviours are deliberately *not* pinned, because the conversion
-    changes them on purpose - ``get_eventfinding_status``, ``get_num_events_found``,
-    ``get_samplerate`` and ``get_single_event_data`` all park their answers on
-    attributes written only on success and never cleared before the emit, so a
-    swallowed dispatch failure leaves the previous value in place. Those assertions
-    belong to the commit that fixes them.
-
-    The bus is stubbed the way the real dispatcher behaves, per the class above: a
-    dispatch delivers its answer through the return function named in the emit, and a
-    *failed* dispatch delivers nothing at all, which a bare ``Mock`` cannot express.
+    What stays here is what the View still owns: refusing what it can refuse, emitting a
+    typed intent, and drawing the answer.
     """
-
-    FAILS = object()
-
-    #: The bus names its return function on the **Controller**, and one of them does not
-    #: match its View-side counterpart: ``set_event_filter`` is a RawDataController
-    #: method that forwards to ``MetaEventTabView.set_data_filter_function``. Recorded
-    #: here because the conversion has to route that answer somewhere, and the name in
-    #: the emit is not the name on the View.
-    RETURN_ON_VIEW = {"set_event_filter": "set_data_filter_function"}
 
     @pytest.fixture
     def wired(self, view: RawDataView):
         """
-        A view whose bus emits record themselves and deliver real side effects.
-
-        ``answers`` is keyed by plugin method name. A value of :attr:`FAILS` stands for
-        a dispatch that failed and therefore called no return function; a list is
-        consumed one answer per call, for the per-event loop.
+        A view with its intent signal and plot call observable.
 
         :param view: the bare view
         :type view: RawDataView
-        :return: the view, with ``calls`` and ``answers`` attached
+        :return: the view, ready to record
         :rtype: RawDataView
         """
-        view.plot_data = None
-        view.eventfinding_status = True
-        view.num_events_allowed = 10
-        view.data_filter = None
-        view.plot_samplerate = 1
-        view.calls = []
-        view.answers = {
-            "get_eventfinding_status": True,
-            "get_num_events_found": 10,
-            "get_callable_filter": "a-callable",
-            "get_samplerate": 250000.0,
-            "get_single_event_data": None,
-        }
         view._update_event_plot = MagicMock()
-
-        def deliver(metaclass, key, method, args, return_fn, extra):
-            view.calls.append((metaclass, key, method, args, return_fn, extra))
-            answer = view.answers.get(method, self.FAILS)
-            if isinstance(answer, list):
-                answer = answer.pop(0) if answer else self.FAILS
-            if answer is self.FAILS:
-                return
-            getattr(view, self.RETURN_ON_VIEW.get(return_fn, return_fn))(answer)
-
-        view.global_signal.emit.side_effect = deliver
         return view
 
     @staticmethod
@@ -481,36 +437,7 @@ class TestHandlePlotEvents:
         base.update(over)
         return base
 
-    @staticmethod
-    def asked(view: RawDataView, method: str) -> list:
-        """
-        Every dispatch of one plugin method.
-
-        :param view: the wired view
-        :type view: RawDataView
-        :param method: the plugin method name
-        :type method: str
-        :return: the matching recorded calls
-        :rtype: list
-        """
-        return [call for call in view.calls if call[2] == method]
-
-    def event_data(self, samples: float) -> dict:
-        """
-        The dict shape ``get_single_event_data`` really returns.
-
-        Its declared return type is ``Optional[Dict[str, ...]]``, which is why
-        ``update_plot_data`` carries a ``data["data"]`` branch. A stub handing back a
-        bare array would let a conversion that forgets to unwrap pass.
-
-        :param samples: the value to fill the array with
-        :type samples: float
-        :return: an event-data dict
-        :rtype: dict
-        """
-        return {"data": np.full(4, samples), "samplerate": 250000.0}
-
-    # -- the branches that stop early ------------------------------------
+    # -- what the View refuses on its own --------------------------------
 
     def test_a_missing_channel_key_escapes_as_a_keyerror(
         self, wired: RawDataView
@@ -521,202 +448,88 @@ class TestHandlePlotEvents:
         ``_extract_plot_event_parameters`` reaches ``parameters["channel"]`` directly, so
         a dict without that key raises ``KeyError`` straight out of the method while the
         guard beside it advertises "Parameter extraction failed". Latent rather than live,
-        because the controls panel always supplies ``channel``. Pinned as-is rather than
-        fixed here, to keep this a pinning commit; queued in ``future_fixes.md``.
+        because the controls panel always supplies ``channel``. Pinned as-is; queued in
+        ``future_fixes.md``.
         """
         with pytest.raises(KeyError):
             wired._handle_plot_events({})
 
-        assert wired.calls == []
-        wired._update_event_plot.assert_not_called()
+        wired.event_plot_requested.emit.assert_not_called()
 
-    def test_extraction_failure_asks_nothing(self, wired: RawDataView) -> None:
+    def test_extraction_failure_requests_nothing(self, wired: RawDataView) -> None:
         """A non-numeric channel is the shape the guard does catch."""
         wired._handle_plot_events(self.params(channel=["not-a-channel"]))
 
-        assert wired.calls == []
+        wired.event_plot_requested.emit.assert_not_called()
         wired._update_event_plot.assert_not_called()
 
-    def test_multiple_channels_are_refused_before_any_dispatch(
+    def test_multiple_channels_are_refused_before_asking(
         self, wired: RawDataView
     ) -> None:
-        """Events from two channels cannot share a plot, and it stops before the bus."""
+        """Events from two channels cannot share a plot, and it stops here."""
         wired._handle_plot_events(self.params(channel=["0", "1"]))
 
-        assert wired.calls == []
+        wired.event_plot_requested.emit.assert_not_called()
         wired._update_event_plot.assert_not_called()
 
-    def test_unfinished_eventfinding_stops_after_the_status_check(
+    # -- the intent ------------------------------------------------------
+
+    def test_the_intent_carries_the_finder_channel_events_and_filter(
         self, wired: RawDataView
     ) -> None:
-        """The status is the first thing asked, and a False answer ends it."""
-        wired.answers["get_eventfinding_status"] = False
+        """The channel arrives as a single int, not the one-element list it came in."""
+        wired._handle_plot_events(
+            self.params(channel=["3"], event_index=[5, 6], filter="F1")
+        )
 
-        wired._handle_plot_events(self.params())
+        wired.event_plot_requested.emit.assert_called_once_with(
+            "finder", 3, [5, 6], "F1"
+        )
 
-        assert [call[2] for call in wired.calls] == ["get_eventfinding_status"]
-        wired._update_event_plot.assert_not_called()
-
-    def test_zero_events_found_stops_after_the_count(self, wired: RawDataView) -> None:
-        """Nothing to plot, and the filter and samplerate are never asked for."""
-        wired.answers["get_num_events_found"] = 0
-
-        wired._handle_plot_events(self.params())
-
-        assert [call[2] for call in wired.calls] == [
-            "get_eventfinding_status",
-            "get_num_events_found",
-        ]
-        wired._update_event_plot.assert_not_called()
-
-    def test_an_empty_event_list_asks_only_the_two_status_questions(
-        self, wired: RawDataView
-    ) -> None:
-        """No indices selected is not an error, and loads nothing."""
-        wired._handle_plot_events(self.params(event_index=[]))
-
-        assert [call[2] for call in wired.calls] == [
-            "get_eventfinding_status",
-            "get_num_events_found",
-        ]
-        wired._update_event_plot.assert_not_called()
-
-    # -- what each dispatch carries --------------------------------------
-
-    def test_the_status_and_count_are_asked_for_the_selected_channel(
-        self, wired: RawDataView
-    ) -> None:
-        """Both take the channel, as an int, in a one-element tuple."""
-        wired.answers["get_single_event_data"] = [self.event_data(1.0)] * 2
-
-        wired._handle_plot_events(self.params(channel=["3"]))
-
-        assert self.asked(wired, "get_eventfinding_status")[0][3] == (3,)
-        assert self.asked(wired, "get_num_events_found")[0][3] == (3,)
-
-    def test_no_filter_asks_for_no_callable(self, wired: RawDataView) -> None:
-        """The "No Filter" selection is real, so the filter plugin is not consulted."""
-        wired.answers["get_single_event_data"] = [self.event_data(1.0)] * 2
-
+    def test_no_filter_is_carried_as_an_empty_key(self, wired: RawDataView) -> None:
+        """The three spellings of "none" collapse before they leave the View."""
         wired._handle_plot_events(self.params(filter="No Filter"))
 
-        assert self.asked(wired, "get_callable_filter") == []
+        assert wired.event_plot_requested.emit.call_args[0][3] == ""
 
-    def test_a_named_filter_is_fetched_and_reaches_the_event_load(
-        self, wired: RawDataView
-    ) -> None:
-        """The callable is fetched once and passed into every event load."""
-        wired.answers["get_single_event_data"] = [self.event_data(1.0)] * 2
-
-        wired._handle_plot_events(self.params(filter="F1"))
-
-        fetched = self.asked(wired, "get_callable_filter")
-        assert len(fetched) == 1
-        assert fetched[0][1] == "F1"
-        for call in self.asked(wired, "get_single_event_data"):
-            assert call[3][2] == "a-callable"
-
-    def test_each_event_is_loaded_with_the_documented_argument_shape(
+    def test_no_selected_events_is_carried_as_an_empty_list(
         self, wired: RawDataView
     ) -> None:
         """
-        ``get_single_event_data(channel, index, data_filter=None, rectify=False, ...)``.
+        ``event_index`` is absent or None when nothing is selected.
 
-        The fourth positional is **rectify**, not ``raw_data`` - the emit's argument
-        tuple says only ``False``, and the method has two boolean parameters. Pinned
-        against the real signature so the conversion cannot quietly re-aim it.
+        The Controller still asks the finder for its status and count in that case, which
+        is the behaviour the pre-conversion code had, so the intent is emitted rather
+        than suppressed here.
         """
-        wired.answers["get_single_event_data"] = [
-            self.event_data(1.0),
-            self.event_data(2.0),
-        ]
+        wired._handle_plot_events(self.params(event_index=None))
 
-        wired._handle_plot_events(self.params(channel=["2"], event_index=[5, 6]))
+        assert wired.event_plot_requested.emit.call_args[0][2] == []
 
-        loads = self.asked(wired, "get_single_event_data")
-        assert [call[3] for call in loads] == [
-            (2, 5, None, False),
-            (2, 6, None, False),
-        ]
+    # -- drawing the answer ----------------------------------------------
 
-    def test_the_samplerate_is_asked_once_from_the_eventfinder(
+    def test_set_event_plot_data_reports_when_nothing_loaded(
         self, wired: RawDataView
     ) -> None:
-        """Not from the reader, and not once per event."""
-        wired.answers["get_single_event_data"] = [self.event_data(1.0)] * 2
-
-        wired._handle_plot_events(self.params())
-
-        rate = self.asked(wired, "get_samplerate")
-        assert len(rate) == 1
-        assert rate[0][0] == "MetaEventFinder"
-        assert wired.plot_samplerate == 250000.0
-
-    # -- the loop's own behaviour ----------------------------------------
-
-    def test_loaded_events_are_unwrapped_and_plotted_with_their_indices(
-        self, wired: RawDataView
-    ) -> None:
-        """
-        The dict's ``data`` key is what gets plotted, not the dict.
-
-        ``update_plot_data`` performs the unwrap today; the conversion has to keep
-        doing it somewhere, and a stub returning a bare array would not notice.
-        """
-        wired.answers["get_single_event_data"] = [
-            self.event_data(1.0),
-            self.event_data(2.0),
-        ]
-
-        wired._handle_plot_events(self.params(event_index=[0, 1]))
-
-        data_list, indices = wired._update_event_plot.call_args[0]
-        assert list(indices) == [0, 1]
-        assert [float(entry[0]) for entry in data_list] == [1.0, 2.0]
-
-    def test_out_of_bounds_indices_are_dropped_against_the_reported_count(
-        self, wired: RawDataView
-    ) -> None:
-        """The finder's count is the bound, and indices at or above it go."""
-        wired.answers["get_num_events_found"] = 2
-        wired.answers["get_single_event_data"] = [
-            self.event_data(1.0),
-            self.event_data(2.0),
-        ]
-
-        wired._handle_plot_events(self.params(event_index=[0, 1, 2, 7]))
-
-        assert [call[3][1] for call in self.asked(wired, "get_single_event_data")] == [
-            0,
-            1,
-        ]
-        assert list(wired._update_event_plot.call_args[0][1]) == [0, 1]
-
-    def test_an_event_that_returns_no_data_is_dropped_from_the_indices(
-        self, wired: RawDataView
-    ) -> None:
-        """
-        A ``None`` answer skips that event, and its index goes with it.
-
-        This is the alignment that matters: the plot labels each trace with the index
-        beside it, so a dropped event must not shift the rest.
-        """
-        wired.answers["get_single_event_data"] = [
-            self.event_data(1.0),
-            None,
-            self.event_data(3.0),
-        ]
-
-        wired._handle_plot_events(self.params(event_index=[0, 1, 2]))
-
-        data_list, indices = wired._update_event_plot.call_args[0]
-        assert list(indices) == [0, 2]
-        assert [float(entry[0]) for entry in data_list] == [1.0, 3.0]
-
-    def test_every_event_failing_plots_nothing(self, wired: RawDataView) -> None:
         """The user is told, rather than being shown an empty figure."""
-        wired.answers["get_single_event_data"] = [None, None]
-
-        wired._handle_plot_events(self.params(event_index=[0, 1]))
+        wired.set_event_plot_data([], [])
 
         wired._update_event_plot.assert_not_called()
+        wired.add_text_to_display.emit.assert_called_once()
+
+    def test_set_event_plot_data_draws_traces_against_their_indices(
+        self, wired: RawDataView
+    ) -> None:
+        """
+        The alignment that matters: each trace is labelled with the index beside it.
+
+        The Controller drops an event it could not load and drops its index with it, so
+        the View draws whatever pair it is handed without pruning anything.
+        """
+        data = [np.full(4, 1.0), np.full(4, 3.0)]
+
+        wired.set_event_plot_data(data, [0, 2])
+
+        drawn_data, drawn_indices = wired._update_event_plot.call_args[0]
+        assert list(drawn_indices) == [0, 2]
+        assert [float(entry[0]) for entry in drawn_data] == [1.0, 3.0]

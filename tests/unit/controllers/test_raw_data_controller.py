@@ -12,6 +12,7 @@ Covers:
 - update_channels delegates to view
 - _load_and_filter reads each channel through call(), dropping what fails (4a)
 - load_trace_data / load_psd_data hand the result to the matching view setter
+- load_event_plot_data makes the five event-plot calls the View used to make (4a)
 - update_available_plugins resolves eventfinder channels before pushing names (4a)
 - _resolve_eventfinder_channels queries every finder and omits one that raises
 - set_num_events_allowed delegates to view
@@ -493,6 +494,329 @@ def test_load_psd_data_hands_the_result_back_for_the_psd(
     controller.load_psd_data("R", [0], 3.0, 9.0, "F1")
 
     mock_view.set_trace_for_psd.assert_called_once_with(["d0"], [0])
+
+
+# --------------- event plotting (Step 4a) ----------------------------
+
+
+class TestLoadEventPlotData:
+    """
+    The five bus round trips ``RawDataView._handle_plot_events`` used to make itself.
+
+    The invariants below were pinned against the View in
+    ``test_raw_data_view_characterization.py`` before the conversion and moved here with
+    the calls. The order is load-bearing rather than incidental: each answer gates the
+    next question, and the status and count are asked even when no indices are selected.
+
+    Four of these answers used to be parked on a View attribute written only on success
+    and never cleared before the emit, so a dispatch failure that the bus swallowed left
+    the previous value in place. Those four cases are asserted here for the first time.
+    """
+
+    @staticmethod
+    def answers(controller: RawDataController, **over) -> None:
+        """
+        Install one answer per plugin method, dispatched by name.
+
+        A value of ``BOOM`` raises, standing for the failure the bus used to swallow; a
+        list is consumed one answer per call, for the per-event loop.
+
+        :param controller: Controller under test.
+        :param over: answers keyed by plugin method name.
+        """
+        table: dict = {
+            "get_eventfinding_status": True,
+            "get_num_events_found": 10,
+            "get_callable_filter": "a-callable",
+            "get_samplerate": 250000.0,
+            "get_single_event_data": {"data": "samples"},
+        }
+        table.update(over)
+
+        def dispatch(metaclass, key, method, *args):
+            answer = table[method]
+            if isinstance(answer, list):
+                answer = answer.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        controller.model.call.side_effect = dispatch
+
+    @staticmethod
+    def asked(controller: RawDataController, method: str) -> list:
+        """
+        Every call() of one plugin method.
+
+        :param controller: Controller under test.
+        :param method: the plugin method name.
+        :return: the matching call args tuples.
+        """
+        return [
+            call.args
+            for call in controller.model.call.call_args_list
+            if call.args[2] == method
+        ]
+
+    # -- the branches that stop early ------------------------------------
+
+    def test_unfinished_eventfinding_stops_after_the_status(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """The status is asked first, for that channel, and a False answer ends it."""
+        self.answers(controller, get_eventfinding_status=False)
+
+        controller.load_event_plot_data("finder", 3, [0, 1], "")
+
+        assert self.asked(controller, "get_eventfinding_status") == [
+            ("MetaEventFinder", "finder", "get_eventfinding_status", 3)
+        ]
+        assert self.asked(controller, "get_num_events_found") == []
+        mock_view.set_event_plot_data.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_an_unreadable_status_reports_and_stops(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        **New behaviour.** The bus swallowed this and the View read the previous
+        channel's finished-ness off an attribute nothing had cleared.
+        """
+        self.answers(controller, get_eventfinding_status=RuntimeError("boom"))
+
+        controller.load_event_plot_data("finder", 3, [0, 1], "")
+
+        assert self.asked(controller, "get_num_events_found") == []
+        mock_view.set_event_plot_data.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_zero_events_found_stops_before_the_filter(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """Nothing to plot, so the filter and samplerate are never asked for."""
+        self.answers(controller, get_num_events_found=0)
+
+        controller.load_event_plot_data("finder", 0, [0, 1], "F1")
+
+        assert self.asked(controller, "get_callable_filter") == []
+        assert self.asked(controller, "get_samplerate") == []
+        mock_view.set_event_plot_data.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_an_unreadable_count_reports_and_stops(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        **New behaviour, and the worst of the four.** A swallowed failure here left the
+        *previous* channel's event count in place, and that count is what bounded this
+        channel's indices - so it decided which events were plotted.
+        """
+        self.answers(controller, get_num_events_found=RuntimeError("boom"))
+
+        controller.load_event_plot_data("finder", 0, [0, 1], "")
+
+        assert self.asked(controller, "get_single_event_data") == []
+        mock_view.set_event_plot_data.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_no_selected_events_still_asks_the_two_status_questions(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """Pre-conversion behaviour, preserved: both are asked, nothing is loaded."""
+        self.answers(controller)
+
+        controller.load_event_plot_data("finder", 0, [], "")
+
+        assert len(self.asked(controller, "get_eventfinding_status")) == 1
+        assert len(self.asked(controller, "get_num_events_found")) == 1
+        assert self.asked(controller, "get_single_event_data") == []
+        mock_view.set_event_plot_data.assert_not_called()
+
+    # -- bounding, filtering, samplerate ---------------------------------
+
+    def test_out_of_bounds_indices_are_dropped_against_the_reported_count(
+        self, controller: RawDataController
+    ) -> None:
+        """The finder's count is the bound, and indices at or above it go."""
+        self.answers(
+            controller,
+            get_num_events_found=2,
+            get_single_event_data=[{"data": "a"}, {"data": "b"}],
+        )
+
+        controller.load_event_plot_data("finder", 0, [0, 1, 2, 7], "")
+
+        assert [args[4] for args in self.asked(controller, "get_single_event_data")] == [
+            0,
+            1,
+        ]
+
+    def test_an_empty_filter_key_asks_for_no_callable(
+        self, controller: RawDataController
+    ) -> None:
+        """"No Filter" reaches the Controller as "", and consults nothing."""
+        self.answers(controller, get_single_event_data=[{"data": "a"}])
+
+        controller.load_event_plot_data("finder", 0, [0], "")
+
+        assert self.asked(controller, "get_callable_filter") == []
+        assert self.asked(controller, "get_single_event_data")[0][5] is None
+
+    def test_a_named_filter_is_fetched_once_and_reaches_every_load(
+        self, controller: RawDataController
+    ) -> None:
+        """One fetch, then the same callable for each event."""
+        self.answers(
+            controller, get_single_event_data=[{"data": "a"}, {"data": "b"}]
+        )
+
+        controller.load_event_plot_data("finder", 0, [0, 1], "F1")
+
+        assert self.asked(controller, "get_callable_filter") == [
+            ("MetaFilter", "F1", "get_callable_filter")
+        ]
+        for args in self.asked(controller, "get_single_event_data"):
+            assert args[5] == "a-callable"
+
+    def test_an_unfetchable_filter_proceeds_unfiltered(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """A warning, not a failure: unfiltered events are still worth plotting."""
+        self.answers(
+            controller,
+            get_callable_filter=RuntimeError("boom"),
+            get_single_event_data=[{"data": "a"}],
+        )
+
+        controller.load_event_plot_data("finder", 0, [0], "F1")
+
+        assert self.asked(controller, "get_single_event_data")[0][5] is None
+        mock_view.set_event_plot_data.assert_called_once()
+        controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+
+    def test_the_samplerate_comes_from_the_eventfinder_once(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """From the finder, not the reader, and not once per event."""
+        self.answers(
+            controller, get_single_event_data=[{"data": "a"}, {"data": "b"}]
+        )
+
+        controller.load_event_plot_data("finder", 0, [0, 1], "")
+
+        assert self.asked(controller, "get_samplerate") == [
+            ("MetaEventFinder", "finder", "get_samplerate")
+        ]
+        mock_view.update_plot_samplerate.assert_called_once_with(250000.0)
+
+    def test_an_unreadable_samplerate_falls_back_to_one(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        **New behaviour.** The View's own guard could not fire, because the bus
+        swallowed the failure and left the previous rate in place.
+        """
+        self.answers(
+            controller,
+            get_samplerate=RuntimeError("boom"),
+            get_single_event_data=[{"data": "a"}],
+        )
+
+        controller.load_event_plot_data("finder", 0, [0], "")
+
+        mock_view.update_plot_samplerate.assert_called_once_with(1)
+
+    # -- the event loop --------------------------------------------------
+
+    def test_each_event_is_loaded_with_the_real_argument_shape(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        ``get_single_event_data(channel, index, data_filter=None, rectify=False, ...)``.
+
+        The trailing ``False`` is **rectify**, not ``raw_data``. The emit's argument
+        tuple said only ``False`` and the method has two boolean parameters, so this is
+        written from the signature rather than from the call site (rule 42).
+        """
+        self.answers(
+            controller, get_single_event_data=[{"data": "a"}, {"data": "b"}]
+        )
+
+        controller.load_event_plot_data("finder", 2, [5, 6], "")
+
+        assert self.asked(controller, "get_single_event_data") == [
+            ("MetaEventFinder", "finder", "get_single_event_data", 2, 5, None, False),
+            ("MetaEventFinder", "finder", "get_single_event_data", 2, 6, None, False),
+        ]
+
+    def test_the_payload_dict_is_unwrapped_before_it_reaches_the_view(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        ``get_single_event_data`` returns a dict, and the ``data`` key is the samples.
+
+        ``update_plot_data`` used to do this unwrap on the way back through the bus, and
+        its own source comment asked for it to be explicit instead. It is explicit here.
+        """
+        self.answers(
+            controller,
+            get_single_event_data=[{"data": "first"}, {"data": "second"}],
+        )
+
+        controller.load_event_plot_data("finder", 0, [0, 1], "")
+
+        mock_view.set_event_plot_data.assert_called_once_with(
+            ["first", "second"], [0, 1]
+        )
+
+    def test_an_event_with_no_data_is_dropped_with_its_index(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """A None payload skips that event; the surviving indices stay aligned."""
+        self.answers(
+            controller,
+            get_single_event_data=[{"data": "first"}, None, {"data": "third"}],
+        )
+
+        controller.load_event_plot_data("finder", 0, [0, 1, 2], "")
+
+        mock_view.set_event_plot_data.assert_called_once_with(
+            ["first", "third"], [0, 2]
+        )
+
+    def test_an_event_that_cannot_be_read_is_dropped_with_its_index(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        **New behaviour, and the stale read this step exists to close.** A swallowed
+        failure left the previous event's samples on ``plot_data``, and the caller's
+        ``is not None`` guard passed - so the previous event was plotted a second time
+        under this event's index.
+        """
+        self.answers(
+            controller,
+            get_single_event_data=[
+                {"data": "first"},
+                RuntimeError("boom"),
+                {"data": "third"},
+            ],
+        )
+
+        controller.load_event_plot_data("finder", 0, [0, 1, 2], "")
+
+        drawn, indices = mock_view.set_event_plot_data.call_args[0]
+        assert (drawn, indices) == (["first", "third"], [0, 2])
+        assert drawn.count("first") == 1
+
+    def test_every_event_failing_hands_back_empty_lists(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """The View reports it; the Controller does not decide how to say so."""
+        self.answers(controller, get_single_event_data=[None, None])
+
+        controller.load_event_plot_data("finder", 0, [0, 1], "")
+
+        mock_view.set_event_plot_data.assert_called_once_with([], [])
 
 
 # ---------------- eventfinder channel resolution (4a) ----------------

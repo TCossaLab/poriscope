@@ -60,6 +60,7 @@ class RawDataController(MetaEventTabController):
         self.view.reader_channels_requested.connect(self.request_reader_channels)
         self.view.trace_data_requested.connect(self.load_trace_data)
         self.view.psd_data_requested.connect(self.load_psd_data)
+        self.view.event_plot_requested.connect(self.load_event_plot_data)
 
     @log(logger=logger)
     @Slot(str, list, float, float, str, bool)
@@ -128,6 +129,169 @@ class RawDataController(MetaEventTabController):
             reader, channels, start, length, data_filter
         )
         self.view.set_trace_for_psd(data_list, kept)
+
+    @log(logger=logger)
+    @Slot(str, int, list, str)
+    def load_event_plot_data(
+        self,
+        eventfinder: str,
+        channel: int,
+        events: List[int],
+        data_filter: str,
+    ) -> None:
+        """
+        Check the finder, bound the indices, resolve the filter, and load each event.
+
+        Step 4a: five bus round trips became five calls. The order the View used is kept
+        exactly - status, then count, then the filter callable, then the samplerate, then
+        one load per event - because each answer gates the next question, and the status
+        and count are asked even when no indices are selected.
+
+        **Four stale reads disappear with the emits.** Every one of those answers used to
+        be parked on a View attribute written only on success and never cleared before the
+        emit, so a dispatch failure that ``_dispatch_to`` swallowed left the previous
+        value in place: the previous channel's finished-ness, the previous channel's event
+        count - which then bounded *this* channel's indices - the previous samplerate, and
+        the previous event's samples. ``call()`` raises, so each failure now stops the
+        thing it should stop.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel: the single channel whose events are being plotted
+        :type channel: int
+        :param events: the event indices the user selected, possibly empty
+        :type events: List[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            finished = self.model.call(
+                "MetaEventFinder", eventfinder, "get_eventfinding_status", channel
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to read eventfinding status for channel {channel}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to read eventfinding status for channel {channel}: {e}",
+                self.__class__.__name__,
+            )
+            return
+        if finished is False:
+            self.add_text_to_display.emit(
+                f"Eventfinding not finished in channel {channel}",
+                self.__class__.__name__,
+            )
+            return
+
+        try:
+            num_events = self.model.call(
+                "MetaEventFinder", eventfinder, "get_num_events_found", channel
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to read the event count for channel {channel}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to read the event count for channel {channel}: {e}",
+                self.__class__.__name__,
+            )
+            return
+        if num_events == 0:
+            self.add_text_to_display.emit(
+                f"No events to display from channel {channel}",
+                self.__class__.__name__,
+            )
+            return
+
+        if not events:
+            return
+
+        if max(events) >= num_events:
+            self.logger.info(
+                f"Some event indices were out of bounds, truncating indices above {num_events - 1}"
+            )
+        events = [event for event in events if event < num_events]
+
+        callable_filter = self._resolve_callable_filter(data_filter)
+        self.view.update_plot_samplerate(self._event_samplerate(eventfinder))
+
+        event_data: List[Any] = []
+        kept: List[int] = []
+        for event in events:
+            try:
+                payload = self.model.call(
+                    "MetaEventFinder",
+                    eventfinder,
+                    "get_single_event_data",
+                    channel,
+                    event,
+                    callable_filter,
+                    False,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to retrieve requested data for event {event}: {repr(e)}"
+                )
+                continue
+            if payload is None:
+                self.logger.warning(f"No data loaded for event {event}, skipping")
+                continue
+            event_data.append(payload["data"])
+            kept.append(event)
+        self.view.set_event_plot_data(event_data, kept)
+
+    @log(logger=logger)
+    def _resolve_callable_filter(self, data_filter: str) -> Optional[Callable]:
+        """
+        Fetch the filter's callable, or proceed without one.
+
+        A filter that cannot be fetched is a warning rather than a failure, because
+        plotting unfiltered events is still useful - which is what the View did.
+
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: the callable, or None if none was asked for or it could not be fetched
+        :rtype: Optional[Callable]
+        """
+        if not data_filter:
+            return None
+        try:
+            resolved: Callable = self.model.call(
+                "MetaFilter", data_filter, "get_callable_filter"
+            )
+        except Exception:
+            self.logger.warning(
+                f"Unable to load filter {data_filter}, proceeding without a filter"
+            )
+            return None
+        return resolved
+
+    @log(logger=logger)
+    def _event_samplerate(self, eventfinder: str) -> float:
+        """
+        The event finder's samplerate, or 1 so the axis falls back to raw indices.
+
+        Asked of the *event finder* rather than the reader, which is what the View did:
+        the events came from the finder and carry its rate.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :return: the samplerate in Hz, or 1 if it could not be read
+        :rtype: float
+        """
+        try:
+            samplerate: float = self.model.call(
+                "MetaEventFinder", eventfinder, "get_samplerate"
+            )
+        except Exception:
+            self.logger.warning(
+                "Unable to get samplerate, time axis will indicate raw data index"
+            )
+            return 1
+        return samplerate
 
     @log(logger=logger)
     def _load_and_filter(
