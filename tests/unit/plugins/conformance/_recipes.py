@@ -309,6 +309,10 @@ def _fill(
         if key in overrides:
             entry["Value"] = overrides[key]
         elif entry.get("Value") is None:
+            # .get(), not entry["Value"]: omitting the key and setting it to None
+            # are both valid "no default" spellings (see settings_schema.py), and
+            # real plugins use both - indexing directly would KeyError on the ones
+            # that omit it.
             unset.append(key)
     if unset:
         raise ValueError(
