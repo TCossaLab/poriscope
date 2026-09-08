@@ -842,15 +842,7 @@ cheaper after 4a for the reason recorded under 4c below.
 
 ### Owed
 
-- A **manual Windows pass on the three RawData plots** rewritten after the 2026-09-08
-  pass, which cleared everything up to `1ff9e92`:
-  - **Trace and noise spectrum** (`a572644`): load a multi-channel trace with and without
-    a filter, and the PSD, and confirm each subplot carries its own channel — the fault
-    that commit fixed.
-  - **Event plots** (`8446eb4`): plot several events with and without a filter, and check
-    the traces are labelled with the right indices and the time axis is right. Worth also
-    trying an out-of-range index, since the bound now comes from a call that can fail
-    loudly instead of silently reusing another channel's count.
+- Nothing on the manual pass — **cleared again 2026-09-08**, see the Verification section.
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
   gate. Still open from 3f.
 
@@ -1109,6 +1101,16 @@ select-all, dismiss on an outside click, reopen with the selection intact); and 
 outliving the app on close. That is the pre-refactor baseline, so a later failure is
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
+
+**Second Step 4a RawData manual pass: run 2026-09-08, all clear.** Covers the three plots
+rewritten after the first pass — the trace and noise spectrum (`a572644`) and the event
+plots (`8446eb4`) — so every path 4a has converted has now been seen working on Windows.
+This pass also surfaced three clarity defects rather than correctness ones, all fixed in
+`2ad8ba0`: an out-of-range event index reported "No data available for plotting" instead
+of naming the bound, stepping the index below 0 was declined silently, and finding or
+fitting events with no filter selected could register almost every sample as an event with
+no warning. The last of those was reported as a hang and correctly diagnosed as user
+error; it is guarded by a confirmation now.
 
 **Step 4a RawData manual pass: run 2026-09-08, all clear.** The two paths that had no
 cover, verified as separate checks because they exercise different widgets and would fail
