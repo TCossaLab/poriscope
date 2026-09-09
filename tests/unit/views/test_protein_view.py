@@ -796,14 +796,6 @@ class TestStateSetters:
         mock_view.set_query("", "events")
         assert mock_view.query == ""
 
-    def test_set_query_shows_sql_when_flag(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda msg, src: received.append(msg))
-        mock_view._show_sql_in_display = True
-        mock_view.set_query("SELECT 1", "events")
-        assert any("SELECT 1" in m for m in received)
-        assert mock_view._show_sql_in_display is False
-
     def test_set_event_query_stores(self, mock_view):
         mock_view.set_event_query("SELECT * FROM events")
         assert mock_view.event_query == "SELECT * FROM events"
@@ -811,15 +803,6 @@ class TestStateSetters:
     def test_set_event_query_empty(self, mock_view):
         mock_view.set_event_query("")
         assert mock_view.event_query == ""
-
-    def test_set_event_query_shows_when_flag(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda msg, src: received.append(msg))
-        mock_view._show_event_sql_in_display = True
-        mock_view.set_event_query("SELECT 2")
-        assert any("SELECT 2" in m for m in received)
-        assert mock_view._show_event_sql_in_display is False
-
 
 # ===========================================================================
 # _handle_other_actions
@@ -2012,15 +1995,6 @@ class TestShowAddFilterDialog:
         dialog.walkthrough_dialog = None
         return dialog
 
-    def test_sets_show_sql_flag(self, mock_view):
-        mock_view._walkthrough_active = False
-        with patch(
-            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
-            return_value=self._mock_dialog(None, accepted=False),
-        ):
-            mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert mock_view._show_sql_in_display is True
-
     def test_cancelled_dialog_does_not_emit_signal(self, mock_view):
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
@@ -2141,15 +2115,6 @@ class TestShowEditFilterDialog:
     def _flush_qt_between_tests(self, qt_app):
         yield
         qt_app.processEvents()
-
-    def test_sets_show_sql_flag(self, mock_view):
-        mock_view.subset_filters = {"f1": "dur>1"}
-        with patch(
-            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
-            return_value=self._mock_dialog(accepted=False),
-        ):
-            mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert mock_view._show_sql_in_display is True
 
     def test_cancelled_dialog_no_emit(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}

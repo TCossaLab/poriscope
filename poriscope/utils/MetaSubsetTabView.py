@@ -154,8 +154,6 @@ class MetaSubsetTabView(MetaView):
     _pending_filter_name: Optional[str]
     _pending_filter_text: Optional[str]
     _pending_old_filter_name: Optional[str]
-    _show_event_sql_in_display: bool
-    _show_sql_in_display: bool
     selected_experiment_and_channels_by_loader: Dict[str, Dict[str, List[str]]]
     subset_filters: Dict[str, str]
 
@@ -163,7 +161,10 @@ class MetaSubsetTabView(MetaView):
     #: Declared here without a value so the contract is visible and mypy can see it,
     #: while reading one before its setter has run stays the AttributeError it is now.
     experiment_id: Optional[int]
-    event_data_generator: Iterator[Any]
+    #: Optional since Step 4a: ``_overlay_plot`` clears it before asking for a
+    #: subset, so that a load which fails is not read back as the previous subset's
+    #: events.
+    event_data_generator: Optional[Iterator[Any]]
     event_query: str
     query: str
     selection_tree: SelectionTree
@@ -474,8 +475,6 @@ class MetaSubsetTabView(MetaView):
         :param parameters: Dictionary with 'db_loader'.
         :type parameters: dict
         """
-        self._show_sql_in_display = True
-
         dialog = AddSubsetFilterDialog(
             self, existing_names=list(self.subset_filters.keys())
         )
@@ -522,8 +521,6 @@ class MetaSubsetTabView(MetaView):
                 )
                 return
 
-            self._show_sql_in_display = True
-
             self.filter_validation_requested.emit(
                 loader, filter_text, "validate_new_filter"
             )
@@ -544,8 +541,6 @@ class MetaSubsetTabView(MetaView):
         :param loader: the database loader the filter applies to
         :type loader: str
         """
-        self._show_sql_in_display = True
-
         self.logger.debug(f"Editing filter: {name}")
         self.logger.debug(f"Filters available: {self.subset_filters}")
 
@@ -581,7 +576,6 @@ class MetaSubsetTabView(MetaView):
                 )
                 return
 
-            self._show_sql_in_display = True
             self.filter_validation_requested.emit(
                 loader, new_filter, "validate_edited_filter"
             )
@@ -797,6 +791,11 @@ class MetaSubsetTabView(MetaView):
         """
         Set the SQL query and table name used in plotting.
 
+        Step 4a stopped this echoing the query to the status panel. What it received
+        at filter-creation time was the *validation* query, which is not the query
+        that pulls the subset - ``MetadataController._echo_applied_query`` shows that
+        one instead, when the filter is actually applied.
+
         :param query: SQL query string.
         :type query: str
         :param table_name: Name of the database table.
@@ -804,17 +803,6 @@ class MetaSubsetTabView(MetaView):
         """
         self.query = query
         self.table_name = table_name
-        if not query:
-            return
-
-        # Only display SQL for filter creation/edit validation
-        if self._show_sql_in_display:
-            self.add_text_to_display.emit(
-                f"SQL ({table_name}):\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            # one-shot so normal plot queries never show
-            self._show_sql_in_display = False
 
     @log(logger=logger)
     def set_event_query(self, query: str) -> None:
@@ -825,15 +813,6 @@ class MetaSubsetTabView(MetaView):
         :type query: str
         """
         self.event_query = query
-        if not query:
-            return
-
-        if self._show_event_sql_in_display:
-            self.add_text_to_display.emit(
-                f"Event SQL:\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            self._show_event_sql_in_display = False
 
     @log(logger=logger)
     def set_units(self, units: Any) -> None:

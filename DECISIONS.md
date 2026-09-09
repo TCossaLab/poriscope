@@ -10,6 +10,36 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - The status panel shows the applied query, deduplicated, not the validation one
+
+**Context.** Kyle: what the sidebar shows should be the query that runs when the filter pulls
+metadata - one, two or three tables as that filter genuinely needs - and ideally the same
+query that validated it, since validating something other than what you run is the defect.
+
+**Decision.** The applied query is echoed by `MetadataController._echo_applied_query` when a
+subset is fetched, and only when it differs from the last one shown. Filter creation no longer
+echoes anything, and `_show_sql_in_display` / `_show_event_sql_in_display` are **deleted**.
+Creation-time validation stays as a pre-check with immediate feedback on failure, which is
+what Kyle asked for when this was put to him.
+
+**Evidence for keeping the pre-check rather than validating only at apply time.** The
+validation verdict does not depend on which columns are selected. Measured across a
+one-events-column set, a one-axis histogram, a two-table scatter and a three-table 3D
+scatter: identical verdicts for four valid filters and two broken ones. So the cheap
+pre-check agrees with what the real query would say, and the only thing that was actually
+wrong was *what got displayed*.
+
+**Deduplicated because a plot builds several queries.** `_overlay_plot` builds one per
+(experiment, channel) in scope, and replotting is common, so echoing every one would bury the
+panel. Kyle chose "only when it changes" over "every query" and over "only the first per
+plot".
+
+**`_show_event_sql_in_display` was already dead** - assigned False in three places, read
+once, never set True - so the event-SQL echo had never fired.
+
+**Revisit if** users want the query for every experiment/channel rather than the distinct
+ones, which would mean keying the dedupe on the scope as well as the SQL.
+
 ## 2026-09-08 - The Controller picks the filter-validation columns, and asks for events only
 
 **Context.** Step 4a's conversion of the two filter-validation round trips had to decide

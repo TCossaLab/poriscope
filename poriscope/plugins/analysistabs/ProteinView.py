@@ -228,9 +228,6 @@ class ProteinView(MetaSubsetTabView):
         self.allowed_bins: Optional[Any] = None
         self.allowed_sizes: Optional[bool] = None
 
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
-
         self._last_event_action: str = "plot_events"  # or "plot_histogram"
 
         self.plotted_datasets: Set[
@@ -2075,8 +2072,6 @@ class ProteinView(MetaSubsetTabView):
         """
         self._reset_actions()
         self._clear_cache()
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]
@@ -2553,8 +2548,6 @@ class ProteinView(MetaSubsetTabView):
         """
         self._reset_actions()
         self._clear_cache()
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]

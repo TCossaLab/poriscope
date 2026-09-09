@@ -14,6 +14,12 @@
 
 * The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
 
+* **The SQL shown on the status panel is now the query that actually pulls the subset**, rather than the smaller one built to validate the filter, and it is shown when the filter is applied rather than when it is created - repeated only when it changes
+
+* **Fixed the Metadata tab plotting the wrong subset's data when a database call failed**: the query, the column units and the event generator were each reused from the previous subset, so a failure mid-plot drew the previous subset under this one's label, or labelled the axes with another column's units
+
+* A subset the Metadata tab cannot query, load or read the units of is now reported instead of failing silently
+
 * **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
 
 * Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone

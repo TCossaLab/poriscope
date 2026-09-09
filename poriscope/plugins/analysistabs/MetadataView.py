@@ -97,6 +97,25 @@ class MetadataView(MetaSubsetTabView):
     #: ``update_units`` moved down here from ``MetaSubsetTabView``.
     column_units_requested = Signal(str, str, str)
 
+    #: Asks the Controller for one metadata subset, ready to plot: the loader's key,
+    #: the columns this plot type needs, the filter, and the experiment/channel scope.
+    #: The Controller builds the query, loads the rows and looks up each column's
+    #: units, then hands all three back through ``set_query``, ``update_plot_data``
+    #: and ``set_column_units`` - or hands back nothing and reports why.
+    #:
+    #: Step 4a replaced three separate ``global_signal`` emits, of which two parked
+    #: their answer on an attribute that was never cleared first: a failed
+    #: ``construct_metadata_query`` left the *previous* subset's query in
+    #: ``self.query``, and a failed ``get_column_units`` appended the previous
+    #: column's units, mislabelling the axis.
+    metadata_subset_requested = Signal(str, list, str, object)
+
+    #: The same for an event-data subset: the loader's key, the filter and the scope.
+    #: The answer arrives through ``set_event_query`` and
+    #: ``set_event_data_generator``. Both of those were unguarded reads too - a
+    #: failed load replotted the previous subset's events.
+    event_subset_requested = Signal(str, str, object)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -134,6 +153,9 @@ class MetadataView(MetaSubsetTabView):
         # stated once and the callers' cleared-before-emit assignment type-checks.
         self.relayed_experiment_id: Optional[int] = None
         self.relayed_query_result = None
+        # One units string per plotted column, set by set_column_units once the
+        # whole subset has been fetched. None means it has not been.
+        self.column_units: Optional[List[Optional[str]]] = None
         # Heterogeneous by design: the histogram paths append 1-D arrays, the
         # density path appends whole DataFrames, and the all-points path appends
         # (x, y) tuples. Flagged for review.
@@ -149,9 +171,6 @@ class MetadataView(MetaSubsetTabView):
         self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Union[int, float]] = None
         self.allowed_sizes: Optional[bool] = None
-
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
         self.plotted_datasets: Set[
             Tuple[
@@ -1190,8 +1209,6 @@ class MetadataView(MetaSubsetTabView):
         :return: True if at least one dataset was plotted, False otherwise - including when every requested dataset was skipped as already plotted, so that the caller can roll the recorded action back rather than leave an undo step that would restore an identical figure.
         :rtype: bool
         """
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
         selected_filters = self.get_selected_filters()
         loader = parameters["db_loader"]
@@ -1364,31 +1381,20 @@ class MetadataView(MetaSubsetTabView):
                         ):  # do not overlay the same thing twice
                             continue
 
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_metadata_query",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "relay_query",
-                            (),
+                        # All three cleared before asking, not just plot_data: the
+                        # Controller sets them only once the whole subset has been
+                        # fetched, so a partial failure leaves them empty rather than
+                        # holding the previous subset's query, rows or units. Before
+                        # Step 4a only plot_data was cleared, and the other two were
+                        # read back stale.
+                        self.query = ""
+                        self.plot_data = None
+                        self.column_units = None
+                        self.metadata_subset_requested.emit(
+                            loader, columns, sql_filter, exp_and_ch_arg
                         )
                         if self.query == "":
                             return False
-
-                        # Cleared first: a dispatch that fails never calls
-                        # update_plot_data, so without this the guard below would
-                        # read the previous subset's rows and plot them under this
-                        # subset's label. .empty as well as None because the loader
-                        # returns an empty frame for a query that matched nothing.
-                        self.plot_data = None
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_metadata",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "update_plot_data",
-                            (),
-                        )
 
                         if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
@@ -1402,17 +1408,13 @@ class MetadataView(MetaSubsetTabView):
                                 self.__class__.__name__,
                             )
 
-                        units = []
-                        for column in columns:
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "get_column_units",
-                                (column,),
-                                "relay_units",
-                                (),
+                        units = self.column_units
+                        if units is None:
+                            self.add_text_to_display.emit(
+                                f"Could not read the units of {columns} from {loader}",
+                                self.__class__.__name__,
                             )
-                            units.append(self.units)
+                            return False
 
                         if len(columns) != len(units):
                             self.add_text_to_display.emit(
@@ -1439,24 +1441,14 @@ class MetadataView(MetaSubsetTabView):
                         )
 
                     elif plot_type in self.event_data_plots:
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_event_data_query",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_query",
-                            (),
+                        # Cleared for the same reason as the metadata group above.
+                        self.event_query = ""
+                        self.event_data_generator = None
+                        self.event_subset_requested.emit(
+                            loader, sql_filter, exp_and_ch_arg
                         )
                         if self.event_query == "":
                             return False
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_event_data",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_data_generator",
-                            (),
-                        )
                         if self.event_data_generator:
                             if plot_type in [
                                 "Raw All Points Histogram",
@@ -2565,6 +2557,24 @@ class MetadataView(MetaSubsetTabView):
         if not loader or loader == "No Event Database":
             return
         self.column_units_requested.emit(loader, column, axis)
+
+    @log(logger=logger)
+    def set_column_units(self, units: List[Optional[str]]) -> None:
+        """
+        Receive one units string per plotted column, in the columns' own order.
+
+        Step 4a. The units used to arrive one at a time, through ``set_units``, with
+        ``_overlay_plot`` appending ``self.units`` after each round trip - so a
+        lookup that failed appended the previous column's units instead of nothing,
+        and the axis was labelled with the wrong unit. Handed over as a list in one
+        call, the count either matches the columns or the answer is missing entirely.
+
+        :param units: one units string per column, None where the loader has none
+        :type units: List[Optional[str]]
+        :return: None
+        :rtype: None
+        """
+        self.column_units = units
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
