@@ -12,6 +12,7 @@ returns, so a loader handing back the wrong padding or sample rate would have su
 as a confusing fitter failure rather than as a loader failure.
 """
 
+import shutil
 from typing import List, Type
 
 import numpy as np
@@ -55,6 +56,31 @@ def loader(request, events_db_path):
     """
     instance = build_any_event_loader(request.param, events_db_path)
     yield instance
+    instance.close_resources()
+
+
+@pytest.fixture(params=LOADERS, ids=[cls.__name__ for cls in LOADERS])
+def loader_over_own_copy(request, events_db_path, tmp_path):
+    """
+    Build the loader under test over its own copy of the shared events database.
+
+    A per-test copy, not ``events_db_path`` directly, so the leak check below can
+    safely unlink it without breaking every other test in this file that still
+    needs the shared one.
+
+    :param request: Pytest request, carrying the parametrised loader class.
+    :type request: pytest.FixtureRequest
+    :param events_db_path: Path to the shared synthetic events database.
+    :type events_db_path: str
+    :param tmp_path: Per-test temporary directory for the copy.
+    :type tmp_path: pathlib.Path
+    :return: The loader and the path of its own database copy.
+    :rtype: tuple
+    """
+    db_copy = tmp_path / "events.sqlite3"
+    shutil.copy(events_db_path, db_copy)
+    instance = build_any_event_loader(request.param, str(db_copy))
+    yield instance, db_copy
     instance.close_resources()
 
 
@@ -160,6 +186,28 @@ def test_reset_and_close_are_safe(loader: MetaEventLoader) -> None:
     )
     loader.close_resources()
     loader.close_resources()
+
+
+@pytest.mark.conformance
+def test_loader_releases_its_input_file(loader_over_own_copy) -> None:
+    """
+    ``close_resources`` lets go of the input database file.
+
+    Unlike a reader's memmap, a loader's SQLite connection is not something
+    Python's garbage collector reclaims for free - this checks that
+    ``close_resources`` actually closes it, immediately, not eventually.
+    On Windows an open handle blocks ``os.unlink``, so this is a real leak
+    check rather than a formality.
+
+    :param loader_over_own_copy: The loader and the path to its own database copy.
+    :type loader_over_own_copy: tuple
+    """
+    loader, db_copy = loader_over_own_copy
+    loader.close_resources()
+    try:
+        db_copy.unlink()
+    except PermissionError as exc:
+        pytest.fail(f"input file still locked after close_resources: {exc}")
 
 
 @pytest.mark.conformance

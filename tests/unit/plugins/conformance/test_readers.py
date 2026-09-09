@@ -34,6 +34,8 @@ valid for *some* readers, not the family in general - confirmed directly
 against the real reader rather than assumed.
 """
 
+import gc
+import shutil
 from typing import List, Type
 
 import numpy as np
@@ -253,6 +255,51 @@ def test_reset_and_close_are_safe(opened) -> None:
 
     reader.close_resources()
     reader.close_resources()
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("reader_cls", READERS, ids=[cls.__name__ for cls in READERS])
+def test_reader_releases_its_input_file(reader_cls, tmp_path_factory) -> None:
+    """
+    A reader's file(s) become releasable once nothing references the reader.
+
+    Deliberately does not use the ``opened`` fixture: it is itself a generator,
+    and its paused frame would keep holding the reader live across the ``yield``
+    until teardown, defeating the point of this test regardless of what happens
+    below. Built directly here instead, so the only reference is the local one
+    this test controls.
+
+    ``MetaReader.close_resources``'s own docstring says a memmap-backed reader
+    "need not explicitly close" it - the handle is released once the reader
+    itself is collected, and confirmed empirically for all readers that release
+    does not depend on ``close_resources`` being called at all, only on nothing
+    referencing the reader anymore. It is still called here, once, to match the
+    real lifecycle (``MainModel``/``DataPluginController`` call it on plugin
+    deletion before dropping their own reference) - a future reader holding an
+    OS-level resource GC alone cannot reclaim would need it to matter.
+
+    So the contract under test is not "closed means released immediately", it
+    is "once nothing references the reader, its file(s) are actually
+    releasable" - the leak this catches is a hidden reference surviving
+    deletion (a module-level cache, a registered callback), not a broken
+    ``close_resources``.
+
+    :param reader_cls: The reader class under test.
+    :type reader_cls: Type[MetaReader]
+    :param tmp_path_factory: Pytest's session-scoped temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
+    """
+    out_dir = tmp_path_factory.mktemp(reader_cls.__name__)
+    dataset = build_reader_dataset(reader_cls, out_dir)
+    reader = build_any_reader(reader_cls, dataset)
+    reader.close_resources()
+
+    del reader
+    gc.collect()
+    try:
+        shutil.rmtree(out_dir)
+    except PermissionError as exc:
+        pytest.fail(f"{reader_cls.__name__} still holds its file(s) open: {exc}")
 
 
 @pytest.mark.conformance

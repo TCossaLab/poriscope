@@ -10,6 +10,40 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-09 - Reader and loader leak checks use different patterns, deliberately
+
+**Context.** Extending `test_writers.py`'s leak check to readers and loaders. An earlier
+scoping note (2026-08-31, now removed from `future_fixes.md`) claimed a reader's
+`close_resources()` "does not reliably release its `numpy.memmap` handle immediately" on
+Windows. Re-tested properly before writing the real check: that claim was a testing
+mistake, not a defect - the probe never dropped its own reference to the reader before
+checking, so of course the file stayed open. With `del` + `gc.collect()`, release is
+100% reliable across all 7 readers, confirmed empirically.
+
+**Decision.** `MetaReader.close_resources()`'s own docstring says a memmap-backed reader
+"need not explicitly close" it - the base class contract is "GC will handle it," not
+"closed means released immediately." So `test_reader_releases_its_input_file`
+(`test_readers.py`) asserts the weaker, correct thing: the file becomes releasable once
+nothing references the reader (`del` + `gc.collect()`), not that `close_resources()`
+alone releases it. Loaders got the stronger check instead -
+`test_loader_releases_its_input_file`/`test_db_loader_releases_its_input_file`
+(`test_eventloaders.py`/`test_dbloaders.py`) assert immediate release after
+`close_resources()` alone, matching the writer pattern - because a SQLite connection is
+not something the garbage collector reclaims for free the way a memmap is, and measured
+directly: all 3 loaders (`SQLiteEventLoader`, `SQLiteDBLoader`, `SQLitePeakDBLoader`)
+already close their connection explicitly and release immediately.
+
+**Evidence.** Probed both ways for every reader and loader before writing either test:
+readers fail immediately after `close_resources()` while still referenced, and pass
+100% of the time once `del`ed and collected; all three loaders pass immediately, with
+or without dropping the reference.
+
+**Revisit if** a reader test written against this weaker contract ever needs to prove
+something stronger - at that point the difference from the loader contract stops being
+free, and the two would need to converge or the difference re-justified per plugin.
+
+---
+
 ## 2026-09-08 - `ci-branches.yml`/`ci-fork-pr.yml` install `poriscope` itself, not just its dependencies
 
 **Context.** The `settings-schema` pre-commit hook (`scripts/check_plugin_schemas.py`) does a

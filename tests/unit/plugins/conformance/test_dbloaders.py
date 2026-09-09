@@ -13,6 +13,7 @@ here is inherited behaviour, which is exactly the kind of thing a subclass can b
 by accident.
 """
 
+import shutil
 from typing import List, Type
 
 import pandas as pd
@@ -44,6 +45,31 @@ def db_loader(request, metadata_db_path):
     """
     instance = build_db_loader(request.param, metadata_db_path)
     yield instance
+    instance.close_resources()
+
+
+@pytest.fixture(params=DB_LOADERS, ids=[cls.__name__ for cls in DB_LOADERS])
+def db_loader_over_own_copy(request, metadata_db_path, tmp_path):
+    """
+    Build the database loader under test over its own copy of the shared database.
+
+    A per-test copy, not ``metadata_db_path`` directly, so the leak check below
+    can safely unlink it without breaking every other test in this file that
+    still needs the shared one.
+
+    :param request: Pytest request, carrying the parametrised loader class.
+    :type request: pytest.FixtureRequest
+    :param metadata_db_path: Path to the shared synthetic metadata database.
+    :type metadata_db_path: str
+    :param tmp_path: Per-test temporary directory for the copy.
+    :type tmp_path: pathlib.Path
+    :return: The database loader and the path of its own database copy.
+    :rtype: tuple
+    """
+    db_copy = tmp_path / "metadata.sqlite3"
+    shutil.copy(metadata_db_path, db_copy)
+    instance = build_db_loader(request.param, str(db_copy))
+    yield instance, db_copy
     instance.close_resources()
 
 
@@ -173,6 +199,28 @@ def test_reset_and_close_are_safe(db_loader: MetaDatabaseLoader) -> None:
     assert db_loader.get_experiment_names(), "reset_channel left the loader unusable"
     db_loader.close_resources()
     db_loader.close_resources()
+
+
+@pytest.mark.conformance
+def test_db_loader_releases_its_input_file(db_loader_over_own_copy) -> None:
+    """
+    ``close_resources`` lets go of the input database file.
+
+    Unlike a reader's memmap, a loader's SQLite connection is not something
+    Python's garbage collector reclaims for free - this checks that
+    ``close_resources`` actually closes it, immediately, not eventually.
+    On Windows an open handle blocks ``os.unlink``, so this is a real leak
+    check rather than a formality.
+
+    :param db_loader_over_own_copy: The loader and the path to its own database copy.
+    :type db_loader_over_own_copy: tuple
+    """
+    db_loader, db_copy = db_loader_over_own_copy
+    db_loader.close_resources()
+    try:
+        db_copy.unlink()
+    except PermissionError as exc:
+        pytest.fail(f"input file still locked after close_resources: {exc}")
 
 
 @pytest.mark.conformance

@@ -640,10 +640,14 @@ All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`; see
 `changelog.md`. Still open:
 - No fixture knob for the CUSUM family's planted *sublevel* count in `_recipes.py`
   (fitters are only checked against a known *event* count).
-- `test_writers.py`'s `os.unlink`-after-`close_resources()` leak check covers writers
-  only, not readers' `numpy.memmap` or loaders' SQLite connections.
 - `PeakFinder` stays skipped (`FITTERS_SKIPPED` in `_recipes.py`): needs a two-level
   signal fixture, not a tuning fix.
+- **Possibly worth revisiting: `MetaReader.close_resources()` relies on GC rather than
+  explicitly releasing its memmap** - see `DECISIONS.md` (2026-09-09) for why the reader
+  leak check was scoped to that weaker, currently-documented contract rather than the
+  stronger one loaders already meet. Touches the base class's docstring contract (every
+  future reader, not just these 7) and `poriscope/utils/`/`poriscope/plugins/datareaders/`
+  are both `@shadowk29`-owned - consult before implementing, not a unilateral change.
 
 ## 3. Contribution scaffold: the analysis-tab half
 
@@ -721,7 +725,4 @@ per-format layering, not per-reader duplication.
 
 **Notes from scoping (2026-08-31).** Exception types vary by format on a 0-byte file
 (`ValueError` for Chimera/BinaryReader1X, `struct.error` for ABF2) - inconsistent but
-none hang. On Windows, `close_resources()` does not reliably release the reader's
-`numpy.memmap` handle immediately; rewriting the same path right after raised
-`PermissionError` until GC ran - relevant if a reader is ever added to block 1's
-writer-only leak check.
+none hang.

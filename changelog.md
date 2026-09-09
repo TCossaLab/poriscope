@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The behavioural conformance suite's resource-leak check is extended to readers and loaders, not just writers
+
 * **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
 
 * Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite
