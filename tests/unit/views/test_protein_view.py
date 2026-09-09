@@ -804,6 +804,7 @@ class TestStateSetters:
         mock_view.set_event_query("")
         assert mock_view.event_query == ""
 
+
 # ===========================================================================
 # _handle_other_actions
 # ===========================================================================
