@@ -23,7 +23,7 @@ against this same synthetic signal.
 """
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Type
+from typing import Any, Callable, Dict, List, Tuple, Type
 
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
@@ -712,6 +712,97 @@ READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
 READER_EXTRA_SETTINGS: Dict[str, Callable[[SyntheticDataset], Dict[str, Any]]] = {
     "SingleBinaryDecoder": lambda dataset: {"Sampling Rate": dataset.samplerate},
 }
+
+
+# ===========================================================================
+# Malformed-input mutations, for the reader fuzz suite
+# ===========================================================================
+#
+# Deterministic, not open-ended fuzzing, to avoid flaky CI. Each mutation
+# rewrites a real, already-written dataset in place; the caller is
+# responsible for building a fresh per-test copy first (mutations destroy
+# the file, and READER_DATASET_BUILDERS' writers are not re-run per mutation).
+
+
+def _truncate_to_zero(dataset: SyntheticDataset) -> None:
+    """Empty the data file entirely."""
+    dataset.data_path.write_bytes(b"")
+
+
+def _truncate_short(dataset: SyntheticDataset) -> None:
+    """Cut the data file down to 3 bytes - shorter than any format's own header."""
+    data = dataset.data_path.read_bytes()
+    dataset.data_path.write_bytes(data[: min(3, len(data))])
+
+
+def _truncate_mid_payload(dataset: SyntheticDataset) -> None:
+    """Cut the data file to half its original length."""
+    data = dataset.data_path.read_bytes()
+    dataset.data_path.write_bytes(data[: len(data) // 2])
+
+
+def _zero_middle_section(dataset: SyntheticDataset) -> None:
+    """Overwrite a middle slice of the data file with zero bytes, length unchanged."""
+    data = bytearray(dataset.data_path.read_bytes())
+    span = max(1, len(data) // 10)
+    start = max(0, len(data) // 2 - span // 2)
+    end = min(len(data), start + span)
+    data[start:end] = b"\x00" * (end - start)
+    dataset.data_path.write_bytes(bytes(data))
+
+
+def _flip_abf2_signature(dataset: SyntheticDataset) -> None:
+    """Corrupt the ``ABF2`` signature (bytes 0-3) both ABF2 formats share."""
+    data = bytearray(dataset.data_path.read_bytes())
+    data[0:4] = b"\x00\x00\x00\x00"
+    dataset.data_path.write_bytes(bytes(data))
+
+
+def _corrupt_end_header(dataset: SyntheticDataset) -> None:
+    """Corrupt the ``<END HEADER>`` marker the 2024-01 Chimera format embeds."""
+    data = dataset.data_path.read_bytes()
+    dataset.data_path.write_bytes(data.replace(b"<END HEADER>", b"<XXXX XXXXXX>"))
+
+
+def _delete_sidecar(dataset: SyntheticDataset) -> None:
+    """Remove the sidecar metadata file, leaving the primary data file intact."""
+    if dataset.metadata_path is not None:
+        dataset.metadata_path.unlink()
+
+
+def _truncate_sidecar_to_zero(dataset: SyntheticDataset) -> None:
+    """Empty the sidecar metadata file, leaving the primary data file intact."""
+    if dataset.metadata_path is not None:
+        dataset.metadata_path.write_bytes(b"")
+
+
+_SHARED_MUTATIONS: List[Tuple[str, Callable[[SyntheticDataset], None]]] = [
+    ("truncate_to_zero", _truncate_to_zero),
+    ("truncate_short", _truncate_short),
+    ("truncate_mid_payload", _truncate_mid_payload),
+    ("zero_middle_section", _zero_middle_section),
+]
+
+# Per-reader mutation lists: the shared set every format gets, plus
+# format-specific ones layered on top - not per-reader duplication. Only 3 of
+# the 7 formats have an in-band marker worth flipping (the two ABF2 readers'
+# signature, the 2024-01 Chimera embedded header); the two sidecar-based
+# formats (2024-05 Chimera, ChimeraVC100) get sidecar mutations instead, since
+# their "header" is the sidecar file, not anything in the data file itself.
+# BinaryReader1X and SingleBinaryDecoder have no in-band marker at all - a
+# fixed-format binary dump has nothing to flip - so they get the shared set
+# only.
+MUTATIONS: Dict[str, List[Tuple[str, Callable[[SyntheticDataset], None]]]] = {
+    name: list(_SHARED_MUTATIONS) for name in READER_DATASET_BUILDERS
+}
+for _reader_name in ("TCossaLabABFReader", "LegacyElementsReader"):
+    MUTATIONS[_reader_name].append(("flip_abf2_signature", _flip_abf2_signature))
+MUTATIONS["ChimeraReader20240101"].append(("corrupt_end_header", _corrupt_end_header))
+for _reader_name in ("ChimeraReader20240501", "ChimeraReaderVC100"):
+    MUTATIONS[_reader_name].append(("delete_sidecar", _delete_sidecar))
+    MUTATIONS[_reader_name].append(
+        ("truncate_sidecar_to_zero", _truncate_sidecar_to_zero)
+    )
 
 
 def build_reader_dataset(

@@ -6,6 +6,8 @@
 
 * `PeakFinder` is un-skipped in the behavioural conformance suite and passes all four checks, matching `Basic_PeakFinder`
 
+* New fuzz testing for every data reader against malformed input (truncated files, corrupted headers, missing sidecars) - none crash or hang uncaught
+
 * **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
 
 * Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite

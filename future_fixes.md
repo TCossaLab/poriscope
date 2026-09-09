@@ -628,11 +628,11 @@ owning developer.
 # Future Fix: Community-Contributed-Plugin Compliance Gate
 
 Designed as a set: a pipeline that lets a community-contributed plugin be verified as safe
-and correct to merge with a bounded amount of human review. Blocks 2, 6 and 8, and block 3
+and correct to merge with a bounded amount of human review. Blocks 2, 6, 7 and 8, and block 3
 for data plugins, are done and their sections are gone (block 8's "no custom lint rules"
 call is recorded in `DECISIONS.md`, 2026-09-01). What is left is **5** (free-standing),
-**4**, block 3's analysis-tab half, and **1** and **7**, which are pytest suites and so the
-test developer's.
+**4**, block 3's analysis-tab half, and **1**, which is a pytest suite and so the test
+developer's.
 
 ## 1. Behavioural conformance suite — remaining gaps
 
@@ -644,6 +644,17 @@ included (`FITTERS_SKIPPED` in `_recipes.py` is now empty); see `changelog.md`. 
   stronger one loaders already meet. Touches the base class's docstring contract (every
   future reader, not just these 7) and `poriscope/utils/`/`poriscope/plugins/datareaders/`
   are both `@shadowk29`-owned - consult before implementing, not a unilateral change.
+- **Worth asking `@shadowk29`: should readers converge on one exception type for
+  malformed input?** `tests/unit/plugins/conformance/test_reader_fuzz.py` measured that a
+  0-byte file alone already produces four different exception families depending on
+  reader/format - `ValueError` (most), `json.decoder.JSONDecodeError` (`ChimeraReader20240101`,
+  a `ValueError` subclass), `struct.error` (both ABF2 readers, *not* a `ValueError`
+  subclass) - and a missing sidecar file raises `FileNotFoundError` or `OSError`
+  depending on the reader. The fuzz suite deliberately does not enforce a type, since
+  that would be proposing a contract change, not testing one. Also worth confirming as
+  intentional rather than just observed: neither `ChimeraReader20240501` nor
+  `ChimeraReaderVC100` attempts to degrade gracefully when its sidecar file is missing
+  today - both raise cleanly instead.
 
 ## 3. Contribution scaffold: the analysis-tab half
 
@@ -702,22 +713,6 @@ past six - are in `DECISIONS.md` (2026-09-02); the contributor-facing version is
 
 **Gotcha.** `ci-fork-pr.yml`'s permissions are deliberately `contents: read`; do not add
 anything needing write access. That is `ci-internal-pr.yml`, which is not fork-safe.
-
-## 7. Fuzz / malformed-input testing for data readers — test developer
-
-**Goal.** Readers parse arbitrary externally-produced files; none of the current checks
-exercise one against anything but a well-formed synthetic file, so a malformed one
-(truncated, wrong magic bytes) can crash or hang instead of raising a caught exception.
-
-**Plan.** New `tests/unit/plugins/datareaders/test_reader_fuzz.py`, parametrized over
-`discover_concrete(MetaReader)`. Reuse `READER_DATASET_BUILDERS` (`_recipes.py`) and
-apply a small fixed set of deterministic mutations (truncate to 0 bytes / mid-payload,
-zero a middle section, flip the per-format header marker) rather than open-ended
-fuzzing, to avoid flaky CI. Assert in three tiers: construction never hangs or raises
-uncaught; a successful `get_channel_length()` must be deliverable via `load_data`
-exactly; over-requesting must raise (`MetaReader.load_data` now does, see
-`changelog.md`). Keep mutations in a `MUTATIONS` dict in `_recipes.py`, shared set plus
-per-format layering, not per-reader duplication.
 
 **Notes from scoping (2026-08-31).** Exception types vary by format on a 0-byte file
 (`ValueError` for Chimera/BinaryReader1X, `struct.error` for ABF2) - inconsistent but
