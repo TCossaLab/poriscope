@@ -1,3 +1,38 @@
+## Step 4a handoff, paused 2026-09-08
+
+**Where it stands.** The subset tabs are the last of 4a. Emits: **19** left across the
+family - `MetadataView` 6, `ProteinView` 12, `MetaSubsetTabView` 1. Started the session at
+34.
+
+Landed, in order: `39a8f74e` `get_selected_filters` + the `_subset_controls` property ·
+`7ae7a2f8` `_rebuild_event_id_cache` · `7d6e67be` both filter dialogs · `34e46886`
+`_load_filter` · `967efecc` five more methods `_subset_controls` unlocked · `f27d0a58`
+`relay_query` to the Controller · `de13e2eb` the filter-validation round trips · `32b3bc34`
+`_overlay_plot` and the applied-query display.
+
+**Manual passes:** metadata and protein both green after `34e46886`. **Nothing since
+`967efecc` has been checked on Windows** - that is five commits, including the two that
+change what the status panel shows.
+
+**Next, in order:**
+
+1. **Metadata's remainder, 6 emits.** `_handle_plot_events` (4), `_export_csv_subset` (1,
+   the one `set_generator` shape in this tab), `handle_parameter_change` (1). Note
+   `_handle_plot_events` still carries its own `"No filtered events found"` string, which no
+   longer matches the promoted `_rebuild_event_id_cache`'s "...for the current scope." -
+   align them here.
+2. **Protein's remainder, 12 emits.** `_commit_fits` (3), `_resolve_event_db_ids` (2),
+   `_build_load_event_data_args` (2), `_fetch_event_data` (1),
+   `_update_distribution_individual` (2), `_update_distribution_ensemble` (2). The last is
+   `@register_action`'s twin of the one before it, which Step 7 flags for saved-action
+   replay. `_build_load_event_data_args` is where the queued raw-filter gap is fixed.
+3. **The last emit on the base.** `_rebuild_event_id_cache`'s `load_metadata` is an
+   emit-then-read whose callers branch on its `bool`, so it can only be converted once
+   `_handle_plot_events` and `_shift_range_and_update_plot` are restructured - i.e. after 1
+   and 2, not before.
+
+**Then 4a is done** and the `global_signal` bus has no callers left in the analysis tabs.
+
 # Poriscope 2.0.0 Refactor Plan
 
 Approved 2026-09-03. **Step 0 and the whole of Step 1 (Tiers A, B2 and C) landed
