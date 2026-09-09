@@ -10,6 +10,40 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - The Controller picks the filter-validation columns, and asks for events only
+
+**Context.** Step 4a's conversion of the two filter-validation round trips had to decide
+where the columns for the throwaway validation query come from. Kyle noticed that a filter
+as simple as `duration < 300` was validated against a query joining all three metadata
+tables, and asked whether removing the hardcoding was the fix.
+
+**Decision.** The Controller resolves them, by asking the loader for its **events** columns
+and passing one. `MetaSubsetTabView._validation_columns` is **deleted**, and with it both
+halves of the queued defect: the hardcoded triple and Metadata never filling
+`available_columns`.
+
+**Evidence.** Removing the hardcoding alone was not enough. The obvious replacement,
+Protein's `available_columns[:3]`, is the *all-tables* column list, so its first three are
+whichever columns the writer inserted first - measured as 0 joins today only because
+`SQLiteDBWriter` happens to insert events, then sublevels, then experiments, and because
+`SELECT name FROM columns` has no `ORDER BY`. Neither is a guarantee. Asking for
+`get_column_names_by_table("events")` is deterministic regardless of insertion order, costs
+one extra 0.15 ms lookup, and is less code in total. Measured join counts for one events
+column: **0** for `duration < 300`, **0** with no conditions, **1** for a filter that really
+does reference sublevels or experiments - against **2 in every case** for the triple.
+`["event_id"]` is not a usable single column: it is in `construct_metadata_query`'s
+`redundant_cols` and `get_table_by_column` returns None for it, so the obvious first attempt
+raises.
+
+**A silent failure the conversion turns into a reported one.** `construct_metadata_query`
+*raises* `ValueError` for a column it cannot map, and the bus's `_dispatch_to` swallowed
+every exception - so a filter naming a column the database does not have vanished with only
+a log line, on both tabs. `validate_filter` catches and reports it, and clears the pending
+filter state, without which the next validation to succeed would commit the refused name.
+
+**Revisit if** a filter needs validating against a column outside `events`, which would
+make one events column insufficient rather than merely minimal.
+
 ## 2026-09-08 - `relay_query` is promoted, and the reason recorded against it was false
 
 **Context.** `MetaSubsetTabController`'s own class docstring listed `relay_query` under

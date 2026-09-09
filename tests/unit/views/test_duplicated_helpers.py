@@ -44,9 +44,11 @@ Eight groups:
   the throwaway validation query is built from, and whether an invalid raw filter is
   reported in a modal or on the status panel. **Step 4a promoted both to**
   ``MetaSubsetTabView``, taking Metadata's modal by the user's choice and Protein's
-  columns handling, each behind a named helper. The per-tab tests cover the modal;
-  what is pinned here is the column selection, whose fallback branch is the only one
-  the metadata tab can currently take.
+  columns handling, each behind a named helper. The per-tab tests cover the modal, and
+  the column selection is no longer here at all: Step 4a's conversion moved it to
+  ``MetaSubsetTabController.validate_filter``, which asks the loader for its *events*
+  columns instead of guessing three, so ``_validation_columns`` and the tests that
+  pinned its fallback are gone.
 - ``_load_filter`` existed twice and diverged once: only ``ProteinView`` let a filter
   whose name ends in ``_raw`` skip validation. **Step 4a promoted Protein's**, which
   fixes the metadata tab rather than merging it - see the group below for the measured
@@ -715,63 +717,6 @@ class TestFilterDialogsWerePromoted:
         assert "show_edit_filter_dialog" not in MetaSubsetTabView.__abstractmethods__
         assert MetaSubsetTabView.__abstractmethods__ == ABSTRACT_MEMBERS
 
-    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_validation_columns_prefers_the_database_s_own_columns(
-        self, qapp: object, view_cls: type
-    ) -> None:
-        """
-        ProteinView's behaviour, promoted: validate against columns that exist.
-
-        ``construct_metadata_query`` only has to *build* for the filter to count as
-        valid, so three columns the database actually has beat a fixed guess - a
-        wrong guess rejects a filter that was fine.
-        """
-        view = build_subset_tab(view_cls)
-        view.available_columns = ["dwell", "amplitude", "baseline", "ignored"]
-
-        assert view._validation_columns() == ["dwell", "amplitude", "baseline"]
-
-    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_validation_columns_falls_back_to_the_fixed_triple(
-        self, qapp: object, view_cls: type
-    ) -> None:
-        """
-        The branch the metadata tab always takes today.
-
-        Only ``ProteinView`` fills ``available_columns``; ``MetadataView``'s
-        ``update_column_names`` updates its axis comboboxes and stores nothing, so
-        the metadata tab still validates against the fixed triple. That is a
-        one-line follow-up queued in ``future_fixes.md``, and this test is what it
-        should flip.
-        """
-        view = build_subset_tab(view_cls)
-        view.available_columns = []
-
-        assert view._validation_columns() == [
-            "sublevel_current",
-            "voltage",
-            "duration",
-        ]
-
-    def test_the_metadata_tab_still_has_no_columns_to_offer(self, qapp: object) -> None:
-        """
-        Pins the gap itself, not just the fallback it causes.
-
-        Asserted through ``update_column_names`` rather than by reading the
-        attribute, so that filling it there - which is the queued fix - is what
-        makes this test fail.
-        """
-        view = build_subset_tab(MetadataView)
-        view.metadatacontrols.update_axes = MagicMock()
-
-        view.update_column_names(["dwell", "amplitude", "baseline"])
-
-        assert view._validation_columns() == [
-            "sublevel_current",
-            "voltage",
-            "duration",
-        ]
-
 
 # ===========================================================================
 # _load_filter - two copies, one of them missing the raw bypass
@@ -865,13 +810,14 @@ class TestLoadFilterWasPromoted:
             staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
         )
 
+        emitted: list = []
+        view.filter_validation_requested.connect(lambda *args: emitted.append(args))
+
         view._load_filter({"db_loader": "a_loader"})
 
         assert view.subset_filters == {}
-        view.global_signal.emit.assert_called_once()
-        emitted = view.global_signal.emit.call_args[0]
-        assert emitted[2] == "construct_metadata_query"
-        assert emitted[3][1] == "dwell > 5"
+        assert emitted == [("a_loader", "dwell > 5", "validate_new_filter")]
+        view.global_signal.emit.assert_not_called()
         assert view._pending_filter_name == "long_events"
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)

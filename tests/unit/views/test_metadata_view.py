@@ -92,6 +92,12 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock methods called by _overlay_plot
     view_instance.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view_instance.global_signal = mocker.Mock()
+    # The two Step 4a validation intents. Stood in for the same reason global_signal
+    # is: this fixture builds the view with __new__ and a patched MetaView.__init__,
+    # so no QObject exists behind it and emitting a real Signal raises "Signal source
+    # has been deleted".
+    view_instance.filter_validation_requested = mocker.Mock()
+    view_instance.raw_filter_validation_requested = mocker.Mock()
 
     # Additional mocks needed before _init()
     view_instance._commit_cache = mocker.Mock()
@@ -3315,7 +3321,9 @@ def test_load_filter_validates_with_loader_when_provided(
     parameters = {"db_loader": "test_loader"}
     view._load_filter(parameters)
 
-    view.global_signal.emit.assert_called()
+    view.filter_validation_requested.emit.assert_called_once_with(
+        "test_loader", "WHERE x > 1", "validate_new_filter"
+    )
 
 
 def test_load_filter_adds_filter_directly_when_no_loader(
@@ -4699,13 +4707,14 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     mock_dialog.filter_text = "WHERE duration > 100"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-
     view._show_add_filter_dialog({"db_loader": "test_loader"})
 
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[2] == "construct_metadata_query"
+    # Step 4a: the Controller makes the construct_metadata_query call now, and picks
+    # the columns to validate against, so the View's half is the intent alone.
+    view.filter_validation_requested.emit.assert_called_once_with(
+        "test_loader", "WHERE duration > 100", "validate_new_filter"
+    )
+    view.global_signal.emit.assert_not_called()
 
 
 def test_show_add_filter_dialog_returns_when_no_loader(
@@ -4844,11 +4853,11 @@ def test_show_edit_filter_dialog_validates_on_accept(
     mock_dialog.new_filter = "WHERE x > 10"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-
     view.show_edit_filter_dialog("Filter1", "test_loader")
 
-    view.global_signal.emit.assert_called_once()
+    view.filter_validation_requested.emit.assert_called_once_with(
+        "test_loader", "WHERE x > 10", "validate_edited_filter"
+    )
 
 
 def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
@@ -4865,7 +4874,6 @@ def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
     mock_dialog.new_filter = "WHERE x > 10"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
 
     view.show_edit_filter_dialog("Filter1", "test_loader")
 

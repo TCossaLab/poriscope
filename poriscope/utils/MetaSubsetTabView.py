@@ -69,7 +69,7 @@ class MetaSubsetTabView(MetaView):
       filters in ``subset_filters`` and the three pending fields the Controller reads
       back after a validation round-trip. ``_show_add_filter_dialog`` and
       ``show_edit_filter_dialog`` open the two filter dialogs and validate what they
-      return, through ``_validation_columns`` and ``_reject_non_select_raw_filter``;
+      return, through ``_reject_non_select_raw_filter`` and the Controller;
       ``_save_filter`` and ``_load_filter`` write them to and read them back from a
       JSON file.
     - **Experiment selection.** ``show_selection_tree`` and
@@ -110,6 +110,23 @@ class MetaSubsetTabView(MetaView):
     #: key is carried so the answer can be filed under it, which is what the bus used
     #: its ``ret_args`` for.
     experiment_structure_requested = Signal(str)
+
+    #: Asks the Controller to validate an assisted subset filter: the loader's key,
+    #: the filter expression, and which intent the answer serves
+    #: (``validate_new_filter`` or ``validate_edited_filter``). Step 4a replaced a
+    #: ``global_signal`` emit whose answer came back through ``relay_query``; the
+    #: Controller now calls the loader directly and invokes ``relay_query`` itself, so
+    #: a filter naming a column the database does not have is *reported* rather than
+    #: swallowed by the dispatcher.
+    #:
+    #: The columns the throwaway validation query selects are resolved by the
+    #: Controller, not carried here - see ``MetaSubsetTabController.validate_filter``.
+    filter_validation_requested = Signal(str, str, str)
+
+    #: The same for a raw filter, which is a complete SELECT the loader checks with
+    #: ``validate_filter_query`` rather than building a query around. The answer
+    #: arrives through ``on_raw_filter_validated``.
+    raw_filter_validation_requested = Signal(str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -406,13 +423,8 @@ class MetaSubsetTabView(MetaView):
                 # Read back by relay_query once the round-trip returns.
                 self._pending_filter_name = name
                 self._pending_filter_text = filter_text
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "construct_metadata_query",
-                    (self._validation_columns(), filter_text, None),
-                    "relay_query",
-                    ("validate_new_filter",),
+                self.filter_validation_requested.emit(
+                    loader, filter_text, "validate_new_filter"
                 )
             else:
                 self.subset_filters[name] = filter_text
@@ -421,29 +433,6 @@ class MetaSubsetTabView(MetaView):
 
         combo.refreshDisplayText()
         self.logger.info(f"Filters loaded from {path}")
-
-    @log(logger=logger)
-    def _validation_columns(self) -> List[str]:
-        """
-        Three columns to build the throwaway query that validates a filter.
-
-        ``construct_metadata_query`` needs a column list to build a query with, and
-        the filter dialogs only want to know whether the query *builds* - the query
-        itself is discarded. Columns the database actually has are therefore better
-        than a fixed guess, since a filter is otherwise rejected because the guess
-        was wrong rather than because the filter was.
-
-        Promoted with ``ProteinView``'s behaviour: only that tab fills
-        ``available_columns``, so the metadata tab still falls back to the fixed
-        triple until it does too. ``future_fixes.md`` carries that.
-
-        :return: up to three column names to validate against
-        :rtype: List[str]
-        """
-        available = getattr(self, "available_columns", None)
-        if available:
-            return list(available[:3])
-        return ["sublevel_current", "voltage", "duration"]
 
     @log(logger=logger)
     def _reject_non_select_raw_filter(self, filter_text: str) -> bool:
@@ -478,8 +467,9 @@ class MetaSubsetTabView(MetaView):
 
         Promoted from both subset tabs in Step 4a. The copies diverged twice, in
         the same two places as ``show_edit_filter_dialog``: the columns the
-        validation query is built from, now ``_validation_columns``, and how an
-        invalid raw filter is reported, now ``_reject_non_select_raw_filter``.
+        validation query is built from, which the same step moved to the Controller
+        along with the call itself, and how an invalid raw filter is reported, now
+        ``_reject_non_select_raw_filter``.
 
         :param parameters: Dictionary with 'db_loader'.
         :type parameters: dict
@@ -527,25 +517,15 @@ class MetaSubsetTabView(MetaView):
                     return
                 name = f"{name}_raw" if not name.endswith("_raw") else name
                 self._pending_filter_name = name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
+                self.raw_filter_validation_requested.emit(
+                    loader, filter_text.strip().rstrip(";") + " LIMIT 0"
                 )
                 return
 
             self._show_sql_in_display = True
 
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (self._validation_columns(), filter_text, None),
-                "relay_query",
-                ("validate_new_filter",),
+            self.filter_validation_requested.emit(
+                loader, filter_text, "validate_new_filter"
             )
 
     @log(logger=logger)
@@ -596,24 +576,14 @@ class MetaSubsetTabView(MetaView):
                     f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
                 )
                 self._pending_filter_name = new_name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
+                self.raw_filter_validation_requested.emit(
+                    loader, new_filter.strip().rstrip(";") + " LIMIT 0"
                 )
                 return
 
             self._show_sql_in_display = True
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (self._validation_columns(), new_filter, None),
-                "relay_query",
-                ("validate_edited_filter",),
+            self.filter_validation_requested.emit(
+                loader, new_filter, "validate_edited_filter"
             )
 
     @log(logger=logger)

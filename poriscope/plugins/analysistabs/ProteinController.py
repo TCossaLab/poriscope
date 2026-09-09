@@ -63,8 +63,8 @@ class ProteinController(MetaSubsetTabController):
         """
         Connect internal view signals to their corresponding controller slots.
 
-        This tab adds none of its own yet; the two the subset base wires are the whole
-        of it.
+        This tab adds none of its own yet; the four the subset base wires are the
+        whole of it.
 
         :return: None
         :rtype: None

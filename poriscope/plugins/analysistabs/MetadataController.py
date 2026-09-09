@@ -61,7 +61,7 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own intent on top of the two the subset base wires.
+        Wire this tab's own intent on top of the four the subset base wires.
 
         :return: None
         :rtype: None

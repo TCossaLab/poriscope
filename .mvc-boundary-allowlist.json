@@ -2,7 +2,7 @@
   "emits": {
     "poriscope/plugins/analysistabs/MetadataView.py": 11,
     "poriscope/plugins/analysistabs/ProteinView.py": 12,
-    "poriscope/utils/MetaSubsetTabView.py": 6
+    "poriscope/utils/MetaSubsetTabView.py": 1
   },
   "imports": {
     "poriscope/plugins/analysistabs/ClusteringView.py": [

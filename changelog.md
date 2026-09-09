@@ -14,6 +14,10 @@
 
 * The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
 
+* **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
+
+* Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone
+
 * `relay_query` is now provided by `MetaSubsetTabController` instead of being implemented separately by each subset tab
 
 * `_delete_filter` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it

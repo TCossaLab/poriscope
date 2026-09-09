@@ -32,6 +32,16 @@ codebase. Measured: `construct_metadata_query` does not refuse a complete SELECT
 `conditions` - it splices it in after `WHERE` and returns an empty debug message - so the
 failure is silent. Step 4a's commit 6 moves Protein's branch; sharing it is the fix.
 
+## The Metadata tab has no downstream handling for raw SQL filters (2026-09-08)
+
+It can create, save and load them, but every plotting path takes
+`next(iter(selected_filters.values()))` and passes it as a WHERE-clause body -
+`MetadataView.py:2028` into `_rebuild_event_id_cache`, and the same at `:1197` and `:2060`.
+`ProteinView._build_load_event_data_args:1766` is the only `endswith("_raw")` branch in the
+codebase. Measured: `construct_metadata_query` does not refuse a complete SELECT passed as
+`conditions` - it splices it in after `WHERE` and returns an empty debug message - so the
+failure is silent. Step 4a's commit 6 moves Protein's branch; sharing it is the fix.
+
 ## `_validation_columns`' fallback triple is wrong twice over (2026-09-08)
 
 `MetaSubsetTabView._validation_columns` falls back to

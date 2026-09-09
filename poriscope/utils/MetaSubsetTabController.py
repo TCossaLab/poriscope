@@ -54,7 +54,11 @@ class MetaSubsetTabController(MetaController):
       update_column_names, update_column_units,
       get_experiment_structure_ready and get_experiment_names_for_tree
       forward the loader's description of the database to the View.
-    - **Filter validation.** relay_query receives the query the loader built - or
+    - **Filter validation.** validate_filter and validate_raw_filter answer the
+      View's two validation intents by calling the loader directly, which is what
+      Step 4a replaced a signal-bus round trip with; a failure the bus used to
+      swallow is reported through _refuse_filter.
+      relay_query receives the query the loader built - or
       the debug message explaining why it could not - and commits, renames or refuses
       the pending filter accordingly. Promoted in Step 4a: this base's own docstring
       had recorded it as unshareable because "the two tabs' copies differ", and they
@@ -157,7 +161,7 @@ class MetaSubsetTabController(MetaController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire the two lookups both subset tabs share.
+        Wire the four lookups both subset tabs share.
 
         Step 4a. A subclass with intents of its own overrides this and calls
         ``super()._setup_connections()`` first, so the shared pair is wired once here
@@ -170,6 +174,8 @@ class MetaSubsetTabController(MetaController):
         self.view.experiment_structure_requested.connect(
             self.request_experiment_structure
         )
+        self.view.filter_validation_requested.connect(self.validate_filter)
+        self.view.raw_filter_validation_requested.connect(self.validate_raw_filter)
 
     @log(logger=logger)
     @Slot(str)
@@ -301,6 +307,122 @@ class MetaSubsetTabController(MetaController):
         self.view.selected_experiment_and_channels_by_loader[loader_name] = (
             str_structure.copy()
         )
+
+    @log(logger=logger)
+    @Slot(str, str, str)
+    def validate_filter(self, loader: str, filter_text: str, intent: str) -> None:
+        """
+        Validate an assisted subset filter by asking the loader to build a query.
+
+        A filter counts as valid if ``construct_metadata_query`` can *build* a query
+        around it; the query itself is thrown away. Step 4a converted the emit that
+        used to do this, and the conversion matters twice over. The bus swallowed
+        every exception, and ``construct_metadata_query`` **raises** for a column it
+        cannot map to a table - so a filter naming a column the database does not
+        have used to vanish with nothing but a log line. It is reported now.
+
+        The columns are resolved here rather than passed in by the View, and only
+        ``events`` columns are asked for. The View used to hand over a hardcoded
+        ``["sublevel_current", "voltage", "duration"]`` - one column from each of the
+        three tables, which forced the built query to join all three every time, even
+        for a filter with no conditions at all. One events column yields exactly the
+        joins the filter itself needs: none for ``duration < 300``, one for a filter
+        that really does reference sublevels or experiments.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param filter_text: the filter expression to validate, without WHERE
+        :type filter_text: str
+        :param intent: ``validate_new_filter`` or ``validate_edited_filter``, passed
+            through to ``relay_query`` to say what to do with the answer
+        :type intent: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            columns = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_names_by_table", "events"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to read the events columns of {loader}: {e!r}")
+            self._refuse_filter(f"Unable to read the columns of {loader}: {e}")
+            return
+
+        if not columns:
+            # Nothing to build a query around, so nothing can be validated. Refusing
+            # is the honest answer: the hardcoded triple this replaces would have
+            # "validated" against three columns that may not exist either.
+            self.logger.error(f"{loader} reported no columns in its events table")
+            self._refuse_filter(
+                f"{loader} reports no columns in its events table, so the filter "
+                "cannot be validated"
+            )
+            return
+
+        try:
+            query, debug, table_name = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                columns[:1],
+                filter_text,
+                None,
+            )
+        except Exception as e:
+            # Previously swallowed by the dispatcher. ValueError for an unmappable
+            # column, KeyError for an unknown experiment name.
+            self.logger.error(f"Failed to validate filter {filter_text!r}: {e!r}")
+            self._refuse_filter(f"The filter could not be validated: {e}")
+            return
+
+        self.relay_query(query, debug, table_name, intent)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def validate_raw_filter(self, loader: str, query: str) -> None:
+        """
+        Validate a raw subset filter, which the loader checks without building.
+
+        A raw filter is a complete SELECT the loader runs verbatim, so it is checked
+        with ``validate_filter_query`` rather than by constructing a query around it.
+        Step 4a converted the emit; as with the assisted path, a failure that the bus
+        swallowed now reaches the user.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param query: the raw filter, already suffixed with LIMIT 0 by the View
+        :type query: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            valid, error_msg = self.model.call(
+                "MetaDatabaseLoader", loader, "validate_filter_query", query
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to validate raw filter {query!r}: {e!r}")
+            self.view.on_raw_filter_validated(False, str(e))
+            return
+
+        self.view.on_raw_filter_validated(valid, error_msg)
+
+    @log(logger=logger)
+    def _refuse_filter(self, message: str) -> None:
+        """
+        Report why a filter could not be validated, and drop the pending state.
+
+        Both halves matter: without the clear, the refused name and text stay parked
+        on the View and the next validation to succeed would commit them under the
+        wrong name. ``relay_query`` does the same on its own failure path, which is
+        the shape this follows.
+
+        :param message: what to tell the user
+        :type message: str
+        :return: None
+        :rtype: None
+        """
+        self.add_text_to_display.emit(message, self.__class__.__name__)
+        self.view.clear_pending_filter_state()
 
     @log(logger=logger)
     def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:

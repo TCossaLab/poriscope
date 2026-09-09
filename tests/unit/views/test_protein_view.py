@@ -2041,17 +2041,25 @@ class TestShowAddFilterDialog:
             mock_view._show_add_filter_dialog({"db_loader": None})
         mock_view.global_signal.emit.assert_not_called()
 
-    def test_assisted_filter_emits_construct_metadata_query(self, mock_view):
+    def test_assisted_filter_asks_the_controller_to_validate(self, mock_view):
+        """
+        Renamed: Step 4a replaced the construct_metadata_query emit with an intent.
+
+        The Controller makes that call now, and chooses the columns to validate
+        against, so what this tab does is state the intent.
+        """
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
+        mock_view.filter_validation_requested = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True, is_raw=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_called_once()
-        call_args = mock_view.global_signal.emit.call_args[0]
-        assert call_args[2] == "construct_metadata_query"
+        mock_view.filter_validation_requested.emit.assert_called_once_with(
+            "ldr", "dur>1", "validate_new_filter"
+        )
+        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_requires_select_statement(self, mock_view, monkeypatch):
         """
@@ -2079,6 +2087,7 @@ class TestShowAddFilterDialog:
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
+        mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
@@ -2090,9 +2099,10 @@ class TestShowAddFilterDialog:
             ),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_called_once()
-        call_args = mock_view.global_signal.emit.call_args[0]
-        assert call_args[2] == "validate_filter_query"
+        mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
+            "ldr", "SELECT * FROM events LIMIT 0"
+        )
+        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_appends_raw_suffix(self, mock_view):
         mock_view._walkthrough_active = False
@@ -2161,19 +2171,27 @@ class TestShowEditFilterDialog:
             mock_view.show_edit_filter_dialog("f1", None)
         mock_view.global_signal.emit.assert_not_called()
 
-    def test_assisted_edit_emits_construct_metadata_query(self, mock_view):
+    def test_assisted_edit_asks_the_controller_to_validate(self, mock_view):
+        """
+        Renamed: Step 4a replaced the construct_metadata_query emit with an intent.
+
+        The edited filter carries validate_edited_filter rather than
+        validate_new_filter, which is what tells relay_query to replace the old name
+        instead of adding a second entry.
+        """
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
+        mock_view.filter_validation_requested = MagicMock()
         dialog = self._mock_dialog(accepted=True, is_raw=False)
         with patch(
             "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=dialog,
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_called_once()
-        assert (
-            mock_view.global_signal.emit.call_args[0][2] == "construct_metadata_query"
+        mock_view.filter_validation_requested.emit.assert_called_once_with(
+            "ldr", dialog.new_filter, "validate_edited_filter"
         )
+        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_edit_requires_select(self, mock_view, monkeypatch):
         """Modal rather than status panel, for the reason above."""
@@ -2194,6 +2212,7 @@ class TestShowEditFilterDialog:
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
+        mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
@@ -2204,8 +2223,10 @@ class TestShowEditFilterDialog:
             ),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_called_once()
-        assert mock_view.global_signal.emit.call_args[0][2] == "validate_filter_query"
+        mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
+            "ldr", "SELECT * FROM events LIMIT 0"
+        )
+        mock_view.global_signal.emit.assert_not_called()
 
     def test_pending_old_filter_name_set(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
