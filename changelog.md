@@ -12,6 +12,10 @@
 
 * **Fixed the Metadata tab renaming a raw SQL filter when it was loaded from a file**: the filter came back as `<name>_raw_assisted` and was treated as an assisted filter from then on, rather than as the raw filter that was saved
 
+* The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
+
+* `_delete_filter` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
+
 * The Protein tab now reports a raw SQL filter that is not a complete SELECT statement in a dialog rather than on the status panel, matching the Metadata tab - the filter dialog has just closed at that point, so a status line was easy to miss
 
 * `show_edit_filter_dialog` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it

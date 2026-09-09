@@ -40,7 +40,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pytest  # noqa: E402
 from PySide6.QtCore import QCoreApplication, QEvent  # noqa: E402
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from tests.unit._dialog_guard import prevent_blocking_dialogs  # noqa: E402
 
 # A full gc.collect() walks every generation, including the long-lived one holding
 # PySide6, numpy, pandas, sklearn and matplotlib. That traversal cost 129 ms per test
@@ -63,33 +65,15 @@ def _prevent_blocking_dialogs(monkeypatch):
     Auto-applied to every test in this directory: makes any modal dialog
     return immediately instead of opening a real blocking event loop.
 
+    The patches themselves live in ``tests/unit/_dialog_guard``, because
+    ``tests/unit/controllers`` needs exactly the same set - see that module for
+    why they are not installed globally instead.
+
     If a test specifically wants to assert dialog *content* (e.g. the text
     in a QMessageBox), prefer pytest-qt's qtbot + monkeypatching the
     specific dialog class in that test instead of relying on this default.
     """
-    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
-    monkeypatch.setattr(QDialog, "exec_", lambda self: QDialog.DialogCode.Accepted)
-    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(
-        QMessageBox, "exec_", lambda self: QMessageBox.StandardButton.Ok
-    )
-    # The *static* helpers block too, and patching only exec/exec_ did not cover them:
-    # QMessageBox.question() opens its own event loop without going through either. The
-    # gap was invisible until a confirmation was added on a path these tests drive, and
-    # the symptom is a hung test rather than a failing one. `question` answers Yes so a
-    # confirmation reads as "the user agreed"; a test that wants the No branch patches it
-    # itself, as the note above says.
-    monkeypatch.setattr(
-        QMessageBox,
-        "question",
-        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
-    )
-    for _static in ("warning", "information", "critical"):
-        monkeypatch.setattr(
-            QMessageBox,
-            _static,
-            staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok),
-        )
+    prevent_blocking_dialogs(monkeypatch)
 
 
 @pytest.fixture(autouse=True)

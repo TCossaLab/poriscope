@@ -1324,12 +1324,20 @@ class TestOnRawFilterValidated:
         mock_view.on_raw_filter_validated(False, "syntax error")
         assert mock_view._pending_filter_name is None
 
-    def test_invalid_emits_message(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+    def test_invalid_shows_warning(self, mock_view, monkeypatch):
+        """
+        Renamed from test_invalid_emits_message: it is a modal now, not a message.
+
+        Step 4a promoted on_raw_filter_validated to MetaSubsetTabView taking
+        Metadata's QMessageBox over this tab's status-panel line, so that a rejected
+        raw filter reads the same on both tabs.
+        """
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         self._setup(mock_view)
         mock_view.on_raw_filter_validated(False, "syntax error")
-        assert any("syntax error" in m for m in received)
+        warned.assert_called_once()
+        assert "syntax error" in warned.call_args[0][2]
 
     def test_valid_add_path(self, mock_view):
         self._setup(mock_view)

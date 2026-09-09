@@ -5364,7 +5364,7 @@ class TestOnRawFilterValidated:
         view._pending_filter_text = "SELECT * FROM events"
         view._pending_old_filter_name = None
         mock_warn = mocker.patch(
-            "poriscope.plugins.analysistabs.MetadataView.QMessageBox.warning"
+            "poriscope.utils.MetaSubsetTabView.QMessageBox.warning"
         )
         view.on_raw_filter_validated(False, "syntax error")
         mock_warn.assert_called_once()

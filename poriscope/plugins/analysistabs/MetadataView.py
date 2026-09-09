@@ -52,7 +52,6 @@ from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
-    QCheckBox,
     QMessageBox,
 )
 from scipy import stats
@@ -134,7 +133,7 @@ class MetadataView(MetaSubsetTabView):
         # back by the emitter on the next statement. Declared here so the type is
         # stated once and the callers' cleared-before-emit assignment type-checks.
         self.relayed_experiment_id: Optional[int] = None
-        self.relayed_query_result: Optional[pd.DataFrame] = None
+        self.relayed_query_result = None
         # Heterogeneous by design: the histogram paths append 1-D arrays, the
         # density path appends whole DataFrames, and the all-points path appends
         # (x, y) tuples. Flagged for review.
@@ -2227,20 +2226,6 @@ class MetadataView(MetaSubsetTabView):
         self.plot_events_generator = generator
 
     @log(logger=logger)
-    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
-        """
-        A callback from a global_signal call that stores the result of a DB query.
-
-        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
-        which return the same thing: the rows, an empty frame if none matched, or
-        None if the query could not be built or run.
-
-        :param result: DataFrame returned by the query, or None if it failed.
-        :type result: Optional[pd.DataFrame]
-        """
-        self.relayed_query_result = result
-
-    @log(logger=logger)
     def relay_experiment_id(self, exp_id: Optional[int]) -> None:
         """
         A callback from a global_signal call that stores a resolved experiment id.
@@ -2728,83 +2713,6 @@ class MetadataView(MetaSubsetTabView):
             self._delete_filter(name)
 
     @log(logger=logger)
-    def _delete_filter(self, name: str) -> None:
-        """
-        Internal method to remove a filter and update the UI.
-
-        :param name: The name of the filter to remove.
-        :type name: str
-        """
-        self.subset_filters.pop(name, None)
-
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-        for i in reversed(range(list_widget.count())):
-            widget = list_widget.itemWidget(list_widget.item(i))
-            if widget:
-                checkbox = widget.findChild(QCheckBox)
-                if checkbox and checkbox.text() == name:
-                    list_widget.takeItem(i)
-                    break
-
-        self.metadatacontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
-    def replace_filter_item(self, name: str) -> None:
-        """
-        Remove any existing filter item with the same name and add the new one.
-
-        :param name: The name of the filter to (re)add.
-        :type name: str
-        """
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-        for i in range(list_widget.count()):
-            item = list_widget.item(i)
-            widget = list_widget.itemWidget(item)
-            checkbox = widget.findChild(QCheckBox)
-            if checkbox and checkbox.text() == name:
-                list_widget.takeItem(i)
-                break
-
-        self.metadatacontrols.filter_comboBox.addItem(name)
-        self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-
-    @log(logger=logger)
-    def update_filter_name(self, old_name: str, new_name: str) -> None:
-        """
-        Replace old filter name with new one in the ComboBox, removing any duplicates.
-
-        :param old_name: The filter name being replaced.
-        :type old_name: str
-        :param new_name: The filter name to display instead.
-        :type new_name: str
-        """
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-
-        # Remove old name
-        for i in range(list_widget.count()):
-            item = list_widget.item(i)
-            widget = list_widget.itemWidget(item)
-            checkbox = widget.findChild(QCheckBox)
-            if checkbox and checkbox.text() == old_name:
-                list_widget.takeItem(i)
-                break
-
-        # Remove new name if it already exists and is different
-        if new_name != old_name:
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                widget = list_widget.itemWidget(item)
-                checkbox = widget.findChild(QCheckBox)
-                if checkbox and checkbox.text() == new_name:
-                    list_widget.takeItem(i)
-                    break
-
-        # Add updated name
-        self.metadatacontrols.filter_comboBox.addItem(new_name)
-        self.metadatacontrols.filter_comboBox.selectItem(new_name, select=True)
-        self.metadatacontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
     def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
         """
         a global signal callback that provides the channel_db_id for raw query scoping
@@ -2813,58 +2721,6 @@ class MetadataView(MetaSubsetTabView):
         :type channel_db_id: Optional[int]
         """
         self.channel_db_id = channel_db_id
-
-    @log(logger=logger)
-    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
-        """
-        Relay callback from validate_filter_query for raw SQL filter validation.
-
-        :param valid: Whether the query is valid.
-        :type valid: bool
-        :param error_msg: Error message if invalid.
-        :type error_msg: str
-        """
-        if not valid:
-            QMessageBox.warning(
-                self,
-                "Invalid Raw SQL Filter",
-                f"The filter could not be validated:\n\n{error_msg}",
-            )
-            self.clear_pending_filter_state()
-            return
-
-        name = self._pending_filter_name
-        filter_text = self._pending_filter_text
-        old_name = self._pending_old_filter_name
-
-        if name is None:
-            # Mirrors the guard the assisted-filter path already applies in
-            # relay_query: with no pending name there is nothing to commit.
-            self.logger.warning(
-                "Raw filter validated with no pending filter name, ignoring."
-            )
-            self.clear_pending_filter_state()
-            return
-
-        if old_name is not None:  # edit path
-            self.subset_filters.pop(old_name, None)
-            self.subset_filters[name] = filter_text or ""
-            self.update_filter_name(old_name, name)
-            self.add_text_to_display.emit(
-                f"Filter '{old_name}' updated to '{name}'.",
-                self.__class__.__name__,
-            )
-        else:  # add path
-            self.subset_filters[name] = filter_text or ""
-            self.metadatacontrols.filter_comboBox.addItem(name)
-            self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-            self.metadatacontrols.filter_comboBox.refreshDisplayText()
-            self.add_text_to_display.emit(
-                f"Filter '{name}' added.",
-                self.__class__.__name__,
-            )
-
-        self.clear_pending_filter_state()
 
     @log(logger=logger)
     def get_walkthrough_steps(self) -> List[WalkthroughStep]:

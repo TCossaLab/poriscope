@@ -10,6 +10,42 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - Five more subset-tab methods collapsed once the base had a panel name
+
+**Context.** After the four planned promotions, a sweep for remaining shared-name methods
+found five whose *entire* divergence was `self.metadatacontrols` against
+`self.proteincontrols`: `replace_filter_item`, `update_filter_name`, `_delete_filter`,
+`on_raw_filter_validated` and `relay_query_result` (that last differing only in its
+docstring).
+
+**Decision.** All five promoted. `_delete_filter` **stops being abstract**, and
+`on_raw_filter_validated`'s one real divergence - modal against status panel - is settled
+the same way the filter dialogs settled it, in Metadata's favour, so the protein tab now
+reports a rejected raw filter in a dialog. The base's abstract set goes from seven to five,
+and a test asserts the whole frozenset rather than individual membership, because that set
+is published contract.
+
+**Evidence.** `_delete_filter`'s abstractness was documented as "each tab rebuilds its own
+filter widgets afterwards". That reduced entirely to the panel name: with `_subset_controls`
+in place the two bodies are identical, so the stated reason had already evaporated. This is
+the payoff of preferring an accessor over a stored handle two commits earlier - the accessor
+is what made five more bodies mergeable without touching a single test's mock.
+
+**A test-directory gap this exposed.** Promoting the modal into `MetaSubsetTabView` **hung**
+`test_protein_controller.py::test_invalid_forwards_to_view`, which drives the method through
+the Controller's forwarder against a real View: `tests/unit/controllers` had no modal guard
+while `tests/unit/views` did, and a blocking dialog stalls a test rather than failing it. The
+patches now live in `tests/unit/_dialog_guard.py` and both directories install them.
+**Deliberately not installed at `tests/conftest.py` level:** the e2e suite opts into
+dismissing message boxes through its own `auto_dismiss_message_boxes` fixture, and a blanket
+autouse patch would pre-empt that and quietly make those assertions vacuous. The controller
+conftest also does *not* start setting an offscreen platform or the Agg backend, which
+`tests/unit/views` does - that would change how every test in the directory builds its
+widgets, well beyond keeping one modal from stalling.
+
+**Revisit if** a third subset tab appears whose filter widgets genuinely differ, which would
+make `_delete_filter` abstract again.
+
 ## 2026-09-08 - `_load_filter` promotes Protein's raw bypass, which fixes the metadata tab
 
 **Context.** The last of the four methods Step 4a promotes, and the only one where the

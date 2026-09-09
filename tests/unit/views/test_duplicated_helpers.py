@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is merged by Step 3 or Step 4, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Seven groups:
+Eight groups:
 
 - ``_factors`` exists three times - ``MetaView.py:139`` plus byte-identical
   overrides in ``RawDataView.py:109`` and ``EventAnalysisView.py:121`` that shadow
@@ -51,6 +51,14 @@ Seven groups:
   whose name ends in ``_raw`` skip validation. **Step 4a promoted Protein's**, which
   fixes the metadata tab rather than merging it - see the group below for the measured
   consequence of not bypassing.
+- **Five more methods collapsed once ``_subset_controls`` existed**:
+  ``replace_filter_item``, ``update_filter_name``, ``_delete_filter``,
+  ``on_raw_filter_validated`` and ``relay_query_result``. Four of them differed *only*
+  in the name each tab held its controls panel under, and ``relay_query_result``
+  differed only in its docstring; ``on_raw_filter_validated`` carried the modal-vs-
+  status-panel divergence a second time and was settled the same way. ``_delete_filter``
+  was **abstract** on the base for the stated reason that each tab rebuilds its own
+  filter widgets - which was only ever true because of the panel name.
 """
 
 import json
@@ -60,6 +68,7 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QBoxLayout
 
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
@@ -415,6 +424,20 @@ class TestCreateButtonWasPromoted:
 
 SUBSET_TABS = (MetadataView, ProteinView)
 
+#: What ``MetaSubsetTabView`` still asks a subclass for. Asserted whole rather than
+#: membership-by-membership, because the base's abstract set is published contract:
+#: a promotion that quietly drops one, or a new one added without a changelog note,
+#: should fail here. Step 4a took it from seven to five.
+ABSTRACT_MEMBERS = frozenset(
+    {
+        "_init",
+        "_reset_actions",
+        "_subset_controls",
+        "notify_plugin_state_changed",
+        "update_available_plugins",
+    }
+)
+
 
 def build_subset_tab(view_cls: type) -> object:
     """
@@ -690,16 +713,7 @@ class TestFilterDialogsWerePromoted:
         inherits it, so the count is asserted rather than left to be noticed.
         """
         assert "show_edit_filter_dialog" not in MetaSubsetTabView.__abstractmethods__
-        assert MetaSubsetTabView.__abstractmethods__ == frozenset(
-            {
-                "_delete_filter",
-                "_init",
-                "_reset_actions",
-                "_subset_controls",
-                "notify_plugin_state_changed",
-                "update_available_plugins",
-            }
-        )
+        assert MetaSubsetTabView.__abstractmethods__ == ABSTRACT_MEMBERS
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_validation_columns_prefers_the_database_s_own_columns(
@@ -885,3 +899,146 @@ class TestLoadFilterWasPromoted:
             "raw_one_raw": "SELECT 1",
         }
         view.global_signal.emit.assert_not_called()
+
+
+# ===========================================================================
+# the five methods _subset_controls unlocked - promoted by Step 4a
+# ===========================================================================
+
+
+PANEL_NAME_ONLY = (
+    "replace_filter_item",
+    "update_filter_name",
+    "_delete_filter",
+    "relay_query_result",
+    "on_raw_filter_validated",
+)
+
+
+class TestThePanelNameMethodsWerePromoted:
+    """
+    The five that collapsed once the base had a name for the controls panel.
+
+    Four differed only in ``metadatacontrols`` against ``proteincontrols``, and
+    ``relay_query_result`` only in its docstring - so with ``_subset_controls`` in
+    place there was nothing left to decide except ``on_raw_filter_validated``'s
+    modal, which the filter dialogs had already settled.
+    """
+
+    @pytest.mark.parametrize("name", PANEL_NAME_ONLY)
+    def test_the_base_owns_the_only_copy(self, name: str) -> None:
+        """Neither tab may keep its own, or the promotion was partial."""
+        assert name in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert name not in view_cls.__dict__, f"{view_cls.__name__}.{name}"
+
+    def test_delete_filter_is_no_longer_abstract(self) -> None:
+        """
+        The base asks a subclass for five things now, not six.
+
+        ``_delete_filter``'s abstractness was documented as each tab rebuilding its
+        own filter widgets. That reduced entirely to the panel name, so the reason
+        went away with it.
+        """
+        assert "_delete_filter" not in MetaSubsetTabView.__abstractmethods__
+        assert MetaSubsetTabView.__abstractmethods__ == ABSTRACT_MEMBERS
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_deleting_a_filter_drops_it_from_both_the_dict_and_the_combobox(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        The promoted body, run against a real combobox for both tabs.
+
+        Asserted through the widget rather than only the dict, because the dict half
+        would pass even if the promoted copy were reaching the wrong panel.
+        """
+        view = build_subset_tab(view_cls)
+        view.subset_filters = {"keep_me": "dwell > 1", "drop_me": "dwell > 2"}
+        view._subset_controls.update_filters(["keep_me", "drop_me"])
+
+        view._delete_filter("drop_me")
+
+        assert view.subset_filters == {"keep_me": "dwell > 1"}
+        remaining = [
+            view._subset_controls.filter_comboBox.listWidget.item(i).data(Qt.UserRole)
+            for i in range(view._subset_controls.filter_comboBox.listWidget.count())
+        ]
+        assert remaining == ["keep_me"]
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_an_invalid_raw_filter_is_reported_in_a_modal_on_both_tabs(
+        self, qapp: object, view_cls: type, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        The protein tab's behaviour change, and the reason this group exists.
+
+        It used to put the rejection on the status panel. The promoted copy uses
+        Metadata's modal, consistently with the filter dialogs, so the same
+        rejection reads the same way wherever it comes from.
+        """
+        view = build_subset_tab(view_cls)
+        view._pending_filter_name = "f1_raw"
+        view._pending_filter_text = "SELECT 1"
+        view._pending_old_filter_name = None
+        warned = MagicMock()
+        monkeypatch.setattr(
+            "poriscope.utils.MetaSubsetTabView.QMessageBox.warning",
+            staticmethod(warned),
+        )
+
+        view.on_raw_filter_validated(False, "no such column: dwel")
+
+        warned.assert_called_once()
+        assert "no such column: dwel" in warned.call_args[0][2]
+        assert view.subset_filters == {}
+        assert view._pending_filter_name is None
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_valid_raw_filter_is_committed_and_selected(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """The add path: stored under its pending name, and checked in the combobox."""
+        view = build_subset_tab(view_cls)
+        view._pending_filter_name = "f1_raw"
+        view._pending_filter_text = "SELECT event_id FROM events"
+        view._pending_old_filter_name = None
+
+        view.on_raw_filter_validated(True, "")
+
+        assert view.subset_filters == {"f1_raw": "SELECT event_id FROM events"}
+        assert view.get_selected_filters() == {"f1_raw": "SELECT event_id FROM events"}
+        assert view._pending_filter_name is None
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_relay_query_result_parks_the_answer_and_can_clear_it(
+        self, qapp: object, view_cls: type
+    ) -> None:
+        """
+        Both directions matter, because the clear is what makes the read safe.
+
+        Every caller sets it to None before dispatching, precisely so that a failed
+        call cannot be read back as this call's answer, so a version that ignored a
+        None would reintroduce the stale read this whole step exists to remove.
+        """
+        view = build_subset_tab(view_cls)
+        frame = pd.DataFrame({"event_id": [1, 2]})
+
+        view.relay_query_result(frame)
+        assert view.relayed_query_result is frame
+
+        view.relay_query_result(None)
+        assert view.relayed_query_result is None
+
+    def test_the_parked_answer_is_declared_on_the_base(self) -> None:
+        """
+        The annotation moved with the method that writes it.
+
+        Only ``MetadataView`` declared it before; ``ProteinView`` assigned it at first
+        use, and every read guards with ``getattr(..., None)``. Both ``_init``s now set
+        it, so those guards are belt-and-braces - worth stating before someone removes
+        one and finds out which reads still depend on them.
+        """
+        assert "relayed_query_result" in MetaSubsetTabView.__annotations__
+        for view_cls in SUBSET_TABS:
+            assert "relayed_query_result" not in view_cls.__annotations__

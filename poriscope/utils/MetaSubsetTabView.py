@@ -31,7 +31,7 @@ from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QMessageBox
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
@@ -61,7 +61,10 @@ class MetaSubsetTabView(MetaView):
     - **Column and experiment state.** ``update_available_columns`` and
       ``set_units`` keep the tab's column comboboxes and axis labels in step with the
       loader's description of the database.
-    - **Subset filters.** ``_save_filter``, ``_delete_filter_by_name``,
+    - **Subset filters.** ``_delete_filter``, ``replace_filter_item``,
+      ``update_filter_name`` and ``on_raw_filter_validated`` keep the filter combobox
+      in step with ``subset_filters``, reaching the combobox through
+      ``_subset_controls``. ``_save_filter``, ``_delete_filter_by_name``,
       ``_show_filter_info_dialog`` and ``clear_pending_filter_state`` manage the named
       filters in ``subset_filters`` and the three pending fields the Controller reads
       back after a validation round-trip. ``_show_add_filter_dialog`` and
@@ -86,8 +89,6 @@ class MetaSubsetTabView(MetaView):
       follows for its shared code.
     - **``_subset_controls``**, a one-line property returning whatever name the tab
       holds its controls panel under, so the shared methods here can reach it.
-    - **``_delete_filter``**, declared abstract below, because each tab rebuilds its
-      own filter widgets after a removal.
     - **The five abstract methods ``MetaView`` declares**, unchanged - this base
       implements none of them.
 
@@ -111,6 +112,18 @@ class MetaSubsetTabView(MetaView):
     experiment_structure_requested = Signal(str)
 
     logger = logging.getLogger(__name__)
+
+    #: Where ``relay_query_result`` parks a query's answer for the emitter to read on
+    #: the next statement. Assigned in each subclass's ``_init`` as well, so that a
+    #: read before any query has run sees None rather than raising. Goes away with the
+    #: last of the emit-then-read pairs.
+    #:
+    #: A DataFrame in practice, typed ``Any`` because a View may not import pandas -
+    #: ``check_mvc_boundary``'s rule 2, whose target is zero, so earning a new
+    #: allowlist entry for a member already scheduled for deletion would be a poor
+    #: trade. The two tabs keep the precise type where they use it, and so does
+    #: ``MetaSubsetTabController.relay_query_result``, which is allowed pandas.
+    relayed_query_result: Optional[Any]
 
     #: Assigned in each subclass's ``_init``, identically in both tabs today. The
     #: annotation moves here with the methods that read it; the assignment stays with
@@ -153,6 +166,178 @@ class MetaSubsetTabView(MetaView):
         """
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
+
+    @log(logger=logger)
+    def relay_query_result(self, result: Optional[Any]) -> None:
+        """
+        A callback from a global_signal call that stores the result of a DB query.
+
+        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
+        which return the same thing: the rows, an empty frame if none matched, or
+        None if the query could not be built or run. Read back by
+        ``_rebuild_event_id_cache`` and by the tabs' own plot paths.
+
+        Typed ``Any`` rather than ``Optional[pd.DataFrame]`` because a View may not
+        import pandas; see ``relayed_query_result`` above.
+
+        :param result: DataFrame returned by the query, or None if it failed.
+        :type result: Optional[Any]
+        """
+        self.relayed_query_result = result
+
+    @log(logger=logger)
+    def _delete_filter(self, name: str) -> None:
+        """
+        Remove a named subset filter and take its row out of the combobox.
+
+        Promoted from both subset tabs, and **no longer abstract**. The reason
+        recorded for its abstractness - that each tab rebuilds its own filter
+        widgets - was true only because each reached its panel under its own name;
+        the two bodies were otherwise identical, and ``_subset_controls`` is what
+        that reason reduced to.
+
+        :param name: the filter to remove
+        :type name: str
+        :return: None
+        :rtype: None
+        """
+        self.subset_filters.pop(name, None)
+
+        list_widget = self._subset_controls.filter_comboBox.listWidget
+        for i in reversed(range(list_widget.count())):
+            widget = list_widget.itemWidget(list_widget.item(i))
+            if widget:
+                checkbox = widget.findChild(QCheckBox)
+                if checkbox and checkbox.text() == name:
+                    list_widget.takeItem(i)
+                    break
+
+        self._subset_controls.filter_comboBox.refreshDisplayText()
+
+    @log(logger=logger)
+    def replace_filter_item(self, name: str) -> None:
+        """
+        Remove any existing filter item with the same name and add the new one.
+
+        Promoted from both subset tabs, whose copies differed only in the name each
+        held its controls panel under.
+
+        :param name: The name of the filter to (re)add.
+        :type name: str
+        :return: None
+        :rtype: None
+        """
+        list_widget = self._subset_controls.filter_comboBox.listWidget
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            widget = list_widget.itemWidget(item)
+            checkbox = widget.findChild(QCheckBox)
+            if checkbox and checkbox.text() == name:
+                list_widget.takeItem(i)
+                break
+
+        self._subset_controls.filter_comboBox.addItem(name)
+        self._subset_controls.filter_comboBox.selectItem(name, select=True)
+
+    @log(logger=logger)
+    def update_filter_name(self, old_name: str, new_name: str) -> None:
+        """
+        Replace old filter name with new one in the ComboBox, removing any duplicates.
+
+        Promoted from both subset tabs, whose copies differed only in the name each
+        held its controls panel under.
+
+        :param old_name: The filter name being replaced.
+        :type old_name: str
+        :param new_name: The filter name to display instead.
+        :type new_name: str
+        :return: None
+        :rtype: None
+        """
+        list_widget = self._subset_controls.filter_comboBox.listWidget
+
+        # Remove old name
+        for i in range(list_widget.count()):
+            item = list_widget.item(i)
+            widget = list_widget.itemWidget(item)
+            checkbox = widget.findChild(QCheckBox)
+            if checkbox and checkbox.text() == old_name:
+                list_widget.takeItem(i)
+                break
+
+        # Remove new name if it already exists and is different
+        if new_name != old_name:
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                widget = list_widget.itemWidget(item)
+                checkbox = widget.findChild(QCheckBox)
+                if checkbox and checkbox.text() == new_name:
+                    list_widget.takeItem(i)
+                    break
+
+        # Add updated name
+        self._subset_controls.filter_comboBox.addItem(new_name)
+        self._subset_controls.filter_comboBox.selectItem(new_name, select=True)
+        self._subset_controls.filter_comboBox.refreshDisplayText()
+
+    @log(logger=logger)
+    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
+        """
+        Commit a raw SQL filter once the loader has said the query is valid.
+
+        Promoted from both subset tabs. Beyond the controls-panel name they
+        diverged in one place, the same one the two filter dialogs diverged in and
+        settled the same way: an invalid filter is reported in a **modal**, which
+        was Metadata's behaviour, rather than on the status panel.
+
+        :param valid: Whether the query is valid.
+        :type valid: bool
+        :param error_msg: Error message if invalid.
+        :type error_msg: str
+        :return: None
+        :rtype: None
+        """
+        if not valid:
+            QMessageBox.warning(
+                self,
+                "Invalid Raw SQL Filter",
+                f"The filter could not be validated:\n\n{error_msg}",
+            )
+            self.clear_pending_filter_state()
+            return
+
+        name = self._pending_filter_name
+        filter_text = self._pending_filter_text
+        old_name = self._pending_old_filter_name
+
+        if name is None:
+            # Mirrors the guard the assisted-filter path already applies in
+            # relay_query: with no pending name there is nothing to commit.
+            self.logger.warning(
+                "Raw filter validated with no pending filter name, ignoring."
+            )
+            self.clear_pending_filter_state()
+            return
+
+        if old_name is not None:  # edit path
+            self.subset_filters.pop(old_name, None)
+            self.subset_filters[name] = filter_text or ""
+            self.update_filter_name(old_name, name)
+            self.add_text_to_display.emit(
+                f"Filter '{old_name}' updated to '{name}'.",
+                self.__class__.__name__,
+            )
+        else:  # add path
+            self.subset_filters[name] = filter_text or ""
+            self._subset_controls.filter_comboBox.addItem(name)
+            self._subset_controls.filter_comboBox.selectItem(name, select=True)
+            self._subset_controls.filter_comboBox.refreshDisplayText()
+            self.add_text_to_display.emit(
+                f"Filter '{name}' added.",
+                self.__class__.__name__,
+            )
+
+        self.clear_pending_filter_state()
 
     @log(logger=logger)
     def _load_filter(self, parameters: Dict[str, Any]) -> None:
@@ -576,18 +761,6 @@ class MetaSubsetTabView(MetaView):
 
         :return: the panel built by ``_build_controls``
         :rtype: MetaSubsetTabControls
-        """
-
-    @abstractmethod
-    def _delete_filter(self, name: str) -> None:
-        """
-        Remove a named subset filter and rebuild whatever widgets displayed it.
-
-        Abstract because the two tabs hold their filter widgets under different names,
-        so each rebuilds its own.
-
-        :param name: the filter to remove
-        :type name: str
         """
 
     @log(logger=logger)
