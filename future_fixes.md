@@ -22,6 +22,36 @@ pause, but the schema cannot change while a loader is open, so a dict cache buil
 `_finalize_initialization` would remove all of them. Re-measure on a network-mounted
 database before deciding it does not matter.
 
+## The sidebar should show the query that actually pulls the subset (2026-09-08)
+
+Per Kyle: what the sidebar shows should be the query that runs when the filter is used to
+pull metadata - 1, 2 or 3 tables as that filter genuinely needs - and ideally the same query
+that validated it, since validating something other than what you run is the defect.
+
+Today it shows the **validation** query, and the apply paths suppress their own:
+`MetadataView.py:1193`, `ProteinView.py:2078` and `:2556` each set
+`_show_sql_in_display = False` before building the real one, and `set_query`
+(`MetaSubsetTabView.py:811`) is one-shot.
+
+Three facts the fix has to absorb, all read from the code rather than assumed:
+
+- **`construct_metadata_query` now has three callers only**: `MetadataView.py:1370` (the real
+  apply query, `(columns, sql_filter, exp_and_ch_arg)`), `MetaSubsetTabController.py:366`
+  (validation), and `ClusteringController.py:143` (a different tab).
+- **The real query depends on plot type, not just the filter.** `MetadataView.py:1273-1300`
+  selects 1, 2 or 3 axis columns per plot type, plus `["start_time"]` for Capture Rate - so at
+  filter-creation time there is no single query to show or validate. `_overlay_plot` also
+  builds **one per (experiment, channel)** in scope, so "the query" can be several.
+- **`ProteinView` never calls it.** That tab pulls subsets through `query_database_directly`
+  (`:1510`) and `construct_event_data_query`/`load_event_data` (`:2130`, `:2621`), so the
+  metadata tab is the only one with a query of this shape to show.
+
+Consequence for the design: making the validated query and the run query the same means
+validating at **apply** time, where the columns and scope are known, rather than at creation
+time. The apply path already builds it and already routes failures to `relay_query`'s modal,
+so the creation-time round trip shrinks to a pre-check or goes away. Land it with the commit
+that converts `_overlay_plot` (Step 4a commit 4), which is where those columns live.
+
 ## The Metadata tab has no downstream handling for raw SQL filters (2026-09-08)
 
 It can create, save and load them, but every plotting path takes
