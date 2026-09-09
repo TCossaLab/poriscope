@@ -41,8 +41,23 @@ every exception - so a filter naming a column the database does not have vanishe
 a log line, on both tabs. `validate_filter` catches and reports it, and clears the pending
 filter state, without which the next validation to succeed would commit the refused name.
 
-**Revisit if** a filter needs validating against a column outside `events`, which would
-make one events column insufficient rather than merely minimal.
+**One events column does not limit what can be validated**, which an earlier draft of this
+entry wrongly implied. The joins follow the *conditions*, not the selected columns:
+`construct_metadata_query` derives `force_events_sublevels_join` and
+`force_experiments_join` by testing the condition text against each table's column names.
+Measured with a single events column - `sublevel_duration < 300` joins sublevels,
+`voltage > 50` joins experiments, and a filter naming columns in all three validates and
+joins both of the others; `nonsense_column > 1` is still refused. So a filter that needs all
+three tables gets all three.
+
+**What this does not fix:** the SQL echoed to the status panel after a filter is created is
+the *validation* query, and it never was the query that runs when the filter is applied -
+the real one is built from the axis columns chosen at plot time. Every plot path sets
+`_show_sql_in_display = False` before building it, deliberately. Queued separately, to land
+with the commit that converts the apply path.
+
+**Revisit if** the validation query and the applied query are unified, which would make the
+column choice here moot.
 
 ## 2026-09-08 - `relay_query` is promoted, and the reason recorded against it was false
 
