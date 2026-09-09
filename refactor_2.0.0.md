@@ -33,6 +33,14 @@ change what the status panel shows.
 
 **Then 4a is done** and the `global_signal` bus has no callers left in the analysis tabs.
 
+**Read before writing code:** method rules **44 and 47-49** in the artifact
+(<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>) were all earned in
+this session's commits - the accessor-over-stored-handle choice that unlocked five promotions,
+a base docstring whose stated design constraint was false, deleting a statement by line match
+and silently re-parenting the code after it, and what a probe that silences logging actually
+measures. Rules 45 and 46 cover the two traps most likely to bite the next commit: patch
+targets move with a promoted method, and the plan's account of a defect is a hypothesis.
+
 # Poriscope 2.0.0 Refactor Plan
 
 Approved 2026-09-03. **Step 0 and the whole of Step 1 (Tiers A, B2 and C) landed
@@ -777,20 +785,31 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 **Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **17 commits,
 not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
-working tree; suite **3,449 passed / 4 skipped**.
+working tree; suite **3,550 passed / 4 skipped**. Re-measured 2026-09-08 after Step 4a's
+commit 4; the artifact's table carries the same numbers and the reasoning behind the two
+rows that moved.
 
 | Gate | Start of refactor | Now | Target |
 | --- | --- | --- | --- |
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **65** | 0 |
-| — rule 1, View emits | 75 | **35** | 0 |
+| Boundary allowlist | 111 | **44** | 0 |
+| — rule 1, View emits | 75 | **19** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
-| — rule 3, Controller reads a View private | 10 | **10** | 0 (4d) |
+| — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
 | — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
 | Refactor-coverage audit | — | **100% pinned** | 100% |
+
+**Rule 3 halved without anything being fixed.** Promoting `relay_query` to
+`MetaSubsetTabController` merged two copies of the same five reach-ins into one, so the count
+went 10 → 5 while the violations are unchanged in kind and still wait on 4d moving the
+pending-filter state to the Model. Recorded because a ratchet that falls without a fix is the
+reading error method rule 21 warns about. **Rule 2 is unmoved and one attempt would have made
+it worse**: annotating the base's `relayed_query_result` as `Optional[pd.DataFrame]` put a
+pandas import in a View and the gate refused it; `Optional[Any]` was the right trade for a
+member already scheduled for deletion.
 
 **Corrected 2026-09-08: the duplication row was comparing two scopes.** It read
 `1,889 → 31`. **1,889 is the six-family repo-wide total** — the ratchet was widened in
