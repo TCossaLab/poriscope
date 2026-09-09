@@ -28,6 +28,7 @@ import logging
 from typing import Any, Dict, Generator, Optional, override
 
 from PySide6.QtCore import Slot
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
@@ -53,6 +54,11 @@ class MetaSubsetTabController(MetaController):
       update_column_names, update_column_units,
       get_experiment_structure_ready and get_experiment_names_for_tree
       forward the loader's description of the database to the View.
+    - **Filter validation.** relay_query receives the query the loader built - or
+      the debug message explaining why it could not - and commits, renames or refuses
+      the pending filter accordingly. Promoted in Step 4a: this base's own docstring
+      had recorded it as unshareable because "the two tabs' copies differ", and they
+      differed by one blank line.
     - **Session state.** get_session_state and restore_session_state
       override MetaController's hooks so a tab's subset filters survive a
       save and reload.
@@ -65,9 +71,6 @@ class MetaSubsetTabController(MetaController):
       MetaView and MetaController already follow for their shared code.
     - **self.view and self.model**, built in its _init() as
       MetaController requires.
-    - **relay_query**, which is deliberately *not* shared: the two tabs' copies
-      differ, and each reaches into its own View's pending-filter state. Step 4d
-      moves that state to the Model, after which the method can be promoted here.
 
     :ivar logger: the module logger the shared methods below log under
     """
@@ -298,6 +301,101 @@ class MetaSubsetTabController(MetaController):
         self.view.selected_experiment_and_channels_by_loader[loader_name] = (
             str_structure.copy()
         )
+
+    @log(logger=logger)
+    def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:
+        r"""
+        Relay a query and optional debug message to the view, handling optional filter intents.
+
+        Promoted from both subset tabs in Step 4a. ``MetaSubsetTabController``'s
+        docstring recorded this method as deliberately not shared, because "the two
+        tabs' copies differ" and each reaches into its own View's pending-filter
+        state, with the promotion deferred to Step 4d. Neither half held up: the
+        copies differed **by one blank line**, and the pending-filter state has been
+        declared on ``MetaSubsetTabView`` since earlier in this step, so both copies
+        were already reaching into the same shared attributes.
+
+        :param query: SQL query string to display or execute.
+        :type query: str
+        :param debug: Debug message to display if query is empty.
+        :type debug: str
+        :param table_name: Name of the table associated with the query.
+        :type table_name: str
+        :param \*args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
+        :type \*args: str
+        """
+        intent = args[0] if args else None
+
+        if debug and not query:
+            # Also on the display panel, not only in the modal: the dialog is
+            # dismissed before the user gets back to the filter text, and the
+            # message is often a set of instructions for correcting it.
+            self.view.add_text_to_display.emit(debug, self.__class__.__name__)
+            QMessageBox.warning(
+                self.view,
+                "Invalid Filter",
+                f"The filter could not be validated:\n\n{debug}",
+            )
+            if intent in ("validate_new_filter", "validate_edited_filter"):
+                self.view.clear_pending_filter_state()
+            return
+
+        self.view.set_query(query, table_name)
+
+        if intent == "validate_new_filter":
+            name = self.view._pending_filter_name
+            filter_text = self.view._pending_filter_text
+
+            if name is not None:
+                suffixed_name = (
+                    f"{name}_assisted" if not name.endswith("_assisted") else name
+                )
+                self.view.subset_filters[suffixed_name] = filter_text or ""
+
+                if not filter_text:
+                    self.view.add_text_to_display.emit(
+                        f"Filter '{suffixed_name}' uses all rows (no WHERE clause).",
+                        self.__class__.__name__,
+                    )
+
+                self.view.add_text_to_display.emit(
+                    f"Filter '{suffixed_name}' added.", self.__class__.__name__
+                )
+
+                self.view.replace_filter_item(suffixed_name)
+
+        elif intent == "validate_edited_filter":
+            old_name = self.view._pending_old_filter_name
+            new_name = self.view._pending_filter_name
+            new_filter = self.view._pending_filter_text
+
+            if new_name is not None:
+                suffixed_new_name = (
+                    f"{new_name}_assisted"
+                    if not new_name.endswith("_assisted")
+                    else new_name
+                )
+                if old_name is not None:
+                    self.view.subset_filters.pop(old_name, None)
+                self.view.subset_filters[suffixed_new_name] = new_filter or ""
+
+                if not new_filter:
+                    self.view.add_text_to_display.emit(
+                        f"Filter '{suffixed_new_name}' uses all rows (no WHERE clause) -> FULL DATASET.",
+                        self.__class__.__name__,
+                    )
+
+                self.view.add_text_to_display.emit(
+                    f"Filter '{old_name}' updated to '{suffixed_new_name}'.",
+                    self.__class__.__name__,
+                )
+
+                # NOTE: old_name is Optional[str] on the attribute, but
+                # show_edit_filter_dialog sets it from a `str` parameter before
+                # emitting this intent, so it is never None here. The guarantee
+                # travels through a signal connection mypy cannot follow.
+                self.view.update_filter_name(old_name, suffixed_new_name)  # type: ignore[arg-type]
+        self.view.clear_pending_filter_state()
 
     @log(logger=logger)
     def set_experiment_id(self, experiment_id: Optional[int]) -> None:

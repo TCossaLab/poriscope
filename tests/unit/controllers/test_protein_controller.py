@@ -94,7 +94,7 @@ class TestRelayBaselineDuration:
 class TestRelayQuery:
     def test_debug_no_query_shows_warning_dialog(self, controller):
         with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
+            "poriscope.utils.MetaSubsetTabController.QMessageBox.warning"
         ) as mock_warn:
             controller.relay_query("", "syntax error here", "events")
         mock_warn.assert_called_once()
@@ -106,9 +106,7 @@ class TestRelayQuery:
         controller.view._pending_filter_name = "f1"
         controller.view._pending_filter_text = "dur > 5"
         controller.view._pending_old_filter_name = None
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
-        ):
+        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
             controller.relay_query("", "bad syntax", "events", "validate_new_filter")
         assert controller.view._pending_filter_name is None
         assert controller.view._pending_filter_text is None
@@ -117,9 +115,7 @@ class TestRelayQuery:
         controller.view._pending_filter_name = "f2"
         controller.view._pending_filter_text = "dur > 10"
         controller.view._pending_old_filter_name = "f1"
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
-        ):
+        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
             controller.relay_query("", "bad syntax", "events", "validate_edited_filter")
         assert controller.view._pending_old_filter_name is None
 
@@ -127,9 +123,7 @@ class TestRelayQuery:
         controller.view._pending_filter_name = "f1"
         controller.view._pending_filter_text = "dur > 5"
         controller.view._pending_old_filter_name = None
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
-        ):
+        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
             controller.relay_query("", "bad syntax", "events")
         # no intent arg supplied -> early return before clear_pending_filter_state,
         # so pending state should be untouched

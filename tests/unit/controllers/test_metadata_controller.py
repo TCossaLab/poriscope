@@ -75,9 +75,7 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
-    )
+    mocker.patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning")
     return ctrl
 
 
@@ -603,7 +601,7 @@ def test_relay_query_emits_debug_message_when_query_is_empty(
     :param mocker: Pytest-mock fixture.
     """
     mock_warning = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
+        "poriscope.utils.MetaSubsetTabController.QMessageBox.warning"
     )
     controller.relay_query("", "something went wrong", "my_table")
     mock_warning.assert_called_once()

@@ -14,6 +14,8 @@
 
 * The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
 
+* `relay_query` is now provided by `MetaSubsetTabController` instead of being implemented separately by each subset tab
+
 * `_delete_filter` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
 
 * The Protein tab now reports a raw SQL filter that is not a complete SELECT statement in a dialog rather than on the status panel, matching the Metadata tab - the filter dialog has just closed at that point, so a status line was easy to miss

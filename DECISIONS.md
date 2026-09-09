@@ -10,6 +10,36 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-08 - `relay_query` is promoted, and the reason recorded against it was false
+
+**Context.** `MetaSubsetTabController`'s own class docstring listed `relay_query` under
+what a subclass owes it, "deliberately *not* shared: the two tabs' copies differ, and each
+reaches into its own View's pending-filter state. Step 4d moves that state to the Model,
+after which the method can be promoted here."
+
+**Decision.** Promoted now, in Step 4a. The docstring's claim is corrected rather than
+deferred to.
+
+**Evidence.** Neither half of the recorded reason held. The two 86-line copies differ **by a
+single blank line** - diffed, not eyeballed. And the pending-filter state
+(`_pending_filter_name`, `_pending_filter_text`, `_pending_old_filter_name`) has been
+declared on `MetaSubsetTabView` since earlier in this step, so both copies were already
+reaching into the same shared attributes; nothing was waiting on 4d. An older entry here had
+in fact anticipated this - "Step 3b's first promotion, `relay_query`, carries 10 of 10 of
+rule 3's violations" - so the docstring, not the plan, was the stale artefact. Measured
+result: rule 3 falls **10 to 5** (both Controllers clean, one copy on the base) and the
+boundary allowlist total 59 to 54.
+
+**A test for a docstring.** The promoted method's fifteen Metadata tests and Protein's
+several all still pass, resolving through the MRO, and none of them could have caught a
+leftover copy - it would shadow the base for that one tab and every test would stay green. A
+new `tests/unit/controllers/test_promoted_controller_methods.py` asserts single ownership,
+MRO identity, and that the stale docstring claim is gone, since nothing else reads a
+docstring.
+
+**Revisit if** 4d moving the pending state to the Model makes the shared body per-tab again,
+which would be a genuine reason rather than the one recorded.
+
 ## 2026-09-08 - Five more subset-tab methods collapsed once the base had a panel name
 
 **Context.** After the four planned promotions, a sweep for remaining shared-name methods
