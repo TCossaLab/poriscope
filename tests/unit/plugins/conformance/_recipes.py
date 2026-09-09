@@ -127,6 +127,22 @@ PEAKED_EVENTS_DIP_WIDTH_SAMPLES = 60
 # levels is what's used.
 STAIRCASE_LEVEL_AMPLITUDES_PA = [0.0, -150.0, -300.0]
 
+# A fourth events database, for PeakFinder only. PEAKED_EVENTS_DIP_PA (used by
+# Basic_PeakFinder) does not work for it: PeakFinder's own minimum peak
+# prominence is the carrier blockage's own depth (~400 pA here, see
+# PeakFinder._locate_sublevel_transitions), not a fixed or exposed setting, so
+# a shallow dip can never clear it regardless of tuning - confirmed directly,
+# not assumed, that even a -600 pA dip at PEAKED_EVENTS_DIP_WIDTH_SAMPLES (60)
+# still rejects all 25 events as "No Peaks Found". The actual blocker turned
+# out to be `wlen` (from "Window Length Percentage", 10% of event length here
+# = 25 samples): scipy.signal.find_peaks cannot see far enough past a wide dip
+# to compute its true prominence within that window. A dip both deep enough
+# (>= carrier blockage) and narrow enough (well under wlen) fits cleanly -
+# measured 25/25 at both (-450, 10-20) and (-600, 20-30); -600/20 is used for
+# margin on both axes rather than either boundary.
+PEAKFINDER_DIP_PA = -600.0
+PEAKFINDER_DIP_WIDTH_SAMPLES = 20
+
 # Chimera recording: event finders (and the reader they hang off)
 CHIMERA_CHANNEL = 3
 CHIMERA_EVENTS = 5
@@ -193,6 +209,10 @@ EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
         "Min Prominence": 50.0,
         "Min Distance": 5.0,
     },
+    # Against the PeakFinder-only database (PEAKFINDER_DIP_PA/_WIDTH_SAMPLES,
+    # FITTERS_USING_PEAKFINDER_EVENTS below). Every default already clears it -
+    # confirmed directly, not assumed - so there is nothing to override here.
+    "PeakFinder": {},
 }
 
 # Fitters that need the peaked-events database (a smooth intra-event dip, per
@@ -206,27 +226,12 @@ FITTERS_USING_PEAKED_EVENTS = frozenset({"Basic_PeakFinder"})
 # level transitions.
 FITTERS_USING_STAIRCASE_EVENTS = frozenset({"CUSUM", "ClassicCUSUM", "IntraCUSUM"})
 
-# PeakFinder has no recipe above and is skipped, with the reason below
-# surfaced by pytest_generate_tests. It was tried against the same peaked-events
-# database Basic_PeakFinder uses and rejected all 25 events as "No Peaks Found"
-# under every setting combination attempted - not a missing-fixture problem in
-# the same sense as the other five originally were. Its internal minimum peak
-# prominence, in PeakFinder._locate_sublevel_transitions, is derived from
-# carrier_blockage - the depth of the blockage itself, ~400 pA here - not from
-# the "Min Carrier Blockage" setting, which only gates whether the blockage
-# qualifies as a carrier at all. A sublevel needs prominence comparable to the
-# *full blockage depth* to register, so a modest internal dip can never clear
-# it regardless of tuning. Making PeakFinder fit needs a structurally different
-# fixture - something closer to a genuine two-level signal with both levels
-# comparable in depth - and even that would only reach the entry point to its
-# own downstream folded/unfolded and translocation-direction classification
-# stages, which are unexplored.
-FITTERS_SKIPPED = {
-    "PeakFinder": (
-        "needs a two-level signal comparable to the full blockage depth, not "
-        "a modest intra-event dip - see FITTERS_SKIPPED in _recipes.py"
-    ),
-}
+# Fitters that need the PeakFinder-only database (PEAKFINDER_DIP_PA/
+# _WIDTH_SAMPLES) rather than the peaked-events one Basic_PeakFinder uses -
+# see PEAKFINDER_DIP_PA's comment for why the same dip does not work for both.
+FITTERS_USING_PEAKFINDER_EVENTS = frozenset({"PeakFinder"})
+
+FITTERS_SKIPPED: Dict[str, str] = {}
 
 
 def build_event_loader(db_path: str) -> SQLiteEventLoader:

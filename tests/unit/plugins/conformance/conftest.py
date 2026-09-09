@@ -37,6 +37,8 @@ from tests.unit.plugins.conformance._recipes import (
     NOISE_STD_PA,
     PEAKED_EVENTS_DIP_PA,
     PEAKED_EVENTS_DIP_WIDTH_SAMPLES,
+    PEAKFINDER_DIP_PA,
+    PEAKFINDER_DIP_WIDTH_SAMPLES,
     STAIRCASE_LEVEL_AMPLITUDES_PA,
 )
 
@@ -125,6 +127,38 @@ def staircase_events_db_path(tmp_path_factory) -> str:
         baseline_std_pA=NOISE_STD_PA,
         event_amplitude_pA=EVENT_AMPLITUDE_PA,
         sublevel_amplitudes_pA=STAIRCASE_LEVEL_AMPLITUDES_PA,
+    )
+    return str(database.db_path)
+
+
+@pytest.fixture(scope="session")
+def peakfinder_events_db_path(tmp_path_factory) -> str:
+    """
+    The same shape as ``events_db_path``, with a dip deep and narrow enough
+    for ``PeakFinder`` specifically to resolve.
+
+    ``PEAKED_EVENTS_DIP_PA`` (used by ``Basic_PeakFinder``) does not work for
+    ``PeakFinder`` - see ``PEAKFINDER_DIP_PA``'s comment in ``_recipes.py`` for
+    why. Kept as a fourth, separate database rather than added to any existing
+    one so the fitters that already pass are not put at any risk of a
+    behaviour change from it.
+
+    :param tmp_path_factory: Pytest's session-scoped temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: Path to the written database.
+    :rtype: str
+    """
+    out = tmp_path_factory.mktemp("conformance_peakfinder_events") / "events.sqlite3"
+    database = generate_events_database(
+        out,
+        channel_id=EVENTS_CHANNEL,
+        num_events=EVENTS_COUNT,
+        samplerate=EVENTS_SAMPLERATE_HZ,
+        baseline_mean_pA=BASELINE_PA,
+        baseline_std_pA=NOISE_STD_PA,
+        event_amplitude_pA=EVENT_AMPLITUDE_PA,
+        sublevel_dip_pA=PEAKFINDER_DIP_PA,
+        sublevel_dip_width_samples=PEAKFINDER_DIP_WIDTH_SAMPLES,
     )
     return str(database.db_path)
 

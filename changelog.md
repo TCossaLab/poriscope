@@ -4,6 +4,8 @@
 
 * The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) is now checked against a known planted *sublevel* count, not just a known event count
 
+* `PeakFinder` is un-skipped in the behavioural conformance suite and passes all four checks, matching `Basic_PeakFinder`
+
 * **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
 
 * Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite

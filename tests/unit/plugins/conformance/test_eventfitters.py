@@ -29,6 +29,7 @@ from tests.unit.plugins.conformance._recipes import (
     EVENTS_COUNT,
     FITTERS_SKIPPED,
     FITTERS_USING_PEAKED_EVENTS,
+    FITTERS_USING_PEAKFINDER_EVENTS,
     FITTERS_USING_STAIRCASE_EVENTS,
     INJECTED_EVENT_COLUMNS,
     INJECTED_SUBLEVEL_COLUMNS,
@@ -45,14 +46,19 @@ STAIRCASE_FITTERS: List[Type[MetaEventFitter]] = [
 
 
 @pytest.fixture
-def fitter(request, events_db_path, peaked_events_db_path) -> MetaEventFitter:
+def fitter(
+    request, events_db_path, peaked_events_db_path, peakfinder_events_db_path
+) -> MetaEventFitter:
     """
     Build the fitter under test, attached to a fresh loader, and close it after.
 
     Fitters in ``FITTERS_USING_PEAKED_EVENTS`` (peak-based fitters, which need a
     resolvable local extremum inside the blockage) are attached to
     ``peaked_events_db_path`` instead of the shared flat ``events_db_path`` -
-    see that fixture and ``_recipes.py``'s ``PEAKED_EVENTS_DIP_PA``.
+    see that fixture and ``_recipes.py``'s ``PEAKED_EVENTS_DIP_PA``. Fitters in
+    ``FITTERS_USING_PEAKFINDER_EVENTS`` get ``peakfinder_events_db_path``
+    instead, since ``PeakFinder`` needs a deeper, narrower dip than
+    ``PEAKED_EVENTS_DIP_PA`` provides - see ``PEAKFINDER_DIP_PA``'s comment.
 
     :param request: Pytest request, carrying the parametrised fitter class.
     :type request: pytest.FixtureRequest
@@ -61,15 +67,20 @@ def fitter(request, events_db_path, peaked_events_db_path) -> MetaEventFitter:
     :param peaked_events_db_path: Path to the events database with a
         resolvable intra-event dip.
     :type peaked_events_db_path: str
+    :param peakfinder_events_db_path: Path to the events database with a dip
+        deep and narrow enough for ``PeakFinder`` specifically.
+    :type peakfinder_events_db_path: str
     :return: A configured fitter, ready to fit.
     :rtype: MetaEventFitter
     """
     fitter_cls = request.param
-    db_path = (
-        peaked_events_db_path
-        if fitter_cls.__name__ in FITTERS_USING_PEAKED_EVENTS
-        else events_db_path
-    )
+    name = fitter_cls.__name__
+    if name in FITTERS_USING_PEAKFINDER_EVENTS:
+        db_path = peakfinder_events_db_path
+    elif name in FITTERS_USING_PEAKED_EVENTS:
+        db_path = peaked_events_db_path
+    else:
+        db_path = events_db_path
     loader = build_event_loader(db_path)
     instance = build_event_fitter(fitter_cls, loader)
     yield instance

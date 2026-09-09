@@ -636,10 +636,8 @@ test developer's.
 
 ## 1. Behavioural conformance suite — remaining gaps
 
-All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`; see
-`changelog.md`. Still open:
-- `PeakFinder` stays skipped (`FITTERS_SKIPPED` in `_recipes.py`): needs a two-level
-  signal fixture, not a tuning fix.
+All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`, `PeakFinder`
+included (`FITTERS_SKIPPED` in `_recipes.py` is now empty); see `changelog.md`. Still open:
 - **Possibly worth revisiting: `MetaReader.close_resources()` relies on GC rather than
   explicitly releasing its memmap** - see `DECISIONS.md` (2026-09-09) for why the reader
   leak check was scoped to that weaker, currently-documented contract rather than the
