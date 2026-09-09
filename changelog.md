@@ -20,6 +20,10 @@
 
 * A subset the Metadata tab cannot query, load or read the units of is now reported instead of failing silently
 
+* **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
+
+* A subset export to CSV that the database refuses is now reported instead of appearing to start, and no longer uses up the next export's name
+
 * **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
 
 * Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone

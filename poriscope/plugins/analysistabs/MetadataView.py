@@ -116,6 +116,36 @@ class MetadataView(MetaSubsetTabView):
     #: failed load replotted the previous subset's events.
     event_subset_requested = Signal(str, str, object)
 
+    #: Asks for one column's declared type, which the categorical-histogram guard
+    #: needs before it will let the plot proceed. The answer arrives through
+    #: ``set_column_type``, and stays ``None`` when the lookup failed.
+    column_type_requested = Signal(str, str)
+
+    #: Asks for the full data of specific events, named by the ``event_id`` values the
+    #: navigation snapped to: the loader's key, those ids, the experiment name, the
+    #: channel, and the experiment/channel scope ``load_event_data`` wants. The answer
+    #: arrives through ``set_event_plot_data_generator``.
+    #:
+    #: Step 4a replaced a three-emit chain - resolve the experiment name to an id,
+    #: query the events table for the ids matching those ``event_id`` values within
+    #: that scope, then load exactly those rows - each of whose answers was parked on
+    #: an attribute and read back on the next statement. The whole chain belongs to
+    #: whoever can run it end to end and report which part failed, which is not the
+    #: widget.
+    event_plot_data_requested = Signal(str, list, object, object, object)
+
+    #: Asks for one event's plot features - the lines, points and labels a fitter left
+    #: behind. Emitted once per event on the plot path, and answered through
+    #: ``update_plot_features``, which the Controller calls only when the lookup
+    #: succeeded and the labels it returned match their features.
+    plot_features_requested = Signal(str, int, int, int)
+
+    #: Asks for a filtered subset to be written to CSV in a worker thread: the loader's
+    #: key, the destination folder, the export's name, the single selected filter (or
+    #: None for the whole dataset), the experiment/channel scope, and the index this
+    #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
+    csv_subset_export_requested = Signal(str, str, str, object, object, int)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -148,11 +178,15 @@ class MetadataView(MetaSubsetTabView):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
-        # Bus results, written by relay_experiment_id/relay_query_result and read
-        # back by the emitter on the next statement. Declared here so the type is
-        # stated once and the callers' cleared-before-emit assignment type-checks.
-        self.relayed_experiment_id: Optional[int] = None
+        # Written by relay_query_result and read back by the emitter on the next
+        # statement. Declared here so the type is stated once and the callers'
+        # cleared-before-emit assignment type-checks. The last such attribute on this
+        # tab: the experiment-id one went with the event-plot chain in Step 4a, and
+        # this one goes with _rebuild_event_id_cache's own emit on the base.
         self.relayed_query_result = None
+        # Set by set_event_plot_data_generator once the whole event-plot chain has
+        # succeeded. None means it has not been fetched.
+        self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
         # One units string per plotted column, set by set_column_units once the
         # whole subset has been fetched. None means it has not been.
         self.column_units: Optional[List[Optional[str]]] = None
@@ -1642,7 +1676,10 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def set_column_type(self, column_type: Optional[str]) -> None:
         """
-        a callback from a global_signal call that sets the column type of a specified variable
+        Receive the type asked for by ``column_type_requested``.
+
+        Set only when the lookup succeeded, so the ``None`` the caller cleared it to
+        survives a failure and the categorical guard refuses the plot.
 
         :param column_type: SQL type name of the queried column, or None on failure.
         :type column_type: Optional[str]
@@ -1811,15 +1848,11 @@ class MetadataView(MetaSubsetTabView):
                 loader = parameters["db_loader"]
                 x_axis_col = parameters["x_axis"]
 
+                # Cleared first: the Controller sets it only when the lookup
+                # succeeded, so a failure reads as "not a categorical column"
+                # rather than as the previous column's type.
                 self.column_type = None
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_column_type",
-                    (x_axis_col,),
-                    "relay_column_type",
-                    (),
-                )
+                self.column_type_requested.emit(loader, x_axis_col)
 
                 if not self.is_categorical_type(self.column_type):
                     self.add_text_to_display.emit(
@@ -2035,8 +2068,11 @@ class MetadataView(MetaSubsetTabView):
             if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
         elif not self.filtered_event_ids:
+            # Worded exactly as _rebuild_event_id_cache words it, since the two are
+            # the same finding reached by different routes: the cache is current and
+            # empty here, rather than having just been rebuilt and come back empty.
             self.add_text_to_display.emit(
-                "No filtered events found",
+                "No filtered events found for the current scope.",
                 self.__class__.__name__,
             )
             return
@@ -2052,77 +2088,21 @@ class MetadataView(MetaSubsetTabView):
         # Update the event_id field to reflect the snapped position
         self.metadatacontrols.set_event_id_input(snapped_start_id)
 
-        # Resolve snapped event_ids to event_db_ids for load_event_data, scoped
-        # to the current experiment/channel — event_id is only unique within a
-        # channel, not across the whole events table, so without this scoping
-        # the query can silently match rows from other channels that happen to
-        # share the same event_id.
-
-        # NOTE: id-resolution + fetch logic is kept inline here rather than
-        # factored into a shared helper (unlike ProteinView, which extracts
-        # this into _resolve_event_db_ids/_fetch_event_data) because this is
-        # currently the only caller in this view. If a second consumer shows
-        # up, port ProteinView's extracted pattern instead of duplicating
-        # this block.
-        id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
-        where_parts = [f"event_id IN {id_tuple}"]
-
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_experiment_id = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_experiment_id_by_name",
-            (exp,),
-            "relay_experiment_id",
-            (),
+        # Ask for exactly these events' data. Resolving the snapped event_ids to
+        # database ids is part of that request rather than something done here: the
+        # ids have to be scoped to the current experiment and channel, because
+        # event_id is only unique within a channel and an unscoped match silently
+        # picks up rows from other channels that happen to share one.
+        #
+        # Cleared first: the Controller sets the generator only once the whole chain
+        # has succeeded, and reports which part did not, so a failure here is not
+        # mistaken for the previous plot's events.
+        self.plot_events_generator = None
+        self.event_plot_data_requested.emit(
+            loader, snapped_event_ids, exp, channel, exp_and_ch
         )
-        exp_id = getattr(self, "relayed_experiment_id", None)
-        if exp_id is not None:
-            where_parts.append(f"experiment_id = {exp_id}")
-            if channel is not None:
-                where_parts.append(f"channel_id = {channel}")
-
-        db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "query_database_directly",
-            (db_id_query,),
-            "relay_query_result",
-            (),
-        )
-        db_id_result = getattr(self, "relayed_query_result", None)
-        if db_id_result is None or db_id_result.empty:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
-            return
-        db_ids = db_id_result["id"].tolist()
-        db_id_tuple = f"({','.join(str(i) for i in db_ids)})"
-        event_db_id_filter = f"e.id IN {db_id_tuple}"
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_event_data",
-            (event_db_id_filter, exp_and_ch),
-            "relay_event_plot_data_generator",
-            (),
-        )
-        event_generator = getattr(self, "plot_events_generator", None)
+        event_generator = self.plot_events_generator
         if event_generator is None:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
             return
 
         data_list = []
@@ -2146,44 +2126,34 @@ class MetadataView(MetaSubsetTabView):
             experiment_id = event["experiment_id"]
             channel_id = event["channel_id"]
             event_id_val = event["event_id"]
-            try:
-                load_feature_args = (experiment_id, channel_id, event_id_val)
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_plot_features",
-                    load_feature_args,
-                    "update_features",
-                    (),
-                )
-            except RuntimeError as e:
-                self.logger.error(
-                    f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
-                )
-            except KeyError as e:
-                self.logger.info(
-                    f"Event {event} not found in channel {channel} to get features, skipping: {e}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"An unexpected error occured while trying to overlay features on the event: {e}"
-                )
-            else:
-                if self.vertical is not None:
-                    vertical_lines[-1] = self.vertical
-                    vertical_labels[-1] = self.vlabels
-                    self.vertical = None
-                    self.vlabels = None
-                if self.horizontal is not None:
-                    horizontal_lines[-1] = self.horizontal
-                    horizontal_labels[-1] = self.hlabels
-                    self.horizontal = None
-                    self.hlabels = None
-                if self.points is not None:
-                    points[-1] = self.points
-                    plabels[-1] = self.plabels
-                    self.points = None
-                    self.plabels = None
+            # Called with no arguments to clear all six before asking, for the same
+            # reason the generator is cleared above: a lookup that fails leaves them
+            # unset, and this event gets no features rather than the last one's.
+            #
+            # The try/except that used to wrap this emit is gone with it. It could
+            # never fire: the bus swallowed every exception a plugin raised, and a
+            # Qt slot's exception does not propagate back to the emitter either
+            # (measured on PySide6 6.9.0 - emit returns normally and the traceback
+            # goes to sys.excepthook), so the Controller reports failures itself.
+            self.update_plot_features()
+            self.plot_features_requested.emit(
+                loader, experiment_id, channel_id, event_id_val
+            )
+            if self.vertical is not None:
+                vertical_lines[-1] = self.vertical
+                vertical_labels[-1] = self.vlabels
+                self.vertical = None
+                self.vlabels = None
+            if self.horizontal is not None:
+                horizontal_lines[-1] = self.horizontal
+                horizontal_labels[-1] = self.hlabels
+                self.horizontal = None
+                self.hlabels = None
+            if self.points is not None:
+                points[-1] = self.points
+                plabels[-1] = self.plabels
+                self.points = None
+                self.plabels = None
 
         if data_list:
             self._update_event_plot(
@@ -2210,22 +2180,16 @@ class MetadataView(MetaSubsetTabView):
         self, generator: Iterator[Dict[str, Any]]
     ) -> None:
         """
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays.
+        Receive the events asked for by ``event_plot_data_requested``.
+
+        Set only once the Controller has resolved the requested event_ids to database
+        ids and loaded exactly those rows, so ``None`` means the request failed and
+        has already been reported.
 
         :param generator: a generator of event data
         :type generator: Iterator[Dict[str, Any]]
         """
         self.plot_events_generator = generator
-
-    @log(logger=logger)
-    def relay_experiment_id(self, exp_id: Optional[int]) -> None:
-        """
-        A callback from a global_signal call that stores a resolved experiment id.
-
-        :param exp_id: Integer experiment id.
-        :type exp_id: Optional[int]
-        """
-        self.relayed_experiment_id = exp_id
 
     @log(logger=logger)
     def update_plot_features(
@@ -2504,22 +2468,31 @@ class MetadataView(MetaSubsetTabView):
 
         folder = result["Folder"]["Value"]
 
-        export_subset_args = (folder, name, filters, selection)
-        ret_args = (self.subset_export_count, loader, "MetaDatabaseLoader")
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "export_subset_to_csv",
-                export_subset_args,
-                "set_generator",
-                ret_args,
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to export subset: {repr(e)}")
-        else:
-            self.run_generators.emit(loader)
-            self.subset_export_count += 1
+        # The export runs in a worker thread, so there is no answer to read back
+        # here: the Controller stages the generator, starts it, and calls
+        # on_subset_export_started only if it got that far. The try/except that used
+        # to wrap this emit went with it - it could not catch a plugin failure, which
+        # the bus swallowed before it, and cannot catch one now either, since a Qt
+        # slot's exception does not propagate back to the emitter.
+        self.csv_subset_export_requested.emit(
+            loader, folder, name, filters, selection, self.subset_export_count
+        )
+
+    @log(logger=logger)
+    def on_subset_export_started(self) -> None:
+        """
+        Move to the next export index, now that this one is running.
+
+        The index names the export in the dialog and keys its worker, so it advances
+        only for an export that was actually staged - which is what the Controller
+        calling this says. Kept here rather than counted in the Controller because
+        the dialog needs it before the request goes out, and one owner cannot drift
+        from itself.
+
+        :return: None
+        :rtype: None
+        """
+        self.subset_export_count += 1
 
     @log(logger=logger)
     def set_exported_event_count(self, written: int) -> None:

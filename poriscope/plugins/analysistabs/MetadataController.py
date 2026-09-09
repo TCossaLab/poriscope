@@ -66,15 +66,19 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own three intents on top of the four the subset base wires.
+        Wire this tab's own seven intents on top of the four the subset base wires.
 
         :return: None
         :rtype: None
         """
         super()._setup_connections()
         self.view.column_units_requested.connect(self.request_column_units)
+        self.view.column_type_requested.connect(self.request_column_type)
         self.view.metadata_subset_requested.connect(self.load_metadata_subset)
         self.view.event_subset_requested.connect(self.load_event_subset)
+        self.view.event_plot_data_requested.connect(self.load_event_plot_data)
+        self.view.plot_features_requested.connect(self.request_plot_features)
+        self.view.csv_subset_export_requested.connect(self.export_csv_subset)
 
     @log(logger=logger)
     @Slot(str, list, str, object)
@@ -269,6 +273,259 @@ class MetadataController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
+    @Slot(str, str)
+    def request_column_type(self, loader: str, column: str) -> None:
+        """
+        Fetch one column's declared type, for the categorical-histogram guard.
+
+        Step 4a. The View clears the answer before asking, so a lookup that failed
+        leaves it ``None`` and the guard refuses the plot - which is what the bus
+        produced by accident, and is now what it produces on purpose.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param column: the column whose type is wanted
+        :type column: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_type = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_type", column
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to read the type of column {column}: {e!r}")
+            return
+        self.view.set_column_type(column_type)
+
+    @log(logger=logger)
+    @Slot(str, list, object, object, object)
+    def load_event_plot_data(
+        self,
+        loader: str,
+        event_ids: List[int],
+        exp: Optional[str],
+        channel: Optional[int],
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+    ) -> None:
+        """
+        Load the full data of specific events, named by their ``event_id`` values.
+
+        Step 4a replaced a three-emit chain the View ran a statement at a time:
+        resolve the experiment name to an id, query the events table for the primary
+        keys of those event_ids within the experiment and channel, then load exactly
+        those rows. Each answer was parked on an attribute and read back on the next
+        line, and each read was guarded only by having cleared the attribute first.
+
+        The scoping is the reason the middle query exists at all: ``event_id`` is
+        unique only within a channel, so an unscoped match picks up rows from other
+        channels that happen to share one.
+
+        **One behaviour change.** An experiment name that does not resolve now stops
+        the plot and says so. Before, the bus swallowed the failure, the id came back
+        ``None``, and the query ran *unscoped* - which is the same "plots the wrong
+        subset" class of fault Step 4a's earlier commits fixed, silently returning
+        another channel's events under this channel's label.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the event_id values to plot, already snapped to the cache
+        :type event_ids: List[int]
+        :param exp: the experiment the events belong to, or None to leave it out of scope
+        :type exp: Optional[str]
+        :param channel: the channel the events belong to, or None for all channels
+        :type channel: Optional[int]
+        :param experiments_and_channels: the scope handed on to ``load_event_data``
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :return: None
+        :rtype: None
+        """
+        id_list = ",".join(str(eid) for eid in event_ids)
+        where_parts = [f"event_id IN ({id_list})"]
+
+        if exp is not None:
+            try:
+                exp_id = self.model.call(
+                    "MetaDatabaseLoader", loader, "get_experiment_id_by_name", exp
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to resolve experiment {exp}: {e!r}")
+                self.add_text_to_display.emit(
+                    f"Could not look up experiment {exp} in {loader}: {e}",
+                    self.__class__.__name__,
+                )
+                return
+            if exp_id is None:
+                self.add_text_to_display.emit(
+                    f"{loader} has no experiment named {exp}, so these events cannot "
+                    "be scoped to it",
+                    self.__class__.__name__,
+                )
+                return
+            where_parts.append(f"experiment_id = {exp_id}")
+
+        if channel is not None:
+            where_parts.append(f"channel_id = {channel}")
+
+        query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
+        try:
+            id_result = self.model.call(
+                "MetaDatabaseLoader", loader, "query_database_directly", query
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to resolve event ids for {event_ids}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not look up these events in {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if id_result is None or id_result.empty:
+            self.add_text_to_display.emit(
+                f"No data available for plotting with indices in the specified range {event_ids}",
+                self.__class__.__name__,
+            )
+            return
+        if "id" not in id_result.columns:
+            # A populated result without the column it was asked for means the loader
+            # did not honour its own contract, which is a different problem from an
+            # empty subset and would raise on the read below.
+            self.logger.error(
+                f"{loader} returned rows with no id column for query {query!r}"
+            )
+            return
+
+        db_ids = ",".join(str(i) for i in id_result["id"].tolist())
+        try:
+            generator = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "load_event_data",
+                f"e.id IN ({db_ids})",
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load events {event_ids}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not load these events from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if generator is None:
+            self.add_text_to_display.emit(
+                f"No data available for plotting with indices in the specified range {event_ids}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_plot_data_generator(generator)
+
+    @log(logger=logger)
+    @Slot(str, int, int, int)
+    def request_plot_features(
+        self, loader: str, experiment_id: int, channel_id: int, event_id: int
+    ) -> None:
+        """
+        Fetch one event's fitted features and hand them to the View.
+
+        Step 4a. Emitted once per event on the plot path, so a failure is logged and
+        the event is plotted without features, as it was before - the View clears the
+        six feature attributes before each request and reads them back after, so an
+        event whose lookup failed gets none rather than the previous event's.
+
+        ``update_features``' label-length validation is called here rather than
+        inlined, and its ``ValueError`` is caught for the same reason the bus caught
+        it: one fitter returning mismatched labels should not abandon the plot.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param experiment_id: the event's experiment id
+        :type experiment_id: int
+        :param channel_id: the event's channel id
+        :type channel_id: int
+        :param event_id: the event's id within that channel
+        :type event_id: int
+        :return: None
+        :rtype: None
+        """
+        try:
+            features = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "get_plot_features",
+                experiment_id,
+                channel_id,
+                event_id,
+            )
+            self.update_features(*features)
+        except Exception as e:
+            self.logger.error(
+                f"Features for event {event_id} in channel {channel_id} of "
+                f"experiment {experiment_id} could not be loaded, skipping: {e!r}"
+            )
+
+    @log(logger=logger)
+    @Slot(str, str, str, object, object, int)
+    def export_csv_subset(
+        self,
+        loader: str,
+        folder: str,
+        name: str,
+        subset_filter: Optional[str],
+        experiments_and_channels: Optional[Dict[str, List[str]]],
+        export_index: int,
+    ) -> None:
+        """
+        Start writing one filtered subset to CSV in a worker thread.
+
+        Step 4a, and the second emit in this step that was not an emit-then-read: the
+        plugin returns a progress generator and the bus passed it straight into
+        ``set_generator``, with the export's index, the loader key and the metaclass
+        travelling as the bus's ``ret_args``. ``RawDataController.commit_events`` is
+        the same shape.
+
+        The View's index only advances for an export that was staged, which is what
+        ``on_subset_export_started`` says, so a failed export does not consume a name.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param folder: the folder to write the subset into
+        :type folder: str
+        :param name: the name to append to the exported filenames
+        :type name: str
+        :param subset_filter: the single selected filter, or None for the whole dataset
+        :type subset_filter: Optional[str]
+        :param experiments_and_channels: the experiment and channel scope
+        :type experiments_and_channels: Optional[Dict[str, List[str]]]
+        :param export_index: the index this export's worker is keyed under
+        :type export_index: int
+        :return: None
+        :rtype: None
+        """
+        try:
+            generator = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "export_subset_to_csv",
+                folder,
+                name,
+                subset_filter,
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to export subset {name}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not export this subset from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.model.set_generator(generator, export_index, loader, "MetaDatabaseLoader")
+        self.model.run_generators(loader)
+        self.view.on_subset_export_started()
+
+    @log(logger=logger)
     @Slot(str, str, str)
     def request_column_units(self, loader: str, column: str, axis: str) -> None:
         """
@@ -296,16 +553,6 @@ class MetadataController(MetaSubsetTabController):
             self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
             return
         self.view.update_column_units(column_units, axis)
-
-    @log(logger=logger)
-    def relay_column_type(self, column_type: Optional[str]) -> None:
-        """
-        Relay the data type of a specified column to the view
-
-        :param column_type: The data type of the column, or None if the loader could not resolve one.
-        :type column_type: Optional[str]
-        """
-        self.view.set_column_type(column_type)
 
     @log(logger=logger)
     def update_features(
@@ -369,13 +616,3 @@ class MetadataController(MetaSubsetTabController):
         :type result: Optional[pd.DataFrame]
         """
         self.view.relay_query_result(result)
-
-    @log(logger=logger)
-    def relay_experiment_id(self, exp_id: Optional[int]) -> None:
-        """
-        Relay a resolved experiment id to the view.
-
-        :param exp_id: Integer experiment id.
-        :type exp_id: Optional[int]
-        """
-        self.view.relay_experiment_id(exp_id)

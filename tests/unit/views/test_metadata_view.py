@@ -109,6 +109,21 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.event_subset_requested.emit.side_effect = _event_subset_answers(
         view_instance
     )
+    # The four Step 4a intents that replaced the last of this tab's bus emits. The two
+    # whose answer is read back on the next statement replay a canned_* value; the two
+    # that are fire-and-forget - the per-event feature lookup and the CSV export, which
+    # runs in a worker - are bare Mocks, so a test that wants features parks them
+    # itself and a test that wants the export just asserts on the emit.
+    view_instance.column_type_requested = mocker.Mock()
+    view_instance.column_type_requested.emit.side_effect = _column_type_answer(
+        view_instance
+    )
+    view_instance.event_plot_data_requested = mocker.Mock()
+    view_instance.event_plot_data_requested.emit.side_effect = _event_plot_data_answer(
+        view_instance
+    )
+    view_instance.plot_features_requested = mocker.Mock()
+    view_instance.csv_subset_export_requested = mocker.Mock()
 
     # Additional mocks needed before _init()
     view_instance._commit_cache = mocker.Mock()
@@ -1954,6 +1969,52 @@ def _event_subset_answers(view: MetadataView) -> Callable[..., None]:
     def _emit(loader: str, sql_filter: str, scope: object) -> None:
         view.event_query = getattr(view, "canned_event_query", "")
         view.event_data_generator = getattr(view, "canned_event_data_generator", None)
+
+    return _emit
+
+
+def _column_type_answer(view: MetadataView) -> Callable[..., None]:
+    """
+    Stand in for the Controller answering ``column_type_requested``.
+
+    ``handle_parameter_change`` clears ``column_type`` before asking, so a test that
+    wants the categorical guard to see a type parks it as ``canned_column_type``.
+    Absent that, the answer is None, which is what a failed lookup leaves.
+
+    :param view: the view whose answer to set
+    :type view: MetadataView
+    :return: a side_effect for the mocked intent emit
+    :rtype: Callable[..., None]
+    """
+
+    def _emit(loader: str, column: str) -> None:
+        view.column_type = getattr(view, "canned_column_type", None)
+
+    return _emit
+
+
+def _event_plot_data_answer(view: MetadataView) -> Callable[..., None]:
+    """
+    Stand in for the Controller answering ``event_plot_data_requested``.
+
+    The one intent replaced three chained emits, so a test that used to park an
+    experiment id and a query result now parks only the generator they were resolved
+    in order to fetch - as ``canned_plot_events_generator``.
+
+    :param view: the view whose answer to set
+    :type view: MetadataView
+    :return: a side_effect for the mocked intent emit
+    :rtype: Callable[..., None]
+    """
+
+    def _emit(
+        loader: str,
+        event_ids: list,
+        exp: object,
+        channel: object,
+        scope: object,
+    ) -> None:
+        view.plot_events_generator = getattr(view, "canned_plot_events_generator", None)
 
     return _emit
 
@@ -4055,15 +4116,10 @@ def test_export_csv_subset_converts_empty_filters_to_none(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {}, {"exp1": [1]})
 
-    # Verify global_signal was called with None for filters
-    call_args = view.global_signal.emit.call_args[0]
-    export_args = call_args[3]
-    assert export_args[2] is None  # filters should be None
+    assert view.csv_subset_export_requested.emit.call_args[0][3] is None
 
 
 def test_export_csv_subset_extracts_filter_value(
@@ -4081,21 +4137,21 @@ def test_export_csv_subset_extracts_filter_value(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
 
-    # Verify global_signal was called with filter value
-    call_args = view.global_signal.emit.call_args[0]
-    export_args = call_args[3]
-    assert export_args[2] == "WHERE x > 1"
+    assert view.csv_subset_export_requested.emit.call_args[0][3] == "WHERE x > 1"
 
 
 def test_export_csv_subset_emits_signal_on_success(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify global signal is emitted for export."""
+    """Verify the export intent carries the whole request, and starts no worker here.
+
+    ``run_generators`` was emitted from this method before Step 4a. Staging the
+    generator and starting it are the Controller's now, which is the only place that
+    knows whether the export was set up at all.
+    """
     view.available_plugins = {}  # type: ignore[attr-defined]
     view.subset_export_count = 0
     mock_dialog_class = mocker.patch(
@@ -4107,19 +4163,31 @@ def test_export_csv_subset_emits_signal_on_success(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
     view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {"exp1": [1]})
 
-    view.global_signal.emit.assert_called_once()
-    view.run_generators.emit.assert_called_once_with("test_loader")
+    view.csv_subset_export_requested.emit.assert_called_once_with(
+        "test_loader",
+        "/path/to/folder",
+        "export_name",
+        "WHERE x > 1",
+        {"exp1": [1]},
+        0,
+    )
+    view.global_signal.emit.assert_not_called()
+    view.run_generators.emit.assert_not_called()
 
 
-def test_export_csv_subset_increments_counter(
+def test_export_csv_subset_does_not_advance_the_index_by_itself(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify subset export counter is incremented."""
+    """Verify the index advances on the Controller's word, not on the request.
+
+    Was ``..._increments_counter``, which held when this method staged the export
+    itself. It advances in ``on_subset_export_started`` now, so an export the loader
+    refused does not consume a name.
+    """
     view.available_plugins = {}  # type: ignore[attr-defined]
     initial_count = view.subset_export_count
     mock_dialog_class = mocker.patch(
@@ -4131,10 +4199,12 @@ def test_export_csv_subset_increments_counter(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+
+    assert view.subset_export_count == initial_count
+
+    view.on_subset_export_started()
 
     assert view.subset_export_count == initial_count + 1
 
@@ -4155,32 +4225,6 @@ def test_export_csv_subset_does_not_increment_counter_on_cancel(
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
 
     assert view.subset_export_count == initial_count
-
-
-def test_export_csv_subset_handles_exception(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify exception is logged when export fails."""
-    view.available_plugins = {}
-    view.subset_export_count = 0
-    mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
-    )
-    mock_dialog = mocker.Mock()
-    mock_dialog.get_result.return_value = (
-        {"Folder": {"Value": "/path/to/folder"}},
-        "export_name",
-    )
-    mock_dialog_class.return_value = mock_dialog
-
-    # Create a fresh mock for global_signal that will raise exception
-    view.global_signal = mocker.Mock()
-    view.global_signal.emit = mocker.Mock(side_effect=Exception("Export failed"))
-
-    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
-
-    # Should log error but not crash
-    assert view.logger.error.called
 
     # ----------------------------- Set Exported Event Count Tests ------------------------------
 
@@ -5365,14 +5409,7 @@ class TestHandleParameterChangeCategoricalGuard:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is continuous, emits a message and skips _overlay_plot."""
-        view.column_type = "REAL"
-        view.global_signal = mocker.Mock()
-
-        def side_effect(*args: Any) -> None:
-            if len(args) > 2 and args[2] == "get_column_type":
-                view.column_type = "REAL"
-
-        view.global_signal.emit.side_effect = side_effect
+        view.canned_column_type = "REAL"
         view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
@@ -5384,14 +5421,7 @@ class TestHandleParameterChangeCategoricalGuard:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is categorical (e.g. INTEGER), _overlay_plot is called."""
-        view.column_type = "INTEGER"
-        view.global_signal = mocker.Mock()
-
-        def side_effect(*args: Any) -> None:
-            if len(args) > 2 and args[2] == "get_column_type":
-                view.column_type = "INTEGER"
-
-        view.global_signal.emit.side_effect = side_effect
+        view.canned_column_type = "INTEGER"
         view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
@@ -5402,14 +5432,7 @@ class TestHandleParameterChangeCategoricalGuard:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is None (unknown), treated as categorical — proceeds."""
-        view.column_type = None
-        view.global_signal = mocker.Mock()
-
-        def side_effect(*args: Any) -> None:
-            if len(args) > 2 and args[2] == "get_column_type":
-                view.column_type = None
-
-        view.global_signal.emit.side_effect = side_effect
+        view.canned_column_type = None
         view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
@@ -5599,18 +5622,8 @@ def test_handle_plot_events_uses_cache_for_navigation(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view.relayed_query_result = pd.DataFrame({"id": [1]})
-    view.plot_events_generator = iter([_FULL_EVENT])
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([_FULL_EVENT])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([_FULL_EVENT])
     parameters = {
         "db_loader": "test_loader",
         "event_id": 3,
@@ -5858,15 +5871,7 @@ def test_handle_plot_events_snaps_to_nearest_filtered_event(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([dict(_FULL_EVENT)])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 3, "n_events": 1, "raw": False}
@@ -5887,15 +5892,7 @@ def test_handle_plot_events_wraps_to_first_when_past_last(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([dict(_FULL_EVENT)])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 99, "n_events": 1, "raw": False}
@@ -5936,15 +5933,7 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     view.current_channel = 1
     view._rebuild_event_id_cache = mocker.Mock(return_value=True)
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([dict(_FULL_EVENT)])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
@@ -5953,10 +5942,15 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     view._rebuild_event_id_cache.assert_not_called()
 
 
-def test_handle_plot_events_returns_early_when_no_db_ids(
+def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify early return with message when db_id resolution returns empty result."""
+    """Verify the event-plot intent carries the snapped ids and the current scope.
+
+    Was ``..._returns_early_when_no_db_ids``, which drove the db-id resolution the
+    View used to do a statement at a time. That whole chain is the Controller's now,
+    so what is left to pin here is the request it sends.
+    """
     view.metadatacontrols = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
@@ -5965,26 +5959,25 @@ def test_handle_plot_events_returns_early_when_no_db_ids(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame()
-
-    view.global_signal.emit.side_effect = side_effect
 
     view._handle_plot_events(
-        {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
+        {"db_loader": "test_loader", "event_id": 4, "n_events": 2, "raw": False}
     )
 
-    view._update_event_plot.assert_not_called()
-    view.add_text_to_display.emit.assert_called()
+    view.event_plot_data_requested.emit.assert_called_once_with(
+        "test_loader", [5, 10], "exp1", 1, {"exp1": [1]}
+    )
+    view.global_signal.emit.assert_not_called()
 
 
-def test_handle_plot_events_emits_warning_when_generator_none(
+def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify warning is emitted when load_event_data produces no generator."""
+    """Verify nothing is plotted, and nothing said, when no generator comes back.
+
+    The Controller reports which part of the chain failed, so a message from here as
+    well would say the same thing twice.
+    """
     view.metadatacontrols = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
@@ -5992,20 +5985,12 @@ def test_handle_plot_events_emits_warning_when_generator_none(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view.plot_events_generator = None
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        # load_event_data does not set plot_events_generator
-
-    view.global_signal.emit.side_effect = side_effect
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
     )
 
+    assert view.plot_events_generator is None
     view._update_event_plot.assert_not_called()
-    view.add_text_to_display.emit.assert_called()
+    view.add_text_to_display.emit.assert_not_called()

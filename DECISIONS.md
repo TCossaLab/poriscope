@@ -10,6 +10,52 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-09 - An unresolvable experiment stops an event plot rather than running unscoped
+
+**Context.** `MetadataView._handle_plot_events` resolved the experiment name to an id, then
+scoped its `SELECT id FROM events` query by that id and the channel. The bus swallowed a
+failed lookup, so the id came back `None` and the query ran with **no scope at all**.
+
+**Decision.** `MetadataController.load_event_plot_data` reports and returns instead. Channel
+scoping is also applied independently of the experiment lookup, where the old code appended
+`channel_id` only inside the branch that had resolved an experiment id.
+
+**Evidence.** `event_id` is unique only within a channel, so an unscoped match returns
+whichever channel's row happens to share the number - the same "plots the wrong subset" class
+of fault as the three stale reads fixed in `32b3bc34`, and invisible in exactly the same way.
+`test_metadata_fetch_slots` drives it, and reverting the guard fails that one test and no
+other.
+
+**Revisit if** a database legitimately holds events whose experiment is unknown, in which
+case the fallback needs to be scoped by channel rather than unscoped.
+
+---
+
+## 2026-09-09 - Metadata's event-plot chain went to the Controller whole, not emit by emit
+
+**Context.** Three of the tab's six remaining emits were one chain: resolve the experiment,
+query the events table for the primary keys of the snapped `event_id`s within scope, load
+exactly those rows. Converting them one for one would have produced three intents and kept
+three answer-slot attributes on the View.
+
+**Decision.** One intent, `event_plot_data_requested`, answered by one Controller method that
+runs the whole chain. `relayed_experiment_id`, `MetadataView.relay_experiment_id` and
+`MetadataController.relay_experiment_id` are deleted rather than re-pointed.
+
+**Evidence.** The two intermediate answers are only ever used to build the next query, so
+nothing outside the chain reads them; the only answer the View needs is the generator, which
+it already had a setter for. The cost is that the id-resolution SQL now sits in a Controller,
+which Step 4b will move again - one hop further along than leaving it in a widget.
+
+**Not promoted to `MetaSubsetTabController` yet**, even though `ProteinView`'s
+`_resolve_event_db_ids` + `_fetch_event_data` are visibly the same chain. Their failure
+messages differ (Metadata names the event ids, Protein names the plot type), Protein selects
+`id, event_id` where Metadata selects `id`, and Protein re-sorts the result into the caller's
+order. Rule 47's lesson is to diff the two copies before believing they differ, and there is
+nothing to diff until Protein's half is converted. **Revisit at Step 4a's Protein commit.**
+
+---
+
 ## 2026-09-08 - The status panel shows the applied query, deduplicated, not the validation one
 
 **Context.** Kyle: what the sidebar shows should be the query that runs when the filter pulls

@@ -14,13 +14,12 @@ exists to handle, and which this path does not use. The mis-fire is pinned below
 current behaviour and queued in ``future_fixes.md``; **this file records what the
 code does, it does not endorse it**.
 
-``MetadataView._handle_plot_events`` builds a near-twin query
-(``SELECT id FROM events WHERE ...`` against ``ProteinView``'s
-``SELECT id, event_id FROM events WHERE ...``) but does so inline, 120 lines into a
-244-line orchestrator, so pinning its text means driving the whole method. Its twin
-in ``ProteinView._resolve_event_db_ids`` *is* pinned, in
-``test_protein_view_characterization.py``. The gap is recorded in
-``future_fixes.md``: extract that query before Step 4b moves it.
+The metadata tab built a near-twin query (``SELECT id FROM events WHERE ...`` against
+``ProteinView``'s ``SELECT id, event_id FROM events WHERE ...``) inline, 120 lines into
+a 244-line orchestrator, which is why pinning its text used to mean driving the whole
+method. Step 4a moved that chain to ``MetadataController.load_event_plot_data``, where
+``test_metadata_fetch_slots`` drives it directly; the projection difference between the
+two tabs is still recorded below, because Step 4b has to reconcile them.
 """
 
 import pytest
@@ -214,21 +213,28 @@ class TestTheNaiveWhereDetection:
         assert query.endswith("AND experiment_id = 7 AND channel_db_id = 3")
 
 
-def test_the_two_views_build_different_projections(view: ProteinView) -> None:
+def test_the_two_tabs_build_different_projections() -> None:
     """
     The near-twin queries in the two tabs are not interchangeable.
 
-    ``ProteinView._resolve_event_db_ids`` selects ``id, event_id`` while
-    ``MetadataView._handle_plot_events`` selects ``id`` alone. Step 4b folds both
-    into the loader, and a single shared query would have to serve both - so the
-    difference is recorded here rather than discovered during the merge.
+    ``ProteinView._resolve_event_db_ids`` selects ``id, event_id`` while the metadata
+    tab selects ``id`` alone. Step 4b folds both into the loader, and a single shared
+    query would have to serve both - so the difference is recorded here rather than
+    discovered during the merge.
+
+    The metadata half moved out of the View in Step 4a: the whole three-call chain it
+    sat in is ``MetadataController.load_event_plot_data`` now, which is also why its
+    text is asserted rather than only its projection - the query is built from a list
+    of clauses there, so the ``SELECT`` and the clauses are checked separately, and
+    ``test_metadata_fetch_slots`` pins what the clauses come out as.
     """
     import inspect
 
-    from poriscope.plugins.analysistabs.MetadataView import MetadataView
+    from poriscope.plugins.analysistabs.MetadataController import MetadataController
 
     protein = inspect.getsource(ProteinView._resolve_event_db_ids)
-    metadata = inspect.getsource(MetadataView._handle_plot_events)
+    metadata = inspect.getsource(MetadataController.load_event_plot_data)
 
     assert "SELECT id, event_id FROM events WHERE" in protein
     assert "SELECT id FROM events WHERE" in metadata
+    assert "id, event_id" not in metadata

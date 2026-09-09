@@ -1,35 +1,35 @@
-## Step 4a handoff, paused 2026-09-08
+## Step 4a handoff, 2026-09-09
 
-**Where it stands.** The subset tabs are the last of 4a. Emits: **19** left across the
-family - `MetadataView` 6, `ProteinView` 12, `MetaSubsetTabView` 1. Started the session at
-34.
+**Where it stands.** The subset tabs are the last of 4a. Emits: **13** left across the
+family - `MetadataView` **0**, `ProteinView` 12, `MetaSubsetTabView` 1. Started the previous
+session at 34. Boundary allowlist total 38, `*Controller.py` at 71 functions; both banked.
 
 Landed, in order: `39a8f74e` `get_selected_filters` + the `_subset_controls` property ·
 `7ae7a2f8` `_rebuild_event_id_cache` · `7d6e67be` both filter dialogs · `34e46886`
 `_load_filter` · `967efecc` five more methods `_subset_controls` unlocked · `f27d0a58`
 `relay_query` to the Controller · `de13e2eb` the filter-validation round trips · `32b3bc34`
-`_overlay_plot` and the applied-query display.
+`_overlay_plot` and the applied-query display · this session, Metadata's last six.
 
-**Manual passes:** metadata and protein both green after `34e46886`. **Nothing since
-`967efecc` has been checked on Windows** - that is five commits, including the two that
-change what the status panel shows.
+**Manual passes:** metadata and protein green after `34e46886`, and again after `32b3bc34`
+(the five commits through the applied-query display, checked 2026-09-09). Metadata's last six
+are **not** yet checked on Windows.
 
 **Next, in order:**
 
-1. **Metadata's remainder, 6 emits.** `_handle_plot_events` (4), `_export_csv_subset` (1,
-   the one `set_generator` shape in this tab), `handle_parameter_change` (1). Note
-   `_handle_plot_events` still carries its own `"No filtered events found"` string, which no
-   longer matches the promoted `_rebuild_event_id_cache`'s "...for the current scope." -
-   align them here.
-2. **Protein's remainder, 12 emits.** `_commit_fits` (3), `_resolve_event_db_ids` (2),
+1. **Protein's remainder, 12 emits.** `_commit_fits` (3), `_resolve_event_db_ids` (2),
    `_build_load_event_data_args` (2), `_fetch_event_data` (1),
    `_update_distribution_individual` (2), `_update_distribution_ensemble` (2). The last is
    `@register_action`'s twin of the one before it, which Step 7 flags for saved-action
    replay. `_build_load_event_data_args` is where the queued raw-filter gap is fixed.
-3. **The last emit on the base.** `_rebuild_event_id_cache`'s `load_metadata` is an
-   emit-then-read whose callers branch on its `bool`, so it can only be converted once
-   `_handle_plot_events` and `_shift_range_and_update_plot` are restructured - i.e. after 1
-   and 2, not before.
+   `_resolve_event_db_ids` + `_fetch_event_data` are the same chain
+   `MetadataController.load_event_plot_data` now runs; diff them against it and promote to
+   `MetaSubsetTabController` if they merge (see `DECISIONS.md`, 2026-09-09). Delete the
+   write-only `baseline_duration` chain in the same commit - it is dead in both files.
+2. **The last emit on the base.** `_rebuild_event_id_cache`'s `load_metadata`. The claim
+   that this needs `_handle_plot_events` and `_shift_range_and_update_plot` restructured
+   first **did not survive** Metadata's commit: the established pattern is clear the answer,
+   emit a typed intent, read it back, and that leaves `_rebuild_event_id_cache`'s `bool`
+   return - and therefore both callers - untouched. Verify that before assuming either way.
 
 **Then 4a is done** and the `global_signal` bus has no callers left in the analysis tabs.
 
@@ -564,10 +564,11 @@ reorder joins, reassign aliases or change the projection and every one would sti
 - `test(views):` the View-authored SQL, pinned *before* the refactor moves it into the loader.
   `ProteinView.py:1778` was already pinned in branch 5 via `_resolve_event_db_ids`;
   `ProteinView.py:1957-1967`'s `scoped_query` is pinned here including both mis-fires of its
-  naive `"WHERE" in query.upper()` test. **`MetadataView.py:2351` is pinned only indirectly** —
-  it is inline, 120 lines into a 244-line orchestrator, so its text cannot be reached without
-  driving the whole method. Extract it before Step 4b moves it; queued in `future_fixes.md`,
-  and the projection difference against its Protein twin (`id` vs `id, event_id`) is asserted.
+  naive `"WHERE" in query.upper()` test. Metadata's twin **was** pinned only indirectly —
+  inline, 120 lines into a 244-line orchestrator — until Step 4a moved that whole chain to
+  `MetadataController.load_event_plot_data`, where `test_metadata_fetch_slots` drives it
+  directly. The projection difference against its Protein twin (`id` vs `id, event_id`) is
+  still asserted, because Step 4b has to reconcile them.
 - **Two findings from verifying the goldens are actually sensitive.** The alias map at
   `MetaDatabaseLoader.py:1021-1029` feeds the projection and the WHERE qualification while the
   JOIN's `ON` clause hardcodes `s.`, so renaming an alias emits invalid SQL — latent today,
@@ -785,8 +786,8 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 
 **Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **17 commits,
 not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
-working tree; suite **3,550 passed / 4 skipped**. Re-measured 2026-09-08 after Step 4a's
-commit 4; the artifact's table carries the same numbers and the reasoning behind the two
+working tree; suite **3,573 passed / 4 skipped**. Re-measured 2026-09-09 after Metadata's
+last six emits; the artifact's table carries the same numbers and the reasoning behind the
 rows that moved.
 
 | Gate | Start of refactor | Now | Target |
@@ -794,8 +795,8 @@ rows that moved.
 | Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
 | — the 3 analysis-tab families | 1,199 | **31** | 0 |
 | — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
-| Boundary allowlist | 111 | **44** | 0 |
-| — rule 1, View emits | 75 | **19** | 0 |
+| Boundary allowlist | 111 | **38** | 0 |
+| — rule 1, View emits | 75 | **13** | 0 |
 | — rule 2, View computation imports | 22 | **20** | 0 |
 | — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
@@ -886,8 +887,32 @@ the View emits a **typed intent**, the Controller's slot calls the plugin throug
   `future_fixes.md` entry that had been misdiagnosed since 2026-09-04 — `ProteinView`'s
   missing `update_column_units` was **unreachable**, not swallowed, because the protein
   tab has no units label, no units cache, and hardcoded axis-label units.
-- **Metadata 17, Protein 18.** Next: promote the four shared-name methods, then convert
-  their six emits once on the base.
+- **Metadata is done — the fourth View at zero emits**, 2026-09-09, taking it 17 → 0 over
+  nine commits shared with the base and the protein tab. The last six: the categorical
+  guard's `get_column_type`, the CSV subset export, and `_handle_plot_events`' four -
+  three of which were **one chain** (resolve the experiment, resolve the event ids within
+  scope, load those rows) and became a single intent answered by
+  `MetadataController.load_event_plot_data`, rather than three intents keeping three
+  answer-slot attributes on the View.
+
+  **One more unscoped-query fault**, of the same class as commit 4's three stale reads: a
+  failed experiment lookup left the id `None` and the id query ran with no scope, so an
+  `event_id` that exists in two channels could return the wrong channel's events. It stops
+  the plot now. Reasoning in `DECISIONS.md`.
+
+  **Two dead guards went with the emits.** The View's `try/except` around the per-event
+  feature lookup and around the export could never fire - the bus swallowed plugin
+  exceptions before they reached it, and a Qt slot's exception does not propagate back to
+  the emitter either. Measured on PySide6 6.9.0: `emit()` returns normally, the traceback
+  goes to `sys.excepthook`, and the remaining slots still run.
+
+  **The commit-4 methods had no Controller-side test.** `load_metadata_subset` and
+  `load_event_subset` shipped covered only by View tests that stub the answer, so a wrong
+  call signature or a swallowed failure would have satisfied the whole suite.
+  `tests/unit/controllers/test_metadata_fetch_slots.py` covers them alongside this commit's
+  four, 24 tests, and two mutations - dropping the scope guard, and handing the query over
+  before the rows load - each fail exactly one of them.
+- **Protein 12.** Next, and the last of 4a bar the base's single remaining emit.
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much
 cheaper after 4a for the reason recorded under 4c below.
@@ -905,12 +930,20 @@ cheaper after 4a for the reason recorded under 4c below.
   how `1,889 → 31` happened.
 - **A safety net's absence has no signature, so assert the net is armed.** A missing test
   dependency errors at setup rather than failing, which reads as a pass.
-- Method notes are at **43 rules** in the artifact, grouped by refactor phase; the
+- **A converted slot needs its own test, not just its caller's.** The View tests stub the
+  Controller's answer, so they cannot see a wrong call signature or a swallowed failure, and
+  no gate covers a method that did not exist before the commit. Rule 52.
+- **Delete a guard the conversion makes unreachable, once you have measured that it is.** A
+  Qt slot's exception does not reach the emitter, so a `try/except` around an emit is dead
+  code that reads as error handling. Rule 50.
+- Method notes are at **52 rules** in the artifact, grouped by refactor phase; the
   artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
 ### Owed
 
-- Nothing on the manual pass — **RawData cleared in full 2026-09-08**, see the Verification section.
+- **Metadata's last six emits are unchecked on Windows** — the event-plot chain, the CSV
+  export and the categorical-histogram guard. Everything earlier is cleared, the five paused
+  subset-tab commits on 2026-09-09.
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
   gate. Still open from 3f.
 

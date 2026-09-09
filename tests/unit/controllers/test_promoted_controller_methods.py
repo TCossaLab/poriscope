@@ -23,6 +23,7 @@ from pytest_mock import MockerFixture
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
+from tests.unit.controllers._recording_model import RecordingModel
 
 pytestmark = pytest.mark.characterization
 
@@ -89,48 +90,6 @@ def test_the_base_no_longer_calls_relay_query_unshareable() -> None:
 # ===========================================================================
 # validate_filter / validate_raw_filter - Step 4a's converted round trips
 # ===========================================================================
-
-
-class RecordingModel:
-    """
-    A Model whose ``call`` records its arguments and replays canned answers.
-
-    The answers are keyed by plugin method name and written from each method's real
-    signature on ``MetaDatabaseLoader`` - ``get_column_names_by_table`` returns
-    ``Optional[List[str]]``, ``construct_metadata_query`` a ``Tuple[str, str, str]``
-    and ``validate_filter_query`` a ``Tuple[bool, str]``. Writing them from the
-    signature rather than from the calling code is what keeps the test from pinning
-    the shape the caller happens to assume.
-    """
-
-    def __init__(self, answers: dict) -> None:
-        """
-        :param answers: plugin method name to answer, or to an exception to raise
-        :type answers: dict
-        """
-        self.answers = answers
-        self.calls: list = []
-
-    def call(self, metaclass: str, key: str, method: str, *args: object) -> object:
-        """
-        Record one plugin call and return its canned answer.
-
-        :param metaclass: the plugin family
-        :type metaclass: str
-        :param key: the plugin instance's key
-        :type key: str
-        :param method: the method being called on it
-        :type method: str
-        :param args: the positional arguments, spread rather than tupled
-        :type args: object
-        :return: whatever this method's canned answer is
-        :rtype: object
-        """
-        self.calls.append((metaclass, key, method, args))
-        answer = self.answers[method]
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
 
 
 @pytest.fixture
