@@ -1,7 +1,7 @@
 """
 Shared synthetic data for the conformance suite.
 
-All three fixtures are session-scoped and read-only: the conformance checks drive
+All fixtures here are session-scoped and read-only: the conformance checks drive
 plugins *over* this data and write their own outputs to per-test paths, so building
 each dataset once is safe and keeps the suite cheap. Every plugin instance is still
 created per test, so no plugin state is shared.
@@ -37,6 +37,7 @@ from tests.unit.plugins.conformance._recipes import (
     NOISE_STD_PA,
     PEAKED_EVENTS_DIP_PA,
     PEAKED_EVENTS_DIP_WIDTH_SAMPLES,
+    STAIRCASE_LEVEL_AMPLITUDES_PA,
 )
 
 
@@ -92,6 +93,38 @@ def peaked_events_db_path(tmp_path_factory) -> str:
         event_amplitude_pA=EVENT_AMPLITUDE_PA,
         sublevel_dip_pA=PEAKED_EVENTS_DIP_PA,
         sublevel_dip_width_samples=PEAKED_EVENTS_DIP_WIDTH_SAMPLES,
+    )
+    return str(database.db_path)
+
+
+@pytest.fixture(scope="session")
+def staircase_events_db_path(tmp_path_factory) -> str:
+    """
+    The same shape as ``events_db_path``, with a known number of discrete,
+    resolvable levels inside every blockage instead of one flat level.
+
+    For step-detection fitters (``FITTERS_USING_STAIRCASE_EVENTS`` in
+    ``_recipes.py``): a flat blockage has no internal transitions for a
+    changepoint detector to count, so those fitters need this instead of the
+    shared flat database. Kept as a third, separate database rather than
+    added to the shared one so the fitters that already pass against a flat
+    blockage are not put at any risk of a behaviour change from it.
+
+    :param tmp_path_factory: Pytest's session-scoped temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: Path to the written database.
+    :rtype: str
+    """
+    out = tmp_path_factory.mktemp("conformance_staircase_events") / "events.sqlite3"
+    database = generate_events_database(
+        out,
+        channel_id=EVENTS_CHANNEL,
+        num_events=EVENTS_COUNT,
+        samplerate=EVENTS_SAMPLERATE_HZ,
+        baseline_mean_pA=BASELINE_PA,
+        baseline_std_pA=NOISE_STD_PA,
+        event_amplitude_pA=EVENT_AMPLITUDE_PA,
+        sublevel_amplitudes_pA=STAIRCASE_LEVEL_AMPLITUDES_PA,
     )
     return str(database.db_path)
 

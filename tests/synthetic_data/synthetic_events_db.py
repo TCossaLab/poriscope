@@ -203,6 +203,7 @@ def _build_event_trace(
     amplitude: float,
     sublevel_dip_pA: Optional[float] = None,
     sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
 ) -> np.ndarray:
     """
     Build one event's ground-truth trace: baseline, blockage, baseline.
@@ -254,17 +255,53 @@ def _build_event_trace(
         sublevel_dip_pA, in samples. Must be strictly less than event_length,
         so at least one blockage sample remains on either side of it.
     :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: If given, divides the blockage into
+        ``len(sublevel_amplitudes_pA)`` contiguous, equal-width steps (the
+        last absorbs any remainder from an uneven division), each held at
+        ``amplitude`` plus its own offset from this list - a staircase of
+        discrete, resolvable levels for a step-detection fitter (the CUSUM
+        family), unlike sublevel_dip_pA's single smooth taper for a
+        peak-based one. Mutually exclusive with sublevel_dip_pA.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
 
     :return: The event trace, in picoamps.
     :rtype: numpy.ndarray
 
     :raises ValueError: If exactly one of sublevel_dip_pA and
-        sublevel_dip_width_samples is given, or if the dip does not fit
-        strictly inside the blockage.
+        sublevel_dip_width_samples is given, if the dip does not fit
+        strictly inside the blockage, if sublevel_amplitudes_pA is given
+        together with sublevel_dip_pA, or if event_length cannot fit that
+        many whole-sample steps.
     """
     total = padding_before + event_length + padding_after
     trace = build_noisy_segment(rng, total, baseline_mean, baseline_std)
-    trace[padding_before : padding_before + event_length] += amplitude
+
+    if sublevel_amplitudes_pA is not None and sublevel_dip_pA is not None:
+        raise ValueError(
+            "sublevel_amplitudes_pA and sublevel_dip_pA are mutually exclusive"
+        )
+
+    if sublevel_amplitudes_pA is not None:
+        num_steps = len(sublevel_amplitudes_pA)
+        if num_steps < 1:
+            raise ValueError("sublevel_amplitudes_pA must have at least one entry")
+        step_width = event_length // num_steps
+        if step_width < 1:
+            raise ValueError(
+                f"event_length ({event_length}) cannot fit {num_steps} whole-sample "
+                "steps"
+            )
+        pos = padding_before
+        for i, offset in enumerate(sublevel_amplitudes_pA):
+            width = (
+                step_width
+                if i < num_steps - 1
+                else event_length - step_width * (num_steps - 1)
+            )
+            trace[pos : pos + width] += amplitude + offset
+            pos += width
+    else:
+        trace[padding_before : padding_before + event_length] += amplitude
 
     if (sublevel_dip_pA is None) != (sublevel_dip_width_samples is None):
         raise ValueError(
@@ -379,6 +416,7 @@ def _write_channel(
     event_amplitudes_pA: Optional[List[float]] = None,
     sublevel_dip_pA: Optional[float] = None,
     sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
 ) -> SyntheticEventsChannel:
     """
     Insert one channel's row and all of its planted events into an
@@ -455,6 +493,11 @@ def _write_channel(
     :param sublevel_dip_width_samples: Width of the dip described by
         sublevel_dip_pA, in samples. Must be given together with it.
     :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: If given, planted in every event via
+        _build_event_trace - see its docstring. Gives a step-detection
+        fitter (the CUSUM family) a known number of discrete, resolvable
+        levels within the blockage instead of a single flat one.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
 
     :return: Ground truth for the channel just written.
     :rtype: SyntheticEventsChannel
@@ -509,6 +552,7 @@ def _write_channel(
             amplitude=this_amplitude,
             sublevel_dip_pA=sublevel_dip_pA,
             sublevel_dip_width_samples=sublevel_dip_width_samples,
+            sublevel_amplitudes_pA=sublevel_amplitudes_pA,
         )
         raw_data = trace.astype(RAW_DATA_DTYPE).tobytes()
 
@@ -571,6 +615,7 @@ def generate_events_database(
     event_amplitudes_pA: Optional[List[float]] = None,
     sublevel_dip_pA: Optional[float] = None,
     sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
 ) -> SyntheticEventsDatabase:
     """
     Write a single-channel synthetic events database with known events.
@@ -639,6 +684,11 @@ def generate_events_database(
     :param sublevel_dip_width_samples: Width of the dip described by
         sublevel_dip_pA, in samples. Must be given together with it.
     :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: If given, planted in every event via
+        _build_event_trace - see its docstring. Gives a step-detection
+        fitter (the CUSUM family) a known number of discrete, resolvable
+        levels within the blockage instead of a single flat one.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
 
     :return: A SyntheticEventsDatabase describing the file and its
         planted events.
@@ -673,6 +723,7 @@ def generate_events_database(
             conductivity=conductivity,
             sublevel_dip_pA=sublevel_dip_pA,
             sublevel_dip_width_samples=sublevel_dip_width_samples,
+            sublevel_amplitudes_pA=sublevel_amplitudes_pA,
         )
         conn.commit()
     finally:

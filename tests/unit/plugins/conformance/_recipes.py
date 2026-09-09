@@ -110,6 +110,23 @@ EVENTS_SAMPLERATE_HZ = 500_000.0
 PEAKED_EVENTS_DIP_PA = -150.0
 PEAKED_EVENTS_DIP_WIDTH_SAMPLES = 60
 
+# A third events database, for step-detection fitters only (the CUSUM family). A
+# flat blockage has no internal transitions for a changepoint detector to count,
+# so those fitters need a known number of discrete, resolvable levels instead -
+# see generate_events_database's sublevel_amplitudes_pA and
+# _build_event_trace's docstring for why this is a staircase of flat steps
+# rather than PEAKED_EVENTS_DIP_PA's single smooth taper (which suits a
+# peak-finder, not a step detector). Kept as a separate database rather than
+# added to either existing one, for the same non-interference reason as
+# PEAKED_EVENTS_DIP_PA above.
+#
+# 150 pA between consecutive levels was measured, not assumed: with 15 pA
+# noise, spacing has to clear CUSUM/IntraCUSUM's Step Size (100 pA - the
+# family's least sensitive setting) with real margin, and 4-5 levels measured
+# one persistent single-event miss for ClassicCUSUM at this signal, so 3
+# levels is what's used.
+STAIRCASE_LEVEL_AMPLITUDES_PA = [0.0, -150.0, -300.0]
+
 # Chimera recording: event finders (and the reader they hang off)
 CHIMERA_CHANNEL = 3
 CHIMERA_EVENTS = 5
@@ -182,6 +199,12 @@ EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
 # PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES) rather than the shared flat one. A flat
 # blockage has no resolvable local extremum for a peak-based fitter to find.
 FITTERS_USING_PEAKED_EVENTS = frozenset({"Basic_PeakFinder"})
+
+# Fitters checked against a known planted *sublevel* count (the staircase
+# database, STAIRCASE_LEVEL_AMPLITUDES_PA) rather than only a known *event*
+# count - the step-detection family, whose whole job is counting internal
+# level transitions.
+FITTERS_USING_STAIRCASE_EVENTS = frozenset({"CUSUM", "ClassicCUSUM", "IntraCUSUM"})
 
 # PeakFinder has no recipe above and is skipped, with the reason below
 # surfaced by pytest_generate_tests. It was tried against the same peaked-events

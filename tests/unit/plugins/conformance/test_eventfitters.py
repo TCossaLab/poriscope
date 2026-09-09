@@ -29,14 +29,19 @@ from tests.unit.plugins.conformance._recipes import (
     EVENTS_COUNT,
     FITTERS_SKIPPED,
     FITTERS_USING_PEAKED_EVENTS,
+    FITTERS_USING_STAIRCASE_EVENTS,
     INJECTED_EVENT_COLUMNS,
     INJECTED_SUBLEVEL_COLUMNS,
+    STAIRCASE_LEVEL_AMPLITUDES_PA,
     build_event_fitter,
     build_event_loader,
     discover_concrete,
 )
 
 EVENT_FITTERS: List[Type[MetaEventFitter]] = discover_concrete(MetaEventFitter)
+STAIRCASE_FITTERS: List[Type[MetaEventFitter]] = [
+    cls for cls in EVENT_FITTERS if cls.__name__ in FITTERS_USING_STAIRCASE_EVENTS
+]
 
 
 @pytest.fixture
@@ -67,6 +72,33 @@ def fitter(request, events_db_path, peaked_events_db_path) -> MetaEventFitter:
     )
     loader = build_event_loader(db_path)
     instance = build_event_fitter(fitter_cls, loader)
+    yield instance
+    instance.close_resources()
+    loader.close_resources()
+
+
+@pytest.fixture(
+    params=STAIRCASE_FITTERS, ids=[cls.__name__ for cls in STAIRCASE_FITTERS]
+)
+def staircase_fitter(request, staircase_events_db_path) -> MetaEventFitter:
+    """
+    Build a step-detection fitter over the staircase database, and close it after.
+
+    A dedicated fixture rather than reusing ``fitter``: it is parametrised
+    directly over ``STAIRCASE_FITTERS``, not routed through
+    ``pytest_generate_tests`` (which parametrises ``fitter`` over every
+    discovered fitter class), so this only ever runs for the CUSUM family.
+
+    :param request: Pytest request, carrying the parametrised fitter class.
+    :type request: pytest.FixtureRequest
+    :param staircase_events_db_path: Path to the events database with a known
+        number of discrete levels inside every blockage.
+    :type staircase_events_db_path: str
+    :return: A configured fitter, ready to fit.
+    :rtype: MetaEventFitter
+    """
+    loader = build_event_loader(staircase_events_db_path)
+    instance = build_event_fitter(request.param, loader)
     yield instance
     instance.close_resources()
     loader.close_resources()
@@ -234,3 +266,34 @@ def test_reset_and_close_are_safe(fitter: MetaEventFitter) -> None:
 
     fitter.close_resources()
     fitter.close_resources()
+
+
+@pytest.mark.conformance
+def test_sublevel_count_matches_the_planted_staircase(
+    staircase_fitter: MetaEventFitter,
+) -> None:
+    """
+    A step-detection fitter counts exactly the planted number of levels.
+
+    ``num_sublevels`` includes the baseline segments before and after the
+    blockage, not just the levels inside it - confirmed directly against a
+    flat single-level blockage, which reports 3 (baseline, the one level,
+    baseline) - so a staircase of ``len(STAIRCASE_LEVEL_AMPLITUDES_PA)``
+    discrete levels should report exactly that many plus 2.
+
+    :param staircase_fitter: The configured fitter under test.
+    :type staircase_fitter: MetaEventFitter
+    """
+    for _progress in staircase_fitter.fit_events(EVENTS_CHANNEL):
+        pass
+
+    expected = len(STAIRCASE_LEVEL_AMPLITUDES_PA) + 2
+    wrong = {
+        index: meta["num_sublevels"]
+        for index, meta in staircase_fitter.event_metadata[EVENTS_CHANNEL].items()
+        if meta["num_sublevels"] != expected
+    }
+    assert not wrong, (
+        f"expected num_sublevels=={expected} for every event, got {wrong}:"
+        f"\n{staircase_fitter.report_channel_status()}"
+    )

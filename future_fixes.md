@@ -638,8 +638,6 @@ test developer's.
 
 All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`; see
 `changelog.md`. Still open:
-- No fixture knob for the CUSUM family's planted *sublevel* count in `_recipes.py`
-  (fitters are only checked against a known *event* count).
 - `PeakFinder` stays skipped (`FITTERS_SKIPPED` in `_recipes.py`): needs a two-level
   signal fixture, not a tuning fix.
 - **Possibly worth revisiting: `MetaReader.close_resources()` relies on GC rather than
