@@ -331,7 +331,102 @@ the last means passing every earlier one - and Decision C is changing some of th
 **Revisit if** a genuine need for a raw plugin instance in a tab appears. Make `_get_plugin`
 public deliberately at that point rather than working around it, and expect rule 5 to move.
 
+## 2026-09-09 - Reader and loader leak checks use different patterns, deliberately
+
+**Context.** Extending `test_writers.py`'s leak check to readers and loaders. An earlier
+scoping note (2026-08-31, now removed from `future_fixes.md`) claimed a reader's
+`close_resources()` "does not reliably release its `numpy.memmap` handle immediately" on
+Windows. Re-tested properly before writing the real check: that claim was a testing
+mistake, not a defect - the probe never dropped its own reference to the reader before
+checking, so of course the file stayed open. With `del` + `gc.collect()`, release is
+100% reliable across all 7 readers, confirmed empirically.
+
+**Decision.** `MetaReader.close_resources()`'s own docstring says a memmap-backed reader
+"need not explicitly close" it - the base class contract is "GC will handle it," not
+"closed means released immediately." So `test_reader_releases_its_input_file`
+(`test_readers.py`) asserts the weaker, correct thing: the file becomes releasable once
+nothing references the reader (`del` + `gc.collect()`), not that `close_resources()`
+alone releases it. Loaders got the stronger check instead -
+`test_loader_releases_its_input_file`/`test_db_loader_releases_its_input_file`
+(`test_eventloaders.py`/`test_dbloaders.py`) assert immediate release after
+`close_resources()` alone, matching the writer pattern - because a SQLite connection is
+not something the garbage collector reclaims for free the way a memmap is, and measured
+directly: all 3 loaders (`SQLiteEventLoader`, `SQLiteDBLoader`, `SQLitePeakDBLoader`)
+already close their connection explicitly and release immediately.
+
+**Evidence.** Probed both ways for every reader and loader before writing either test:
+readers fail immediately after `close_resources()` while still referenced, and pass
+100% of the time once `del`ed and collected; all three loaders pass immediately, with
+or without dropping the reference.
+
+**Revisit if** a reader test written against this weaker contract ever needs to prove
+something stronger - at that point the difference from the loader contract stops being
+free, and the two would need to converge or the difference re-justified per plugin.
+
 ---
+
+## 2026-09-08 - `ci-branches.yml`/`ci-fork-pr.yml` install `poriscope` itself, not just its dependencies
+
+**Context.** The `settings-schema` pre-commit hook (`scripts/check_plugin_schemas.py`) does a
+live `import poriscope.utils.plugin_schemas`, with no `sys.path` handling of its own. Both
+`ci-branches.yml` and `ci-fork-pr.yml` install only `requirements.txt`/`requirements-dev.txt`
+(third-party dependencies) - `pip install -e ".[dev]"` was removed from `ci-branches.yml` on
+2025-08-26, back when nothing in the pipeline needed `poriscope` importable outside of
+`pytest` (which gets it for free from `tests/conftest.py`'s own `sys.path` shim). Surfaced
+2026-09-08 when this branch's pre-commit run hit `ModuleNotFoundError: No module named
+'poriscope'` - the first hook this pipeline has ever had that imports it directly.
+
+**Decision.** Install the package (`pip install -e ".[dev]"`, with the same
+`|| pip install -r requirements-dev.txt` fallback `ci-internal-pr.yml` already uses - load
+bearing for `ci-fork-pr.yml`, where a broken fork `pyproject.toml` should degrade rather than
+hard-fail the job) rather than add a `sys.path` shim to the affected scripts.
+
+**Evidence.** `develop`'s own CI has never hit this: `db954c5b` added the validator and
+script but never wired them into `.pre-commit-config.yaml` at all - confirmed directly
+against `develop`'s tip, whose local hooks are only `pydoclint` and `plugin-module-level`.
+The hook itself is this branch's own contribution, retargeted at merge time to call
+`develop`'s script; `develop`'s CI run on that same commit (`350508b2`) is green via the
+GitHub API. A `sys.path` shim in the two affected scripts would also work and would need no
+CI change, but would diverge from `CLAUDE.md`'s own documented setup (`pip install
+-e ".[dev]"` is step 1) and would skip exercising `pyproject.toml`'s real dependency/
+entry-point metadata the way an actual install does.
+
+**Revisit if** a third CI workflow needs `poriscope` importable outside pytest and hits the
+same gap - `ci-internal-pr.yml` already has this right.
+
+---
+
+## 2026-08-31 - `Basic_PeakFinder`'s conformance fixture uses a raised-cosine taper, not a rectangle
+
+**Context.** `Basic_PeakFinder` crashed (`ValueError: zero-size array...`) on a zero-width
+sublevel, reachable whenever `scipy.signal.find_peaks`'s interpolated half-height crossing
+lands on the same sample twice - itself only reachable once the fitter was driven against a
+fixture with an actual intra-event dip to find (block 1 of `future_fixes.md`).
+
+**Decision.** Fix the crash by returning `0.0` for a zero-width sublevel (no data to take a
+deviation over, matching `sublevel_raw_ecd`'s existing empty-slice tolerance). For the new
+fixture knob (`peaked_events_db_path`), use a smooth Hann-window taper rather than a
+rectangular dip.
+
+**Evidence.** A rectangular dip was tried first and made the crash *more* frequent (its
+abrupt edges resolve into two close peaks under noise), not less.
+
+---
+
+## 2026-08-30 - `MetaReader` conformance does not assert a raw-dtype reconstruction formula
+
+**Context.** The original conformance plan for `MetaReader` included asserting
+`load_data(raw_data=True).dtype == get_raw_dtype()`.
+
+**Decision.** Don't; assert only that `get_raw_dtype()` resolves to a real dtype and the raw
+path returns the same sample count as the normal one.
+
+**Evidence.** `MetaReader.load_data` always finishes its raw-data branch with
+`.astype(self.get_raw_dtype())`, so the dtype equality holds by construction for every
+reader regardless of whether `get_raw_dtype()` bears any relationship to the file's actual
+on-disk type - not a per-plugin invariant. A literal `raw*scale+offset` reconstruction was
+also considered and rejected: `ChimeraReaderVC100._convert_data` reinterprets the raw code
+through a bitmask/uint16 step that `(scale, offset)` alone doesn't capture.
 
 ## 2026-09-06 - Shared tab behaviour goes in a base class; no new mixins
 

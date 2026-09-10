@@ -653,6 +653,17 @@ owning developer.
 - **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata**, whose
   declared value type is `Union[int, float, str, bool]`. A `None` reaching the database
   writer is not something that contract allows for.
+- **`Basic_PeakFinder` writes `NaN` into `sublevel_current` for 23 of 25 events** on the
+  conformance dip fixture, from a `numpy.mean` over an empty slice - a zero-width level
+  whose mean is undefined. Same family as the `sublevel_max_deviation` zero-width crash
+  fixed 2026-08, which now returns `0.0`; this path returns `NaN` instead and no one
+  notices. In event 0 it is sublevel 9, a row carrying a valid `peak_height` (434.4) with
+  `sublevel_current` `NaN`. Distinct from the plugin's *structural* `NaN`s, which are fine:
+  it emits 15 sublevels per event interleaving peak rows with the level rows between them,
+  so the 16 peak-specific columns are `NaN` on every non-peak row by design. The run emits
+  134 `RuntimeWarning`s ("Mean of empty slice", "invalid value encountered in scalar
+  divide") that conformance cannot see, since no check asserts finiteness - visible as the
+  10 collapsed warnings on any `pytest tests/unit/plugins/conformance` run.
 - **`NanoTrees._DNA` slices with two unguarded `Optional[int]` paddings**
   (`data[:padding_before]`, `data[-padding_after:]`), so the negation raises `TypeError` for
   any event loader supplying neither. It has no live caller - the only call site is commented
@@ -695,37 +706,55 @@ owning developer.
 # Future Fix: Community-Contributed-Plugin Compliance Gate
 
 Designed as a set: a pipeline that lets a community-contributed plugin be verified as safe
-and correct to merge with a bounded amount of human review. Blocks 2, 6 and 8, and block 3
-for data plugins, are done and their sections are gone. What is left is **5**
-(free-standing), **4**, block 3's analysis-tab half, and **1** and **7**, which are pytest
-suites and so the test developer's.
+and correct to merge with a bounded amount of human review. Blocks 2, 6, 7 and 8, and block 3
+for data plugins, are done and their sections are gone (block 8's "no custom lint rules"
+call is recorded in `DECISIONS.md`, 2026-09-01). What is left is **5** (free-standing),
+**4**, block 3's analysis-tab half, and **1**, which is a pytest suite and so the test
+developer's.
 
-## 1. Behavioural conformance suite (not just signature compliance) — test developer
+## 1. Behavioural conformance suite — remaining gaps
 
-**Goal.** Instantiate every discovered plugin and actually run its core methods against
-small synthetic data, asserting it behaves like a well-formed member of its `Meta*` family.
-`test_plugin_compliance.py` already does the discovery (`pkgutil.walk_packages` plus
-`BASE_CLASS_DATA`) but never calls the plugin, so a contribution can satisfy every signature
-check and still crash on real data, leak resources, or produce garbage.
-
-**Shape.** A `tests/unit/plugins/test_plugin_conformance.py` reusing that discovery loop but
-parametrized over *concrete* classes. One canonical fixture per family from
-`tests/synthetic_data/`, and a minimal settings dict built from each plugin's own
-`get_empty_settings()` (fill required `Value`s with the `Min`/`Max` midpoint or the first
-`Options` entry). One generic check per family, not per plugin: instantiate, drive the real
-lifecycle (a finder's event boundaries monotonic, in-bounds and non-overlapping; a reader's
-`load_data` dtype/shape matching `get_raw_dtype()`; a fitter's metadata dict carrying the
-documented keys), then `close_resources()` and assert no exception and no dangling handles.
-Register a `conformance` marker so block 5 can scope it to changed files.
-
-**Gotchas.** It is only as strong as the fixtures are representative - keep trace length,
-noise level and event count realistic enough that a finder cannot pass by doing nothing.
-Prefer a small dedicated fixture per family over one mega-fixture, so failures stay
-attributable. Run it against every existing in-repo plugin first.
-
-**Worth slightly less than it was**, since `scripts/new_plugin.py`'s generated skeleton is now
-the first thing such a suite would run against, and that script's own tests already assert
-every family's skeleton instantiates and declares a self-consistent schema.
+All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`, `PeakFinder`
+included, and no fitter is exempt; see `changelog.md`. Still open:
+- **Possibly worth revisiting: `MetaReader.close_resources()` relies on GC rather than
+  explicitly releasing its memmap** - see `DECISIONS.md` (2026-09-09) for why the reader
+  leak check was scoped to that weaker, currently-documented contract rather than the
+  stronger one loaders already meet. Touches the base class's docstring contract (every
+  future reader, not just these 7) and `poriscope/utils/`/`poriscope/plugins/datareaders/`
+  are both `@shadowk29`-owned - consult before implementing, not a unilateral change.
+- **Needs discussing: should anything enforce that a new fitter fixture shape comes with
+  a check that reads it?** Today nothing does, and `quality_control.rst`'s add-a-fixture
+  table says so. Measured during an end-to-end walk: a tapered-oscillation shape was
+  planted, routed and used while all four generic fitter checks passed at the intended
+  amplitude *and* at 25x it, since they only ask whether events were fitted. A guard
+  asserting "the routed fixture changes what the fitter reports" was tried and removed
+  the same day - it proves a difference exists, not that anything asserts it, so that
+  same oscillation shape would have passed it, and it was redundant once `"dip"` and
+  `"staircase"` each had a real check. The option that would work is fixture mutation
+  testing: perturb the planted shape, require some assertion to fail. That is how both
+  shape checks were verified by hand, but as a suite feature it means re-running tests
+  from inside a test. Worth weighing that cost against how often a new shape is added
+  (one in this suite's lifetime) before building anything - and worth agreeing not to
+  re-add the weaker existence-of-difference guard.
+- **Worth discussing: how much of the writer/loader override path to document.**
+  `quality_control.rst`'s conformance section now names it in one sentence; a longer
+  version with a worked code block per builder shape was cut. Never exercised: all five
+  plugins in `MetaWriter`/`MetaDatabaseWriter`/`MetaDatabaseLoader`/`MetaEventLoader`
+  declare nothing beyond the generic parameters their builders already supply, and those
+  four families have gained one plugin (`SQLitePeakDBLoader`, 2026-04) against seven
+  repo-wide since the 2025-08 import. `_fill`'s `ValueError` already names where the
+  value goes. Restore the examples, keep the one sentence, or drop it entirely?
+- **Worth asking `@shadowk29`: should readers converge on one exception type for
+  malformed input?** `tests/unit/plugins/conformance/test_reader_fuzz.py` measured that a
+  0-byte file alone already produces four different exception families depending on
+  reader/format - `ValueError` (most), `json.decoder.JSONDecodeError` (`ChimeraReader20240101`,
+  a `ValueError` subclass), `struct.error` (both ABF2 readers, *not* a `ValueError`
+  subclass) - and a missing sidecar file raises `FileNotFoundError` or `OSError`
+  depending on the reader. The fuzz suite deliberately does not enforce a type, since
+  that would be proposing a contract change, not testing one. Also worth confirming as
+  intentional rather than just observed: neither `ChimeraReader20240501` nor
+  `ChimeraReaderVC100` attempts to degrade gracefully when its sidecar file is missing
+  today - both raise cleanly instead.
 
 ## 3. Contribution scaffold: the analysis-tab half
 
@@ -785,27 +814,6 @@ past six - are in `DECISIONS.md` (2026-09-02); the contributor-facing version is
 **Gotcha.** `ci-fork-pr.yml`'s permissions are deliberately `contents: read`; do not add
 anything needing write access. That is `ci-internal-pr.yml`, which is not fork-safe.
 
-**Gated on this block:** `scripts/check_plugin_schemas.py` has no pre-commit hook, deliberately
-- it would have blocked commits on the six owner-held `Basic_PeakFinder` findings before the
-owning developer had seen them. The test suite covers the same ground on every push meanwhile.
-`CODEOWNERS` landing does not release this. Wire the hook once the owner has ruled on the six.
-
-## 7. Fuzz / malformed-input testing for data readers — test developer
-
-**Goal.** Catch unhandled crashes in community-contributed parsers on truncated, corrupted or
-off-spec binary input - the most likely crash surface for a new `MetaReader`, since readers
-parse arbitrary externally-produced files. No current check exercises a reader against
-anything but a well-formed synthetic file.
-
-**Shape.** A `tests/unit/plugins/datareaders/test_reader_fuzz.py` parametrized over every
-concrete `MetaReader` the way `test_plugin_compliance.py` discovers them. Take each family's
-valid synthetic fixture and apply a small, fixed set of *deterministic* mutations - truncate at
-several byte offsets, flip the header magic, zero a middle section - rather than open-ended
-random fuzzing, which would risk flaky CI. Assert only that each mutation yields either a clean
-successful read or a caught, well-typed exception: never an unhandled crash, a hang, or a
-silently truncated array. The mutation generation is necessarily format-specific (one "corrupt
-this fixture" helper per reader family, not per reader); the assertion logic and discovery loop
-are shared.
-
-**Gotcha.** This applies meaningfully only to `MetaReader`. Finders, fitters and filters
-operate on already-validated in-memory arrays, so the risk does not transfer.
+**Notes from scoping (2026-08-31).** Exception types vary by format on a 0-byte file
+(`ValueError` for Chimera/BinaryReader1X, `struct.error` for ABF2) - inconsistent but
+none hang.

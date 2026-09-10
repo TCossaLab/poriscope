@@ -805,29 +805,40 @@ class Basic_PeakFinder(MetaEventFitter):
         sublevel_metadata["sublevel_cumulative_ecd"] = np.cumsum(
             sublevel_metadata["sublevel_raw_ecd"]
         )
-        # get the maximal deviation from the event baseline for each sublevel
+        # get the maximal deviation from the event baseline for each sublevel.
+        # A sublevel can be zero-width - e.g. find_peaks' half-height width
+        # crossing truncating to the same sample as the peak itself under
+        # noise - in which case there is no data to take a deviation over, and
+        # neither ordering of the slice below would be non-empty. 0.0 is the
+        # only sensible value for a sublevel with no extent, consistent with
+        # sublevel_raw_ecd's np.sum over the same empty slice above already
+        # being 0.0 rather than raising.
         sublevel_metadata["sublevel_max_deviation"] = np.array(
             [
                 (
-                    np.max(
-                        np.absolute(
-                            data[
-                                int(sublevel_starts[i]["index"]) : int(
-                                    sublevel_starts[i + 1]["index"]
-                                )
-                            ]
-                            - event_baseline
+                    0.0
+                    if sublevel_starts[i]["index"] == sublevel_starts[i + 1]["index"]
+                    else (
+                        np.max(
+                            np.absolute(
+                                data[
+                                    int(sublevel_starts[i]["index"]) : int(
+                                        sublevel_starts[i + 1]["index"]
+                                    )
+                                ]
+                                - event_baseline
+                            )
                         )
-                    )
-                    if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
-                    else np.max(
-                        np.absolute(
-                            data[
-                                int(sublevel_starts[i + 1]["index"]) : int(
-                                    sublevel_starts[i]["index"]
-                                )
-                            ]
-                            - event_baseline
+                        if sublevel_starts[i]["index"] < sublevel_starts[i + 1]["index"]
+                        else np.max(
+                            np.absolute(
+                                data[
+                                    int(sublevel_starts[i + 1]["index"]) : int(
+                                        sublevel_starts[i]["index"]
+                                    )
+                                ]
+                                - event_baseline
+                            )
                         )
                     )
                 )

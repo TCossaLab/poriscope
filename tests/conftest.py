@@ -17,8 +17,34 @@ depend on the specific layout they build.
 
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 import pytest
+
+# ===========================================================================
+# Repo root on sys.path
+# ===========================================================================
+#
+# Test modules import shared helpers by absolute path - ``tests.synthetic_data``,
+# ``tests.unit.views._qt_mocks``, ``tests.e2e._helpers``. None of those resolve on
+# their own: there is no ``__init__.py`` anywhere under ``tests/``, so pytest's
+# prepend import mode inserts each test file's own directory rather than the repo
+# root, and the bare ``pytest`` command (unlike ``python -m pytest``) does not add
+# the current directory either. The editable install only exposes ``poriscope``.
+#
+# tests/e2e/conftest.py and tests/integration/conftest.py each carry their own copy
+# of this shim. Those run only for their own subtrees, which left the import working
+# in a full run purely because ``tests/e2e`` is collected before ``tests/unit`` and
+# its conftest had already patched sys.path - so ``pytest tests/unit/views`` failed
+# standalone with ModuleNotFoundError while the full suite passed. Doing it here
+# instead makes it independent of collection order. The other two copies are now
+# redundant but harmless; both guard on the path not already being present.
+_TESTS_DIR = Path(__file__).resolve().parent
+for _candidate in [_TESTS_DIR, *_TESTS_DIR.parents]:
+    if (_candidate / "poriscope").exists():
+        if str(_candidate) not in sys.path:
+            sys.path.insert(0, str(_candidate))
+        break
 
 
 @pytest.fixture(autouse=True)
