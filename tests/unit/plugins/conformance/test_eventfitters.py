@@ -402,4 +402,3 @@ def test_fitter_fixture_shapes_are_known() -> None:
         f"unknown fixture shapes in FITTER_FIXTURES: {unknown}. Known shapes are "
         f"{sorted(FITTER_FIXTURE_SHAPES)}."
     )
-
