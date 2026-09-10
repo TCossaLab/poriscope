@@ -8,6 +8,11 @@
 
 * The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) is now checked against a known planted *sublevel* count, not just a known event count
 
+* Peak-based fitters are now checked against the depth of the planted dip, which their previous conformance checks could not distinguish from a flat blockage
+
+* Which synthetic recording each event fitter is tested against is now one entry in `FITTER_FIXTURES`, replacing three separate sets
+
+
 * `NanoTrees` is checked against a planted sublevel count too, which its previous conformance settings would have merged into a single level
 
 * The conformance suite no longer has a way to exempt an event fitter; every discovered fitter is driven

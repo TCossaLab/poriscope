@@ -25,22 +25,27 @@ import pytest
 
 from poriscope.utils.MetaEventFitter import MetaEventFitter
 from tests.unit.plugins.conformance._recipes import (
+    EVENT_AMPLITUDE_PA,
     EVENTS_CHANNEL,
     EVENTS_COUNT,
-    FITTERS_USING_PEAKED_EVENTS,
-    FITTERS_USING_PEAKFINDER_EVENTS,
-    FITTERS_USING_STAIRCASE_EVENTS,
+    FITTER_FIXTURES,
     INJECTED_EVENT_COLUMNS,
     INJECTED_SUBLEVEL_COLUMNS,
+    NOISE_STD_PA,
+    PEAKED_EVENTS_DIP_PA,
     STAIRCASE_LEVEL_AMPLITUDES_PA,
     build_event_fitter,
     build_event_loader,
     discover_concrete,
+    fitters_using,
 )
 
 EVENT_FITTERS: List[Type[MetaEventFitter]] = discover_concrete(MetaEventFitter)
 STAIRCASE_FITTERS: List[Type[MetaEventFitter]] = [
-    cls for cls in EVENT_FITTERS if cls.__name__ in FITTERS_USING_STAIRCASE_EVENTS
+    cls for cls in EVENT_FITTERS if cls.__name__ in fitters_using("staircase")
+]
+PEAKED_FITTERS: List[Type[MetaEventFitter]] = [
+    cls for cls in EVENT_FITTERS if cls.__name__ in fitters_using("dip")
 ]
 
 
@@ -51,13 +56,12 @@ def fitter(
     """
     Build the fitter under test, attached to a fresh loader, and close it after.
 
-    Fitters in ``FITTERS_USING_PEAKED_EVENTS`` (peak-based fitters, which need a
-    resolvable local extremum inside the blockage) are attached to
-    ``peaked_events_db_path`` instead of the shared flat ``events_db_path`` -
-    see that fixture and ``_recipes.py``'s ``PEAKED_EVENTS_DIP_PA``. Fitters in
-    ``FITTERS_USING_PEAKFINDER_EVENTS`` get ``peakfinder_events_db_path``
-    instead, since ``PeakFinder`` needs a deeper, narrower dip than
-    ``PEAKED_EVENTS_DIP_PA`` provides - see ``PEAKFINDER_DIP_PA``'s comment.
+    ``FITTER_FIXTURES`` in ``_recipes.py`` says which recording each fitter is
+    driven against: "dip" for a peak-based fitter needing a resolvable extremum
+    inside the blockage, "deep_dip" for ``PeakFinder``, which needs one deeper
+    and narrower still. A fitter mapped to "staircase" is driven against the
+    shared flat database here - its planted levels are only meaningful to
+    ``staircase_fitter``, which reads the count.
 
     :param request: Pytest request, carrying the parametrised fitter class.
     :type request: pytest.FixtureRequest
@@ -73,13 +77,13 @@ def fitter(
     :rtype: MetaEventFitter
     """
     fitter_cls = request.param
-    name = fitter_cls.__name__
-    if name in FITTERS_USING_PEAKFINDER_EVENTS:
-        db_path = peakfinder_events_db_path
-    elif name in FITTERS_USING_PEAKED_EVENTS:
-        db_path = peaked_events_db_path
-    else:
-        db_path = events_db_path
+    by_shape = {
+        "dip": peaked_events_db_path,
+        "staircase": events_db_path,
+        "deep_dip": peakfinder_events_db_path,
+    }
+    shape = FITTER_FIXTURES.get(fitter_cls.__name__)
+    db_path = by_shape.get(shape, events_db_path)
     loader = build_event_loader(db_path)
     instance = build_event_fitter(fitter_cls, loader)
     yield instance
@@ -306,4 +310,64 @@ def test_sublevel_count_matches_the_planted_staircase(
     assert not wrong, (
         f"expected num_sublevels=={expected} for every event, got {wrong}:"
         f"\n{staircase_fitter.report_channel_status()}"
+    )
+
+
+@pytest.fixture(params=PEAKED_FITTERS, ids=[cls.__name__ for cls in PEAKED_FITTERS])
+def peaked_fitter(request, peaked_events_db_path) -> MetaEventFitter:
+    """
+    Build a peak-based fitter over the peaked database, and close it after.
+
+    A dedicated fixture rather than reusing ``fitter``, for the same reason
+    ``staircase_fitter`` is: parametrised directly over ``PEAKED_FITTERS`` so it
+    only runs for the family that database exists for.
+
+    :param request: Pytest request, carrying the parametrised fitter class.
+    :type request: pytest.FixtureRequest
+    :param peaked_events_db_path: Path to the events database carrying a
+        resolvable intra-event dip.
+    :type peaked_events_db_path: str
+    :return: A configured fitter, ready to fit.
+    :rtype: MetaEventFitter
+    """
+    loader = build_event_loader(peaked_events_db_path)
+    instance = build_event_fitter(request.param, loader)
+    yield instance
+    instance.close_resources()
+    loader.close_resources()
+
+
+@pytest.mark.conformance
+def test_peak_fitter_resolves_the_planted_dip(peaked_fitter: MetaEventFitter) -> None:
+    """
+    A peak-based fitter reports a deviation deep enough to include the planted dip.
+
+    Without this the "dip" database earns nothing: measured, ``Basic_PeakFinder``
+    fits all 25 events against the plain flat blockage too, and its
+    ``num_sublevels`` is noise-driven scatter (6-24) either way, so every other
+    check here would pass whichever database it were handed. ``max_deviation`` is
+    what separates them - the carrier blockage alone reaches 433-467 pA, the
+    carrier plus the dip reaches 554-614 pA, measured over 143 events and six
+    seeds.
+
+    The floor sits at ``|amplitude| + |dip| - 3 * noise``, which measured 38 pA
+    clear of the flat population's deepest event and 49 pA below the peaked
+    population's shallowest.
+
+    :param peaked_fitter: The configured peak-based fitter under test.
+    :type peaked_fitter: MetaEventFitter
+    """
+    for _progress in peaked_fitter.fit_events(EVENTS_CHANNEL):
+        pass
+
+    floor = abs(EVENT_AMPLITUDE_PA) + abs(PEAKED_EVENTS_DIP_PA) - 3.0 * NOISE_STD_PA
+    shallow = {
+        index: meta["max_deviation"]
+        for index, meta in peaked_fitter.event_metadata[EVENTS_CHANNEL].items()
+        if meta["max_deviation"] <= floor
+    }
+    assert not shallow, (
+        f"expected max_deviation > {floor:.1f} pA for every event, which needs the "
+        f"planted dip and not just the carrier blockage; these did not reach it: "
+        f"{shallow}"
     )

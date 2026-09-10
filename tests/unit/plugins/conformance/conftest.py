@@ -72,7 +72,7 @@ def peaked_events_db_path(tmp_path_factory) -> str:
     The same shape as ``events_db_path``, with a resolvable dip inside every
     blockage.
 
-    For peak-based fitters (``FITTERS_USING_PEAKED_EVENTS`` in ``_recipes.py``):
+    For peak-based fitters (``FITTER_FIXTURES`` maps them to "dip"):
     a flat blockage has no local extremum for ``scipy.signal.find_peaks`` to
     locate, so those fitters need this instead of the shared flat database.
     Kept as a second, separate database rather than added to the shared one so
@@ -105,8 +105,8 @@ def staircase_events_db_path(tmp_path_factory) -> str:
     The same shape as ``events_db_path``, with a known number of discrete,
     resolvable levels inside every blockage instead of one flat level.
 
-    For step-detection fitters (``FITTERS_USING_STAIRCASE_EVENTS`` in
-    ``_recipes.py``): a flat blockage has no internal transitions for a
+    For step-detection fitters (``FITTER_FIXTURES`` maps them to
+    "staircase"): a flat blockage has no internal transitions for a
     changepoint detector to count, so those fitters need this instead of the
     shared flat database. Kept as a third, separate database rather than
     added to the shared one so the fitters that already pass against a flat

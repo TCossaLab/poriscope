@@ -100,13 +100,19 @@ EVENTS_COUNT = 25
 EVENTS_SAMPLERATE_HZ = 500_000.0
 
 # A second events database, for peak-based fitters only (Basic_PeakFinder). A
-# flat blockage has no resolvable local extremum for scipy.signal.find_peaks to
-# find, so those fitters need a smooth sublevel dip inside the blockage - see
-# generate_events_database's sublevel_dip_pA/sublevel_dip_width_samples and
-# _build_event_trace's docstring for why the dip is a smooth taper rather than
-# a rectangle. Kept as a separate database rather than added to the shared one
-# above so the five fitters that already pass against a flat blockage are not
-# put at any risk of a behaviour change from this.
+# flat blockage plants no extremum for scipy.signal.find_peaks to resolve, so
+# the dip is what gives one something real to find. Planted via
+# generate_events_database's sublevel_dip_pA/sublevel_dip_width_samples; see
+# _build_event_trace's docstring for why it is a smooth taper and not a
+# rectangle. Kept separate from the shared database so the five fitters that
+# already pass against a flat blockage are not put at risk by it.
+#
+# What the dip does *not* do is make a tolerant fitter fail without it:
+# measured, Basic_PeakFinder fits all 25 events on the flat database too,
+# finding peaks in the 15 pA noise and reporting 6-24 sublevels either way. So
+# none of the generic fitter checks can tell the two databases apart, and
+# test_peak_fitter_resolves_the_planted_dip reads max_deviation instead, which
+# does (433-467 pA flat against 554-614 pA here).
 PEAKED_EVENTS_DIP_PA = -150.0
 PEAKED_EVENTS_DIP_WIDTH_SAMPLES = 60
 
@@ -208,37 +214,56 @@ EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
     # 75.0 and at 40.0, fails at 200.0.
     "NanoTrees": {"Smallest Significant Sublevel": 75.0},
     "NoFitter": {},
-    # Against the peaked-events database (PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES,
-    # FITTERS_USING_PEAKED_EVENTS below), not the shared flat one.
+    # Against the "dip" database (PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES, see
+    # FITTER_FIXTURES below), not the shared flat one.
     "Basic_PeakFinder": {
         "Min Height": 100.0,
         "Min Prominence": 50.0,
         "Min Distance": 5.0,
     },
-    # Against the PeakFinder-only database (PEAKFINDER_DIP_PA/_WIDTH_SAMPLES,
-    # FITTERS_USING_PEAKFINDER_EVENTS below). Every default already clears it -
+    # Against the "deep_dip" database (PEAKFINDER_DIP_PA/_WIDTH_SAMPLES, see
+    # FITTER_FIXTURES below). Every default already clears it -
     # confirmed directly, not assumed - so there is nothing to override here.
     "PeakFinder": {},
 }
 
-# Fitters that need the peaked-events database (a smooth intra-event dip, per
-# PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES) rather than the shared flat one. A flat
-# blockage has no resolvable local extremum for a peak-based fitter to find.
-FITTERS_USING_PEAKED_EVENTS = frozenset({"Basic_PeakFinder"})
+# Which synthetic recording each fitter is driven against. A fitter absent from
+# here gets the shared flat blockage, which suits anything that only needs
+# events to exist; name yours here if it needs structure inside the blockage.
+# One dict rather than a set per shape, so a new fitter is one line and a new
+# shape needs no new collection.
+#
+#   "dip"       PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES - a smooth intra-event dip,
+#               for a peak-based fitter, since a flat blockage plants no
+#               extremum to resolve.
+#   "staircase" STAIRCASE_LEVEL_AMPLITUDES_PA - a known number of discrete
+#               levels, for the step-detection family whose job is counting
+#               internal transitions. NanoTrees belongs here despite its name:
+#               its multi-pass pipeline is a level decomposition.
+#   "deep_dip"  PEAKFINDER_DIP_PA/_WIDTH_SAMPLES - deeper and narrower than
+#               "dip"; see PEAKFINDER_DIP_PA's comment for why the same dip
+#               cannot serve both.
+FITTER_FIXTURES: Dict[str, str] = {
+    "Basic_PeakFinder": "dip",
+    "CUSUM": "staircase",
+    "ClassicCUSUM": "staircase",
+    "IntraCUSUM": "staircase",
+    "NanoTrees": "staircase",
+    "PeakFinder": "deep_dip",
+}
 
-# Fitters checked against a known planted *sublevel* count (the staircase
-# database, STAIRCASE_LEVEL_AMPLITUDES_PA) rather than only a known *event*
-# count - the step-detection family, whose whole job is counting internal
-# level transitions. NanoTrees belongs here despite its name: its multi-pass
-# pipeline is a level decomposition, so a flat blockage never exercised it.
-FITTERS_USING_STAIRCASE_EVENTS = frozenset(
-    {"CUSUM", "ClassicCUSUM", "IntraCUSUM", "NanoTrees"}
-)
 
-# Fitters that need the PeakFinder-only database (PEAKFINDER_DIP_PA/
-# _WIDTH_SAMPLES) rather than the peaked-events one Basic_PeakFinder uses -
-# see PEAKFINDER_DIP_PA's comment for why the same dip does not work for both.
-FITTERS_USING_PEAKFINDER_EVENTS = frozenset({"PeakFinder"})
+def fitters_using(shape: str) -> frozenset:
+    """
+    Class names of the fitters driven against one fixture shape.
+
+    :param shape: A value from ``FITTER_FIXTURES`` - "dip", "staircase" or
+        "deep_dip".
+    :type shape: str
+    :return: The class names mapped to that shape.
+    :rtype: frozenset
+    """
+    return frozenset(n for n, s in FITTER_FIXTURES.items() if s == shape)
 
 
 def build_event_loader(db_path: str) -> SQLiteEventLoader:
@@ -282,9 +307,8 @@ def build_event_fitter(
     if name not in EVENT_FITTER_SETTINGS:
         raise KeyError(
             f"No conformance recipe for {name}. Add one to EVENT_FITTER_SETTINGS, "
-            f"and name it in one of FITTERS_USING_PEAKED_EVENTS, "
-            f"FITTERS_USING_STAIRCASE_EVENTS or FITTERS_USING_PEAKFINDER_EVENTS if a "
-            f"flat blockage is the wrong signal for it."
+            f"and name it in FITTER_FIXTURES if a flat blockage is the wrong "
+            f"signal for it."
         )
     overrides = EVENT_FITTER_SETTINGS[name]
 

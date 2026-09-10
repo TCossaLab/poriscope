@@ -841,36 +841,35 @@ the only exceptions are called out explicitly where they arise.
 
   .. list-table::
      :header-rows: 1
-     :widths: 30 38 32
+     :widths: 22 46 32
 
-     * - Name your fitter here
-       - if it needs
+     * - Shape
+       - if your fitter needs
        - as these already do
-     * - none of them — the default
+     * - *not listed*
        - nothing inside the event; the blockage alone is enough
        - ``NoFitter``
-     * - ``FITTERS_USING_PEAKED_EVENTS``
+     * - ``"dip"``
        - a resolvable dip inside the blockage, as a peak-based fitter does
        - ``Basic_PeakFinder``
-     * - ``FITTERS_USING_STAIRCASE_EVENTS``
+     * - ``"staircase"``
        - a known number of discrete levels, as a step or changepoint detector does
        - ``CUSUM``, ``ClassicCUSUM``, ``IntraCUSUM``, ``NanoTrees``
-     * - ``FITTERS_USING_PEAKFINDER_EVENTS``
+     * - ``"deep_dip"``
        - a dip both deeper than the carrier blockage and narrower than the
          peak-search window
        - ``PeakFinder``
 
   Those four rows account for every fitter that ships, so the quickest way to place
-  your own is to find the one it most resembles.
-
-  Each is a set of class names, so naming yours is a one-word edit:
+  your own is to find the one it most resembles. Naming it is one line:
 
   .. code-block:: python
 
      # _recipes.py
-     FITTERS_USING_STAIRCASE_EVENTS = frozenset(
-         {"CUSUM", "ClassicCUSUM", "IntraCUSUM", "YourFitter"}
-     )
+     FITTER_FIXTURES: Dict[str, str] = {
+         "CUSUM": "staircase",
+         "YourFitter": "staircase",
+     }
 
   **If none of the three suits your fitter**, those are not the only options — they are
   just the shapes anyone has needed so far. Which way you go depends on whether a
@@ -900,12 +899,13 @@ the only exceptions are called out explicitly where they arise.
        - ``staircase_events_db_path``
      * - ``conformance/_recipes.py``
        - the shape's constants, and a set naming the fitters that need it
-       - ``STAIRCASE_LEVEL_AMPLITUDES_PA``, ``FITTERS_USING_STAIRCASE_EVENTS``
+       - ``STAIRCASE_LEVEL_AMPLITUDES_PA``, a ``FITTER_FIXTURES`` entry
      * - ``conformance/test_eventfitters.py``
        - route the set to the fixture **and write a check that reads the planted
          shape**. Routing alone buys nothing: the four generic fitter checks pass on
-         any signal that yields events, so without a new assertion your fixture is
-         built, used, and never actually examined.
+         any signal that yields events, so without an assertion of your own the
+         fixture is built, routed, used - and never actually examined. Nothing
+         enforces this; the staircase and dip checks are the worked examples.
        - ``staircase_fitter``,
          ``test_sublevel_count_matches_the_planted_staircase``
 
@@ -917,16 +917,19 @@ the only exceptions are called out explicitly where they arise.
   recordings are already supported (``generate_multichannel_dataset``), so the four
   edits above are nearly always the answer.
 
-  Neither mistake fails loudly, and the two go wrong in different ways. Leave a
-  peak-based fitter out of its set and it looks like your fitter rejecting every
-  planted event, because a flat blockage gives it no peak to find — so check which
-  fixture you are on before you start debugging the algorithm. Leaving a step detector
-  out of ``FITTERS_USING_STAIRCASE_EVENTS`` is quieter and worse: the sublevel-count
-  check is never run for your plugin at all, so the suite goes green without having
-  tested the one thing your fitter exists to do. Check both together, since a wrong
-  fixture and a wrong recipe value will each hide the other: a threshold set above the
-  feature you are looking for costs nothing on a fixture that has no such feature in
-  it.
+  How loudly the wrong choice fails depends on your fitter, and it is worth knowing
+  that "loudly" is not guaranteed. A strict peak fitter left out of its set rejects
+  every planted event, which is obvious. A tolerant one does not: measured,
+  ``Basic_PeakFinder`` fits all 25 events on a flat blockage and reports 6-24
+  sublevels per event, because it finds peaks in the 15 pA noise — so the flat
+  database looks like a success. Leaving a step detector out of
+  ``"staircase"`` in ``FITTER_FIXTURES`` is quieter still: its sublevel-count check is
+  never collected, so the suite goes green having never tested what the fitter is
+  for.
+
+  Check the fixture and the recipe together, since a wrong pairing of the two hides
+  itself: a threshold set above the feature you are looking for costs nothing on a
+  fixture that has no such feature in it.
 * **``MetaWriter``, ``MetaDatabaseWriter``, ``MetaDatabaseLoader``, ``MetaEventLoader``:
   usually nothing.** These build generically from the file parameter every plugin in the
   family already has, plus the four experiment-metadata parameters the two writers
