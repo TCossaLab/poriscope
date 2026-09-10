@@ -644,6 +644,20 @@ included, and no fitter is exempt; see `changelog.md`. Still open:
   stronger one loaders already meet. Touches the base class's docstring contract (every
   future reader, not just these 7) and `poriscope/utils/`/`poriscope/plugins/datareaders/`
   are both `@shadowk29`-owned - consult before implementing, not a unilateral change.
+- **Needs discussing: should anything enforce that a new fitter fixture shape comes with
+  a check that reads it?** Today nothing does, and `quality_control.rst`'s add-a-fixture
+  table says so. Measured during an end-to-end walk: a tapered-oscillation shape was
+  planted, routed and used while all four generic fitter checks passed at the intended
+  amplitude *and* at 25x it, since they only ask whether events were fitted. A guard
+  asserting "the routed fixture changes what the fitter reports" was tried and removed
+  the same day - it proves a difference exists, not that anything asserts it, so that
+  same oscillation shape would have passed it, and it was redundant once `"dip"` and
+  `"staircase"` each had a real check. The option that would work is fixture mutation
+  testing: perturb the planted shape, require some assertion to fail. That is how both
+  shape checks were verified by hand, but as a suite feature it means re-running tests
+  from inside a test. Worth weighing that cost against how often a new shape is added
+  (one in this suite's lifetime) before building anything - and worth agreeing not to
+  re-add the weaker existence-of-difference guard.
 - **Worth discussing: how much of the writer/loader override path to document.**
   `quality_control.rst`'s conformance section now names it in one sentence; a longer
   version with a worked code block per builder shape was cut. Never exercised: all five
