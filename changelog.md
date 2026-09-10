@@ -1,5 +1,42 @@
 ## Poriscope 2.0.0: in progress
 
+* The behavioural conformance suite's resource-leak check is extended to readers and loaders, not just writers
+
+* The behavioural conformance suite's readers, database loaders and event loaders now fail with a clear message (matching writers) if a new plugin declares a required parameter with no recipe entry, instead of an unrelated validation error
+
+* Conformance failure messages now name the exact dict or builder to edit for the plugin's family, and `scripts/new_plugin.py` points new plugins at the conformance suite alongside the compliance and schema checks
+
+* The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) is now checked against a known planted *sublevel* count, not just a known event count
+
+* Peak-based fitters are now checked against the depth of the planted dip, which their previous conformance checks could not distinguish from a flat blockage
+
+* Which synthetic recording each event fitter is tested against is now one entry in `FITTER_FIXTURES`, replacing three separate sets
+
+
+* `NanoTrees` is checked against a planted sublevel count too, which its previous conformance settings would have merged into a single level
+
+* The conformance suite no longer has a way to exempt an event fitter; every discovered fitter is driven
+
+* `PeakFinder` is un-skipped in the behavioural conformance suite and passes all four checks, matching `Basic_PeakFinder`
+
+* New fuzz testing for every data reader against malformed input (truncated files, corrupted headers, missing sidecars) - none crash or hang uncaught
+
+* **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
+
+* Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite
+
+* The settings-schema check is extracted for reuse outside pytest (`poriscope/utils/settings_schema.py::validate_settings_schema`) and gated in pre-commit
+
+* `MetaReader` conformance lands: all 24 data plugins across all 8 `Meta*` families now run against real synthetic data
+
+* Behavioural conformance extended to six more plugin families (filters, event finders/loaders, db loaders, writers): 22 of 24 data plugins now run against real data
+
+* Event fitters gain behavioural conformance tests (new `conformance` marker), driven against real data rather than mocked loaders
+
+* Fixed: `pytest tests/unit/views` failed when run on its own; the missing `sys.path` shim now lives in the root `tests/conftest.py`
+
+* Every plugin's `get_empty_settings()` is now checked against its own declared contract; 21 violations fixed (15 missing `Value` keys, 11 `int`-vs-`float` defaults). **Breaking for programmatic callers:** an unfilled required parameter now raises `TypeError` instead of `KeyError`
+
 * The baseline statistics behind the Raw Data tab's green baseline band are now computed in that tab's model rather than in its plot widget
 
 * Removed an unused Gaussian function from the Raw Data view; the baseline fit never called it

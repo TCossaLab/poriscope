@@ -201,9 +201,35 @@ def _build_event_trace(
     baseline_mean: float,
     baseline_std: float,
     amplitude: float,
+    sublevel_dip_pA: Optional[float] = None,
+    sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
 ) -> np.ndarray:
     """
     Build one event's ground-truth trace: baseline, blockage, baseline.
+
+    The blockage is flat (a single constant level) unless sublevel_dip_pA is
+    given, in which case a smooth, single-lobed dip (a raised-cosine/Hann
+    taper, not a rectangle) is added on top of it, centered in the blockage
+    and spanning sublevel_dip_width_samples. A flat blockage has no resolvable
+    local extremum for a peak-based fitter to find - see
+    Basic_PeakFinder._locate_sublevel_transitions, which runs
+    scipy.signal.find_peaks on the inverted trace - so this is what makes an
+    event usable for that family; the CUSUM/step-detection family does not
+    need it and is unaffected by leaving it unset.
+
+    The taper is deliberately smooth rather than a rectangular step. A
+    rectangular dip has two abrupt edges, and find_peaks - confirmed directly
+    against the real Basic_PeakFinder rather than assumed - can resolve edge
+    ripple as two separate close-together peaks instead of one clean feature.
+    That in turn can produce two adjacent sublevel-transition indices that
+    land on the very same sample, which crashes
+    Basic_PeakFinder._populate_sublevel_metadata's sublevel_max_deviation
+    computation (a real, if narrow, latent bug: both arms of its
+    start-before-vs-after ternary slice to an empty array when the two
+    indices are equal, and np.max on that raises "zero-size array to
+    reduction operation maximum which has no identity"). A smooth taper has
+    exactly one local extremum by construction and does not trigger it.
 
     :param rng: Random generator to draw noise from.
     :type rng: numpy.random.Generator
@@ -220,13 +246,89 @@ def _build_event_trace(
     :param amplitude: Signed current change during the blockage, in
         picoamps.
     :type amplitude: float
+    :param sublevel_dip_pA: If given, the peak signed current change, on top
+        of amplitude, added at the centre of a smooth taper spanning
+        sublevel_dip_width_samples - e.g. -150.0 for a transient deeper
+        blockage. sublevel_dip_width_samples must also be given.
+    :type sublevel_dip_pA: Optional[float]
+    :param sublevel_dip_width_samples: Width of the taper described by
+        sublevel_dip_pA, in samples. Must be strictly less than event_length,
+        so at least one blockage sample remains on either side of it.
+    :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: If given, divides the blockage into
+        ``len(sublevel_amplitudes_pA)`` contiguous, equal-width steps (the
+        last absorbs any remainder from an uneven division), each held at
+        ``amplitude`` plus its own offset from this list - a staircase of
+        discrete, resolvable levels for a step-detection fitter (the CUSUM
+        family), unlike sublevel_dip_pA's single smooth taper for a
+        peak-based one. Mutually exclusive with sublevel_dip_pA.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
 
     :return: The event trace, in picoamps.
     :rtype: numpy.ndarray
+
+    :raises ValueError: If exactly one of sublevel_dip_pA and
+        sublevel_dip_width_samples is given, if the dip does not fit
+        strictly inside the blockage, if sublevel_amplitudes_pA is given
+        together with sublevel_dip_pA, or if event_length cannot fit that
+        many whole-sample steps.
     """
     total = padding_before + event_length + padding_after
     trace = build_noisy_segment(rng, total, baseline_mean, baseline_std)
-    trace[padding_before : padding_before + event_length] += amplitude
+
+    if sublevel_amplitudes_pA is not None and sublevel_dip_pA is not None:
+        raise ValueError(
+            "sublevel_amplitudes_pA and sublevel_dip_pA are mutually exclusive"
+        )
+
+    if sublevel_amplitudes_pA is not None:
+        num_steps = len(sublevel_amplitudes_pA)
+        if num_steps < 1:
+            raise ValueError("sublevel_amplitudes_pA must have at least one entry")
+        step_width = event_length // num_steps
+        if step_width < 1:
+            raise ValueError(
+                f"event_length ({event_length}) cannot fit {num_steps} whole-sample "
+                "steps"
+            )
+        pos = padding_before
+        for i, offset in enumerate(sublevel_amplitudes_pA):
+            width = (
+                step_width
+                if i < num_steps - 1
+                else event_length - step_width * (num_steps - 1)
+            )
+            trace[pos : pos + width] += amplitude + offset
+            pos += width
+    else:
+        trace[padding_before : padding_before + event_length] += amplitude
+
+    if (sublevel_dip_pA is None) != (sublevel_dip_width_samples is None):
+        raise ValueError(
+            "sublevel_dip_pA and sublevel_dip_width_samples must be given together"
+        )
+    if sublevel_dip_pA is not None and sublevel_dip_width_samples is not None:
+        if sublevel_dip_width_samples >= event_length:
+            raise ValueError(
+                f"sublevel_dip_width_samples ({sublevel_dip_width_samples}) must be "
+                f"strictly less than event_length ({event_length})"
+            )
+        if sublevel_dip_width_samples < 2:
+            raise ValueError(
+                f"sublevel_dip_width_samples ({sublevel_dip_width_samples}) must be "
+                "at least 2, so the taper has a well-defined shape"
+            )
+        dip_start = padding_before + (event_length - sublevel_dip_width_samples) // 2
+        # Raised-cosine (Hann) taper: 0 at both edges, sublevel_dip_pA at the
+        # centre, continuous and smooth throughout - one unambiguous local
+        # extremum, unlike a rectangular step. See the docstring above for why
+        # that matters.
+        n = np.arange(sublevel_dip_width_samples)
+        taper = 0.5 * (1 - np.cos(2 * np.pi * n / (sublevel_dip_width_samples - 1)))
+        trace[dip_start : dip_start + sublevel_dip_width_samples] += (
+            sublevel_dip_pA * taper
+        )
+
     return trace
 
 
@@ -312,6 +414,9 @@ def _write_channel(
     conductivity: float,
     event_length_range_samples: Optional[Tuple[int, int]] = None,
     event_amplitudes_pA: Optional[List[float]] = None,
+    sublevel_dip_pA: Optional[float] = None,
+    sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
 ) -> SyntheticEventsChannel:
     """
     Insert one channel's row and all of its planted events into an
@@ -380,6 +485,19 @@ def _write_channel(
         raw events genuinely fail to fit -- not because raw ids were
         artificially skipped.
     :type event_amplitudes_pA: Optional[List[float]]
+    :param sublevel_dip_pA: If given, planted in every event via
+        _build_event_trace - see its docstring. Makes events usable by a
+        peak-based fitter (e.g. Basic_PeakFinder), which needs a resolvable
+        local extremum inside the blockage, not just a flat level.
+    :type sublevel_dip_pA: Optional[float]
+    :param sublevel_dip_width_samples: Width of the dip described by
+        sublevel_dip_pA, in samples. Must be given together with it.
+    :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: If given, planted in every event via
+        _build_event_trace - see its docstring. Gives a step-detection
+        fitter (the CUSUM family) a known number of discrete, resolvable
+        levels within the blockage instead of a single flat one.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
 
     :return: Ground truth for the channel just written.
     :rtype: SyntheticEventsChannel
@@ -432,6 +550,9 @@ def _write_channel(
             baseline_mean=baseline_mean_pA,
             baseline_std=baseline_std_pA,
             amplitude=this_amplitude,
+            sublevel_dip_pA=sublevel_dip_pA,
+            sublevel_dip_width_samples=sublevel_dip_width_samples,
+            sublevel_amplitudes_pA=sublevel_amplitudes_pA,
         )
         raw_data = trace.astype(RAW_DATA_DTYPE).tobytes()
 
@@ -492,6 +613,9 @@ def generate_events_database(
     seed: int = 42,
     event_length_range_samples: Optional[Tuple[int, int]] = None,
     event_amplitudes_pA: Optional[List[float]] = None,
+    sublevel_dip_pA: Optional[float] = None,
+    sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
 ) -> SyntheticEventsDatabase:
     """
     Write a single-channel synthetic events database with known events.
@@ -552,6 +676,19 @@ def generate_events_database(
         see _write_channel()'s docstring for why that's the realistic
         way to end up with gaps in a fitted-event set.
     :type event_amplitudes_pA: Optional[List[float]]
+    :param sublevel_dip_pA: If given, planted in every event - see
+        _build_event_trace()'s docstring. Makes events usable by a
+        peak-based fitter, which needs a resolvable local extremum inside
+        the blockage rather than a single flat level.
+    :type sublevel_dip_pA: Optional[float]
+    :param sublevel_dip_width_samples: Width of the dip described by
+        sublevel_dip_pA, in samples. Must be given together with it.
+    :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: If given, planted in every event via
+        _build_event_trace - see its docstring. Gives a step-detection
+        fitter (the CUSUM family) a known number of discrete, resolvable
+        levels within the blockage instead of a single flat one.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
 
     :return: A SyntheticEventsDatabase describing the file and its
         planted events.
@@ -584,6 +721,9 @@ def generate_events_database(
             voltage=voltage,
             thickness=thickness,
             conductivity=conductivity,
+            sublevel_dip_pA=sublevel_dip_pA,
+            sublevel_dip_width_samples=sublevel_dip_width_samples,
+            sublevel_amplitudes_pA=sublevel_amplitudes_pA,
         )
         conn.commit()
     finally:

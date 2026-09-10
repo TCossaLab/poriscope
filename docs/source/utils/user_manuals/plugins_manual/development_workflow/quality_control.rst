@@ -33,6 +33,8 @@ The following tools are used in Poriscope:
 - **pydoclint** – checks that a docstring's documented parameters, return type, and
   raised exceptions actually match the function's real signature and body (see
   :ref:`docstring_consistency` below)
+- **settings-schema** – checks that every plugin's ``get_empty_settings()`` is
+  internally self-consistent (see :ref:`settings_schema_checking` below)
 - **check-added-large-files** – prevents accidental commits of large files
 - **Ruff security rules** – a second, separately scoped Ruff pass over
   ``poriscope/plugins/`` only, flagging code execution, unsafe deserialization and
@@ -40,9 +42,9 @@ The following tools are used in Poriscope:
 - **plugin module-level code check** – rejects code that runs when a plugin is merely
   discovered; see :ref:`plugin_trust_boundary` below
 
-All seven are managed through the **pre-commit** framework.
+All eight are managed through the **pre-commit** framework.
 
-Two further gates are not pre-commit hooks but are enforced just as strictly:
+Three further gates are not pre-commit hooks but are enforced just as strictly:
 
 - a dedicated automated test — :ref:`plugin_compliance_testing` below — checks that any
   plugin you add or modify actually implements the interface its base class requires. It
@@ -50,6 +52,12 @@ Two further gates are not pre-commit hooks but are enforced just as strictly:
   as much a compliance gate as the tools above, and often the one that matters most. A
   companion test, :ref:`settings_schema_checking`, does the same for the settings schema
   your plugin declares.
+- the **behavioural conformance suite** — :ref:`plugin_conformance_testing` below —
+  actually runs your plugin against synthetic data and checks it behaves like a
+  well-formed member of its family. The two checks above are static: a plugin can
+  satisfy both completely and still be wrong on the first real event. If you are
+  contributing a data reader, :ref:`reader_fuzz_testing` additionally drives it against
+  deliberately malformed files.
 - the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
   Sphinx documentation on every pull request with warnings treated as errors. pydoclint
   checks that a docstring *describes the right things*; it does not check that the
@@ -69,12 +77,15 @@ run automatically:
 - ``mypy`` – validates static typing
 - ``pydoclint`` – validates that docstrings match real signatures and behavior
 - ``plugin-module-level`` – blocks import-time code in a data plugin
+- ``settings-schema`` – validates every plugin's declared settings schema
 - ``check-added-large-files`` – blocks files larger than 123 KB
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
-``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/`` and
-``plugin-module-level`` more narrowly still, to the eight data-plugin families.
-Everything else runs against every tracked file.
+``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/``,
+``plugin-module-level`` more narrowly still to the eight data-plugin families, and
+``settings-schema`` to ``poriscope/plugins/**`` — it only needs to run when a
+plugin's settings could have changed. Everything else runs against every tracked
+file.
 
 These checks **never modify files**.
 
@@ -506,7 +517,7 @@ exclusions, and ``mypy.ini`` enforces that:
    generic types such as ``List[str]`` it compares them by *equality* — so a
    reasonable-looking widening of the base's type will fail it.
 
-.. _plugin_compliance_testing:
+.. _test_suite_configuration:
 
 Test Suite Configuration
 -------------------------
@@ -551,6 +562,8 @@ Run it deliberately when you want the number. The plain ``pytest`` invocation is
 pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
 the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
 drop, so treat it as information rather than a gate.
+
+.. _plugin_compliance_testing:
 
 Plugin Interface Compliance Testing
 ------------------------------------
@@ -642,6 +655,460 @@ and returns a list of human-readable problems.
    Omitting ``Value`` entirely is fine and means the same as ``Value: None``: no default,
    the user must supply one. Most shipped readers do exactly this. What is *not* fine is
    supplying a ``Value`` that contradicts the ``Type`` beside it.
+
+The check above is static: it validates the schema's *shape* against hand-built rules, with
+no plugin instance involved. ``tests/unit/plugins/test_settings_defaults.py`` covers what
+that cannot — whether a plugin's *own real* defaults survive that *same plugin's* live
+``_validate_param_types``/``_validate_param_ranges`` at instantiation. The two can
+disagree even when the schema is self-consistent by the static rules, so both run; a
+plugin that ships no real defaults to check (every parameter omits ``Value`` or sets it to
+``None``) is reported as skipped rather than silently passing.
+
+.. _plugin_conformance_testing:
+
+Behavioural Conformance Testing
+--------------------------------
+
+The :ref:`compliance test <plugin_compliance_testing>` was the building inspector: it
+confirmed that every load-bearing wall the blueprint called for is really there. What
+nobody has done yet is move in and turn the taps on.
+
+That is this suite's job. Compliance and schema checking are both *static* — they read
+your plugin without ever running your algorithm — so a plugin can satisfy both
+completely and still get the wrong answer on the very first real event. A reader can
+report exactly the right number of samples while returning them with the sign flipped.
+A fitter can declare every metadata column correctly and then reject every event it is
+handed. Nothing above this point would notice either.
+
+``tests/unit/plugins/conformance/`` closes that gap. It builds your plugin the way the
+application does — real settings, a real parent plugin, a real file — drives it over
+synthetic data from ``tests/synthetic_data/``, and checks it behaves like a
+well-formed member of its family. All eight families are covered, each with checks
+written for what that family's output is actually used for:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - Family
+     - What conformance asks of it
+   * - ``MetaReader``
+     - Agrees with the recording about channels, sample rate and length; ``load_data``
+       recovers the planted baseline and event depth in picoamps, not just a plausible
+       shape; ``get_raw_dtype()`` resolves to a real dtype and the raw-data path returns
+       the same sample count as the normal one.
+   * - ``MetaFilter``
+     - Shape and dtype preserved, output finite, the data actually changed but the
+       blockage still detectable, and ``get_callable_filter()`` agreeing with
+       ``filter_data()``.
+   * - ``MetaEventFinder``
+     - Locates exactly the planted events — neither missing any nor reporting noise —
+       with boundaries ordered, in-bounds and non-overlapping, landing on the
+       plantings, and ``get_single_event_data()`` carrying the documented keys.
+   * - ``MetaEventFitter``
+     - Fits every planted event rather than silently rejecting them all, and every
+       metadata column it produces is declared in ``get_event_metadata_types()``
+       **and** ``get_event_metadata_units()`` so the database writer has a type for
+       it. Also ``get_single_event_metadata()`` returning usable arrays. The CUSUM
+       family (``CUSUM``, ``ClassicCUSUM``, ``IntraCUSUM``) is additionally checked
+       against a known planted *sublevel* count, not just a known event count, over
+       a dedicated staircase fixture.
+   * - ``MetaEventLoader``
+     - Agrees with the database about channels, event count and sample rate, and every
+       loaded event carries the exact keys ``get_event_generator``'s docstring
+       specifies, with padding that leaves room for a blockage.
+   * - ``MetaWriter``, ``MetaDatabaseWriter``
+     - Driven through a real chain, then the output is checked for SQLite integrity,
+       the expected row count, and — the part that matters — being readable back by
+       the matching loader.
+   * - ``MetaDatabaseLoader``
+     - Reports its experiments, channels and per-channel event counts correctly, can
+       type every column it lists, and discriminates a valid filter query from an
+       invalid one.
+
+Every family is also asked that ``reset_channel`` and ``close_resources`` are safe
+after use, including twice. Readers, loaders and writers are further asked to actually
+release their file(s) once nothing references the plugin anymore, which on Windows is a
+genuine handle-leak check because an open handle blocks ``os.unlink``. The check differs
+by family because the contract does: a writer closes its connection explicitly inside
+``close_resources``, while a reader's own docstring permits leaving a memmap for the
+garbage collector to reclaim — so the reader/loader version of the check drops its only
+reference and runs ``gc.collect()`` before checking, rather than asserting on
+``close_resources`` alone.
+
+Like the compliance test, it is parametrised over *discovered* classes, so your plugin
+is covered the moment you drop the file in. The suite cannot guess valid settings on
+its own — ``Options`` on a file parameter is a dialog filter glob rather than a list of
+values, most numeric parameters declare no ``Max`` to interpolate against, and a
+parameter naming a parent plugin needs a live instance — so whether *you* need to add
+anything depends on which family your plugin belongs to. At a glance:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 22 44
+
+   * - Family
+     - Recipe work
+     - What that means
+   * - ``MetaFilter``, ``MetaEventFinder``, ``MetaEventFitter``
+     - **Always**
+     - An entry keyed by your class name, even if it is empty. An event fitter may also
+       have to say which synthetic recording it should be tested against.
+   * - ``MetaWriter``, ``MetaDatabaseWriter``, ``MetaDatabaseLoader``,
+       ``MetaEventLoader``
+     - **Usually none**
+     - Nothing, provided your plugin adds no required parameter of its own.
+   * - ``MetaReader``
+     - **Always**
+     - A fixture entry, always — the lookup is per class, so even a covered format
+       needs one. How much work it is varies; see the four rows further down.
+
+.. note::
+
+   One thing applies to **every** family: a plugin generated by
+   ``scripts/new_plugin.py`` ships a placeholder parameter with no default, so it
+   cannot pass until you replace or delete it. "Usually none" above means no *recipe*
+   work — it does not mean a freshly generated plugin passes untouched.
+
+.. tip::
+
+   **Where to start.** Run ``pytest -m conformance`` before you have written any of
+   your algorithm, while your plugin is still the generated skeleton. You will get one
+   clear failure naming exactly what to add, and adding it is a line or two. Doing it
+   first means the suite is watching your plugin from your earliest commit, so the day
+   you invert a gain or drop a sign you hear about it straight away instead of in
+   review. Everything below is reference for when that failure appears.
+
+The detail, family by family. **Every edit below is in one file**,
+``tests/unit/plugins/conformance/_recipes.py``, called ``_recipes.py`` from here on;
+the only exceptions are called out explicitly where they arise.
+
+* **``MetaFilter``, ``MetaEventFinder``, ``MetaEventFitter``: yes, always.** Each of
+  these is looked up by class name in a dict in ``_recipes.py``
+  (``FILTER_SETTINGS``, ``EVENT_FINDER_SETTINGS``, ``EVENT_FITTER_SETTINGS``), where an
+  entry is a plain ``{"YourClassName": {"Param Name": value, ...}}`` dict:
+
+  .. code-block:: python
+
+     # _recipes.py
+     EVENT_FINDER_SETTINGS: Dict[str, Dict[str, Any]] = {
+         "ClassicBlockageFinder": {"Threshold": 200.0},
+     }
+
+  You only need to list a *parameter* here if ``get_empty_settings()`` leaves it with
+  no default (``Value`` omitted or ``None``) — anything your plugin already defaults is
+  used as-is. If yours is a **variant** of a shipped plugin, that includes everything
+  its parent left without a default, not just what you added: a variant of
+  ``BesselFilter`` still has to supply ``Cutoff`` and ``Samplerate``. The ``ValueError``
+  names them, so you do not have to work it out in advance.
+
+  **The entry itself is still required even when you have nothing to put in it**, since
+  the lookup is on dict membership rather than on unset parameters. A plugin whose every
+  parameter has a default takes an empty dict, and two shipped fitters do exactly that:
+
+  .. code-block:: python
+
+     EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
+         "NoFitter": {},
+         "PeakFinder": {},
+     }
+
+  The two failures you can hit are therefore distinct. No entry at all gives
+  ``KeyError: No conformance recipe for YourPlugin. Add one to ...`` — which an empty
+  dict resolves. An entry that exists but leaves an undefaulted parameter unset gives
+  ``ValueError: YourPlugin's conformance recipe leaves [...] unset and they have no
+  default``, naming the exact parameters rather than just the plugin.
+
+  Pick those values for the test signal, not for real data. The fixtures build a 2000 pA
+  baseline with 15 pA of noise and -400 pA events, so the ``Threshold: 200.0`` above says
+  "halfway down a 400 pA event in this recording" — it is not a recommended setting for
+  your plugin, and it would need changing if the fixture's noise or event size ever did.
+  That is also why these values live in the test file rather than on your plugin class:
+  they describe the test, not the science.
+
+  **Event fitters additionally choose which events database they are driven against.**
+  A *fixture* is a synthetic recording built with known content deliberately planted in
+  it — the software equivalent of running a reference standard through your instrument.
+  Because you know exactly what went in, you can tell whether what your plugin reports
+  coming out is right.
+
+  And as with a real standard, the one you choose has to contain the feature you are
+  testing for. Handing a step detector a recording with no steps in it proves nothing,
+  the same way a calibration standard with no analyte in it would tell you nothing
+  about your detector. So a fitter gets a flat blockage by default, and if that is the
+  wrong standard for yours, map your class to whichever of these shapes fits, in
+  ``FITTER_FIXTURES`` beside the recipe dicts in ``_recipes.py``:
+
+  .. list-table::
+     :header-rows: 1
+     :widths: 22 46 32
+
+     * - Shape
+       - if your fitter needs
+       - as these already do
+     * - *not listed*
+       - nothing inside the event; the blockage alone is enough
+       - ``NoFitter``
+     * - ``"dip"``
+       - a resolvable dip inside the blockage, as a peak-based fitter does
+       - ``Basic_PeakFinder``
+     * - ``"staircase"``
+       - a known number of discrete levels, as a step or changepoint detector does
+       - ``CUSUM``, ``ClassicCUSUM``, ``IntraCUSUM``, ``NanoTrees``
+     * - ``"deep_dip"``
+       - a dip both deeper than the carrier blockage and narrower than the
+         peak-search window
+       - ``PeakFinder``
+
+  Those four rows account for every fitter that ships, so the quickest way to place
+  your own is to find the one it most resembles. Naming it is one line:
+
+  .. code-block:: python
+
+     # _recipes.py
+     FITTER_FIXTURES: Dict[str, str] = {
+         "CUSUM": "staircase",
+         "YourFitter": "staircase",
+     }
+
+  **If none of the three suits your fitter**, those are not the only options — they are
+  just the shapes anyone has needed so far. Which way you go depends on whether a
+  suitable recording could exist at all.
+
+  *If it could* — your fitter looks for something no fixture contains yet, an
+  exponential decay or an oscillation, say — then **add a fixture of your own**. Doing
+  that means writing a new shape into the events-database generator and wiring it
+  through to the suite: four edits, with the staircase as the worked example to copy
+  from.
+
+  .. list-table::
+     :header-rows: 1
+     :widths: 30 38 32
+
+     * - Edit, to add a fixture shape
+       - What goes there
+       - Copy from the staircase
+     * - ``tests/synthetic_data/synthetic_events_db.py``
+       - a new planting parameter, threaded through ``generate_events_database``,
+         ``_write_channel`` and ``_build_event_trace`` — all three, or it never
+         reaches the trace. Taper the shape rather than making it rectangular: sharp
+         edges were measured to trip fitters *more* often, not less.
+       - ``sublevel_amplitudes_pA``
+     * - ``conformance/conftest.py``
+       - a session-scoped fixture building a database with that parameter set
+       - ``staircase_events_db_path``
+     * - ``conformance/_recipes.py``
+       - the shape's constants, its name added to ``FITTER_FIXTURE_SHAPES``, and a
+         ``FITTER_FIXTURES`` entry mapping your fitter to it
+       - ``STAIRCASE_LEVEL_AMPLITUDES_PA``, ``"staircase"``
+     * - ``conformance/test_eventfitters.py``
+       - add your shape to the ``by_shape`` map in the ``fitter`` fixture, **and
+         write a check that reads the planted shape**. The mapping alone buys
+         nothing: the four generic fitter checks pass on any signal that yields
+         events, so without an assertion of your own the fixture is built, routed,
+         used - and never actually examined. Nothing enforces that last part; the
+         staircase and dip checks are the worked examples to copy.
+       - ``staircase_fitter``,
+         ``test_sublevel_count_matches_the_planted_staircase``
+
+  There is deliberately no way to exempt a fitter from this. Every discovered fitter
+  is driven, and one the current fixtures cannot exercise fails rather than being
+  marked as skipped — because a missing shape is almost always something to plant
+  rather than to excuse. Be sceptical of "no fixture could suit this": a fitter is
+  handed arrays of numbers, the generator computes arbitrary arrays, and multi-channel
+  recordings are already supported (``generate_multichannel_dataset``), so the four
+  edits above are nearly always the answer.
+
+  How loudly the wrong choice fails depends on your fitter, and it is worth knowing
+  that "loudly" is not guaranteed. A strict peak fitter left out of its set rejects
+  every planted event, which is obvious. A tolerant one does not: measured,
+  ``Basic_PeakFinder`` fits all 25 events on a flat blockage and reports 6-24
+  sublevels per event, because it finds peaks in the 15 pA noise — so the flat
+  database looks like a success. Leaving a step detector out of
+  ``"staircase"`` in ``FITTER_FIXTURES`` is quieter still: its sublevel-count check is
+  never collected, so the suite goes green having never tested what the fitter is
+  for.
+
+  Check the fixture and the recipe together, since a wrong pairing of the two hides
+  itself: a threshold set above the feature you are looking for costs nothing on a
+  fixture that has no such feature in it.
+* **``MetaWriter``, ``MetaDatabaseWriter``, ``MetaDatabaseLoader``, ``MetaEventLoader``:
+  usually nothing.** These build generically from the file parameter every plugin in the
+  family already has, plus the four experiment-metadata parameters the two writers
+  share — and no plugin shipped in these families declares anything beyond that, so all
+  four are covered with zero recipe work today. If yours does declare an extra required
+  parameter with no default, you get the same
+  ``ValueError: YourPlugin's conformance recipe leaves ['Your Param'] unset`` as above,
+  and it names where the value goes: these four have no per-class dict, so it belongs
+  in the ``overrides`` built inside that family's ``build_*`` function.
+* **``MetaReader``: always, and it is the one real piece of work.** A reader's
+  "recipe" is not settings — it is a synthetic file in its actual on-disk format,
+  since that is the entire thing a reader varies over. Every existing format lives
+  under ``tests/synthetic_data/`` (``synthetic_chimera.py``,
+  ``synthetic_chimera_vc100.py``, ``synthetic_binary.py``, ``synthetic_abf2.py``),
+  each a subclass of ``BaseSyntheticRecordingWriter`` that only has to implement
+  ``_write()``, and each derived directly from the real parsing code rather than
+  guessed — see each module's docstring for that derivation. Every reader needs an
+  entry in ``READER_DATASET_BUILDERS`` in ``_recipes.py``, keyed by class name rather
+  than by format, and a reader with no entry fails the same way the other families
+  do — including one whose format is already covered, since the lookup is per class.
+  Note what the *value* is: not settings, but a callable that writes a recording and
+  returns the ground truth for it.
+
+  .. code-block:: python
+
+     # _recipes.py
+     READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
+         "ChimeraReader20240501": _chimera_20240501_dataset,
+         "YourReader": _your_format_dataset,
+     }
+
+  What that entry costs depends on how far your format sits from a covered one. Most
+  readers land on the first row:
+
+  .. list-table::
+     :header-rows: 1
+     :widths: 32 68
+
+     * - If your reader
+       - the entry is
+     * - reads a covered format and wants the same signal
+       - one line pointing at that format's existing builder — the usual case for a
+         variant of a shipped reader.
+     * - reads a covered format from a rig whose numbers mean something different
+       - a call to the existing generator with your own config. The config carries
+         the signal and the electronics: baseline, noise, event amplitude and
+         duration, ``samplerate``, plus per-format fields such as ``tia_gain``,
+         ``i_offset`` and ``filter_gain``.
+     * - stores the same samples, but arranged differently in the file
+       - a new generator function in that format's existing module, since the config
+         describes the signal and cannot describe file layout.
+         ``synthetic_chimera.py`` holds two generators for exactly this reason: the
+         samples are encoded identically, but one format keeps its metadata in a
+         separate ``.json`` file and the other embeds it in the recording's own
+         header.
+     * - reads a genuinely new format
+       - a new writer module under ``tests/synthetic_data/`` — a
+         ``BaseSyntheticRecordingWriter`` subclass implementing ``_write()``.
+
+  Your reader may need a **setting that the file itself does not carry**, the way
+  ``SingleBinaryDecoder`` has to be told its sample rate because nothing in the file
+  records it. Supply those in ``READER_EXTRA_SETTINGS``, as a small function that reads
+  what it needs off the recording that was just written:
+
+  .. code-block:: python
+
+     # _recipes.py
+     READER_EXTRA_SETTINGS: Dict[str, Callable[[SyntheticDataset], Dict[str, Any]]] = {
+         "SingleBinaryDecoder": lambda dataset: {"Sampling Rate": dataset.samplerate},
+     }
+
+  Leave that out and you get the same ``ValueError`` as the other families, naming the
+  parameter, rather than an unhelpful error from deep inside ``apply_settings``.
+
+  Finally, once your reader has a fixture it is fuzz-tested for free: the suite feeds it
+  truncated and corrupted copies of its own recording and checks it fails cleanly instead
+  of hanging or crashing. You add nothing for that — see :ref:`reader_fuzz_testing`.
+
+  What those shared mutations cannot know about is anything particular to *your* format.
+  If yours has a part that identifies or describes it — a signature at the start of the
+  file, a header, a companion file beside the recording — add a **mutation**: a short
+  function that damages that one thing, so you find out what your parser does when it is
+  wrong. Two edits, both in ``_recipes.py``. Write the function, next to the shipped ones
+  — this one is ``_flip_abf2_signature`` with the name changed, and it is the whole of it:
+
+  .. code-block:: python
+
+     def _corrupt_your_marker(dataset: SyntheticDataset) -> None:
+         """Corrupt the marker your format puts at the start of the file."""
+         data = bytearray(dataset.data_path.read_bytes())
+         data[0:4] = b"\x00\x00\x00\x00"
+         dataset.data_path.write_bytes(bytes(data))
+
+  then register it for your reader, below where ``MUTATIONS`` is built:
+
+  .. code-block:: python
+
+     MUTATIONS["YourReader"].append(("corrupt_your_marker", _corrupt_your_marker))
+
+  The name in that tuple is what appears in the test id, so a failure points straight at
+  the mutation that caused it. Nothing fails if you skip all this, which is how the most
+  distinctive part of a format ends up being the one part never tested.
+
+However much or little your family turned out to need, the suite is run the same way.
+Scope it to your own plugin by name while you are iterating — the parametrised test ids
+carry the class name, so ``-k`` matches it:
+
+.. code-block:: bash
+
+   pytest -m conformance                    # every plugin, all eight families
+   pytest -m conformance -k YourPlugin      # only yours, while you work
+
+.. tip::
+
+   Watch the units. Two plugins in this codebase declare a parameter in sigma where
+   their siblings use picoamps — ``ThresholdBlockageFinder``'s ``Threshold`` and
+   ``ClassicCUSUM``'s ``Step Size`` — so a recipe value copied from a sibling silently
+   detects nothing. Read the parameter's ``Units`` entry rather than the sibling's
+   number. Declaring ``Units`` on your own parameters is what makes this checkable.
+
+.. tip::
+
+   If you are writing a reader, check your ``_set_raw_dtype()`` yourself, because the
+   suite cannot. It verifies that ``get_raw_dtype()`` resolves to a usable dtype and
+   that the raw-data call returns as many samples as the normal one — but not that the
+   dtype matches what is really on disk. It cannot: ``MetaReader.load_data`` finishes
+   its raw-data branch with ``.astype(self.get_raw_dtype())``, so the returned array
+   has that dtype whatever you declared. A reader passing every raw-data check can
+   still be describing its file's encoding wrongly.
+
+.. _reader_fuzz_testing:
+
+Fuzz Testing for Data Readers
+-------------------------------
+
+Everything above only ever hands a reader a *well-formed* recording. Readers parse
+files produced by real, uncontrolled instrument software, so
+``tests/unit/plugins/conformance/test_reader_fuzz.py`` drives every discovered
+``MetaReader`` over a small, fixed set of deterministic mutations of its own valid
+fixture instead — truncated to zero bytes, truncated mid-file, a corrupted format
+marker, a missing sidecar — and asserts three tiers, in order of how far the mutation
+lets the reader get:
+
+1. Construction either succeeds or raises a caught exception — never hangs, never
+   raises something uncatchable.
+2. If construction succeeds, ``get_channel_length()`` agrees with what ``load_data``
+   can actually deliver for that many samples.
+3. Requesting more than ``get_channel_length()`` reports raises ``ValueError``
+   rather than quietly returning a shorter array.
+
+Coverage follows the fixtures. ``MUTATIONS`` in ``_recipes.py`` is keyed by reader class
+name and built from ``READER_DATASET_BUILDERS``' own keys, so a reader is fuzz-tested from
+the moment it has a conformance fixture, with nothing further to register here. Each
+reader gets the shared mutations above, plus any format-specific ones registered for
+it — five of the seven have those today, the two headerless binary formats having
+nothing of their own to corrupt. :ref:`plugin_conformance_testing` shows how to add one.
+
+These run as part of ``pytest -m conformance`` like everything else, but they are quick
+enough to run on their own while you are working on a parser:
+
+.. code-block:: bash
+
+   pytest tests/unit/plugins/conformance/test_reader_fuzz.py
+   pytest tests/unit/plugins/conformance/test_reader_fuzz.py -k YourReader
+
+.. note::
+
+   The suite deliberately does not assert a single exception type for malformed
+   input. Measured directly: a 0-byte file alone already produces four different
+   exception families depending on reader and format — ``ValueError`` (most
+   readers), ``json.JSONDecodeError`` (a ``ValueError`` subclass, one format's
+   embedded-header parse), ``struct.error`` (both ABF2 readers, *not* a
+   ``ValueError`` subclass) — and a missing sidecar raises ``FileNotFoundError`` or
+   ``OSError`` depending on the reader. Standardizing that, and whether a reader
+   should degrade gracefully when its sidecar is missing, are open questions for
+   whoever owns each reader family, tracked in ``future_fixes.md`` — not something
+   this suite decides.
 
 .. _duplication_ratchet:
 
@@ -803,11 +1270,26 @@ Pre-Pull-Request Compliance Checklist
 .. tip::
 
    If you are *starting* a data plugin rather than finishing one, generate it with
-   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script`. Every step below
-   passes against the generated skeleton before you have written any of your own code,
-   which means the first failure you see is one you actually caused. Getting a signature
+   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script`. Getting a signature
    or a docstring field wrong by hand is by far the most common reason a first plugin PR
    comes back, and the generator copies both verbatim out of the base class.
+
+   **What a freshly generated skeleton does and does not pass**, measured against one
+   generated plugin in each of the eight families: steps 1 and 2 pass cleanly — it is
+   already ``black``/``ruff`` clean and satisfies ``mypy``, ``pydoclint``, the security
+   and module-level checks, and the settings schema. Step 3 does **not** pass, and is
+   not meant to: the skeleton's methods still raise ``NotImplementedError``, and the
+   conformance suite has no recipe for a plugin it has never seen, so every family
+   reports errors until you fill the stubs in and register your recipe. Those are
+   expected, and each names what it wants; see :ref:`plugin_conformance_testing`.
+   A failure in step 1 or 2, by contrast, really is one you caused.
+
+   One of those step-3 errors catches everybody, including families that otherwise
+   need no recipe at all. The generator seeds ``get_empty_settings`` with a
+   placeholder parameter — ``"My Parameter"``, marked ``# TODO``, with no default —
+   so conformance correctly reports it unset. Replace it with the parameters your
+   plugin actually needs, or delete it if it needs none; until you do, no generated
+   plugin in any family can pass.
 
 ☐ **1. Apply automatic formatting and safe fixes.**
 
@@ -824,7 +1306,8 @@ then stage the changes.
 
    pre-commit run --all-files
 
-This runs ``ruff`` (strict), ``mypy``, ``pydoclint``, and ``check-added-large-files``.
+This runs ``ruff`` (strict), ``mypy``, ``pydoclint``, ``settings-schema``, and
+``check-added-large-files``.
 Nothing here is auto-fixed for you — if ``mypy`` or ``pydoclint`` report a problem,
 you need to edit the code or docstring yourself. See :ref:`docstring_consistency`
 above if a pydoclint failure doesn't make sense, and :ref:`type_checking_policy` for
@@ -837,17 +1320,27 @@ what mypy expects of new code.
    unannotated function you add will fail here even though it would once have been
    skipped.
 
-☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the plugin
-compliance suite and the settings-schema check.**
+☐ **3. If you added or modified a plugin (or a ``Meta*`` base class), run the three
+plugin gates.**
 
 .. code-block:: bash
 
-   pytest tests/unit/plugins/test_plugin_compliance.py
+   pytest tests/unit/plugins
    python scripts/check_plugin_schemas.py
 
-See :ref:`plugin_compliance_testing` and :ref:`settings_schema_checking` above for what
-these actually check. The first covers the methods your plugin implements, the second the
-settings schema it declares; they catch different mistakes.
+The first covers all three at once: interface compliance, settings-schema
+consistency, and behavioural conformance. The second is the fast, pytest-independent
+settings-schema check, useful when you only want to check the one plugin you are
+working on (``python scripts/check_plugin_schemas.py MyEventFinder``). See
+:ref:`plugin_compliance_testing`, :ref:`settings_schema_checking` and
+:ref:`plugin_conformance_testing` above for what each one actually checks — they
+catch different mistakes. A new filter, event finder or event fitter needs a settings
+recipe added to ``tests/unit/plugins/conformance/_recipes.py``; conformance fails
+with a message telling you exactly where. The other plugin families usually need
+nothing added — see :ref:`plugin_conformance_testing` above for the full breakdown.
+A new **reader** is the exception: it needs a synthetic file in its own on-disk
+format, and it is also driven against malformed input by
+:ref:`reader_fuzz_testing`, which the same ``pytest tests/unit/plugins`` run covers.
 
 ☐ **4. Run the test suite** — the same suite continuous integration runs on every
 branch push:
@@ -908,6 +1401,10 @@ Summary for New Developers
   :ref:`type_checking_policy`
 - New or modified plugins must also pass ``test_plugin_compliance.py`` — see
   :ref:`plugin_compliance_testing`
+- …and must pass the behavioural conformance suite, which runs your plugin against real
+  synthetic data rather than only inspecting its interface. Most new plugins need to add
+  a settings recipe for it; see :ref:`plugin_conformance_testing` for which families do
+  and what to write
 - Docstrings must render, not just describe the right parameters — every pull request
   rebuilds the docs with warnings as errors; see :ref:`docs_render_check`
 - Before opening a pull request, work through :ref:`pre_pr_checklist` in full
