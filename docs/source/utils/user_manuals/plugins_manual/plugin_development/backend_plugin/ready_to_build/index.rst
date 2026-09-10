@@ -20,9 +20,13 @@ Start From a Generated Skeleton
 You do not have to do any of the four steps above by hand. ``scripts/new_plugin.py``
 writes a skeleton that already satisfies all four, and which passes ``ruff``, ``mypy``,
 ``pydoclint``, the plugin compliance suite and the settings-schema check *before you have
-filled in a single method*. Every failure you see after that is one you introduced, which
-is a much easier position to work from than discovering a signature mismatch when a
-reviewer runs the suite on your pull request.
+filled in a single method* — a much easier position to work from than discovering a
+signature mismatch when a reviewer runs the suite on your pull request.
+
+Two things a fresh skeleton does **not** pass, by design, so do not read that list as a
+green test run: its unfilled methods raise ``NotImplementedError``, and the behavioural
+conformance suite has no recipe for a plugin it has never seen. Both are expected, and
+both say what they want — see :ref:`plugin_conformance_testing`.
 
 Run it with no arguments and it will ask what you are building:
 
@@ -76,6 +80,12 @@ you can confirm the plumbing works before writing any of the algorithm.
    ``MetaReader`` an event finder depends on, the ``Output File`` a writer needs — and an
    override that forgets the ``super()`` call silently drops them. Nothing checks for it.
 
+   The stub then seeds one example parameter, ``"My Parameter"``, marked ``# TODO`` and
+   carrying no default. Replace it with the parameters your plugin actually needs, or
+   delete it if it needs none. Until you do, conformance correctly reports it as a
+   required parameter left unset — and that applies even in the families that otherwise
+   need no recipe work at all, so it is the one step no generated plugin can skip.
+
 .. warning::
 
    Plugin names must be unique across **every** family, not just within one, because the
@@ -106,9 +116,15 @@ To assist with quality control, any contributions to the poriscope repository wi
 
    "Our tests and type checks" means something specific and checkable, not a vague
    standard a reviewer applies by eye. See :ref:`quality_control` for exactly what
-   runs (formatting, typing, docstring consistency, and plugin interface compliance
-   testing), and work through :ref:`pre_pr_checklist` before you open your pull
-   request — it will save you a review round-trip.
+   runs (formatting, typing, docstring consistency, plugin interface compliance
+   testing, and the behavioural conformance suite, which actually runs your plugin
+   against synthetic data), and work through :ref:`pre_pr_checklist` before you open
+   your pull request — it will save you a review round-trip.
+
+   Budget for that last one: most new plugins have to add a settings recipe so the
+   conformance suite can drive them, and a reader for a format not already covered
+   has to add a synthetic writer for it. See :ref:`plugin_conformance_testing` for
+   which families need what.
 
 .. toctree::
    :maxdepth: 1

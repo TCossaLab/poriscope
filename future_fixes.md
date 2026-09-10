@@ -637,13 +637,21 @@ developer's.
 ## 1. Behavioural conformance suite — remaining gaps
 
 All eight `Meta*` families are covered in `tests/unit/plugins/conformance/`, `PeakFinder`
-included (`FITTERS_SKIPPED` in `_recipes.py` is now empty); see `changelog.md`. Still open:
+included, and no fitter is exempt; see `changelog.md`. Still open:
 - **Possibly worth revisiting: `MetaReader.close_resources()` relies on GC rather than
   explicitly releasing its memmap** - see `DECISIONS.md` (2026-09-09) for why the reader
   leak check was scoped to that weaker, currently-documented contract rather than the
   stronger one loaders already meet. Touches the base class's docstring contract (every
   future reader, not just these 7) and `poriscope/utils/`/`poriscope/plugins/datareaders/`
   are both `@shadowk29`-owned - consult before implementing, not a unilateral change.
+- **Worth discussing: how much of the writer/loader override path to document.**
+  `quality_control.rst`'s conformance section now names it in one sentence; a longer
+  version with a worked code block per builder shape was cut. Never exercised: all five
+  plugins in `MetaWriter`/`MetaDatabaseWriter`/`MetaDatabaseLoader`/`MetaEventLoader`
+  declare nothing beyond the generic parameters their builders already supply, and those
+  four families have gained one plugin (`SQLitePeakDBLoader`, 2026-04) against seven
+  repo-wide since the 2025-08 import. `_fill`'s `ValueError` already names where the
+  value goes. Restore the examples, keep the one sentence, or drop it entirely?
 - **Worth asking `@shadowk29`: should readers converge on one exception type for
   malformed input?** `tests/unit/plugins/conformance/test_reader_fuzz.py` measured that a
   0-byte file alone already produces four different exception families depending on
