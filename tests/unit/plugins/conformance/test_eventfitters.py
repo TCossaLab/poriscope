@@ -27,7 +27,6 @@ from poriscope.utils.MetaEventFitter import MetaEventFitter
 from tests.unit.plugins.conformance._recipes import (
     EVENTS_CHANNEL,
     EVENTS_COUNT,
-    FITTERS_SKIPPED,
     FITTERS_USING_PEAKED_EVENTS,
     FITTERS_USING_PEAKFINDER_EVENTS,
     FITTERS_USING_STAIRCASE_EVENTS,
@@ -119,22 +118,22 @@ def pytest_generate_tests(metafunc):
     """
     Parametrise the ``fitter`` fixture over every discovered fitter class.
 
-    Classes in ``FITTERS_SKIPPED`` are parametrised as skips rather than
-    dropped, so they stay visible in the report, each with the specific reason
-    recorded for it rather than a generic one.
+    Every discovered fitter is driven; there is no exemption list. A fitter the
+    current fixtures cannot exercise fails rather than being marked, on the grounds
+    that the generator can plant any shape a fitter looks for - see
+    ``quality_control.rst`` for how to add one.
 
     :param metafunc: Pytest's per-function collection hook argument.
     :type metafunc: pytest.Metafunc
     """
     if "fitter" not in metafunc.fixturenames:
         return
-    params = []
-    for cls in EVENT_FITTERS:
-        marks = []
-        if cls.__name__ in FITTERS_SKIPPED:
-            marks.append(pytest.mark.skip(reason=FITTERS_SKIPPED[cls.__name__]))
-        params.append(pytest.param(cls, marks=marks, id=cls.__name__))
-    metafunc.parametrize("fitter", params, indirect=True)
+    metafunc.parametrize(
+        "fitter",
+        EVENT_FITTERS,
+        ids=[cls.__name__ for cls in EVENT_FITTERS],
+        indirect=True,
+    )
 
 
 @pytest.mark.conformance

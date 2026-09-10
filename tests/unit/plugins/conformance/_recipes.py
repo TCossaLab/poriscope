@@ -200,7 +200,13 @@ EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
             "Intraevent Hysteresis": 0.0,
         },
     ),
-    "NanoTrees": {"Smallest Significant Sublevel": 200.0},
+    # 75.0 rather than the 200.0 this carried while NanoTrees only ever saw a flat
+    # blockage. The setting is the threshold below which adjacent levels are merged,
+    # so against the staircase's 150 pA steps a 200.0 threshold merged all of them:
+    # it reported 3 sublevels where 5 are planted while still reporting 25/25 good
+    # fits, which is exactly why a flat fixture never caught it. Measured: passes at
+    # 75.0 and at 40.0, fails at 200.0.
+    "NanoTrees": {"Smallest Significant Sublevel": 75.0},
     "NoFitter": {},
     # Against the peaked-events database (PEAKED_EVENTS_DIP_PA/_WIDTH_SAMPLES,
     # FITTERS_USING_PEAKED_EVENTS below), not the shared flat one.
@@ -223,15 +229,16 @@ FITTERS_USING_PEAKED_EVENTS = frozenset({"Basic_PeakFinder"})
 # Fitters checked against a known planted *sublevel* count (the staircase
 # database, STAIRCASE_LEVEL_AMPLITUDES_PA) rather than only a known *event*
 # count - the step-detection family, whose whole job is counting internal
-# level transitions.
-FITTERS_USING_STAIRCASE_EVENTS = frozenset({"CUSUM", "ClassicCUSUM", "IntraCUSUM"})
+# level transitions. NanoTrees belongs here despite its name: its multi-pass
+# pipeline is a level decomposition, so a flat blockage never exercised it.
+FITTERS_USING_STAIRCASE_EVENTS = frozenset(
+    {"CUSUM", "ClassicCUSUM", "IntraCUSUM", "NanoTrees"}
+)
 
 # Fitters that need the PeakFinder-only database (PEAKFINDER_DIP_PA/
 # _WIDTH_SAMPLES) rather than the peaked-events one Basic_PeakFinder uses -
 # see PEAKFINDER_DIP_PA's comment for why the same dip does not work for both.
 FITTERS_USING_PEAKFINDER_EVENTS = frozenset({"PeakFinder"})
-
-FITTERS_SKIPPED: Dict[str, str] = {}
 
 
 def build_event_loader(db_path: str) -> SQLiteEventLoader:
@@ -274,11 +281,10 @@ def build_event_fitter(
     name = fitter_cls.__name__
     if name not in EVENT_FITTER_SETTINGS:
         raise KeyError(
-            f"No conformance recipe for {name}. Add one to EVENT_FITTER_SETTINGS "
-            f"(add its name to FITTERS_USING_PEAKED_EVENTS too if it needs a "
-            f"resolvable intra-event dip rather than a flat blockage), or to "
-            f"FITTERS_SKIPPED with a reason if the fixtures genuinely cannot "
-            f"exercise it yet."
+            f"No conformance recipe for {name}. Add one to EVENT_FITTER_SETTINGS, "
+            f"and name it in one of FITTERS_USING_PEAKED_EVENTS, "
+            f"FITTERS_USING_STAIRCASE_EVENTS or FITTERS_USING_PEAKFINDER_EVENTS if a "
+            f"flat blockage is the wrong signal for it."
         )
     overrides = EVENT_FITTER_SETTINGS[name]
 
@@ -328,9 +334,24 @@ def _fill(
             # that omit it.
             unset.append(key)
     if unset:
+        # The generator seeds every new plugin with a "My Parameter" example, so
+        # mention it only when it is actually one of the culprits - otherwise the
+        # advice is noise in front of the part that applies.
+        placeholder = (
+            "'My Parameter' is the plugin generator's leftover example: delete it "
+            "from your plugin's get_empty_settings rather than adding it here. "
+            if "My Parameter" in unset
+            else ""
+        )
         raise ValueError(
             f"{name}'s conformance recipe leaves {sorted(unset)} unset and they have "
-            f"no default. Add them to this module's recipe for that family."
+            f"no default. {placeholder}Supply them in _recipes.py: filters, event "
+            f"finders and event fitters have a per-class dict (FILTER_SETTINGS, "
+            f"EVENT_FINDER_SETTINGS, EVENT_FITTER_SETTINGS), while readers, writers "
+            f"and loaders have none - add it to the overrides built inside that "
+            f"family's build_* function, or to READER_EXTRA_SETTINGS for a reader "
+            f"parameter the file does not carry. A variant of a shipped plugin also "
+            f"inherits whatever its parent left without a default."
         )
 
 
@@ -546,10 +567,13 @@ def build_db_loader(
     :type db_path: str
     :return: A loader with settings applied and channel status initialised.
     :rtype: MetaDatabaseLoader
+    :raises ValueError: If the class declares a required parameter with no default
+        and no override here.
     """
     loader = loader_cls()
     settings = loader.get_empty_settings(standalone=True)
-    settings["Input File"]["Value"] = str(db_path)
+    overrides: Dict[str, Any] = {"Input File": str(db_path)}
+    _fill(settings, overrides, loader_cls.__name__)
     loader.apply_settings(settings)
     loader.report_channel_status(init=True)
     return loader
@@ -571,10 +595,13 @@ def build_any_event_loader(
     :type db_path: str
     :return: A loader with settings applied and channel status initialised.
     :rtype: MetaEventLoader
+    :raises ValueError: If the class declares a required parameter with no default
+        and no override here.
     """
     loader = loader_cls()
     settings = loader.get_empty_settings(standalone=True)
-    settings["Input File"]["Value"] = str(db_path)
+    overrides: Dict[str, Any] = {"Input File": str(db_path)}
+    _fill(settings, overrides, loader_cls.__name__)
     loader.apply_settings(settings)
     loader.report_channel_status(init=True)
     return loader
@@ -840,16 +867,18 @@ def build_any_reader(
     :type reader_cls: Type[MetaReader]
     :param dataset: The recording to open, from build_reader_dataset.
     :type dataset: SyntheticDataset
+    :raises ValueError: If the class declares a required parameter with no default
+        and no entry in READER_EXTRA_SETTINGS.
     :return: A reader with settings applied and channel status initialised.
     :rtype: MetaReader
     """
     reader = reader_cls()
     settings = reader.get_empty_settings(standalone=True)
-    settings["Input File"]["Value"] = str(dataset.data_path)
+    overrides: Dict[str, Any] = {"Input File": str(dataset.data_path)}
     extra = READER_EXTRA_SETTINGS.get(reader_cls.__name__)
     if extra is not None:
-        for key, value in extra(dataset).items():
-            settings[key]["Value"] = value
+        overrides.update(extra(dataset))
+    _fill(settings, overrides, reader_cls.__name__)
     reader.apply_settings(settings)
     reader.report_channel_status(init=True)
     return reader

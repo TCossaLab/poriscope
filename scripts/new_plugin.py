@@ -1125,6 +1125,8 @@ def build(args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]) ->
     print(f"  1. Fill in the {count} methods marked TODO. Each carries its contract.")
     print(f"  2. python scripts/check_plugin_schemas.py {args.name}")
     print("  3. pytest tests/unit/plugins/test_plugin_compliance.py")
+    print("  4. pytest -m conformance   # drives it against synthetic data; most")
+    print("       plugins need a recipe added first - the failure names which dict")
     return path
 
 

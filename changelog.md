@@ -2,7 +2,15 @@
 
 * The behavioural conformance suite's resource-leak check is extended to readers and loaders, not just writers
 
+* The behavioural conformance suite's readers, database loaders and event loaders now fail with a clear message (matching writers) if a new plugin declares a required parameter with no recipe entry, instead of an unrelated validation error
+
+* Conformance failure messages now name the exact dict or builder to edit for the plugin's family, and `scripts/new_plugin.py` points new plugins at the conformance suite alongside the compliance and schema checks
+
 * The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) is now checked against a known planted *sublevel* count, not just a known event count
+
+* `NanoTrees` is checked against a planted sublevel count too, which its previous conformance settings would have merged into a single level
+
+* The conformance suite no longer has a way to exempt an event fitter; every discovered fitter is driven
 
 * `PeakFinder` is un-skipped in the behavioural conformance suite and passes all four checks, matching `Basic_PeakFinder`
 

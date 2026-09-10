@@ -121,4 +121,11 @@ def test_reader_survives_malformed_input(
 def test_every_reader_has_at_least_one_mutation() -> None:
     """Guard against a reader silently having no fuzz coverage at all."""
     missing = [cls.__name__ for cls in READERS if not MUTATIONS.get(cls.__name__)]
-    assert not missing, f"no mutations registered for {missing}"
+    assert not missing, (
+        f"no fuzz mutations for {missing}. MUTATIONS is derived from "
+        f"READER_DATASET_BUILDERS' own keys in _recipes.py, so this means the reader "
+        f"has no conformance fixture at all - add it there and it picks up the shared "
+        f"mutations automatically. Add a format-specific mutation only if its format "
+        f"carries a structural marker (a signature, an embedded header, a sidecar) "
+        f"the shared truncation set would not otherwise corrupt."
+    )
