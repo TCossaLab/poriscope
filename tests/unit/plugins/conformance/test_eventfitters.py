@@ -28,6 +28,7 @@ from tests.unit.plugins.conformance._recipes import (
     EVENT_AMPLITUDE_PA,
     EVENTS_CHANNEL,
     EVENTS_COUNT,
+    FITTER_FIXTURE_SHAPES,
     FITTER_FIXTURES,
     INJECTED_EVENT_COLUMNS,
     INJECTED_SUBLEVEL_COLUMNS,
@@ -51,7 +52,10 @@ PEAKED_FITTERS: List[Type[MetaEventFitter]] = [
 
 @pytest.fixture
 def fitter(
-    request, events_db_path, peaked_events_db_path, peakfinder_events_db_path
+    request,
+    events_db_path,
+    peaked_events_db_path,
+    peakfinder_events_db_path,
 ) -> MetaEventFitter:
     """
     Build the fitter under test, attached to a fresh loader, and close it after.
@@ -83,7 +87,12 @@ def fitter(
         "deep_dip": peakfinder_events_db_path,
     }
     shape = FITTER_FIXTURES.get(fitter_cls.__name__)
-    db_path = by_shape.get(shape, events_db_path)
+    if shape is not None and shape not in by_shape:
+        raise KeyError(
+            f"{fitter_cls.__name__} is mapped to fixture shape {shape!r}, which "
+            f"has no database here; known shapes are {sorted(by_shape)}"
+        )
+    db_path = by_shape[shape] if shape is not None else events_db_path
     loader = build_event_loader(db_path)
     instance = build_event_fitter(fitter_cls, loader)
     yield instance
@@ -371,3 +380,26 @@ def test_peak_fitter_resolves_the_planted_dip(peaked_fitter: MetaEventFitter) ->
         f"planted dip and not just the carrier blockage; these did not reach it: "
         f"{shallow}"
     )
+
+
+@pytest.mark.conformance
+def test_fitter_fixture_shapes_are_known() -> None:
+    """
+    Every ``FITTER_FIXTURES`` value names a shape the suite can actually build.
+
+    The shape is a string, so a typo used to route the fitter to the shared flat
+    database in silence - it simply fell through to the default - costing exactly
+    the coverage the entry was added to buy. Checked here rather than only where
+    the fixture is resolved, so a mistyped entry is caught even when that fitter's
+    own tests are deselected.
+    """
+    unknown = {
+        name: shape
+        for name, shape in FITTER_FIXTURES.items()
+        if shape not in FITTER_FIXTURE_SHAPES
+    }
+    assert not unknown, (
+        f"unknown fixture shapes in FITTER_FIXTURES: {unknown}. Known shapes are "
+        f"{sorted(FITTER_FIXTURE_SHAPES)}."
+    )
+

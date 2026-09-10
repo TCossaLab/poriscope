@@ -243,6 +243,11 @@ EVENT_FITTER_SETTINGS: Dict[str, Dict[str, Any]] = {
 #   "deep_dip"  PEAKFINDER_DIP_PA/_WIDTH_SAMPLES - deeper and narrower than
 #               "dip"; see PEAKFINDER_DIP_PA's comment for why the same dip
 #               cannot serve both.
+# The shape names FITTER_FIXTURES may use. Declared so a typo is caught rather
+# than silently routing the fitter to the shared flat database, which is what a
+# mistyped value did before this existed.
+FITTER_FIXTURE_SHAPES = frozenset({"dip", "staircase", "deep_dip"})
+
 FITTER_FIXTURES: Dict[str, str] = {
     "Basic_PeakFinder": "dip",
     "CUSUM": "staircase",
@@ -257,12 +262,17 @@ def fitters_using(shape: str) -> frozenset:
     """
     Class names of the fitters driven against one fixture shape.
 
-    :param shape: A value from ``FITTER_FIXTURES`` - "dip", "staircase" or
-        "deep_dip".
+    :param shape: One of ``FITTER_FIXTURE_SHAPES``.
     :type shape: str
+    :raises ValueError: If ``shape`` is not a known shape name.
     :return: The class names mapped to that shape.
     :rtype: frozenset
     """
+    if shape not in FITTER_FIXTURE_SHAPES:
+        raise ValueError(
+            f"{shape!r} is not a fixture shape; known shapes are "
+            f"{sorted(FITTER_FIXTURE_SHAPES)}"
+        )
     return frozenset(n for n, s in FITTER_FIXTURES.items() if s == shape)
 
 

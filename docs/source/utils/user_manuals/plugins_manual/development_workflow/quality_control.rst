@@ -836,8 +836,8 @@ the only exceptions are called out explicitly where they arise.
   testing for. Handing a step detector a recording with no steps in it proves nothing,
   the same way a calibration standard with no analyte in it would tell you nothing
   about your detector. So a fitter gets a flat blockage by default, and if that is the
-  wrong standard for yours, name your class in whichever of these three fits — they sit
-  beside the recipe dicts in ``_recipes.py``:
+  wrong standard for yours, map your class to whichever of these shapes fits, in
+  ``FITTER_FIXTURES`` beside the recipe dicts in ``_recipes.py``:
 
   .. list-table::
      :header-rows: 1
@@ -898,14 +898,16 @@ the only exceptions are called out explicitly where they arise.
        - a session-scoped fixture building a database with that parameter set
        - ``staircase_events_db_path``
      * - ``conformance/_recipes.py``
-       - the shape's constants, and a set naming the fitters that need it
-       - ``STAIRCASE_LEVEL_AMPLITUDES_PA``, a ``FITTER_FIXTURES`` entry
+       - the shape's constants, its name added to ``FITTER_FIXTURE_SHAPES``, and a
+         ``FITTER_FIXTURES`` entry mapping your fitter to it
+       - ``STAIRCASE_LEVEL_AMPLITUDES_PA``, ``"staircase"``
      * - ``conformance/test_eventfitters.py``
-       - route the set to the fixture **and write a check that reads the planted
-         shape**. Routing alone buys nothing: the four generic fitter checks pass on
-         any signal that yields events, so without an assertion of your own the
-         fixture is built, routed, used - and never actually examined. Nothing
-         enforces this; the staircase and dip checks are the worked examples.
+       - add your shape to the ``by_shape`` map in the ``fitter`` fixture, **and
+         write a check that reads the planted shape**. The mapping alone buys
+         nothing: the four generic fitter checks pass on any signal that yields
+         events, so without an assertion of your own the fixture is built, routed,
+         used - and never actually examined. Nothing enforces that last part; the
+         staircase and dip checks are the worked examples to copy.
        - ``staircase_fitter``,
          ``test_sublevel_count_matches_the_planted_staircase``
 

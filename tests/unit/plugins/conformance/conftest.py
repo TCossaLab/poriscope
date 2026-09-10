@@ -228,3 +228,4 @@ def metadata_db_path(tmp_path_factory) -> str:
         ],
     )
     return str(database.db_path)
+
