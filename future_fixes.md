@@ -586,6 +586,17 @@ owning developer.
 - **`Basic_PeakFinder._populate_event_metadata` can put `None` into event metadata**, whose
   declared value type is `Union[int, float, str, bool]`. A `None` reaching the database
   writer is not something that contract allows for.
+- **`Basic_PeakFinder` writes `NaN` into `sublevel_current` for 23 of 25 events** on the
+  conformance dip fixture, from a `numpy.mean` over an empty slice - a zero-width level
+  whose mean is undefined. Same family as the `sublevel_max_deviation` zero-width crash
+  fixed 2026-08, which now returns `0.0`; this path returns `NaN` instead and no one
+  notices. In event 0 it is sublevel 9, a row carrying a valid `peak_height` (434.4) with
+  `sublevel_current` `NaN`. Distinct from the plugin's *structural* `NaN`s, which are fine:
+  it emits 15 sublevels per event interleaving peak rows with the level rows between them,
+  so the 16 peak-specific columns are `NaN` on every non-peak row by design. The run emits
+  134 `RuntimeWarning`s ("Mean of empty slice", "invalid value encountered in scalar
+  divide") that conformance cannot see, since no check asserts finiteness - visible as the
+  10 collapsed warnings on any `pytest tests/unit/plugins/conformance` run.
 - **`NanoTrees._DNA` slices with two unguarded `Optional[int]` paddings**
   (`data[:padding_before]`, `data[-padding_after:]`), so the negation raises `TypeError` for
   any event loader supplying neither. It has no live caller - the only call site is commented
