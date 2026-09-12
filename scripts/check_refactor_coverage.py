@@ -336,21 +336,41 @@ def emit_bearing_methods() -> List[Tuple[str, str, str]]:
     found: List[Tuple[str, str, str]] = []
     for name in VIEW_FILES:
         path = TABS / name
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            for child in ast.walk(node):
-                if (
-                    isinstance(child, ast.Call)
-                    and isinstance(child.func, ast.Attribute)
-                    and child.func.attr == "emit"
-                    and isinstance(child.func.value, ast.Attribute)
-                    and child.func.value.attr == "global_signal"
-                ):
-                    found.append((f"{display(path)}", node.name, "4a"))
-                    break
+        for method in method_names_with_emits(path):
+            found.append((f"{display(path)}", method, "4a"))
     return found
+
+
+def method_names_with_emits(path: Path) -> List[str]:
+    """
+    Name every method in one file that emits on the plugin bus.
+
+    Split out from :py:func:`emit_bearing_methods` so the detection can be checked
+    against a source that has an emit. The derived list it feeds is *supposed* to
+    reach zero as Step 4a lands, so a test asserting that list is non-empty measures
+    how much work is left rather than whether the instrument works.
+
+    :param path: the file to scan
+    :type path: Path
+    :return: the method names, in source order
+    :rtype: List[str]
+    """
+    names: List[str] = []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for child in ast.walk(node):
+            if (
+                isinstance(child, ast.Call)
+                and isinstance(child.func, ast.Attribute)
+                and child.func.attr == "emit"
+                and isinstance(child.func.value, ast.Attribute)
+                and child.func.value.attr == "global_signal"
+            ):
+                names.append(node.name)
+                break
+    return names
 
 
 def sql_authoring_methods() -> List[Tuple[str, str, str]]:
@@ -363,22 +383,41 @@ def sql_authoring_methods() -> List[Tuple[str, str, str]]:
     :return: (file, method, step) triples
     :rtype: List[Tuple[str, str, str]]
     """
-    markers = ("SELECT ", "ALTER TABLE", "DELETE FROM")
     found: List[Tuple[str, str, str]] = []
     for name in VIEW_FILES:
         path = TABS / name
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            for child in ast.walk(node):
-                text: Optional[str] = None
-                if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                    text = child.value
-                if text and any(marker in text for marker in markers):
-                    found.append((f"{display(path)}", node.name, "4b"))
-                    break
+        for method in method_names_with_sql(path):
+            found.append((f"{display(path)}", method, "4b"))
     return found
+
+
+def method_names_with_sql(path: Path) -> List[str]:
+    """
+    Name every method in one file that builds SQL as a string.
+
+    Split out from :py:func:`sql_authoring_methods` for the same reason
+    :py:func:`method_names_with_emits` was: the derived list falls as the work
+    lands, so the instrument needs checking against a source that does author SQL.
+
+    :param path: the file to scan
+    :type path: Path
+    :return: the method names, in source order
+    :rtype: List[str]
+    """
+    markers = ("SELECT ", "ALTER TABLE", "DELETE FROM")
+    names: List[str] = []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for child in ast.walk(node):
+            text: Optional[str] = None
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                text = child.value
+            if text and any(marker in text for marker in markers):
+                names.append(node.name)
+                break
+    return names
 
 
 def deduplicated_targets() -> List[Tuple[str, str, str]]:

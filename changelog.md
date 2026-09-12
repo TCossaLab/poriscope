@@ -22,6 +22,10 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
+* **Fixed the Protein tab offering to overwrite fit data based on a stale answer**: if it could not read whether the database already held fit columns it reused the previous answer, so the "overwrite?" prompt could appear for a database with nothing to overwrite, or be skipped for one that had; it now reports the failure and commits nothing
+
+* Committing protein fits now reports a database that refuses the write instead of announcing new columns to the other tabs regardless
+
 * **Fixed the Protein tab showing one query on the status panel while running another**: for a raw SQL subset it displayed the query built from the filter and then loaded through a differently scoped one; it now shows the query that runs
 
 * **Fixed the Protein tab reading the whole database when a raw SQL subset could not be scoped**: an experiment or channel it could not place was dropped from the query without a word, so a filter meant for one channel returned every channel's events; it now stops and says so

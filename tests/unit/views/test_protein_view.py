@@ -60,7 +60,12 @@ import pandas as pd
 import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
-from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
+from poriscope.plugins.analysistabs.ProteinView import (
+    FIT_COLUMN_UNITS,
+    FIT_COLUMNS,
+    ProteinView,
+    format_axis_label,
+)
 from tests.unit.views._qt_mocks import mock_axes, shadow_signals
 
 # ===========================================================================
@@ -2321,36 +2326,89 @@ class TestUpdateDistributionEnsemble:
         assert mock_view.plot_initialized is True
 
 
+def _fit_frame() -> pd.DataFrame:
+    """
+    A fit-data frame carrying every column the commit writes.
+
+    Built from ``FIT_COLUMNS`` rather than typed out, so a column added to the
+    production list cannot leave this fixture silently short of it.
+
+    :return: one row, keyed by event id
+    :rtype: pd.DataFrame
+    """
+    frame = {"id": [1]}
+    frame.update({column: [1.0] for column in FIT_COLUMNS})
+    return pd.DataFrame(frame)
+
+
 # ===========================================================================
 # set_alter_database_status / _commit_fits boundary (extra)
 # ===========================================================================
 
 
 class TestCommitFitsExtended:
-    def test_emits_get_table_by_column(self, mock_view):
-        mock_view.fit_data = pd.DataFrame(
-            {
-                "id": [1],
-                "prolate_volume": [1.0],
-                "prolate_shape_factor": [1.0],
-                "prolate_major_axis": [1.0],
-                "prolate_minor_axis": [1.0],
-                "oblate_volume": [1.0],
-                "oblate_shape_factor": [1.0],
-                "oblate_major_axis": [1.0],
-                "oblate_minor_axis": [1.0],
-                "min_fractional_blockage": [0.1],
-                "min_fractional_blockage_std": [0.01],
-                "max_fractional_blockage": [0.3],
-                "max_fractional_blockage_std": [0.02],
-            }
-        )
-        mock_view.column_table = None
-        mock_view.global_signal = MagicMock()
+    """
+    Step 4a made the commit two-phase, so the View asks and the Controller looks.
+
+    What is left to pin on this side is that the question goes out and that the
+    answer decides whether the user is asked - the plugin call itself is
+    ``ProteinController.check_for_existing_fit_columns``, covered in
+    ``test_protein_fetch_slots``.
+    """
+
+    def test_asks_whether_the_database_already_holds_fit_data(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        asked = []
+        mock_view.fit_commit_requested.connect(asked.append)
+
         mock_view._commit_fits("ldr")
-        emit_calls = mock_view.global_signal.emit.call_args_list
-        actions = [c[0][2] for c in emit_calls]
-        assert "get_table_by_column" in actions
+
+        assert asked == ["ldr"]
+
+    def test_no_existing_columns_commits_without_asking_the_user(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(
+            lambda *args: sent.append(args)
+        )
+
+        with patch.object(QMessageBox, "question") as dialog:
+            mock_view.confirm_fit_commit("ldr", None)
+
+        dialog.assert_not_called()
+        assert len(sent) == 1
+        loader, frame, units, table = sent[0]
+        assert (loader, table) == ("ldr", None)
+        assert list(frame.columns) == ["id"] + FIT_COLUMNS
+        assert len(units) == len(FIT_COLUMNS)
+
+    def test_existing_columns_ask_first_and_carry_the_table_through(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Ok):
+            mock_view.confirm_fit_commit("ldr", "events")
+
+        assert sent[0][0] == "ldr"
+        assert sent[0][3] == "events"
+
+    def test_declining_the_overwrite_sends_nothing(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Cancel):
+            mock_view.confirm_fit_commit("ldr", "events")
+
+        assert sent == []
+
+    def test_the_units_line_up_with_the_columns(self, mock_view):
+        """
+        A column added to one list and not the other would mislabel every column
+        after it, and nothing downstream could notice.
+        """
+        assert len(FIT_COLUMN_UNITS) == len(FIT_COLUMNS)
 
 
 # ===========================================================================

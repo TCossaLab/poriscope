@@ -41,6 +41,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.ProteinView import FIT_COLUMNS
 from tests.unit.controllers._recording_model import RecordingModel
 
 pytestmark = pytest.mark.characterization
@@ -320,3 +321,180 @@ class TestLoadEventPlotData:
 
         controller.view.set_event_plot_data_generator.assert_not_called()
         assert "No data available for the requested events" in panel_text(controller)
+
+
+def fit_frame() -> pd.DataFrame:
+    """
+    The fitted columns the View hands over, keyed by event id.
+
+    :return: one row carrying every written column
+    :rtype: pd.DataFrame
+    """
+    frame = {"id": [1]}
+    frame.update({column: [1.0] for column in FIT_COLUMNS})
+    return pd.DataFrame(frame)
+
+
+# ===========================================================================
+# the two-phase fit commit - look first, then write what the user approved
+# ===========================================================================
+
+
+class TestCheckForExistingFitColumns:
+    """
+    Phase one. The plugin call the View used to make before its modal question.
+    """
+
+    def test_the_table_name_goes_back_to_the_view(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel({"get_table_by_column": "events"})
+
+        controller.check_for_existing_fit_columns("ldr")
+
+        assert controller.model.calls_to("get_table_by_column") == [("prolate_volume",)]
+        controller.view.confirm_fit_commit.assert_called_once_with("ldr", "events")
+
+    def test_no_such_column_is_reported_as_no_table(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        ``None`` is the answer *and* the flag: nothing to overwrite, so the user is
+        never asked.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel({"get_table_by_column": None})
+
+        controller.check_for_existing_fit_columns("ldr")
+
+        controller.view.confirm_fit_commit.assert_called_once_with("ldr", None)
+
+    def test_a_lookup_that_fails_asks_the_user_nothing(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        The bus swallowed this, leaving the View reading a stale table name - which
+        decides whether a destructive overwrite is proposed at all.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel(
+            {"get_table_by_column": RuntimeError("db gone")}
+        )
+
+        controller.check_for_existing_fit_columns("ldr")
+
+        controller.view.confirm_fit_commit.assert_not_called()
+        assert "Could not check ldr for existing fit data" in panel_text(controller)
+
+
+class TestCommitFits:
+    """
+    Phase two, reached once the database has been looked at and the user has agreed.
+    """
+
+    def test_a_first_commit_writes_without_altering_anything(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        frame = fit_frame()
+        units = [None] * len(FIT_COLUMNS)
+        controller.model = RecordingModel({"add_columns_to_table": True})
+
+        controller.commit_fits("ldr", frame, units, None)
+
+        assert controller.model.calls_to("alter_database") == []
+        (written, sent_units, table), = controller.model.calls_to(
+            "add_columns_to_table"
+        )
+        assert written is frame
+        assert sent_units is units
+        assert table == "events"
+        controller.view.on_fit_commit_finished.assert_called_once_with("ldr")
+
+    def test_an_overwrite_drops_every_written_column_first(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        The DROP and DELETE statements are built from the frame the View sent, so a
+        column added to the write cannot be left behind by the drop.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel(
+            {"alter_database": True, "add_columns_to_table": True}
+        )
+
+        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
+
+        (queries,), = controller.model.calls_to("alter_database")
+        assert len(queries) == 2 * len(FIT_COLUMNS)
+        for column in FIT_COLUMNS:
+            assert f"ALTER TABLE events DROP COLUMN {column}" in queries
+            assert f"DELETE FROM columns WHERE name = '{column}'" in queries
+        assert not any("id" == q.rsplit(" ", 1)[-1] for q in queries)
+
+    def test_a_failed_drop_does_not_write_over_half_a_table(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        The write has to stop, or the tab ends up with some old columns and some new.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel(
+            {"alter_database": False, "add_columns_to_table": True}
+        )
+
+        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
+
+        assert controller.model.calls_to("add_columns_to_table") == []
+        controller.view.on_fit_commit_finished.assert_not_called()
+        assert "clean it up manually" in panel_text(controller)
+
+    def test_a_drop_that_raises_is_reported(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel(
+            {"alter_database": RuntimeError("locked"), "add_columns_to_table": True}
+        )
+
+        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
+
+        assert controller.model.calls_to("add_columns_to_table") == []
+        assert "clean it up manually" in panel_text(controller)
+
+    def test_a_failed_write_still_reports_and_does_not_announce_new_columns(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        Announcing columns the database refused would leave every other tab offering
+        them.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel(
+            {"add_columns_to_table": RuntimeError("read only")}
+        )
+
+        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), None)
+
+        controller.view.on_fit_commit_finished.assert_not_called()
+        assert "Could not write the fit data" in panel_text(controller)

@@ -79,6 +79,42 @@ warnings.filterwarnings(
 )
 
 
+#: The fitted columns ``_commit_fits`` writes, in the order they are written.
+#: ``FIT_COLUMN_UNITS`` is index-aligned with it, ``None`` where dimensionless, and
+#: the two are kept beside each other because a column added to one and not the other
+#: silently mislabels every column after it.
+FIT_COLUMNS = [
+    "prolate_volume",
+    "prolate_shape_factor",
+    "prolate_major_axis",
+    "prolate_minor_axis",
+    "oblate_volume",
+    "oblate_shape_factor",
+    "oblate_major_axis",
+    "oblate_minor_axis",
+    "min_fractional_blockage",
+    "min_fractional_blockage_std",
+    "max_fractional_blockage",
+    "max_fractional_blockage_std",
+]
+
+#: Units for :py:data:`FIT_COLUMNS`, index-aligned with it.
+FIT_COLUMN_UNITS: List[Optional[str]] = [
+    "nm^3",
+    None,
+    "nm",
+    "nm",
+    "nm^3",
+    None,
+    "nm",
+    "nm",
+    None,
+    None,
+    None,
+    None,
+]
+
+
 @inherit_docstrings
 class ProteinView(MetaSubsetTabView):
     """
@@ -112,6 +148,19 @@ class ProteinView(MetaSubsetTabView):
     #: resolve the two scope ids a ``_raw`` filter needs, load the events - so both
     #: now raise this one intent.
     event_distribution_data_requested = Signal(str, str, str, object, object, object)
+
+    #: Asks whether the database already holds fit columns, before any are written.
+    #: Answered through ``confirm_fit_commit``.
+    #:
+    #: Step 4a, two-phase because the plugin call it replaced interleaved with a modal
+    #: question: whether the user is asked at all depends on the answer.
+    fit_commit_requested = Signal(str)
+
+    #: Sends the approved write out: the loader's key, the fitted columns, their units,
+    #: and the table whose existing fit columns are to be dropped first (None when
+    #: there are none). The user's decision travels here rather than being parked on
+    #: this widget between the two phases.
+    fit_commit_confirmed = Signal(str, object, object, object)
 
     @property
     def fig_hist(self) -> Figure:
@@ -382,7 +431,12 @@ class ProteinView(MetaSubsetTabView):
     @log(logger=logger)
     def _commit_fits(self, loader: str) -> None:
         """
-        Commits fitted data to the database
+        Ask whether this database already holds fit data, before writing any.
+
+        Phase one of a two-phase commit (Step 4a). The plugin call that used to sit
+        here interleaved with a modal question, so it cannot be one intent: whether
+        the user is asked at all depends on the answer. The Controller looks, then
+        calls :py:meth:`confirm_fit_commit` back.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
@@ -390,108 +444,60 @@ class ProteinView(MetaSubsetTabView):
         """
         if self.fit_data is None:
             raise AttributeError("fit data has not been set, unable to commit")
-        fit_data = self.fit_data[
-            [
-                "id",
-                "prolate_volume",
-                "prolate_shape_factor",
-                "prolate_major_axis",
-                "prolate_minor_axis",
-                "oblate_volume",
-                "oblate_shape_factor",
-                "oblate_major_axis",
-                "oblate_minor_axis",
-                "min_fractional_blockage",
-                "min_fractional_blockage_std",
-                "max_fractional_blockage",
-                "max_fractional_blockage_std",
-            ]
-        ]
-        units = [
-            "nm^3",
-            None,
-            "nm",
-            "nm",
-            "nm^3",
-            None,
-            "nm",
-            "nm",
-            None,
-            None,
-            None,
-            None,
-        ]
-        table_name = "events"
+        self.fit_commit_requested.emit(loader)
 
-        self.column_table: Optional[str] = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_table_by_column",
-            ("prolate_volume",),
-            "check_column_exists",
-            (),
-        )
-        if self.column_table is not None:
+    @log(logger=logger)
+    @Slot(str, object)
+    def confirm_fit_commit(self, loader: str, table_name: Optional[str]) -> None:
+        """
+        Ask the user about an overwrite if there is one, then send the write out.
+
+        Phase two of the commit. ``table_name`` is both the answer and the flag:
+        ``None`` means the database holds no fit columns, so there is nothing to
+        confirm and the write goes straight out. The user's decision travels back in
+        the intent rather than being parked on this widget between the halves.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param table_name: the table already holding fit columns, or None
+        :type table_name: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if self.fit_data is None:
+            return
+
+        if table_name is not None:
             reply = QMessageBox.question(
                 self,
                 "Confirm Overwrite",
-                "fit data data already exists, are you sure you want to overwrite? This action cannot be undone.",
+                "fit data data already exists, are you sure you want to overwrite? "
+                "This action cannot be undone.",
                 QMessageBox.Ok | QMessageBox.Cancel,
             )
-            if reply == QMessageBox.Ok:
-                self.operation_success = False
-                queries = [
-                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_volume",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_shape_factor",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_major_axis",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN prolate_minor_axis",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN min_fractional_blockage",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN min_fractional_blockage_std",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN max_fractional_blockage",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN max_fractional_blockage_std",
-                    "DELETE FROM columns WHERE name = 'prolate_volume'",
-                    "DELETE FROM columns WHERE name = 'prolate_shape_factor'",
-                    "DELETE FROM columns WHERE name = 'prolate_major_axis'",
-                    "DELETE FROM columns WHERE name = 'prolate_minor_axis'",
-                    "DELETE FROM columns WHERE name = 'min_fractional_blockage'",
-                    "DELETE FROM columns WHERE name = 'min_fractional_blockage_std'",
-                    "DELETE FROM columns WHERE name = 'max_fractional_blockage'",
-                    "DELETE FROM columns WHERE name = 'max_fractional_blockage_std'",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_volume",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_shape_factor",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_major_axis",
-                    f"ALTER TABLE {self.column_table} DROP COLUMN oblate_minor_axis",
-                    "DELETE FROM columns WHERE name = 'oblate_volume'",
-                    "DELETE FROM columns WHERE name = 'oblate_shape_factor'",
-                    "DELETE FROM columns WHERE name = 'oblate_major_axis'",
-                    "DELETE FROM columns WHERE name = 'oblate_minor_axis'",
-                ]
-
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "alter_database",
-                    (queries,),
-                    "alter_database_status",
-                    (),
-                )
-                if self.operation_success is not True:
-                    self.add_text_to_display.emit(
-                        "Unable to delete fit data, you will have to clean it up manually",
-                        self.__class__.__name__,
-                    )
-                    return
-            else:
+            if reply != QMessageBox.Ok:
                 return
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
+
+        self.fit_commit_confirmed.emit(
             loader,
-            "add_columns_to_table",
-            (fit_data, units, table_name),
-            "display_write_status",
-            (),
+            self.fit_data[["id"] + FIT_COLUMNS],
+            FIT_COLUMN_UNITS,
+            table_name,
         )
+
+    @log(logger=logger)
+    def on_fit_commit_finished(self, loader: str) -> None:
+        """
+        Refresh this tab's column list, and tell the rest of the app.
+
+        Called by the Controller once the write has been attempted, so a commit that
+        never reached the database does not announce new columns.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
         self.update_available_columns(loader)  # refresh this tab locally
         self.plugin_state_changed.emit(
             "MetaDatabaseLoader", loader, "columns"

@@ -72,6 +72,118 @@ class ProteinController(MetaSubsetTabController):
         self.view.event_distribution_data_requested.connect(
             self.load_event_distribution_data
         )
+        self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
+        self.view.fit_commit_confirmed.connect(self.commit_fits)
+
+    @log(logger=logger)
+    @Slot(str)
+    def check_for_existing_fit_columns(self, loader: str) -> None:
+        """
+        Ask whether this database already holds fit columns, and tell the View.
+
+        Phase one of a two-phase commit. ``_commit_fits`` interleaved a plugin call
+        with a modal question for the user, which no single intent can express: the
+        answer to "does this already exist?" decides whether the user is asked at all.
+        ``RawDataController._start_eventfinder`` has the same shape for the same
+        reason.
+
+        The table name is the answer *and* the flag - ``None`` means no such column,
+        so nothing needs overwriting.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            table_name = self.model.call(
+                "MetaDatabaseLoader", loader, "get_table_by_column", "prolate_volume"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to look for existing fit columns: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not check {loader} for existing fit data: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.confirm_fit_commit(loader, table_name)
+
+    @log(logger=logger)
+    @Slot(str, object, object, object)
+    def commit_fits(
+        self,
+        loader: str,
+        fit_data: pd.DataFrame,
+        units: List[Optional[str]],
+        overwrite_table: Optional[str],
+    ) -> None:
+        """
+        Drop any fit columns being replaced, then write the new ones.
+
+        Phase two, reached either straight away when the database holds no fit data or
+        once the user has approved the overwrite. The user's decision travels as
+        ``overwrite_table`` rather than being held on the View between the two halves,
+        which is what ``_start_eventfinder``'s filter key does.
+
+        The DROP and DELETE statements are built here rather than in the widget - a
+        free Step 4b win, since they were the last SQL this method authored.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param fit_data: the fitted columns to write, keyed by event id
+        :type fit_data: pd.DataFrame
+        :param units: one unit per written column, ``None`` where dimensionless
+        :type units: List[Optional[str]]
+        :param overwrite_table: the table holding fit columns to drop first, or None
+        :type overwrite_table: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if overwrite_table is not None:
+            columns = [column for column in fit_data.columns if column != "id"]
+            queries = [
+                f"ALTER TABLE {overwrite_table} DROP COLUMN {column}"
+                for column in columns
+            ] + [f"DELETE FROM columns WHERE name = '{column}'" for column in columns]
+            try:
+                succeeded = self.model.call(
+                    "MetaDatabaseLoader", loader, "alter_database", queries
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to drop the existing fit columns: {e!r}")
+                self.add_text_to_display.emit(
+                    f"Unable to delete fit data from {loader}, you will have to clean "
+                    f"it up manually: {e}",
+                    self.__class__.__name__,
+                )
+                return
+            if succeeded is not True:
+                self.add_text_to_display.emit(
+                    "Unable to delete fit data, you will have to clean it up manually",
+                    self.__class__.__name__,
+                )
+                return
+
+        try:
+            written = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "add_columns_to_table",
+                fit_data,
+                units,
+                "events",
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to write the fit data: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not write the fit data to {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.display_write_status(bool(written))
+        self.view.on_fit_commit_finished(loader)
 
     @log(logger=logger)
     @Slot(str, str, str, object, object, object)
