@@ -546,7 +546,9 @@ class TestExportCsvSubset:
         ``ret_args`` into ``set_generator``; they are arguments now.
         """
         generator = iter([0.5, 1.0])
-        controller.model = RecordingModel({"export_subset_to_csv": generator})
+        controller.model = RecordingModel(
+            {"count_subset_events": 12, "export_subset_to_csv": generator}
+        )
         staged: list = []
         ran: list = []
         controller.model.set_generator = (  # type: ignore[attr-defined]
@@ -566,17 +568,100 @@ class TestExportCsvSubset:
         assert ran == ["ldr"]
         controller.view.on_subset_export_started.assert_called_once()
 
+    def test_the_subset_is_counted_before_anything_is_staged(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        The count has to run against the same filter and scope the export gets, or it
+        is answering a question about a different subset.
+
+        Written from ``MetaDatabaseLoader.count_subset_events(conditions,
+        experiments_and_channels)`` rather than from the calling code - it takes the
+        filter and the scope, and *not* the folder or the subset name that
+        ``export_subset_to_csv`` also takes.
+        """
+        controller.model = RecordingModel(
+            {"count_subset_events": 12, "export_subset_to_csv": iter([1.0])}
+        )
+        controller.model.set_generator = lambda *args: None  # type: ignore[attr-defined]
+        controller.model.run_generators = lambda key: None  # type: ignore[attr-defined]
+
+        controller.export_csv_subset(
+            "ldr", "/out", "Subset_3", "duration < 300", SCOPE, 3
+        )
+
+        assert controller.model.calls_to("count_subset_events") == [
+            ("duration < 300", SCOPE)
+        ]
+        assert [name for _, _, name, _ in controller.model.calls] == [
+            "count_subset_events",
+            "export_subset_to_csv",
+        ]
+
+    def test_an_empty_subset_is_refused_before_a_worker_is_started(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        The regression this guard exists for.
+
+        ``export_subset_to_csv`` is a generator, so its own empty-subset check fires on
+        the worker's first advance - after the export index has already advanced and
+        the progress bar has been created. Counting first is what lets the tab decline
+        before any of that happens, and the message has to say the name survived,
+        because the user's next dialog will offer it again.
+        """
+        controller.model = RecordingModel({"count_subset_events": 0})
+        staged: list = []
+        controller.model.set_generator = (  # type: ignore[attr-defined]
+            lambda *args: staged.append(args)
+        )
+
+        controller.export_csv_subset("ldr", "/out", "Subset_0", "duration < 0", SCOPE, 0)
+
+        assert staged == []
+        assert controller.model.calls_to("export_subset_to_csv") == []
+        controller.view.on_subset_export_started.assert_not_called()
+        message = panel_text(controller)
+        assert "No events match Subset_0" in message
+        assert "still available" in message
+
+    def test_a_count_that_fails_stages_nothing_and_says_why(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        An unknown experiment raises ``KeyError`` out of the count, which the bus used
+        to swallow - leaving the export index consumed and no worker running, with
+        nothing said.
+        """
+        controller.model = RecordingModel(
+            {"count_subset_events": KeyError("Could not find experiment ID(s) for: exp")}
+        )
+        staged: list = []
+        controller.model.set_generator = (  # type: ignore[attr-defined]
+            lambda *args: staged.append(args)
+        )
+
+        controller.export_csv_subset("ldr", "/out", "Subset_0", None, SCOPE, 0)
+
+        assert staged == []
+        assert controller.model.calls_to("export_subset_to_csv") == []
+        controller.view.on_subset_export_started.assert_not_called()
+        assert "Could not find experiment" in panel_text(controller)
+
     def test_a_refused_export_stages_nothing_and_says_why(
         self, controller: MetadataController
     ) -> None:
         """
-        ``export_subset_to_csv`` raises ``ValueError`` for a filter that matches no
-        data and ``KeyError`` for an unknown experiment, both of which the bus
-        swallowed - leaving the export index consumed and no worker running, with
-        nothing said.
+        A non-empty subset whose export still cannot be constructed is reported too.
+
+        This is the arm that survives the count: ``call()`` itself failing to resolve
+        or build the generator, rather than anything inside the generator's body.
         """
         controller.model = RecordingModel(
-            {"export_subset_to_csv": ValueError("no matching data")}
+            {
+                "count_subset_events": 12,
+                "export_subset_to_csv": ValueError("no matching data"),
+            }
         )
         staged: list = []
         controller.model.set_generator = (  # type: ignore[attr-defined]

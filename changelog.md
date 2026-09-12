@@ -22,7 +22,9 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
-* A subset export to CSV that the database refuses is now reported instead of appearing to start, and no longer uses up the next export's name
+* Fixed `construct_event_data_query` not documenting that it raises for an unknown experiment name, and collapsed three identical copies of its SQL id-list helper onto one
+
+* A subset export to CSV that matches no events, or that the database refuses, is now reported before the export starts instead of running the progress bar to the end in silence, and no longer uses up the next export's name
 
 * **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
 

@@ -10,6 +10,70 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-12 - A nested function can hide pydoclint's raise checks, so hoisting one can surface real violations
+
+**Context.** Collapsing three byte-identical nested `tuple_builder` helpers in
+`MetaDatabaseLoader` onto one `_id_tuple` method made `pydoclint` fail with DOC501/DOC503 on
+`construct_event_data_query` - a method whose body and docstring the commit never touched.
+
+**Decision.** Treat the violation as real and document the `KeyError`, rather than reading the
+new failure as something the cleanup broke. Nothing is added to
+`.pydoclint-baseline.txt`, which stays empty.
+
+**Evidence.** Bisected directly: `git show HEAD:...MetaDatabaseLoader.py` passes `pydoclint`;
+the same file with only the nested helpers removed and the calls re-pointed reports
+DOC501/DOC503 on `construct_event_data_query`. The method has raised an undocumented
+`KeyError` for an unknown experiment name since long before this branch. A minimal
+two-function probe did *not* reproduce the blindness, so the trigger is narrower than "any
+nested function" and was not chased further - what matters is that the check can be silently
+absent.
+
+**Consequence worth knowing:** `CLAUDE.md`'s preference for module- or class-level functions
+over nested ones has a gate consequence as well as a readability one, and **a pydoclint pass
+is not evidence that a function containing a nested `def` documents its exceptions**. Same
+family as `check-class-attributes` (2026-08-25): an instrument that is quietly not looking.
+
+**Revisit if** pydoclint is upgraded - re-run the bisection above and delete this entry if the
+blindness is gone.
+
+---
+
+## 2026-09-12 - An empty subset is counted before the export worker starts, not raised inside it
+
+**Context.** A CSV subset export whose filter matched no rows ran the progress bar to 100%,
+consumed the next `Subset_N` name, and reported only a worker-thread WARNING that names the
+loader twice and not the subset. `changelog.md` had claimed this fixed since `e7ce9ba0`.
+`export_subset_to_csv` is a **generator function**, so `call()` only constructs it: every
+guard in its body, its own `No events found matching subset criteria` included, fires on the
+worker's first advance - after `MetadataController`'s `try/except` has passed and after
+`on_subset_export_started` has advanced the index.
+
+**Decision.** `MetaDatabaseLoader.count_subset_events` answers "will this write anything?"
+synchronously, and `MetadataController.export_csv_subset` calls it before staging a worker.
+The events query moved into `_build_subset_events_query`, which both the count and the export
+use, so the two cannot drift into asking about different subsets.
+
+**Evidence.** Measured on real synthetic databases of 25/250/1000 events, 15 runs each: the
+count is **7-9 ms, flat in event count**, against 46-80 ms to the export's first yield and
+32 ms-1.3 s for the rest. Three tests fail when the refusal is removed - two flow tests
+driving the real loader and one Controller test. The pre-existing Controller test
+`test_a_refused_export_stages_nothing_and_says_why` passed throughout, because its model's
+`call` raised synchronously, which the real generator-returning plugin can never do.
+
+**Rejected: priming the generator** (`next()` in the Controller, hand the started generator to
+the worker). It fixes both halves with no new method, but `SerializeDecorator` holds
+`BaseDataPlugin.lock` - an owner-bound `RLock` - across `yield`, so a generator started on the
+GUI thread and finished on a worker would raise `cannot release un-acquired lock` for any
+plugin whose `force_serial_channel_operations()` returns `True`. None does today, which makes
+it a latent trap rather than a live fault. Kyle's standing rule: avoid cross-thread anything
+where possible.
+
+**Revisit if** a subset's events query ever becomes expensive enough that 7-9 ms on the GUI
+thread is felt - at which point the count wants to move onto the worker with a way to report
+back, not to be deleted.
+
+---
+
 ## 2026-09-09 - Reader and loader leak checks use different patterns, deliberately
 
 **Context.** Extending `test_writers.py`'s leak check to readers and loaders. An earlier

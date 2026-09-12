@@ -2485,9 +2485,11 @@ class MetadataView(MetaSubsetTabView):
 
         The index names the export in the dialog and keys its worker, so it advances
         only for an export that was actually staged - which is what the Controller
-        calling this says. Kept here rather than counted in the Controller because
-        the dialog needs it before the request goes out, and one owner cannot drift
-        from itself.
+        calling this says. The Controller counts the subset before staging anything,
+        so an export refused for being empty never reaches here and the next dialog
+        offers the same name again. Kept here rather than counted in the Controller
+        because the dialog needs it before the request goes out, and one owner cannot
+        drift from itself.
 
         :return: None
         :rtype: None

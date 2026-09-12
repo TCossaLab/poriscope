@@ -486,7 +486,17 @@ class MetadataController(MetaSubsetTabController):
         the same shape.
 
         The View's index only advances for an export that was staged, which is what
-        ``on_subset_export_started`` says, so a failed export does not consume a name.
+        ``on_subset_export_started`` says - and *staged* now means "counted, non-empty,
+        and handed to a worker". An export that fails partway through its generator
+        still consumes its name, because by then it is a running job rather than a
+        refused one.
+
+        ``export_subset_to_csv`` is a **generator**, so ``call()`` only constructs it and
+        the ``try/except`` below sees nothing that happens inside its body - including
+        its own empty-subset check, which fires on the worker's first advance, after the
+        index has already advanced. That is why the subset is counted first through
+        ``count_subset_events``, which runs the same query the export runs, through the
+        same builder. An empty subset is refused here, before a worker exists.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -503,6 +513,30 @@ class MetadataController(MetaSubsetTabController):
         :return: None
         :rtype: None
         """
+        try:
+            event_count = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "count_subset_events",
+                subset_filter,
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to count subset {name}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not export this subset from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if not event_count:
+            self.add_text_to_display.emit(
+                f"No events match {name}, so nothing was exported - "
+                f"the name {name} is still available",
+                self.__class__.__name__,
+            )
+            return
+
         try:
             generator = self.model.call(
                 "MetaDatabaseLoader",
