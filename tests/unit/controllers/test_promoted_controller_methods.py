@@ -17,6 +17,7 @@ job for the View-side promotions, because that file lives under ``tests/unit/vie
 these are Controllers.
 """
 
+import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
 
@@ -314,3 +315,95 @@ class TestValidateRawFilter:
         valid, message = controller.view.on_raw_filter_validated.call_args[0]
         assert valid is False
         assert "no such table" in message
+
+
+# ===========================================================================
+# load_event_id_cache - Step 4a's last conversion, shared by both subset tabs
+# ===========================================================================
+
+
+class TestLoadEventIdCache:
+    """
+    The base method that answers ``event_id_cache_requested``.
+
+    Shared because ``_rebuild_event_id_cache`` is shared: one copy on
+    ``MetaSubsetTabView`` asks, one copy here answers. The answer is written from
+    ``MetaDatabaseLoader.load_metadata(columns, conditions,
+    experiments_and_channels)`` rather than from the calling code - the bus packed
+    those three into a tuple, and ``call()`` spreads them.
+    """
+
+    def test_the_rows_are_asked_for_by_event_id_and_handed_over(
+        self, controller: MetaSubsetTabController
+    ) -> None:
+        """
+        :param controller: the controller under test
+        :type controller: MetaSubsetTabController
+        """
+        rows = pd.DataFrame({"event_id": [1, 2, 3]})
+        controller.model = RecordingModel({"load_metadata": rows})
+
+        controller.load_event_id_cache("ldr", "dwell > 1", {"exp1": [0]})
+
+        assert controller.model.calls_to("load_metadata") == [
+            (["event_id"], "dwell > 1", {"exp1": [0]})
+        ]
+        controller.view.set_event_id_rows.assert_called_once_with(rows)
+
+    def test_no_filter_and_no_scope_are_passed_through_as_none(
+        self, controller: MetaSubsetTabController
+    ) -> None:
+        """
+        The View sends ``None`` for "every row", which is what the loader's own
+        signature means by it - not an empty string and not an empty dict.
+
+        :param controller: the controller under test
+        :type controller: MetaSubsetTabController
+        """
+        controller.model = RecordingModel({"load_metadata": pd.DataFrame()})
+
+        controller.load_event_id_cache("ldr", None, None)
+
+        assert controller.model.calls_to("load_metadata") == [
+            (["event_id"], None, None)
+        ]
+
+    def test_a_query_that_fails_leaves_the_answer_untouched(
+        self, controller: MetaSubsetTabController
+    ) -> None:
+        """
+        The caller cleared it before asking, so not setting it is the whole point:
+        that is what lets ``_rebuild_event_id_cache`` tell "the query did not run"
+        from "the subset is empty". The bus destroyed that distinction by swallowing
+        the failure and leaving the previous call's rows in place.
+
+        :param controller: the controller under test
+        :type controller: MetaSubsetTabController
+        """
+        controller.model = RecordingModel({"load_metadata": RuntimeError("no column")})
+
+        controller.load_event_id_cache("ldr", "nope > 1", None)
+
+        controller.view.set_event_id_rows.assert_not_called()
+        messages = [
+            call.args[0]
+            for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("no column" in message for message in messages)
+
+    def test_an_empty_result_is_still_handed_over(
+        self, controller: MetaSubsetTabController
+    ) -> None:
+        """
+        An empty subset is an answer, not a failure, and the caller reports it
+        differently - so it has to reach the View rather than being filtered here.
+
+        :param controller: the controller under test
+        :type controller: MetaSubsetTabController
+        """
+        rows = pd.DataFrame({"event_id": []})
+        controller.model = RecordingModel({"load_metadata": rows})
+
+        controller.load_event_id_cache("ldr", "dwell > 999", None)
+
+        controller.view.set_event_id_rows.assert_called_once_with(rows)

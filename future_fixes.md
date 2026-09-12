@@ -16,12 +16,14 @@ Read-only investigation and measurement do not.
 
 Run on its own, the module reports `8 passed` and the process then exits **127** with no
 faulthandler dump - a Qt teardown crash after the summary line, not a test failure.
-Reproduced at `8ffd3ce6` with only the six pre-existing tests, so it predates the
-empty-subset work. Full-suite runs usually complete (`REALEXIT=0`, three of four), but one
-died mid-run at this same module, so it is intermittent rather than isolation-only. Nothing
-is currently red because CI runs the whole suite; the risk is that a future genuine crash
-here reads as this one. Diagnose with `faulthandler` and a narrowed fixture before trusting
-any green run scoped to this file.
+Reproduced at `8ffd3ce6` with only the six pre-existing tests, so it predates Step 4a's
+last commits. In full runs it is intermittent and kills the run mid-way at this same
+module: **2 of 8 full runs** over one session, each time immediately after this file's
+tests. Nothing is currently red, because a re-run passes and CI runs the whole suite; the
+risk is that a future genuine crash here reads as this one, and that CI goes red for
+reasons nobody can reproduce. Diagnose with `faulthandler` and a narrowed fixture -
+`metadata_tab` builds a real `MainView` per test and the worker threads outlive some of
+them - before trusting any green run scoped to this file.
 
 ## `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
 

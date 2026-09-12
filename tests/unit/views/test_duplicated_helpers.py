@@ -55,8 +55,9 @@ Eight groups:
   consequence of not bypassing.
 - **Five more methods collapsed once ``_subset_controls`` existed**:
   ``replace_filter_item``, ``update_filter_name``, ``_delete_filter``,
-  ``on_raw_filter_validated`` and ``relay_query_result``. Four of them differed *only*
-  in the name each tab held its controls panel under, and ``relay_query_result``
+  ``on_raw_filter_validated`` and the answer-parking setter (``relay_query_result``
+  then, ``set_event_id_rows`` since Step 4a's last conversion). Four of them differed
+  *only* in the name each tab held its controls panel under, and that setter
   differed only in its docstring; ``on_raw_filter_validated`` carried the modal-vs-
   status-panel divergence a second time and was settled the same way. ``_delete_filter``
   was **abstract** on the base for the stated reason that each tab rebuilds its own
@@ -546,21 +547,26 @@ def answer_query_with(view: object, frame: object) -> None:
     """
     Make the view's next ``load_metadata`` round-trip park ``frame``.
 
-    ``_rebuild_event_id_cache`` clears ``relayed_query_result`` before it emits,
-    precisely so a failed dispatch cannot be read as this call's answer, so a
-    test cannot simply assign the attribute up front. Step 4a's next commit
-    replaces the emit with a direct call and this helper goes with it.
+    ``_rebuild_event_id_cache`` clears ``event_id_rows`` before it asks, precisely so
+    a query that did not run cannot be read as this call's answer, so a test cannot
+    simply assign the attribute up front.
 
-    :param view: the view whose bus round-trip should be answered
+    Step 4a converted the bus round-trip this used to stub into the
+    ``event_id_cache_requested`` intent, answered by
+    ``MetaSubsetTabController.load_event_id_cache``. The stub stands in for that
+    Controller and sets what it sets - a stub that did nothing would make every
+    assertion below vacuous.
+
+    :param view: the view whose request should be answered
     :type view: object
     :param frame: whatever the loader should appear to have returned
     :type frame: object
     """
 
     def deliver(*_args: object) -> None:
-        view.relayed_query_result = frame
+        view.event_id_rows = frame
 
-    view.global_signal.emit.side_effect = deliver
+    view.event_id_cache_requested.connect(deliver)
 
 
 class TestRebuildEventIdCacheWasPromoted:
@@ -856,7 +862,7 @@ PANEL_NAME_ONLY = (
     "replace_filter_item",
     "update_filter_name",
     "_delete_filter",
-    "relay_query_result",
+    "set_event_id_rows",
     "on_raw_filter_validated",
 )
 
@@ -865,10 +871,15 @@ class TestThePanelNameMethodsWerePromoted:
     """
     The five that collapsed once the base had a name for the controls panel.
 
-    Four differed only in ``metadatacontrols`` against ``proteincontrols``, and
-    ``relay_query_result`` only in its docstring - so with ``_subset_controls`` in
-    place there was nothing left to decide except ``on_raw_filter_validated``'s
-    modal, which the filter dialogs had already settled.
+    Four differed only in ``metadatacontrols`` against ``proteincontrols``, and the
+    answer-parking one only in its docstring - so with ``_subset_controls`` in place
+    there was nothing left to decide except ``on_raw_filter_validated``'s modal,
+    which the filter dialogs had already settled.
+
+    That answer-parking method was ``relay_query_result``, filled over the signal
+    bus. Step 4a's last conversion replaced it with ``set_event_id_rows``, filled by
+    ``MetaSubsetTabController.load_event_id_cache``; it is still a promoted method
+    with one copy on the base, which is what this class checks.
     """
 
     @pytest.mark.parametrize("name", PANEL_NAME_ONLY)
@@ -957,34 +968,35 @@ class TestThePanelNameMethodsWerePromoted:
         assert view._pending_filter_name is None
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_relay_query_result_parks_the_answer_and_can_clear_it(
+    def test_set_event_id_rows_parks_the_answer_and_can_clear_it(
         self, qapp: object, view_cls: type
     ) -> None:
         """
         Both directions matter, because the clear is what makes the read safe.
 
-        Every caller sets it to None before dispatching, precisely so that a failed
-        call cannot be read back as this call's answer, so a version that ignored a
-        None would reintroduce the stale read this whole step exists to remove.
+        ``_rebuild_event_id_cache`` sets it to None before asking, precisely so that a
+        query that did not run cannot be read back as this call's answer, so a version
+        that ignored a None would reintroduce the stale read this whole step exists to
+        remove.
         """
         view = build_subset_tab(view_cls)
         frame = pd.DataFrame({"event_id": [1, 2]})
 
-        view.relay_query_result(frame)
-        assert view.relayed_query_result is frame
+        view.set_event_id_rows(frame)
+        assert view.event_id_rows is frame
 
-        view.relay_query_result(None)
-        assert view.relayed_query_result is None
+        view.set_event_id_rows(None)
+        assert view.event_id_rows is None
 
     def test_the_parked_answer_is_declared_on_the_base(self) -> None:
         """
         The annotation moved with the method that writes it.
 
         Only ``MetadataView`` declared it before; ``ProteinView`` assigned it at first
-        use, and every read guards with ``getattr(..., None)``. Both ``_init``s now set
-        it, so those guards are belt-and-braces - worth stating before someone removes
-        one and finds out which reads still depend on them.
+        use. Step 4a's last conversion renamed it to ``event_id_rows`` and gave it a
+        single writer, so the ``getattr(..., None)`` guards that used to surround every
+        read are gone and the declaration is what keeps the type stated once.
         """
-        assert "relayed_query_result" in MetaSubsetTabView.__annotations__
+        assert "event_id_rows" in MetaSubsetTabView.__annotations__
         for view_cls in SUBSET_TABS:
-            assert "relayed_query_result" not in view_cls.__annotations__
+            assert "event_id_rows" not in view_cls.__annotations__

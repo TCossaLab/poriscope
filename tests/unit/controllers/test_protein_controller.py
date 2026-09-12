@@ -13,7 +13,6 @@ Run with:
 
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 from PySide6.QtWidgets import QApplication
 
@@ -451,20 +450,12 @@ class TestOnRawFilterValidated:
         assert "new_raw" in controller.view.subset_filters
 
 
-# ===========================================================================
-# relay_query_result
-# ===========================================================================
-
-
-class TestRelayQueryResult:
-    def test_forwards_dataframe_to_view(self, controller):
-        df = pd.DataFrame({"event_id": [1, 2, 3]})
-        controller.relay_query_result(df)
-        assert controller.view.relayed_query_result is df
-
-    def test_forwards_none_to_view(self, controller):
-        controller.relay_query_result(None)
-        assert controller.view.relayed_query_result is None
+# ``TestRelayQueryResult`` lived here and is gone with the method: Step 4a's last
+# conversion replaced the ``relay_query_result`` bus round-trip with the
+# ``event_id_cache_requested`` intent, answered by
+# ``MetaSubsetTabController.load_event_id_cache`` and parked by ``set_event_id_rows``.
+# The promoted-method side is covered in ``test_duplicated_helpers``, and the
+# Controller slot in ``test_subset_tab_controller``.
 
 
 # ===========================================================================

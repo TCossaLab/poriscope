@@ -128,19 +128,24 @@ class MetaSubsetTabView(MetaView):
     #: arrives through ``on_raw_filter_validated``.
     raw_filter_validation_requested = Signal(str, str)
 
+    #: Asks for the ``event_id`` values a subset holds, so the navigation cache can be
+    #: rebuilt: the loader's key, the filter (``None`` for all rows) and the
+    #: experiment/channel scope. The answer arrives through ``set_event_id_rows``.
+    #:
+    #: Step 4a's last conversion, and the one the plan had recorded as blocked on
+    #: restructuring ``_rebuild_event_id_cache``'s callers. Re-derived before it was
+    #: worked: all five callers consume only the ``bool`` return and read
+    #: ``filtered_event_ids`` a statement later, so clearing the answer, emitting and
+    #: reading it back leaves every one of them untouched.
+    event_id_cache_requested = Signal(str, object, object)
+
     logger = logging.getLogger(__name__)
 
-    #: Where ``relay_query_result`` parks a query's answer for the emitter to read on
-    #: the next statement. Assigned in each subclass's ``_init`` as well, so that a
-    #: read before any query has run sees None rather than raising. Goes away with the
-    #: last of the emit-then-read pairs.
-    #:
-    #: A DataFrame in practice, typed ``Any`` because a View may not import pandas -
-    #: ``check_mvc_boundary``'s rule 2, whose target is zero, so earning a new
-    #: allowlist entry for a member already scheduled for deletion would be a poor
-    #: trade. The two tabs keep the precise type where they use it, and so does
-    #: ``MetaSubsetTabController.relay_query_result``, which is allowed pandas.
-    relayed_query_result: Optional[Any]
+    #: Where the Controller leaves the ``event_id`` rows :py:meth:`_rebuild_event_id_cache`
+    #: asked for, to be read back on the next statement over the direct connection.
+    #: Typed ``Any`` rather than ``pandas.DataFrame`` because a View may not import
+    #: pandas; the Controller that fills it is allowed to.
+    event_id_rows: Optional[Any]
 
     #: Assigned in each subclass's ``_init``, identically in both tabs today. The
     #: annotation moves here with the methods that read it; the assignment stays with
@@ -186,22 +191,20 @@ class MetaSubsetTabView(MetaView):
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
 
     @log(logger=logger)
-    def relay_query_result(self, result: Optional[Any]) -> None:
+    def set_event_id_rows(self, rows: Optional[Any]) -> None:
         """
-        A callback from a global_signal call that stores the result of a DB query.
+        Receive the ``event_id`` rows the filtered-event cache asked for.
 
-        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
-        which return the same thing: the rows, an empty frame if none matched, or
-        None if the query could not be built or run. Read back by
-        ``_rebuild_event_id_cache`` and by the tabs' own plot paths.
+        Called by ``MetaSubsetTabController.load_event_id_cache`` only once the query
+        has run, so ``None`` means "that did not happen" rather than "the previous
+        answer still stands".
 
-        Typed ``Any`` rather than ``Optional[pd.DataFrame]`` because a View may not
-        import pandas; see ``relayed_query_result`` above.
-
-        :param result: DataFrame returned by the query, or None if it failed.
-        :type result: Optional[Any]
+        :param rows: the rows the loader returned, or None if the query failed
+        :type rows: Optional[Any]
+        :return: None
+        :rtype: None
         """
-        self.relayed_query_result = result
+        self.event_id_rows = rows
 
     @log(logger=logger)
     def _delete_filter(self, name: str) -> None:
@@ -635,19 +638,12 @@ class MetaSubsetTabView(MetaView):
         if exp is not None:
             exp_and_ch = {exp: [channel] if channel is not None else None}
 
-        # Cleared first: a dispatch that fails never calls the return function,
-        # so without this the read below sees the previous call's value and
-        # treats it as this call's answer.
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_metadata",
-            (["event_id"], sql_filter or None, exp_and_ch),
-            "relay_query_result",
-            (),
-        )
-        result = getattr(self, "relayed_query_result", None)
+        # Cleared first: the Controller sets it only once the query has run, so
+        # without this the read below would see the previous call's value and treat
+        # it as this call's answer.
+        self.event_id_rows = None
+        self.event_id_cache_requested.emit(loader, sql_filter or None, exp_and_ch)
+        result = self.event_id_rows
         if result is not None and result.empty:
             self.add_text_to_display.emit(
                 "No filtered events found for the current scope.",

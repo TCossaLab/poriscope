@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict, Generator, Optional, override
+from typing import Any, Dict, Generator, List, Optional, override
 
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
@@ -166,6 +166,52 @@ class MetaSubsetTabController(MetaController):
         )
         self.view.filter_validation_requested.connect(self.validate_filter)
         self.view.raw_filter_validation_requested.connect(self.validate_raw_filter)
+        self.view.event_id_cache_requested.connect(self.load_event_id_cache)
+
+    @log(logger=logger)
+    @Slot(str, object, object)
+    def load_event_id_cache(
+        self,
+        loader: str,
+        conditions: Optional[str],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+    ) -> None:
+        """
+        Fetch the ``event_id`` values a subset holds, for the navigation cache.
+
+        Step 4a's last conversion, shared by both subset tabs because
+        ``_rebuild_event_id_cache`` is shared. A failed query leaves the View's answer
+        untouched at ``None``, which is what lets the caller tell "that did not run"
+        from "the subset is empty" - a distinction the bus destroyed by swallowing the
+        failure and leaving the previous call's rows in place.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param conditions: the subset filter, or None for every row
+        :type conditions: Optional[str]
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :return: None
+        :rtype: None
+        """
+        try:
+            rows = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "load_metadata",
+                ["event_id"],
+                conditions,
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load the filtered event ids: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not read this subset's events from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_id_rows(rows)
 
     @log(logger=logger)
     @Slot(str)

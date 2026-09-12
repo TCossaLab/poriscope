@@ -178,12 +178,6 @@ class MetadataView(MetaSubsetTabView):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
-        # Written by relay_query_result and read back by the emitter on the next
-        # statement. Declared here so the type is stated once and the callers'
-        # cleared-before-emit assignment type-checks. The last such attribute on this
-        # tab: the experiment-id one went with the event-plot chain in Step 4a, and
-        # this one goes with _rebuild_event_id_cache's own emit on the base.
-        self.relayed_query_result = None
         # Set by set_event_plot_data_generator once the whole event-plot chain has
         # succeeded. None means it has not been fetched.
         self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None

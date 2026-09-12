@@ -1,7 +1,5 @@
 {
-  "emits": {
-    "poriscope/utils/MetaSubsetTabView.py": 1
-  },
+  "emits": {},
   "imports": {
     "poriscope/plugins/analysistabs/ClusteringView.py": [
       "numpy",

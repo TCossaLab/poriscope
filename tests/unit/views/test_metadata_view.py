@@ -124,6 +124,9 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     )
     view_instance.plot_features_requested = mocker.Mock()
     view_instance.csv_subset_export_requested = mocker.Mock()
+    # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
+    # each test that drives _rebuild_event_id_cache sets its own answer.
+    view_instance.event_id_cache_requested = mocker.Mock()
 
     # Additional mocks needed before _init()
     view_instance._commit_cache = mocker.Mock()
@@ -5637,13 +5640,9 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify False is returned when no filtered events are found."""
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame()
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame()
+    )
 
     result = view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5656,13 +5655,9 @@ def test_rebuild_event_id_cache_stores_event_ids(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify filtered_event_ids is populated, and sorted, from the query result."""
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [10, 0, 5]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [10, 0, 5]})
+    )
 
     result = view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5674,13 +5669,9 @@ def test_rebuild_event_id_cache_updates_current_trackers(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify current_sql_filter, current_experiment, and current_channel are updated."""
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [1, 2, 3]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [1, 2, 3]})
+    )
 
     view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2)
 
@@ -5693,14 +5684,10 @@ def test_rebuild_event_id_cache_emits_all_events_when_no_filter(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify display panel message says 'All events' when no filter is active."""
-    view.global_signal = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={})
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [0, 1, 2]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [0, 1, 2]})
+    )
 
     view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5712,14 +5699,10 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify display panel message includes filter name and 'subset' when filter is active."""
-    view.global_signal = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"my_filter": "duration > 1"})
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [3, 7]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [3, 7]})
+    )
 
     view._rebuild_event_id_cache("loader", "duration > 1", None, None)
 
@@ -5732,14 +5715,10 @@ def test_rebuild_event_id_cache_emits_total_and_bounds(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify display panel message includes total count, first and last event_id."""
-    view.global_signal = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={})
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [2, 5, 9]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [2, 5, 9]})
+    )
 
     view._rebuild_event_id_cache("loader", "", None, None)
 

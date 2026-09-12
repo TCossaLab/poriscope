@@ -286,7 +286,6 @@ class ProteinView(MetaSubsetTabView):
         self._pending_filter_text = None
         self._pending_old_filter_name = None
         self.filtered_event_ids = []
-        self.relayed_query_result = None
         self.subset_filters = {}
         self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
         self.available_experiment_and_channels_by_loader: Dict[

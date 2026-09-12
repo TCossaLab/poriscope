@@ -509,14 +509,3 @@ class ProteinController(MetaSubsetTabController):
         :type status: bool
         """
         self.view.set_alter_database_status(status)
-
-    @log(logger=logger)
-    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
-        """
-        Relay a direct database query result to the view.
-        Used by ProteinView._rebuild_event_id_cache to receive the list of filtered event_ids.
-
-        :param result: DataFrame returned by query_database_directly, or None if the query failed.
-        :type result: Optional[pd.DataFrame]
-        """
-        self.view.relay_query_result(result)

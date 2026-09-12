@@ -28,7 +28,6 @@
 import logging
 from typing import Dict, List, Optional, override
 
-import pandas as pd
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -646,13 +645,3 @@ class MetadataController(MetaSubsetTabController):
         self.view.update_plot_features(
             vertical, horizontal, points, vlabels, hlabels, plabels
         )
-
-    @log(logger=logger)
-    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
-        """
-        Relay the result of a direct DB query to the view.
-
-        :param result: DataFrame returned by query_database_directly.
-        :type result: Optional[pd.DataFrame]
-        """
-        self.view.relay_query_result(result)
