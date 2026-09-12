@@ -22,6 +22,8 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
+* **Fixed the Metadata tab not reporting an event-data filter the database refuses, and never showing the SQL for an event plot**: the refusal was invisible and the plot went ahead, because the query builder returns the query and the reason together and only the pair was being checked
+
 * **Fixed the Protein tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment scope, so an event number that exists in more than one channel could return the wrong channel's data; it now stops and says so
 
 * The Protein tab now asks its database loader for event plot data through a direct call from its controller rather than through the signal bus, so a lookup that fails is reported instead of silently widening the query

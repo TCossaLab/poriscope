@@ -38,6 +38,32 @@ be shared rather than copied.
 
 ---
 
+## 2026-09-12 - Rule 42 fired again on `construct_event_data_query`, and the test had pinned it
+
+**Context.** `MetadataController.load_event_subset` bound
+`construct_event_data_query`'s return to one name. It is declared
+`-> Tuple[str, str]` and reports a filter it cannot build as `("", debug)`. The bus splatted
+that pair across `relay_event_query(query, debug)`; `call()` hands it over whole.
+
+**Decision.** Unpack both names, and report `debug` when the query half is empty. Found while
+converting the protein tab's copy of the same chain, which would have inherited it.
+
+**Evidence.** Measured against a real `SQLiteDBLoader`: the call returns
+`('SELECT
+  d.id, ...', '')`, a `tuple`, for which `bool(...)` is `True` and `== ""` is
+`False`. So `if not query` could never fire, the View's own `if self.event_query == ""` guard
+could never fire either, and `_echo_applied_query` called `.strip()` on a tuple. **No test
+caught it and the whole suite was green**, because the Controller test's stub answered with a
+bare string - the assertion had been written from the implementation rather than from the
+collaborator's signature, which is precisely the failure rule 42 records. The e2e and flow
+suites pass identically before and after, so nothing above the unit layer exercised it either.
+
+**Revisit if** another `call()` conversion binds a declared tuple return to one name; the
+three `construct_metadata_query` call sites were checked at the same time and all unpack
+their three values correctly.
+
+---
+
 ## 2026-09-12 - Protein's event-plot chain stops on an unresolvable experiment, as Metadata's does
 
 **Context.** `ProteinView._resolve_event_db_ids` appended the experiment scope only when

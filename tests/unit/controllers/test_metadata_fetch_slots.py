@@ -231,7 +231,7 @@ class TestLoadEventSubset:
         generator = iter([{"event_id": 1}])
         controller.model = RecordingModel(
             {
-                "construct_event_data_query": "SELECT * FROM events",
+                "construct_event_data_query": ("SELECT * FROM events", ""),
                 "load_event_data": generator,
             }
         )
@@ -250,7 +250,7 @@ class TestLoadEventSubset:
         """
         controller.model = RecordingModel(
             {
-                "construct_event_data_query": "SELECT * FROM events",
+                "construct_event_data_query": ("SELECT * FROM events", ""),
                 "load_event_data": RuntimeError("no such table: events"),
             }
         )
@@ -259,6 +259,32 @@ class TestLoadEventSubset:
 
         controller.view.set_event_data_generator.assert_not_called()
         assert "no such table: events" in panel_text(controller)
+
+
+    def test_a_query_the_loader_refuses_to_build_stops_the_plot(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        ``construct_event_data_query`` reports a filter it cannot build by returning
+        ``("", debug)``, and that refusal has to stop the plot and reach the user.
+
+        The guard reading ``if not query`` was written against the whole return value
+        rather than against the query half, and a 2-tuple is always truthy - so the
+        refusal was invisible and the tab went on to load and plot.
+        """
+        controller.model = RecordingModel(
+            {
+                "construct_event_data_query": ("", "no such column: nope"),
+                "load_event_data": iter([]),
+            }
+        )
+
+        controller.load_event_subset("ldr", "nope > 1", SCOPE)
+
+        assert controller.model.calls_to("load_event_data") == []
+        controller.view.set_event_query.assert_not_called()
+        controller.view.set_event_data_generator.assert_not_called()
+        assert "no such column: nope" in panel_text(controller)
 
 
 # ===========================================================================

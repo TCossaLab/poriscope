@@ -199,7 +199,13 @@ class MetadataController(MetaSubsetTabController):
         :rtype: None
         """
         try:
-            query = self.model.call(
+            # Two values, because construct_event_data_query is declared
+            # -> Tuple[str, str] and reports a filter it cannot build as
+            # ("", debug). The bus splatted that pair across
+            # relay_event_query(query, debug); call() hands it over whole, and a
+            # 2-tuple is always truthy - so binding it to one name made the guard
+            # below unable to fire and put the pair itself on the status panel.
+            query, debug = self.model.call(
                 "MetaDatabaseLoader",
                 loader,
                 "construct_event_data_query",
@@ -216,7 +222,7 @@ class MetadataController(MetaSubsetTabController):
 
         if not query:
             self.add_text_to_display.emit(
-                "The event query for this subset could not be built",
+                debug or "The event query for this subset could not be built",
                 self.__class__.__name__,
             )
             return
