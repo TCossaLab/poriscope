@@ -10,6 +10,34 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-12 - The trace plot trims its own request; the reader's clamp is not restored
+
+**Context.** The merge from `develop` made `MetaReader.load_data` raise `ValueError` on an
+out-of-bounds request instead of clamping it (declared **Breaking** in `changelog.md`).
+Nothing between the Raw Data tab's time inputs and the reader bounds the request -
+`RawDataView._validate_plot_parameters` only checks the values are present - so a range
+running past the end of a file went from drawing what existed to drawing nothing, with the
+reason reaching only the log.
+
+**Decision.** `RawDataController._bounded_length` trims each channel's request to that
+channel's length before asking, and reports on the status panel both when it trims and when
+the range starts past the end. The reader's stricter contract stays.
+
+**Evidence.** Measured against a real `BinaryReader1X` over a 2 s synthetic recording: a
+request for 0-4 s, one starting at 3 s, and one overrunning the final sliver all raise
+`ValueError` now. Every *other* caller of `load_data` already trims against
+`get_channel_length` and is unaffected - `MetaEventFinder._find_events:426`
+(`if end > total_samples: end = total_samples`), that finder's last-event padding at `:609`,
+and `MetaReader.continuous_read:372`. Confirmed empirically for the finder: driven over a
+whole file, all three finders leave ~198,000 samples of headroom at both ends. The trace plot
+was the only caller with no bound of its own, which is why the fix belongs in the tab and
+uses the same `get_channel_length` idiom the other three already use.
+
+**Revisit if** a second tab grows a direct `load_data` call, at which point the trim wants to
+be shared rather than copied.
+
+---
+
 ## 2026-09-12 - A nested function can hide pydoclint's raise checks, so hoisting one can surface real violations
 
 **Context.** Collapsing three byte-identical nested `tuple_builder` helpers in

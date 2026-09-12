@@ -611,6 +611,14 @@ class TestCommitEvents:
 
 # ------------- trace loading and filtering (Step 4a) -----------------
 
+# _load_and_filter now asks each channel for its length before reading it, so the
+# range can be trimmed to what the channel holds (MetaReader.load_data raises on an
+# over-long request instead of clamping). These lists interleave that answer with the
+# reads. 25e6 samples at 250 kHz is 100 s, comfortably longer than any range asked
+# for below, so nothing here is trimmed - the trimming itself is tested separately.
+LONG_CHANNEL = 25_000_000.0
+
+
 
 def test_load_and_filter_returns_data_and_surviving_channels(
     controller: RawDataController,
@@ -622,12 +630,22 @@ def test_load_and_filter_returns_data_and_surviving_channels(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.model.call.side_effect = [250000.0, "ch0", "ch1"]
+    controller.model.call.side_effect = [
+        250000.0,
+        LONG_CHANNEL,
+        "ch0",
+        LONG_CHANNEL,
+        "ch1",
+    ]
 
     data, kept = controller._load_and_filter("R", [0, 1], 2.0, 9.0, "")
 
     assert (data, kept) == (["ch0", "ch1"], [0, 1])
-    assert controller.model.call.call_args_list[1:] == [
+    assert [
+        c
+        for c in controller.model.call.call_args_list
+        if c.args[2] == "load_data"
+    ] == [
         mocker.call("MetaReader", "R", "load_data", 2.0, 9.0, 0),
         mocker.call("MetaReader", "R", "load_data", 2.0, 9.0, 1),
     ]
@@ -649,7 +667,15 @@ def test_load_and_filter_drops_a_channel_the_reader_cannot_supply(
     :param controller: Controller under test.
     :param mock_view: Mocked raw data view.
     """
-    controller.model.call.side_effect = [250000.0, "ch0", Exception("boom"), "ch2"]
+    controller.model.call.side_effect = [
+        250000.0,
+        LONG_CHANNEL,
+        "ch0",
+        LONG_CHANNEL,
+        Exception("boom"),
+        LONG_CHANNEL,
+        "ch2",
+    ]
 
     data, kept = controller._load_and_filter("R", [0, 1, 2], 0.0, 1.0, "")
 
@@ -666,7 +692,13 @@ def test_load_and_filter_drops_a_channel_that_returns_none(
 
     :param controller: Controller under test.
     """
-    controller.model.call.side_effect = [250000.0, None, "ch1"]
+    controller.model.call.side_effect = [
+        250000.0,
+        LONG_CHANNEL,
+        None,
+        LONG_CHANNEL,
+        "ch1",
+    ]
 
     data, kept = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "")
 
@@ -681,7 +713,12 @@ def test_load_and_filter_filters_each_channel_when_asked(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
-    controller.model.call.side_effect = [250000.0, "raw0", "filtered0"]
+    controller.model.call.side_effect = [
+        250000.0,
+        LONG_CHANNEL,
+        "raw0",
+        "filtered0",
+    ]
 
     data, kept = controller._load_and_filter("R", [0], 0.0, 1.0, "F1")
 
@@ -705,8 +742,10 @@ def test_load_and_filter_keeps_the_unfiltered_channel_when_the_filter_fails(
     """
     controller.model.call.side_effect = [
         250000.0,
+        LONG_CHANNEL,
         "raw0",
         "filtered0",
+        LONG_CHANNEL,
         "raw1",
         Exception("boom"),
     ]
@@ -728,7 +767,15 @@ def test_load_and_filter_fetches_the_samplerate_once_per_request(
     :param mock_view: Mocked raw data view.
     :param mocker: Pytest-mock fixture.
     """
-    controller.model.call.side_effect = [250000.0, "ch0", "ch1", "ch2"]
+    controller.model.call.side_effect = [
+        250000.0,
+        LONG_CHANNEL,
+        "ch0",
+        LONG_CHANNEL,
+        "ch1",
+        LONG_CHANNEL,
+        "ch2",
+    ]
 
     controller._load_and_filter("R", [0, 1, 2], 0.0, 1.0, "")
 
@@ -751,7 +798,7 @@ def test_load_and_filter_falls_back_to_samplerate_one(
     :param controller: Controller under test.
     :param mock_view: Mocked raw data view.
     """
-    controller.model.call.side_effect = [Exception("boom"), "ch0"]
+    controller.model.call.side_effect = [Exception("boom"), LONG_CHANNEL, "ch0"]
 
     controller._load_and_filter("R", [0], 0.0, 1.0, "")
 
@@ -1306,3 +1353,119 @@ def test_relay_eventfinding_status_delegates_false_to_view(
     """
     controller.relay_eventfinding_status(False)
     mock_view.set_eventfinding_status.assert_called_once_with(False)
+
+
+# ------------- trimming a request to the channel's length -----------------
+
+
+class TestBoundedLength:
+    """
+    ``MetaReader.load_data`` raises on an over-long request now instead of clamping it.
+
+    Every other caller of ``load_data`` already trims against ``get_channel_length`` -
+    ``MetaEventFinder._find_events``, that finder's last-event padding, and
+    ``MetaReader.continuous_read``. The trace plot was the one that did not, so a range
+    running past the end of a file went from drawing what existed to drawing nothing
+    with the reason only in the log.
+    """
+
+    def test_a_range_inside_the_channel_is_passed_through_untouched(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        The ordinary case must not pay for the guard, and must not tell the user
+        anything about a range that was fine.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.return_value = 250_000.0 * 100  # 100 s at 250 kHz
+
+        assert controller._bounded_length("R", 0, 2.0, 9.0, 250_000.0) == 9.0
+        controller.add_text_to_display.emit.assert_not_called()
+
+    def test_a_range_overrunning_the_end_is_trimmed_and_reported(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Trimming silently would be the same "you are looking at something other than
+        what you asked for" fault this step exists to remove, so the message is part
+        of the behaviour rather than an extra.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.return_value = 250_000.0 * 10  # 10 s at 250 kHz
+
+        assert controller._bounded_length("R", 0, 8.0, 100.0, 250_000.0) == 2.0
+        (message, _), _ = controller.add_text_to_display.emit.call_args
+        assert "ends at 10 s" in message
+
+    def test_a_range_starting_past_the_end_asks_for_nothing(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        There is no length that makes this request meaningful, so the channel is
+        skipped rather than trimmed to zero - a zero-length read is a different and
+        more confusing failure.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.return_value = 250_000.0 * 10
+
+        assert controller._bounded_length("R", 1, 40.0, 1.0, 250_000.0) is None
+        (message, _), _ = controller.add_text_to_display.emit.call_args
+        assert "nothing to plot from 40 s" in message
+
+    def test_a_channel_whose_length_cannot_be_read_keeps_its_request(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        A reader that cannot answer gets the benefit of the doubt: the request goes
+        out as entered and fails in ``load_data``, which reports it. Refusing here
+        would turn "I could not check" into "there is nothing to plot".
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = Exception("boom")
+
+        assert controller._bounded_length("R", 0, 0.0, 1.0, 250_000.0) == 1.0
+        controller.add_text_to_display.emit.assert_not_called()
+        controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
+
+    def test_an_unreadable_samplerate_skips_the_check_entirely(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        ``_load_and_filter`` falls back to a samplerate of 1 when the reader cannot
+        report one, which plots against raw indices. There is no seconds-to-samples
+        conversion to trim against in that state, and dividing by a zero or negative
+        rate would be worse than not checking.
+
+        :param controller: Controller under test.
+        """
+        assert controller._bounded_length("R", 0, 0.0, 1.0, 0.0) == 1.0
+        controller.model.call.assert_not_called()
+
+    def test_each_channel_is_trimmed_against_its_own_length(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        Channels of one recording can differ in length, which is why the trim is per
+        channel rather than once per request.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = [
+            250_000.0,  # get_samplerate
+            250_000.0 * 10,  # channel 0 holds 10 s
+            "ch0",
+            250_000.0 * 4,  # channel 1 holds only 4 s
+            "ch1",
+        ]
+
+        data, kept = controller._load_and_filter("R", [0, 1], 0.0, 6.0, "")
+
+        assert (data, kept) == (["ch0", "ch1"], [0, 1])
+        loads = [
+            c for c in controller.model.call.call_args_list if c.args[2] == "load_data"
+        ]
+        assert [c.args[4] for c in loads] == [6.0, 4.0]

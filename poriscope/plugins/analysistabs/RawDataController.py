@@ -432,6 +432,76 @@ class RawDataController(MetaEventTabController):
         return samplerate
 
     @log(logger=logger)
+    def _bounded_length(
+        self,
+        reader: str,
+        channel: int,
+        start: float,
+        length: float,
+        samplerate: float,
+    ) -> Optional[float]:
+        """
+        Trim a requested time range to what the channel actually holds, and say so.
+
+        ``MetaReader.load_data`` used to clamp an over-long request and hand back a
+        shorter array; it now raises ``ValueError`` instead. Nothing between the time
+        inputs and the reader bounds the request - ``_validate_plot_parameters`` only
+        checks that the values are present - so asking to plot past the end of a file
+        went from drawing what existed to drawing nothing, with the reason reaching
+        only the log.
+
+        Trimming here keeps the old visible behaviour without giving the reader's
+        stricter contract back, and the message is the point rather than an extra: a
+        silent clamp is the same "you are looking at something other than what you
+        asked for" fault this step has spent its time removing.
+
+        A reader that cannot report its length gets the benefit of the doubt and the
+        untrimmed request, which then fails in ``load_data`` and is reported there.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channel: the channel the request is for
+        :type channel: int
+        :param start: start time in seconds
+        :type start: float
+        :param length: requested duration in seconds
+        :type length: float
+        :param samplerate: the reader's sample rate in Hz
+        :type samplerate: float
+        :return: the duration to ask for, or None if the range lies past the end
+        :rtype: Optional[float]
+        """
+        if samplerate <= 0:
+            return length
+        try:
+            channel_samples = self.model.call(
+                "MetaReader", reader, "get_channel_length", channel
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Unable to read the length of channel {channel}: {repr(e)}. "
+                "Requesting the range as entered."
+            )
+            return length
+
+        duration = channel_samples / samplerate
+        if start >= duration:
+            self.add_text_to_display.emit(
+                f"Channel {channel} is {duration:g} s long, so there is nothing to "
+                f"plot from {start:g} s",
+                self.__class__.__name__,
+            )
+            return None
+        if start + length > duration:
+            self.add_text_to_display.emit(
+                f"Channel {channel} ends at {duration:g} s, so plotting "
+                f"{start:g}-{duration:g} s rather than the {length:g} s requested",
+                self.__class__.__name__,
+            )
+            return duration - start
+        return length
+
+    @log(logger=logger)
     def _load_and_filter(
         self,
         reader: str,
@@ -458,6 +528,10 @@ class RawDataController(MetaEventTabController):
         The samplerate is fetched once per request rather than once per channel, which is
         what the old per-channel ``_load_data`` did.
 
+        Each channel's range is trimmed to what that channel holds before it is asked
+        for; see :py:meth:`_bounded_length`. Channels of a recording can differ in
+        length, which is why the trim is per channel rather than once per request.
+
         :param reader: the reader plugin's key
         :type reader: str
         :param channels: the channels to read
@@ -483,13 +557,20 @@ class RawDataController(MetaEventTabController):
         data_list: List[Any] = []
         kept: List[int] = []
         for channel in channels:
+            bounded = self._bounded_length(reader, channel, start, length, samplerate)
+            if bounded is None:
+                continue
             try:
                 channel_data = self.model.call(
-                    "MetaReader", reader, "load_data", start, length, channel
+                    "MetaReader", reader, "load_data", start, bounded, channel
                 )
             except Exception as e:
                 self.logger.error(
                     f"Unable to retrieve requested data for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Could not read channel {channel} from {reader}: {e}",
+                    self.__class__.__name__,
                 )
                 continue
             if channel_data is None:
