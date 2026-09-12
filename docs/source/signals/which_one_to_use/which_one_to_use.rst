@@ -1,6 +1,13 @@
 Which to use 
 ============
 
+.. note::
+
+   Both signals on this page are the *bus*, and an analysis tab reaching a data
+   plugin should use neither: call the plugin directly instead, as
+   :ref:`CallingAPlugin` describes. What follows compares the two bus handlers with
+   each other, for the machinery that still runs on them.
+
 .. tabs::
 
    .. tab:: Similarities

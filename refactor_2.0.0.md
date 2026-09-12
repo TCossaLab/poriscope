@@ -1,45 +1,63 @@
-## Step 4a handoff, 2026-09-09
+## Step 4a handoff, 2026-09-12
 
-**Where it stands.** The subset tabs are the last of 4a. Emits: **13** left across the
-family - `MetadataView` **0**, `ProteinView` 12, `MetaSubsetTabView` 1. Started the previous
-session at 34. Boundary allowlist total 38, `*Controller.py` at 71 functions; both banked.
+**Step 4a's conversions are done.** `global_signal.emit` has **no callers left in the
+analysis tabs**: boundary rule 1 reads **0**, down from 13 at the start of this session and
+75 at the start of the step. Allowlist total **25** - 20 forbidden View imports (Step 4c)
+and 5 Controller reach-ins (4d). Suite **3,778 passed / 16 skipped**; all static gates and
+`sphinx-build -W` green.
 
-Landed, in order: `39a8f74e` `get_selected_filters` + the `_subset_controls` property ·
-`7ae7a2f8` `_rebuild_event_id_cache` · `7d6e67be` both filter dialogs · `34e46886`
-`_load_filter` · `967efecc` five more methods `_subset_controls` unlocked · `f27d0a58`
-`relay_query` to the Controller · `de13e2eb` the filter-validation round trips · `32b3bc34`
-`_overlay_plot` and the applied-query display · this session, Metadata's last six.
+Landed this session, in order: `17294f7d` merge-artifact doc fixes · `bf5b47a5` the CSV
+export regression · `82b6742f` the Raw Data range trim · `58055b6f` Protein's event-plot
+chain · `29fbd703` `construct_event_data_query`'s tuple · `9bacda1d` Protein's distribution
+subsets · `84808210` `_commit_fits`, taking ProteinView to zero · `62595e36` the base's last
+emit.
 
-**Manual passes:** metadata and protein green after `34e46886`, and again after `32b3bc34`
-(the five commits through the applied-query display, checked 2026-09-09). Metadata's last six
-are **not** yet checked on Windows.
+**Three defects were found rather than converted**, all invisible to the suite:
+
+- `MetadataController.load_event_subset` bound `construct_event_data_query`'s declared
+  `Tuple[str, str]` to one name, so a filter the database refused was neither reported nor
+  able to stop the plot, and event-plot SQL never reached the panel. **The Controller test
+  pinned it**, because its stub answered with a bare string - rule 42's failure mode exactly.
+- The CSV subset export is a generator, so its own empty-subset check fired on the worker's
+  first advance, after the export index had advanced. `changelog.md` had claimed this fixed
+  since `e7ce9ba0`. `MetaDatabaseLoader.count_subset_events` now answers before a worker is
+  started, measured at 7-9 ms and flat in event count.
+- `sphinx-build -W` is a gate in two workflows and had been failing since Step 3b, because
+  the autodoc generator emitted `.. automethod::` for `_subset_controls`, a property. The
+  generator understands properties now.
 
 **Next, in order:**
 
-1. **Protein's remainder, 12 emits.** `_commit_fits` (3), `_resolve_event_db_ids` (2),
-   `_build_load_event_data_args` (2), `_fetch_event_data` (1),
-   `_update_distribution_individual` (2), `_update_distribution_ensemble` (2). The last is
-   `@register_action`'s twin of the one before it, which Step 7 flags for saved-action
-   replay. `_build_load_event_data_args` is where the queued raw-filter gap is fixed.
-   `_resolve_event_db_ids` + `_fetch_event_data` are the same chain
-   `MetadataController.load_event_plot_data` now runs; diff them against it and promote to
-   `MetaSubsetTabController` if they merge (see `DECISIONS.md`, 2026-09-09). Delete the
-   write-only `baseline_duration` chain in the same commit - it is dead in both files.
-2. **The last emit on the base.** `_rebuild_event_id_cache`'s `load_metadata`. The claim
-   that this needs `_handle_plot_events` and `_shift_range_and_update_plot` restructured
-   first **did not survive** Metadata's commit: the established pattern is clear the answer,
-   emit a typed intent, read it back, and that leaves `_rebuild_event_id_cache`'s `bool`
-   return - and therefore both callers - untouched. Verify that before assuming either way.
+1. **Manual pass on Windows.** Nothing below the e2e layer sees a real plugin, and eight
+   commits of conversions are owed one. The list is at the end of this section.
+2. **The promotion review.** Both event-plot chains are converted, so there is finally
+   something to diff (`DECISIONS.md`, 2026-09-09 and 2026-09-12). Four differences survived
+   conversion: the `id, event_id` projection, the failure wording, the empty-id guard and
+   where the scope comes from. Separately, `load_event_subset` and
+   `load_event_distribution_data` are the same chain plus a `_raw` branch, and sharing them
+   is what closes the metadata tab's raw-filter gap - but it needs `_echo_applied_query` and
+   `_last_echoed_query` to move to `MetaSubsetTabController`, which would start the protein
+   tab echoing SQL on the panel. Decide that deliberately.
+3. **Then 3d**, which 4a's commit 1 unblocked, and **4c**, much cheaper after 4a.
 
-**Then 4a is done** and the `global_signal` bus has no callers left in the analysis tabs.
+**Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
+(<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-56**
+earned this session: a generator's guards run on the consumer's thread; a test that stubs a
+collaborator with the wrong return shape pins the bug; a derived gate that reaches zero is
+success, not regression; and a nested function can hide a static check that then fires on
+the commit that hoists it.
 
-**Read before writing code:** method rules **44 and 47-49** in the artifact
-(<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>) were all earned in
-this session's commits - the accessor-over-stored-handle choice that unlocked five promotions,
-a base docstring whose stated design constraint was false, deleting a statement by line match
-and silently re-parenting the code after it, and what a probe that silences logging actually
-measures. Rules 45 and 46 cover the two traps most likely to bite the next commit: patch
-targets move with a promoted method, and the plan's account of a defect is a hypothesis.
+**Manual pass owed** (Windows, against a real database):
+
+- Metadata: the five checks from the previous handoff re-run, with the CSV export's empty
+  filter now refused before the progress bar appears and keeping its `Subset_N` name; and an
+  event-data plot, whose SQL should now appear on the status panel.
+- Protein: plot events and histograms with an event id + n_events; step the id; a filter
+  matching nothing; individual and ensemble distribution plots, including one with a `_raw`
+  filter and an experiment scope - the panel should show the query that ran; commit fits onto
+  a database that already has them (confirm and cancel both) and onto one that does not.
+- Raw Data: a trace request past the end of the file, which should now draw what exists and
+  say it trimmed the range.
 
 # Poriscope 2.0.0 Refactor Plan
 
@@ -912,7 +930,28 @@ the View emits a **typed intent**, the Controller's slot calls the plugin throug
   `tests/unit/controllers/test_metadata_fetch_slots.py` covers them alongside this commit's
   four, 24 tests, and two mutations - dropping the scope guard, and handing the query over
   before the rows load - each fail exactly one of them.
-- **Protein 12.** Next, and the last of 4a bar the base's single remaining emit.
+- **Protein is done — the fifth and last View at zero emits**, 2026-09-12, taking it
+  12 → 0 over three commits. The event-plot chain (`_resolve_event_db_ids` +
+  `_fetch_event_data`) went as one intent, as Metadata's had; the two distribution twins
+  and `_build_load_event_data_args` went as one more, because all three ran the same
+  four-emit chain; and `_commit_fits` went two-phase, because it interleaves a plugin call
+  with a modal question.
+
+  **Three unscoped-query faults of the same family closed with them**, each one the bus
+  swallowing a lookup and the View then dropping the scope rather than stopping: the
+  experiment on the event-id query, and the experiment *and* channel on a `_raw` filter's
+  scope clause. A raw filter meant for one channel read the whole database.
+
+  **And the tab showed one query while running another.** For a `_raw` subset it displayed
+  what `construct_event_data_query` built - which does not refuse a complete SELECT, it
+  splices it in after `WHERE` - and then loaded through a separately scoped raw query.
+
+- **`MetaSubsetTabView` is at zero for the second time**, 2026-09-12. Its last emit was
+  `_rebuild_event_id_cache`'s `load_metadata`, and the recorded claim that its callers
+  needed restructuring first was false: re-derived, **all five** call sites (not the two the
+  plan named - the method lives on the base, so ProteinView has three) consume only the
+  `bool` return and read `filtered_event_ids` a statement later. `relayed_query_result` and
+  its three relay methods went with it.
 
 **Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much
 cheaper after 4a for the reason recorded under 4c below.
@@ -980,7 +1019,7 @@ finds coverage that never existed — the Gaussian-mixture branch was fifteen li
 and it now has four direct tests including one pinning that 1.9.0's seeding survived the
 move.
 
-#### 4a — IN PROGRESS. Mechanism + Clustering landed 2026-09-07
+#### 4a — CONVERSIONS DONE 2026-09-12. Mechanism + Clustering landed 2026-09-07
 
 **Allowlist 102 → 95.** `ClusteringView` is the **first View in the repo at zero emits**;
 the View-layer total is 72 → 65.
