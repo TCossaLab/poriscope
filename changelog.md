@@ -22,6 +22,14 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
+* **Fixed the Protein tab showing one query on the status panel while running another**: for a raw SQL subset it displayed the query built from the filter and then loaded through a differently scoped one; it now shows the query that runs
+
+* **Fixed the Protein tab reading the whole database when a raw SQL subset could not be scoped**: an experiment or channel it could not place was dropped from the query without a word, so a filter meant for one channel returned every channel's events; it now stops and says so
+
+* The Protein tab now builds and loads its distribution subsets through a direct call from its controller rather than through the signal bus, so a filter the database refuses is reported instead of silently plotting nothing
+
+* Fixed the Protein tab's ensemble distribution failing with an unhandled error, rather than stopping quietly, when no subset produced any data to fit
+
 * **Fixed the Metadata tab not reporting an event-data filter the database refuses, and never showing the SQL for an event plot**: the refusal was invisible and the plot went ahead, because the query builder returns the query and the reason together and only the pair was being checked
 
 * **Fixed the Protein tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment scope, so an event number that exists in more than one channel could return the wrong channel's data; it now stops and says so

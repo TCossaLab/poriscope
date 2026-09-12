@@ -103,6 +103,16 @@ class ProteinView(MetaSubsetTabView):
     #: failed, which is not the widget.
     event_plot_data_requested = Signal(str, list, object, object, object, str)
 
+    #: Asks for one subset's event data: the loader's key, the filter, the filter's
+    #: name (whose ``_raw`` suffix picks the route), the experiment and channel in
+    #: scope, and the scope dict an assisted filter is built against. The answers
+    #: arrive through ``set_event_query`` and ``set_event_data_generator``.
+    #:
+    #: Step 4a. Both distribution modes ran the same four emits - build the query,
+    #: resolve the two scope ids a ``_raw`` filter needs, load the events - so both
+    #: now raise this one intent.
+    event_distribution_data_requested = Signal(str, str, str, object, object, object)
+
     @property
     def fig_hist(self) -> Figure:
         return (
@@ -1541,70 +1551,6 @@ class ProteinView(MetaSubsetTabView):
         return data_list
 
     @log(logger=logger)
-    def _build_load_event_data_args(
-        self,
-        sql_filter: str,
-        subset_name: str,
-        exp: Optional[str],
-        channel: str,
-        exp_and_ch_arg: dict,
-        loader: str,
-    ) -> tuple:
-        """
-        Build the (filter_or_query, exp_and_ch_or_None) args tuple for load_event_data,
-        handling raw filter scoping automatically.
-
-        :param sql_filter: SQL filter string or complete raw query.
-        :type sql_filter: str
-        :param subset_name: Name of the subset filter, used to detect _raw suffix.
-        :type subset_name: str
-        :param exp: Experiment name, or None.
-        :type exp: Optional[str]
-        :param channel: Channel identifier.
-        :type channel: str
-        :param exp_and_ch_arg: Experiment/channel dict for assisted filters.
-        :type exp_and_ch_arg: dict
-        :param loader: Name of the database loader.
-        :type loader: str
-        :return: Tuple of (query_or_filter, exp_and_ch_or_None) for load_event_data.
-        :rtype: tuple
-        """
-        if subset_name.endswith("_raw"):
-            self.experiment_id = None
-            self.channel_db_id = None
-            if exp is not None:
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_experiment_id_by_name",
-                    (exp,),
-                    "set_experiment_id",
-                    (),
-                )
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_channel_db_id",
-                    (exp, int(channel)),
-                    "set_channel_db_id",
-                    (),
-                )
-            scoped_query = sql_filter.strip().rstrip(";")
-            if (
-                exp is not None
-                and self.experiment_id is not None
-                and self.channel_db_id is not None
-            ):
-                scope = f"experiment_id = {self.experiment_id} AND channel_db_id = {self.channel_db_id}"
-                if "WHERE" in scoped_query.upper():
-                    scoped_query = f"{scoped_query} AND {scope}"
-                else:
-                    scoped_query = f"{scoped_query} WHERE {scope}"
-            return (scoped_query, None)
-        else:
-            return (sql_filter, exp_and_ch_arg)
-
-    @log(logger=logger)
     def _handle_plot_events(self, parameters: dict) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
@@ -2031,29 +1977,22 @@ class ProteinView(MetaSubsetTabView):
                 exp_and_ch_arg = {exp: [channel]}
 
                 for subset_name, sql_filter in selected_filters.items():
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
+                    # Both cleared before asking: the Controller sets them only once
+                    # the whole chain has succeeded, so a failure leaves them empty
+                    # rather than describing the previous subset.
+                    self.event_query = ""
+                    self.event_data_generator = None
+                    self.event_distribution_data_requested.emit(
                         loader,
-                        "construct_event_data_query",
-                        (sql_filter, exp_and_ch_arg),
-                        "relay_event_query",
-                        (),
+                        sql_filter,
+                        subset_name,
+                        exp,
+                        int(channel) if channel is not None else None,
+                        exp_and_ch_arg,
                     )
 
                     if self.event_query == "":
                         return
-
-                    load_event_data_args = self._build_load_event_data_args(
-                        sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
-                    )
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "load_event_data",
-                        load_event_data_args,
-                        "relay_event_data_generator",
-                        (),
-                    )
 
                     if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
                         self.logger.warning(f"Invalid plot type: {plot_type}")
@@ -2501,6 +2440,11 @@ class ProteinView(MetaSubsetTabView):
         # The three guards above guarantee that experiments_and_channels, every
         # channels list, and selected_filters each contain exactly one entry,
         # so the triple-nested loop below runs exactly once.
+        #
+        # Declared out here all the same: the loop is the only thing that binds it,
+        # and reaching the ensemble fit below without it would be a NameError rather
+        # than a plot that did not happen.
+        plot_data: Optional[pd.DataFrame] = None
 
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
@@ -2520,28 +2464,22 @@ class ProteinView(MetaSubsetTabView):
                     )
                     sizes = False
 
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
+                    # Both cleared before asking: the Controller sets them only once
+                    # the whole chain has succeeded, so a failure leaves them empty
+                    # rather than describing the previous subset.
+                    self.event_query = ""
+                    self.event_data_generator = None
+                    self.event_distribution_data_requested.emit(
                         loader,
-                        "construct_event_data_query",
-                        (sql_filter, exp_and_ch_arg),
-                        "relay_event_query",
-                        (),
+                        sql_filter,
+                        subset_name,
+                        exp,
+                        int(channel) if channel is not None else None,
+                        exp_and_ch_arg,
                     )
+
                     if self.event_query == "":
                         return
-
-                    load_event_data_args = self._build_load_event_data_args(
-                        sql_filter, subset_name, exp, channel, exp_and_ch_arg, loader
-                    )
-                    self.global_signal.emit(
-                        "MetaDatabaseLoader",
-                        loader,
-                        "load_event_data",
-                        load_event_data_args,
-                        "relay_event_data_generator",
-                        (),
-                    )
 
                     if self.event_data_generator:
                         if plot_type in ["Raw Histogram", "Filtered Histogram"]:
@@ -2595,6 +2533,8 @@ class ProteinView(MetaSubsetTabView):
                         (loader, exp, channel_id, sql_filter, subset_name)
                     )
 
+        if plot_data is None:
+            return
         if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):
             return
 

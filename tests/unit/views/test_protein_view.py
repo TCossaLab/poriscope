@@ -686,47 +686,17 @@ class TestConstructAllPointsHistogram:
         assert df["Normalized Current"].max() - df["Normalized Current"].min() > 0
 
 
-# ===========================================================================
-# _build_load_event_data_args
-# ===========================================================================
-
-
-class TestBuildLoadEventDataArgs:
-    def test_non_raw_returns_filter_and_exp(self, mock_view):
-        exp_ch = {"ExpA": ["0"]}
-        result = mock_view._build_load_event_data_args(
-            "dur > 100", "myfilter", "ExpA", "0", exp_ch, "loader1"
-        )
-        assert result == ("dur > 100", exp_ch)
-
-    def test_raw_returns_none_second(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "myfilter_raw", "ExpA", "0", {}, "loader1"
-        )
-        assert result[1] is None
-
-    def test_raw_strips_trailing_semicolon(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events;", "filter_raw", None, "0", {}, "loader1"
-        )
-        assert not result[0].endswith(";")
-
-    def test_raw_no_exp_no_scope(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", None, "0", {}, "loader1"
-        )
-        assert "WHERE" not in result[0].upper()
-
-    def test_raw_scope_requires_live_bus(self, mock_view):
-        # global_signal.emit() has no connected slots in tests so
-        # experiment_id stays None and the scope clause is not appended.
-        mock_view.experiment_id = 5
-        mock_view.channel_db_id = 2
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", "ExpA", "0", {}, "loader1"
-        )
-        assert result[1] is None
-        assert "SELECT * FROM events" in result[0]
+# ``TestBuildLoadEventDataArgs`` lived here and is gone with the method: Step 4a moved
+# the raw-subset scoping into ``ProteinController._scope_raw_subset_query``. Its
+# coverage is ``tests/unit/controllers/test_raw_subset_scoping.py``, which was
+# ``test_view_authored_sql.py`` before the same move.
+#
+# ``test_raw_scope_requires_live_bus`` is not carried over. It asserted that the scope
+# clause is *not* appended, on the grounds that "global_signal.emit() has no connected
+# slots in tests so experiment_id stays None" - so it passed by describing the test
+# harness rather than the code, and would have gone on passing whatever the scoping
+# did. The behaviour it stood in front of is now two tests that drive a lookup
+# answering None and assert the plot stops.
 
 
 # ===========================================================================
